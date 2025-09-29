@@ -43,8 +43,6 @@ Persona lets you define **domain personas** (Technician, Service Writer, Invento
 * **Admin UI starter**: optional React UI bundle served by Spring Boot to manage personas, prompts, and integrations.
 * **Seeded prompts**: WrenchML diagnostic JSON template, data normalization template, and an assistant system voice for all personas.
 * **AWS adapters**: Bedrock (Converse), Titan embeddings, SageMaker predict, S3 blob ops (GET/PUT).
-* **No H2**: framework targets PostgreSQL; testing via Testcontainers recommended.
-* **Breaking change**: removed older fallback table; use `persona_integration_binding.fallback_integration_ids`.
 
 ---
 
