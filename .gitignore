@@ -1,0 +1,25 @@
+# Project Files
+/persona-admin-ui/node_modules/
+/kotlin-persona/
+/generators/
+/spring-persona/
+/temp/
+/temp-ui/
+
+
+# Gradle
+.gradle/
+build/
+out/
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+
+# OS
+**/.DS_Store
+
+# Logs
+logs/
+*.log
