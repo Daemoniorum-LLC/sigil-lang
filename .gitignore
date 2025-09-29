@@ -1,7 +1,8 @@
 # Project Files
-/persona-admin-ui/node_modules/
-/kotlin-persona/
-/generators/
+persona-framework/persona-admin-ui/node_modules/
+persona-framework/persona-admin-ui/node_modules/*
+/kotlin-persona
+/generators
 /spring-persona/
 /temp/
 /temp-ui/
@@ -23,3 +24,8 @@ out/
 # Logs
 logs/
 *.log
+/persona-admin-ui/node_modules/*
+/temp-ui
+/temp
+/spring-persona
+/build/
