@@ -37,3 +37,17 @@ persona-demo/.env
 .env.*.local
 hydra/.env
 */.env
+
+
+# Admin UI test/build artifacts
+persona-admin-ui/coverage/
+persona-admin-ui/playwright-report/
+persona-admin-ui/test-results/
+persona-admin-ui/blob-report/
+persona-admin-ui/storybook-static/
+persona-admin-ui/dist/
+persona-admin-ui/.vite/
+persona-admin-ui/.eslintcache
+
+src/
+test/
