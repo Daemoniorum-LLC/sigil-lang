@@ -60,11 +60,9 @@ keepalive.log
 hydra-keepalive.log
 
 # Separate project directories (have own repos)
-# These are independent projects with their own .git directories
-bael/
-mammon/
-hydra/
-paimon/
+# These modules now live as sibling directories in /development/projects/
+# They are referenced in settings.gradle.kts as external projects
+# No need to ignore them here since they're no longer subdirectories
 
 # Grimoire IDE Starter variants (developer workspace)
 # Keep these tracked for now but ignore build artifacts
