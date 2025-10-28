@@ -1,4 +1,4 @@
-# Persona Framework
+# Persona Framework v2 v2.0 - Test
 
 Production-ready autonomous AI agent platform for Spring Boot applications.
 
