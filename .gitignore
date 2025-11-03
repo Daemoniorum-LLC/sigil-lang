@@ -65,3 +65,5 @@ test-results/
 test-file.txt
 tmp/hsperfdata_root/
 hydra-0.1.0.jar
+BOOT-INF/
+*.jar
