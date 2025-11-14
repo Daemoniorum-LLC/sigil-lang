@@ -23,6 +23,7 @@ out/
 
 # Logs
 logs/
+!**/src/**/logs/
 *.log
 /persona-admin-ui/node_modules/*
 /temp-ui
