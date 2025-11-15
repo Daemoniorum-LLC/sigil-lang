@@ -10,6 +10,13 @@ lev-restart      # Full restart: kill + clean + build + run
 lev-logs         # tail -f leviathan.out
 bael-dev         # cd bael && npm run dev
 bael-test        # cd bael && playwright headed mode
+eidolon          # Launch script (all|backend|gui|stop|restart|status)
+eidolon-start    # Start backend + GUI
+eidolon-stop     # Stop all components
+eidolon-restart  # Restart all components
+eidolon-status   # Show component status
+eidolon-backend  # Start backend only
+eidolon-gui      # Start GUI only
 ```
 
 # Grimoire Integration
