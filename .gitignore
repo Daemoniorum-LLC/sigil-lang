@@ -10,21 +10,33 @@ persona-framework/persona-admin-ui/node_modules/*
 
 # Node.js
 /node_modules/
-/package-lock.json
 **/node_modules/
+/package-lock.json
+**/dist/
+**/.next/
+**/.output/
+**/.turbo/
+**/.vite/
+**/coverage/
 
 # PDF generation (keep HTML, ignore PDF)
 BUSINESS_PLAN.pdf
 
-# Gradle
+# Gradle and build outputs
 .gradle/
+**/.gradle/
 build/
+**/build/
 out/
+**/out/
+.kotlin/
 
 # IDEs
 .idea/
+**/.idea/
 *.iml
 .vscode/
+**/.vscode/
 
 # OS
 **/.DS_Store
@@ -82,5 +94,5 @@ tmp/hsperfdata_root/
 hydra-0.1.0.jar
 BOOT-INF/
 *.jar
-.kotlin/
 workspace/
+.gradle-local/**
