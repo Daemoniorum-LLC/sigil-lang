@@ -97,3 +97,6 @@ BOOT-INF/
 *.jar
 workspace/
 .gradle-local/**
+leviathan/leviathan.out
+*.out
+*/*.out
