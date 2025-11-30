@@ -100,3 +100,9 @@ workspace/
 leviathan/leviathan.out
 *.out
 */*.out
+
+# TypeScript build artifacts
+*.tsbuildinfo
+**/tsconfig.tsbuildinfo
+vite.config.js
+vite.config.d.ts
