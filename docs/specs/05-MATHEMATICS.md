@@ -17,53 +17,736 @@ Mathematics is not a single tradition but a convergence of human insight across 
 
 ---
 
-## 2. Numeric Plurality
+## 2. Numeric Plurality and Base Systems
 
-### 2.1 Multi-Base Literals
+Sigil treats numeral systems as first-class — not merely syntax sugar for decimal, but distinct mathematical objects with their own properties, operations, and cultural histories.
 
-Numbers exist in whatever base serves the domain:
+### 2.1 Historical Numeral Systems
+
+#### Positional Systems
 
 ```sigil
-// Base prefixes
-let decimal     = 42              // Base 10 (default)
-let binary      = 0b101010        // Base 2
+// Standard positional bases with prefixes
+let decimal     = 42              // Base 10 (Hindu-Arabic)
+let binary      = 0b101010        // Base 2 (Leibniz, but also Pingala, Ifá)
 let octal       = 0o52            // Base 8
 let hex         = 0x2A            // Base 16
-let vigesimal   = 0v22            // Base 20 (Mayan)
-let sexagesimal = 0s42            // Base 60 (Babylonian)
-let duodecimal  = 0d36            // Base 12
+let vigesimal   = 0v22            // Base 20 (Mayan, Aztec, Basque, Celtic)
+let sexagesimal = 0s42            // Base 60 (Babylonian, still used in time/angles)
+let duodecimal  = 0z36            // Base 12 (widespread: 12 hours, 12 inches, dozens)
 
-// Explicit base annotation
+// Explicit base annotation for any radix
 let base7 = 60:₇                  // 42 in base 7
-let base36 = 16:₃₆                // 42 in base 36
-
-// Mixed radix (like time: hours-minutes-seconds)
-let time = [1, 23, 45]:₆₀         // 1:23:45 in sexagesimal cascade
-let mayan_date = [9, 12, 11, 5, 18]:₂₀  // Long count
+let base36 = 16:₃₆                // 42 in base 36 (alphanumeric)
+let base62 = g:₆₂                 // 42 in base 62 (0-9, A-Z, a-z)
 ```
 
-### 2.2 Number Systems as Types
+#### Babylonian Cuneiform (Base 60)
 
 ```sigil
-// Different number systems are distinct types
-type Decimal = Num·base(10)
-type Binary = Num·base(2)
-type Sexagesimal = Num·base(60)
-type MayanLong = Num·mixed([20, 20, 20, 18, 20])  // Mayan long count
+// Babylonian used two symbols: 𒐕 (1) and 𒌋 (10)
+// Combined additively within each position, then positional for 60s
+mod numeral·babylonian {
+    type Digit = u8  // 0-59 per position
+    type Cuneiform = [Digit]  // Most significant first
 
-// Conversion is explicit
+    // 42 = 42 (single position)
+    // 3661 = 1·60² + 1·60 + 1 = [1, 1, 1]
+
+    fn to_cuneiform(n: u64) -> Cuneiform {
+        if n == 0 { return [] }
+        let mut digits = []
+        let mut remaining = n
+        while remaining > 0 {
+            digits|push_front(remaining % 60)
+            remaining /= 60
+        }
+        digits
+    }
+
+    fn render(c: Cuneiform) -> str {
+        c|τ{d => render_digit(d)}|join(" ")
+    }
+
+    fn render_digit(d: Digit) -> str {
+        let tens = d / 10
+        let ones = d % 10
+        "𒌋"|repeat(tens) ++ "𒐕"|repeat(ones)
+    }
+}
+
+let babylon_42 = 42|numeral·babylonian·render  // "𒌋𒌋𒌋𒌋𒐕𒐕"
+```
+
+#### Mayan Numerals (Base 20)
+
+```sigil
+mod numeral·mayan {
+    // Mayan used dots (•) for 1-4, bars (—) for 5
+    // Shell glyph (𝋠) for zero
+    // Vertical stacking for positions (20⁰, 20¹, 20², ...)
+
+    type MayanDigit = u8  // 0-19
+
+    fn render_digit(d: MayanDigit) -> str {
+        if d == 0 { return "𝋠" }  // Shell (zero)
+        let bars = d / 5
+        let dots = d % 5
+        let bar_line = "—"|repeat(bars)|join("")
+        let dot_line = "•"|repeat(dots)|join("")
+        "{dot_line}\n{bar_line}"
+    }
+
+    // Long Count calendar uses modified base: 20, 18, 20, 20, 20...
+    // (18 in position 1 because 18×20 = 360 ≈ solar year)
+    type LongCount = [u8; 5]  // [baktun, katun, tun, winal, kin]
+
+    const LONG_COUNT_RADIX: [u64; 5] = [
+        144000,  // baktun = 20×18×20×20
+        7200,    // katun = 18×20×20
+        360,     // tun = 18×20
+        20,      // winal = 20
+        1,       // kin
+    ]
+
+    fn from_days(days: u64) -> LongCount {
+        let mut remaining = days
+        let mut result = [0u8; 5]
+        for (i, radix) in LONG_COUNT_RADIX|enumerate {
+            result[i] = (remaining / radix) as u8
+            remaining %= radix
+        }
+        result
+    }
+}
+
+let today = 1_872_000|numeral·mayan·from_days  // [13, 0, 11, ...]
+```
+
+#### Chinese Rod Numerals
+
+```sigil
+mod numeral·rod {
+    // Chinese counting rods: vertical (|) and horizontal (—)
+    // Alternating orientation by position to avoid ambiguity
+
+    enum Orientation { Vertical, Horizontal }
+
+    fn digit_rods(d: u8, pos: u32) -> str {
+        let orient = if pos % 2 == 0 { Vertical } else { Horizontal }
+        match (d, orient) {
+            (0, _) => " ",
+            (1, Vertical) => "𝍠",
+            (2, Vertical) => "𝍡",
+            (3, Vertical) => "𝍢",
+            // ... up to 9
+            (1, Horizontal) => "𝍩",
+            // ...
+        }
+    }
+
+    // Rod calculus supports negative numbers via color
+    // Red rods = positive, Black rods = negative
+    enum Sign { Red, Black }
+
+    struct RodNumber {
+        sign: Sign,
+        digits: [u8],
+    }
+}
+```
+
+#### Egyptian Hieratic/Demotic
+
+```sigil
+mod numeral·egyptian {
+    // Additive system: symbols for 1, 10, 100, 1000, etc.
+    // 𓏺 = 1 (stroke)
+    // 𓎆 = 10 (arch)
+    // 𓍢 = 100 (coil of rope)
+    // 𓆼 = 1000 (lotus)
+    // 𓂭 = 10000 (finger)
+    // 𓆐 = 100000 (tadpole)
+    // 𓁨 = 1000000 (god with raised arms)
+
+    fn to_hieroglyphic(n: u64) -> str {
+        let mut result = ""
+        let mut remaining = n
+
+        result ++= "𓁨"|repeat((remaining / 1_000_000) as usize)
+        remaining %= 1_000_000
+        result ++= "𓆐"|repeat((remaining / 100_000) as usize)
+        remaining %= 100_000
+        // ... and so on
+
+        result
+    }
+}
+```
+
+### 2.2 Balanced Number Systems
+
+Balanced bases use signed digits centered around zero — powerful for certain computations.
+
+#### Balanced Ternary (Setun Computer)
+
+```sigil
+mod numeral·balanced_ternary {
+    // Digits: T (-1), 0, 1  (or: -, 0, +)
+    // Used in the Soviet Setun computer (1958)
+    // Advantages: negation is just flipping signs, no separate sign bit
+
+    type Trit = enum { N = -1, Z = 0, P = 1 }  // Negative, Zero, Positive
+    type BalancedTernary = [Trit]
+
+    fn from_int(mut n: i64) -> BalancedTernary {
+        let mut trits = []
+        while n != 0 {
+            let rem = n % 3
+            let (trit, carry) = match rem {
+                0 => (Z, 0),
+                1 => (P, 0),
+                2 => (N, 1),   // 2 = 3 - 1, so -1 with carry
+                -1 => (N, 0),
+                -2 => (P, -1), // -2 = -3 + 1, so +1 with borrow
+                _ => unreachable!(),
+            }
+            trits|push_front(trit)
+            n = n / 3 + carry
+        }
+        trits
+    }
+
+    fn negate(bt: BalancedTernary) -> BalancedTernary {
+        bt|τ{t => match t { N => P, Z => Z, P => N }}
+    }
+
+    fn to_string(bt: BalancedTernary) -> str {
+        bt|τ{t => match t { N => "T", Z => "0", P => "1" }}|join("")
+    }
+}
+
+let forty_two = 42|balanced_ternary·from_int  // 1TT00 (1×81 - 1×27 - 1×9 + 0×3 + 0×1 = 81-27-9 = 45... wait)
+// Actually: 42 = 27 + 27 - 9 - 3 = 1×27 + 1×27... let me recalculate
+// 42 = 1×27 + 1×9 + 1×3 + 1×3 ... = 1T1T0
+```
+
+#### Balanced Quinary, Septenary, etc.
+
+```sigil
+// Generalized balanced base
+mod numeral·balanced<const B: u32> where B % 2 == 1 {
+    // For odd base B, digits range from -(B-1)/2 to +(B-1)/2
+
+    const HALF: i32 = (B as i32 - 1) / 2
+
+    type Digit = i32  // Range: -HALF..=HALF
+
+    fn from_int(mut n: i64) -> [Digit] {
+        let mut digits = []
+        while n != 0 {
+            let mut rem = (n % B as i64) as i32
+            if rem > HALF {
+                rem -= B as i32
+                n += B as i64
+            } else if rem < -HALF {
+                rem += B as i32
+                n -= B as i64
+            }
+            digits|push_front(rem)
+            n /= B as i64
+        }
+        digits
+    }
+}
+
+type BalancedQuinary = numeral·balanced<5>   // Digits: -2, -1, 0, 1, 2
+type BalancedSeptenary = numeral·balanced<7> // Digits: -3, -2, -1, 0, 1, 2, 3
+```
+
+### 2.3 Non-Integer Bases
+
+Bases need not be integers — irrational and transcendental bases have remarkable properties.
+
+#### Golden Ratio Base (Phinary, Base φ)
+
+```sigil
+mod numeral·phinary {
+    // Base φ = (1 + √5) / 2 ≈ 1.618
+    // Uses digits 0 and 1 only
+    // Key property: φ² = φ + 1, so 100_φ = 11_φ
+    // Unique representation if no consecutive 1s (Zeckendorf)
+
+    const φ: f64 = (1.0 + 5.0|sqrt) / 2.0
+
+    type Phinary = [bool]  // true = 1, false = 0
+
+    // Every positive integer has a finite representation!
+    fn from_int(n: u64) -> Phinary {
+        // Use Zeckendorf representation (Fibonacci coding)
+        let fibs = fibonacci()|take_while{f => f <= n}|collect
+        let mut remaining = n
+        let mut bits = []
+
+        for f in fibs|reverse {
+            if remaining >= f {
+                bits|push(true)
+                remaining -= f
+            } else {
+                bits|push(false)
+            }
+        }
+        bits|reverse
+    }
+
+    fn to_float(p: Phinary) -> f64 {
+        p|enumerate|τ{(i, bit) =>
+            if bit { φ ** (p.len() - 1 - i) as f64 } else { 0.0 }
+        }|Σ
+    }
+
+    // Normalize: replace 011 with 100 (since φ + 1 = φ²)
+    fn normalize(p: Phinary) -> Phinary {
+        // Remove consecutive 1s
+        let mut result = p·clone
+        loop {
+            let mut changed = false
+            for i in 0..result.len()-1 {
+                if result[i] && result[i+1] {
+                    result[i] = false
+                    result[i+1] = false
+                    if i > 0 {
+                        // Carry to next position
+                        result[i-1] = !result[i-1]  // Toggle (with possible cascade)
+                    } else {
+                        result|push_front(true)
+                    }
+                    changed = true
+                }
+            }
+            if !changed { break }
+        }
+        result
+    }
+}
+
+// 42 in phinary (Zeckendorf: 34 + 8 = F₉ + F₆)
+let forty_two_phi = 42|phinary·from_int  // 10100100 (representing fib positions)
+```
+
+#### Base e (Natural Logarithm Base)
+
+```sigil
+mod numeral·base_e {
+    // Base e ≈ 2.71828...
+    // Digits: 0, 1, 2 (since e > 2)
+    // Representations are not unique, but greedy algorithm works
+
+    const E: f64 = 2.718281828459045
+
+    fn from_float(x: f64, precision: u32) -> [u8] {
+        let mut digits = []
+        let mut remaining = x
+
+        // Integer part
+        let mut power = 0
+        while E ** (power + 1) as f64 <= remaining {
+            power += 1
+        }
+
+        for p in ((-precision as i32)..=power)|reverse {
+            let place_value = E ** p as f64
+            let digit = (remaining / place_value)|floor as u8
+            digits|push(digit|min(2))  // Cap at 2
+            remaining -= digit as f64 * place_value
+        }
+        digits
+    }
+}
+```
+
+#### Base π, Base √2
+
+```sigil
+mod numeral·base_pi {
+    const π: f64 = 3.14159265358979
+
+    // Base π uses digits 0, 1, 2, 3
+    fn from_float(x: f64, precision: u32) -> [u8] {
+        // Similar greedy algorithm
+        // ...
+    }
+}
+
+mod numeral·base_sqrt2 {
+    const √2: f64 = 1.41421356237
+
+    // Base √2 is interesting: √2² = 2, so 100_√2 = 2₁₀
+    // Uses digits 0, 1
+    // Related to paper sizes (A0, A1, A2... each is √2 ratio)
+}
+```
+
+### 2.4 Negative Bases
+
+Negative bases can represent all integers without a sign!
+
+#### Negabinary (Base -2)
+
+```sigil
+mod numeral·negabinary {
+    // Base -2: no sign needed for negative numbers!
+    // Digits: 0, 1
+
+    fn from_int(mut n: i64) -> [bool] {
+        if n == 0 { return [false] }
+
+        let mut bits = []
+        while n != 0 {
+            let mut rem = n % -2
+            n /= -2
+            if rem < 0 {
+                rem += 2
+                n += 1
+            }
+            bits|push_front(rem == 1)
+        }
+        bits
+    }
+
+    fn to_int(bits: [bool]) -> i64 {
+        bits|enumerate|τ{(i, bit) =>
+            if bit { (-2i64) ** (bits.len() - 1 - i) } else { 0 }
+        }|Σ
+    }
+}
+
+let neg_42 = (-42)|negabinary·from_int  // 110110 (no minus sign!)
+let pos_42 = 42|negabinary·from_int     // 1010110
+```
+
+#### Negadecimal (Base -10)
+
+```sigil
+mod numeral·negadecimal {
+    // Base -10: digits 0-9, alternating sign by position
+
+    fn from_int(mut n: i64) -> [u8] {
+        let mut digits = []
+        while n != 0 {
+            let mut rem = n % -10
+            n /= -10
+            if rem < 0 {
+                rem += 10
+                n += 1
+            }
+            digits|push_front(rem as u8)
+        }
+        digits
+    }
+}
+```
+
+### 2.5 Complex Bases
+
+Bases in the complex plane can represent Gaussian integers!
+
+#### Quater-Imaginary (Base 2i)
+
+```sigil
+mod numeral·quater_imaginary {
+    // Base 2i (where i = √-1)
+    // Digits: 0, 1, 2, 3
+    // Can represent ALL Gaussian integers (a + bi where a,b ∈ ℤ)
+    // No sign needed!
+
+    use complex·{Complex, I}
+
+    fn from_gaussian(z: Complex<i64>) -> [u8] {
+        let mut digits = []
+        let mut remaining = z
+
+        while remaining != 0 {
+            // z mod 2i: find digit 0,1,2,3 such that (z - d) is divisible by 2i
+            let d = ((remaining.re % 4) + 4) % 4
+            digits|push_front(d as u8)
+
+            // Divide by 2i: multiply by -i/2 = i/2 * -1
+            remaining = (remaining - d) / (2 * I)
+        }
+        digits
+    }
+
+    fn to_gaussian(digits: [u8]) -> Complex<i64> {
+        digits|enumerate|τ{(i, d) =>
+            d as Complex * (2 * I) ** (digits.len() - 1 - i)
+        }|Σ
+    }
+}
+
+// Complex number 5 + 3i in quater-imaginary
+let z = Complex(5, 3)|quater_imaginary·from_gaussian  // Some sequence of 0,1,2,3
+```
+
+#### Base (-1 + i)
+
+```sigil
+mod numeral·dragon_base {
+    // Base (-1 + i), also called "dragon base"
+    // Digits: 0, 1
+    // Related to the dragon curve fractal!
+
+    use complex·{Complex, I}
+
+    const BASE: Complex<i64> = Complex(-1, 1)
+
+    fn from_gaussian(z: Complex<i64>) -> [bool] {
+        let mut bits = []
+        let mut remaining = z
+
+        while remaining != Complex(0, 0) {
+            let d = remaining.re & 1  // Parity of real part
+            bits|push_front(d == 1)
+            remaining = (remaining - d) / BASE
+        }
+        bits
+    }
+
+    // Iteration of digit map traces dragon curve!
+}
+```
+
+### 2.6 Mixed Radix Systems
+
+Different positions use different bases — natural for human-scale quantities.
+
+```sigil
+mod numeral·mixed_radix {
+    // A mixed radix system has different base per position
+    type MixedRadix = [u64]  // Radix for each position
+
+    // Time: seconds-minutes-hours
+    const TIME_HMS: MixedRadix = [60, 60, 24]
+
+    // Old British currency: pence-shillings-pounds (pre-1971)
+    const OLD_BRITISH: MixedRadix = [12, 20]  // 12 pence/shilling, 20 shillings/pound
+
+    // Degrees-minutes-seconds (like Babylonian)
+    const DMS: MixedRadix = [60, 60]
+
+    // Mayan Long Count (with irregular 18 in second position)
+    const MAYAN_LONG: MixedRadix = [20, 18, 20, 20, 20]
+
+    fn to_mixed(n: u64, radices: &MixedRadix) -> [u64] {
+        let mut digits = []
+        let mut remaining = n
+        for radix in radices {
+            digits|push_front(remaining % radix)
+            remaining /= radix
+        }
+        if remaining > 0 {
+            digits|push_front(remaining)
+        }
+        digits
+    }
+
+    fn from_mixed(digits: &[u64], radices: &MixedRadix) -> u64 {
+        let mut result = 0u64
+        let mut multiplier = 1u64
+        for (digit, radix) in digits|reverse|zip(radices) {
+            result += digit * multiplier
+            multiplier *= radix
+        }
+        result
+    }
+}
+
+// 90061 seconds = 1 day, 1 hour, 1 minute, 1 second
+let time = 90061|mixed_radix·to_mixed(TIME_HMS)  // [1, 1, 1, 1]
+```
+
+### 2.7 Bijective Numeration
+
+No zero! Every positive integer has exactly one representation.
+
+```sigil
+mod numeral·bijective {
+    // Bijective base-k: digits are 1, 2, 3, ..., k (no zero!)
+    // Used in spreadsheet columns: A, B, C, ... Z, AA, AB, ...
+
+    fn to_bijective<const K: u32>(mut n: u64) -> [u8] {
+        let mut digits = []
+        while n > 0 {
+            let mut d = n % K as u64
+            if d == 0 {
+                d = K as u64
+                n -= 1
+            }
+            digits|push_front(d as u8)
+            n /= K as u64
+        }
+        digits
+    }
+
+    // Spreadsheet column names (bijective base-26)
+    fn to_column(n: u64) -> str {
+        to_bijective::<26>(n)|τ{d => ('A' as u8 + d - 1) as char}|collect
+    }
+
+    fn from_column(s: &str) -> u64 {
+        s.chars()|τ{c => (c as u8 - 'A' as u8 + 1) as u64}
+         |enumerate|τ{(i, d) => d * 26u64 ** (s.len() - 1 - i)}
+         |Σ
+    }
+}
+
+let col = 42|bijective·to_column  // "AP" (1×26 + 16 = 42)
+```
+
+### 2.8 Residue Number Systems
+
+Represent numbers by their residues modulo coprime bases — enables parallel arithmetic!
+
+```sigil
+mod numeral·residue {
+    // RNS: represent n by (n mod m₁, n mod m₂, ..., n mod mₖ)
+    // where m₁, m₂, ... are pairwise coprime
+    // Range: 0 to M-1 where M = m₁ × m₂ × ... × mₖ
+
+    struct RNS<const N: usize> {
+        moduli: [u64; N],
+        residues: [u64; N],
+    }
+
+    fn encode<const N: usize>(n: u64, moduli: &[u64; N]) -> RNS<N> {
+        let residues = moduli|τ{m => n % m}|collect_array
+        RNS { moduli: *moduli, residues }
+    }
+
+    fn decode<const N: usize>(rns: &RNS<N>) -> u64 {
+        // Chinese Remainder Theorem
+        sunzi·crt(rns.residues|zip(rns.moduli)|collect())
+    }
+
+    // Addition is parallel and carry-free!
+    fn add<const N: usize>(a: &RNS<N>, b: &RNS<N>) -> RNS<N> {
+        let residues = a.moduli|zip(a.residues)|zip(b.residues)
+            |τ{((m, ra), rb) => (ra + rb) % m}
+            |collect_array
+        RNS { moduli: a.moduli, residues }
+    }
+
+    // Multiplication is also parallel!
+    fn mul<const N: usize>(a: &RNS<N>, b: &RNS<N>) -> RNS<N> {
+        let residues = a.moduli|zip(a.residues)|zip(b.residues)
+            |τ{((m, ra), rb) => (ra * rb) % m}
+            |collect_array
+        RNS { moduli: a.moduli, residues }
+    }
+}
+
+// Common RNS for 32-bit range
+const RNS_MODULI: [u64; 4] = [257, 263, 269, 271]  // Product > 2³²
+
+let a = 1000|residue·encode(RNS_MODULI)  // [229, 211, 193, 187]
+let b = 2000|residue·encode(RNS_MODULI)  // [201, 159, 117, 103]
+let c = residue·mul(&a, &b)               // Parallel multiplication!
+let result = c|residue·decode             // 2000000
+```
+
+### 2.9 p-Adic Numbers
+
+Infinite expansions to the left, used in number theory and cryptography.
+
+```sigil
+mod numeral·p_adic<const P: u64> where P·is_prime {
+    // p-adic integers: ...d₂d₁d₀ (infinite to the left!)
+    // Convergence is measured differently: numbers "close" if they
+    // agree on many rightmost digits
+
+    // Finite approximation to n digits
+    struct PAdicApprox {
+        digits: [u8],  // Rightmost first
+        precision: u32,
+    }
+
+    // p-adic norm: |n|_p = p^(-v) where p^v || n
+    fn norm(n: i64) -> f64 {
+        if n == 0 { return 0.0 }
+        let mut v = 0
+        let mut m = n|abs
+        while m % P == 0 {
+            v += 1
+            m /= P
+        }
+        (P as f64) ** (-v as f64)
+    }
+
+    // In p-adics, negative numbers have infinite representations!
+    // -1 in p-adic = ....(p-1)(p-1)(p-1) (all digits = p-1)
+    fn neg_one(precision: u32) -> PAdicApprox {
+        PAdicApprox {
+            digits: [(P - 1) as u8]|repeat(precision)|collect,
+            precision,
+        }
+    }
+
+    // Addition with carry propagating leftward
+    fn add(a: &PAdicApprox, b: &PAdicApprox) -> PAdicApprox {
+        let mut digits = []
+        let mut carry = 0u8
+        for (da, db) in a.digits|zip(b.digits) {
+            let sum = da + db + carry
+            digits|push(sum % P as u8)
+            carry = sum / P as u8
+        }
+        PAdicApprox { digits, precision: a.precision }
+    }
+}
+
+// 2-adic numbers
+type Dyadic = numeral·p_adic<2>
+
+// In 2-adics: ...1111 + 1 = 0 (so ...1111 represents -1!)
+let minus_one = Dyadic·neg_one(8)  // [1,1,1,1,1,1,1,1]
+let one = PAdicApprox { digits: [1], precision: 8 }
+let zero = Dyadic·add(&minus_one, &one)  // [0,0,0,0,0,0,0,0]
+```
+
+### 2.10 Number Systems as Types
+
+```sigil
+// All numeral systems implement a common trait
+trait NumeralSystem {
+    type Digit
+    type Representation
+
+    fn encode(n: i64) -> Self·Representation
+    fn decode(repr: &Self·Representation) -> i64
+    fn radix(self) -> Option<i64>  // None for non-positional
+}
+
+// Type-safe conversions
 let x: Decimal = 42
-let y: Sexagesimal = x·to_base(60)  // 0s42
-let z: Binary = x·to_base(2)        // 0b101010
+let y: Sexagesimal = x·to_base(60)
+let z: Binary = x·to_base(2)
+let w: BalancedTernary = x·to_balanced(3)
+let φ: Phinary = x·to_phinary()
 
 // Domain-specific defaults
 //@ rune: default_base(60)
 mod astronomy {
     let angle = 45·30·0  // degrees, minutes, seconds
 }
+
+//@ rune: default_base(-2)
+mod two_complement_free {
+    let x = 42   // Stored as negabinary, no sign bit needed!
+    let y = -42  // Also no sign bit!
+}
 ```
 
-### 2.3 Śūnya (Zero) and Ananta (Infinity)
+### 2.11 Śūnya (Zero) and Ananta (Infinity)
 
 Indian mathematics formalized zero and infinity. Sigil treats them as first-class:
 
