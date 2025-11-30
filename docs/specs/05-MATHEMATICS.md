@@ -590,7 +590,464 @@ fn main() {
 
 ---
 
-## 10. Design Principles
+## 10. Temporal Mathematics
+
+### 10.1 Cyclical Time
+
+Many cultures understand time as cyclical rather than linear:
+
+```sigil
+// Cycle type: wrapping arithmetic
+type Cycle<N: const usize> = i64 mod N
+
+// Cultural calendar systems
+type MayanTzolkin = Cycle<260>      // Sacred calendar
+type MayanHaab = Cycle<365>         // Civil calendar
+type ChineseStem = Cycle<10>        // Heavenly stems
+type ChineseBranch = Cycle<12>      // Earthly branches
+type IslamicMonth = Cycle<12>       // Hijri months
+type HebrewMonth = Cycle<13>        // Including Adar II
+
+// Calendar round (Mayan): two interlocking cycles
+struct CalendarRound {
+    tzolkin: MayanTzolkin,
+    haab: MayanHaab,
+}
+// Repeats every lcm(260, 365) = 18,980 days ≈ 52 years
+
+// Chinese sexagenary cycle
+struct Sexagenary {
+    stem: ChineseStem,
+    branch: ChineseBranch,
+}
+// 60-year cycle: 10 stems × 12 branches, but only 60 valid pairs
+
+// Cycle operations
+let today: MayanTzolkin = 1
+let future = today + 300  // Wraps automatically
+let diff = future - today // Accounts for wrapping
+```
+
+### 10.2 Non-Linear Time
+
+```sigil
+// Aboriginal Dreamtime: events exist outside linear time
+type Dreamtime = Eternal
+
+trait Atemporal {
+    // Events that exist in mythic time
+    fn in_dreamtime(self) -> Dreamtime
+    fn manifests_at(self) -> [LinearTime]  // When it appears in linear time
+}
+
+// Recurring time (events that repeat)
+struct RecurringEvent<C: Cycle> {
+    phase: C,
+    meaning: str,
+}
+
+// Astrological aspects (angles between celestial bodies)
+type Aspect = Cycle<360>
+const CONJUNCTION: Aspect = 0
+const SEXTILE: Aspect = 60
+const SQUARE: Aspect = 90
+const TRINE: Aspect = 120
+const OPPOSITION: Aspect = 180
+```
+
+### 10.3 Polychronic Computation
+
+```sigil
+// Multiple time streams
+struct PolyTime {
+    linear: Duration,           // Western linear
+    cyclic: [CyclicTime],       // Various cycles
+    relational: EventGraph,     // "After X, before Y"
+    seasonal: Season,           // Agricultural/natural
+}
+
+// Time can be queried in any system
+let event = Event·new("harvest")
+event|time·linear     // "2024-09-21T14:00:00Z"
+event|time·mayan      // "13.0.11.14.5, 8 Chikchan, 13 Ch'en"
+event|time·chinese    // "甲辰年八月十九" (Year of Dragon, 8th month, 19th day)
+event|time·seasonal   // Autumn.mid
+event|time·lunar      // WaxingGibbous(0.82)
+
+// Temporal morphemes
+event|when·before(other)   // Relative ordering
+event|when·during(period)  // Containment
+event|when·cycle(tzolkin)  // Position in cycle
+```
+
+---
+
+## 11. Harmonic Mathematics (Music & Sound)
+
+### 11.1 Tuning Systems
+
+Every culture developed distinct approaches to dividing the octave:
+
+```sigil
+// Pythagorean tuning (Greek/Chinese/many others)
+// Based on perfect fifths (3:2 ratio)
+mod tuning·pythagorean {
+    const FIFTH: Ratio = 3/2
+    const FOURTH: Ratio = 4/3
+    const TONE: Ratio = 9/8
+    const SEMITONE: Ratio = 256/243  // Limma
+
+    fn spiral_of_fifths(n: i32) -> Ratio {
+        FIFTH ** n / (2 ** (n * 7 / 12))  // Reduced to octave
+    }
+}
+
+// Just intonation (pure ratios)
+mod tuning·just {
+    const RATIOS: [Ratio; 12] = [
+        1/1,    // Unison
+        16/15,  // Minor second
+        9/8,    // Major second
+        6/5,    // Minor third
+        5/4,    // Major third
+        4/3,    // Perfect fourth
+        45/32,  // Tritone
+        3/2,    // Perfect fifth
+        8/5,    // Minor sixth
+        5/3,    // Major sixth
+        9/5,    // Minor seventh
+        15/8,   // Major seventh
+    ]
+}
+
+// Equal temperament (Western standard)
+mod tuning·equal {
+    fn semitone(n: i32) -> f64 {
+        2.0 ** (n / 12.0)
+    }
+}
+
+// Gamelan pelog (Indonesian) - 7 unequal steps
+mod tuning·pelog {
+    // Approximate cents from tonic (varies by gamelan)
+    const SCALE: [Cents; 7] = [0, 120, 270, 400, 550, 670, 800]
+}
+
+// Maqam (Arabic) - quarter tones
+mod tuning·maqam {
+    type QuarterTone = Cycle<24>  // 24 quarter-tones per octave
+
+    const RAST: [QuarterTone; 8] = [0, 4, 7, 10, 14, 18, 21, 24]
+    const BAYATI: [QuarterTone; 8] = [0, 3, 6, 10, 14, 17, 20, 24]
+    const HIJAZ: [QuarterTone; 8] = [0, 2, 8, 10, 14, 16, 22, 24]
+}
+
+// Shruti (Indian) - 22 divisions
+mod tuning·shruti {
+    type Shruti = Cycle<22>
+
+    const SA: Shruti = 0
+    const RE_KOMAL: Shruti = 2
+    const RE: Shruti = 4
+    const GA_KOMAL: Shruti = 5
+    // ... etc
+}
+```
+
+### 11.2 Rhythmic Mathematics
+
+```sigil
+// Euclidean rhythms (Godfried Toussaint, drawing from African traditions)
+fn euclidean·rhythm(pulses: u32, steps: u32) -> [bool] {
+    // Distributes pulses as evenly as possible over steps
+    // E(3,8) = [x . . x . . x .] = Cuban tresillo
+    // E(5,8) = [x . x x . x x .] = Cuban cinquillo
+    bresenham·line(pulses, steps)|τ{_ > 0}
+}
+
+// Tala (Indian rhythmic cycles)
+struct Tala {
+    name: str,
+    beats: u32,
+    subdivisions: [u32],  // Vibhag structure
+}
+
+const ADI_TALA: Tala = Tala {
+    name: "Adi",
+    beats: 8,
+    subdivisions: [4, 2, 2],  // Chatusra-jati
+}
+
+const RUPAK_TALA: Tala = Tala {
+    name: "Rupak",
+    beats: 7,
+    subdivisions: [3, 2, 2],
+}
+
+// Aksak (Balkan irregular meters)
+// Expressed as combinations of 2s and 3s
+type Aksak = [u32]  // e.g., [2,2,2,3] for 9/8
+
+const DAICHOVO: Aksak = [2, 2, 2, 3]      // 9/8 Bulgarian
+const KOPANITSA: Aksak = [2, 2, 3, 2, 2]  // 11/8 Bulgarian
+const LESNOTO: Aksak = [3, 2, 2]          // 7/8 Macedonian
+
+// Polyrhythm
+struct Polyrhythm {
+    layers: [(u32, u32)],  // (beats, per cycle)
+}
+
+let three_against_two = Polyrhythm {
+    layers: [(3, 1), (2, 1)],
+}
+
+// Cross-rhythm analysis
+fn cross_rhythm(a: u32, b: u32) -> [Onset] {
+    let cycle = lcm(a, b)
+    (0..cycle)|φ{t => t % a == 0 || t % b == 0}
+}
+```
+
+### 11.3 Pitch and Frequency
+
+```sigil
+// Frequency as type
+type Frequency = f64  // Hz
+type Pitch = (NoteName, Octave)
+type Cents = f64      // 1200 cents = 1 octave
+
+// Conversions
+fn pitch·to_freq(p: Pitch, tuning: Tuning) -> Frequency {
+    tuning.reference * tuning.ratio(p)
+}
+
+fn freq·to_midi(f: Frequency) -> f64 {
+    69 + 12 * log2(f / 440)
+}
+
+fn cents·between(a: Frequency, b: Frequency) -> Cents {
+    1200 * log2(b / a)
+}
+
+// Harmonic series
+fn harmonics(fundamental: Frequency, n: u32) -> [Frequency] {
+    (1..=n)|τ{k => fundamental * k}
+}
+
+// Difference tones (Tartini tones)
+fn difference·tone(a: Frequency, b: Frequency) -> Frequency {
+    (a - b)|abs
+}
+
+// Beating frequency
+fn beat·frequency(a: Frequency, b: Frequency) -> Frequency {
+    (a - b)|abs
+}
+```
+
+### 11.4 Scale Construction
+
+```sigil
+// Scale as pitch class set
+type PitchClass = Cycle<12>  // In 12-TET
+type Scale = Set<PitchClass>
+
+const MAJOR: Scale = {0, 2, 4, 5, 7, 9, 11}
+const MINOR_NATURAL: Scale = {0, 2, 3, 5, 7, 8, 10}
+const PENTATONIC_MAJOR: Scale = {0, 2, 4, 7, 9}
+const WHOLE_TONE: Scale = {0, 2, 4, 6, 8, 10}
+const OCTATONIC: Scale = {0, 1, 3, 4, 6, 7, 9, 10}
+
+// Raga (Indian) - ascending/descending may differ
+struct Raga {
+    name: str,
+    arohana: [Shruti],   // Ascending
+    avarohana: [Shruti], // Descending
+    vadi: Shruti,        // Most important note
+    samvadi: Shruti,     // Second most important
+    time: TimeOfDay?,    // Associated time
+    rasa: Emotion?,      // Associated emotion
+}
+
+// Mode generation (rotate scale)
+fn mode(scale: Scale, degree: u32) -> Scale {
+    scale|τ{pc => (pc - scale[degree]) mod 12}
+}
+
+// Scale operations
+scale|transpose(n)      // Move all pitches by n
+scale|invert            // Mirror around axis
+scale|complement        // Notes NOT in scale
+a|∩b                    // Common tones
+a|∪b                    // Combined pitch content
+```
+
+### 11.5 Spectral Mathematics
+
+```sigil
+// Fourier analysis
+fn fft(signal: [f64]) -> [Complex] {
+    cooley·tukey(signal)
+}
+
+fn spectrum(signal: [f64], sample_rate: Frequency) -> [(Frequency, Amplitude)] {
+    let coeffs = fft(signal)
+    coeffs|enumerate|τ{(i, c) =>
+        (i * sample_rate / signal.len(), c|magnitude)
+    }
+}
+
+// Spectral centroid (brightness measure)
+fn spectral·centroid(spectrum: [(Frequency, Amplitude)]) -> Frequency {
+    let weighted = spectrum|τ{(f, a) => f * a}|Σ
+    let total = spectrum|τ{(_, a) => a}|Σ
+    weighted / total
+}
+
+// Consonance/dissonance (multiple models)
+mod consonance {
+    // Simple ratio model (Pythagoras)
+    fn ratio_simplicity(a: Frequency, b: Frequency) -> f64 {
+        let ratio = (a / b)|to_ratio|simplify
+        1.0 / (ratio.numer + ratio.denom)
+    }
+
+    // Critical bandwidth model (Plomp-Levelt)
+    fn plomp_levelt(a: Frequency, b: Frequency) -> f64 {
+        let cb = critical_bandwidth((a + b) / 2)
+        let x = (a - b)|abs / cb
+        // Dissonance curve
+        // ...
+    }
+}
+```
+
+---
+
+## 12. Symbolic and Esoteric Mathematics
+
+### 12.1 Gematria and Numerology
+
+```sigil
+// Letter-number correspondences
+trait Gematria {
+    fn value(self) -> u64
+}
+
+// Hebrew gematria
+impl Gematria for Hebrew {
+    fn value(self) -> u64 {
+        match self {
+            'א' => 1, 'ב' => 2, 'ג' => 3, /* ... */
+            'י' => 10, 'כ' => 20, /* ... */
+            'ק' => 100, 'ר' => 200, /* ... */
+        }
+    }
+}
+
+// Greek isopsephy
+impl Gematria for Greek {
+    fn value(self) -> u64 {
+        match self {
+            'α' => 1, 'β' => 2, 'γ' => 3, /* ... */
+        }
+    }
+}
+
+// Arabic abjad
+impl Gematria for Arabic {
+    fn value(self) -> u64 {
+        match self {
+            'ا' => 1, 'ب' => 2, 'ج' => 3, /* ... */
+        }
+    }
+}
+
+// Word value
+fn word·value<G: Gematria>(word: [G]) -> u64 {
+    word|τ{Gematria·value}|Σ
+}
+
+// Find words with same value
+fn isopsephic(corpus: [Word], target: u64) -> [Word] {
+    corpus|φ{w => w|word·value == target}
+}
+```
+
+### 12.2 Sacred Geometry Ratios
+
+```sigil
+// Golden ratio
+const φ: f64 = (1 + √5) / 2  // 1.618...
+const Φ: f64 = 1 / φ         // 0.618... (reciprocal)
+
+// Silver ratio
+const δ_S: f64 = 1 + √2      // 2.414...
+
+// Plastic ratio
+const ρ: f64 = // Real root of x³ = x + 1
+
+// Sacred proportions
+const VESICA_PISCIS: f64 = √3
+const SQRT_2: f64 = √2       // Ad quadratum
+const SQRT_3: f64 = √3       // Ad triangulum
+const SQRT_5: f64 = √5       // Pentagon diagonal
+
+// Fibonacci-like sequences
+fn fibonacci() -> impl Iterator<u64> {
+    iterate((1, 1), |(a, b)| (b, a + b))|τ{|(a, _)| a}
+}
+
+fn lucas() -> impl Iterator<u64> {
+    iterate((2, 1), |(a, b)| (b, a + b))|τ{|(a, _)| a}
+}
+
+fn pell() -> impl Iterator<u64> {
+    iterate((0, 1), |(a, b)| (b, 2*b + a))|τ{|(a, _)| a}
+}
+```
+
+### 12.3 I Ching Mathematics
+
+```sigil
+// Hexagram structure
+type Line = enum { Yin, Yang, OldYin, OldYang }
+type Trigram = [Line; 3]
+type Hexagram = [Line; 6]
+
+// 64 hexagrams as 6-bit patterns
+type HexagramNumber = Cycle<64>
+
+// King Wen sequence (traditional ordering)
+const KING_WEN: [HexagramNumber; 64] = [
+    1, 2, 3, 4, /* ... traditional sequence ... */
+]
+
+// Binary (Shao Yong) sequence
+fn shao_yong(h: Hexagram) -> u8 {
+    h|τ{line => if line.is_yang() { 1 } else { 0 }}
+     |enumerate
+     |τ{(i, b) => b << i}
+     |Σ
+}
+
+// Transformations
+fn complement(h: Hexagram) -> Hexagram {
+    h|τ{Line·flip}
+}
+
+fn invert(h: Hexagram) -> Hexagram {
+    h|reverse
+}
+
+fn nuclear(h: Hexagram) -> Hexagram {
+    [h[1], h[2], h[3], h[2], h[3], h[4]]
+}
+```
+
+---
+
+## 13. Design Principles
 
 1. **No privileged notation** — Western symbols are available but not default
 2. **Multiple representations** — Same value, different cultural expressions
@@ -599,3 +1056,6 @@ fn main() {
 5. **Domain-appropriate bases** — Use base-60 for time, base-20 for calendrics
 6. **Relational thinking** — Kinship and relationship as mathematical primitives
 7. **Geometric plurality** — Euclidean is one option among many
+8. **Temporal plurality** — Linear time is one model among many
+9. **Harmonic universals** — Music theory from all traditions as first-class
+10. **Symbolic bridges** — Gematria, sacred geometry as valid mathematical domains
