@@ -106,4 +106,7 @@ leviathan/leviathan.out
 **/tsconfig.tsbuildinfo
 vite.config.js
 vite.config.d.ts
+
+# Rust
+**/target/
 moloch/target/
