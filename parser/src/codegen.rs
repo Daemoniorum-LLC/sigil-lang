@@ -164,12 +164,23 @@ pub mod jit {
             builder.symbol("sigil_abs", sigil_abs as *const u8);
 
             // I/O functions
+            builder.symbol("sigil_print", sigil_print as *const u8);
             builder.symbol("sigil_print_int", sigil_print_int as *const u8);
             builder.symbol("sigil_print_float", sigil_print_float as *const u8);
             builder.symbol("sigil_print_str", sigil_print_str as *const u8);
 
             // Time functions
             builder.symbol("sigil_now", sigil_now as *const u8);
+
+            // Type-aware arithmetic (for dynamic typing)
+            builder.symbol("sigil_add", sigil_add as *const u8);
+            builder.symbol("sigil_sub", sigil_sub as *const u8);
+            builder.symbol("sigil_mul", sigil_mul as *const u8);
+            builder.symbol("sigil_div", sigil_div as *const u8);
+            builder.symbol("sigil_lt", sigil_lt as *const u8);
+            builder.symbol("sigil_le", sigil_le as *const u8);
+            builder.symbol("sigil_gt", sigil_gt as *const u8);
+            builder.symbol("sigil_ge", sigil_ge as *const u8);
 
             // Array functions
             builder.symbol("sigil_array_new", sigil_array_new as *const u8);
@@ -211,7 +222,7 @@ pub mod jit {
             builtins.insert("floor".into(), sigil_floor as *const u8);
             builtins.insert("ceil".into(), sigil_ceil as *const u8);
             builtins.insert("abs".into(), sigil_abs as *const u8);
-            builtins.insert("print".into(), sigil_print_int as *const u8);
+            builtins.insert("print".into(), sigil_print as *const u8);
             builtins.insert("now".into(), sigil_now as *const u8);
 
             builtins
@@ -809,7 +820,18 @@ pub mod jit {
             Expr::Binary { op, left, right } => {
                 let lhs = compile_expr(module, functions, extern_fns, builder, scope, left)?;
                 let rhs = compile_expr(module, functions, extern_fns, builder, scope, right)?;
-                compile_binary_op(builder, op.clone(), lhs, rhs)
+                // Use runtime functions for arithmetic to handle float/int polymorphism
+                match op {
+                    BinOp::Add => compile_call(module, functions, extern_fns, builder, "sigil_add", &[lhs, rhs]),
+                    BinOp::Sub => compile_call(module, functions, extern_fns, builder, "sigil_sub", &[lhs, rhs]),
+                    BinOp::Mul => compile_call(module, functions, extern_fns, builder, "sigil_mul", &[lhs, rhs]),
+                    BinOp::Div => compile_call(module, functions, extern_fns, builder, "sigil_div", &[lhs, rhs]),
+                    BinOp::Lt => compile_call(module, functions, extern_fns, builder, "sigil_lt", &[lhs, rhs]),
+                    BinOp::Le => compile_call(module, functions, extern_fns, builder, "sigil_le", &[lhs, rhs]),
+                    BinOp::Gt => compile_call(module, functions, extern_fns, builder, "sigil_gt", &[lhs, rhs]),
+                    BinOp::Ge => compile_call(module, functions, extern_fns, builder, "sigil_ge", &[lhs, rhs]),
+                    _ => compile_binary_op(builder, op.clone(), lhs, rhs),
+                }
             }
 
             Expr::Unary { op, expr: inner } => {
@@ -1039,7 +1061,7 @@ pub mod jit {
             "floor" => Some("sigil_floor"),
             "ceil" => Some("sigil_ceil"),
             "abs" => Some("sigil_abs"),
-            "print" => Some("sigil_print_int"),
+            "print" => Some("sigil_print"),
             "now" => Some("sigil_now"),
             n if n.starts_with("sigil_") => Some(n),
             _ => None,
@@ -1291,6 +1313,118 @@ pub mod jit {
     // ============================================
     // Runtime support functions (called from JIT)
     // ============================================
+
+    // Type-aware arithmetic operations
+    // Uses heuristic: if value looks like a float bit pattern, treat as float
+    // Small integers (< 2^50) are unlikely to have float patterns
+    #[inline]
+    fn is_float_pattern(v: i64) -> bool {
+        let exp = (v >> 52) & 0x7FF;
+        // Float exponent is non-zero (except for 0.0 and denormals)
+        // and not all 1s (infinity/NaN) - valid float range
+        exp > 0 && exp < 0x7FF && v != 0
+    }
+
+    #[no_mangle]
+    pub extern "C" fn sigil_add(a: i64, b: i64) -> i64 {
+        if is_float_pattern(a) || is_float_pattern(b) {
+            let fa = f64::from_bits(a as u64);
+            let fb = f64::from_bits(b as u64);
+            (fa + fb).to_bits() as i64
+        } else {
+            a.wrapping_add(b)
+        }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn sigil_sub(a: i64, b: i64) -> i64 {
+        if is_float_pattern(a) || is_float_pattern(b) {
+            let fa = f64::from_bits(a as u64);
+            let fb = f64::from_bits(b as u64);
+            (fa - fb).to_bits() as i64
+        } else {
+            a.wrapping_sub(b)
+        }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn sigil_mul(a: i64, b: i64) -> i64 {
+        if is_float_pattern(a) || is_float_pattern(b) {
+            let fa = f64::from_bits(a as u64);
+            let fb = f64::from_bits(b as u64);
+            (fa * fb).to_bits() as i64
+        } else {
+            a.wrapping_mul(b)
+        }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn sigil_div(a: i64, b: i64) -> i64 {
+        if is_float_pattern(a) || is_float_pattern(b) {
+            let fa = f64::from_bits(a as u64);
+            let fb = f64::from_bits(b as u64);
+            (fa / fb).to_bits() as i64
+        } else if b != 0 {
+            a / b
+        } else {
+            0 // Avoid division by zero
+        }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn sigil_lt(a: i64, b: i64) -> i64 {
+        if is_float_pattern(a) || is_float_pattern(b) {
+            let fa = f64::from_bits(a as u64);
+            let fb = f64::from_bits(b as u64);
+            if fa < fb { 1 } else { 0 }
+        } else {
+            if a < b { 1 } else { 0 }
+        }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn sigil_le(a: i64, b: i64) -> i64 {
+        if is_float_pattern(a) || is_float_pattern(b) {
+            let fa = f64::from_bits(a as u64);
+            let fb = f64::from_bits(b as u64);
+            if fa <= fb { 1 } else { 0 }
+        } else {
+            if a <= b { 1 } else { 0 }
+        }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn sigil_gt(a: i64, b: i64) -> i64 {
+        if is_float_pattern(a) || is_float_pattern(b) {
+            let fa = f64::from_bits(a as u64);
+            let fb = f64::from_bits(b as u64);
+            if fa > fb { 1 } else { 0 }
+        } else {
+            if a > b { 1 } else { 0 }
+        }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn sigil_ge(a: i64, b: i64) -> i64 {
+        if is_float_pattern(a) || is_float_pattern(b) {
+            let fa = f64::from_bits(a as u64);
+            let fb = f64::from_bits(b as u64);
+            if fa >= fb { 1 } else { 0 }
+        } else {
+            if a >= b { 1 } else { 0 }
+        }
+    }
+
+    // Print that handles both int and float
+    #[no_mangle]
+    pub extern "C" fn sigil_print(v: i64) -> i64 {
+        if is_float_pattern(v) {
+            println!("{}", f64::from_bits(v as u64));
+        } else {
+            println!("{}", v);
+        }
+        0
+    }
 
     #[no_mangle]
     pub extern "C" fn sigil_sqrt(x: f64) -> f64 {
