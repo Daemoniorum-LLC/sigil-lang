@@ -796,29 +796,27 @@ pub mod llvm {
                 .create_jit_execution_engine(OptimizationLevel::Aggressive)
                 .map_err(|e| e.to_string())?;
 
-            // Register runtime functions
-            ee.add_global_mapping(
-                &self.module.get_function("sigil_now").unwrap(),
-                sigil_now as usize,
-            );
-            ee.add_global_mapping(
-                &self.module.get_function("sigil_print_int").unwrap(),
-                sigil_print_int as usize,
-            );
+            // Register runtime functions (only if declared/used in the program)
+            if let Some(f) = self.module.get_function("sigil_now") {
+                ee.add_global_mapping(&f, sigil_now as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_print_int") {
+                ee.add_global_mapping(&f, sigil_print_int as usize);
+            }
 
-            // Register math functions
-            ee.add_global_mapping(&self.module.get_function("sigil_sqrt").unwrap(), sigil_sqrt as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_sin").unwrap(), sigil_sin as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_cos").unwrap(), sigil_cos as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_tan").unwrap(), sigil_tan as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_exp").unwrap(), sigil_exp as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_ln").unwrap(), sigil_ln as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_pow").unwrap(), sigil_pow as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_floor").unwrap(), sigil_floor as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_ceil").unwrap(), sigil_ceil as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_abs").unwrap(), sigil_abs as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_min").unwrap(), sigil_min as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_max").unwrap(), sigil_max as usize);
+            // Register math functions (only if declared/used in the program)
+            if let Some(f) = self.module.get_function("sigil_sqrt") { ee.add_global_mapping(&f, sigil_sqrt as usize); }
+            if let Some(f) = self.module.get_function("sigil_sin") { ee.add_global_mapping(&f, sigil_sin as usize); }
+            if let Some(f) = self.module.get_function("sigil_cos") { ee.add_global_mapping(&f, sigil_cos as usize); }
+            if let Some(f) = self.module.get_function("sigil_tan") { ee.add_global_mapping(&f, sigil_tan as usize); }
+            if let Some(f) = self.module.get_function("sigil_exp") { ee.add_global_mapping(&f, sigil_exp as usize); }
+            if let Some(f) = self.module.get_function("sigil_ln") { ee.add_global_mapping(&f, sigil_ln as usize); }
+            if let Some(f) = self.module.get_function("sigil_pow") { ee.add_global_mapping(&f, sigil_pow as usize); }
+            if let Some(f) = self.module.get_function("sigil_floor") { ee.add_global_mapping(&f, sigil_floor as usize); }
+            if let Some(f) = self.module.get_function("sigil_ceil") { ee.add_global_mapping(&f, sigil_ceil as usize); }
+            if let Some(f) = self.module.get_function("sigil_abs") { ee.add_global_mapping(&f, sigil_abs as usize); }
+            if let Some(f) = self.module.get_function("sigil_min") { ee.add_global_mapping(&f, sigil_min as usize); }
+            if let Some(f) = self.module.get_function("sigil_max") { ee.add_global_mapping(&f, sigil_max as usize); }
 
             self.execution_engine = Some(ee);
 
