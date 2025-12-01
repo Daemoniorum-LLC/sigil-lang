@@ -1099,18 +1099,18 @@ GRAPHICS (FFI)                     Status    Target
 └─ Shader DSL                      [✓]       Phase 3 - Complete (native)
 
 SCENE                              Status    Target
-├─ Hierarchical nodes              [ ]       Phase 4
-├─ Transform propagation           [ ]       Phase 4
-├─ Prefabs                         [ ]       Phase 4
-├─ Serialization                   [ ]       Phase 4
-└─ Tags and layers                 [ ]       Phase 4
+├─ Hierarchical nodes              [✓]       Phase 4 - Complete
+├─ Transform propagation           [✓]       Phase 4 - Complete
+├─ Prefabs                         [✓]       Phase 4 - Complete
+├─ Serialization                   [✓]       Phase 4 - Complete
+└─ Tags and layers                 [✓]       Phase 4 - Complete
 
 ASSETS                             Status    Target
-├─ glTF loader                     [ ]       Phase 4
-├─ OBJ loader                      [ ]       Phase 4
-├─ Image formats                   [ ]       Phase 4
-├─ Hot reload                      [ ]       Phase 4
-└─ Async loading                   [~]       Phase 4
+├─ glTF loader                     [✓]       Phase 4 - Complete
+├─ OBJ loader                      [~]       Phase 4 - Partial (via glTF)
+├─ Image formats                   [✓]       Phase 4 - Complete
+├─ Hot reload                      [✓]       Phase 4 - Complete
+└─ Async loading                   [✓]       Phase 4 - Complete
 
 NETWORKING                         Status    Target
 ├─ Spatial partitioning            [ ]       Phase 5
