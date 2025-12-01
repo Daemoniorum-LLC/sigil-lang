@@ -1,0 +1,35 @@
+// Benchmark for SIMD array operations
+
+fn main() -> i64 {
+    // Create array with 100k elements using sigil_array_new
+    let arr = sigil_array_new(100000);
+    let k = 0;
+    while k < 100000 {
+        sigil_array_set(arr, k, k);
+        k = k + 1;
+    }
+
+    // Test 1: Array sum using SIMD
+    let start1 = now();
+    let sum = sigil_array_sum(arr);
+    let t1 = now() - start1;
+    print(t1);
+    print(sum);
+
+    // Test 2: Scale array by 2
+    let start2 = now();
+    sigil_array_scale(arr, 2);
+    let t2 = now() - start2;
+    print(t2);
+
+    // Test 3: Find min/max
+    let start3 = now();
+    let min_val = sigil_array_min(arr);
+    let max_val = sigil_array_max(arr);
+    let t3 = now() - start3;
+    print(t3);
+    print(min_val);
+    print(max_val);
+
+    0
+}

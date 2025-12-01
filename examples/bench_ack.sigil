@@ -1,0 +1,29 @@
+// Ackermann benchmark
+
+fn ackermann(m, n) {
+    if m == 0 { return n + 1; }
+    if n == 0 { return ackermann(m - 1, 1); }
+    return ackermann(m - 1, ackermann(m, n - 1));
+}
+
+fn main() -> i64 {
+    // Warm up
+    let warm = ackermann(3, 5);
+    print(warm);
+
+    // Benchmark ackermann(3,7)
+    let start = now();
+    let result = ackermann(3, 7);
+    let elapsed = now() - start;
+    print(result);
+    print(elapsed);
+
+    // Try ackermann(3,8) - much harder
+    let start2 = now();
+    let result2 = ackermann(3, 8);
+    let elapsed2 = now() - start2;
+    print(result2);
+    print(elapsed2);
+
+    0
+}

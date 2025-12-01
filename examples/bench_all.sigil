@@ -1,0 +1,65 @@
+// Comprehensive benchmark comparing all algorithms
+
+fn fib(n) {
+    if n <= 1 { return n; }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn ackermann(m, n) {
+    if m == 0 { return n + 1; }
+    if n == 0 { return ackermann(m - 1, 1); }
+    return ackermann(m - 1, ackermann(m, n - 1));
+}
+
+fn tak(x, y, z) {
+    if y >= x { return z; }
+    return tak(
+        tak(x - 1, y, z),
+        tak(y - 1, z, x),
+        tak(z - 1, x, y)
+    );
+}
+
+fn gcd(a, b) {
+    if b == 0 { return a; }
+    return gcd(b, a - (a / b) * b);
+}
+
+fn main() -> i64 {
+    print(0);  // Header
+
+    // Test 1: Fibonacci
+    let start1 = now();
+    let fib35 = fib(35);
+    let t1 = now() - start1;
+    print(fib35);
+    print(t1);
+
+    // Test 2: Ackermann
+    let start2 = now();
+    let ack = ackermann(3, 7);
+    let t2 = now() - start2;
+    print(ack);
+    print(t2);
+
+    // Test 3: Tak
+    let start3 = now();
+    let tak_result = tak(18, 12, 6);
+    let t3 = now() - start3;
+    print(tak_result);
+    print(t3);
+
+    // Test 4: GCD x10k
+    let start4 = now();
+    let i = 0;
+    let gcd_result = 0;
+    while i < 10000 {
+        gcd_result = gcd(1071, 462);
+        i = i + 1;
+    }
+    let t4 = now() - start4;
+    print(gcd_result);
+    print(t4);
+
+    0
+}

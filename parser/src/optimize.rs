@@ -79,12 +79,13 @@ impl Optimizer {
             }
         }
 
-        // Accumulator transformation pass (for aggressive optimization)
+        // Accumulator transformation pass (for Standard and Aggressive optimization)
         // This transforms double-recursive functions like fib into tail-recursive form
+        // Enabled for Standard+ because it provides massive speedups (O(2^n) -> O(n))
         let mut new_items: Vec<crate::span::Spanned<Item>> = Vec::new();
         let mut transformed_functions: HashMap<String, String> = HashMap::new();
 
-        if self.level == OptLevel::Aggressive {
+        if matches!(self.level, OptLevel::Standard | OptLevel::Aggressive) {
             for item in &file.items {
                 if let Item::Function(func) = &item.node {
                     if let Some((helper_func, wrapper_func)) = self.try_accumulator_transform(func) {
@@ -104,9 +105,10 @@ impl Optimizer {
         let items: Vec<_> = file.items.iter().map(|item| {
             let node = match &item.node {
                 Item::Function(func) => {
-                    // Check if this function was transformed
+                    // Check if this function was transformed (Standard or Aggressive)
                     if let Some((_, wrapper)) = self.try_accumulator_transform(func) {
-                        if self.level == OptLevel::Aggressive && transformed_functions.contains_key(&func.name.name) {
+                        if matches!(self.level, OptLevel::Standard | OptLevel::Aggressive)
+                           && transformed_functions.contains_key(&func.name.name) {
                             Item::Function(self.optimize_function(&wrapper))
                         } else {
                             Item::Function(self.optimize_function(func))

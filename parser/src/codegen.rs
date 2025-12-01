@@ -125,6 +125,7 @@ pub mod jit {
             flag_builder.set("enable_verifier", "false").unwrap(); // Disable verifier in release for speed
             flag_builder.set("enable_alias_analysis", "true").unwrap();
 
+            // Get native ISA with CPU feature detection (AVX2, SSE4, etc. auto-detected)
             let isa_builder = cranelift_native::builder().map_err(|e| e.to_string())?;
             let isa = isa_builder
                 .finish(settings::Flags::new(flag_builder))
@@ -257,9 +258,9 @@ pub mod jit {
             builtins
         }
 
-        /// Compile a Sigil program
+        /// Compile a Sigil program (uses Aggressive optimization for best performance)
         pub fn compile(&mut self, source: &str) -> Result<(), String> {
-            self.compile_with_opt(source, OptLevel::Standard)
+            self.compile_with_opt(source, OptLevel::Aggressive)
         }
 
         /// Compile with a specific optimization level
