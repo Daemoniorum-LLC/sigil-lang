@@ -61,11 +61,40 @@ pub struct ExternStatic {
     pub ty: TypeExpr,
 }
 
+/// Function attributes for low-level control.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FunctionAttrs {
+    /// Naked function (no prologue/epilogue)
+    pub naked: bool,
+    /// Inline hint
+    pub inline: Option<InlineHint>,
+    /// Calling convention override
+    pub calling_convention: Option<String>,
+    /// No mangle (preserve symbol name)
+    pub no_mangle: bool,
+    /// Link section
+    pub link_section: Option<String>,
+    /// Export as C function
+    pub export: bool,
+}
+
+/// Inline hints for functions.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InlineHint {
+    /// #[inline]
+    Hint,
+    /// #[inline(always)]
+    Always,
+    /// #[inline(never)]
+    Never,
+}
+
 /// Function definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub visibility: Visibility,
     pub is_async: bool,
+    pub attrs: FunctionAttrs,
     pub name: Ident,
     pub generics: Option<Generics>,
     pub params: Vec<Param>,
@@ -196,10 +225,33 @@ pub struct PathSegment {
     pub generics: Option<Vec<TypeExpr>>,
 }
 
+/// Struct attributes for low-level control.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StructAttrs {
+    /// Memory representation
+    pub repr: Option<StructRepr>,
+    /// Packed (no padding)
+    pub packed: bool,
+    /// Alignment override
+    pub align: Option<usize>,
+}
+
+/// Memory representation for structs.
+#[derive(Debug, Clone, PartialEq)]
+pub enum StructRepr {
+    /// C-compatible layout
+    C,
+    /// Transparent (single field struct)
+    Transparent,
+    /// Specific integer type
+    Int(String),
+}
+
 /// Struct definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructDef {
     pub visibility: Visibility,
+    pub attrs: StructAttrs,
     pub name: Ident,
     pub generics: Option<Generics>,
     pub fields: StructFields,
@@ -545,6 +597,80 @@ pub enum Expr {
         expr: Box<Expr>,
         ty: TypeExpr,
     },
+
+    /// Inline assembly: `asm!("instruction", ...)`
+    InlineAsm(InlineAsm),
+
+    /// Volatile read: `volatile read<T>(ptr)` or `volatile read(ptr)`
+    VolatileRead {
+        ptr: Box<Expr>,
+        ty: Option<TypeExpr>,
+    },
+
+    /// Volatile write: `volatile write<T>(ptr, value)` or `volatile write(ptr, value)`
+    VolatileWrite {
+        ptr: Box<Expr>,
+        value: Box<Expr>,
+        ty: Option<TypeExpr>,
+    },
+}
+
+/// Inline assembly expression.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InlineAsm {
+    /// The assembly template string
+    pub template: String,
+    /// Output operands
+    pub outputs: Vec<AsmOperand>,
+    /// Input operands
+    pub inputs: Vec<AsmOperand>,
+    /// Clobbered registers
+    pub clobbers: Vec<String>,
+    /// Assembly options
+    pub options: AsmOptions,
+}
+
+/// An assembly operand (input or output).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AsmOperand {
+    /// Constraint string (e.g., "=r", "r", "m", or register name)
+    pub constraint: String,
+    /// The expression to bind
+    pub expr: Expr,
+    /// The kind of operand
+    pub kind: AsmOperandKind,
+    /// For inout operands, the output expression (if different from input)
+    pub output: Option<Box<Expr>>,
+}
+
+/// Assembly operand kind.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AsmOperandKind {
+    /// Input only
+    Input,
+    /// Output only
+    Output,
+    /// Input and output (same register)
+    InOut,
+}
+
+/// Assembly options/modifiers.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AsmOptions {
+    /// Volatile (has side effects, cannot be optimized away)
+    pub volatile: bool,
+    /// Pure assembly (no side effects)
+    pub pure_asm: bool,
+    /// No memory clobber
+    pub nomem: bool,
+    /// No stack
+    pub nostack: bool,
+    /// Preserves flags
+    pub preserves_flags: bool,
+    /// Read-only (inputs only)
+    pub readonly: bool,
+    /// AT&T syntax (vs Intel)
+    pub att_syntax: bool,
 }
 
 /// Pipe operation in a chain.

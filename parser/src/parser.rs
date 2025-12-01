@@ -160,6 +160,14 @@ impl<'a> Parser<'a> {
             Some(Token::Extern) => {
                 Item::ExternBlock(self.parse_extern_block()?)
             }
+            Some(Token::Naked) => {
+                // naked fn -> function with naked attribute
+                Item::Function(self.parse_function(visibility)?)
+            }
+            Some(Token::Packed) => {
+                // packed struct -> struct with packed attribute
+                Item::Struct(self.parse_struct(visibility)?)
+            }
             Some(token) => {
                 return Err(ParseError::UnexpectedToken {
                     expected: "item".to_string(),
@@ -183,6 +191,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function(&mut self, visibility: Visibility) -> ParseResult<Function> {
+        // Parse function attributes
+        let mut attrs = FunctionAttrs::default();
+
+        // Check for naked keyword before fn
+        if self.consume_if(&Token::Naked) {
+            attrs.naked = true;
+        }
+
         let is_async = self.consume_if(&Token::Async);
         self.expect(Token::Fn)?;
 
@@ -211,6 +227,7 @@ impl<'a> Parser<'a> {
         Ok(Function {
             visibility,
             is_async,
+            attrs,
             name,
             generics,
             params,
@@ -221,6 +238,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_struct(&mut self, visibility: Visibility) -> ParseResult<StructDef> {
+        // Parse struct attributes
+        let mut attrs = StructAttrs::default();
+
+        // Check for packed keyword before struct
+        if self.consume_if(&Token::Packed) {
+            attrs.packed = true;
+        }
+
         self.expect(Token::Struct)?;
         let name = self.parse_ident()?;
         let generics = self.parse_generics_opt()?;
@@ -243,6 +268,7 @@ impl<'a> Parser<'a> {
 
         Ok(StructDef {
             visibility,
+            attrs,
             name,
             generics,
             fields,
@@ -1295,9 +1321,228 @@ impl<'a> Parser<'a> {
                     Ok(Expr::Path(path))
                 }
             }
+            Some(Token::Asm) => self.parse_inline_asm(),
+            Some(Token::Volatile) => self.parse_volatile_expr(),
             Some(token) => Err(ParseError::UnexpectedToken {
                 expected: "expression".to_string(),
                 found: token,
+                span: self.current_span(),
+            }),
+            None => Err(ParseError::UnexpectedEof),
+        }
+    }
+
+    /// Parse inline assembly: `asm!("template", ...)`
+    ///
+    /// Syntax:
+    /// ```sigil
+    /// asm!("template {0} {1}",
+    ///     out("rax") result,
+    ///     in("rbx") input,
+    ///     clobber("rcx", "rdx"),
+    ///     options(volatile, nostack))
+    /// ```
+    fn parse_inline_asm(&mut self) -> ParseResult<Expr> {
+        self.expect(Token::Asm)?;
+        self.expect(Token::Bang)?;
+        self.expect(Token::LParen)?;
+
+        // Parse template string
+        let template = match self.current_token().cloned() {
+            Some(Token::StringLit(s)) => {
+                self.advance();
+                s
+            }
+            Some(t) => {
+                return Err(ParseError::UnexpectedToken {
+                    expected: "assembly template string".to_string(),
+                    found: t,
+                    span: self.current_span(),
+                });
+            }
+            None => return Err(ParseError::UnexpectedEof),
+        };
+
+        let mut outputs = Vec::new();
+        let mut inputs = Vec::new();
+        let mut clobbers = Vec::new();
+        let mut options = AsmOptions::default();
+
+        // Parse operands and options
+        while self.consume_if(&Token::Comma) {
+            if self.check(&Token::RParen) {
+                break;
+            }
+
+            match self.current_token().cloned() {
+                Some(Token::Ident(ref name)) if name == "out" => {
+                    self.advance();
+                    let operand = self.parse_asm_operand(AsmOperandKind::Output)?;
+                    outputs.push(operand);
+                }
+                // Handle `in` which is a keyword (Token::In)
+                Some(Token::In) => {
+                    self.advance();
+                    let operand = self.parse_asm_operand(AsmOperandKind::Input)?;
+                    inputs.push(operand);
+                }
+                Some(Token::Ident(ref name)) if name == "inout" => {
+                    self.advance();
+                    let operand = self.parse_asm_operand(AsmOperandKind::InOut)?;
+                    outputs.push(operand);
+                }
+                Some(Token::Ident(ref name)) if name == "clobber" => {
+                    self.advance();
+                    self.expect(Token::LParen)?;
+                    while !self.check(&Token::RParen) {
+                        if let Some(Token::StringLit(reg)) = self.current_token().cloned() {
+                            self.advance();
+                            clobbers.push(reg);
+                        } else if let Some(Token::Ident(reg)) = self.current_token().cloned() {
+                            self.advance();
+                            clobbers.push(reg);
+                        }
+                        if !self.consume_if(&Token::Comma) {
+                            break;
+                        }
+                    }
+                    self.expect(Token::RParen)?;
+                }
+                Some(Token::Ident(ref name)) if name == "options" => {
+                    self.advance();
+                    self.expect(Token::LParen)?;
+                    while !self.check(&Token::RParen) {
+                        if let Some(Token::Ident(opt)) = self.current_token().cloned() {
+                            self.advance();
+                            match opt.as_str() {
+                                "volatile" => options.volatile = true,
+                                "nostack" => options.nostack = true,
+                                "pure" => options.pure_asm = true,
+                                "readonly" => options.readonly = true,
+                                "nomem" => options.nomem = true,
+                                "att_syntax" => options.att_syntax = true,
+                                _ => {}
+                            }
+                        }
+                        if !self.consume_if(&Token::Comma) {
+                            break;
+                        }
+                    }
+                    self.expect(Token::RParen)?;
+                }
+                _ => break,
+            }
+        }
+
+        self.expect(Token::RParen)?;
+
+        Ok(Expr::InlineAsm(InlineAsm {
+            template,
+            outputs,
+            inputs,
+            clobbers,
+            options,
+        }))
+    }
+
+    /// Parse an assembly operand: `("reg") expr` or `("reg") var => expr`
+    fn parse_asm_operand(&mut self, kind: AsmOperandKind) -> ParseResult<AsmOperand> {
+        self.expect(Token::LParen)?;
+
+        let constraint = match self.current_token().cloned() {
+            Some(Token::StringLit(s)) => {
+                self.advance();
+                s
+            }
+            Some(Token::Ident(s)) => {
+                self.advance();
+                s
+            }
+            Some(t) => {
+                return Err(ParseError::UnexpectedToken {
+                    expected: "register constraint".to_string(),
+                    found: t,
+                    span: self.current_span(),
+                });
+            }
+            None => return Err(ParseError::UnexpectedEof),
+        };
+
+        self.expect(Token::RParen)?;
+
+        let expr = self.parse_expr()?;
+
+        // For inout, check for `=> output`
+        let output = if kind == AsmOperandKind::InOut && self.consume_if(&Token::FatArrow) {
+            Some(Box::new(self.parse_expr()?))
+        } else {
+            None
+        };
+
+        Ok(AsmOperand {
+            constraint,
+            expr,
+            kind,
+            output,
+        })
+    }
+
+    /// Parse volatile memory operations
+    ///
+    /// - `volatile read<T>(ptr)` - volatile read from pointer
+    /// - `volatile write<T>(ptr, value)` - volatile write to pointer
+    fn parse_volatile_expr(&mut self) -> ParseResult<Expr> {
+        self.expect(Token::Volatile)?;
+
+        match self.current_token().cloned() {
+            Some(Token::Ident(ref name)) if name == "read" => {
+                self.advance();
+
+                // Optional type parameter <T>
+                let ty = if self.consume_if(&Token::Lt) {
+                    let t = self.parse_type()?;
+                    self.expect(Token::Gt)?;
+                    Some(t)
+                } else {
+                    None
+                };
+
+                self.expect(Token::LParen)?;
+                let ptr = self.parse_expr()?;
+                self.expect(Token::RParen)?;
+
+                Ok(Expr::VolatileRead {
+                    ptr: Box::new(ptr),
+                    ty,
+                })
+            }
+            Some(Token::Ident(ref name)) if name == "write" => {
+                self.advance();
+
+                // Optional type parameter <T>
+                let ty = if self.consume_if(&Token::Lt) {
+                    let t = self.parse_type()?;
+                    self.expect(Token::Gt)?;
+                    Some(t)
+                } else {
+                    None
+                };
+
+                self.expect(Token::LParen)?;
+                let ptr = self.parse_expr()?;
+                self.expect(Token::Comma)?;
+                let value = self.parse_expr()?;
+                self.expect(Token::RParen)?;
+
+                Ok(Expr::VolatileWrite {
+                    ptr: Box::new(ptr),
+                    value: Box::new(value),
+                    ty,
+                })
+            }
+            Some(t) => Err(ParseError::UnexpectedToken {
+                expected: "'read' or 'write' after 'volatile'".to_string(),
+                found: t,
                 span: self.current_span(),
             }),
             None => Err(ParseError::UnexpectedEof),
@@ -1953,5 +2198,115 @@ mod tests {
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_inline_asm() {
+        let source = r#"
+            fn outb(port: u16, value: u8) {
+                asm!("out dx, al",
+                    in("dx") port,
+                    in("al") value,
+                    options(nostack));
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Function(func) = &file.items[0].node {
+            assert_eq!(func.name.name, "outb");
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_inline_asm_with_outputs() {
+        let source = r#"
+            fn inb(port: u16) -> u8 {
+                let result: u8 = 0;
+                asm!("in al, dx",
+                    out("al") result,
+                    in("dx") port,
+                    options(nostack, nomem));
+                return result;
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_volatile_read() {
+        let source = r#"
+            fn read_mmio(addr: *mut u32) -> u32 {
+                return volatile read<u32>(addr);
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_volatile_write() {
+        let source = r#"
+            fn write_mmio(addr: *mut u32, value: u32) {
+                volatile write<u32>(addr, value);
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_naked_function() {
+        let source = r#"
+            naked fn interrupt_handler() {
+                asm!("push rax; push rbx; call handler_impl; pop rbx; pop rax; iretq",
+                    options(nostack));
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Function(func) = &file.items[0].node {
+            assert!(func.attrs.naked, "Function should be naked");
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_packed_struct() {
+        let source = r#"
+            packed struct GDTEntry {
+                limit_low: u16,
+                base_low: u16,
+                base_middle: u8,
+                access: u8,
+                granularity: u8,
+                base_high: u8,
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Struct(s) = &file.items[0].node {
+            assert!(s.attrs.packed, "Struct should be packed");
+            assert_eq!(s.name.name, "GDTEntry");
+            if let StructFields::Named(fields) = &s.fields {
+                assert_eq!(fields.len(), 6);
+            } else {
+                panic!("Expected named fields");
+            }
+        } else {
+            panic!("Expected struct");
+        }
     }
 }

@@ -103,6 +103,14 @@ pub enum Token {
     Unsafe,
     #[token("extern")]
     Extern,
+    #[token("asm")]
+    Asm,
+    #[token("volatile")]
+    Volatile,
+    #[token("naked")]
+    Naked,
+    #[token("packed")]
+    Packed,
     #[token("on")]
     On,
 

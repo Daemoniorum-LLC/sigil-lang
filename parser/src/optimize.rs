@@ -196,6 +196,7 @@ impl Optimizer {
             return_type: func.return_type.clone(),
             where_clause: func.where_clause.clone(),
             body,
+            attrs: func.attrs.clone(),
         }
     }
 
