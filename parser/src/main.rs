@@ -203,6 +203,11 @@ fn llvm_file(path: &str) -> ExitCode {
         return ExitCode::from(1);
     }
 
+    // Debug: print IR
+    if std::env::var("SIGIL_DEBUG_IR").is_ok() {
+        eprintln!("Generated LLVM IR:\n{}", compiler.get_ir());
+    }
+
     // Run
     match compiler.run() {
         Ok(result) => {

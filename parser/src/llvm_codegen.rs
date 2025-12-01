@@ -39,6 +39,15 @@ pub mod llvm {
         opt_level: OptLevel,
     }
 
+    // Runtime helper: get current time in milliseconds
+    extern "C" fn sigil_now() -> i64 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0)
+    }
+
     impl<'ctx> LlvmCompiler<'ctx> {
         /// Create a new LLVM compiler
         pub fn new(context: &'ctx Context, opt_level: OptLevel) -> Result<Self, String> {
@@ -64,6 +73,9 @@ pub mod llvm {
             let mut optimizer = Optimizer::new(self.opt_level);
             let optimized = optimizer.optimize_file(&source_file);
 
+            // Declare runtime functions
+            self.declare_runtime_functions();
+
             // First pass: declare all functions
             for spanned_item in &optimized.items {
                 if let Item::Function(func) = &spanned_item.node {
@@ -82,6 +94,15 @@ pub mod llvm {
             self.run_llvm_optimizations()?;
 
             Ok(())
+        }
+
+        /// Declare runtime helper functions
+        fn declare_runtime_functions(&self) {
+            let i64_type = self.context.i64_type();
+
+            // sigil_now() -> i64
+            let now_type = i64_type.fn_type(&[], false);
+            self.module.add_function("sigil_now", now_type, None);
         }
 
         /// Declare a function (creates the signature)
@@ -104,7 +125,7 @@ pub mod llvm {
 
             // Name parameters
             for (i, param) in func.params.iter().enumerate() {
-                if let ast::Pattern::Ident(ref ident) = param.pattern {
+                if let ast::Pattern::Ident { name: ref ident, .. } = param.pattern {
                     fn_value
                         .get_nth_param(i as u32)
                         .unwrap()
@@ -130,7 +151,7 @@ pub mod llvm {
 
             // Add parameters to scope
             for (i, param) in func.params.iter().enumerate() {
-                if let ast::Pattern::Ident(ref ident) = param.pattern {
+                if let ast::Pattern::Ident { name: ref ident, .. } = param.pattern {
                     let param_value = fn_value.get_nth_param(i as u32).unwrap();
                     // Allocate on stack for potential mutation
                     let alloca = self.builder.build_alloca(
@@ -146,13 +167,15 @@ pub mod llvm {
             if let Some(ref body) = func.body {
                 let result = self.compile_block(fn_value, &mut scope, body)?;
 
-                // Return the result
-                if let Some(val) = result {
-                    self.builder.build_return(Some(&val)).map_err(|e| e.to_string())?;
-                } else {
-                    // Return 0 if no explicit return
-                    let zero = self.context.i64_type().const_int(0, false);
-                    self.builder.build_return(Some(&zero)).map_err(|e| e.to_string())?;
+                // Only add return if block isn't already terminated
+                let current_block = self.builder.get_insert_block().unwrap();
+                if current_block.get_terminator().is_none() {
+                    if let Some(val) = result {
+                        self.builder.build_return(Some(&val)).map_err(|e| e.to_string())?;
+                    } else {
+                        let zero = self.context.i64_type().const_int(0, false);
+                        self.builder.build_return(Some(&zero)).map_err(|e| e.to_string())?;
+                    }
                 }
             } else {
                 // No body, return 0
@@ -197,7 +220,7 @@ pub mod llvm {
         ) -> Result<Option<IntValue<'ctx>>, String> {
             match stmt {
                 ast::Stmt::Let { pattern, init, .. } => {
-                    if let ast::Pattern::Ident(ref ident) = pattern {
+                if let ast::Pattern::Ident { name: ref ident, .. } = pattern {
                         let init_val = if let Some(ref expr) = init {
                             self.compile_expr(fn_value, scope, expr)?
                         } else {
@@ -563,16 +586,26 @@ pub mod llvm {
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
                 "now" => {
-                    // Return 0 for benchmarking stub (in real impl, call clock_gettime)
-                    return Ok(self.context.i64_type().const_int(0, false));
+                    // Call sigil_now runtime function
+                    let now_fn = self.module.get_function("sigil_now")
+                        .ok_or("sigil_now not declared")?;
+                    let call = self.builder.build_call(now_fn, &[], "now")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call.try_as_basic_value().left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                 }
                 _ => {}
             }
 
             // Get the function
-            let callee = self.functions.get(fn_name)
-                .or_else(|| self.module.get_function(fn_name))
-                .ok_or(format!("Unknown function: {}", fn_name))?;
+            let callee = if let Some(f) = self.functions.get(fn_name) {
+                *f
+            } else if let Some(f) = self.module.get_function(fn_name) {
+                f
+            } else {
+                return Err(format!("Unknown function: {}", fn_name));
+            };
 
             // Compile arguments
             let compiled_args: Result<Vec<_>, _> = args
@@ -585,7 +618,7 @@ pub mod llvm {
             let compiled_args = compiled_args?;
 
             // Build call
-            let call = self.builder.build_call(*callee, &compiled_args, "call")
+            let call = self.builder.build_call(callee, &compiled_args, "call")
                 .map_err(|e| e.to_string())?;
 
             // Get return value
@@ -631,10 +664,21 @@ pub mod llvm {
 
         /// Create JIT execution engine and run
         pub fn run(&mut self) -> Result<i64, String> {
+            // Verify module before execution
+            if let Err(msg) = self.module.verify() {
+                return Err(format!("Module verification failed: {}", msg.to_string()));
+            }
+
             // Create execution engine
             let ee = self.module
                 .create_jit_execution_engine(OptimizationLevel::Aggressive)
                 .map_err(|e| e.to_string())?;
+
+            // Register runtime functions
+            ee.add_global_mapping(
+                &self.module.get_function("sigil_now").unwrap(),
+                sigil_now as usize,
+            );
 
             self.execution_engine = Some(ee);
 
