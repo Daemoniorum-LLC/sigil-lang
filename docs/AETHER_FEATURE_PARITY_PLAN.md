@@ -1046,20 +1046,20 @@ impl NodeService for AetherNodeServer {
 
 ```
 CORE ECS                           Status    Target
-├─ Entity/Generation handles       [ ]       Phase 1
-├─ Component storage               [ ]       Phase 1
-├─ Query system                    [ ]       Phase 1
-├─ System scheduler                [ ]       Phase 1
-├─ Event bus                       [ ]       Phase 1
+├─ Entity/Generation handles       [✓]       Phase 1 - Complete
+├─ Component storage               [✓]       Phase 1 - Complete
+├─ Query system                    [✓]       Phase 1 - Complete
+├─ System scheduler                [✓]       Phase 1 - Complete
+├─ Event bus                       [✓]       Phase 1 - Complete
 ├─ Hot reload                      [ ]       Phase 4
-└─ Resource management             [ ]       Phase 1
+└─ Resource management             [✓]       Phase 1 - Complete
 
 MATH/SIMD                          Status    Target
-├─ Vec2/Vec3/Vec4                  [~]       Phase 1
-├─ Mat3/Mat4                       [ ]       Phase 1
-├─ Quaternions                     [ ]       Phase 1
-├─ AABB/Sphere/Ray                 [ ]       Phase 1
-├─ Intersection tests              [ ]       Phase 1
+├─ Vec2/Vec3/Vec4                  [✓]       Phase 1 - Complete
+├─ Mat3/Mat4                       [✓]       Phase 1 - Complete
+├─ Quaternions                     [✓]       Phase 1 - Complete
+├─ AABB/Sphere/Ray                 [✓]       Phase 1 - Complete
+├─ Intersection tests              [✓]       Phase 1 - Complete
 └─ SIMD operations                 [✓]       Done
 
 PHYSICS (FFI)                      Status    Target
