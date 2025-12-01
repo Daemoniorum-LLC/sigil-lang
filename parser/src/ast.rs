@@ -109,6 +109,188 @@ pub struct SectionConfig {
     pub region: Option<String>,
 }
 
+// ============================================
+// SIMD Types for Game Engine / High-Performance
+// ============================================
+
+/// SIMD vector type.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SimdType {
+    /// Element type (f32, f64, i32, etc.)
+    pub element_type: Box<TypeExpr>,
+    /// Number of lanes (2, 4, 8, 16)
+    pub lanes: u8,
+}
+
+/// SIMD intrinsic operations.
+#[derive(Debug, Clone, PartialEq, Copy)]
+pub enum SimdOp {
+    // Arithmetic
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Neg,
+    Abs,
+    Min,
+    Max,
+
+    // Comparison (returns mask)
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+
+    // Horizontal operations
+    HAdd,      // Horizontal add (sum all lanes)
+    Dot,       // Dot product
+
+    // Shuffle/permute
+    Shuffle,
+    Blend,
+
+    // Load/store
+    Load,
+    Store,
+    LoadAligned,
+    StoreAligned,
+
+    // Conversions
+    Cast,
+    Widen,
+    Narrow,
+
+    // Math functions
+    Sqrt,
+    Rsqrt,     // Reciprocal square root
+    Rcp,       // Reciprocal
+    Floor,
+    Ceil,
+    Round,
+
+    // Bitwise
+    And,
+    Or,
+    Xor,
+    Not,
+    Shl,
+    Shr,
+}
+
+// ============================================
+// Atomic Types for Concurrency
+// ============================================
+
+/// Atomic memory ordering.
+#[derive(Debug, Clone, PartialEq, Copy, Default)]
+pub enum MemoryOrdering {
+    /// No ordering constraints
+    Relaxed,
+    /// Acquire semantics (for loads)
+    Acquire,
+    /// Release semantics (for stores)
+    Release,
+    /// Acquire + Release
+    AcqRel,
+    /// Sequential consistency
+    #[default]
+    SeqCst,
+}
+
+/// Atomic operations.
+#[derive(Debug, Clone, PartialEq, Copy)]
+pub enum AtomicOp {
+    Load,
+    Store,
+    Swap,
+    CompareExchange,
+    CompareExchangeWeak,
+    FetchAdd,
+    FetchSub,
+    FetchAnd,
+    FetchOr,
+    FetchXor,
+    FetchMin,
+    FetchMax,
+}
+
+// ============================================
+// Derive Macros
+// ============================================
+
+/// Built-in derivable traits.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DeriveTrait {
+    // Standard traits
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+
+    // Game engine specific
+    Component,     // ECS component marker
+    Resource,      // ECS resource marker
+    Bundle,        // ECS component bundle
+
+    // Serialization
+    Serialize,
+    Deserialize,
+
+    // Custom derive (name of the derive macro)
+    Custom(String),
+}
+
+/// Struct attributes including derive.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StructAttrs {
+    /// Memory representation
+    pub repr: Option<StructRepr>,
+    /// Packed layout (no padding)
+    pub packed: bool,
+    /// Alignment override
+    pub align: Option<usize>,
+    /// SIMD alignment/vectorization hints
+    pub simd: bool,
+    /// Derived traits
+    pub derives: Vec<DeriveTrait>,
+    /// Outer attributes
+    pub outer_attrs: Vec<Attribute>,
+}
+
+// ============================================
+// Allocator Trait Support
+// ============================================
+
+/// Built-in trait definitions for game engines.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BuiltinTrait {
+    /// Memory allocator trait
+    Allocator,
+    /// Iterator trait
+    Iterator,
+    /// Into iterator
+    IntoIterator,
+    /// Drop/destructor
+    Drop,
+    /// Default construction
+    Default,
+    /// Deref coercion
+    Deref,
+    /// DerefMut coercion
+    DerefMut,
+    /// Index access
+    Index,
+    /// IndexMut access
+    IndexMut,
+}
+
 /// A complete Sigil source file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SourceFile {
@@ -333,6 +515,13 @@ pub enum TypeExpr {
     Cycle {
         modulus: Box<Expr>,
     },
+    /// SIMD vector type: `simd<f32, 4>`, `Vec4f`
+    Simd {
+        element: Box<TypeExpr>,
+        lanes: u8,
+    },
+    /// Atomic type: `atomic<T>`
+    Atomic(Box<TypeExpr>),
     /// Never type: `!` or `never`
     Never,
     /// Inferred: `_`
@@ -349,17 +538,6 @@ pub struct TypePath {
 pub struct PathSegment {
     pub ident: Ident,
     pub generics: Option<Vec<TypeExpr>>,
-}
-
-/// Struct attributes for low-level control.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct StructAttrs {
-    /// Memory representation
-    pub repr: Option<StructRepr>,
-    /// Packed (no padding)
-    pub packed: bool,
-    /// Alignment override
-    pub align: Option<usize>,
 }
 
 /// Memory representation for structs.
@@ -738,6 +916,67 @@ pub enum Expr {
         ptr: Box<Expr>,
         value: Box<Expr>,
         ty: Option<TypeExpr>,
+    },
+
+    // ========================================
+    // SIMD Operations
+    // ========================================
+
+    /// SIMD vector literal: `simd[1.0, 2.0, 3.0, 4.0]`
+    SimdLiteral {
+        elements: Vec<Expr>,
+        ty: Option<TypeExpr>,
+    },
+
+    /// SIMD intrinsic operation: `simd::add(a, b)`
+    SimdIntrinsic {
+        op: SimdOp,
+        args: Vec<Expr>,
+    },
+
+    /// SIMD shuffle: `simd::shuffle(a, b, [0, 4, 1, 5])`
+    SimdShuffle {
+        a: Box<Expr>,
+        b: Box<Expr>,
+        indices: Vec<u8>,
+    },
+
+    /// SIMD splat (broadcast scalar to all lanes): `simd::splat(x)`
+    SimdSplat {
+        value: Box<Expr>,
+        lanes: u8,
+    },
+
+    /// SIMD extract single lane: `simd::extract(v, 0)`
+    SimdExtract {
+        vector: Box<Expr>,
+        index: u8,
+    },
+
+    /// SIMD insert into lane: `simd::insert(v, 0, value)`
+    SimdInsert {
+        vector: Box<Expr>,
+        index: u8,
+        value: Box<Expr>,
+    },
+
+    // ========================================
+    // Atomic Operations
+    // ========================================
+
+    /// Atomic operation: `atomic::load(&x, Ordering::SeqCst)`
+    AtomicOp {
+        op: AtomicOp,
+        ptr: Box<Expr>,
+        value: Option<Box<Expr>>,        // For store, swap, fetch_add, etc.
+        expected: Option<Box<Expr>>,     // For compare_exchange
+        ordering: MemoryOrdering,
+        failure_ordering: Option<MemoryOrdering>,  // For compare_exchange
+    },
+
+    /// Atomic fence: `atomic::fence(Ordering::SeqCst)`
+    AtomicFence {
+        ordering: MemoryOrdering,
     },
 }
 

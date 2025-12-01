@@ -124,6 +124,18 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Ident { name: "volatile".to_string(), evidentiality: None, span })
             }
+            Some(Token::Derive) => {
+                self.advance();
+                Ok(Ident { name: "derive".to_string(), evidentiality: None, span })
+            }
+            Some(Token::Simd) => {
+                self.advance();
+                Ok(Ident { name: "simd".to_string(), evidentiality: None, span })
+            }
+            Some(Token::Atomic) => {
+                self.advance();
+                Ok(Ident { name: "atomic".to_string(), evidentiality: None, span })
+            }
             Some(t) => Err(ParseError::UnexpectedToken {
                 expected: "attribute name".to_string(),
                 found: t,
@@ -458,7 +470,7 @@ impl<'a> Parser<'a> {
                 Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
             }
             Some(Token::Struct) => {
-                Item::Struct(self.parse_struct(visibility)?)
+                Item::Struct(self.parse_struct_with_attrs(visibility, outer_attrs)?)
             }
             Some(Token::Enum) => {
                 Item::Enum(self.parse_enum(visibility)?)
@@ -496,7 +508,7 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Packed) => {
                 // packed struct -> struct with packed attribute
-                Item::Struct(self.parse_struct(visibility)?)
+                Item::Struct(self.parse_struct_with_attrs(visibility, outer_attrs)?)
             }
             Some(token) => {
                 return Err(ParseError::UnexpectedToken {
@@ -634,9 +646,52 @@ impl<'a> Parser<'a> {
         func_attrs
     }
 
-    fn parse_struct(&mut self, visibility: Visibility) -> ParseResult<StructDef> {
+    fn parse_struct_with_attrs(&mut self, visibility: Visibility, outer_attrs: Vec<Attribute>) -> ParseResult<StructDef> {
         // Parse struct attributes
         let mut attrs = StructAttrs::default();
+        attrs.outer_attrs = outer_attrs.clone();
+
+        // Process derive attributes
+        for attr in &outer_attrs {
+            if attr.name.name == "derive" {
+                if let Some(AttrArgs::Paren(args)) = &attr.args {
+                    for arg in args {
+                        if let AttrArg::Ident(ident) = arg {
+                            let derive = Self::parse_derive_trait(&ident.name)?;
+                            attrs.derives.push(derive);
+                        }
+                    }
+                }
+            } else if attr.name.name == "simd" {
+                attrs.simd = true;
+            } else if attr.name.name == "repr" {
+                if let Some(AttrArgs::Paren(args)) = &attr.args {
+                    for arg in args {
+                        if let AttrArg::Ident(ident) = arg {
+                            attrs.repr = Some(match ident.name.as_str() {
+                                "C" => StructRepr::C,
+                                "transparent" => StructRepr::Transparent,
+                                "packed" => {
+                                    attrs.packed = true;
+                                    StructRepr::C // packed implies C repr
+                                }
+                                other => StructRepr::Int(other.to_string()),
+                            });
+                        } else if let AttrArg::Nested(nested) = arg {
+                            if nested.name.name == "align" {
+                                if let Some(AttrArgs::Paren(align_args)) = &nested.args {
+                                    if let Some(AttrArg::Literal(Literal::Int { value, .. })) = align_args.first() {
+                                        if let Ok(n) = value.parse::<usize>() {
+                                            attrs.align = Some(n);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Check for packed keyword before struct
         if self.consume_if(&Token::Packed) {
@@ -670,6 +725,29 @@ impl<'a> Parser<'a> {
             generics,
             fields,
         })
+    }
+
+    fn parse_derive_trait(name: &str) -> ParseResult<DeriveTrait> {
+        match name {
+            "Debug" => Ok(DeriveTrait::Debug),
+            "Clone" => Ok(DeriveTrait::Clone),
+            "Copy" => Ok(DeriveTrait::Copy),
+            "Default" => Ok(DeriveTrait::Default),
+            "PartialEq" => Ok(DeriveTrait::PartialEq),
+            "Eq" => Ok(DeriveTrait::Eq),
+            "PartialOrd" => Ok(DeriveTrait::PartialOrd),
+            "Ord" => Ok(DeriveTrait::Ord),
+            "Hash" => Ok(DeriveTrait::Hash),
+            // ECS traits
+            "Component" => Ok(DeriveTrait::Component),
+            "Resource" => Ok(DeriveTrait::Resource),
+            "Bundle" => Ok(DeriveTrait::Bundle),
+            // Serde traits
+            "Serialize" => Ok(DeriveTrait::Serialize),
+            "Deserialize" => Ok(DeriveTrait::Deserialize),
+            // Custom derive
+            _ => Ok(DeriveTrait::Custom(name.to_string())),
+        }
     }
 
     fn parse_enum(&mut self, visibility: Visibility) -> ParseResult<EnumDef> {
@@ -1236,6 +1314,32 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(TypeExpr::Infer)
             }
+            Some(Token::Simd) => {
+                self.advance();
+                self.expect(Token::Lt)?;
+                let element = self.parse_type()?;
+                self.expect(Token::Comma)?;
+                let lanes = match self.current_token() {
+                    Some(Token::IntLit(s)) => {
+                        let n = s.parse::<u8>().map_err(|_| ParseError::Custom("invalid lane count".to_string()))?;
+                        self.advance();
+                        n
+                    }
+                    _ => return Err(ParseError::Custom("expected lane count".to_string())),
+                };
+                self.expect(Token::Gt)?;
+                Ok(TypeExpr::Simd {
+                    element: Box::new(element),
+                    lanes,
+                })
+            }
+            Some(Token::Atomic) => {
+                self.advance();
+                self.expect(Token::Lt)?;
+                let inner = self.parse_type()?;
+                self.expect(Token::Gt)?;
+                Ok(TypeExpr::Atomic(Box::new(inner)))
+            }
             _ => {
                 let path = self.parse_type_path()?;
                 Ok(TypeExpr::Path(path))
@@ -1720,6 +1824,8 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Asm) => self.parse_inline_asm(),
             Some(Token::Volatile) => self.parse_volatile_expr(),
+            Some(Token::Simd) => self.parse_simd_expr(),
+            Some(Token::Atomic) => self.parse_atomic_expr(),
             Some(token) => Err(ParseError::UnexpectedToken {
                 expected: "expression".to_string(),
                 found: token,
@@ -1943,6 +2049,303 @@ impl<'a> Parser<'a> {
                 span: self.current_span(),
             }),
             None => Err(ParseError::UnexpectedEof),
+        }
+    }
+
+    /// Parse SIMD expressions
+    ///
+    /// Syntax:
+    /// ```sigil
+    /// simd[1.0, 2.0, 3.0, 4.0]              // SIMD literal
+    /// simd.splat(1.0, 4)                    // Broadcast value to all lanes
+    /// simd.add(a, b)                        // SIMD intrinsic
+    /// simd.shuffle(a, b, [0, 4, 1, 5])      // Shuffle lanes
+    /// simd.extract(v, 0)                    // Extract element
+    /// simd.insert(v, 0, val)                // Insert element
+    /// ```
+    fn parse_simd_expr(&mut self) -> ParseResult<Expr> {
+        self.expect(Token::Simd)?;
+
+        match self.current_token().cloned() {
+            Some(Token::LBracket) => {
+                // SIMD literal: simd[1.0, 2.0, 3.0, 4.0]
+                self.advance();
+                let elements = self.parse_expr_list()?;
+                self.expect(Token::RBracket)?;
+
+                // Optional type annotation
+                let ty = if self.consume_if(&Token::Colon) {
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
+
+                Ok(Expr::SimdLiteral { elements, ty })
+            }
+            Some(Token::Dot) => {
+                self.advance();
+                match self.current_token().cloned() {
+                    Some(Token::Ident(ref op)) => {
+                        let op_name = op.clone();
+                        self.advance();
+                        self.expect(Token::LParen)?;
+
+                        match op_name.as_str() {
+                            "splat" => {
+                                let value = self.parse_expr()?;
+                                self.expect(Token::Comma)?;
+                                let lanes = match self.current_token() {
+                                    Some(Token::IntLit(s)) => {
+                                        let n = s.parse::<u8>().map_err(|_| ParseError::Custom("invalid lane count".to_string()))?;
+                                        self.advance();
+                                        n
+                                    }
+                                    _ => return Err(ParseError::Custom("expected lane count".to_string())),
+                                };
+                                self.expect(Token::RParen)?;
+                                Ok(Expr::SimdSplat { value: Box::new(value), lanes })
+                            }
+                            "shuffle" => {
+                                let a = self.parse_expr()?;
+                                self.expect(Token::Comma)?;
+                                let b = self.parse_expr()?;
+                                self.expect(Token::Comma)?;
+                                self.expect(Token::LBracket)?;
+                                let mut indices = Vec::new();
+                                loop {
+                                    match self.current_token() {
+                                        Some(Token::IntLit(s)) => {
+                                            let n = s.parse::<u8>().map_err(|_| ParseError::Custom("invalid index".to_string()))?;
+                                            indices.push(n);
+                                            self.advance();
+                                        }
+                                        _ => return Err(ParseError::Custom("expected index".to_string())),
+                                    }
+                                    if !self.consume_if(&Token::Comma) {
+                                        break;
+                                    }
+                                }
+                                self.expect(Token::RBracket)?;
+                                self.expect(Token::RParen)?;
+                                Ok(Expr::SimdShuffle { a: Box::new(a), b: Box::new(b), indices })
+                            }
+                            "extract" => {
+                                let vector = self.parse_expr()?;
+                                self.expect(Token::Comma)?;
+                                let index = match self.current_token() {
+                                    Some(Token::IntLit(s)) => {
+                                        let n = s.parse::<u8>().map_err(|_| ParseError::Custom("invalid index".to_string()))?;
+                                        self.advance();
+                                        n
+                                    }
+                                    _ => return Err(ParseError::Custom("expected index".to_string())),
+                                };
+                                self.expect(Token::RParen)?;
+                                Ok(Expr::SimdExtract { vector: Box::new(vector), index })
+                            }
+                            "insert" => {
+                                let vector = self.parse_expr()?;
+                                self.expect(Token::Comma)?;
+                                let index = match self.current_token() {
+                                    Some(Token::IntLit(s)) => {
+                                        let n = s.parse::<u8>().map_err(|_| ParseError::Custom("invalid index".to_string()))?;
+                                        self.advance();
+                                        n
+                                    }
+                                    _ => return Err(ParseError::Custom("expected index".to_string())),
+                                };
+                                self.expect(Token::Comma)?;
+                                let value = self.parse_expr()?;
+                                self.expect(Token::RParen)?;
+                                Ok(Expr::SimdInsert { vector: Box::new(vector), index, value: Box::new(value) })
+                            }
+                            _ => {
+                                // Parse as generic SIMD intrinsic
+                                let op = Self::parse_simd_op(&op_name)?;
+                                let args = self.parse_expr_list()?;
+                                self.expect(Token::RParen)?;
+                                Ok(Expr::SimdIntrinsic { op, args })
+                            }
+                        }
+                    }
+                    Some(t) => Err(ParseError::UnexpectedToken {
+                        expected: "SIMD operation name".to_string(),
+                        found: t,
+                        span: self.current_span(),
+                    }),
+                    None => Err(ParseError::UnexpectedEof),
+                }
+            }
+            Some(t) => Err(ParseError::UnexpectedToken {
+                expected: "'[' or '.' after 'simd'".to_string(),
+                found: t,
+                span: self.current_span(),
+            }),
+            None => Err(ParseError::UnexpectedEof),
+        }
+    }
+
+    fn parse_simd_op(name: &str) -> ParseResult<SimdOp> {
+        match name {
+            "add" => Ok(SimdOp::Add),
+            "sub" => Ok(SimdOp::Sub),
+            "mul" => Ok(SimdOp::Mul),
+            "div" => Ok(SimdOp::Div),
+            "neg" => Ok(SimdOp::Neg),
+            "abs" => Ok(SimdOp::Abs),
+            "min" => Ok(SimdOp::Min),
+            "max" => Ok(SimdOp::Max),
+            "eq" => Ok(SimdOp::Eq),
+            "ne" => Ok(SimdOp::Ne),
+            "lt" => Ok(SimdOp::Lt),
+            "le" => Ok(SimdOp::Le),
+            "gt" => Ok(SimdOp::Gt),
+            "ge" => Ok(SimdOp::Ge),
+            "hadd" => Ok(SimdOp::HAdd),
+            "dot" => Ok(SimdOp::Dot),
+            "blend" => Ok(SimdOp::Blend),
+            "load" => Ok(SimdOp::Load),
+            "store" => Ok(SimdOp::Store),
+            "load_aligned" => Ok(SimdOp::LoadAligned),
+            "store_aligned" => Ok(SimdOp::StoreAligned),
+            "cast" => Ok(SimdOp::Cast),
+            "widen" => Ok(SimdOp::Widen),
+            "narrow" => Ok(SimdOp::Narrow),
+            "sqrt" => Ok(SimdOp::Sqrt),
+            "rsqrt" => Ok(SimdOp::Rsqrt),
+            "rcp" => Ok(SimdOp::Rcp),
+            "floor" => Ok(SimdOp::Floor),
+            "ceil" => Ok(SimdOp::Ceil),
+            "round" => Ok(SimdOp::Round),
+            "and" => Ok(SimdOp::And),
+            "or" => Ok(SimdOp::Or),
+            "xor" => Ok(SimdOp::Xor),
+            "not" => Ok(SimdOp::Not),
+            "shl" => Ok(SimdOp::Shl),
+            "shr" => Ok(SimdOp::Shr),
+            _ => Err(ParseError::Custom(format!("unknown SIMD operation: {}", name))),
+        }
+    }
+
+    /// Parse atomic expressions
+    ///
+    /// Syntax:
+    /// ```sigil
+    /// atomic.load(ptr, Relaxed)
+    /// atomic.store(ptr, value, Release)
+    /// atomic.swap(ptr, value, SeqCst)
+    /// atomic.compare_exchange(ptr, expected, new, AcqRel, Relaxed)
+    /// atomic.fetch_add(ptr, value, Acquire)
+    /// atomic.fence(SeqCst)
+    /// ```
+    fn parse_atomic_expr(&mut self) -> ParseResult<Expr> {
+        self.expect(Token::Atomic)?;
+        self.expect(Token::Dot)?;
+
+        match self.current_token().cloned() {
+            Some(Token::Ident(ref op)) => {
+                let op_name = op.clone();
+                self.advance();
+
+                if op_name == "fence" {
+                    self.expect(Token::LParen)?;
+                    let ordering = self.parse_memory_ordering()?;
+                    self.expect(Token::RParen)?;
+                    return Ok(Expr::AtomicFence { ordering });
+                }
+
+                self.expect(Token::LParen)?;
+                let ptr = self.parse_expr()?;
+
+                let op = Self::parse_atomic_op(&op_name)?;
+
+                // Parse value for operations that need it
+                let value = match op {
+                    AtomicOp::Load => None,
+                    _ => {
+                        self.expect(Token::Comma)?;
+                        Some(Box::new(self.parse_expr()?))
+                    }
+                };
+
+                // Parse expected value for compare_exchange
+                let expected = match op {
+                    AtomicOp::CompareExchange | AtomicOp::CompareExchangeWeak => {
+                        self.expect(Token::Comma)?;
+                        Some(Box::new(self.parse_expr()?))
+                    }
+                    _ => None,
+                };
+
+                // Parse memory ordering
+                self.expect(Token::Comma)?;
+                let ordering = self.parse_memory_ordering()?;
+
+                // Parse failure ordering for compare_exchange
+                let failure_ordering = match op {
+                    AtomicOp::CompareExchange | AtomicOp::CompareExchangeWeak => {
+                        if self.consume_if(&Token::Comma) {
+                            Some(self.parse_memory_ordering()?)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+
+                self.expect(Token::RParen)?;
+
+                Ok(Expr::AtomicOp {
+                    op,
+                    ptr: Box::new(ptr),
+                    value,
+                    expected,
+                    ordering,
+                    failure_ordering,
+                })
+            }
+            Some(t) => Err(ParseError::UnexpectedToken {
+                expected: "atomic operation name".to_string(),
+                found: t,
+                span: self.current_span(),
+            }),
+            None => Err(ParseError::UnexpectedEof),
+        }
+    }
+
+    fn parse_atomic_op(name: &str) -> ParseResult<AtomicOp> {
+        match name {
+            "load" => Ok(AtomicOp::Load),
+            "store" => Ok(AtomicOp::Store),
+            "swap" => Ok(AtomicOp::Swap),
+            "compare_exchange" => Ok(AtomicOp::CompareExchange),
+            "compare_exchange_weak" => Ok(AtomicOp::CompareExchangeWeak),
+            "fetch_add" => Ok(AtomicOp::FetchAdd),
+            "fetch_sub" => Ok(AtomicOp::FetchSub),
+            "fetch_and" => Ok(AtomicOp::FetchAnd),
+            "fetch_or" => Ok(AtomicOp::FetchOr),
+            "fetch_xor" => Ok(AtomicOp::FetchXor),
+            "fetch_min" => Ok(AtomicOp::FetchMin),
+            "fetch_max" => Ok(AtomicOp::FetchMax),
+            _ => Err(ParseError::Custom(format!("unknown atomic operation: {}", name))),
+        }
+    }
+
+    fn parse_memory_ordering(&mut self) -> ParseResult<MemoryOrdering> {
+        match self.current_token() {
+            Some(Token::Ident(name)) => {
+                let ordering = match name.as_str() {
+                    "Relaxed" => MemoryOrdering::Relaxed,
+                    "Acquire" => MemoryOrdering::Acquire,
+                    "Release" => MemoryOrdering::Release,
+                    "AcqRel" => MemoryOrdering::AcqRel,
+                    "SeqCst" => MemoryOrdering::SeqCst,
+                    _ => return Err(ParseError::Custom("expected memory ordering (Relaxed, Acquire, Release, AcqRel, SeqCst)".to_string())),
+                };
+                self.advance();
+                Ok(ordering)
+            }
+            _ => Err(ParseError::Custom("expected memory ordering".to_string())),
         }
     }
 
@@ -2885,6 +3288,222 @@ mod tests {
         }
         if let Item::Function(func) = &file.items[2].node {
             assert_eq!(func.attrs.inline, Some(InlineHint::Never));
+        }
+    }
+
+    #[test]
+    fn test_parse_simd_type() {
+        let source = r#"
+            fn vec_add(a: simd<f32, 4>, b: simd<f32, 4>) -> simd<f32, 4> {
+                return simd.add(a, b);
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Function(func) = &file.items[0].node {
+            assert_eq!(func.name.name, "vec_add");
+            // Check first parameter type
+            if let TypeExpr::Simd { element, lanes } = &func.params[0].ty {
+                assert_eq!(*lanes, 4);
+                if let TypeExpr::Path(path) = element.as_ref() {
+                    assert_eq!(path.segments[0].ident.name, "f32");
+                }
+            } else {
+                panic!("Expected SIMD type");
+            }
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_simd_literal() {
+        let source = r#"
+            fn make_vec() -> simd<f32, 4> {
+                return simd[1.0, 2.0, 3.0, 4.0];
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_simd_intrinsics() {
+        let source = r#"
+            fn dot_product(a: simd<f32, 4>, b: simd<f32, 4>) -> f32 {
+                let prod = simd.mul(a, b);
+                return simd.hadd(prod);
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_simd_shuffle() {
+        let source = r#"
+            fn interleave(a: simd<f32, 4>, b: simd<f32, 4>) -> simd<f32, 4> {
+                return simd.shuffle(a, b, [0, 4, 1, 5]);
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_atomic_type() {
+        let source = r#"
+            struct Counter {
+                value: atomic<i64>,
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Struct(s) = &file.items[0].node {
+            if let StructFields::Named(fields) = &s.fields {
+                if let TypeExpr::Atomic(inner) = &fields[0].ty {
+                    if let TypeExpr::Path(path) = inner.as_ref() {
+                        assert_eq!(path.segments[0].ident.name, "i64");
+                    }
+                } else {
+                    panic!("Expected atomic type");
+                }
+            }
+        } else {
+            panic!("Expected struct");
+        }
+    }
+
+    #[test]
+    fn test_parse_atomic_operations() {
+        let source = r#"
+            fn increment(ptr: *mut i64) -> i64 {
+                return atomic.fetch_add(ptr, 1, SeqCst);
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_atomic_compare_exchange() {
+        let source = r#"
+            fn cas(ptr: *mut i64, expected: i64, new: i64) -> bool {
+                let result = atomic.compare_exchange(ptr, expected, new, AcqRel, Relaxed);
+                return result;
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_atomic_fence() {
+        let source = r#"
+            fn memory_barrier() {
+                atomic.fence(SeqCst);
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_derive_macro() {
+        let source = r#"
+            #[derive(Debug, Clone, Component)]
+            struct Position {
+                x: f32,
+                y: f32,
+                z: f32,
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Struct(s) = &file.items[0].node {
+            assert_eq!(s.attrs.derives.len(), 3);
+            assert!(matches!(s.attrs.derives[0], DeriveTrait::Debug));
+            assert!(matches!(s.attrs.derives[1], DeriveTrait::Clone));
+            assert!(matches!(s.attrs.derives[2], DeriveTrait::Component));
+        } else {
+            panic!("Expected struct");
+        }
+    }
+
+    #[test]
+    fn test_parse_repr_c_struct() {
+        let source = r#"
+            #[repr(C)]
+            struct FFIStruct {
+                field: i32,
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Struct(s) = &file.items[0].node {
+            assert_eq!(s.attrs.repr, Some(StructRepr::C));
+        } else {
+            panic!("Expected struct");
+        }
+    }
+
+    #[test]
+    fn test_parse_allocator_trait() {
+        let source = r#"
+            trait Allocator {
+                type Error;
+
+                fn allocate(size: usize, align: usize) -> *mut u8;
+                fn deallocate(ptr: *mut u8, size: usize, align: usize);
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Trait(t) = &file.items[0].node {
+            assert_eq!(t.name.name, "Allocator");
+            assert_eq!(t.items.len(), 3); // associated type + 2 methods
+            assert!(matches!(t.items[0], TraitItem::Type { .. }));
+        } else {
+            panic!("Expected trait");
+        }
+    }
+
+    #[test]
+    fn test_parse_where_clause() {
+        let source = r#"
+            fn alloc_array<T, A>(allocator: &mut A, count: usize) -> *mut T
+            where
+                A: Allocator,
+            {
+                return allocator.allocate(count, 8);
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Function(func) = &file.items[0].node {
+            assert!(func.where_clause.is_some());
+            let wc = func.where_clause.as_ref().unwrap();
+            assert_eq!(wc.predicates.len(), 1);
+        } else {
+            panic!("Expected function");
         }
     }
 }

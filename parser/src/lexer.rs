@@ -111,6 +111,12 @@ pub enum Token {
     Naked,
     #[token("packed")]
     Packed,
+    #[token("simd")]
+    Simd,
+    #[token("atomic")]
+    Atomic,
+    #[token("derive")]
+    Derive,
     #[token("on")]
     On,
 

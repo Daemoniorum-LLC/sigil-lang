@@ -53,6 +53,12 @@ pub enum Type {
     /// Cyclic type (modular arithmetic)
     Cycle { modulus: usize },
 
+    /// SIMD vector type
+    Simd { element: Box<Type>, lanes: u8 },
+
+    /// Atomic type
+    Atomic(Box<Type>),
+
     /// Type variable for inference
     Var(TypeVar),
 
@@ -1117,6 +1123,19 @@ impl TypeChecker {
                 Type::Cycle { modulus: 12 } // Default, should evaluate
             }
 
+            TypeExpr::Simd { element, lanes } => {
+                let elem_ty = self.convert_type(element);
+                Type::Simd {
+                    element: Box::new(elem_ty),
+                    lanes: *lanes,
+                }
+            }
+
+            TypeExpr::Atomic(inner) => {
+                let inner_ty = self.convert_type(inner);
+                Type::Atomic(Box::new(inner_ty))
+            }
+
             TypeExpr::Never => Type::Never,
             TypeExpr::Infer => Type::Var(TypeVar(0)), // Fresh var
         }
@@ -1215,6 +1234,8 @@ impl fmt::Display for Type {
             Type::Var(v) => write!(f, "?{}", v.0),
             Type::Error => write!(f, "<error>"),
             Type::Never => write!(f, "!"),
+            Type::Simd { element, lanes } => write!(f, "simd<{}, {}>", element, lanes),
+            Type::Atomic(inner) => write!(f, "atomic<{}>", inner),
         }
     }
 }
