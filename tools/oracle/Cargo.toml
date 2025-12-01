@@ -1,0 +1,31 @@
+[package]
+name = "sigil-oracle"
+version = "0.1.0"
+edition = "2021"
+description = "Oracle - Language Server Protocol implementation for Sigil"
+authors = ["Daemoniorum, Inc."]
+license = "MIT"
+
+[[bin]]
+name = "sigil-oracle"
+path = "src/main.rs"
+
+[dependencies]
+# LSP framework
+tower-lsp = "0.20"
+tokio = { version = "1", features = ["full"] }
+
+# Sigil parser
+sigil-parser = { path = "../../parser", default-features = false }
+
+# Serialization for LSP
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+dashmap = "5"
+ropey = "1"

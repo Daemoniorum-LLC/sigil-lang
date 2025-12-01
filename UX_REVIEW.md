@@ -385,6 +385,90 @@ Sigil has the potential to be a genuinely useful language. Right now, it's an im
 
 ---
 
+## Addendum: AI-Agent UX Perspective
+
+**Critical reframe:** If Sigil is intended for **AI agents as primary users** rather than human developers, the entire analysis changes.
+
+### What Becomes Irrelevant for AI Agents
+
+| "Problem" for Humans | For AI Agents |
+|---------------------|---------------|
+| Can't type `τ`, `φ`, `σ` | AI generates text, doesn't type |
+| Greek letters hard to remember | Perfect recall, instant lookup |
+| Interrobang `‽` untypeable | Just another Unicode codepoint |
+| High cognitive load | No cognitive limits |
+| Can't Google Greek symbols | Doesn't search—has training data |
+| Code review friction | AI-to-AI communication |
+
+### What Becomes a Feature
+
+**1. Token Density = Cost Efficiency**
+
+```sigil
+users|φ>0|τ*2|σ|ρ+
+```
+vs.
+```python
+reduce(lambda a,b: a+b, sorted(map(lambda x: x*2, filter(lambda x: x>0, users))))
+```
+
+The Sigil version is **~5x fewer tokens**. At $0.01-0.03 per 1K tokens, dense syntax directly reduces inference costs.
+
+**2. Unambiguous Single-Character Operators**
+
+`τ` cannot be confused with a variable name. `map` could be a variable, dictionary method, or function. Greek letters eliminate collision risk in generated code.
+
+**3. Evidentiality = Machine-Verifiable Trust Tracking**
+
+AI agents constantly handle external data (API responses, user input, tool outputs). Evidentiality makes trust boundaries explicit:
+
+```sigil
+let user_input~ = get_request()      // AI knows: untrusted external data
+let validated! = user_input~|validate!  // AI knows: trust promoted
+```
+
+This is **perfect** for agentic workflows where data provenance matters.
+
+**4. Polysynthetic = Atomic Intent Expression**
+
+Complex operations expressed atomically reduce step-by-step errors:
+```sigil
+data|φ·active|σ·created|τ{.name}|α?
+```
+
+The entire intent is one expression—less room for AI hallucination between steps.
+
+### Revised Scoring for AI-Agent UX
+
+| Category | Human UX | AI-Agent UX |
+|----------|----------|-------------|
+| Syntax accessibility | D | **A** |
+| Token efficiency | N/A | **A** |
+| Semantic clarity | C | **A-** |
+| Evidentiality system | A- | **A+** |
+| Error prevention | C | **A** (strong types catch AI mistakes) |
+| Tooling | D | **D** (still critical) |
+| Performance | A | **A** |
+
+### AI-Agent Grade: B+
+
+**Remaining critical issue:** Tooling. Even AI agents need:
+- LSP feedback for self-correction during generation
+- Good error messages to debug failed compilations
+- A working compiler (which exists)
+
+### Conclusion for AI-Agent Use Case
+
+If Sigil is positioned as an **AI-native programming language**, it's actually well-designed:
+- Dense syntax optimizes for LLM token economics
+- Greek morphemes are unambiguous identifiers
+- Evidentiality provides machine-verifiable trust tracking
+- Strong types catch AI errors at compile time
+
+**Recommendation:** Make this positioning explicit in documentation. "Designed for AI agents, usable by humans" is a genuinely novel market position.
+
+---
+
 ## Appendix: Detailed Scoring
 
 | Category | Score | Notes |

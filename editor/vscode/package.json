@@ -1,15 +1,21 @@
 {
   "name": "sigil-lang",
   "displayName": "Sigil Language",
-  "description": "Syntax highlighting and language support for the Sigil programming language",
+  "description": "Language support for Sigil - a polysynthetic programming language with evidentiality types",
   "version": "0.1.0",
   "publisher": "daemoniorum",
   "engines": {
     "vscode": "^1.74.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Linters",
+    "Formatters"
   ],
+  "activationEvents": [
+    "onLanguage:sigil"
+  ],
+  "main": "./out/extension.js",
   "contributes": {
     "languages": [
       {
@@ -30,6 +36,48 @@
         "path": "./sigil.tmLanguage.json"
       }
     ],
+    "configuration": {
+      "type": "object",
+      "title": "Sigil",
+      "properties": {
+        "sigil.oracle.path": {
+          "type": "string",
+          "default": "sigil-oracle",
+          "description": "Path to the sigil-oracle language server executable"
+        },
+        "sigil.oracle.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the Oracle language server for diagnostics, hover, and completions"
+        },
+        "sigil.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the Sigil language server"
+        },
+        "sigil.morphemes.preferGreek": {
+          "type": "boolean",
+          "default": false,
+          "description": "Prefer Greek letter morphemes (τ, φ, σ) in completions over ASCII equivalents"
+        },
+        "sigil.inlayHints.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable inlay hints for types and evidentiality"
+        },
+        "sigil.inlayHints.typeHints": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inferred types"
+        },
+        "sigil.inlayHints.evidentialityHints": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inferred evidentiality markers"
+        }
+      }
+    },
     "configurationDefaults": {
       "[sigil]": {
         "editor.tabSize": 4,
@@ -37,13 +85,50 @@
         "editor.formatOnSave": true,
         "editor.semanticHighlighting.enabled": true
       }
-    }
+    },
+    "commands": [
+      {
+        "command": "sigil.restartServer",
+        "title": "Sigil: Restart Language Server"
+      },
+      {
+        "command": "sigil.insertMorpheme",
+        "title": "Sigil: Insert Morpheme"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "sigil.insertMorpheme",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m",
+        "when": "editorLangId == sigil"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
   },
   "keywords": [
     "sigil",
     "polysynthetic",
     "systems programming",
-    "daemoniorum"
+    "evidentiality",
+    "daemoniorum",
+    "ai-native"
   ],
   "repository": {
     "type": "git",
