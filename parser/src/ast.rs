@@ -491,6 +491,11 @@ pub enum Expr {
         expr: Box<Expr>,
         evidentiality: Evidentiality,
     },
+    /// Assignment: `x = value`
+    Assign {
+        target: Box<Expr>,
+        value: Box<Expr>,
+    },
 }
 
 /// Pipe operation in a chain.

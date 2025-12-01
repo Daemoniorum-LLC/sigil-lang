@@ -29,13 +29,15 @@ pub type ParseResult<T> = Result<T, ParseError>;
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
     current: Option<(Token, Span)>,
+    /// Tracks whether we're parsing a condition (if/while/for) where < is comparison not generics
+    in_condition: bool,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(source: &'a str) -> Self {
         let mut lexer = Lexer::new(source);
         let current = lexer.next_token();
-        Self { lexer, current }
+        Self { lexer, current, in_condition: false }
     }
 
     /// Parse a complete source file.
@@ -718,7 +720,8 @@ impl<'a> Parser<'a> {
     fn parse_path_segment(&mut self) -> ParseResult<PathSegment> {
         let ident = self.parse_ident()?;
 
-        let generics = if self.consume_if(&Token::Lt) {
+        // Don't parse generics in condition context (< is comparison, not generics)
+        let generics = if !self.is_in_condition() && self.consume_if(&Token::Lt) {
             let types = self.parse_type_list()?;
             self.expect(Token::Gt)?;
             Some(types)
@@ -755,7 +758,18 @@ impl<'a> Parser<'a> {
     // === Expression parsing (Pratt parser) ===
 
     fn parse_expr(&mut self) -> ParseResult<Expr> {
-        self.parse_expr_bp(0)
+        let lhs = self.parse_expr_bp(0)?;
+
+        // Check for assignment: expr = value
+        if self.consume_if(&Token::Eq) {
+            let value = self.parse_expr()?;
+            return Ok(Expr::Assign {
+                target: Box::new(lhs),
+                value: Box::new(value),
+            });
+        }
+
+        Ok(lhs)
     }
 
     fn parse_expr_bp(&mut self, min_bp: u8) -> ParseResult<Expr> {
@@ -1054,7 +1068,7 @@ impl<'a> Parser<'a> {
             }
             Some(Token::While) => {
                 self.advance();
-                let condition = self.parse_expr()?;
+                let condition = self.parse_condition()?;
                 let body = self.parse_block()?;
                 Ok(Expr::While {
                     condition: Box::new(condition),
@@ -1065,7 +1079,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let pattern = self.parse_pattern()?;
                 self.expect(Token::In)?;
-                let iter = self.parse_expr()?;
+                let iter = self.parse_condition()?;
                 let body = self.parse_block()?;
                 Ok(Expr::For {
                     pattern,
@@ -1397,7 +1411,7 @@ impl<'a> Parser<'a> {
 
     fn parse_if_expr(&mut self) -> ParseResult<Expr> {
         self.expect(Token::If)?;
-        let condition = self.parse_expr()?;
+        let condition = self.parse_condition()?;
         let then_branch = self.parse_block()?;
         let else_branch = if self.consume_if(&Token::Else) {
             if self.check(&Token::If) {
@@ -1425,7 +1439,7 @@ impl<'a> Parser<'a> {
         while !self.check(&Token::RBrace) && !self.is_eof() {
             let pattern = self.parse_pattern()?;
             let guard = if self.consume_if(&Token::If) {
-                Some(self.parse_expr()?)
+                Some(self.parse_condition()?)
             } else {
                 None
             };
@@ -1739,8 +1753,16 @@ impl<'a> Parser<'a> {
     }
 
     fn is_in_condition(&self) -> bool {
-        // Heuristic: we're in a condition context
-        false
+        self.in_condition
+    }
+
+    /// Parse an expression in condition context (< is comparison, not generics)
+    fn parse_condition(&mut self) -> ParseResult<Expr> {
+        let was_in_condition = self.in_condition;
+        self.in_condition = true;
+        let result = self.parse_expr();
+        self.in_condition = was_in_condition;
+        result
     }
 }
 

@@ -595,7 +595,50 @@ impl Interpreter {
             Expr::Struct { path, fields, rest } => self.eval_struct_literal(path, fields, rest),
             Expr::Evidential { expr, evidentiality } => self.eval_evidential(expr, evidentiality),
             Expr::Range { start, end, inclusive } => self.eval_range(start, end, *inclusive),
+            Expr::Assign { target, value } => self.eval_assign(target, value),
             _ => Err(RuntimeError::new(format!("Unsupported expression: {:?}", expr))),
+        }
+    }
+
+    fn eval_assign(&mut self, target: &Expr, value: &Expr) -> Result<Value, RuntimeError> {
+        let val = self.evaluate(value)?;
+
+        match target {
+            Expr::Path(path) if path.segments.len() == 1 => {
+                let name = &path.segments[0].ident.name;
+                self.environment.borrow_mut().set(name, val.clone())?;
+                Ok(val)
+            }
+            Expr::Index { expr, index } => {
+                // Array/map index assignment
+                let idx = self.evaluate(index)?;
+                let idx = match idx {
+                    Value::Int(i) => i as usize,
+                    _ => return Err(RuntimeError::new("Index must be an integer")),
+                };
+
+                // Get the array and modify it
+                if let Expr::Path(path) = expr.as_ref() {
+                    if path.segments.len() == 1 {
+                        let name = &path.segments[0].ident.name;
+                        let current = self.environment.borrow().get(name)
+                            .ok_or_else(|| RuntimeError::new(format!("Undefined variable: {}", name)))?;
+
+                        if let Value::Array(arr) = current {
+                            let borrowed = arr.borrow();
+                            let mut new_arr = borrowed.clone();
+                            drop(borrowed);
+                            if idx < new_arr.len() {
+                                new_arr[idx] = val.clone();
+                                self.environment.borrow_mut().set(name, Value::Array(Rc::new(RefCell::new(new_arr))))?;
+                                return Ok(val);
+                            }
+                        }
+                    }
+                }
+                Err(RuntimeError::new("Invalid index assignment target"))
+            }
+            _ => Err(RuntimeError::new("Invalid assignment target")),
         }
     }
 
