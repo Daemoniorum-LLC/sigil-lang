@@ -1071,13 +1071,13 @@ PHYSICS (FFI)                      Status    Target
 ├─ Contact solver                  [✓]       Phase 2 - Complete
 ├─ Physics queries                 [✓]       Phase 2 - Complete
 ├─ Physics materials               [✓]       Phase 2 - Complete
-├─ CCD                             [ ]       Phase 2 (pending)
-├─ XPBD                            [ ]       Phase 2 (pending)
-├─ SPH fluids                      [ ]       Phase 2 (pending)
-├─ MPM                             [ ]       Phase 2 (pending)
-├─ Destruction                     [ ]       Phase 2 (pending)
+├─ CCD                             [✓]       Phase 2 - Complete
+├─ XPBD                            [✓]       Phase 2 - Complete
+├─ SPH fluids                      [✓]       Phase 2 - Complete
+├─ MPM                             [✓]       Phase 2 - Complete
+├─ Destruction                     [✓]       Phase 2 - Complete
 ├─ Differentiable physics          [✓]       Phase 2 - Complete (native ∇)
-├─ Neural surrogates               [ ]       Phase 2 (pending)
+├─ Neural surrogates               [✓]       Phase 2 - Complete
 └─ Time travel                     [✓]       Phase 2 - Complete (native)
 
 GRAPHICS (FFI)                     Status    Target
