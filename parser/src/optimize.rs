@@ -455,6 +455,7 @@ impl Optimizer {
                 }
                 OptLevel::Standard | OptLevel::Size => {
                     let b = self.pass_constant_fold_block(body);
+                    let b = self.pass_inline_block(&b);  // Function inlining
                     let b = self.pass_strength_reduce_block(&b);
                     let b = self.pass_cse_block(&b);  // CSE pass
                     let b = self.pass_dead_code_block(&b);
@@ -465,6 +466,7 @@ impl Optimizer {
                     let mut b = body.clone();
                     for _ in 0..3 {
                         b = self.pass_constant_fold_block(&b);
+                        b = self.pass_inline_block(&b);  // Function inlining
                         b = self.pass_strength_reduce_block(&b);
                         b = self.pass_cse_block(&b);  // CSE pass
                         b = self.pass_dead_code_block(&b);
@@ -980,6 +982,242 @@ impl Optimizer {
             Expr::Return(e) => {
                 Expr::Return(e.as_ref().map(|e| Box::new(self.pass_simplify_branches_expr(e))))
             }
+            other => other.clone(),
+        }
+    }
+
+    // ========================================================================
+    // Pass: Function Inlining
+    // ========================================================================
+
+    /// Check if a function is small enough to inline
+    fn should_inline(&self, func: &ast::Function) -> bool {
+        // Don't inline recursive functions
+        if self.recursive_functions.contains(&func.name.name) {
+            return false;
+        }
+
+        // Count the number of statements/expressions in the body
+        if let Some(body) = &func.body {
+            let stmt_count = self.count_stmts_in_block(body);
+            // Inline functions with 10 or fewer statements
+            stmt_count <= 10
+        } else {
+            false
+        }
+    }
+
+    /// Count statements in a block (for inlining heuristics)
+    fn count_stmts_in_block(&self, block: &Block) -> usize {
+        let mut count = block.stmts.len();
+        if block.expr.is_some() {
+            count += 1;
+        }
+        // Also count nested blocks in if/while
+        for stmt in &block.stmts {
+            count += self.count_stmts_in_stmt(stmt);
+        }
+        count
+    }
+
+    fn count_stmts_in_stmt(&self, stmt: &Stmt) -> usize {
+        match stmt {
+            Stmt::Expr(e) | Stmt::Semi(e) => self.count_stmts_in_expr(e),
+            Stmt::Let { init: Some(e), .. } => self.count_stmts_in_expr(e),
+            _ => 0,
+        }
+    }
+
+    fn count_stmts_in_expr(&self, expr: &Expr) -> usize {
+        match expr {
+            Expr::If { then_branch, else_branch, .. } => {
+                let mut count = self.count_stmts_in_block(then_branch);
+                if let Some(else_expr) = else_branch {
+                    count += self.count_stmts_in_expr(else_expr);
+                }
+                count
+            }
+            Expr::While { body, .. } => self.count_stmts_in_block(body),
+            Expr::Block(block) => self.count_stmts_in_block(block),
+            _ => 0,
+        }
+    }
+
+    /// Inline function call by substituting the body with parameters replaced
+    fn inline_call(&mut self, func: &ast::Function, args: &[Expr]) -> Option<Expr> {
+        let body = func.body.as_ref()?;
+
+        // Build parameter to argument mapping
+        let mut param_map: HashMap<String, Expr> = HashMap::new();
+        for (param, arg) in func.params.iter().zip(args.iter()) {
+            if let Pattern::Ident { name, .. } = &param.pattern {
+                param_map.insert(name.name.clone(), arg.clone());
+            }
+        }
+
+        // Substitute parameters in the function body
+        let inlined_body = self.substitute_params_in_block(body, &param_map);
+
+        self.stats.functions_inlined += 1;
+
+        // If the body has a final expression, return it
+        // If not, wrap in a block
+        if inlined_body.stmts.is_empty() {
+            if let Some(expr) = inlined_body.expr {
+                // If it's a return, unwrap it
+                if let Expr::Return(Some(inner)) = expr.as_ref() {
+                    return Some(inner.as_ref().clone());
+                }
+                return Some(*expr);
+            }
+        }
+
+        Some(Expr::Block(inlined_body))
+    }
+
+    /// Substitute parameter references with argument expressions
+    fn substitute_params_in_block(&self, block: &Block, param_map: &HashMap<String, Expr>) -> Block {
+        let stmts = block.stmts.iter().map(|s| self.substitute_params_in_stmt(s, param_map)).collect();
+        let expr = block.expr.as_ref().map(|e| Box::new(self.substitute_params_in_expr(e, param_map)));
+        Block { stmts, expr }
+    }
+
+    fn substitute_params_in_stmt(&self, stmt: &Stmt, param_map: &HashMap<String, Expr>) -> Stmt {
+        match stmt {
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: init.as_ref().map(|e| self.substitute_params_in_expr(e, param_map)),
+            },
+            Stmt::Expr(e) => Stmt::Expr(self.substitute_params_in_expr(e, param_map)),
+            Stmt::Semi(e) => Stmt::Semi(self.substitute_params_in_expr(e, param_map)),
+            Stmt::Item(item) => Stmt::Item(item.clone()),
+        }
+    }
+
+    fn substitute_params_in_expr(&self, expr: &Expr, param_map: &HashMap<String, Expr>) -> Expr {
+        match expr {
+            Expr::Path(path) => {
+                // Check if this is a parameter reference
+                if path.segments.len() == 1 {
+                    let name = &path.segments[0].ident.name;
+                    if let Some(arg) = param_map.get(name) {
+                        return arg.clone();
+                    }
+                }
+                expr.clone()
+            }
+            Expr::Binary { op, left, right } => Expr::Binary {
+                op: op.clone(),
+                left: Box::new(self.substitute_params_in_expr(left, param_map)),
+                right: Box::new(self.substitute_params_in_expr(right, param_map)),
+            },
+            Expr::Unary { op, expr: inner } => Expr::Unary {
+                op: *op,
+                expr: Box::new(self.substitute_params_in_expr(inner, param_map)),
+            },
+            Expr::If { condition, then_branch, else_branch } => Expr::If {
+                condition: Box::new(self.substitute_params_in_expr(condition, param_map)),
+                then_branch: self.substitute_params_in_block(then_branch, param_map),
+                else_branch: else_branch.as_ref().map(|e| Box::new(self.substitute_params_in_expr(e, param_map))),
+            },
+            Expr::While { condition, body } => Expr::While {
+                condition: Box::new(self.substitute_params_in_expr(condition, param_map)),
+                body: self.substitute_params_in_block(body, param_map),
+            },
+            Expr::Block(block) => Expr::Block(self.substitute_params_in_block(block, param_map)),
+            Expr::Call { func, args } => Expr::Call {
+                func: Box::new(self.substitute_params_in_expr(func, param_map)),
+                args: args.iter().map(|a| self.substitute_params_in_expr(a, param_map)).collect(),
+            },
+            Expr::Return(e) => Expr::Return(e.as_ref().map(|e| Box::new(self.substitute_params_in_expr(e, param_map)))),
+            Expr::Assign { target, value } => Expr::Assign {
+                target: target.clone(),
+                value: Box::new(self.substitute_params_in_expr(value, param_map)),
+            },
+            Expr::Index { expr: e, index } => Expr::Index {
+                expr: Box::new(self.substitute_params_in_expr(e, param_map)),
+                index: Box::new(self.substitute_params_in_expr(index, param_map)),
+            },
+            Expr::Array(elements) => Expr::Array(
+                elements.iter().map(|e| self.substitute_params_in_expr(e, param_map)).collect()
+            ),
+            other => other.clone(),
+        }
+    }
+
+    fn pass_inline_block(&mut self, block: &Block) -> Block {
+        let stmts = block.stmts.iter().map(|s| self.pass_inline_stmt(s)).collect();
+        let expr = block.expr.as_ref().map(|e| Box::new(self.pass_inline_expr(e)));
+        Block { stmts, expr }
+    }
+
+    fn pass_inline_stmt(&mut self, stmt: &Stmt) -> Stmt {
+        match stmt {
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: init.as_ref().map(|e| self.pass_inline_expr(e)),
+            },
+            Stmt::Expr(e) => Stmt::Expr(self.pass_inline_expr(e)),
+            Stmt::Semi(e) => Stmt::Semi(self.pass_inline_expr(e)),
+            Stmt::Item(item) => Stmt::Item(item.clone()),
+        }
+    }
+
+    fn pass_inline_expr(&mut self, expr: &Expr) -> Expr {
+        match expr {
+            Expr::Call { func, args } => {
+                // First, recursively inline arguments
+                let args: Vec<Expr> = args.iter().map(|a| self.pass_inline_expr(a)).collect();
+
+                // Check if we can inline this call
+                if let Expr::Path(path) = func.as_ref() {
+                    if path.segments.len() == 1 {
+                        let func_name = &path.segments[0].ident.name;
+                        if let Some(target_func) = self.functions.get(func_name).cloned() {
+                            if self.should_inline(&target_func) && args.len() == target_func.params.len() {
+                                if let Some(inlined) = self.inline_call(&target_func, &args) {
+                                    return inlined;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Expr::Call { func: func.clone(), args }
+            }
+            Expr::Binary { op, left, right } => Expr::Binary {
+                op: op.clone(),
+                left: Box::new(self.pass_inline_expr(left)),
+                right: Box::new(self.pass_inline_expr(right)),
+            },
+            Expr::Unary { op, expr: inner } => Expr::Unary {
+                op: *op,
+                expr: Box::new(self.pass_inline_expr(inner)),
+            },
+            Expr::If { condition, then_branch, else_branch } => Expr::If {
+                condition: Box::new(self.pass_inline_expr(condition)),
+                then_branch: self.pass_inline_block(then_branch),
+                else_branch: else_branch.as_ref().map(|e| Box::new(self.pass_inline_expr(e))),
+            },
+            Expr::While { condition, body } => Expr::While {
+                condition: Box::new(self.pass_inline_expr(condition)),
+                body: self.pass_inline_block(body),
+            },
+            Expr::Block(block) => Expr::Block(self.pass_inline_block(block)),
+            Expr::Return(e) => Expr::Return(e.as_ref().map(|e| Box::new(self.pass_inline_expr(e)))),
+            Expr::Assign { target, value } => Expr::Assign {
+                target: target.clone(),
+                value: Box::new(self.pass_inline_expr(value)),
+            },
+            Expr::Index { expr: e, index } => Expr::Index {
+                expr: Box::new(self.pass_inline_expr(e)),
+                index: Box::new(self.pass_inline_expr(index)),
+            },
+            Expr::Array(elements) => Expr::Array(
+                elements.iter().map(|e| self.pass_inline_expr(e)).collect()
+            ),
             other => other.clone(),
         }
     }
