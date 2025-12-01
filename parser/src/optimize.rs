@@ -3,7 +3,8 @@
 //! A comprehensive optimization framework for the Sigil language.
 //! Implements industry-standard compiler optimizations.
 
-use crate::ast::{self, BinOp, Expr, Item, Literal, Stmt, UnaryOp, Block, NumBase};
+use crate::ast::{self, BinOp, Expr, Ident, Item, Literal, Stmt, UnaryOp, Block, NumBase, TypePath, PathSegment, Pattern};
+use crate::span::Span;
 use std::collections::{HashMap, HashSet};
 
 // ============================================================================
@@ -45,6 +46,8 @@ pub struct Optimizer {
     functions: HashMap<String, ast::Function>,
     /// Track which functions are recursive
     recursive_functions: HashSet<String>,
+    /// Counter for CSE variable names
+    cse_counter: usize,
 }
 
 impl Optimizer {
@@ -54,6 +57,7 @@ impl Optimizer {
             stats: OptStats::default(),
             functions: HashMap::new(),
             recursive_functions: HashSet::new(),
+            cse_counter: 0,
         }
     }
 
@@ -147,6 +151,9 @@ impl Optimizer {
 
     /// Optimize a single function
     fn optimize_function(&mut self, func: &ast::Function) -> ast::Function {
+        // Reset CSE counter per function for cleaner variable names
+        self.cse_counter = 0;
+
         let body = if let Some(body) = &func.body {
             // Run passes based on optimization level
             let optimized = match self.level {
@@ -158,6 +165,7 @@ impl Optimizer {
                 OptLevel::Standard | OptLevel::Size => {
                     let b = self.pass_constant_fold_block(body);
                     let b = self.pass_strength_reduce_block(&b);
+                    let b = self.pass_cse_block(&b);  // CSE pass
                     let b = self.pass_dead_code_block(&b);
                     self.pass_simplify_branches_block(&b)
                 }
@@ -167,6 +175,7 @@ impl Optimizer {
                     for _ in 0..3 {
                         b = self.pass_constant_fold_block(&b);
                         b = self.pass_strength_reduce_block(&b);
+                        b = self.pass_cse_block(&b);  // CSE pass
                         b = self.pass_dead_code_block(&b);
                         b = self.pass_simplify_branches_block(&b);
                     }
@@ -682,15 +691,142 @@ impl Optimizer {
             other => other.clone(),
         }
     }
+
+    // ========================================================================
+    // Pass: Common Subexpression Elimination (CSE)
+    // ========================================================================
+
+    fn pass_cse_block(&mut self, block: &Block) -> Block {
+        // Step 1: Collect all expressions in this block
+        let mut collected = Vec::new();
+        collect_exprs_from_block(block, &mut collected);
+
+        // Step 2: Count occurrences using hash + equality check
+        let mut expr_counts: HashMap<u64, Vec<Expr>> = HashMap::new();
+        for ce in &collected {
+            let entry = expr_counts.entry(ce.hash).or_insert_with(Vec::new);
+            // Check if this exact expression is already in the bucket
+            let found = entry.iter().any(|e| expr_eq(e, &ce.expr));
+            if !found {
+                entry.push(ce.expr.clone());
+            }
+        }
+
+        // Count actual occurrences (need to count duplicates)
+        let mut occurrence_counts: Vec<(Expr, usize)> = Vec::new();
+        for ce in &collected {
+            // Find or create entry for this expression
+            let existing = occurrence_counts.iter_mut().find(|(e, _)| expr_eq(e, &ce.expr));
+            if let Some((_, count)) = existing {
+                *count += 1;
+            } else {
+                occurrence_counts.push((ce.expr.clone(), 1));
+            }
+        }
+
+        // Step 3: Find expressions that occur 2+ times
+        let candidates: Vec<Expr> = occurrence_counts
+            .into_iter()
+            .filter(|(_, count)| *count >= 2)
+            .map(|(expr, _)| expr)
+            .collect();
+
+        if candidates.is_empty() {
+            // No CSE opportunities, just recurse into nested blocks
+            return self.pass_cse_nested(block);
+        }
+
+        // Step 4: Create let bindings for each candidate and replace occurrences
+        let mut result_block = block.clone();
+        let mut new_lets: Vec<Stmt> = Vec::new();
+
+        for expr in candidates {
+            let var_name = format!("__cse_{}", self.cse_counter);
+            self.cse_counter += 1;
+
+            // Create the let binding
+            new_lets.push(make_cse_let(&var_name, expr.clone()));
+
+            // Replace all occurrences in the block
+            result_block = replace_in_block(&result_block, &expr, &var_name);
+
+            self.stats.expressions_deduplicated += 1;
+        }
+
+        // Step 5: Prepend the new let bindings to the block
+        let mut final_stmts = new_lets;
+        final_stmts.extend(result_block.stmts);
+
+        // Step 6: Recurse into nested blocks
+        let result = Block {
+            stmts: final_stmts,
+            expr: result_block.expr,
+        };
+        self.pass_cse_nested(&result)
+    }
+
+    /// Recurse CSE into nested blocks (if, while, block expressions)
+    fn pass_cse_nested(&mut self, block: &Block) -> Block {
+        let stmts = block.stmts.iter().map(|stmt| self.pass_cse_stmt(stmt)).collect();
+        let expr = block.expr.as_ref().map(|e| Box::new(self.pass_cse_expr(e)));
+        Block { stmts, expr }
+    }
+
+    fn pass_cse_stmt(&mut self, stmt: &Stmt) -> Stmt {
+        match stmt {
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: init.as_ref().map(|e| self.pass_cse_expr(e)),
+            },
+            Stmt::Expr(e) => Stmt::Expr(self.pass_cse_expr(e)),
+            Stmt::Semi(e) => Stmt::Semi(self.pass_cse_expr(e)),
+            Stmt::Item(item) => Stmt::Item(item.clone()),
+        }
+    }
+
+    fn pass_cse_expr(&mut self, expr: &Expr) -> Expr {
+        match expr {
+            Expr::If { condition, then_branch, else_branch } => Expr::If {
+                condition: Box::new(self.pass_cse_expr(condition)),
+                then_branch: self.pass_cse_block(then_branch),
+                else_branch: else_branch.as_ref().map(|e| Box::new(self.pass_cse_expr(e))),
+            },
+            Expr::While { condition, body } => Expr::While {
+                condition: Box::new(self.pass_cse_expr(condition)),
+                body: self.pass_cse_block(body),
+            },
+            Expr::Block(b) => Expr::Block(self.pass_cse_block(b)),
+            Expr::Binary { op, left, right } => Expr::Binary {
+                op: *op,
+                left: Box::new(self.pass_cse_expr(left)),
+                right: Box::new(self.pass_cse_expr(right)),
+            },
+            Expr::Unary { op, expr: inner } => Expr::Unary {
+                op: *op,
+                expr: Box::new(self.pass_cse_expr(inner)),
+            },
+            Expr::Call { func, args } => Expr::Call {
+                func: func.clone(),
+                args: args.iter().map(|a| self.pass_cse_expr(a)).collect(),
+            },
+            Expr::Return(e) => Expr::Return(e.as_ref().map(|e| Box::new(self.pass_cse_expr(e)))),
+            Expr::Assign { target, value } => Expr::Assign {
+                target: target.clone(),
+                value: Box::new(self.pass_cse_expr(value)),
+            },
+            other => other.clone(),
+        }
+    }
 }
 
 // ============================================================================
-// Common Subexpression Elimination (CSE)
+// Common Subexpression Elimination (CSE) - Helper Functions
 // ============================================================================
 
 /// Expr hash for CSE - identifies structurally equivalent expressions
 fn expr_hash(expr: &Expr) -> u64 {
-    use std::hash::{Hash, Hasher};
+    use std::hash::Hasher;
     use std::collections::hash_map::DefaultHasher;
 
     let mut hasher = DefaultHasher::new();
@@ -784,6 +920,212 @@ fn is_cse_worthy(expr: &Expr) -> bool {
     }
 }
 
+/// Check if two expressions are structurally equal
+fn expr_eq(a: &Expr, b: &Expr) -> bool {
+    match (a, b) {
+        (Expr::Literal(la), Expr::Literal(lb)) => match (la, lb) {
+            (Literal::Int { value: va, .. }, Literal::Int { value: vb, .. }) => va == vb,
+            (Literal::Float { value: va, .. }, Literal::Float { value: vb, .. }) => va == vb,
+            (Literal::String(sa), Literal::String(sb)) => sa == sb,
+            (Literal::Char(ca), Literal::Char(cb)) => ca == cb,
+            (Literal::Bool(ba), Literal::Bool(bb)) => ba == bb,
+            _ => false,
+        },
+        (Expr::Path(pa), Expr::Path(pb)) => {
+            pa.segments.len() == pb.segments.len()
+                && pa.segments.iter().zip(&pb.segments).all(|(sa, sb)| {
+                    sa.ident.name == sb.ident.name
+                })
+        }
+        (Expr::Binary { op: oa, left: la, right: ra }, Expr::Binary { op: ob, left: lb, right: rb }) => {
+            oa == ob && expr_eq(la, lb) && expr_eq(ra, rb)
+        }
+        (Expr::Unary { op: oa, expr: ea }, Expr::Unary { op: ob, expr: eb }) => {
+            oa == ob && expr_eq(ea, eb)
+        }
+        (Expr::Index { expr: ea, index: ia }, Expr::Index { expr: eb, index: ib }) => {
+            expr_eq(ea, eb) && expr_eq(ia, ib)
+        }
+        (Expr::Call { func: fa, args: aa }, Expr::Call { func: fb, args: ab }) => {
+            expr_eq(fa, fb) && aa.len() == ab.len() && aa.iter().zip(ab).all(|(a, b)| expr_eq(a, b))
+        }
+        _ => false,
+    }
+}
+
+/// Collected expression with its location info
+#[derive(Clone)]
+struct CollectedExpr {
+    expr: Expr,
+    hash: u64,
+}
+
+/// Collect all CSE-worthy expressions from an expression tree
+fn collect_exprs_from_expr(expr: &Expr, out: &mut Vec<CollectedExpr>) {
+    // First, recurse into subexpressions
+    match expr {
+        Expr::Binary { left, right, .. } => {
+            collect_exprs_from_expr(left, out);
+            collect_exprs_from_expr(right, out);
+        }
+        Expr::Unary { expr: inner, .. } => {
+            collect_exprs_from_expr(inner, out);
+        }
+        Expr::Index { expr: e, index } => {
+            collect_exprs_from_expr(e, out);
+            collect_exprs_from_expr(index, out);
+        }
+        Expr::Call { func, args } => {
+            collect_exprs_from_expr(func, out);
+            for arg in args {
+                collect_exprs_from_expr(arg, out);
+            }
+        }
+        Expr::If { condition, then_branch, else_branch } => {
+            collect_exprs_from_expr(condition, out);
+            collect_exprs_from_block(then_branch, out);
+            if let Some(else_expr) = else_branch {
+                collect_exprs_from_expr(else_expr, out);
+            }
+        }
+        Expr::While { condition, body } => {
+            collect_exprs_from_expr(condition, out);
+            collect_exprs_from_block(body, out);
+        }
+        Expr::Block(block) => {
+            collect_exprs_from_block(block, out);
+        }
+        Expr::Return(Some(e)) => {
+            collect_exprs_from_expr(e, out);
+        }
+        Expr::Assign { value, .. } => {
+            collect_exprs_from_expr(value, out);
+        }
+        Expr::Array(elements) => {
+            for e in elements {
+                collect_exprs_from_expr(e, out);
+            }
+        }
+        _ => {}
+    }
+
+    // Then, if this expression is CSE-worthy and pure, add it
+    if is_cse_worthy(expr) && is_pure_expr(expr) {
+        out.push(CollectedExpr {
+            expr: expr.clone(),
+            hash: expr_hash(expr),
+        });
+    }
+}
+
+/// Collect expressions from a block
+fn collect_exprs_from_block(block: &Block, out: &mut Vec<CollectedExpr>) {
+    for stmt in &block.stmts {
+        match stmt {
+            Stmt::Let { init: Some(e), .. } => collect_exprs_from_expr(e, out),
+            Stmt::Expr(e) | Stmt::Semi(e) => collect_exprs_from_expr(e, out),
+            _ => {}
+        }
+    }
+    if let Some(e) = &block.expr {
+        collect_exprs_from_expr(e, out);
+    }
+}
+
+/// Replace all occurrences of target expression with a variable reference
+fn replace_in_expr(expr: &Expr, target: &Expr, var_name: &str) -> Expr {
+    // Check if this expression matches the target
+    if expr_eq(expr, target) {
+        return Expr::Path(TypePath {
+            segments: vec![PathSegment {
+                ident: Ident {
+                    name: var_name.to_string(),
+                    evidentiality: None,
+                    span: Span { start: 0, end: 0 },
+                },
+                generics: None,
+            }],
+        });
+    }
+
+    // Otherwise, recurse into subexpressions
+    match expr {
+        Expr::Binary { op, left, right } => Expr::Binary {
+            op: *op,
+            left: Box::new(replace_in_expr(left, target, var_name)),
+            right: Box::new(replace_in_expr(right, target, var_name)),
+        },
+        Expr::Unary { op, expr: inner } => Expr::Unary {
+            op: *op,
+            expr: Box::new(replace_in_expr(inner, target, var_name)),
+        },
+        Expr::Index { expr: e, index } => Expr::Index {
+            expr: Box::new(replace_in_expr(e, target, var_name)),
+            index: Box::new(replace_in_expr(index, target, var_name)),
+        },
+        Expr::Call { func, args } => Expr::Call {
+            func: Box::new(replace_in_expr(func, target, var_name)),
+            args: args.iter().map(|a| replace_in_expr(a, target, var_name)).collect(),
+        },
+        Expr::If { condition, then_branch, else_branch } => Expr::If {
+            condition: Box::new(replace_in_expr(condition, target, var_name)),
+            then_branch: replace_in_block(then_branch, target, var_name),
+            else_branch: else_branch.as_ref().map(|e| Box::new(replace_in_expr(e, target, var_name))),
+        },
+        Expr::While { condition, body } => Expr::While {
+            condition: Box::new(replace_in_expr(condition, target, var_name)),
+            body: replace_in_block(body, target, var_name),
+        },
+        Expr::Block(block) => Expr::Block(replace_in_block(block, target, var_name)),
+        Expr::Return(e) => Expr::Return(e.as_ref().map(|e| Box::new(replace_in_expr(e, target, var_name)))),
+        Expr::Assign { target: t, value } => Expr::Assign {
+            target: t.clone(),
+            value: Box::new(replace_in_expr(value, target, var_name)),
+        },
+        Expr::Array(elements) => Expr::Array(
+            elements.iter().map(|e| replace_in_expr(e, target, var_name)).collect()
+        ),
+        other => other.clone(),
+    }
+}
+
+/// Replace in a block
+fn replace_in_block(block: &Block, target: &Expr, var_name: &str) -> Block {
+    let stmts = block.stmts.iter().map(|stmt| {
+        match stmt {
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: init.as_ref().map(|e| replace_in_expr(e, target, var_name)),
+            },
+            Stmt::Expr(e) => Stmt::Expr(replace_in_expr(e, target, var_name)),
+            Stmt::Semi(e) => Stmt::Semi(replace_in_expr(e, target, var_name)),
+            Stmt::Item(item) => Stmt::Item(item.clone()),
+        }
+    }).collect();
+
+    let expr = block.expr.as_ref().map(|e| Box::new(replace_in_expr(e, target, var_name)));
+
+    Block { stmts, expr }
+}
+
+/// Create a let statement for a CSE variable
+fn make_cse_let(var_name: &str, expr: Expr) -> Stmt {
+    Stmt::Let {
+        pattern: Pattern::Ident {
+            mutable: false,
+            name: Ident {
+                name: var_name.to_string(),
+                evidentiality: None,
+                span: Span { start: 0, end: 0 },
+            },
+            evidentiality: None,
+        },
+        ty: None,
+        init: Some(expr),
+    }
+}
+
 // ============================================================================
 // Public API
 // ============================================================================
@@ -793,4 +1135,183 @@ pub fn optimize(file: &ast::SourceFile, level: OptLevel) -> (ast::SourceFile, Op
     let mut optimizer = Optimizer::new(level);
     let optimized = optimizer.optimize_file(file);
     (optimized, optimizer.stats)
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper to create an integer literal expression
+    fn int_lit(v: i64) -> Expr {
+        Expr::Literal(Literal::Int {
+            value: v.to_string(),
+            base: NumBase::Decimal,
+            suffix: None,
+        })
+    }
+
+    /// Helper to create a variable reference
+    fn var(name: &str) -> Expr {
+        Expr::Path(TypePath {
+            segments: vec![PathSegment {
+                ident: Ident {
+                    name: name.to_string(),
+                    evidentiality: None,
+                    span: Span { start: 0, end: 0 },
+                },
+                generics: None,
+            }],
+        })
+    }
+
+    /// Helper to create a binary add expression
+    fn add(left: Expr, right: Expr) -> Expr {
+        Expr::Binary {
+            op: BinOp::Add,
+            left: Box::new(left),
+            right: Box::new(right),
+        }
+    }
+
+    /// Helper to create a binary multiply expression
+    fn mul(left: Expr, right: Expr) -> Expr {
+        Expr::Binary {
+            op: BinOp::Mul,
+            left: Box::new(left),
+            right: Box::new(right),
+        }
+    }
+
+    #[test]
+    fn test_expr_hash_equal() {
+        // Same expressions should have same hash
+        let e1 = add(var("a"), var("b"));
+        let e2 = add(var("a"), var("b"));
+        assert_eq!(expr_hash(&e1), expr_hash(&e2));
+    }
+
+    #[test]
+    fn test_expr_hash_different() {
+        // Different expressions should have different hashes
+        let e1 = add(var("a"), var("b"));
+        let e2 = add(var("a"), var("c"));
+        assert_ne!(expr_hash(&e1), expr_hash(&e2));
+    }
+
+    #[test]
+    fn test_expr_eq() {
+        let e1 = add(var("a"), var("b"));
+        let e2 = add(var("a"), var("b"));
+        let e3 = add(var("a"), var("c"));
+
+        assert!(expr_eq(&e1, &e2));
+        assert!(!expr_eq(&e1, &e3));
+    }
+
+    #[test]
+    fn test_is_pure_expr() {
+        assert!(is_pure_expr(&int_lit(42)));
+        assert!(is_pure_expr(&var("x")));
+        assert!(is_pure_expr(&add(var("a"), var("b"))));
+
+        // Calls are not pure
+        let call = Expr::Call {
+            func: Box::new(var("print")),
+            args: vec![int_lit(42)],
+        };
+        assert!(!is_pure_expr(&call));
+    }
+
+    #[test]
+    fn test_is_cse_worthy() {
+        assert!(!is_cse_worthy(&int_lit(42)));  // literals not worth it
+        assert!(!is_cse_worthy(&var("x")));     // variables not worth it
+        assert!(is_cse_worthy(&add(var("a"), var("b"))));  // binary ops worth it
+    }
+
+    #[test]
+    fn test_cse_basic() {
+        // Create a block with repeated subexpression:
+        // let x = a + b;
+        // let y = (a + b) * 2;
+        // The (a + b) should be extracted
+        let a_plus_b = add(var("a"), var("b"));
+
+        let block = Block {
+            stmts: vec![
+                Stmt::Let {
+                    pattern: Pattern::Ident {
+                        mutable: false,
+                        name: Ident { name: "x".to_string(), evidentiality: None, span: Span { start: 0, end: 0 } },
+                        evidentiality: None,
+                    },
+                    ty: None,
+                    init: Some(a_plus_b.clone()),
+                },
+                Stmt::Let {
+                    pattern: Pattern::Ident {
+                        mutable: false,
+                        name: Ident { name: "y".to_string(), evidentiality: None, span: Span { start: 0, end: 0 } },
+                        evidentiality: None,
+                    },
+                    ty: None,
+                    init: Some(mul(a_plus_b.clone(), int_lit(2))),
+                },
+            ],
+            expr: None,
+        };
+
+        let mut optimizer = Optimizer::new(OptLevel::Standard);
+        let result = optimizer.pass_cse_block(&block);
+
+        // Should have 3 statements now: __cse_0 = a + b, x = __cse_0, y = __cse_0 * 2
+        assert_eq!(result.stmts.len(), 3);
+        assert_eq!(optimizer.stats.expressions_deduplicated, 1);
+
+        // First statement should be the CSE let binding
+        if let Stmt::Let { pattern: Pattern::Ident { name, .. }, .. } = &result.stmts[0] {
+            assert_eq!(name.name, "__cse_0");
+        } else {
+            panic!("Expected CSE let binding");
+        }
+    }
+
+    #[test]
+    fn test_cse_no_duplicates() {
+        // No repeated expressions - should not add any CSE bindings
+        let block = Block {
+            stmts: vec![
+                Stmt::Let {
+                    pattern: Pattern::Ident {
+                        mutable: false,
+                        name: Ident { name: "x".to_string(), evidentiality: None, span: Span { start: 0, end: 0 } },
+                        evidentiality: None,
+                    },
+                    ty: None,
+                    init: Some(add(var("a"), var("b"))),
+                },
+                Stmt::Let {
+                    pattern: Pattern::Ident {
+                        mutable: false,
+                        name: Ident { name: "y".to_string(), evidentiality: None, span: Span { start: 0, end: 0 } },
+                        evidentiality: None,
+                    },
+                    ty: None,
+                    init: Some(add(var("c"), var("d"))),
+                },
+            ],
+            expr: None,
+        };
+
+        let mut optimizer = Optimizer::new(OptLevel::Standard);
+        let result = optimizer.pass_cse_block(&block);
+
+        // Should still have 2 statements (no CSE applied)
+        assert_eq!(result.stmts.len(), 2);
+        assert_eq!(optimizer.stats.expressions_deduplicated, 0);
+    }
 }
