@@ -21,9 +21,10 @@ pub mod jit {
     use std::collections::HashMap;
     use std::mem;
 
-    use crate::ast::{self, BinOp, Expr, Item, Literal, UnaryOp};
+    use crate::ast::{self, BinOp, Expr, Item, Literal, UnaryOp, ExternBlock, ExternItem, ExternFunction, TypeExpr};
     use crate::parser::Parser;
     use crate::optimize::{Optimizer, OptLevel};
+    use crate::ffi::ctypes::CType;
 
     /// Runtime value representation
     ///
@@ -83,6 +84,16 @@ pub mod jit {
     type CompiledFn = unsafe extern "C" fn() -> i64;
     type CompiledFnWithArgs = unsafe extern "C" fn(i64) -> i64;
 
+    /// Extern function signature info for FFI
+    #[derive(Clone, Debug)]
+    pub struct ExternFnSig {
+        pub name: String,
+        pub params: Vec<types::Type>,
+        pub returns: Option<types::Type>,
+        pub variadic: bool,
+        pub func_id: FuncId,
+    }
+
     /// JIT Compiler for Sigil
     pub struct JitCompiler {
         /// The JIT module
@@ -93,6 +104,8 @@ pub mod jit {
         ctx: Context,
         /// Compiled functions
         functions: HashMap<String, FuncId>,
+        /// Extern "C" function declarations
+        extern_functions: HashMap<String, ExternFnSig>,
         /// Variable counter for unique variable indices
         var_counter: usize,
         /// Built-in function addresses
@@ -129,6 +142,7 @@ pub mod jit {
                 builder_ctx: FunctionBuilderContext::new(),
                 ctx: Context::new(),
                 functions: HashMap::new(),
+                extern_functions: HashMap::new(),
                 var_counter: 0,
                 builtins,
             })
@@ -164,6 +178,30 @@ pub mod jit {
             builder.symbol("sigil_array_set", sigil_array_set as *const u8);
             builder.symbol("sigil_array_len", sigil_array_len as *const u8);
 
+            // FFI helper functions
+            use crate::ffi::helpers::*;
+            builder.symbol("sigil_string_to_cstring", sigil_string_to_cstring as *const u8);
+            builder.symbol("sigil_cstring_free", sigil_cstring_free as *const u8);
+            builder.symbol("sigil_cstring_len", sigil_cstring_len as *const u8);
+            builder.symbol("sigil_cstring_copy", sigil_cstring_copy as *const u8);
+            builder.symbol("sigil_ptr_from_int", sigil_ptr_from_int as *const u8);
+            builder.symbol("sigil_ptr_to_int", sigil_ptr_to_int as *const u8);
+            builder.symbol("sigil_ptr_read_u8", sigil_ptr_read_u8 as *const u8);
+            builder.symbol("sigil_ptr_write_u8", sigil_ptr_write_u8 as *const u8);
+            builder.symbol("sigil_ptr_read_i32", sigil_ptr_read_i32 as *const u8);
+            builder.symbol("sigil_ptr_write_i32", sigil_ptr_write_i32 as *const u8);
+            builder.symbol("sigil_ptr_read_i64", sigil_ptr_read_i64 as *const u8);
+            builder.symbol("sigil_ptr_write_i64", sigil_ptr_write_i64 as *const u8);
+            builder.symbol("sigil_ptr_read_f64", sigil_ptr_read_f64 as *const u8);
+            builder.symbol("sigil_ptr_write_f64", sigil_ptr_write_f64 as *const u8);
+            builder.symbol("sigil_ptr_add", sigil_ptr_add as *const u8);
+            builder.symbol("sigil_ptr_is_null", sigil_ptr_is_null as *const u8);
+            builder.symbol("sigil_alloc", sigil_alloc as *const u8);
+            builder.symbol("sigil_free", sigil_free as *const u8);
+            builder.symbol("sigil_realloc", sigil_realloc as *const u8);
+            builder.symbol("sigil_memcpy", sigil_memcpy as *const u8);
+            builder.symbol("sigil_memset", sigil_memset as *const u8);
+
             builtins.insert("sqrt".into(), sigil_sqrt as *const u8);
             builtins.insert("sin".into(), sigil_sin as *const u8);
             builtins.insert("cos".into(), sigil_cos as *const u8);
@@ -193,10 +231,16 @@ pub mod jit {
             let mut optimizer = Optimizer::new(opt_level);
             let optimized = optimizer.optimize_file(&source_file);
 
-            // First pass: declare all functions
+            // First pass: declare all extern blocks and functions
             for spanned_item in &optimized.items {
-                if let Item::Function(func) = &spanned_item.node {
-                    self.declare_function(func)?;
+                match &spanned_item.node {
+                    Item::ExternBlock(extern_block) => {
+                        self.declare_extern_block(extern_block)?;
+                    }
+                    Item::Function(func) => {
+                        self.declare_function(func)?;
+                    }
+                    _ => {}
                 }
             }
 
@@ -237,6 +281,120 @@ pub mod jit {
             Ok(func_id)
         }
 
+        /// Declare an extern block (FFI declarations)
+        fn declare_extern_block(&mut self, extern_block: &ExternBlock) -> Result<(), String> {
+            // Currently only "C" ABI is supported
+            if extern_block.abi != "C" && extern_block.abi != "c" {
+                return Err(format!("Unsupported ABI: {}. Only \"C\" is supported.", extern_block.abi));
+            }
+
+            for item in &extern_block.items {
+                match item {
+                    ExternItem::Function(func) => {
+                        self.declare_extern_function(func)?;
+                    }
+                    ExternItem::Static(stat) => {
+                        // TODO: Implement extern statics
+                        eprintln!("Warning: extern static '{}' not yet implemented", stat.name.name);
+                    }
+                }
+            }
+
+            Ok(())
+        }
+
+        /// Declare an extern "C" function
+        fn declare_extern_function(&mut self, func: &ExternFunction) -> Result<(), String> {
+            let name = &func.name.name;
+
+            // Build signature
+            let mut sig = self.module.make_signature();
+            let mut param_types = Vec::new();
+
+            // Add parameters with proper C types
+            for param in &func.params {
+                let ty = self.type_expr_to_cranelift(&param.ty)?;
+                sig.params.push(AbiParam::new(ty));
+                param_types.push(ty);
+            }
+
+            // Return type
+            let return_type = if let Some(ret_ty) = &func.return_type {
+                let ty = self.type_expr_to_cranelift(ret_ty)?;
+                sig.returns.push(AbiParam::new(ty));
+                Some(ty)
+            } else {
+                None
+            };
+
+            // Variadic functions use the "C" calling convention implicitly
+            // Cranelift doesn't have explicit variadic support, but we track it
+
+            let func_id = self
+                .module
+                .declare_function(name, Linkage::Import, &sig)
+                .map_err(|e| e.to_string())?;
+
+            self.extern_functions.insert(name.clone(), ExternFnSig {
+                name: name.clone(),
+                params: param_types,
+                returns: return_type,
+                variadic: func.variadic,
+                func_id,
+            });
+
+            Ok(())
+        }
+
+        /// Convert a Sigil type expression to Cranelift type
+        fn type_expr_to_cranelift(&self, ty: &TypeExpr) -> Result<types::Type, String> {
+            match ty {
+                TypeExpr::Path(path) => {
+                    let name = path.segments.last()
+                        .map(|s| s.ident.name.as_str())
+                        .unwrap_or("");
+
+                    // Check if it's a C type
+                    if let Some(ctype) = CType::from_name(name) {
+                        return Ok(match ctype {
+                            CType::Void => types::I64, // void returns are handled separately
+                            CType::Char | CType::SChar | CType::UChar | CType::Int8 | CType::UInt8 => types::I8,
+                            CType::Short | CType::UShort | CType::Int16 | CType::UInt16 => types::I16,
+                            CType::Int | CType::UInt | CType::Int32 | CType::UInt32 => types::I32,
+                            CType::Long | CType::ULong | CType::LongLong | CType::ULongLong |
+                            CType::Size | CType::SSize | CType::PtrDiff |
+                            CType::Int64 | CType::UInt64 => types::I64,
+                            CType::Float => types::F32,
+                            CType::Double => types::F64,
+                        });
+                    }
+
+                    // Check Sigil native types
+                    match name {
+                        "i8" => Ok(types::I8),
+                        "i16" => Ok(types::I16),
+                        "i32" | "int" => Ok(types::I32),
+                        "i64" => Ok(types::I64),
+                        "u8" => Ok(types::I8),
+                        "u16" => Ok(types::I16),
+                        "u32" => Ok(types::I32),
+                        "u64" => Ok(types::I64),
+                        "f32" => Ok(types::F32),
+                        "f64" | "float" => Ok(types::F64),
+                        "bool" => Ok(types::I8),
+                        "isize" | "usize" => Ok(types::I64),
+                        "()" => Ok(types::I64), // unit type
+                        _ => Ok(types::I64), // Default to i64 for unknown types
+                    }
+                }
+                TypeExpr::Pointer { .. } | TypeExpr::Reference { .. } => {
+                    // Pointers are always 64-bit on our target
+                    Ok(types::I64)
+                }
+                _ => Ok(types::I64), // Default to i64
+            }
+        }
+
         /// Compile a single function
         fn compile_function(&mut self, func: &ast::Function) -> Result<(), String> {
             let name = &func.name.name;
@@ -251,6 +409,7 @@ pub mod jit {
 
             // Take ownership of what we need for building
             let functions = self.functions.clone();
+            let extern_fns = self.extern_functions.clone();
 
             {
                 let mut builder =
@@ -279,7 +438,7 @@ pub mod jit {
 
                 // Compile function body
                 if let Some(body) = &func.body {
-                    let (result, has_return) = compile_block_tracked(&mut self.module, &functions, &mut builder, &mut scope, body)?;
+                    let (result, has_return) = compile_block_tracked(&mut self.module, &functions, &extern_fns, &mut builder, &mut scope, body)?;
                     // Only add return if the block didn't end with an explicit return
                     if !has_return {
                         builder.ins().return_(&[result]);
@@ -414,6 +573,7 @@ pub mod jit {
     fn compile_condition(
         module: &mut JITModule,
         functions: &HashMap<String, FuncId>,
+        extern_fns: &HashMap<String, ExternFnSig>,
         builder: &mut FunctionBuilder,
         scope: &mut CompileScope,
         condition: &Expr,
@@ -431,8 +591,8 @@ pub mod jit {
             };
 
             if let Some(cc) = cc {
-                let lhs = compile_expr(module, functions, builder, scope, left)?;
-                let rhs = compile_expr(module, functions, builder, scope, right)?;
+                let lhs = compile_expr(module, functions, extern_fns, builder, scope, left)?;
+                let rhs = compile_expr(module, functions, extern_fns, builder, scope, right)?;
                 // Return i8 directly - no extension needed
                 return Ok(builder.ins().icmp(cc, lhs, rhs));
             }
@@ -446,7 +606,7 @@ pub mod jit {
 
         // Handle !expr - flip the comparison
         if let Expr::Unary { op: UnaryOp::Not, expr } = condition {
-            let inner = compile_condition(module, functions, builder, scope, expr)?;
+            let inner = compile_condition(module, functions, extern_fns, builder, scope, expr)?;
             // Flip the boolean
             let true_val = builder.ins().iconst(types::I8, 1);
             return Ok(builder.ins().bxor(inner, true_val));
@@ -458,7 +618,7 @@ pub mod jit {
         }
 
         // For other expressions, compile normally and compare to 0
-        let val = compile_expr(module, functions, builder, scope, condition)?;
+        let val = compile_expr(module, functions, extern_fns, builder, scope, condition)?;
         let zero = builder.ins().iconst(types::I64, 0);
         Ok(builder.ins().icmp(IntCC::NotEqual, val, zero))
     }
@@ -490,6 +650,7 @@ pub mod jit {
     fn compile_block_tracked(
         module: &mut JITModule,
         functions: &HashMap<String, FuncId>,
+        extern_fns: &HashMap<String, ExternFnSig>,
         builder: &mut FunctionBuilder,
         scope: &mut CompileScope,
         block: &ast::Block,
@@ -499,7 +660,7 @@ pub mod jit {
         let mut has_return = false;
 
         for stmt in &block.stmts {
-            let (val, ret) = compile_stmt_tracked(module, functions, builder, scope, stmt)?;
+            let (val, ret) = compile_stmt_tracked(module, functions, extern_fns, builder, scope, stmt)?;
             last_val = Some(val);
             if ret {
                 has_return = true;
@@ -507,7 +668,7 @@ pub mod jit {
         }
 
         if let Some(expr) = &block.expr {
-            let (val, ret) = compile_expr_tracked(module, functions, builder, scope, expr)?;
+            let (val, ret) = compile_expr_tracked(module, functions, extern_fns, builder, scope, expr)?;
             last_val = Some(val);
             if ret {
                 has_return = true;
@@ -523,17 +684,19 @@ pub mod jit {
     fn compile_block(
         module: &mut JITModule,
         functions: &HashMap<String, FuncId>,
+        extern_fns: &HashMap<String, ExternFnSig>,
         builder: &mut FunctionBuilder,
         scope: &mut CompileScope,
         block: &ast::Block,
     ) -> Result<cranelift_codegen::ir::Value, String> {
-        compile_block_tracked(module, functions, builder, scope, block).map(|(v, _)| v)
+        compile_block_tracked(module, functions, extern_fns, builder, scope, block).map(|(v, _)| v)
     }
 
     /// Compile a statement, returning (value, has_return)
     fn compile_stmt_tracked(
         module: &mut JITModule,
         functions: &HashMap<String, FuncId>,
+        extern_fns: &HashMap<String, ExternFnSig>,
         builder: &mut FunctionBuilder,
         scope: &mut CompileScope,
         stmt: &ast::Stmt,
@@ -541,7 +704,7 @@ pub mod jit {
         match stmt {
             ast::Stmt::Let { pattern, init, .. } => {
                 let val = if let Some(expr) = init {
-                    compile_expr(module, functions, builder, scope, expr)?
+                    compile_expr(module, functions, extern_fns, builder, scope, expr)?
                 } else {
                     builder.ins().iconst(types::I64, 0)
                 };
@@ -556,27 +719,30 @@ pub mod jit {
                 Ok((val, false))
             }
             ast::Stmt::Expr(expr) | ast::Stmt::Semi(expr) => {
-                compile_expr_tracked(module, functions, builder, scope, expr)
+                compile_expr_tracked(module, functions, extern_fns, builder, scope, expr)
             }
             ast::Stmt::Item(_) => Ok((builder.ins().iconst(types::I64, 0), false)),
         }
     }
 
     /// Compile a statement (convenience wrapper)
+    #[allow(dead_code)]
     fn compile_stmt(
         module: &mut JITModule,
         functions: &HashMap<String, FuncId>,
+        extern_fns: &HashMap<String, ExternFnSig>,
         builder: &mut FunctionBuilder,
         scope: &mut CompileScope,
         stmt: &ast::Stmt,
     ) -> Result<cranelift_codegen::ir::Value, String> {
-        compile_stmt_tracked(module, functions, builder, scope, stmt).map(|(v, _)| v)
+        compile_stmt_tracked(module, functions, extern_fns, builder, scope, stmt).map(|(v, _)| v)
     }
 
     /// Compile an expression, returning (value, has_return)
     fn compile_expr_tracked(
         module: &mut JITModule,
         functions: &HashMap<String, FuncId>,
+        extern_fns: &HashMap<String, ExternFnSig>,
         builder: &mut FunctionBuilder,
         scope: &mut CompileScope,
         expr: &Expr,
@@ -584,7 +750,7 @@ pub mod jit {
         match expr {
             Expr::Return(value) => {
                 let ret_val = if let Some(v) = value {
-                    compile_expr(module, functions, builder, scope, v)?
+                    compile_expr(module, functions, extern_fns, builder, scope, v)?
                 } else {
                     builder.ins().iconst(types::I64, 0)
                 };
@@ -593,15 +759,15 @@ pub mod jit {
             }
             Expr::If { condition, then_branch, else_branch } => {
                 // If expressions can contain returns, so use tracked version
-                compile_if_tracked(module, functions, builder, scope, condition, then_branch, else_branch.as_deref())
+                compile_if_tracked(module, functions, extern_fns, builder, scope, condition, then_branch, else_branch.as_deref())
             }
             Expr::Block(block) => {
                 let mut inner_scope = scope.child();
-                compile_block_tracked(module, functions, builder, &mut inner_scope, block)
+                compile_block_tracked(module, functions, extern_fns, builder, &mut inner_scope, block)
             }
             _ => {
                 // All other expressions don't have return
-                let val = compile_expr(module, functions, builder, scope, expr)?;
+                let val = compile_expr(module, functions, extern_fns, builder, scope, expr)?;
                 Ok((val, false))
             }
         }
@@ -611,6 +777,7 @@ pub mod jit {
     fn compile_expr(
         module: &mut JITModule,
         functions: &HashMap<String, FuncId>,
+        extern_fns: &HashMap<String, ExternFnSig>,
         builder: &mut FunctionBuilder,
         scope: &mut CompileScope,
         expr: &Expr,
@@ -635,13 +802,13 @@ pub mod jit {
             }
 
             Expr::Binary { op, left, right } => {
-                let lhs = compile_expr(module, functions, builder, scope, left)?;
-                let rhs = compile_expr(module, functions, builder, scope, right)?;
+                let lhs = compile_expr(module, functions, extern_fns, builder, scope, left)?;
+                let rhs = compile_expr(module, functions, extern_fns, builder, scope, right)?;
                 compile_binary_op(builder, op.clone(), lhs, rhs)
             }
 
             Expr::Unary { op, expr: inner } => {
-                let val = compile_expr(module, functions, builder, scope, inner)?;
+                let val = compile_expr(module, functions, extern_fns, builder, scope, inner)?;
                 compile_unary_op(builder, *op, val)
             }
 
@@ -655,28 +822,28 @@ pub mod jit {
 
                 let mut arg_vals = Vec::new();
                 for arg in args {
-                    arg_vals.push(compile_expr(module, functions, builder, scope, arg)?);
+                    arg_vals.push(compile_expr(module, functions, extern_fns, builder, scope, arg)?);
                 }
 
-                compile_call(module, functions, builder, &func_name, &arg_vals)
+                compile_call(module, functions, extern_fns, builder, &func_name, &arg_vals)
             }
 
             Expr::If { condition, then_branch, else_branch } => {
-                compile_if(module, functions, builder, scope, condition, then_branch, else_branch.as_deref())
+                compile_if(module, functions, extern_fns, builder, scope, condition, then_branch, else_branch.as_deref())
             }
 
             Expr::While { condition, body } => {
-                compile_while(module, functions, builder, scope, condition, body)
+                compile_while(module, functions, extern_fns, builder, scope, condition, body)
             }
 
             Expr::Block(block) => {
                 let mut inner_scope = scope.child();
-                compile_block(module, functions, builder, &mut inner_scope, block)
+                compile_block(module, functions, extern_fns, builder, &mut inner_scope, block)
             }
 
             Expr::Return(value) => {
                 let ret_val = if let Some(v) = value {
-                    compile_expr(module, functions, builder, scope, v)?
+                    compile_expr(module, functions, extern_fns, builder, scope, v)?
                 } else {
                     builder.ins().iconst(types::I64, 0)
                 };
@@ -685,7 +852,7 @@ pub mod jit {
             }
 
             Expr::Assign { target, value } => {
-                let val = compile_expr(module, functions, builder, scope, value)?;
+                let val = compile_expr(module, functions, extern_fns, builder, scope, value)?;
                 match target.as_ref() {
                     Expr::Path(path) => {
                         let name = path.segments.last().map(|s| s.ident.name.clone()).unwrap_or_default();
@@ -697,35 +864,61 @@ pub mod jit {
                         }
                     }
                     Expr::Index { expr: arr, index } => {
-                        let arr_val = compile_expr(module, functions, builder, scope, arr)?;
-                        let idx_val = compile_expr(module, functions, builder, scope, index)?;
-                        compile_call(module, functions, builder, "sigil_array_set", &[arr_val, idx_val, val])
+                        let arr_val = compile_expr(module, functions, extern_fns, builder, scope, arr)?;
+                        let idx_val = compile_expr(module, functions, extern_fns, builder, scope, index)?;
+                        compile_call(module, functions, extern_fns, builder, "sigil_array_set", &[arr_val, idx_val, val])
                     }
                     _ => Err("Invalid assignment target".into()),
                 }
             }
 
             Expr::Index { expr: arr, index } => {
-                let arr_val = compile_expr(module, functions, builder, scope, arr)?;
-                let idx_val = compile_expr(module, functions, builder, scope, index)?;
-                compile_call(module, functions, builder, "sigil_array_get", &[arr_val, idx_val])
+                let arr_val = compile_expr(module, functions, extern_fns, builder, scope, arr)?;
+                let idx_val = compile_expr(module, functions, extern_fns, builder, scope, index)?;
+                compile_call(module, functions, extern_fns, builder, "sigil_array_get", &[arr_val, idx_val])
             }
 
             Expr::Array(elements) => {
                 let len = builder.ins().iconst(types::I64, elements.len() as i64);
-                let arr = compile_call(module, functions, builder, "sigil_array_new", &[len])?;
+                let arr = compile_call(module, functions, extern_fns, builder, "sigil_array_new", &[len])?;
 
                 for (i, elem) in elements.iter().enumerate() {
-                    let val = compile_expr(module, functions, builder, scope, elem)?;
+                    let val = compile_expr(module, functions, extern_fns, builder, scope, elem)?;
                     let idx = builder.ins().iconst(types::I64, i as i64);
-                    compile_call(module, functions, builder, "sigil_array_set", &[arr, idx, val])?;
+                    compile_call(module, functions, extern_fns, builder, "sigil_array_set", &[arr, idx, val])?;
                 }
 
                 Ok(arr)
             }
 
             Expr::Pipe { expr, .. } => {
-                compile_expr(module, functions, builder, scope, expr)
+                compile_expr(module, functions, extern_fns, builder, scope, expr)
+            }
+
+            // Unsafe blocks - just compile the inner block
+            Expr::Unsafe(block) => {
+                let mut inner_scope = scope.child();
+                compile_block(module, functions, extern_fns, builder, &mut inner_scope, block)
+            }
+
+            // Pointer dereference - load from address
+            Expr::Deref(inner) => {
+                let ptr = compile_expr(module, functions, extern_fns, builder, scope, inner)?;
+                // Load 64-bit value from pointer
+                Ok(builder.ins().load(types::I64, cranelift_codegen::ir::MemFlags::new(), ptr, 0))
+            }
+
+            // Address-of - just return the value (it's already a pointer in our model)
+            Expr::AddrOf { expr: inner, .. } => {
+                compile_expr(module, functions, extern_fns, builder, scope, inner)
+            }
+
+            // Cast expression
+            Expr::Cast { expr: inner, ty } => {
+                let val = compile_expr(module, functions, extern_fns, builder, scope, inner)?;
+                // For now, just return the value - proper casting would check types
+                let _ = ty; // TODO: implement proper type-based casting
+                Ok(val)
             }
 
             _ => Ok(builder.ins().iconst(types::I64, 0)),
@@ -824,6 +1017,7 @@ pub mod jit {
     fn compile_call(
         module: &mut JITModule,
         functions: &HashMap<String, FuncId>,
+        extern_fns: &HashMap<String, ExternFnSig>,
         builder: &mut FunctionBuilder,
         name: &str,
         args: &[cranelift_codegen::ir::Value],
@@ -911,9 +1105,52 @@ pub mod jit {
             let call = builder.ins().call(local_callee, &call_args);
             Ok(builder.inst_results(call)[0])
         } else if let Some(&func_id) = functions.get(name) {
+            // User-defined function
             let local_callee = module.declare_func_in_func(func_id, builder.func);
             let call = builder.ins().call(local_callee, args);
             Ok(builder.inst_results(call)[0])
+        } else if let Some(extern_fn) = extern_fns.get(name) {
+            // Extern "C" function - call through FFI
+            let local_callee = module.declare_func_in_func(extern_fn.func_id, builder.func);
+
+            // Convert arguments to match expected types
+            let mut call_args = Vec::new();
+            for (i, &arg) in args.iter().enumerate() {
+                let arg_type = builder.func.dfg.value_type(arg);
+                let expected_type = extern_fn.params.get(i).copied().unwrap_or(types::I64);
+
+                let converted = if arg_type == expected_type {
+                    arg
+                } else if arg_type == types::I64 && expected_type == types::I32 {
+                    builder.ins().ireduce(types::I32, arg)
+                } else if arg_type == types::I32 && expected_type == types::I64 {
+                    builder.ins().sextend(types::I64, arg)
+                } else if arg_type == types::I64 && expected_type == types::F64 {
+                    builder.ins().fcvt_from_sint(types::F64, arg)
+                } else if arg_type == types::F64 && expected_type == types::I64 {
+                    builder.ins().fcvt_to_sint(types::I64, arg)
+                } else {
+                    arg // Best effort - let Cranelift handle it
+                };
+                call_args.push(converted);
+            }
+
+            let call = builder.ins().call(local_callee, &call_args);
+
+            // Handle return value
+            if extern_fn.returns.is_some() {
+                let result = builder.inst_results(call)[0];
+                let result_type = builder.func.dfg.value_type(result);
+                // Extend smaller types to i64 for our internal representation
+                if result_type == types::I32 || result_type == types::I16 || result_type == types::I8 {
+                    Ok(builder.ins().sextend(types::I64, result))
+                } else {
+                    Ok(result)
+                }
+            } else {
+                // Void return - return 0
+                Ok(builder.ins().iconst(types::I64, 0))
+            }
         } else {
             Err(format!("Unknown function: {}", name))
         }
@@ -923,6 +1160,7 @@ pub mod jit {
     fn compile_if_tracked(
         module: &mut JITModule,
         functions: &HashMap<String, FuncId>,
+        extern_fns: &HashMap<String, ExternFnSig>,
         builder: &mut FunctionBuilder,
         scope: &mut CompileScope,
         condition: &Expr,
@@ -930,7 +1168,7 @@ pub mod jit {
         else_branch: Option<&Expr>,
     ) -> Result<(cranelift_codegen::ir::Value, bool), String> {
         // OPTIMIZATION: Use direct condition compilation
-        let cond_bool = compile_condition(module, functions, builder, scope, condition)?;
+        let cond_bool = compile_condition(module, functions, extern_fns, builder, scope, condition)?;
 
         let then_block = builder.create_block();
         let else_block = builder.create_block();
@@ -945,7 +1183,7 @@ pub mod jit {
         builder.switch_to_block(then_block);
         builder.seal_block(then_block);
         let mut then_scope = scope.child();
-        let (then_val, then_returns) = compile_block_tracked(module, functions, builder, &mut then_scope, then_branch)?;
+        let (then_val, then_returns) = compile_block_tracked(module, functions, extern_fns, builder, &mut then_scope, then_branch)?;
         // Only jump to merge if we didn't return
         if !then_returns {
             builder.ins().jump(merge_block, &[then_val]);
@@ -958,13 +1196,13 @@ pub mod jit {
             match else_expr {
                 Expr::Block(block) => {
                     let mut else_scope = scope.child();
-                    compile_block_tracked(module, functions, builder, &mut else_scope, block)?
+                    compile_block_tracked(module, functions, extern_fns, builder, &mut else_scope, block)?
                 }
                 Expr::If { condition, then_branch, else_branch } => {
-                    compile_if_tracked(module, functions, builder, scope, condition, then_branch, else_branch.as_deref())?
+                    compile_if_tracked(module, functions, extern_fns, builder, scope, condition, then_branch, else_branch.as_deref())?
                 }
                 _ => {
-                    let val = compile_expr(module, functions, builder, scope, else_expr)?;
+                    let val = compile_expr(module, functions, extern_fns, builder, scope, else_expr)?;
                     (val, false)
                 }
             }
@@ -997,19 +1235,21 @@ pub mod jit {
     fn compile_if(
         module: &mut JITModule,
         functions: &HashMap<String, FuncId>,
+        extern_fns: &HashMap<String, ExternFnSig>,
         builder: &mut FunctionBuilder,
         scope: &mut CompileScope,
         condition: &Expr,
         then_branch: &ast::Block,
         else_branch: Option<&Expr>,
     ) -> Result<cranelift_codegen::ir::Value, String> {
-        compile_if_tracked(module, functions, builder, scope, condition, then_branch, else_branch).map(|(v, _)| v)
+        compile_if_tracked(module, functions, extern_fns, builder, scope, condition, then_branch, else_branch).map(|(v, _)| v)
     }
 
     /// Compile while loop
     fn compile_while(
         module: &mut JITModule,
         functions: &HashMap<String, FuncId>,
+        extern_fns: &HashMap<String, ExternFnSig>,
         builder: &mut FunctionBuilder,
         scope: &mut CompileScope,
         condition: &Expr,
@@ -1023,14 +1263,14 @@ pub mod jit {
 
         builder.switch_to_block(header_block);
         // OPTIMIZATION: Use direct condition compilation
-        let cond_bool = compile_condition(module, functions, builder, scope, condition)?;
+        let cond_bool = compile_condition(module, functions, extern_fns, builder, scope, condition)?;
         // Branch directly - no extra comparison needed
         builder.ins().brif(cond_bool, body_block, &[], exit_block, &[]);
 
         builder.switch_to_block(body_block);
         builder.seal_block(body_block);
         let mut body_scope = scope.child();
-        compile_block(module, functions, builder, &mut body_scope, body)?;
+        compile_block(module, functions, extern_fns, builder, &mut body_scope, body)?;
         builder.ins().jump(header_block, &[]);
 
         builder.seal_block(header_block);
@@ -1194,6 +1434,121 @@ pub mod jit {
         unsafe {
             let arr = &*(arr_ptr as *const SigilArray);
             arr.len as i64
+        }
+    }
+
+    // ============================================
+    // FFI Tests
+    // ============================================
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::parser::Parser;
+
+        #[test]
+        fn test_extern_block_parsing_and_declaration() {
+            let source = r#"
+                extern "C" {
+                    fn abs(x: c_int) -> c_int;
+                    fn strlen(s: *const c_char) -> usize;
+                }
+
+                fn main() -> i64 {
+                    42
+                }
+            "#;
+
+            let mut compiler = JitCompiler::new().unwrap();
+            let result = compiler.compile(source);
+            assert!(result.is_ok(), "Failed to compile FFI declarations: {:?}", result);
+
+            // Check that extern functions were registered
+            assert!(compiler.extern_functions.contains_key("abs"), "abs not declared");
+            assert!(compiler.extern_functions.contains_key("strlen"), "strlen not declared");
+
+            // Check abs signature
+            let abs_sig = compiler.extern_functions.get("abs").unwrap();
+            assert_eq!(abs_sig.params.len(), 1);
+            assert_eq!(abs_sig.params[0], types::I32); // c_int -> i32
+            assert_eq!(abs_sig.returns, Some(types::I32));
+
+            // Check strlen signature
+            let strlen_sig = compiler.extern_functions.get("strlen").unwrap();
+            assert_eq!(strlen_sig.params.len(), 1);
+            assert_eq!(strlen_sig.params[0], types::I64); // pointer -> i64
+            assert_eq!(strlen_sig.returns, Some(types::I64)); // usize -> i64
+        }
+
+        #[test]
+        fn test_extern_variadic_function() {
+            let source = r#"
+                extern "C" {
+                    fn printf(fmt: *const c_char, ...) -> c_int;
+                }
+
+                fn main() -> i64 {
+                    0
+                }
+            "#;
+
+            let mut compiler = JitCompiler::new().unwrap();
+            let result = compiler.compile(source);
+            assert!(result.is_ok(), "Failed to compile variadic FFI: {:?}", result);
+
+            let printf_sig = compiler.extern_functions.get("printf").unwrap();
+            assert!(printf_sig.variadic, "printf should be variadic");
+        }
+
+        #[test]
+        fn test_extern_c_abi_only() {
+            let source = r#"
+                extern "Rust" {
+                    fn some_func(x: i32) -> i32;
+                }
+
+                fn main() -> i64 {
+                    0
+                }
+            "#;
+
+            let mut compiler = JitCompiler::new().unwrap();
+            let result = compiler.compile(source);
+            assert!(result.is_err(), "Should reject non-C ABI");
+            assert!(result.unwrap_err().contains("Unsupported ABI"));
+        }
+
+        #[test]
+        fn test_c_type_mapping() {
+            // Test that C types are correctly mapped to Cranelift types
+            let test_cases = vec![
+                ("c_char", types::I8),
+                ("c_int", types::I32),
+                ("c_long", types::I64),
+                ("c_float", types::F32),
+                ("c_double", types::F64),
+                ("size_t", types::I64),
+                ("i32", types::I32),
+                ("f64", types::F64),
+            ];
+
+            for (type_name, expected_cl_type) in test_cases {
+                let source = format!(r#"
+                    extern "C" {{
+                        fn test_func(x: {}) -> {};
+                    }}
+
+                    fn main() -> i64 {{ 0 }}
+                "#, type_name, type_name);
+
+                let mut compiler = JitCompiler::new().unwrap();
+                let result = compiler.compile(&source);
+                assert!(result.is_ok(), "Failed for type {}: {:?}", type_name, result);
+
+                let sig = compiler.extern_functions.get("test_func").unwrap();
+                assert_eq!(sig.params[0], expected_cl_type, "Wrong param type for {}", type_name);
+                assert_eq!(sig.returns, Some(expected_cl_type), "Wrong return type for {}", type_name);
+            }
         }
     }
 }
