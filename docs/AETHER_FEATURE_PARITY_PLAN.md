@@ -1063,17 +1063,22 @@ MATH/SIMD                          Status    Target
 └─ SIMD operations                 [✓]       Done
 
 PHYSICS (FFI)                      Status    Target
-├─ Rigid body dynamics             [ ]       Phase 2
-├─ Collision detection             [ ]       Phase 2
-├─ Joint constraints               [ ]       Phase 2
-├─ CCD                             [ ]       Phase 2
-├─ XPBD                            [ ]       Phase 2
-├─ SPH fluids                      [ ]       Phase 2
-├─ MPM                             [ ]       Phase 2
-├─ Destruction                     [ ]       Phase 2
-├─ Differentiable physics          [~]       Phase 2 (native ∇)
-├─ Neural surrogates               [ ]       Phase 2
-└─ Time travel                     [ ]       Phase 2 (native)
+├─ Rigid body dynamics             [✓]       Phase 2 - Complete
+├─ Collision detection             [✓]       Phase 2 - Complete
+├─ Joint constraints               [✓]       Phase 2 - Complete
+├─ Broadphase (BVH/SpatialHash)    [✓]       Phase 2 - Complete
+├─ Narrowphase (GJK/EPA)           [✓]       Phase 2 - Complete
+├─ Contact solver                  [✓]       Phase 2 - Complete
+├─ Physics queries                 [✓]       Phase 2 - Complete
+├─ Physics materials               [✓]       Phase 2 - Complete
+├─ CCD                             [ ]       Phase 2 (pending)
+├─ XPBD                            [ ]       Phase 2 (pending)
+├─ SPH fluids                      [ ]       Phase 2 (pending)
+├─ MPM                             [ ]       Phase 2 (pending)
+├─ Destruction                     [ ]       Phase 2 (pending)
+├─ Differentiable physics          [✓]       Phase 2 - Complete (native ∇)
+├─ Neural surrogates               [ ]       Phase 2 (pending)
+└─ Time travel                     [✓]       Phase 2 - Complete (native)
 
 GRAPHICS (FFI)                     Status    Target
 ├─ Renderer core                   [ ]       Phase 3
