@@ -51,6 +51,8 @@ pub struct CrateConfig {
     pub features: Vec<String>,
     /// Target architecture (from `#![target(...)]`)
     pub target: Option<TargetConfig>,
+    /// Linker configuration
+    pub linker: Option<LinkerConfig>,
 }
 
 /// Target-specific configuration.
@@ -60,6 +62,51 @@ pub struct TargetConfig {
     pub os: Option<String>,        // "none", "linux", "windows"
     pub abi: Option<String>,       // "gnu", "musl", "msvc"
     pub features: Vec<String>,     // CPU features
+}
+
+/// Linker configuration for bare-metal/OS development.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LinkerConfig {
+    /// Path to linker script: `#![linker_script = "link.ld"]`
+    pub script: Option<String>,
+    /// Entry point symbol: `#![entry_point = "_start"]`
+    pub entry_point: Option<String>,
+    /// Base address for code: `#![base_address = 0x100000]`
+    pub base_address: Option<u64>,
+    /// Stack size: `#![stack_size = 0x4000]`
+    pub stack_size: Option<u64>,
+    /// Additional linker flags
+    pub flags: Vec<String>,
+    /// Memory regions for embedded targets
+    pub memory_regions: Vec<MemoryRegion>,
+    /// Output sections configuration
+    pub sections: Vec<SectionConfig>,
+}
+
+/// Memory region for linker scripts.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MemoryRegion {
+    pub name: String,
+    pub origin: u64,
+    pub length: u64,
+    pub attributes: MemoryAttributes,
+}
+
+/// Memory region attributes.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MemoryAttributes {
+    pub readable: bool,
+    pub writable: bool,
+    pub executable: bool,
+}
+
+/// Output section configuration.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SectionConfig {
+    pub name: String,
+    pub address: Option<u64>,
+    pub align: Option<u64>,
+    pub region: Option<String>,
 }
 
 /// A complete Sigil source file.
@@ -135,10 +182,26 @@ pub struct FunctionAttrs {
     pub calling_convention: Option<String>,
     /// No mangle (preserve symbol name)
     pub no_mangle: bool,
-    /// Link section
+    /// Link section (e.g., ".text.boot", ".init")
     pub link_section: Option<String>,
     /// Export as C function
     pub export: bool,
+    /// Panic handler function
+    pub panic_handler: bool,
+    /// Entry point function
+    pub entry: bool,
+    /// Interrupt handler with interrupt number
+    pub interrupt: Option<u32>,
+    /// Align function to boundary
+    pub align: Option<usize>,
+    /// Cold function (unlikely to be called)
+    pub cold: bool,
+    /// Hot function (likely to be called)
+    pub hot: bool,
+    /// Test function
+    pub test: bool,
+    /// Outer attributes (raw, for any we don't recognize)
+    pub outer_attrs: Vec<Attribute>,
 }
 
 /// Inline hints for functions.

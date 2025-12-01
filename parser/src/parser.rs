@@ -83,12 +83,11 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse an outer attribute: `#[name]` or `#[name(args)]`
-    #[allow(dead_code)]
     fn parse_outer_attribute(&mut self) -> ParseResult<Attribute> {
         self.expect(Token::Hash)?;
         self.expect(Token::LBracket)?;
 
-        let name = self.parse_ident()?;
+        let name = self.parse_attr_name()?;
         let args = self.parse_attr_args()?;
 
         self.expect(Token::RBracket)?;
@@ -98,6 +97,40 @@ impl<'a> Parser<'a> {
             args,
             is_inner: false,
         })
+    }
+
+    /// Parse an attribute name (identifier or keyword used as attribute).
+    fn parse_attr_name(&mut self) -> ParseResult<Ident> {
+        let span = self.current_span();
+        match self.current_token().cloned() {
+            Some(Token::Ident(name)) => {
+                self.advance();
+                Ok(Ident { name, evidentiality: None, span })
+            }
+            // Handle keywords that can be used as attribute names
+            Some(Token::Naked) => {
+                self.advance();
+                Ok(Ident { name: "naked".to_string(), evidentiality: None, span })
+            }
+            Some(Token::Unsafe) => {
+                self.advance();
+                Ok(Ident { name: "unsafe".to_string(), evidentiality: None, span })
+            }
+            Some(Token::Asm) => {
+                self.advance();
+                Ok(Ident { name: "asm".to_string(), evidentiality: None, span })
+            }
+            Some(Token::Volatile) => {
+                self.advance();
+                Ok(Ident { name: "volatile".to_string(), evidentiality: None, span })
+            }
+            Some(t) => Err(ParseError::UnexpectedToken {
+                expected: "attribute name".to_string(),
+                found: t,
+                span,
+            }),
+            None => Err(ParseError::UnexpectedEof),
+        }
     }
 
     /// Parse attribute arguments if present.
@@ -134,6 +167,30 @@ impl<'a> Parser<'a> {
                 Ok(AttrArg::Literal(Literal::Int {
                     value: s,
                     base: NumBase::Decimal,
+                    suffix: None,
+                }))
+            }
+            Some(Token::HexLit(s)) => {
+                self.advance();
+                Ok(AttrArg::Literal(Literal::Int {
+                    value: s,
+                    base: NumBase::Hex,
+                    suffix: None,
+                }))
+            }
+            Some(Token::BinaryLit(s)) => {
+                self.advance();
+                Ok(AttrArg::Literal(Literal::Int {
+                    value: s,
+                    base: NumBase::Binary,
+                    suffix: None,
+                }))
+            }
+            Some(Token::OctalLit(s)) => {
+                self.advance();
+                Ok(AttrArg::Literal(Literal::Int {
+                    value: s,
+                    base: NumBase::Octal,
                     suffix: None,
                 }))
             }
@@ -209,6 +266,8 @@ impl<'a> Parser<'a> {
     /// Build crate configuration from parsed inner attributes.
     fn build_crate_config(&self, attrs: &[Attribute]) -> CrateConfig {
         let mut config = CrateConfig::default();
+        let mut linker = LinkerConfig::default();
+        let mut has_linker_config = false;
 
         for attr in attrs {
             match attr.name.name.as_str() {
@@ -241,11 +300,83 @@ impl<'a> Parser<'a> {
                     }
                     config.target = Some(target);
                 }
+                // Linker configuration attributes
+                "linker_script" => {
+                    if let Some(AttrArgs::Eq(value)) = &attr.args {
+                        if let Expr::Literal(Literal::String(s)) = value.as_ref() {
+                            linker.script = Some(s.clone());
+                            has_linker_config = true;
+                        }
+                    }
+                }
+                "entry_point" => {
+                    if let Some(AttrArgs::Eq(value)) = &attr.args {
+                        if let Expr::Literal(Literal::String(s)) = value.as_ref() {
+                            linker.entry_point = Some(s.clone());
+                            has_linker_config = true;
+                        }
+                    }
+                }
+                "base_address" => {
+                    if let Some(AttrArgs::Eq(value)) = &attr.args {
+                        if let Expr::Literal(Literal::Int { value: s, base, .. }) = value.as_ref() {
+                            let addr = Self::parse_int_value(s, *base);
+                            linker.base_address = Some(addr);
+                            has_linker_config = true;
+                        }
+                    }
+                }
+                "stack_size" => {
+                    if let Some(AttrArgs::Eq(value)) = &attr.args {
+                        if let Expr::Literal(Literal::Int { value: s, base, .. }) = value.as_ref() {
+                            let size = Self::parse_int_value(s, *base);
+                            linker.stack_size = Some(size);
+                            has_linker_config = true;
+                        }
+                    }
+                }
+                "link" => {
+                    // #![link(flag = "-nostdlib", flag = "-static")]
+                    if let Some(AttrArgs::Paren(args)) = &attr.args {
+                        for arg in args {
+                            if let AttrArg::KeyValue { key, value } = arg {
+                                if key.name == "flag" {
+                                    if let Expr::Literal(Literal::String(s)) = value.as_ref() {
+                                        linker.flags.push(s.clone());
+                                        has_linker_config = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 _ => {}
             }
         }
 
+        if has_linker_config {
+            config.linker = Some(linker);
+        }
+
         config
+    }
+
+    /// Parse an integer value from string with given base.
+    fn parse_int_value(s: &str, base: NumBase) -> u64 {
+        // Strip prefix based on base
+        let (stripped, radix) = match base {
+            NumBase::Binary => (s.strip_prefix("0b").or(s.strip_prefix("0B")).unwrap_or(s), 2),
+            NumBase::Octal => (s.strip_prefix("0o").or(s.strip_prefix("0O")).unwrap_or(s), 8),
+            NumBase::Decimal => (s, 10),
+            NumBase::Hex => (s.strip_prefix("0x").or(s.strip_prefix("0X")).unwrap_or(s), 16),
+            NumBase::Vigesimal => (s.strip_prefix("0v").or(s.strip_prefix("0V")).unwrap_or(s), 20),
+            NumBase::Duodecimal => (s.strip_prefix("0d").or(s.strip_prefix("0D")).unwrap_or(s), 12),
+            NumBase::Sexagesimal => (s.strip_prefix("0s").or(s.strip_prefix("0S")).unwrap_or(s), 60),
+            NumBase::Explicit(r) => (s, r as u32),
+        };
+        // Remove underscores (numeric separators) and parse
+        let clean: String = stripped.chars().filter(|c| *c != '_').collect();
+        u64::from_str_radix(&clean, radix).unwrap_or(0)
     }
 
     // === Token utilities ===
@@ -313,11 +444,18 @@ impl<'a> Parser<'a> {
 
     fn parse_item(&mut self) -> ParseResult<Spanned<Item>> {
         let start_span = self.current_span();
+
+        // Collect outer attributes (#[...])
+        let mut outer_attrs = Vec::new();
+        while self.check(&Token::Hash) {
+            outer_attrs.push(self.parse_outer_attribute()?);
+        }
+
         let visibility = self.parse_visibility()?;
 
         let item = match self.current_token() {
             Some(Token::Fn) | Some(Token::Async) => {
-                Item::Function(self.parse_function(visibility)?)
+                Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
             }
             Some(Token::Struct) => {
                 Item::Struct(self.parse_struct(visibility)?)
@@ -354,7 +492,7 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Naked) => {
                 // naked fn -> function with naked attribute
-                Item::Function(self.parse_function(visibility)?)
+                Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
             }
             Some(Token::Packed) => {
                 // packed struct -> struct with packed attribute
@@ -383,8 +521,12 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function(&mut self, visibility: Visibility) -> ParseResult<Function> {
-        // Parse function attributes
-        let mut attrs = FunctionAttrs::default();
+        self.parse_function_with_attrs(visibility, Vec::new())
+    }
+
+    fn parse_function_with_attrs(&mut self, visibility: Visibility, outer_attrs: Vec<Attribute>) -> ParseResult<Function> {
+        // Parse function attributes from outer attributes
+        let mut attrs = self.process_function_attrs(&outer_attrs);
 
         // Check for naked keyword before fn
         if self.consume_if(&Token::Naked) {
@@ -427,6 +569,69 @@ impl<'a> Parser<'a> {
             where_clause,
             body,
         })
+    }
+
+    /// Process outer attributes into FunctionAttrs.
+    fn process_function_attrs(&self, attrs: &[Attribute]) -> FunctionAttrs {
+        let mut func_attrs = FunctionAttrs::default();
+
+        for attr in attrs {
+            match attr.name.name.as_str() {
+                "panic_handler" => func_attrs.panic_handler = true,
+                "entry" => func_attrs.entry = true,
+                "no_mangle" => func_attrs.no_mangle = true,
+                "export" => func_attrs.export = true,
+                "cold" => func_attrs.cold = true,
+                "hot" => func_attrs.hot = true,
+                "test" => func_attrs.test = true,
+                "naked" => func_attrs.naked = true,
+                "inline" => {
+                    func_attrs.inline = Some(match &attr.args {
+                        Some(AttrArgs::Paren(args)) => {
+                            if let Some(AttrArg::Ident(ident)) = args.first() {
+                                match ident.name.as_str() {
+                                    "always" => InlineHint::Always,
+                                    "never" => InlineHint::Never,
+                                    _ => InlineHint::Hint,
+                                }
+                            } else {
+                                InlineHint::Hint
+                            }
+                        }
+                        _ => InlineHint::Hint,
+                    });
+                }
+                "link_section" => {
+                    if let Some(AttrArgs::Eq(value)) = &attr.args {
+                        if let Expr::Literal(Literal::String(s)) = value.as_ref() {
+                            func_attrs.link_section = Some(s.clone());
+                        }
+                    }
+                }
+                "interrupt" => {
+                    if let Some(AttrArgs::Paren(args)) = &attr.args {
+                        if let Some(AttrArg::Literal(Literal::Int { value, base, .. })) = args.first() {
+                            let num = Self::parse_int_value(value, *base) as u32;
+                            func_attrs.interrupt = Some(num);
+                        }
+                    }
+                }
+                "align" => {
+                    if let Some(AttrArgs::Paren(args)) = &attr.args {
+                        if let Some(AttrArg::Literal(Literal::Int { value, base, .. })) = args.first() {
+                            let align = Self::parse_int_value(value, *base) as usize;
+                            func_attrs.align = Some(align);
+                        }
+                    }
+                }
+                _ => {
+                    // Store unrecognized attributes
+                    func_attrs.outer_attrs.push(attr.clone());
+                }
+            }
+        }
+
+        func_attrs
     }
 
     fn parse_struct(&mut self, visibility: Visibility) -> ParseResult<StructDef> {
@@ -2550,5 +2755,136 @@ mod tests {
         let target = file.config.target.as_ref().expect("Should have target config");
         assert_eq!(target.arch, Some("x86_64".to_string()));
         assert_eq!(target.os, Some("none".to_string()));
+    }
+
+    #[test]
+    fn test_parse_panic_handler() {
+        let source = r#"
+            #![no_std]
+
+            #[panic_handler]
+            fn panic(info: *const PanicInfo) -> ! {
+                loop {}
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        assert_eq!(file.items.len(), 1);
+        if let Item::Function(func) = &file.items[0].node {
+            assert!(func.attrs.panic_handler, "Should have panic_handler attribute");
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_entry_point() {
+        let source = r#"
+            #![no_std]
+            #![no_main]
+
+            #[entry]
+            #[no_mangle]
+            fn _start() -> ! {
+                loop {}
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        assert_eq!(file.items.len(), 1);
+        if let Item::Function(func) = &file.items[0].node {
+            assert!(func.attrs.entry, "Should have entry attribute");
+            assert!(func.attrs.no_mangle, "Should have no_mangle attribute");
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_link_section() {
+        let source = r#"
+            #[link_section = ".text.boot"]
+            fn boot_code() { }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        assert_eq!(file.items.len(), 1);
+        if let Item::Function(func) = &file.items[0].node {
+            assert_eq!(func.attrs.link_section, Some(".text.boot".to_string()));
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_linker_config() {
+        let source = r#"
+            #![no_std]
+            #![linker_script = "kernel.ld"]
+            #![entry_point = "_start"]
+            #![base_address = 0x100000]
+            #![stack_size = 0x4000]
+
+            fn kernel_main() { }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        let linker = file.config.linker.as_ref().expect("Should have linker config");
+        assert_eq!(linker.script, Some("kernel.ld".to_string()));
+        assert_eq!(linker.entry_point, Some("_start".to_string()));
+        assert_eq!(linker.base_address, Some(0x100000));
+        assert_eq!(linker.stack_size, Some(0x4000));
+    }
+
+    #[test]
+    fn test_parse_interrupt_handler() {
+        let source = r#"
+            #[interrupt(32)]
+            #[naked]
+            fn timer_handler() {
+                asm!("iretq", options(nostack));
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Function(func) = &file.items[0].node {
+            assert_eq!(func.attrs.interrupt, Some(32));
+            assert!(func.attrs.naked);
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_inline_attributes() {
+        let source = r#"
+            #[inline]
+            fn fast() -> i64 { 0 }
+
+            #[inline(always)]
+            fn very_fast() -> i64 { 0 }
+
+            #[inline(never)]
+            fn never_inline() -> i64 { 0 }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        assert_eq!(file.items.len(), 3);
+
+        if let Item::Function(func) = &file.items[0].node {
+            assert_eq!(func.attrs.inline, Some(InlineHint::Hint));
+        }
+        if let Item::Function(func) = &file.items[1].node {
+            assert_eq!(func.attrs.inline, Some(InlineHint::Always));
+        }
+        if let Item::Function(func) = &file.items[2].node {
+            assert_eq!(func.attrs.inline, Some(InlineHint::Never));
+        }
     }
 }
