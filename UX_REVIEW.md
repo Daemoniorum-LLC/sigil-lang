@@ -69,6 +69,23 @@ The REPL is well-implemented with:
 
 The 15 specification documents are thorough and well-organized. The documentation quality is above average for a v0.1 language.
 
+### 5. Performance Parity with Rust (A)
+
+According to the migration roadmap, Sigil's LLVM backend achieves **native Rust performance**:
+
+| Benchmark | Rust Baseline | Sigil LLVM | Verdict |
+|-----------|--------------|------------|---------|
+| fib(35) | 27ms | 26ms | ✅ 1:1 parity (slightly faster) |
+| primes(100K) | 5ms | 5ms | ✅ Exact parity |
+
+**This is genuinely impressive.** If accurate, it means the LLVM code generation is producing optimal machine code comparable to rustc. This eliminates one of the biggest concerns about new languages—performance. The polysynthetic syntax compiles to zero-cost abstractions as claimed.
+
+**Caveat:** These are microbenchmarks (recursive fibonacci, prime sieve). Real-world performance with complex programs, FFI overhead, and async runtimes remains unproven. The roadmap lists pending benchmarks:
+- Token streaming: target <5ms first token
+- Kafka throughput: target 100K events/sec
+
+**UX implication:** Performance is not the problem. Developers won't reject Sigil because it's slow—they'll reject it because it's hard to type.
+
 ---
 
 ## The Bad
@@ -381,8 +398,9 @@ Sigil has the potential to be a genuinely useful language. Right now, it's an im
 | Learning resources | C | Specs aren't tutorials |
 | Real-world examples | D | Hello World level only |
 | Innovation | A- | Evidentiality is genuinely novel |
+| **Performance** | **A** | **Rust parity achieved on benchmarks** |
 | Adoption readiness | D | Not production ready |
 
-**Final Grade: C+**
+**Final Grade: C+** (Performance alone doesn't drive adoption—usability does)
 
 *Reviewed version: Sigil 0.1.0 (First Seal) - Parser implementation as of December 2025*
