@@ -20,6 +20,9 @@ pub mod optimize;
 #[cfg(feature = "jit")]
 pub mod codegen;
 
+#[cfg(feature = "llvm")]
+pub mod llvm_codegen;
+
 pub use lexer::{Token, Lexer};
 pub use ast::*;
 pub use parser::Parser;
@@ -31,3 +34,6 @@ pub use optimize::{Optimizer, OptLevel, OptStats, optimize};
 
 #[cfg(feature = "jit")]
 pub use codegen::JitCompiler;
+
+#[cfg(feature = "llvm")]
+pub use llvm_codegen::llvm::LlvmCompiler;

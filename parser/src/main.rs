@@ -3,6 +3,8 @@
 use sigil_parser::{Parser, Interpreter, register_stdlib, Lexer, Token};
 #[cfg(feature = "jit")]
 use sigil_parser::JitCompiler;
+#[cfg(feature = "llvm")]
+use sigil_parser::{LlvmCompiler, OptLevel};
 use std::env;
 use std::fs;
 use std::process::ExitCode;
@@ -26,6 +28,7 @@ fn main() -> ExitCode {
         eprintln!("Commands:");
         eprintln!("  run <file>      Execute a Sigil file (interpreted)");
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
+        eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
         eprintln!("  parse <file>    Parse and check a Sigil file");
         eprintln!("  lex <file>      Tokenize a Sigil file");
         eprintln!("  repl            Start interactive REPL");
@@ -51,6 +54,19 @@ fn main() -> ExitCode {
         #[cfg(not(feature = "jit"))]
         "jit" => {
             eprintln!("Error: JIT compilation not available (compile with --features jit)");
+            ExitCode::from(1)
+        }
+        #[cfg(feature = "llvm")]
+        "llvm" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing file argument");
+                return ExitCode::from(1);
+            }
+            llvm_file(&args[2])
+        }
+        #[cfg(not(feature = "llvm"))]
+        "llvm" => {
+            eprintln!("Error: LLVM backend not available (compile with --features llvm)");
             ExitCode::from(1)
         }
         "parse" => {
@@ -146,6 +162,49 @@ fn jit_file(path: &str) -> ExitCode {
 
     // Run
     match jit.run() {
+        Ok(result) => {
+            if result != 0 {
+                println!("{}", result);
+            }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Runtime error in '{}': {}", path, e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+#[cfg(feature = "llvm")]
+fn llvm_file(path: &str) -> ExitCode {
+    use inkwell::context::Context;
+
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Create LLVM context and compiler
+    let context = Context::create();
+    let mut compiler = match LlvmCompiler::new(&context, OptLevel::Aggressive) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Failed to initialize LLVM compiler: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Compile
+    if let Err(e) = compiler.compile(&source) {
+        eprintln!("Compilation error in '{}': {}", path, e);
+        return ExitCode::from(1);
+    }
+
+    // Run
+    match compiler.run() {
         Ok(result) => {
             if result != 0 {
                 println!("{}", result);

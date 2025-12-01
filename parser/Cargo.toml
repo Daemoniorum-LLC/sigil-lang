@@ -9,6 +9,7 @@ license = "MIT"
 [features]
 default = ["jit"]
 jit = ["cranelift-codegen", "cranelift-frontend", "cranelift-jit", "cranelift-module", "cranelift-native"]
+llvm = ["inkwell"]
 
 [dependencies]
 thiserror = "1.0"
@@ -25,6 +26,9 @@ cranelift-native = { version = "0.113", optional = true }
 
 # For runtime support
 libc = "0.2"
+
+# LLVM backend for native performance
+inkwell = { version = "0.6", features = ["llvm18-1"], optional = true }
 
 [dev-dependencies]
 pretty_assertions = "1.4"
