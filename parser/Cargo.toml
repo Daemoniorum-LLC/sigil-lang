@@ -17,6 +17,10 @@ unicode-xid = "0.2"
 logos = "0.14"
 rustyline = { version = "14.0", features = ["derive"] }
 
+# Rich error reporting
+ariadne = "0.4"
+strsim = "0.11"  # For "did you mean?" suggestions
+
 # Cranelift JIT compiler backend
 cranelift-codegen = { version = "0.113", optional = true }
 cranelift-frontend = { version = "0.113", optional = true }

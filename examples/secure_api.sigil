@@ -1,0 +1,322 @@
+//! Secure API Example
+//!
+//! Demonstrates Sigil's evidentiality type system for building
+//! secure APIs with compile-time trust verification.
+
+use std::http
+use std::json
+use std::crypto
+
+/// User input is always reported (untrusted).
+struct UserInput~ {
+    username: str,
+    password: str,
+    email: str,
+    profile: ProfileData~,
+}
+
+struct ProfileData~ {
+    display_name: str,
+    bio: str,
+    website: str,
+}
+
+/// Validated user data is known (trusted).
+struct ValidatedUser! {
+    username: str!,
+    password_hash: str!,
+    email: str!,
+    profile: ValidatedProfile!,
+}
+
+struct ValidatedProfile! {
+    display_name: str!,
+    bio: str!,
+    website: Option<Url!>,
+}
+
+/// SQL query - must be known to prevent injection.
+struct SafeQuery! {
+    query: str!,
+    params: [SqlParam!],
+}
+
+enum SqlParam! {
+    Int(i64!),
+    Str(str!),
+    Null,
+}
+
+/// Validation errors with detailed information.
+enum ValidationError {
+    InvalidUsername(str),
+    WeakPassword(str),
+    InvalidEmail(str),
+    InvalidUrl(str),
+    XssAttempt(str),
+    SqlInjectionAttempt(str),
+}
+
+/// Sanitize text to prevent XSS.
+fn sanitize_text(input~: str) -> Result<str!, ValidationError> {
+    // Check for script tags and other XSS vectors
+    let dangerous_patterns = [
+        "<script", "javascript:", "onerror=", "onload=",
+        "onclick=", "onfocus=", "onmouseover=",
+    ]
+
+    let lower = input.to_lowercase()
+    for pattern in dangerous_patterns {
+        if lower.contains(pattern) {
+            return Err(ValidationError.XssAttempt(pattern.to_string()))
+        }
+    }
+
+    // HTML-escape remaining content
+    let sanitized! = input
+        |replace("&", "&amp;")
+        |replace("<", "&lt;")
+        |replace(">", "&gt;")
+        |replace("\"", "&quot;")
+        |replace("'", "&#x27;")
+
+    Ok(sanitized!)
+}
+
+/// Validate username format.
+fn validate_username(input~: str) -> Result<str!, ValidationError> {
+    let trimmed = input.trim()
+
+    if trimmed|len < 3 {
+        return Err(ValidationError.InvalidUsername("too short"))
+    }
+    if trimmed|len > 32 {
+        return Err(ValidationError.InvalidUsername("too long"))
+    }
+
+    // Only alphanumeric and underscore
+    let is_valid = trimmed
+        |chars
+        |all{c => c.is_alphanumeric() || c == '_'}
+
+    if !is_valid {
+        return Err(ValidationError.InvalidUsername("invalid characters"))
+    }
+
+    // Promote to known - we've verified it's safe
+    Ok(trimmed as str!)
+}
+
+/// Validate and hash password.
+fn validate_password(input~: str) -> Result<str!, ValidationError> {
+    if input|len < 12 {
+        return Err(ValidationError.WeakPassword("minimum 12 characters"))
+    }
+
+    let has_upper = input|chars|any{_.is_uppercase()}
+    let has_lower = input|chars|any{_.is_lowercase()}
+    let has_digit = input|chars|any{_.is_digit()}
+    let has_special = input|chars|any{!_.is_alphanumeric()}
+
+    if !(has_upper && has_lower && has_digit && has_special) {
+        return Err(ValidationError.WeakPassword(
+            "must contain upper, lower, digit, and special character"
+        ))
+    }
+
+    // Hash with Argon2id - result is known (computed from input)
+    let hash! = crypto.argon2id_hash(input, crypto.random_salt())
+    Ok(hash!)
+}
+
+/// Validate email format.
+fn validate_email(input~: str) -> Result<str!, ValidationError> {
+    let trimmed = input.trim().to_lowercase()
+
+    // Basic email regex validation
+    let email_pattern = r"^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$"
+    if !trimmed|matches(email_pattern) {
+        return Err(ValidationError.InvalidEmail("invalid format"))
+    }
+
+    // Check for known disposable email domains
+    let disposable_domains = ["tempmail.com", "throwaway.com", "10minutemail.com"]
+    let domain = trimmed|split("@")|last?|unwrap_or("")
+
+    if disposable_domains|contains(domain) {
+        return Err(ValidationError.InvalidEmail("disposable emails not allowed"))
+    }
+
+    Ok(trimmed as str!)
+}
+
+/// Validate URL.
+fn validate_url(input~: str) -> Result<Option<Url!>, ValidationError> {
+    let trimmed = input.trim()
+
+    if trimmed|is_empty {
+        return Ok(None)
+    }
+
+    // Parse and validate URL
+    match Url.parse(trimmed) {
+        Ok(url) => {
+            // Only allow HTTPS
+            if url.scheme() != "https" {
+                return Err(ValidationError.InvalidUrl("must use HTTPS"))
+            }
+
+            // Check for dangerous paths
+            if url.path().contains("..") {
+                return Err(ValidationError.InvalidUrl("path traversal detected"))
+            }
+
+            Ok(Some(url as Url!))
+        }
+        Err(_) => Err(ValidationError.InvalidUrl("invalid URL format"))
+    }
+}
+
+/// Validate complete profile.
+fn validate_profile(input~: ProfileData~) -> Result<ValidatedProfile!, ValidationError> {
+    let display_name! = sanitize_text(input.display_name)?
+    let bio! = sanitize_text(input.bio)?
+    let website! = validate_url(input.website)?
+
+    Ok(ValidatedProfile! {
+        display_name: display_name!,
+        bio: bio!,
+        website: website!,
+    })
+}
+
+/// Main validation entry point.
+fn validate_user_input(input~: UserInput~) -> Result<ValidatedUser!, ValidationError> {
+    let username! = validate_username(input.username)?
+    let password_hash! = validate_password(input.password)?
+    let email! = validate_email(input.email)?
+    let profile! = validate_profile(input.profile)?
+
+    Ok(ValidatedUser! {
+        username: username!,
+        password_hash: password_hash!,
+        email: email!,
+        profile: profile!,
+    })
+}
+
+/// Build a safe SQL query (only accepts known/validated data).
+fn build_insert_query(user: ValidatedUser!) -> SafeQuery! {
+    // This only compiles because user fields are !-known
+    SafeQuery! {
+        query: "INSERT INTO users (username, password_hash, email, display_name, bio, website) VALUES (?, ?, ?, ?, ?, ?)"!,
+        params: [
+            SqlParam!.Str(user.username!),
+            SqlParam!.Str(user.password_hash!),
+            SqlParam!.Str(user.email!),
+            SqlParam!.Str(user.profile.display_name!),
+            SqlParam!.Str(user.profile.bio!),
+            user.profile.website
+                |tau{url => SqlParam!.Str(url.to_string()!)}
+                |unwrap_or(SqlParam!.Null),
+        ],
+    }
+}
+
+/// Execute a query against the database.
+fn execute_query(db: Database, query: SafeQuery!) -> Result<i64, DbError> {
+    // SafeQuery can only be constructed from validated data,
+    // so we know it's safe to execute
+    db.execute(query.query, query.params)
+}
+
+/// API endpoint handler.
+async fn handle_register(req: Request~) -> Response {
+    // Parse JSON body (untrusted)
+    let body~: UserInput~ = match req.json() {
+        Ok(b) => b,
+        Err(_) => return Response.bad_request("Invalid JSON"),
+    }
+
+    // Validate (this is where trust is established)
+    let validated! = match validate_user_input(body~) {
+        Ok(v) => v,
+        Err(e) => return Response.bad_request(format_validation_error(e)),
+    }
+
+    // Build safe query
+    let query! = build_insert_query(validated!)
+
+    // Execute (only accepts SafeQuery!)
+    match execute_query(db, query!) {
+        Ok(user_id) => {
+            Response.created()
+                .json(json!({ "id": user_id, "message": "User created" }))
+        }
+        Err(DbError.UniqueViolation) => {
+            Response.conflict("Username or email already exists")
+        }
+        Err(e) => {
+            log.error("Database error: {}", e)
+            Response.internal_error("Registration failed")
+        }
+    }
+}
+
+/// API endpoint for updating profile.
+async fn handle_update_profile(req: Request~, auth: AuthToken!) -> Response {
+    // auth is known! because it passed authentication middleware
+    let user_id! = auth.user_id!
+
+    let body~: ProfileData~ = match req.json() {
+        Ok(b) => b,
+        Err(_) => return Response.bad_request("Invalid JSON"),
+    }
+
+    let profile! = match validate_profile(body~) {
+        Ok(p) => p,
+        Err(e) => return Response.bad_request(format_validation_error(e)),
+    }
+
+    // Update query with known-safe data
+    let query! = SafeQuery! {
+        query: "UPDATE users SET display_name = ?, bio = ?, website = ? WHERE id = ?"!,
+        params: [
+            SqlParam!.Str(profile.display_name!),
+            SqlParam!.Str(profile.bio!),
+            profile.website
+                |tau{url => SqlParam!.Str(url.to_string()!)}
+                |unwrap_or(SqlParam!.Null),
+            SqlParam!.Int(user_id!),
+        ],
+    }
+
+    match execute_query(db, query!) {
+        Ok(_) => Response.ok().json(json!({ "message": "Profile updated" })),
+        Err(e) => {
+            log.error("Update failed: {}", e)
+            Response.internal_error("Update failed")
+        }
+    }
+}
+
+fn format_validation_error(e: ValidationError) -> str {
+    match e {
+        ValidationError.InvalidUsername(msg) => "Invalid username: " ++ msg,
+        ValidationError.WeakPassword(msg) => "Weak password: " ++ msg,
+        ValidationError.InvalidEmail(msg) => "Invalid email: " ++ msg,
+        ValidationError.InvalidUrl(msg) => "Invalid URL: " ++ msg,
+        ValidationError.XssAttempt(_) => "Invalid input detected",
+        ValidationError.SqlInjectionAttempt(_) => "Invalid input detected",
+    }
+}
+
+fn main() {
+    let app = App.new()
+        .post("/register", handle_register)
+        .put("/profile", authenticate(handle_update_profile))
+        .with_middleware(rate_limit(100, time.Duration.minutes(1)))
+        .with_middleware(cors(["https://example.com"]))
+
+    app.listen("0.0.0.0:8080")|await
+}

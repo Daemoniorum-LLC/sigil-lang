@@ -7,6 +7,7 @@
 //! - Tree-walking interpreter for development/debugging
 //! - JIT compiler using Cranelift for native performance
 //! - Comprehensive optimization passes (O0-O3)
+//! - Rich diagnostic reporting with colored output
 
 pub mod lexer;
 pub mod ast;
@@ -16,6 +17,7 @@ pub mod interpreter;
 pub mod typeck;
 pub mod stdlib;
 pub mod optimize;
+pub mod diagnostic;
 
 #[cfg(feature = "jit")]
 pub mod codegen;
@@ -31,6 +33,7 @@ pub use interpreter::{Interpreter, Value, Evidence, RuntimeError, Function};
 pub use typeck::{TypeChecker, Type, TypeError, EvidenceLevel};
 pub use stdlib::register_stdlib;
 pub use optimize::{Optimizer, OptLevel, OptStats, optimize};
+pub use diagnostic::{Diagnostic, DiagnosticBuilder, Diagnostics, Severity, FixSuggestion};
 
 #[cfg(feature = "jit")]
 pub use codegen::JitCompiler;

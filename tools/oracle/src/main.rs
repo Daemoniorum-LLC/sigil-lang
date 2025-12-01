@@ -16,6 +16,67 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 use tracing::info;
 
 use sigil_parser::{Lexer, Parser, Token, Span};
+use std::collections::HashMap;
+
+/// A symbol definition in the document.
+#[derive(Debug, Clone)]
+struct SymbolDef {
+    name: String,
+    kind: SymbolKind,
+    span: Span,
+    #[allow(dead_code)]
+    detail: Option<String>,
+}
+
+/// Semantic token types for highlighting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SemanticTokenType {
+    Keyword,
+    Function,
+    Variable,
+    Parameter,
+    Type,
+    Morpheme,
+    Evidentiality,
+    Operator,
+    Comment,
+    String,
+    Number,
+}
+
+impl SemanticTokenType {
+    fn to_index(self) -> u32 {
+        match self {
+            Self::Keyword => 0,
+            Self::Function => 1,
+            Self::Variable => 2,
+            Self::Parameter => 3,
+            Self::Type => 4,
+            Self::Morpheme => 5,
+            Self::Evidentiality => 6,
+            Self::Operator => 7,
+            Self::Comment => 8,
+            Self::String => 9,
+            Self::Number => 10,
+        }
+    }
+
+    fn legend() -> Vec<SemanticTokenType> {
+        vec![
+            Self::Keyword,
+            Self::Function,
+            Self::Variable,
+            Self::Parameter,
+            Self::Type,
+            Self::Morpheme,
+            Self::Evidentiality,
+            Self::Operator,
+            Self::Comment,
+            Self::String,
+            Self::Number,
+        ]
+    }
+}
 
 /// Document state tracked by the server.
 struct Document {
@@ -23,6 +84,10 @@ struct Document {
     content: Rope,
     /// The document version.
     version: i32,
+    /// Symbol definitions in the document.
+    symbols: Vec<SymbolDef>,
+    /// Symbol references (name -> list of usage spans).
+    references: HashMap<String, Vec<Span>>,
 }
 
 /// The Oracle language server.
@@ -321,6 +386,223 @@ impl OracleServer {
 
         items
     }
+
+    /// Extract symbols from a document.
+    fn extract_symbols(&self, content: &str) -> (Vec<SymbolDef>, HashMap<String, Vec<Span>>) {
+        let mut symbols = Vec::new();
+        let mut references: HashMap<String, Vec<Span>> = HashMap::new();
+        let mut lexer = Lexer::new(content);
+        let mut prev_token: Option<Token> = None;
+
+        while let Some((token, span)) = lexer.next_token() {
+            match (&prev_token, &token) {
+                // Function definitions: fn name
+                (Some(Token::Fn), Token::Ident(name)) => {
+                    symbols.push(SymbolDef {
+                        name: name.clone(),
+                        kind: SymbolKind::FUNCTION,
+                        span,
+                        detail: Some("function".to_string()),
+                    });
+                }
+                // Struct definitions: struct Name
+                (Some(Token::Struct), Token::Ident(name)) => {
+                    symbols.push(SymbolDef {
+                        name: name.clone(),
+                        kind: SymbolKind::STRUCT,
+                        span,
+                        detail: Some("struct".to_string()),
+                    });
+                }
+                // Enum definitions: enum Name
+                (Some(Token::Enum), Token::Ident(name)) => {
+                    symbols.push(SymbolDef {
+                        name: name.clone(),
+                        kind: SymbolKind::ENUM,
+                        span,
+                        detail: Some("enum".to_string()),
+                    });
+                }
+                // Trait definitions: trait Name
+                (Some(Token::Trait), Token::Ident(name)) => {
+                    symbols.push(SymbolDef {
+                        name: name.clone(),
+                        kind: SymbolKind::INTERFACE,
+                        span,
+                        detail: Some("trait".to_string()),
+                    });
+                }
+                // Variable definitions: let name or let mut name
+                (Some(Token::Let | Token::Mut), Token::Ident(name)) => {
+                    symbols.push(SymbolDef {
+                        name: name.clone(),
+                        kind: SymbolKind::VARIABLE,
+                        span,
+                        detail: Some("variable".to_string()),
+                    });
+                }
+                // Const definitions: const NAME
+                (Some(Token::Const), Token::Ident(name)) => {
+                    symbols.push(SymbolDef {
+                        name: name.clone(),
+                        kind: SymbolKind::CONSTANT,
+                        span,
+                        detail: Some("constant".to_string()),
+                    });
+                }
+                // Actor definitions: actor Name
+                (Some(Token::Actor), Token::Ident(name)) => {
+                    symbols.push(SymbolDef {
+                        name: name.clone(),
+                        kind: SymbolKind::CLASS,
+                        span,
+                        detail: Some("actor".to_string()),
+                    });
+                }
+                // Track all identifier usages as references
+                (_, Token::Ident(name)) => {
+                    references.entry(name.clone()).or_default().push(span);
+                }
+                _ => {}
+            }
+            prev_token = Some(token);
+        }
+
+        (symbols, references)
+    }
+
+    /// Generate semantic tokens for a document.
+    fn generate_semantic_tokens(&self, content: &str) -> Vec<SemanticToken> {
+        let mut tokens = Vec::new();
+        let mut lexer = Lexer::new(content);
+        let mut prev_line = 0u32;
+        let mut prev_char = 0u32;
+
+        while let Some((token, span)) = lexer.next_token() {
+            let token_type = match &token {
+                // Keywords
+                Token::Fn | Token::Let | Token::Mut | Token::Const | Token::If |
+                Token::Else | Token::Match | Token::For | Token::While | Token::Loop |
+                Token::Return | Token::Break | Token::Continue | Token::Struct |
+                Token::Enum | Token::Trait | Token::Impl | Token::Pub | Token::Use |
+                Token::Mod | Token::Async | Token::Await | Token::Actor | Token::Type |
+                Token::Where | Token::In | Token::As | Token::Static => Some(SemanticTokenType::Keyword),
+
+                // Morphemes
+                Token::Tau | Token::Phi | Token::Sigma | Token::Rho |
+                Token::Lambda | Token::Pi | Token::Hourglass => Some(SemanticTokenType::Morpheme),
+
+                // Evidentiality markers
+                Token::Bang | Token::Question | Token::Tilde |
+                Token::Interrobang => Some(SemanticTokenType::Evidentiality),
+
+                // Operators
+                Token::Pipe | Token::MiddleDot | Token::Arrow | Token::FatArrow |
+                Token::Plus | Token::Minus | Token::Star | Token::Slash |
+                Token::EqEq | Token::NotEq | Token::Lt | Token::Gt |
+                Token::AndAnd | Token::OrOr => Some(SemanticTokenType::Operator),
+
+                // Comments
+                Token::LineComment(_) | Token::DocComment(_) => Some(SemanticTokenType::Comment),
+
+                // Strings
+                Token::StringLit(_) | Token::CharLit(_) => Some(SemanticTokenType::String),
+
+                // Numbers
+                Token::IntLit(_) | Token::FloatLit(_) | Token::BinaryLit(_) |
+                Token::HexLit(_) | Token::OctalLit(_) => Some(SemanticTokenType::Number),
+
+                // Identifiers (would need context to distinguish function vs variable)
+                Token::Ident(_) => Some(SemanticTokenType::Variable),
+
+                _ => None,
+            };
+
+            if let Some(tt) = token_type {
+                let (line, col) = self.offset_to_line_col(content, span.start);
+                let length = (span.end - span.start) as u32;
+
+                // Calculate delta from previous token
+                let delta_line = line - prev_line;
+                let delta_start = if delta_line == 0 {
+                    col - prev_char
+                } else {
+                    col
+                };
+
+                tokens.push(SemanticToken {
+                    delta_line,
+                    delta_start,
+                    length,
+                    token_type: tt.to_index(),
+                    token_modifiers_bitset: 0,
+                });
+
+                prev_line = line;
+                prev_char = col;
+            }
+        }
+
+        tokens
+    }
+
+    /// Convert byte offset to line/column.
+    fn offset_to_line_col(&self, content: &str, offset: usize) -> (u32, u32) {
+        let mut line = 0u32;
+        let mut col = 0u32;
+
+        for (i, ch) in content.char_indices() {
+            if i >= offset {
+                break;
+            }
+            if ch == '\n' {
+                line += 1;
+                col = 0;
+            } else {
+                col += 1;
+            }
+        }
+
+        (line, col)
+    }
+
+    /// Find the definition of a symbol at the given position.
+    fn find_definition(&self, uri: &Url, position: Position) -> Option<Location> {
+        let doc = self.documents.get(uri)?;
+        let content = doc.content.to_string();
+        let offset = self.position_to_offset(&content, position)?;
+
+        // Get the token at position
+        let mut lexer = Lexer::new(&content);
+        let mut target_name: Option<String> = None;
+
+        while let Some((token, span)) = lexer.next_token() {
+            if span.start <= offset && offset < span.end {
+                if let Token::Ident(name) = token {
+                    target_name = Some(name);
+                }
+                break;
+            }
+        }
+
+        let name = target_name?;
+
+        // Search for definition in symbols
+        for sym in &doc.symbols {
+            if sym.name == name {
+                let (line, col, end_col) = self.span_to_position(&content, Some(sym.span));
+                return Some(Location {
+                    uri: uri.clone(),
+                    range: Range {
+                        start: Position { line, character: col },
+                        end: Position { line, character: end_col },
+                    },
+                });
+            }
+        }
+
+        None
+    }
 }
 
 // Helper trait to get span from parse errors
@@ -342,6 +624,24 @@ impl LanguageServer for OracleServer {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
         info!("Oracle LSP server initializing");
 
+        // Build semantic tokens legend
+        let token_types: Vec<tower_lsp::lsp_types::SemanticTokenType> = SemanticTokenType::legend()
+            .into_iter()
+            .map(|t| match t {
+                SemanticTokenType::Keyword => tower_lsp::lsp_types::SemanticTokenType::KEYWORD,
+                SemanticTokenType::Function => tower_lsp::lsp_types::SemanticTokenType::FUNCTION,
+                SemanticTokenType::Variable => tower_lsp::lsp_types::SemanticTokenType::VARIABLE,
+                SemanticTokenType::Parameter => tower_lsp::lsp_types::SemanticTokenType::PARAMETER,
+                SemanticTokenType::Type => tower_lsp::lsp_types::SemanticTokenType::TYPE,
+                SemanticTokenType::Morpheme => tower_lsp::lsp_types::SemanticTokenType::MACRO,
+                SemanticTokenType::Evidentiality => tower_lsp::lsp_types::SemanticTokenType::MODIFIER,
+                SemanticTokenType::Operator => tower_lsp::lsp_types::SemanticTokenType::OPERATOR,
+                SemanticTokenType::Comment => tower_lsp::lsp_types::SemanticTokenType::COMMENT,
+                SemanticTokenType::String => tower_lsp::lsp_types::SemanticTokenType::STRING,
+                SemanticTokenType::Number => tower_lsp::lsp_types::SemanticTokenType::NUMBER,
+            })
+            .collect();
+
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
@@ -357,6 +657,21 @@ impl LanguageServer for OracleServer {
                     ]),
                     ..Default::default()
                 }),
+                definition_provider: Some(OneOf::Left(true)),
+                document_symbol_provider: Some(OneOf::Left(true)),
+                semantic_tokens_provider: Some(
+                    SemanticTokensServerCapabilities::SemanticTokensOptions(
+                        SemanticTokensOptions {
+                            legend: SemanticTokensLegend {
+                                token_types,
+                                token_modifiers: vec![],
+                            },
+                            full: Some(SemanticTokensFullOptions::Bool(true)),
+                            range: None,
+                            ..Default::default()
+                        },
+                    ),
+                ),
                 diagnostic_provider: Some(DiagnosticServerCapabilities::Options(
                     DiagnosticOptions {
                         inter_file_dependencies: false,
@@ -392,11 +707,16 @@ impl LanguageServer for OracleServer {
 
         info!("Document opened: {}", uri);
 
+        // Extract symbols
+        let (symbols, references) = self.extract_symbols(&content);
+
         self.documents.insert(
             uri.clone(),
             Document {
                 content: Rope::from_str(&content),
                 version,
+                symbols,
+                references,
             },
         );
 
@@ -412,9 +732,14 @@ impl LanguageServer for OracleServer {
         let version = params.text_document.version;
 
         if let Some(change) = params.content_changes.into_iter().last() {
+            // Extract symbols from new content
+            let (symbols, references) = self.extract_symbols(&change.text);
+
             if let Some(mut doc) = self.documents.get_mut(&uri) {
                 doc.content = Rope::from_str(&change.text);
                 doc.version = version;
+                doc.symbols = symbols;
+                doc.references = references;
             }
         }
 
@@ -471,6 +796,76 @@ impl LanguageServer for OracleServer {
 
         let items = self.get_completions(&content, position);
         Ok(Some(CompletionResponse::Array(items)))
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        let uri = &params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+
+        if let Some(location) = self.find_definition(uri, position) {
+            Ok(Some(GotoDefinitionResponse::Scalar(location)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> Result<Option<DocumentSymbolResponse>> {
+        let uri = &params.text_document.uri;
+
+        let doc = match self.documents.get(uri) {
+            Some(doc) => doc,
+            None => return Ok(None),
+        };
+
+        let content = doc.content.to_string();
+        let symbols: Vec<SymbolInformation> = doc
+            .symbols
+            .iter()
+            .map(|sym| {
+                let (line, col, end_col) = self.span_to_position(&content, Some(sym.span));
+                #[allow(deprecated)]
+                SymbolInformation {
+                    name: sym.name.clone(),
+                    kind: sym.kind,
+                    tags: None,
+                    deprecated: None,
+                    location: Location {
+                        uri: uri.clone(),
+                        range: Range {
+                            start: Position { line, character: col },
+                            end: Position { line, character: end_col },
+                        },
+                    },
+                    container_name: None,
+                }
+            })
+            .collect();
+
+        Ok(Some(DocumentSymbolResponse::Flat(symbols)))
+    }
+
+    async fn semantic_tokens_full(
+        &self,
+        params: SemanticTokensParams,
+    ) -> Result<Option<SemanticTokensResult>> {
+        let uri = &params.text_document.uri;
+
+        let content = match self.documents.get(uri) {
+            Some(doc) => doc.content.to_string(),
+            None => return Ok(None),
+        };
+
+        let tokens = self.generate_semantic_tokens(&content);
+        Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
+            result_id: None,
+            data: tokens,
+        })))
     }
 }
 
