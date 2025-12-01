@@ -457,6 +457,7 @@ impl Optimizer {
                     let b = self.pass_constant_fold_block(body);
                     let b = self.pass_inline_block(&b);  // Function inlining
                     let b = self.pass_strength_reduce_block(&b);
+                    let b = self.pass_licm_block(&b);  // LICM pass
                     let b = self.pass_cse_block(&b);  // CSE pass
                     let b = self.pass_dead_code_block(&b);
                     self.pass_simplify_branches_block(&b)
@@ -468,6 +469,8 @@ impl Optimizer {
                         b = self.pass_constant_fold_block(&b);
                         b = self.pass_inline_block(&b);  // Function inlining
                         b = self.pass_strength_reduce_block(&b);
+                        b = self.pass_loop_unroll_block(&b);  // Loop unrolling
+                        b = self.pass_licm_block(&b);  // LICM pass
                         b = self.pass_cse_block(&b);  // CSE pass
                         b = self.pass_dead_code_block(&b);
                         b = self.pass_simplify_branches_block(&b);
@@ -1218,6 +1221,560 @@ impl Optimizer {
             Expr::Array(elements) => Expr::Array(
                 elements.iter().map(|e| self.pass_inline_expr(e)).collect()
             ),
+            other => other.clone(),
+        }
+    }
+
+    // ========================================================================
+    // Pass: Loop Unrolling
+    // ========================================================================
+
+    /// Unroll small counted loops for better performance
+    fn pass_loop_unroll_block(&mut self, block: &Block) -> Block {
+        let stmts = block.stmts.iter().map(|s| self.pass_loop_unroll_stmt(s)).collect();
+        let expr = block.expr.as_ref().map(|e| Box::new(self.pass_loop_unroll_expr(e)));
+        Block { stmts, expr }
+    }
+
+    fn pass_loop_unroll_stmt(&mut self, stmt: &Stmt) -> Stmt {
+        match stmt {
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: init.as_ref().map(|e| self.pass_loop_unroll_expr(e)),
+            },
+            Stmt::Expr(e) => Stmt::Expr(self.pass_loop_unroll_expr(e)),
+            Stmt::Semi(e) => Stmt::Semi(self.pass_loop_unroll_expr(e)),
+            Stmt::Item(item) => Stmt::Item(item.clone()),
+        }
+    }
+
+    fn pass_loop_unroll_expr(&mut self, expr: &Expr) -> Expr {
+        match expr {
+            Expr::While { condition, body } => {
+                // Try to unroll if this is a countable loop
+                if let Some(unrolled) = self.try_unroll_loop(condition, body) {
+                    self.stats.loops_optimized += 1;
+                    return unrolled;
+                }
+                // Otherwise, just recurse
+                Expr::While {
+                    condition: Box::new(self.pass_loop_unroll_expr(condition)),
+                    body: self.pass_loop_unroll_block(body),
+                }
+            }
+            Expr::If { condition, then_branch, else_branch } => Expr::If {
+                condition: Box::new(self.pass_loop_unroll_expr(condition)),
+                then_branch: self.pass_loop_unroll_block(then_branch),
+                else_branch: else_branch.as_ref().map(|e| Box::new(self.pass_loop_unroll_expr(e))),
+            },
+            Expr::Block(b) => Expr::Block(self.pass_loop_unroll_block(b)),
+            Expr::Binary { op, left, right } => Expr::Binary {
+                op: *op,
+                left: Box::new(self.pass_loop_unroll_expr(left)),
+                right: Box::new(self.pass_loop_unroll_expr(right)),
+            },
+            Expr::Unary { op, expr: inner } => Expr::Unary {
+                op: *op,
+                expr: Box::new(self.pass_loop_unroll_expr(inner)),
+            },
+            Expr::Call { func, args } => Expr::Call {
+                func: func.clone(),
+                args: args.iter().map(|a| self.pass_loop_unroll_expr(a)).collect(),
+            },
+            Expr::Return(e) => Expr::Return(e.as_ref().map(|e| Box::new(self.pass_loop_unroll_expr(e)))),
+            Expr::Assign { target, value } => Expr::Assign {
+                target: target.clone(),
+                value: Box::new(self.pass_loop_unroll_expr(value)),
+            },
+            other => other.clone(),
+        }
+    }
+
+    /// Try to unroll a loop with known bounds
+    /// Pattern: while i < CONST { body; i = i + 1; }
+    fn try_unroll_loop(&self, condition: &Expr, body: &Block) -> Option<Expr> {
+        // Check for pattern: var < constant
+        let (loop_var, upper_bound) = self.extract_loop_bounds(condition)?;
+
+        // Only unroll small loops (up to 8 iterations from 0)
+        if upper_bound > 8 || upper_bound <= 0 {
+            return None;
+        }
+
+        // Check if body contains increment: loop_var = loop_var + 1
+        if !self.body_has_simple_increment(&loop_var, body) {
+            return None;
+        }
+
+        // Check that loop body is small enough to unroll (max 5 statements)
+        let stmt_count = body.stmts.len();
+        if stmt_count > 5 {
+            return None;
+        }
+
+        // Generate unrolled body
+        let mut unrolled_stmts: Vec<Stmt> = Vec::new();
+
+        for i in 0..upper_bound {
+            // For each iteration, substitute the loop variable with the constant
+            let substituted_body = self.substitute_loop_var_in_block(body, &loop_var, i);
+
+            // Add all statements except the increment
+            for stmt in &substituted_body.stmts {
+                if !self.is_increment_stmt(&loop_var, stmt) {
+                    unrolled_stmts.push(stmt.clone());
+                }
+            }
+        }
+
+        // Return unrolled block
+        Some(Expr::Block(Block {
+            stmts: unrolled_stmts,
+            expr: None,
+        }))
+    }
+
+    /// Extract loop bounds from condition: var < constant
+    fn extract_loop_bounds(&self, condition: &Expr) -> Option<(String, i64)> {
+        if let Expr::Binary { op: BinOp::Lt, left, right } = condition {
+            // Left should be a variable
+            if let Expr::Path(path) = left.as_ref() {
+                if path.segments.len() == 1 {
+                    let var_name = path.segments[0].ident.name.clone();
+                    // Right should be a constant
+                    if let Some(bound) = self.as_int(right) {
+                        return Some((var_name, bound));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if body contains: loop_var = loop_var + 1
+    fn body_has_simple_increment(&self, loop_var: &str, body: &Block) -> bool {
+        for stmt in &body.stmts {
+            if self.is_increment_stmt(loop_var, stmt) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Check if statement is: var = var + 1
+    fn is_increment_stmt(&self, var_name: &str, stmt: &Stmt) -> bool {
+        match stmt {
+            Stmt::Semi(Expr::Assign { target, value }) | Stmt::Expr(Expr::Assign { target, value }) => {
+                // Target should be the loop variable
+                if let Expr::Path(path) = target.as_ref() {
+                    if path.segments.len() == 1 && path.segments[0].ident.name == var_name {
+                        // Value should be var + 1
+                        if let Expr::Binary { op: BinOp::Add, left, right } = value.as_ref() {
+                            if let Expr::Path(lpath) = left.as_ref() {
+                                if lpath.segments.len() == 1 && lpath.segments[0].ident.name == var_name {
+                                    if let Some(1) = self.as_int(right) {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Substitute loop variable with constant value in block
+    fn substitute_loop_var_in_block(&self, block: &Block, var_name: &str, value: i64) -> Block {
+        let stmts = block.stmts.iter().map(|s| self.substitute_loop_var_in_stmt(s, var_name, value)).collect();
+        let expr = block.expr.as_ref().map(|e| Box::new(self.substitute_loop_var_in_expr(e, var_name, value)));
+        Block { stmts, expr }
+    }
+
+    fn substitute_loop_var_in_stmt(&self, stmt: &Stmt, var_name: &str, value: i64) -> Stmt {
+        match stmt {
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: init.as_ref().map(|e| self.substitute_loop_var_in_expr(e, var_name, value)),
+            },
+            Stmt::Expr(e) => Stmt::Expr(self.substitute_loop_var_in_expr(e, var_name, value)),
+            Stmt::Semi(e) => Stmt::Semi(self.substitute_loop_var_in_expr(e, var_name, value)),
+            Stmt::Item(item) => Stmt::Item(item.clone()),
+        }
+    }
+
+    fn substitute_loop_var_in_expr(&self, expr: &Expr, var_name: &str, value: i64) -> Expr {
+        match expr {
+            Expr::Path(path) => {
+                if path.segments.len() == 1 && path.segments[0].ident.name == var_name {
+                    return Expr::Literal(Literal::Int {
+                        value: value.to_string(),
+                        base: NumBase::Decimal,
+                        suffix: None,
+                    });
+                }
+                expr.clone()
+            }
+            Expr::Binary { op, left, right } => Expr::Binary {
+                op: *op,
+                left: Box::new(self.substitute_loop_var_in_expr(left, var_name, value)),
+                right: Box::new(self.substitute_loop_var_in_expr(right, var_name, value)),
+            },
+            Expr::Unary { op, expr: inner } => Expr::Unary {
+                op: *op,
+                expr: Box::new(self.substitute_loop_var_in_expr(inner, var_name, value)),
+            },
+            Expr::Call { func, args } => Expr::Call {
+                func: Box::new(self.substitute_loop_var_in_expr(func, var_name, value)),
+                args: args.iter().map(|a| self.substitute_loop_var_in_expr(a, var_name, value)).collect(),
+            },
+            Expr::If { condition, then_branch, else_branch } => Expr::If {
+                condition: Box::new(self.substitute_loop_var_in_expr(condition, var_name, value)),
+                then_branch: self.substitute_loop_var_in_block(then_branch, var_name, value),
+                else_branch: else_branch.as_ref().map(|e| Box::new(self.substitute_loop_var_in_expr(e, var_name, value))),
+            },
+            Expr::While { condition, body } => Expr::While {
+                condition: Box::new(self.substitute_loop_var_in_expr(condition, var_name, value)),
+                body: self.substitute_loop_var_in_block(body, var_name, value),
+            },
+            Expr::Block(b) => Expr::Block(self.substitute_loop_var_in_block(b, var_name, value)),
+            Expr::Return(e) => Expr::Return(e.as_ref().map(|e| Box::new(self.substitute_loop_var_in_expr(e, var_name, value)))),
+            Expr::Assign { target, value: v } => Expr::Assign {
+                target: Box::new(self.substitute_loop_var_in_expr(target, var_name, value)),
+                value: Box::new(self.substitute_loop_var_in_expr(v, var_name, value)),
+            },
+            Expr::Index { expr: e, index } => Expr::Index {
+                expr: Box::new(self.substitute_loop_var_in_expr(e, var_name, value)),
+                index: Box::new(self.substitute_loop_var_in_expr(index, var_name, value)),
+            },
+            Expr::Array(elements) => Expr::Array(
+                elements.iter().map(|e| self.substitute_loop_var_in_expr(e, var_name, value)).collect()
+            ),
+            other => other.clone(),
+        }
+    }
+
+    // ========================================================================
+    // Pass: Loop Invariant Code Motion (LICM)
+    // ========================================================================
+
+    /// Move loop-invariant computations out of loops
+    fn pass_licm_block(&mut self, block: &Block) -> Block {
+        let stmts = block.stmts.iter().map(|s| self.pass_licm_stmt(s)).collect();
+        let expr = block.expr.as_ref().map(|e| Box::new(self.pass_licm_expr(e)));
+        Block { stmts, expr }
+    }
+
+    fn pass_licm_stmt(&mut self, stmt: &Stmt) -> Stmt {
+        match stmt {
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: init.as_ref().map(|e| self.pass_licm_expr(e)),
+            },
+            Stmt::Expr(e) => Stmt::Expr(self.pass_licm_expr(e)),
+            Stmt::Semi(e) => Stmt::Semi(self.pass_licm_expr(e)),
+            Stmt::Item(item) => Stmt::Item(item.clone()),
+        }
+    }
+
+    fn pass_licm_expr(&mut self, expr: &Expr) -> Expr {
+        match expr {
+            Expr::While { condition, body } => {
+                // Find variables modified in the loop
+                let mut modified_vars = HashSet::new();
+                self.collect_modified_vars_block(body, &mut modified_vars);
+
+                // Also consider the loop condition might modify vars
+                self.collect_modified_vars_expr(condition, &mut modified_vars);
+
+                // Find invariant expressions in the body
+                let mut invariant_exprs: Vec<(String, Expr)> = Vec::new();
+                self.find_loop_invariants(body, &modified_vars, &mut invariant_exprs);
+
+                if invariant_exprs.is_empty() {
+                    // No LICM opportunities, just recurse
+                    return Expr::While {
+                        condition: Box::new(self.pass_licm_expr(condition)),
+                        body: self.pass_licm_block(body),
+                    };
+                }
+
+                // Create let bindings for invariant expressions before the loop
+                let mut pre_loop_stmts: Vec<Stmt> = Vec::new();
+                let mut substitution_map: HashMap<String, String> = HashMap::new();
+
+                for (original_key, invariant_expr) in &invariant_exprs {
+                    let var_name = format!("__licm_{}", self.cse_counter);
+                    self.cse_counter += 1;
+
+                    pre_loop_stmts.push(make_cse_let(&var_name, invariant_expr.clone()));
+                    substitution_map.insert(original_key.clone(), var_name);
+                    self.stats.loops_optimized += 1;
+                }
+
+                // Replace invariant expressions in the loop body
+                let new_body = self.replace_invariants_in_block(body, &invariant_exprs, &substitution_map);
+
+                // Recurse into the modified loop
+                let new_while = Expr::While {
+                    condition: Box::new(self.pass_licm_expr(condition)),
+                    body: self.pass_licm_block(&new_body),
+                };
+
+                // Return block with pre-loop bindings + loop
+                pre_loop_stmts.push(Stmt::Expr(new_while));
+                Expr::Block(Block {
+                    stmts: pre_loop_stmts,
+                    expr: None,
+                })
+            }
+            Expr::If { condition, then_branch, else_branch } => Expr::If {
+                condition: Box::new(self.pass_licm_expr(condition)),
+                then_branch: self.pass_licm_block(then_branch),
+                else_branch: else_branch.as_ref().map(|e| Box::new(self.pass_licm_expr(e))),
+            },
+            Expr::Block(b) => Expr::Block(self.pass_licm_block(b)),
+            Expr::Binary { op, left, right } => Expr::Binary {
+                op: *op,
+                left: Box::new(self.pass_licm_expr(left)),
+                right: Box::new(self.pass_licm_expr(right)),
+            },
+            Expr::Unary { op, expr: inner } => Expr::Unary {
+                op: *op,
+                expr: Box::new(self.pass_licm_expr(inner)),
+            },
+            Expr::Call { func, args } => Expr::Call {
+                func: func.clone(),
+                args: args.iter().map(|a| self.pass_licm_expr(a)).collect(),
+            },
+            Expr::Return(e) => Expr::Return(e.as_ref().map(|e| Box::new(self.pass_licm_expr(e)))),
+            Expr::Assign { target, value } => Expr::Assign {
+                target: target.clone(),
+                value: Box::new(self.pass_licm_expr(value)),
+            },
+            other => other.clone(),
+        }
+    }
+
+    /// Collect all variables that are modified in a block
+    fn collect_modified_vars_block(&self, block: &Block, modified: &mut HashSet<String>) {
+        for stmt in &block.stmts {
+            self.collect_modified_vars_stmt(stmt, modified);
+        }
+        if let Some(expr) = &block.expr {
+            self.collect_modified_vars_expr(expr, modified);
+        }
+    }
+
+    fn collect_modified_vars_stmt(&self, stmt: &Stmt, modified: &mut HashSet<String>) {
+        match stmt {
+            Stmt::Let { pattern, init, .. } => {
+                // Let bindings introduce new variables
+                if let Pattern::Ident { name, .. } = pattern {
+                    modified.insert(name.name.clone());
+                }
+                if let Some(e) = init {
+                    self.collect_modified_vars_expr(e, modified);
+                }
+            }
+            Stmt::Expr(e) | Stmt::Semi(e) => self.collect_modified_vars_expr(e, modified),
+            _ => {}
+        }
+    }
+
+    fn collect_modified_vars_expr(&self, expr: &Expr, modified: &mut HashSet<String>) {
+        match expr {
+            Expr::Assign { target, value } => {
+                if let Expr::Path(path) = target.as_ref() {
+                    if path.segments.len() == 1 {
+                        modified.insert(path.segments[0].ident.name.clone());
+                    }
+                }
+                self.collect_modified_vars_expr(value, modified);
+            }
+            Expr::Binary { left, right, .. } => {
+                self.collect_modified_vars_expr(left, modified);
+                self.collect_modified_vars_expr(right, modified);
+            }
+            Expr::Unary { expr: inner, .. } => {
+                self.collect_modified_vars_expr(inner, modified);
+            }
+            Expr::If { condition, then_branch, else_branch } => {
+                self.collect_modified_vars_expr(condition, modified);
+                self.collect_modified_vars_block(then_branch, modified);
+                if let Some(e) = else_branch {
+                    self.collect_modified_vars_expr(e, modified);
+                }
+            }
+            Expr::While { condition, body } => {
+                self.collect_modified_vars_expr(condition, modified);
+                self.collect_modified_vars_block(body, modified);
+            }
+            Expr::Block(b) => self.collect_modified_vars_block(b, modified),
+            Expr::Call { args, .. } => {
+                for arg in args {
+                    self.collect_modified_vars_expr(arg, modified);
+                }
+            }
+            Expr::Return(Some(e)) => self.collect_modified_vars_expr(e, modified),
+            _ => {}
+        }
+    }
+
+    /// Find loop-invariant expressions in a block
+    fn find_loop_invariants(&self, block: &Block, modified: &HashSet<String>, out: &mut Vec<(String, Expr)>) {
+        for stmt in &block.stmts {
+            self.find_loop_invariants_stmt(stmt, modified, out);
+        }
+        if let Some(expr) = &block.expr {
+            self.find_loop_invariants_expr(expr, modified, out);
+        }
+    }
+
+    fn find_loop_invariants_stmt(&self, stmt: &Stmt, modified: &HashSet<String>, out: &mut Vec<(String, Expr)>) {
+        match stmt {
+            Stmt::Let { init: Some(e), .. } => self.find_loop_invariants_expr(e, modified, out),
+            Stmt::Expr(e) | Stmt::Semi(e) => self.find_loop_invariants_expr(e, modified, out),
+            _ => {}
+        }
+    }
+
+    fn find_loop_invariants_expr(&self, expr: &Expr, modified: &HashSet<String>, out: &mut Vec<(String, Expr)>) {
+        // First recurse into subexpressions
+        match expr {
+            Expr::Binary { left, right, .. } => {
+                self.find_loop_invariants_expr(left, modified, out);
+                self.find_loop_invariants_expr(right, modified, out);
+            }
+            Expr::Unary { expr: inner, .. } => {
+                self.find_loop_invariants_expr(inner, modified, out);
+            }
+            Expr::Call { args, .. } => {
+                for arg in args {
+                    self.find_loop_invariants_expr(arg, modified, out);
+                }
+            }
+            Expr::Index { expr: e, index } => {
+                self.find_loop_invariants_expr(e, modified, out);
+                self.find_loop_invariants_expr(index, modified, out);
+            }
+            _ => {}
+        }
+
+        // Then check if this expression is loop-invariant and worth hoisting
+        if self.is_loop_invariant(expr, modified) && is_cse_worthy(expr) && is_pure_expr(expr) {
+            let key = format!("{:?}", expr_hash(expr));
+            // Check if we already have this exact expression
+            if !out.iter().any(|(k, _)| k == &key) {
+                out.push((key, expr.clone()));
+            }
+        }
+    }
+
+    /// Check if an expression is loop-invariant (doesn't depend on modified variables)
+    fn is_loop_invariant(&self, expr: &Expr, modified: &HashSet<String>) -> bool {
+        match expr {
+            Expr::Literal(_) => true,
+            Expr::Path(path) => {
+                if path.segments.len() == 1 {
+                    !modified.contains(&path.segments[0].ident.name)
+                } else {
+                    true // Qualified paths are assumed invariant
+                }
+            }
+            Expr::Binary { left, right, .. } => {
+                self.is_loop_invariant(left, modified) && self.is_loop_invariant(right, modified)
+            }
+            Expr::Unary { expr: inner, .. } => self.is_loop_invariant(inner, modified),
+            Expr::Index { expr: e, index } => {
+                self.is_loop_invariant(e, modified) && self.is_loop_invariant(index, modified)
+            }
+            // Calls are not invariant (might have side effects)
+            Expr::Call { .. } => false,
+            // Other expressions are not invariant
+            _ => false,
+        }
+    }
+
+    /// Replace invariant expressions with variable references
+    fn replace_invariants_in_block(&self, block: &Block, invariants: &[(String, Expr)], subs: &HashMap<String, String>) -> Block {
+        let stmts = block.stmts.iter().map(|s| self.replace_invariants_in_stmt(s, invariants, subs)).collect();
+        let expr = block.expr.as_ref().map(|e| Box::new(self.replace_invariants_in_expr(e, invariants, subs)));
+        Block { stmts, expr }
+    }
+
+    fn replace_invariants_in_stmt(&self, stmt: &Stmt, invariants: &[(String, Expr)], subs: &HashMap<String, String>) -> Stmt {
+        match stmt {
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: init.as_ref().map(|e| self.replace_invariants_in_expr(e, invariants, subs)),
+            },
+            Stmt::Expr(e) => Stmt::Expr(self.replace_invariants_in_expr(e, invariants, subs)),
+            Stmt::Semi(e) => Stmt::Semi(self.replace_invariants_in_expr(e, invariants, subs)),
+            Stmt::Item(item) => Stmt::Item(item.clone()),
+        }
+    }
+
+    fn replace_invariants_in_expr(&self, expr: &Expr, invariants: &[(String, Expr)], subs: &HashMap<String, String>) -> Expr {
+        // Check if this expression matches an invariant
+        let key = format!("{:?}", expr_hash(expr));
+        for (inv_key, inv_expr) in invariants {
+            if &key == inv_key && expr_eq(expr, inv_expr) {
+                if let Some(var_name) = subs.get(inv_key) {
+                    return Expr::Path(TypePath {
+                        segments: vec![PathSegment {
+                            ident: Ident {
+                                name: var_name.clone(),
+                                evidentiality: None,
+                                span: Span { start: 0, end: 0 },
+                            },
+                            generics: None,
+                        }],
+                    });
+                }
+            }
+        }
+
+        // Otherwise recurse
+        match expr {
+            Expr::Binary { op, left, right } => Expr::Binary {
+                op: *op,
+                left: Box::new(self.replace_invariants_in_expr(left, invariants, subs)),
+                right: Box::new(self.replace_invariants_in_expr(right, invariants, subs)),
+            },
+            Expr::Unary { op, expr: inner } => Expr::Unary {
+                op: *op,
+                expr: Box::new(self.replace_invariants_in_expr(inner, invariants, subs)),
+            },
+            Expr::Call { func, args } => Expr::Call {
+                func: func.clone(),
+                args: args.iter().map(|a| self.replace_invariants_in_expr(a, invariants, subs)).collect(),
+            },
+            Expr::If { condition, then_branch, else_branch } => Expr::If {
+                condition: Box::new(self.replace_invariants_in_expr(condition, invariants, subs)),
+                then_branch: self.replace_invariants_in_block(then_branch, invariants, subs),
+                else_branch: else_branch.as_ref().map(|e| Box::new(self.replace_invariants_in_expr(e, invariants, subs))),
+            },
+            Expr::While { condition, body } => Expr::While {
+                condition: Box::new(self.replace_invariants_in_expr(condition, invariants, subs)),
+                body: self.replace_invariants_in_block(body, invariants, subs),
+            },
+            Expr::Block(b) => Expr::Block(self.replace_invariants_in_block(b, invariants, subs)),
+            Expr::Return(e) => Expr::Return(e.as_ref().map(|e| Box::new(self.replace_invariants_in_expr(e, invariants, subs)))),
+            Expr::Assign { target, value } => Expr::Assign {
+                target: target.clone(),
+                value: Box::new(self.replace_invariants_in_expr(value, invariants, subs)),
+            },
+            Expr::Index { expr: e, index } => Expr::Index {
+                expr: Box::new(self.replace_invariants_in_expr(e, invariants, subs)),
+                index: Box::new(self.replace_invariants_in_expr(index, invariants, subs)),
+            },
             other => other.clone(),
         }
     }

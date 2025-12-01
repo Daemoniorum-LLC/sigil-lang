@@ -207,6 +207,17 @@ pub mod jit {
             builder.symbol("sigil_array_set", sigil_array_set as *const u8);
             builder.symbol("sigil_array_len", sigil_array_len as *const u8);
 
+            // SIMD-optimized array operations
+            builder.symbol("sigil_array_sum", sigil_array_sum as *const u8);
+            builder.symbol("sigil_array_scale", sigil_array_scale as *const u8);
+            builder.symbol("sigil_array_offset", sigil_array_offset as *const u8);
+            builder.symbol("sigil_array_dot", sigil_array_dot as *const u8);
+            builder.symbol("sigil_array_add", sigil_array_add as *const u8);
+            builder.symbol("sigil_array_mul", sigil_array_mul as *const u8);
+            builder.symbol("sigil_array_min", sigil_array_min as *const u8);
+            builder.symbol("sigil_array_max", sigil_array_max as *const u8);
+            builder.symbol("sigil_array_fill", sigil_array_fill as *const u8);
+
             // FFI helper functions
             use crate::ffi::helpers::*;
             builder.symbol("sigil_string_to_cstring", sigil_string_to_cstring as *const u8);
@@ -942,6 +953,17 @@ pub mod jit {
     ) -> Result<(cranelift_codegen::ir::Value, bool), String> {
         match expr {
             Expr::Return(value) => {
+                // NOTE: Cranelift's return_call requires frame pointers which aren't enabled
+                // by default. Tail call optimization is handled at the AST level instead
+                // (see optimizer's accumulator transform for fib-like patterns).
+                //
+                // When Cranelift adds better tail call support, enable this:
+                // if let Some(v) = value {
+                //     if let Expr::Call { func: call_func, args: call_args } = v.as_ref() {
+                //         // ... use return_call instruction
+                //     }
+                // }
+
                 let ret_val = if let Some(v) = value {
                     compile_expr(module, functions, extern_fns, builder, scope, v)?
                 } else {
@@ -1064,6 +1086,8 @@ pub mod jit {
             }
 
             Expr::Return(value) => {
+                // NOTE: Tail call optimization via Cranelift's return_call requires frame
+                // pointers. Tail recursion is handled at the AST level instead.
                 let ret_val = if let Some(v) = value {
                     compile_expr(module, functions, extern_fns, builder, scope, v)?
                 } else {
@@ -2004,6 +2028,304 @@ pub mod jit {
         unsafe {
             let arr = &*(arr_ptr as *const SigilArray);
             arr.len as i64
+        }
+    }
+
+    // ============================================
+    // SIMD-Optimized Array Operations
+    // ============================================
+    // These operations process arrays in SIMD-friendly batches
+
+    /// Sum all elements in an array using SIMD-friendly loop
+    #[no_mangle]
+    pub extern "C" fn sigil_array_sum(arr_ptr: i64) -> i64 {
+        unsafe {
+            let arr = &*(arr_ptr as *const SigilArray);
+            let data = std::slice::from_raw_parts(arr.data, arr.len);
+
+            // Process in batches of 4 for SIMD-friendliness
+            let chunks = data.chunks_exact(4);
+            let remainder = chunks.remainder();
+
+            // Accumulate 4 partial sums (allows SIMD vectorization)
+            let mut sum0: i64 = 0;
+            let mut sum1: i64 = 0;
+            let mut sum2: i64 = 0;
+            let mut sum3: i64 = 0;
+
+            for chunk in chunks {
+                sum0 = sum0.wrapping_add(chunk[0]);
+                sum1 = sum1.wrapping_add(chunk[1]);
+                sum2 = sum2.wrapping_add(chunk[2]);
+                sum3 = sum3.wrapping_add(chunk[3]);
+            }
+
+            // Add remainder
+            let mut sum = sum0.wrapping_add(sum1).wrapping_add(sum2).wrapping_add(sum3);
+            for &v in remainder {
+                sum = sum.wrapping_add(v);
+            }
+
+            sum
+        }
+    }
+
+    /// Multiply all elements by a scalar (in-place, SIMD-friendly)
+    #[no_mangle]
+    pub extern "C" fn sigil_array_scale(arr_ptr: i64, scalar: i64) -> i64 {
+        unsafe {
+            let arr = &mut *(arr_ptr as *mut SigilArray);
+            let data = std::slice::from_raw_parts_mut(arr.data, arr.len);
+
+            // Process in batches of 4 for SIMD-friendliness
+            for chunk in data.chunks_exact_mut(4) {
+                chunk[0] = chunk[0].wrapping_mul(scalar);
+                chunk[1] = chunk[1].wrapping_mul(scalar);
+                chunk[2] = chunk[2].wrapping_mul(scalar);
+                chunk[3] = chunk[3].wrapping_mul(scalar);
+            }
+
+            // Handle remainder
+            let remainder_start = (data.len() / 4) * 4;
+            for v in &mut data[remainder_start..] {
+                *v = v.wrapping_mul(scalar);
+            }
+
+            arr_ptr
+        }
+    }
+
+    /// Add a scalar to all elements (in-place, SIMD-friendly)
+    #[no_mangle]
+    pub extern "C" fn sigil_array_offset(arr_ptr: i64, offset: i64) -> i64 {
+        unsafe {
+            let arr = &mut *(arr_ptr as *mut SigilArray);
+            let data = std::slice::from_raw_parts_mut(arr.data, arr.len);
+
+            // Process in batches of 4 for SIMD-friendliness
+            for chunk in data.chunks_exact_mut(4) {
+                chunk[0] = chunk[0].wrapping_add(offset);
+                chunk[1] = chunk[1].wrapping_add(offset);
+                chunk[2] = chunk[2].wrapping_add(offset);
+                chunk[3] = chunk[3].wrapping_add(offset);
+            }
+
+            let remainder_start = (data.len() / 4) * 4;
+            for v in &mut data[remainder_start..] {
+                *v = v.wrapping_add(offset);
+            }
+
+            arr_ptr
+        }
+    }
+
+    /// Dot product of two arrays (SIMD-friendly)
+    #[no_mangle]
+    pub extern "C" fn sigil_array_dot(a_ptr: i64, b_ptr: i64) -> i64 {
+        unsafe {
+            let a_arr = &*(a_ptr as *const SigilArray);
+            let b_arr = &*(b_ptr as *const SigilArray);
+
+            let len = a_arr.len.min(b_arr.len);
+            let a_data = std::slice::from_raw_parts(a_arr.data, len);
+            let b_data = std::slice::from_raw_parts(b_arr.data, len);
+
+            // Process in batches of 4 for SIMD-friendliness
+            let mut sum0: i64 = 0;
+            let mut sum1: i64 = 0;
+            let mut sum2: i64 = 0;
+            let mut sum3: i64 = 0;
+
+            let chunks = len / 4;
+            for i in 0..chunks {
+                let base = i * 4;
+                sum0 = sum0.wrapping_add(a_data[base].wrapping_mul(b_data[base]));
+                sum1 = sum1.wrapping_add(a_data[base + 1].wrapping_mul(b_data[base + 1]));
+                sum2 = sum2.wrapping_add(a_data[base + 2].wrapping_mul(b_data[base + 2]));
+                sum3 = sum3.wrapping_add(a_data[base + 3].wrapping_mul(b_data[base + 3]));
+            }
+
+            // Add remainder
+            let mut sum = sum0.wrapping_add(sum1).wrapping_add(sum2).wrapping_add(sum3);
+            for i in (chunks * 4)..len {
+                sum = sum.wrapping_add(a_data[i].wrapping_mul(b_data[i]));
+            }
+
+            sum
+        }
+    }
+
+    /// Element-wise add two arrays into a new array (SIMD-friendly)
+    #[no_mangle]
+    pub extern "C" fn sigil_array_add(a_ptr: i64, b_ptr: i64) -> i64 {
+        unsafe {
+            let a_arr = &*(a_ptr as *const SigilArray);
+            let b_arr = &*(b_ptr as *const SigilArray);
+
+            let len = a_arr.len.min(b_arr.len);
+            let a_data = std::slice::from_raw_parts(a_arr.data, len);
+            let b_data = std::slice::from_raw_parts(b_arr.data, len);
+
+            // Create result array
+            let result = sigil_array_new(len as i64);
+            let r_arr = &mut *(result as *mut SigilArray);
+            r_arr.len = len;
+            let r_data = std::slice::from_raw_parts_mut(r_arr.data, len);
+
+            // Process in batches of 4 for SIMD-friendliness
+            for i in 0..(len / 4) {
+                let base = i * 4;
+                r_data[base] = a_data[base].wrapping_add(b_data[base]);
+                r_data[base + 1] = a_data[base + 1].wrapping_add(b_data[base + 1]);
+                r_data[base + 2] = a_data[base + 2].wrapping_add(b_data[base + 2]);
+                r_data[base + 3] = a_data[base + 3].wrapping_add(b_data[base + 3]);
+            }
+
+            // Handle remainder
+            for i in ((len / 4) * 4)..len {
+                r_data[i] = a_data[i].wrapping_add(b_data[i]);
+            }
+
+            result
+        }
+    }
+
+    /// Element-wise multiply two arrays into a new array (SIMD-friendly)
+    #[no_mangle]
+    pub extern "C" fn sigil_array_mul(a_ptr: i64, b_ptr: i64) -> i64 {
+        unsafe {
+            let a_arr = &*(a_ptr as *const SigilArray);
+            let b_arr = &*(b_ptr as *const SigilArray);
+
+            let len = a_arr.len.min(b_arr.len);
+            let a_data = std::slice::from_raw_parts(a_arr.data, len);
+            let b_data = std::slice::from_raw_parts(b_arr.data, len);
+
+            // Create result array
+            let result = sigil_array_new(len as i64);
+            let r_arr = &mut *(result as *mut SigilArray);
+            r_arr.len = len;
+            let r_data = std::slice::from_raw_parts_mut(r_arr.data, len);
+
+            // Process in batches of 4 for SIMD-friendliness
+            for i in 0..(len / 4) {
+                let base = i * 4;
+                r_data[base] = a_data[base].wrapping_mul(b_data[base]);
+                r_data[base + 1] = a_data[base + 1].wrapping_mul(b_data[base + 1]);
+                r_data[base + 2] = a_data[base + 2].wrapping_mul(b_data[base + 2]);
+                r_data[base + 3] = a_data[base + 3].wrapping_mul(b_data[base + 3]);
+            }
+
+            // Handle remainder
+            for i in ((len / 4) * 4)..len {
+                r_data[i] = a_data[i].wrapping_mul(b_data[i]);
+            }
+
+            result
+        }
+    }
+
+    /// Find minimum value in array (SIMD-friendly)
+    #[no_mangle]
+    pub extern "C" fn sigil_array_min(arr_ptr: i64) -> i64 {
+        unsafe {
+            let arr = &*(arr_ptr as *const SigilArray);
+            if arr.len == 0 {
+                return 0;
+            }
+
+            let data = std::slice::from_raw_parts(arr.data, arr.len);
+
+            // Process in batches of 4
+            let mut min0 = i64::MAX;
+            let mut min1 = i64::MAX;
+            let mut min2 = i64::MAX;
+            let mut min3 = i64::MAX;
+
+            for chunk in data.chunks_exact(4) {
+                min0 = min0.min(chunk[0]);
+                min1 = min1.min(chunk[1]);
+                min2 = min2.min(chunk[2]);
+                min3 = min3.min(chunk[3]);
+            }
+
+            let mut min_val = min0.min(min1).min(min2).min(min3);
+
+            // Handle remainder
+            let remainder_start = (data.len() / 4) * 4;
+            for &v in &data[remainder_start..] {
+                min_val = min_val.min(v);
+            }
+
+            min_val
+        }
+    }
+
+    /// Find maximum value in array (SIMD-friendly)
+    #[no_mangle]
+    pub extern "C" fn sigil_array_max(arr_ptr: i64) -> i64 {
+        unsafe {
+            let arr = &*(arr_ptr as *const SigilArray);
+            if arr.len == 0 {
+                return 0;
+            }
+
+            let data = std::slice::from_raw_parts(arr.data, arr.len);
+
+            // Process in batches of 4
+            let mut max0 = i64::MIN;
+            let mut max1 = i64::MIN;
+            let mut max2 = i64::MIN;
+            let mut max3 = i64::MIN;
+
+            for chunk in data.chunks_exact(4) {
+                max0 = max0.max(chunk[0]);
+                max1 = max1.max(chunk[1]);
+                max2 = max2.max(chunk[2]);
+                max3 = max3.max(chunk[3]);
+            }
+
+            let mut max_val = max0.max(max1).max(max2).max(max3);
+
+            // Handle remainder
+            let remainder_start = (data.len() / 4) * 4;
+            for &v in &data[remainder_start..] {
+                max_val = max_val.max(v);
+            }
+
+            max_val
+        }
+    }
+
+    /// Fill array with a value (SIMD-friendly)
+    #[no_mangle]
+    pub extern "C" fn sigil_array_fill(arr_ptr: i64, value: i64, count: i64) -> i64 {
+        unsafe {
+            let arr = &mut *(arr_ptr as *mut SigilArray);
+            let n = count as usize;
+
+            // Ensure capacity
+            while arr.len < n {
+                sigil_array_push(arr_ptr, 0);
+            }
+
+            let data = std::slice::from_raw_parts_mut(arr.data, n);
+
+            // Process in batches of 4
+            for chunk in data.chunks_exact_mut(4) {
+                chunk[0] = value;
+                chunk[1] = value;
+                chunk[2] = value;
+                chunk[3] = value;
+            }
+
+            // Handle remainder
+            let remainder_start = (n / 4) * 4;
+            for v in &mut data[remainder_start..] {
+                *v = value;
+            }
+
+            arr_ptr
         }
     }
 
