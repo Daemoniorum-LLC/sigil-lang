@@ -18,6 +18,7 @@ pub mod typeck;
 pub mod stdlib;
 pub mod optimize;
 pub mod diagnostic;
+pub mod ffi;
 
 #[cfg(feature = "jit")]
 pub mod codegen;

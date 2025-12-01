@@ -24,6 +24,41 @@ pub enum Item {
     Const(ConstDef),
     Static(StaticDef),
     Actor(ActorDef),
+    ExternBlock(ExternBlock),
+}
+
+/// Foreign function interface block.
+/// `extern "C" { fn foo(x: c_int) -> c_int; }`
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternBlock {
+    pub abi: String,  // "C", "Rust", "system", etc.
+    pub items: Vec<ExternItem>,
+}
+
+/// Items that can appear in an extern block.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExternItem {
+    Function(ExternFunction),
+    Static(ExternStatic),
+}
+
+/// Foreign function declaration (no body).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternFunction {
+    pub visibility: Visibility,
+    pub name: Ident,
+    pub params: Vec<Param>,
+    pub return_type: Option<TypeExpr>,
+    pub variadic: bool,  // For C varargs: fn printf(fmt: *const c_char, ...)
+}
+
+/// Foreign static variable.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternStatic {
+    pub visibility: Visibility,
+    pub mutable: bool,
+    pub name: Ident,
+    pub ty: TypeExpr,
 }
 
 /// Function definition.
@@ -495,6 +530,20 @@ pub enum Expr {
     Assign {
         target: Box<Expr>,
         value: Box<Expr>,
+    },
+    /// Unsafe block: `unsafe { ... }`
+    Unsafe(Block),
+    /// Raw pointer dereference: `*ptr`
+    Deref(Box<Expr>),
+    /// Address-of: `&expr` or `&mut expr`
+    AddrOf {
+        mutable: bool,
+        expr: Box<Expr>,
+    },
+    /// Cast: `expr as Type`
+    Cast {
+        expr: Box<Expr>,
+        ty: TypeExpr,
     },
 }
 

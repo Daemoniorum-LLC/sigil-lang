@@ -690,6 +690,9 @@ fn print_item_summary(item: &sigil_parser::Item) {
         Item::Actor(a) => {
             println!("  actor {} ({} handlers)", a.name.name, a.handlers.len());
         }
+        Item::ExternBlock(e) => {
+            println!("  extern \"{}\" ({} items)", e.abi, e.items.len());
+        }
     }
 }
 

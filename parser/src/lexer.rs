@@ -139,6 +139,105 @@ pub enum Token {
     #[token("⌛")]
     Hourglass,  // Await symbol
 
+    // Additional morphemes
+    #[token("δ")]
+    #[token("Δ")]
+    Delta,  // Difference/change
+
+    #[token("ε")]
+    Epsilon,  // Empty/null
+
+    #[token("ω")]
+    #[token("Ω")]
+    Omega,  // End/terminal
+
+    #[token("α")]
+    Alpha,  // First element
+
+    #[token("ζ")]
+    Zeta,  // Zip/combine
+
+    // === Quantifiers (for AI-native set operations) ===
+    #[token("∀")]
+    ForAll,  // Universal quantification
+
+    #[token("∃")]
+    Exists,  // Existential quantification
+
+    #[token("∈")]
+    ElementOf,  // Membership test
+
+    #[token("∉")]
+    NotElementOf,  // Non-membership
+
+    // === Set Operations ===
+    #[token("∪")]
+    Union,  // Set union
+
+    #[token("∩")]
+    Intersection,  // Set intersection
+
+    #[token("∖")]
+    SetMinus,  // Set difference
+
+    #[token("⊂")]
+    Subset,  // Proper subset
+
+    #[token("⊆")]
+    SubsetEq,  // Subset or equal
+
+    #[token("⊃")]
+    Superset,  // Proper superset
+
+    #[token("⊇")]
+    SupersetEq,  // Superset or equal
+
+    // === Logic Operators ===
+    #[token("∧")]
+    LogicAnd,  // Logical conjunction
+
+    #[token("∨")]
+    LogicOr,  // Logical disjunction
+
+    #[token("¬")]
+    LogicNot,  // Logical negation
+
+    #[token("⊻")]
+    LogicXor,  // Exclusive or
+
+    #[token("⊤")]
+    Top,  // True/any type
+
+    #[token("⊥")]
+    Bottom,  // False/never type
+
+    // === Type Theory ===
+    #[token("∷")]
+    TypeAnnotation,  // Type annotation (alternative to :)
+
+    // === Analysis/Calculus ===
+    #[token("∫")]
+    Integral,  // Cumulative sum
+
+    #[token("∂")]
+    Partial,  // Discrete derivative
+
+    #[token("√")]
+    Sqrt,  // Square root
+
+    #[token("∛")]
+    Cbrt,  // Cube root
+
+    // === Category Theory ===
+    #[token("∘")]
+    Compose,  // Function composition
+
+    #[token("⊗")]
+    Tensor,  // Tensor product
+
+    #[token("⊕")]
+    DirectSum,  // Direct sum / XOR
+
     // === Evidentiality Markers ===
     // Note: These are handled contextually since ! and ? have other uses
     #[token("‽")]
@@ -329,7 +428,33 @@ impl Token {
         matches!(
             self,
             Token::Tau | Token::Phi | Token::Sigma | Token::Rho |
-            Token::Lambda | Token::Pi | Token::Hourglass
+            Token::Lambda | Token::Pi | Token::Hourglass |
+            Token::Delta | Token::Epsilon | Token::Omega | Token::Alpha | Token::Zeta |
+            Token::Integral | Token::Partial | Token::Sqrt | Token::Cbrt |
+            Token::Compose
+        )
+    }
+
+    pub fn is_quantifier(&self) -> bool {
+        matches!(
+            self,
+            Token::ForAll | Token::Exists | Token::ElementOf | Token::NotElementOf
+        )
+    }
+
+    pub fn is_set_op(&self) -> bool {
+        matches!(
+            self,
+            Token::Union | Token::Intersection | Token::SetMinus |
+            Token::Subset | Token::SubsetEq | Token::Superset | Token::SupersetEq
+        )
+    }
+
+    pub fn is_logic_op(&self) -> bool {
+        matches!(
+            self,
+            Token::LogicAnd | Token::LogicOr | Token::LogicNot | Token::LogicXor |
+            Token::Top | Token::Bottom
         )
     }
 
@@ -455,5 +580,63 @@ mod tests {
         assert!(matches!(lexer.next_token(), Some((Token::Empty, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Circle, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Infinity, _))));
+    }
+
+    #[test]
+    fn test_quantifiers() {
+        let mut lexer = Lexer::new("∀x ∃y x∈S y∉T");
+        assert!(matches!(lexer.next_token(), Some((Token::ForAll, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "x"));
+        assert!(matches!(lexer.next_token(), Some((Token::Exists, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "y"));
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "x"));
+        assert!(matches!(lexer.next_token(), Some((Token::ElementOf, _))));
+    }
+
+    #[test]
+    fn test_set_operations() {
+        let mut lexer = Lexer::new("A∪B A∩B A∖B A⊂B A⊆B");
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "A"));
+        assert!(matches!(lexer.next_token(), Some((Token::Union, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "B"));
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "A"));
+        assert!(matches!(lexer.next_token(), Some((Token::Intersection, _))));
+    }
+
+    #[test]
+    fn test_logic_operators() {
+        let mut lexer = Lexer::new("p∧q p∨q ¬p p⊻q ⊤ ⊥");
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "p"));
+        assert!(matches!(lexer.next_token(), Some((Token::LogicAnd, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "q"));
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "p"));
+        assert!(matches!(lexer.next_token(), Some((Token::LogicOr, _))));
+    }
+
+    #[test]
+    fn test_analysis_operators() {
+        let mut lexer = Lexer::new("∫f ∂g √x ∛y f∘g");
+        assert!(matches!(lexer.next_token(), Some((Token::Integral, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "f"));
+        assert!(matches!(lexer.next_token(), Some((Token::Partial, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "g"));
+        assert!(matches!(lexer.next_token(), Some((Token::Sqrt, _))));
+    }
+
+    #[test]
+    fn test_additional_morphemes() {
+        let mut lexer = Lexer::new("δ ε ω α ζ");
+        assert!(matches!(lexer.next_token(), Some((Token::Delta, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Epsilon, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Omega, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Alpha, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Zeta, _))));
+    }
+
+    #[test]
+    fn test_ffi_keywords() {
+        let mut lexer = Lexer::new("extern unsafe");
+        assert!(matches!(lexer.next_token(), Some((Token::Extern, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Unsafe, _))));
     }
 }
