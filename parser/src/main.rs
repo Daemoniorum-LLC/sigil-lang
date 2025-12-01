@@ -1,6 +1,6 @@
 //! Sigil CLI - Parse, check, and run Sigil source files.
 
-use sigil_parser::{Parser, Interpreter};
+use sigil_parser::{Parser, Interpreter, register_stdlib};
 use std::env;
 use std::fs;
 use std::process::ExitCode;
@@ -77,8 +77,9 @@ fn run_file(path: &str) -> ExitCode {
         }
     };
 
-    // Execute
+    // Execute with full stdlib
     let mut interpreter = Interpreter::new();
+    register_stdlib(&mut interpreter);
     match interpreter.execute(&ast) {
         Ok(value) => {
             // Only print result if it's not null
@@ -205,6 +206,7 @@ fn repl() -> ExitCode {
     println!();
 
     let mut interpreter = Interpreter::new();
+    register_stdlib(&mut interpreter);
     let mut show_ast = false;
 
     loop {

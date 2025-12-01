@@ -680,7 +680,7 @@ impl Interpreter {
             (Value::Float(a), Value::Int(b)) => self.float_binary_op(a, b as f64, op),
             (Value::String(a), Value::String(b)) => {
                 match op {
-                    BinOp::Concat => Ok(Value::String(Rc::new(format!("{}{}", a, b)))),
+                    BinOp::Add | BinOp::Concat => Ok(Value::String(Rc::new(format!("{}{}", a, b)))),
                     BinOp::Eq => Ok(Value::Bool(*a == *b)),
                     BinOp::Ne => Ok(Value::Bool(*a != *b)),
                     _ => Err(RuntimeError::new("Invalid string operation")),
@@ -1063,7 +1063,8 @@ impl Interpreter {
         Err(RuntimeError::new("return"))
     }
 
-    fn eval_break(&mut self, value: &Option<Box<Expr>>) -> Result<Value, RuntimeError> {
+    fn eval_break(&mut self, _value: &Option<Box<Expr>>) -> Result<Value, RuntimeError> {
+        // TODO: break with value for loop expressions
         Err(RuntimeError::new("break"))
     }
 

@@ -94,6 +94,11 @@ impl<'a> Parser<'a> {
         matches!(&self.current, Some((token, _)) if std::mem::discriminant(token) == std::mem::discriminant(expected))
     }
 
+    /// Peek at the next token (after current) without consuming anything.
+    fn peek_next(&mut self) -> Option<&Token> {
+        self.lexer.peek().map(|(t, _)| t)
+    }
+
     fn consume_if(&mut self, expected: &Token) -> bool {
         if self.check(expected) {
             self.advance();
@@ -1304,34 +1309,29 @@ impl<'a> Parser<'a> {
         self.expect(Token::LBrace)?;
         self.skip_comments();
 
-        // Try to detect closure pattern: `{x => ...}` or `{(x, y) => ...}`
-        if let Some(Token::Ident(_)) = self.current_token() {
-            // Peek ahead for =>
-            // For simplicity, assume it's a closure if we see ident =>
-            let checkpoint = self.current.clone();
+        // Try to detect closure pattern: `{x => ...}` using lookahead
+        // We check if current is Ident and next is FatArrow without consuming tokens
+        let is_simple_closure = matches!(self.current_token(), Some(Token::Ident(_)))
+            && matches!(self.peek_next(), Some(Token::FatArrow));
+
+        if is_simple_closure {
             let name = self.parse_ident()?;
-
-            if self.check(&Token::FatArrow) {
-                self.advance();
-                self.skip_comments();
-                let body = self.parse_expr()?;
-                self.skip_comments();
-                self.expect(Token::RBrace)?;
-                return Ok(Expr::Closure {
-                    params: vec![ClosureParam {
-                        pattern: Pattern::Ident {
-                            mutable: false,
-                            name,
-                            evidentiality: None,
-                        },
-                        ty: None,
-                    }],
-                    body: Box::new(body),
-                });
-            }
-
-            // Not a closure, restore and parse as block
-            self.current = checkpoint;
+            self.expect(Token::FatArrow)?;
+            self.skip_comments();
+            let body = self.parse_expr()?;
+            self.skip_comments();
+            self.expect(Token::RBrace)?;
+            return Ok(Expr::Closure {
+                params: vec![ClosureParam {
+                    pattern: Pattern::Ident {
+                        mutable: false,
+                        name,
+                        evidentiality: None,
+                    },
+                    ty: None,
+                }],
+                body: Box::new(body),
+            });
         }
 
         // Parse as block
@@ -1657,8 +1657,12 @@ impl<'a> Parser<'a> {
         let mut params = Vec::new();
         while !self.check(&Token::RParen) && !self.is_eof() {
             let pattern = self.parse_pattern()?;
-            self.expect(Token::Colon)?;
-            let ty = self.parse_type()?;
+            // Type annotation is optional - use Infer if not provided
+            let ty = if self.consume_if(&Token::Colon) {
+                self.parse_type()?
+            } else {
+                TypeExpr::Infer
+            };
             params.push(Param { pattern, ty });
             if !self.consume_if(&Token::Comma) {
                 break;

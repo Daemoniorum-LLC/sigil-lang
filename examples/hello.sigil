@@ -1,6 +1,6 @@
 // Hello World in Sigil
 
-fn greet(name: str) {
+fn greet(name) {
     print("Hello, " + name + "!");
 }
 
@@ -10,12 +10,14 @@ fn main() {
 
     // Test arithmetic
     let x = 2 + 3 * 4;
-    print("2 + 3 * 4 =", x);
+    print("Result:");
+    print(x);
 
     // Test arrays and pipes
     let nums = [1, 2, 3, 4, 5];
     let doubled = nums|τ{_ * 2};
-    print("Doubled:", doubled);
+    print("Doubled:");
+    print(doubled);
 
     // Test conditionals
     if x > 10 {
