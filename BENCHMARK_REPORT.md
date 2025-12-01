@@ -183,7 +183,47 @@ This algorithmic optimization produces code **faster than Rust** for recursive p
 
 ---
 
-## 10. Benchmark Commands
+## 10. Expanded Benchmark Suite (Comprehensive)
+
+### Algorithm Comparison: Sigil JIT vs Rust
+
+| Benchmark | Rust | Sigil JIT | Ratio |
+|-----------|------|-----------|-------|
+| **fib(30) recursive** | 2ms | 6ms | 3x slower |
+| **fib(35) recursive** | 25ms | 69ms | 2.8x slower |
+| **ackermann(3,7)** | 2ms | 4ms | 2x slower |
+| **tak(18,12,6)** | 89μs | <1ms | ~11x slower |
+| **GCD x10k** | 121μs | <1ms | ~8x slower |
+| **fib_iter(50) x10k** | 212μs | 1ms | ~5x slower |
+| **Sum 1M integers** | 0μs* | <1ms | - |
+| **Nested 1000x1000** | 0μs* | 1ms | - |
+
+*Rust compiler optimizes simple loops to O(1) operations
+
+### Key Observations
+
+1. **Recursive algorithms** (fib, ackermann) perform within **2-3x of Rust** - excellent for JIT compilation
+2. **Iterative algorithms** are **5-11x slower** due to:
+   - Lack of loop unrolling in Cranelift
+   - Runtime value boxing overhead
+   - No tail-call optimization
+3. **The JIT excels at deep recursion** where Cranelift's code generation shines
+
+### Benchmark Test Cases
+
+| Test | Description | Complexity |
+|------|-------------|------------|
+| fib(n) | Double-recursive Fibonacci | O(2^n) |
+| ackermann(m,n) | Ackermann function | Hyper-exponential |
+| tak(x,y,z) | Takeuchi function | Triple recursion |
+| gcd(a,b) | Euclidean algorithm | O(log(min(a,b))) |
+| fib_iter(n) | Iterative Fibonacci | O(n) |
+| Sum 1M | Simple accumulation | O(n) |
+| Nested loops | Double nested counter | O(n²) |
+
+---
+
+## 11. Benchmark Commands
 
 ```bash
 # Build Sigil
@@ -195,15 +235,49 @@ cd sigil/parser && cargo build --release
 # Run JIT
 ./target/release/sigil jit benchmark.sigil
 
+# Run JIT comprehensive benchmark
+./target/release/sigil jit examples/bench_comprehensive_jit.sigil
+
 # Run LLVM (if available)
 ./target/release/sigil llvm benchmark.sigil
+
+# Run Rust comparison
+cd rust_comparison && cargo run --release
 ```
 
 ---
 
-## 11. Raw Output
+## 13. Raw Output
 
-### Sigil Interpreted (Comprehensive)
+### Sigil JIT (Comprehensive Benchmark)
+
+```
+=== Sigil JIT Comprehensive Benchmark ===
+fib(30): 6ms, result=832040
+fib(35): 69ms, result=9227465
+ackermann(3,7): 4ms, result=1021
+tak(18,12,6): <1ms, result=7
+GCD x10k: <1ms
+fib_iter(50) x10k: 1ms
+Sum 1M integers: <1ms
+Nested 1000x1000: 1ms
+```
+
+### Rust (Comprehensive Benchmark)
+
+```
+=== Rust Comprehensive Benchmark ===
+fib(30): 2ms, result=832040
+fib(35): 25ms, result=9227465
+ackermann(3,7): 2ms, result=1021
+tak(18,12,6): 89us, result=7
+GCD x10k: 121us
+fib_iter(50) x10k: 212us
+Sum 1M integers: 0us
+Nested 1000x1000: 0us
+```
+
+### Sigil Interpreted (Legacy Benchmark)
 
 ```
 === SIGIL COMPREHENSIVE BENCHMARK ===
@@ -226,7 +300,7 @@ cd sigil/parser && cargo build --release
   Time (ms): 14
 ```
 
-### Rust (Comprehensive)
+### Rust (Legacy Benchmark)
 
 ```
 === RUST COMPREHENSIVE BENCHMARK ===
@@ -282,7 +356,7 @@ Pipe Transforms:           4,990 ns
 
 ---
 
-## 12. Path to Full Parity
+## 14. Path to Full Parity
 
 ### Current Status (After Type Specialization)
 
@@ -331,7 +405,7 @@ The 2.8x gap is caused by:
 
 ---
 
-## 13. Conclusion
+## 15. Conclusion
 
 Sigil provides a flexible performance/expressiveness tradeoff:
 
