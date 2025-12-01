@@ -1,0 +1,6 @@
+// Simplest possible JIT test
+fn main() {
+    let x = 1 + 2;
+    print(x);
+    return 0;
+}
