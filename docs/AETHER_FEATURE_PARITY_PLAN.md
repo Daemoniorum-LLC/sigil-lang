@@ -1046,52 +1046,57 @@ impl NodeService for AetherNodeServer {
 
 ```
 CORE ECS                           Status    Target
-├─ Entity/Generation handles       [ ]       Phase 1
-├─ Component storage               [ ]       Phase 1
-├─ Query system                    [ ]       Phase 1
-├─ System scheduler                [ ]       Phase 1
-├─ Event bus                       [ ]       Phase 1
+├─ Entity/Generation handles       [✓]       Phase 1 - Complete
+├─ Component storage               [✓]       Phase 1 - Complete
+├─ Query system                    [✓]       Phase 1 - Complete
+├─ System scheduler                [✓]       Phase 1 - Complete
+├─ Event bus                       [✓]       Phase 1 - Complete
 ├─ Hot reload                      [ ]       Phase 4
-└─ Resource management             [ ]       Phase 1
+└─ Resource management             [✓]       Phase 1 - Complete
 
 MATH/SIMD                          Status    Target
-├─ Vec2/Vec3/Vec4                  [~]       Phase 1
-├─ Mat3/Mat4                       [ ]       Phase 1
-├─ Quaternions                     [ ]       Phase 1
-├─ AABB/Sphere/Ray                 [ ]       Phase 1
-├─ Intersection tests              [ ]       Phase 1
+├─ Vec2/Vec3/Vec4                  [✓]       Phase 1 - Complete
+├─ Mat3/Mat4                       [✓]       Phase 1 - Complete
+├─ Quaternions                     [✓]       Phase 1 - Complete
+├─ AABB/Sphere/Ray                 [✓]       Phase 1 - Complete
+├─ Intersection tests              [✓]       Phase 1 - Complete
 └─ SIMD operations                 [✓]       Done
 
 PHYSICS (FFI)                      Status    Target
-├─ Rigid body dynamics             [ ]       Phase 2
-├─ Collision detection             [ ]       Phase 2
-├─ Joint constraints               [ ]       Phase 2
-├─ CCD                             [ ]       Phase 2
-├─ XPBD                            [ ]       Phase 2
-├─ SPH fluids                      [ ]       Phase 2
-├─ MPM                             [ ]       Phase 2
-├─ Destruction                     [ ]       Phase 2
-├─ Differentiable physics          [~]       Phase 2 (native ∇)
-├─ Neural surrogates               [ ]       Phase 2
-└─ Time travel                     [ ]       Phase 2 (native)
+├─ Rigid body dynamics             [✓]       Phase 2 - Complete
+├─ Collision detection             [✓]       Phase 2 - Complete
+├─ Joint constraints               [✓]       Phase 2 - Complete
+├─ Broadphase (BVH/SpatialHash)    [✓]       Phase 2 - Complete
+├─ Narrowphase (GJK/EPA)           [✓]       Phase 2 - Complete
+├─ Contact solver                  [✓]       Phase 2 - Complete
+├─ Physics queries                 [✓]       Phase 2 - Complete
+├─ Physics materials               [✓]       Phase 2 - Complete
+├─ CCD                             [✓]       Phase 2 - Complete
+├─ XPBD                            [✓]       Phase 2 - Complete
+├─ SPH fluids                      [✓]       Phase 2 - Complete
+├─ MPM                             [✓]       Phase 2 - Complete
+├─ Destruction                     [✓]       Phase 2 - Complete
+├─ Differentiable physics          [✓]       Phase 2 - Complete (native ∇)
+├─ Neural surrogates               [✓]       Phase 2 - Complete
+└─ Time travel                     [✓]       Phase 2 - Complete (native)
 
 GRAPHICS (FFI)                     Status    Target
-├─ Renderer core                   [ ]       Phase 3
-├─ Mesh/Material/Texture           [ ]       Phase 3
-├─ PBR pipeline                    [ ]       Phase 3
-├─ Dynamic lighting                [ ]       Phase 3
-├─ Shadows                         [ ]       Phase 3
-├─ 3D Gaussian Splatting           [ ]       Phase 3
-├─ NeRF                            [ ]       Phase 3
-├─ Neural texture compression      [ ]       Phase 3
-├─ AI upscaling                    [ ]       Phase 3
-├─ ReSTIR GI                       [ ]       Phase 3
-├─ Radiance cascades               [ ]       Phase 3
-├─ DDGI                            [ ]       Phase 3
-├─ VRS                             [ ]       Phase 3
-├─ Bindless resources              [ ]       Phase 3
-├─ GPU-driven rendering            [ ]       Phase 3
-└─ Shader DSL                      [ ]       Phase 3 (native)
+├─ Renderer core                   [✓]       Phase 3 - Complete
+├─ Mesh/Material/Texture           [✓]       Phase 3 - Complete
+├─ PBR pipeline                    [✓]       Phase 3 - Complete
+├─ Dynamic lighting                [✓]       Phase 3 - Complete
+├─ Shadows                         [✓]       Phase 3 - Complete
+├─ 3D Gaussian Splatting           [✓]       Phase 3 - Complete
+├─ NeRF                            [✓]       Phase 3 - Complete
+├─ Neural texture compression      [✓]       Phase 3 - Complete
+├─ AI upscaling                    [✓]       Phase 3 - Complete
+├─ ReSTIR GI                       [✓]       Phase 3 - Complete
+├─ Radiance cascades               [✓]       Phase 3 - Complete
+├─ DDGI                            [✓]       Phase 3 - Complete
+├─ VRS                             [✓]       Phase 3 - Complete
+├─ Bindless resources              [✓]       Phase 3 - Complete
+├─ GPU-driven rendering            [✓]       Phase 3 - Complete
+└─ Shader DSL                      [✓]       Phase 3 - Complete (native)
 
 SCENE                              Status    Target
 ├─ Hierarchical nodes              [ ]       Phase 4
