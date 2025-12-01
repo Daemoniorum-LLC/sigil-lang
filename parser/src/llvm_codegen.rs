@@ -27,6 +27,15 @@ pub mod llvm {
     /// Type alias for JIT-compiled main function
     type MainFn = unsafe extern "C" fn() -> i64;
 
+    /// Compilation mode
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub enum CompileMode {
+        /// JIT execution - main stays as "main"
+        Jit,
+        /// AOT compilation - main becomes "main_sigil" for linking with C runtime
+        Aot,
+    }
+
     /// LLVM-based compiler for Sigil
     pub struct LlvmCompiler<'ctx> {
         context: &'ctx Context,
@@ -37,6 +46,8 @@ pub mod llvm {
         functions: HashMap<String, FunctionValue<'ctx>>,
         /// Optimization level
         opt_level: OptLevel,
+        /// Compilation mode (JIT vs AOT)
+        compile_mode: CompileMode,
     }
 
     // Runtime helper: get current time in milliseconds
@@ -49,8 +60,13 @@ pub mod llvm {
     }
 
     impl<'ctx> LlvmCompiler<'ctx> {
-        /// Create a new LLVM compiler
+        /// Create a new LLVM compiler for JIT execution
         pub fn new(context: &'ctx Context, opt_level: OptLevel) -> Result<Self, String> {
+            Self::with_mode(context, opt_level, CompileMode::Jit)
+        }
+
+        /// Create a new LLVM compiler with specific compile mode
+        pub fn with_mode(context: &'ctx Context, opt_level: OptLevel, compile_mode: CompileMode) -> Result<Self, String> {
             let module = context.create_module("sigil_main");
             let builder = context.create_builder();
 
@@ -61,6 +77,7 @@ pub mod llvm {
                 execution_engine: None,
                 functions: HashMap::new(),
                 opt_level,
+                compile_mode,
             })
         }
 
@@ -99,15 +116,31 @@ pub mod llvm {
         /// Declare runtime helper functions
         fn declare_runtime_functions(&self) {
             let i64_type = self.context.i64_type();
+            let void_type = self.context.void_type();
 
             // sigil_now() -> i64
             let now_type = i64_type.fn_type(&[], false);
             self.module.add_function("sigil_now", now_type, None);
+
+            // For AOT mode, also declare print functions as external
+            if self.compile_mode == CompileMode::Aot {
+                // sigil_print_int(i64) -> void
+                let print_int_type = void_type.fn_type(&[i64_type.into()], false);
+                self.module.add_function("sigil_print_int", print_int_type, None);
+            }
         }
 
         /// Declare a function (creates the signature)
         fn declare_function(&mut self, func: &ast::Function) -> Result<FunctionValue<'ctx>, String> {
             let name = &func.name.name;
+
+            // In AOT mode, rename "main" to "main_sigil" so it doesn't conflict with C runtime
+            let actual_name = if self.compile_mode == CompileMode::Aot && name == "main" {
+                "main_sigil".to_string()
+            } else {
+                name.clone()
+            };
+
             let i64_type = self.context.i64_type();
 
             // Build parameter types (all i64 for simplicity)
@@ -121,7 +154,7 @@ pub mod llvm {
             let fn_type = i64_type.fn_type(&param_types, false);
 
             // Declare the function
-            let fn_value = self.module.add_function(name, fn_type, None);
+            let fn_value = self.module.add_function(&actual_name, fn_type, None);
 
             // Name parameters
             for (i, param) in func.params.iter().enumerate() {
@@ -133,6 +166,7 @@ pub mod llvm {
                 }
             }
 
+            // Store function with original name for lookups
             self.functions.insert(name.clone(), fn_value);
             Ok(fn_value)
         }
@@ -578,10 +612,16 @@ pub mod llvm {
             // Handle built-in functions
             match fn_name {
                 "print" => {
-                    // For now, print is a no-op in LLVM mode
-                    // In a full implementation, we'd call a runtime function
                     if !args.is_empty() {
-                        return self.compile_expr(fn_value, scope, &args[0]);
+                        let arg_val = self.compile_expr(fn_value, scope, &args[0])?;
+                        // In AOT mode, call the external print function
+                        if self.compile_mode == CompileMode::Aot {
+                            let print_fn = self.module.get_function("sigil_print_int")
+                                .ok_or("sigil_print_int not declared")?;
+                            self.builder.build_call(print_fn, &[arg_val.into()], "")
+                                .map_err(|e| e.to_string())?;
+                        }
+                        return Ok(arg_val);
                     }
                     return Ok(self.context.i64_type().const_int(0, false));
                 }

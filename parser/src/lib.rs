@@ -36,4 +36,4 @@ pub use optimize::{Optimizer, OptLevel, OptStats, optimize};
 pub use codegen::JitCompiler;
 
 #[cfg(feature = "llvm")]
-pub use llvm_codegen::llvm::LlvmCompiler;
+pub use llvm_codegen::llvm::{LlvmCompiler, CompileMode};

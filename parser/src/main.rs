@@ -4,7 +4,7 @@ use sigil_parser::{Parser, Interpreter, register_stdlib, Lexer, Token};
 #[cfg(feature = "jit")]
 use sigil_parser::JitCompiler;
 #[cfg(feature = "llvm")]
-use sigil_parser::{LlvmCompiler, OptLevel};
+use sigil_parser::{LlvmCompiler, CompileMode, OptLevel};
 use std::env;
 use std::fs;
 use std::process::ExitCode;
@@ -29,6 +29,7 @@ fn main() -> ExitCode {
         eprintln!("  run <file>      Execute a Sigil file (interpreted)");
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
+        eprintln!("  compile <file>  Compile to native executable (AOT)");
         eprintln!("  parse <file>    Parse and check a Sigil file");
         eprintln!("  lex <file>      Tokenize a Sigil file");
         eprintln!("  repl            Start interactive REPL");
@@ -67,6 +68,26 @@ fn main() -> ExitCode {
         #[cfg(not(feature = "llvm"))]
         "llvm" => {
             eprintln!("Error: LLVM backend not available (compile with --features llvm)");
+            ExitCode::from(1)
+        }
+        #[cfg(feature = "llvm")]
+        "compile" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing file argument");
+                eprintln!("Usage: sigil compile <file.sigil> [-o output]");
+                return ExitCode::from(1);
+            }
+            let output = if args.len() >= 5 && args[3] == "-o" {
+                args[4].clone()
+            } else {
+                // Default output name: strip extension and add nothing (executable)
+                args[2].trim_end_matches(".sigil").trim_end_matches(".sg").to_string()
+            };
+            compile_file(&args[2], &output)
+        }
+        #[cfg(not(feature = "llvm"))]
+        "compile" => {
+            eprintln!("Error: AOT compilation requires LLVM (compile with --features llvm)");
             ExitCode::from(1)
         }
         "parse" => {
@@ -221,6 +242,133 @@ fn llvm_file(path: &str) -> ExitCode {
             ExitCode::from(1)
         }
     }
+}
+
+#[cfg(feature = "llvm")]
+fn compile_file(path: &str, output: &str) -> ExitCode {
+    use inkwell::context::Context;
+    use std::path::Path;
+    use std::process::Command;
+
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Create LLVM context and compiler in AOT mode
+    let context = Context::create();
+    let mut compiler = match LlvmCompiler::with_mode(&context, OptLevel::Aggressive, CompileMode::Aot) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Failed to initialize LLVM compiler: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Compile
+    if let Err(e) = compiler.compile(&source) {
+        eprintln!("Compilation error in '{}': {}", path, e);
+        return ExitCode::from(1);
+    }
+
+    // Debug: print IR
+    if std::env::var("SIGIL_DEBUG_IR").is_ok() {
+        eprintln!("Generated LLVM IR:\n{}", compiler.get_ir());
+    }
+
+    // Write object file
+    let obj_path = format!("{}.o", output);
+    if let Err(e) = compiler.write_object_file(Path::new(&obj_path)) {
+        eprintln!("Failed to write object file: {}", e);
+        return ExitCode::from(1);
+    }
+
+    // Find the runtime directory (relative to the binary or in known locations)
+    let runtime_c = find_runtime();
+    if runtime_c.is_none() {
+        eprintln!("Error: Could not find sigil_runtime.c");
+        eprintln!("Expected locations:");
+        eprintln!("  - ./runtime/sigil_runtime.c");
+        eprintln!("  - ../runtime/sigil_runtime.c");
+        return ExitCode::from(1);
+    }
+    let runtime_c = runtime_c.unwrap();
+
+    // Link with clang/gcc
+    println!("Compiling {} -> {}", path, output);
+    let linker = find_linker();
+    let link_result = Command::new(&linker)
+        .args([
+            "-O3",
+            &obj_path,
+            &runtime_c,
+            "-o", output,
+            "-lm",  // Link math library
+        ])
+        .status();
+
+    // Clean up object file
+    let _ = std::fs::remove_file(&obj_path);
+
+    match link_result {
+        Ok(status) if status.success() => {
+            println!("Successfully compiled to: {}", output);
+            ExitCode::SUCCESS
+        }
+        Ok(status) => {
+            eprintln!("Linker failed with status: {}", status);
+            ExitCode::from(1)
+        }
+        Err(e) => {
+            eprintln!("Failed to run linker '{}': {}", linker, e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+#[cfg(feature = "llvm")]
+fn find_runtime() -> Option<String> {
+    let candidates = [
+        "runtime/sigil_runtime.c",
+        "../runtime/sigil_runtime.c",
+        "sigil/parser/runtime/sigil_runtime.c",
+    ];
+
+    for candidate in candidates {
+        if std::path::Path::new(candidate).exists() {
+            return Some(candidate.to_string());
+        }
+    }
+
+    // Try relative to executable
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let path = dir.join("runtime/sigil_runtime.c");
+            if path.exists() {
+                return path.to_string_lossy().into_owned().into();
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(feature = "llvm")]
+fn find_linker() -> String {
+    // Prefer clang, fall back to gcc
+    for linker in ["clang", "gcc", "cc"] {
+        if std::process::Command::new(linker)
+            .arg("--version")
+            .output()
+            .is_ok()
+        {
+            return linker.to_string();
+        }
+    }
+    "cc".to_string()
 }
 
 fn parse_file(path: &str) -> ExitCode {
