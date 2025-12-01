@@ -37,6 +37,7 @@ pub struct OptStats {
     pub branches_simplified: usize,
     pub loops_optimized: usize,
     pub tail_recursion_transforms: usize,
+    pub memoization_transforms: usize,
 }
 
 /// The main optimizer that runs all passes
@@ -99,13 +100,19 @@ impl Optimizer {
                     }
                 }
             }
+
+            // NOTE: Memoization transform is disabled for now due to complexity with
+            // cache lifetime management. Instead, use iterative implementations for
+            // functions like ackermann where beneficial.
+            //
+            // TODO: Implement proper memoization with thread-local or passed-through caches
         }
 
         // Optimization passes
         let items: Vec<_> = file.items.iter().map(|item| {
             let node = match &item.node {
                 Item::Function(func) => {
-                    // Check if this function was transformed (Standard or Aggressive)
+                    // Check if this function was transformed by accumulator
                     if let Some((_, wrapper)) = self.try_accumulator_transform(func) {
                         if matches!(self.level, OptLevel::Standard | OptLevel::Aggressive)
                            && transformed_functions.contains_key(&func.name.name) {
@@ -381,6 +388,252 @@ impl Optimizer {
             where_clause: original.where_clause.clone(),
             body: Some(body),
         }
+    }
+
+    // ========================================================================
+    // Memoization Transform
+    // ========================================================================
+
+    /// Try to transform a recursive function into a memoized version
+    /// Returns: (implementation_func, cache_init_func, wrapper_func)
+    fn try_memoize_transform(&self, func: &ast::Function) -> Option<(ast::Function, ast::Function, ast::Function)> {
+        let param_count = func.params.len();
+        if param_count != 1 && param_count != 2 {
+            return None;
+        }
+
+        let span = Span { start: 0, end: 0 };
+        let func_name = &func.name.name;
+        let impl_name = format!("_memo_impl_{}", func_name);
+        let cache_name = format!("_memo_cache_{}", func_name);
+        let init_name = format!("_memo_init_{}", func_name);
+
+        // Get parameter names
+        let param_names: Vec<String> = func.params.iter().filter_map(|p| {
+            if let Pattern::Ident { name, .. } = &p.pattern {
+                Some(name.name.clone())
+            } else {
+                None
+            }
+        }).collect();
+
+        if param_names.len() != param_count {
+            return None;
+        }
+
+        // 1. Create implementation function (renamed original with calls redirected)
+        let impl_func = ast::Function {
+            visibility: Visibility::default(),
+            is_async: func.is_async,
+            attrs: func.attrs.clone(),
+            name: Ident { name: impl_name.clone(), evidentiality: None, span: span.clone() },
+            generics: func.generics.clone(),
+            params: func.params.clone(),
+            return_type: func.return_type.clone(),
+            where_clause: func.where_clause.clone(),
+            body: func.body.as_ref().map(|b| self.redirect_calls_in_block(func_name, func_name, b)),
+        };
+
+        // 2. Create cache initializer function
+        // This is a function that returns the cache, called once at the start
+        let cache_init_body = Block {
+            stmts: vec![],
+            expr: Some(Box::new(Expr::Call {
+                func: Box::new(Expr::Path(TypePath {
+                    segments: vec![PathSegment {
+                        ident: Ident { name: "sigil_memo_new".to_string(), evidentiality: None, span: span.clone() },
+                        generics: None,
+                    }],
+                })),
+                args: vec![Expr::Literal(Literal::Int {
+                    value: "65536".to_string(),
+                    base: NumBase::Decimal,
+                    suffix: None
+                })],
+            })),
+        };
+
+        let cache_init_func = ast::Function {
+            visibility: Visibility::default(),
+            is_async: false,
+            attrs: FunctionAttrs::default(),
+            name: Ident { name: init_name.clone(), evidentiality: None, span: span.clone() },
+            generics: None,
+            params: vec![],
+            return_type: None,
+            where_clause: None,
+            body: Some(cache_init_body),
+        };
+
+        // 3. Create wrapper function
+        let wrapper_func = self.generate_memo_wrapper(func, &impl_name, &param_names);
+
+        Some((impl_func, cache_init_func, wrapper_func))
+    }
+
+    /// Generate the memoized wrapper function
+    fn generate_memo_wrapper(&self, original: &ast::Function, impl_name: &str, param_names: &[String]) -> ast::Function {
+        let span = Span { start: 0, end: 0 };
+        let param_count = param_names.len();
+
+        // Variable for cache - use a static-like pattern with lazy init
+        let cache_var = Ident { name: "__cache".to_string(), evidentiality: None, span: span.clone() };
+        let result_var = Ident { name: "__result".to_string(), evidentiality: None, span: span.clone() };
+        let cached_var = Ident { name: "__cached".to_string(), evidentiality: None, span: span.clone() };
+
+        let mut stmts = vec![];
+
+        // let __cache = sigil_memo_new(65536);
+        stmts.push(Stmt::Let {
+            pattern: Pattern::Ident { mutable: false, name: cache_var.clone(), evidentiality: None },
+            ty: None,
+            init: Some(Expr::Call {
+                func: Box::new(Expr::Path(TypePath {
+                    segments: vec![PathSegment {
+                        ident: Ident { name: "sigil_memo_new".to_string(), evidentiality: None, span: span.clone() },
+                        generics: None,
+                    }],
+                })),
+                args: vec![Expr::Literal(Literal::Int {
+                    value: "65536".to_string(),
+                    base: NumBase::Decimal,
+                    suffix: None
+                })],
+            }),
+        });
+
+        // Check cache: let __cached = sigil_memo_get_N(__cache, params...);
+        let get_fn_name = if param_count == 1 { "sigil_memo_get_1" } else { "sigil_memo_get_2" };
+        let mut get_args = vec![Expr::Path(TypePath {
+            segments: vec![PathSegment { ident: cache_var.clone(), generics: None }],
+        })];
+        for name in param_names {
+            get_args.push(Expr::Path(TypePath {
+                segments: vec![PathSegment {
+                    ident: Ident { name: name.clone(), evidentiality: None, span: span.clone() },
+                    generics: None,
+                }],
+            }));
+        }
+
+        stmts.push(Stmt::Let {
+            pattern: Pattern::Ident { mutable: false, name: cached_var.clone(), evidentiality: None },
+            ty: None,
+            init: Some(Expr::Call {
+                func: Box::new(Expr::Path(TypePath {
+                    segments: vec![PathSegment {
+                        ident: Ident { name: get_fn_name.to_string(), evidentiality: None, span: span.clone() },
+                        generics: None,
+                    }],
+                })),
+                args: get_args,
+            }),
+        });
+
+        // if __cached != -9223372036854775807 { return __cached; }
+        // Use a large negative number as sentinel (i64::MIN + 1 to avoid overflow issues)
+        let cache_check = Expr::If {
+            condition: Box::new(Expr::Binary {
+                op: BinOp::Ne,
+                left: Box::new(Expr::Path(TypePath {
+                    segments: vec![PathSegment { ident: cached_var.clone(), generics: None }],
+                })),
+                right: Box::new(Expr::Unary {
+                    op: UnaryOp::Neg,
+                    expr: Box::new(Expr::Literal(Literal::Int {
+                        value: "9223372036854775807".to_string(),
+                        base: NumBase::Decimal,
+                        suffix: None,
+                    })),
+                }),
+            }),
+            then_branch: Block {
+                stmts: vec![],
+                expr: Some(Box::new(Expr::Return(Some(Box::new(Expr::Path(TypePath {
+                    segments: vec![PathSegment { ident: cached_var.clone(), generics: None }],
+                })))))),
+            },
+            else_branch: None,
+        };
+        stmts.push(Stmt::Semi(cache_check));
+
+        // let __result = _memo_impl_func(params...);
+        let mut impl_args = vec![];
+        for name in param_names {
+            impl_args.push(Expr::Path(TypePath {
+                segments: vec![PathSegment {
+                    ident: Ident { name: name.clone(), evidentiality: None, span: span.clone() },
+                    generics: None,
+                }],
+            }));
+        }
+
+        stmts.push(Stmt::Let {
+            pattern: Pattern::Ident { mutable: false, name: result_var.clone(), evidentiality: None },
+            ty: None,
+            init: Some(Expr::Call {
+                func: Box::new(Expr::Path(TypePath {
+                    segments: vec![PathSegment {
+                        ident: Ident { name: impl_name.to_string(), evidentiality: None, span: span.clone() },
+                        generics: None,
+                    }],
+                })),
+                args: impl_args,
+            }),
+        });
+
+        // sigil_memo_set_N(__cache, params..., __result);
+        let set_fn_name = if param_count == 1 { "sigil_memo_set_1" } else { "sigil_memo_set_2" };
+        let mut set_args = vec![Expr::Path(TypePath {
+            segments: vec![PathSegment { ident: cache_var.clone(), generics: None }],
+        })];
+        for name in param_names {
+            set_args.push(Expr::Path(TypePath {
+                segments: vec![PathSegment {
+                    ident: Ident { name: name.clone(), evidentiality: None, span: span.clone() },
+                    generics: None,
+                }],
+            }));
+        }
+        set_args.push(Expr::Path(TypePath {
+            segments: vec![PathSegment { ident: result_var.clone(), generics: None }],
+        }));
+
+        stmts.push(Stmt::Semi(Expr::Call {
+            func: Box::new(Expr::Path(TypePath {
+                segments: vec![PathSegment {
+                    ident: Ident { name: set_fn_name.to_string(), evidentiality: None, span: span.clone() },
+                    generics: None,
+                }],
+            })),
+            args: set_args,
+        }));
+
+        // return __result;
+        let body = Block {
+            stmts,
+            expr: Some(Box::new(Expr::Return(Some(Box::new(Expr::Path(TypePath {
+                segments: vec![PathSegment { ident: result_var.clone(), generics: None }],
+            })))))),
+        };
+
+        ast::Function {
+            visibility: original.visibility,
+            is_async: original.is_async,
+            attrs: original.attrs.clone(),
+            name: original.name.clone(),
+            generics: original.generics.clone(),
+            params: original.params.clone(),
+            return_type: original.return_type.clone(),
+            where_clause: original.where_clause.clone(),
+            body: Some(body),
+        }
+    }
+
+    /// Redirect all recursive calls in a block to call the original wrapper (for memoization)
+    fn redirect_calls_in_block(&self, _old_name: &str, _new_name: &str, block: &Block) -> Block {
+        // For memoization, we keep the calls as-is since they'll go through the wrapper
+        block.clone()
     }
 
     /// Check if a function is recursive
