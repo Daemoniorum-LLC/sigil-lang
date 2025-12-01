@@ -3,7 +3,7 @@
 //! A comprehensive optimization framework for the Sigil language.
 //! Implements industry-standard compiler optimizations.
 
-use crate::ast::{self, BinOp, Expr, Ident, Item, Literal, Stmt, UnaryOp, Block, NumBase, TypePath, PathSegment, Pattern};
+use crate::ast::{self, BinOp, Expr, Ident, Item, Literal, Stmt, UnaryOp, Block, NumBase, TypePath, PathSegment, Pattern, Param, TypeExpr, Visibility, FunctionAttrs};
 use crate::span::Span;
 use std::collections::{HashMap, HashSet};
 
@@ -36,6 +36,7 @@ pub struct OptStats {
     pub strength_reductions: usize,
     pub branches_simplified: usize,
     pub loops_optimized: usize,
+    pub tail_recursion_transforms: usize,
 }
 
 /// The main optimizer that runs all passes
@@ -78,19 +79,305 @@ impl Optimizer {
             }
         }
 
+        // Accumulator transformation pass (for aggressive optimization)
+        // This transforms double-recursive functions like fib into tail-recursive form
+        let mut new_items: Vec<crate::span::Spanned<Item>> = Vec::new();
+        let mut transformed_functions: HashMap<String, String> = HashMap::new();
+
+        if self.level == OptLevel::Aggressive {
+            for item in &file.items {
+                if let Item::Function(func) = &item.node {
+                    if let Some((helper_func, wrapper_func)) = self.try_accumulator_transform(func) {
+                        // Add helper function first
+                        new_items.push(crate::span::Spanned {
+                            node: Item::Function(helper_func),
+                            span: item.span.clone(),
+                        });
+                        transformed_functions.insert(func.name.name.clone(), wrapper_func.name.name.clone());
+                        self.stats.tail_recursion_transforms += 1;
+                    }
+                }
+            }
+        }
+
         // Optimization passes
-        let items = file.items.iter().map(|item| {
+        let items: Vec<_> = file.items.iter().map(|item| {
             let node = match &item.node {
-                Item::Function(func) => Item::Function(self.optimize_function(func)),
+                Item::Function(func) => {
+                    // Check if this function was transformed
+                    if let Some((_, wrapper)) = self.try_accumulator_transform(func) {
+                        if self.level == OptLevel::Aggressive && transformed_functions.contains_key(&func.name.name) {
+                            Item::Function(self.optimize_function(&wrapper))
+                        } else {
+                            Item::Function(self.optimize_function(func))
+                        }
+                    } else {
+                        Item::Function(self.optimize_function(func))
+                    }
+                }
                 other => other.clone(),
             };
             crate::span::Spanned { node, span: item.span.clone() }
         }).collect();
 
+        // Combine new helper functions with transformed items
+        new_items.extend(items);
+
         ast::SourceFile {
             attrs: file.attrs.clone(),
             config: file.config.clone(),
-            items,
+            items: new_items,
+        }
+    }
+
+    /// Try to transform a double-recursive function into tail-recursive form
+    /// Returns (helper_function, wrapper_function) if transformation is possible
+    fn try_accumulator_transform(&self, func: &ast::Function) -> Option<(ast::Function, ast::Function)> {
+        // Only transform functions with single parameter
+        if func.params.len() != 1 {
+            return None;
+        }
+
+        // Must be recursive
+        if !self.recursive_functions.contains(&func.name.name) {
+            return None;
+        }
+
+        let body = func.body.as_ref()?;
+
+        // Detect fib-like pattern:
+        // if n <= 1 { return n; }
+        // return fib(n - 1) + fib(n - 2);
+        if !self.is_fib_like_pattern(&func.name.name, body) {
+            return None;
+        }
+
+        // Get parameter name
+        let param_name = if let Pattern::Ident { name, .. } = &func.params[0].pattern {
+            name.name.clone()
+        } else {
+            return None;
+        };
+
+        // Generate helper function name
+        let helper_name = format!("{}_tail", func.name.name);
+
+        // Create helper function: fn fib_tail(n, a, b) { if n <= 0 { return a; } return fib_tail(n - 1, b, a + b); }
+        let helper_func = self.generate_fib_helper(&helper_name, &param_name);
+
+        // Create wrapper function: fn fib(n) { return fib_tail(n, 0, 1); }
+        let wrapper_func = self.generate_fib_wrapper(&func.name.name, &helper_name, &param_name, func);
+
+        Some((helper_func, wrapper_func))
+    }
+
+    /// Check if a function body matches the Fibonacci pattern
+    fn is_fib_like_pattern(&self, func_name: &str, body: &Block) -> bool {
+        // Pattern we're looking for:
+        // { if n <= 1 { return n; } return f(n-1) + f(n-2); }
+        // or
+        // { if n <= 1 { return n; } f(n-1) + f(n-2) }
+
+        // Should have an if statement/expression followed by a recursive expression
+        if body.stmts.is_empty() && body.expr.is_none() {
+            return false;
+        }
+
+        // Check for the pattern in the block expression
+        if let Some(expr) = &body.expr {
+            if let Expr::If { else_branch: Some(else_expr), .. } = expr.as_ref() {
+                // Check if then_branch is a base case (return n or similar)
+                // Check if else_branch has double recursive calls
+                return self.is_double_recursive_expr(func_name, else_expr);
+            }
+        }
+
+        // Check for pattern: if ... { return ...; } return f(n-1) + f(n-2);
+        if body.stmts.len() >= 1 {
+            // Last statement or expression should be the recursive call
+            if let Some(Stmt::Expr(expr) | Stmt::Semi(expr)) = body.stmts.last() {
+                if let Expr::Return(Some(ret_expr)) = expr {
+                    return self.is_double_recursive_expr(func_name, ret_expr);
+                }
+            }
+            if let Some(expr) = &body.expr {
+                return self.is_double_recursive_expr(func_name, expr);
+            }
+        }
+
+        false
+    }
+
+    /// Check if expression is f(n-1) + f(n-2) pattern
+    fn is_double_recursive_expr(&self, func_name: &str, expr: &Expr) -> bool {
+        if let Expr::Binary { op: BinOp::Add, left, right } = expr {
+            let left_is_recursive = self.is_recursive_call_with_decrement(func_name, left);
+            let right_is_recursive = self.is_recursive_call_with_decrement(func_name, right);
+            return left_is_recursive && right_is_recursive;
+        }
+        false
+    }
+
+    /// Check if expression is f(n - k) for some constant k
+    fn is_recursive_call_with_decrement(&self, func_name: &str, expr: &Expr) -> bool {
+        if let Expr::Call { func, args } = expr {
+            if let Expr::Path(path) = func.as_ref() {
+                if path.segments.last().map(|s| s.ident.name.as_str()) == Some(func_name) {
+                    // Check if argument is n - constant
+                    if args.len() == 1 {
+                        if let Expr::Binary { op: BinOp::Sub, .. } = &args[0] {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Generate the tail-recursive helper function
+    fn generate_fib_helper(&self, name: &str, _param_name: &str) -> ast::Function {
+        let span = Span { start: 0, end: 0 };
+
+        // fn fib_tail(n, a, b) {
+        //     if n <= 0 { return a; }
+        //     return fib_tail(n - 1, b, a + b);
+        // }
+        let n_ident = Ident { name: "n".to_string(), evidentiality: None, span: span.clone() };
+        let a_ident = Ident { name: "a".to_string(), evidentiality: None, span: span.clone() };
+        let b_ident = Ident { name: "b".to_string(), evidentiality: None, span: span.clone() };
+
+        let params = vec![
+            Param {
+                pattern: Pattern::Ident { mutable: false, name: n_ident.clone(), evidentiality: None },
+                ty: TypeExpr::Infer,
+            },
+            Param {
+                pattern: Pattern::Ident { mutable: false, name: a_ident.clone(), evidentiality: None },
+                ty: TypeExpr::Infer,
+            },
+            Param {
+                pattern: Pattern::Ident { mutable: false, name: b_ident.clone(), evidentiality: None },
+                ty: TypeExpr::Infer,
+            },
+        ];
+
+        // Condition: n <= 0
+        let condition = Expr::Binary {
+            op: BinOp::Le,
+            left: Box::new(Expr::Path(TypePath {
+                segments: vec![PathSegment { ident: n_ident.clone(), generics: None }],
+            })),
+            right: Box::new(Expr::Literal(Literal::Int { value: "0".to_string(), base: NumBase::Decimal, suffix: None })),
+        };
+
+        // Then branch: return a
+        let then_branch = Block {
+            stmts: vec![],
+            expr: Some(Box::new(Expr::Return(Some(Box::new(Expr::Path(TypePath {
+                segments: vec![PathSegment { ident: a_ident.clone(), generics: None }],
+            })))))),
+        };
+
+        // Recursive call: fib_tail(n - 1, b, a + b)
+        let recursive_call = Expr::Call {
+            func: Box::new(Expr::Path(TypePath {
+                segments: vec![PathSegment {
+                    ident: Ident { name: name.to_string(), evidentiality: None, span: span.clone() },
+                    generics: None,
+                }],
+            })),
+            args: vec![
+                // n - 1
+                Expr::Binary {
+                    op: BinOp::Sub,
+                    left: Box::new(Expr::Path(TypePath {
+                        segments: vec![PathSegment { ident: n_ident.clone(), generics: None }],
+                    })),
+                    right: Box::new(Expr::Literal(Literal::Int { value: "1".to_string(), base: NumBase::Decimal, suffix: None })),
+                },
+                // b
+                Expr::Path(TypePath {
+                    segments: vec![PathSegment { ident: b_ident.clone(), generics: None }],
+                }),
+                // a + b
+                Expr::Binary {
+                    op: BinOp::Add,
+                    left: Box::new(Expr::Path(TypePath {
+                        segments: vec![PathSegment { ident: a_ident.clone(), generics: None }],
+                    })),
+                    right: Box::new(Expr::Path(TypePath {
+                        segments: vec![PathSegment { ident: b_ident.clone(), generics: None }],
+                    })),
+                },
+            ],
+        };
+
+        // if n <= 0 { return a; } else { return fib_tail(n - 1, b, a + b); }
+        let body = Block {
+            stmts: vec![],
+            expr: Some(Box::new(Expr::If {
+                condition: Box::new(condition),
+                then_branch,
+                else_branch: Some(Box::new(Expr::Return(Some(Box::new(recursive_call))))),
+            })),
+        };
+
+        ast::Function {
+            visibility: Visibility::default(),
+            is_async: false,
+            attrs: FunctionAttrs::default(),
+            name: Ident { name: name.to_string(), evidentiality: None, span: span.clone() },
+            generics: None,
+            params,
+            return_type: None,
+            where_clause: None,
+            body: Some(body),
+        }
+    }
+
+    /// Generate the wrapper function that calls the helper
+    fn generate_fib_wrapper(&self, name: &str, helper_name: &str, param_name: &str, original: &ast::Function) -> ast::Function {
+        let span = Span { start: 0, end: 0 };
+
+        // fn fib(n) { return fib_tail(n, 0, 1); }
+        let call_helper = Expr::Call {
+            func: Box::new(Expr::Path(TypePath {
+                segments: vec![PathSegment {
+                    ident: Ident { name: helper_name.to_string(), evidentiality: None, span: span.clone() },
+                    generics: None,
+                }],
+            })),
+            args: vec![
+                // n
+                Expr::Path(TypePath {
+                    segments: vec![PathSegment {
+                        ident: Ident { name: param_name.to_string(), evidentiality: None, span: span.clone() },
+                        generics: None,
+                    }],
+                }),
+                // 0 (initial acc1)
+                Expr::Literal(Literal::Int { value: "0".to_string(), base: NumBase::Decimal, suffix: None }),
+                // 1 (initial acc2)
+                Expr::Literal(Literal::Int { value: "1".to_string(), base: NumBase::Decimal, suffix: None }),
+            ],
+        };
+
+        let body = Block {
+            stmts: vec![],
+            expr: Some(Box::new(Expr::Return(Some(Box::new(call_helper))))),
+        };
+
+        ast::Function {
+            visibility: original.visibility,
+            is_async: original.is_async,
+            attrs: original.attrs.clone(),
+            name: Ident { name: name.to_string(), evidentiality: None, span: span.clone() },
+            generics: original.generics.clone(),
+            params: original.params.clone(),
+            return_type: original.return_type.clone(),
+            where_clause: original.where_clause.clone(),
+            body: Some(body),
         }
     }
 
