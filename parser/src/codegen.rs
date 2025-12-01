@@ -182,6 +182,24 @@ pub mod jit {
             builder.symbol("sigil_gt", sigil_gt as *const u8);
             builder.symbol("sigil_ge", sigil_ge as *const u8);
 
+            // SIMD operations
+            builder.symbol("sigil_simd_new", sigil_simd_new as *const u8);
+            builder.symbol("sigil_simd_splat", sigil_simd_splat as *const u8);
+            builder.symbol("sigil_simd_add", sigil_simd_add as *const u8);
+            builder.symbol("sigil_simd_sub", sigil_simd_sub as *const u8);
+            builder.symbol("sigil_simd_mul", sigil_simd_mul as *const u8);
+            builder.symbol("sigil_simd_div", sigil_simd_div as *const u8);
+            builder.symbol("sigil_simd_dot", sigil_simd_dot as *const u8);
+            builder.symbol("sigil_simd_hadd", sigil_simd_hadd as *const u8);
+            builder.symbol("sigil_simd_length_sq", sigil_simd_length_sq as *const u8);
+            builder.symbol("sigil_simd_length", sigil_simd_length as *const u8);
+            builder.symbol("sigil_simd_normalize", sigil_simd_normalize as *const u8);
+            builder.symbol("sigil_simd_cross", sigil_simd_cross as *const u8);
+            builder.symbol("sigil_simd_min", sigil_simd_min as *const u8);
+            builder.symbol("sigil_simd_max", sigil_simd_max as *const u8);
+            builder.symbol("sigil_simd_extract", sigil_simd_extract as *const u8);
+            builder.symbol("sigil_simd_free", sigil_simd_free as *const u8);
+
             // Array functions
             builder.symbol("sigil_array_new", sigil_array_new as *const u8);
             builder.symbol("sigil_array_push", sigil_array_push as *const u8);
@@ -1424,6 +1442,191 @@ pub mod jit {
             println!("{}", v);
         }
         0
+    }
+
+    // ============================================
+    // SIMD Operations (Vec4 = 4xf64)
+    // ============================================
+    // SIMD vectors are stored as heap-allocated arrays of 4 f64 values
+    // Pointer to array is stored as i64
+
+    /// Create a new Vec4 SIMD vector
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_new(x: i64, y: i64, z: i64, w: i64) -> i64 {
+        let v = Box::new([
+            f64::from_bits(x as u64),
+            f64::from_bits(y as u64),
+            f64::from_bits(z as u64),
+            f64::from_bits(w as u64),
+        ]);
+        Box::into_raw(v) as i64
+    }
+
+    /// Create Vec4 by splatting a scalar to all lanes
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_splat(v: i64) -> i64 {
+        let f = f64::from_bits(v as u64);
+        let v = Box::new([f, f, f, f]);
+        Box::into_raw(v) as i64
+    }
+
+    /// SIMD add
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_add(a: i64, b: i64) -> i64 {
+        unsafe {
+            let a = &*(a as *const [f64; 4]);
+            let b = &*(b as *const [f64; 4]);
+            let r = Box::new([a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3]]);
+            Box::into_raw(r) as i64
+        }
+    }
+
+    /// SIMD subtract
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_sub(a: i64, b: i64) -> i64 {
+        unsafe {
+            let a = &*(a as *const [f64; 4]);
+            let b = &*(b as *const [f64; 4]);
+            let r = Box::new([a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3]]);
+            Box::into_raw(r) as i64
+        }
+    }
+
+    /// SIMD multiply
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_mul(a: i64, b: i64) -> i64 {
+        unsafe {
+            let a = &*(a as *const [f64; 4]);
+            let b = &*(b as *const [f64; 4]);
+            let r = Box::new([a[0] * b[0], a[1] * b[1], a[2] * b[2], a[3] * b[3]]);
+            Box::into_raw(r) as i64
+        }
+    }
+
+    /// SIMD divide
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_div(a: i64, b: i64) -> i64 {
+        unsafe {
+            let a = &*(a as *const [f64; 4]);
+            let b = &*(b as *const [f64; 4]);
+            let r = Box::new([a[0] / b[0], a[1] / b[1], a[2] / b[2], a[3] / b[3]]);
+            Box::into_raw(r) as i64
+        }
+    }
+
+    /// SIMD dot product (returns scalar)
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_dot(a: i64, b: i64) -> i64 {
+        unsafe {
+            let a = &*(a as *const [f64; 4]);
+            let b = &*(b as *const [f64; 4]);
+            let r = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+            r.to_bits() as i64
+        }
+    }
+
+    /// SIMD horizontal add (sum all lanes)
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_hadd(a: i64) -> i64 {
+        unsafe {
+            let a = &*(a as *const [f64; 4]);
+            let r = a[0] + a[1] + a[2] + a[3];
+            r.to_bits() as i64
+        }
+    }
+
+    /// SIMD length squared
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_length_sq(a: i64) -> i64 {
+        unsafe {
+            let a = &*(a as *const [f64; 4]);
+            let r = a[0] * a[0] + a[1] * a[1] + a[2] * a[2] + a[3] * a[3];
+            r.to_bits() as i64
+        }
+    }
+
+    /// SIMD length
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_length(a: i64) -> i64 {
+        unsafe {
+            let a = &*(a as *const [f64; 4]);
+            let r = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2] + a[3] * a[3]).sqrt();
+            r.to_bits() as i64
+        }
+    }
+
+    /// SIMD normalize
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_normalize(a: i64) -> i64 {
+        unsafe {
+            let a = &*(a as *const [f64; 4]);
+            let len = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2] + a[3] * a[3]).sqrt();
+            let inv = if len > 1e-10 { 1.0 / len } else { 0.0 };
+            let r = Box::new([a[0] * inv, a[1] * inv, a[2] * inv, a[3] * inv]);
+            Box::into_raw(r) as i64
+        }
+    }
+
+    /// SIMD cross product (3D, ignores w component)
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_cross(a: i64, b: i64) -> i64 {
+        unsafe {
+            let a = &*(a as *const [f64; 4]);
+            let b = &*(b as *const [f64; 4]);
+            let r = Box::new([
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0],
+                0.0,
+            ]);
+            Box::into_raw(r) as i64
+        }
+    }
+
+    /// SIMD min
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_min(a: i64, b: i64) -> i64 {
+        unsafe {
+            let a = &*(a as *const [f64; 4]);
+            let b = &*(b as *const [f64; 4]);
+            let r = Box::new([
+                a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2]), a[3].min(b[3])
+            ]);
+            Box::into_raw(r) as i64
+        }
+    }
+
+    /// SIMD max
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_max(a: i64, b: i64) -> i64 {
+        unsafe {
+            let a = &*(a as *const [f64; 4]);
+            let b = &*(b as *const [f64; 4]);
+            let r = Box::new([
+                a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2]), a[3].max(b[3])
+            ]);
+            Box::into_raw(r) as i64
+        }
+    }
+
+    /// Extract element from SIMD vector
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_extract(v: i64, idx: i64) -> i64 {
+        unsafe {
+            let v = &*(v as *const [f64; 4]);
+            let r = v[(idx as usize) & 3];
+            r.to_bits() as i64
+        }
+    }
+
+    /// Free SIMD vector (for memory management)
+    #[no_mangle]
+    pub extern "C" fn sigil_simd_free(v: i64) {
+        if v != 0 {
+            unsafe {
+                let _ = Box::from_raw(v as *mut [f64; 4]);
+            }
+        }
     }
 
     #[no_mangle]

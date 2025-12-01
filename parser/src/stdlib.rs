@@ -36,6 +36,7 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_random(interp);
     register_convert(interp);
     register_cycle(interp);
+    register_simd(interp);
 }
 
 // Helper to define a builtin
@@ -2227,6 +2228,196 @@ fn mod_pow(mut base: i64, mut exp: u64, modulus: i64) -> i64 {
         base = (base * base).rem_euclid(modulus);
     }
     result
+}
+
+// ============================================================================
+// SIMD VECTOR FUNCTIONS
+// High-performance vector operations for game/graphics math
+// ============================================================================
+
+fn register_simd(interp: &mut Interpreter) {
+    // simd_new - create a SIMD 4-component vector
+    define(interp, "simd_new", Some(4), |_, args| {
+        let values: Result<Vec<f64>, _> = args.iter().map(|v| match v {
+            Value::Float(f) => Ok(*f),
+            Value::Int(i) => Ok(*i as f64),
+            _ => Err(RuntimeError::new("simd_new() requires numbers")),
+        }).collect();
+        let values = values?;
+        Ok(Value::Array(Rc::new(RefCell::new(vec![
+            Value::Float(values[0]),
+            Value::Float(values[1]),
+            Value::Float(values[2]),
+            Value::Float(values[3]),
+        ]))))
+    });
+
+    // simd_splat - create vector with all same components
+    define(interp, "simd_splat", Some(1), |_, args| {
+        let v = match &args[0] {
+            Value::Float(f) => *f,
+            Value::Int(i) => *i as f64,
+            _ => return Err(RuntimeError::new("simd_splat() requires number")),
+        };
+        Ok(Value::Array(Rc::new(RefCell::new(vec![
+            Value::Float(v), Value::Float(v), Value::Float(v), Value::Float(v),
+        ]))))
+    });
+
+    // simd_add - component-wise addition
+    define(interp, "simd_add", Some(2), |_, args| {
+        simd_binary_op(&args[0], &args[1], |a, b| a + b, "simd_add")
+    });
+
+    // simd_sub - component-wise subtraction
+    define(interp, "simd_sub", Some(2), |_, args| {
+        simd_binary_op(&args[0], &args[1], |a, b| a - b, "simd_sub")
+    });
+
+    // simd_mul - component-wise multiplication
+    define(interp, "simd_mul", Some(2), |_, args| {
+        simd_binary_op(&args[0], &args[1], |a, b| a * b, "simd_mul")
+    });
+
+    // simd_div - component-wise division
+    define(interp, "simd_div", Some(2), |_, args| {
+        simd_binary_op(&args[0], &args[1], |a, b| a / b, "simd_div")
+    });
+
+    // simd_dot - dot product of two vectors
+    define(interp, "simd_dot", Some(2), |_, args| {
+        let a = extract_simd(&args[0], "simd_dot")?;
+        let b = extract_simd(&args[1], "simd_dot")?;
+        let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+        Ok(Value::Float(dot))
+    });
+
+    // simd_cross - 3D cross product (w component set to 0)
+    define(interp, "simd_cross", Some(2), |_, args| {
+        let a = extract_simd(&args[0], "simd_cross")?;
+        let b = extract_simd(&args[1], "simd_cross")?;
+        Ok(Value::Array(Rc::new(RefCell::new(vec![
+            Value::Float(a[1] * b[2] - a[2] * b[1]),
+            Value::Float(a[2] * b[0] - a[0] * b[2]),
+            Value::Float(a[0] * b[1] - a[1] * b[0]),
+            Value::Float(0.0),
+        ]))))
+    });
+
+    // simd_length - vector length (magnitude)
+    define(interp, "simd_length", Some(1), |_, args| {
+        let v = extract_simd(&args[0], "simd_length")?;
+        let len_sq = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
+        Ok(Value::Float(len_sq.sqrt()))
+    });
+
+    // simd_normalize - normalize vector to unit length
+    define(interp, "simd_normalize", Some(1), |_, args| {
+        let v = extract_simd(&args[0], "simd_normalize")?;
+        let len_sq = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
+        let len = len_sq.sqrt();
+        if len < 1e-10 {
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![
+                Value::Float(0.0), Value::Float(0.0), Value::Float(0.0), Value::Float(0.0),
+            ]))));
+        }
+        let inv_len = 1.0 / len;
+        Ok(Value::Array(Rc::new(RefCell::new(vec![
+            Value::Float(v[0] * inv_len),
+            Value::Float(v[1] * inv_len),
+            Value::Float(v[2] * inv_len),
+            Value::Float(v[3] * inv_len),
+        ]))))
+    });
+
+    // simd_min - component-wise minimum
+    define(interp, "simd_min", Some(2), |_, args| {
+        simd_binary_op(&args[0], &args[1], |a, b| a.min(b), "simd_min")
+    });
+
+    // simd_max - component-wise maximum
+    define(interp, "simd_max", Some(2), |_, args| {
+        simd_binary_op(&args[0], &args[1], |a, b| a.max(b), "simd_max")
+    });
+
+    // simd_hadd - horizontal add (sum all components)
+    define(interp, "simd_hadd", Some(1), |_, args| {
+        let v = extract_simd(&args[0], "simd_hadd")?;
+        Ok(Value::Float(v[0] + v[1] + v[2] + v[3]))
+    });
+
+    // simd_extract - extract single component (0-3)
+    define(interp, "simd_extract", Some(2), |_, args| {
+        let v = extract_simd(&args[0], "simd_extract")?;
+        let idx = match &args[1] {
+            Value::Int(i) => *i as usize,
+            _ => return Err(RuntimeError::new("simd_extract() requires integer index")),
+        };
+        if idx > 3 {
+            return Err(RuntimeError::new("simd_extract() index must be 0-3"));
+        }
+        Ok(Value::Float(v[idx]))
+    });
+
+    // simd_free - no-op in interpreter (for JIT compatibility)
+    define(interp, "simd_free", Some(1), |_, _| {
+        Ok(Value::Null)
+    });
+
+    // simd_lerp - linear interpolation between vectors
+    define(interp, "simd_lerp", Some(3), |_, args| {
+        let a = extract_simd(&args[0], "simd_lerp")?;
+        let b = extract_simd(&args[1], "simd_lerp")?;
+        let t = match &args[2] {
+            Value::Float(f) => *f,
+            Value::Int(i) => *i as f64,
+            _ => return Err(RuntimeError::new("simd_lerp() requires float t")),
+        };
+        let one_t = 1.0 - t;
+        Ok(Value::Array(Rc::new(RefCell::new(vec![
+            Value::Float(a[0] * one_t + b[0] * t),
+            Value::Float(a[1] * one_t + b[1] * t),
+            Value::Float(a[2] * one_t + b[2] * t),
+            Value::Float(a[3] * one_t + b[3] * t),
+        ]))))
+    });
+}
+
+// Helper to extract SIMD values from array
+fn extract_simd(val: &Value, fn_name: &str) -> Result<[f64; 4], RuntimeError> {
+    match val {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            if arr.len() < 4 {
+                return Err(RuntimeError::new(format!("{}() requires 4-element array", fn_name)));
+            }
+            let mut result = [0.0; 4];
+            for (i, v) in arr.iter().take(4).enumerate() {
+                result[i] = match v {
+                    Value::Float(f) => *f,
+                    Value::Int(n) => *n as f64,
+                    _ => return Err(RuntimeError::new(format!("{}() requires numeric array", fn_name))),
+                };
+            }
+            Ok(result)
+        }
+        _ => Err(RuntimeError::new(format!("{}() requires array argument", fn_name))),
+    }
+}
+
+// Helper for binary SIMD operations
+fn simd_binary_op<F>(a: &Value, b: &Value, op: F, fn_name: &str) -> Result<Value, RuntimeError>
+where
+    F: Fn(f64, f64) -> f64,
+{
+    let a = extract_simd(a, fn_name)?;
+    let b = extract_simd(b, fn_name)?;
+    Ok(Value::Array(Rc::new(RefCell::new(vec![
+        Value::Float(op(a[0], b[0])),
+        Value::Float(op(a[1], b[1])),
+        Value::Float(op(a[2], b[2])),
+        Value::Float(op(a[3], b[3])),
+    ]))))
 }
 
 // Extended Euclidean algorithm for modular inverse
