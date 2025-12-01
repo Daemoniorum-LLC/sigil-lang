@@ -23,6 +23,7 @@ pub mod jit {
 
     use crate::ast::{self, BinOp, Expr, Item, Literal, UnaryOp};
     use crate::parser::Parser;
+    use crate::optimize::{Optimizer, OptLevel};
 
     /// Runtime value representation
     ///
@@ -180,18 +181,27 @@ pub mod jit {
 
         /// Compile a Sigil program
         pub fn compile(&mut self, source: &str) -> Result<(), String> {
+            self.compile_with_opt(source, OptLevel::Standard)
+        }
+
+        /// Compile with a specific optimization level
+        pub fn compile_with_opt(&mut self, source: &str, opt_level: OptLevel) -> Result<(), String> {
             let mut parser = Parser::new(source);
             let source_file = parser.parse_file().map_err(|e| format!("{:?}", e))?;
 
+            // Run AST optimizations
+            let mut optimizer = Optimizer::new(opt_level);
+            let optimized = optimizer.optimize_file(&source_file);
+
             // First pass: declare all functions
-            for spanned_item in &source_file.items {
+            for spanned_item in &optimized.items {
                 if let Item::Function(func) = &spanned_item.node {
                     self.declare_function(func)?;
                 }
             }
 
             // Second pass: compile all functions
-            for spanned_item in &source_file.items {
+            for spanned_item in &optimized.items {
                 if let Item::Function(func) = &spanned_item.node {
                     self.compile_function(func)?;
                 }
