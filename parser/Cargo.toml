@@ -2,15 +2,29 @@
 name = "sigil-parser"
 version = "0.1.0"
 edition = "2021"
-description = "Parser for the Sigil programming language"
+description = "Parser and native compiler for the Sigil programming language"
 authors = ["Daemoniorum, Inc."]
 license = "MIT"
+
+[features]
+default = ["jit"]
+jit = ["cranelift-codegen", "cranelift-frontend", "cranelift-jit", "cranelift-module", "cranelift-native"]
 
 [dependencies]
 thiserror = "1.0"
 unicode-xid = "0.2"
 logos = "0.14"
 rustyline = { version = "14.0", features = ["derive"] }
+
+# Cranelift JIT compiler backend
+cranelift-codegen = { version = "0.113", optional = true }
+cranelift-frontend = { version = "0.113", optional = true }
+cranelift-jit = { version = "0.113", optional = true }
+cranelift-module = { version = "0.113", optional = true }
+cranelift-native = { version = "0.113", optional = true }
+
+# For runtime support
+libc = "0.2"
 
 [dev-dependencies]
 pretty_assertions = "1.4"

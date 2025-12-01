@@ -1,6 +1,8 @@
 //! Sigil CLI - Parse, check, and run Sigil source files.
 
 use sigil_parser::{Parser, Interpreter, register_stdlib, Lexer, Token};
+#[cfg(feature = "jit")]
+use sigil_parser::JitCompiler;
 use std::env;
 use std::fs;
 use std::process::ExitCode;
@@ -22,7 +24,8 @@ fn main() -> ExitCode {
         eprintln!("Usage: sigil <command> [file.sigil]");
         eprintln!();
         eprintln!("Commands:");
-        eprintln!("  run <file>      Execute a Sigil file");
+        eprintln!("  run <file>      Execute a Sigil file (interpreted)");
+        eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  parse <file>    Parse and check a Sigil file");
         eprintln!("  lex <file>      Tokenize a Sigil file");
         eprintln!("  repl            Start interactive REPL");
@@ -36,6 +39,19 @@ fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
             run_file(&args[2])
+        }
+        #[cfg(feature = "jit")]
+        "jit" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing file argument");
+                return ExitCode::from(1);
+            }
+            jit_file(&args[2])
+        }
+        #[cfg(not(feature = "jit"))]
+        "jit" => {
+            eprintln!("Error: JIT compilation not available (compile with --features jit)");
+            ExitCode::from(1)
         }
         "parse" => {
             if args.len() < 3 {
@@ -93,6 +109,46 @@ fn run_file(path: &str) -> ExitCode {
             // Only print result if it's not null
             if !matches!(value, sigil_parser::Value::Null) {
                 println!("{}", value);
+            }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Runtime error in '{}': {}", path, e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+#[cfg(feature = "jit")]
+fn jit_file(path: &str) -> ExitCode {
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Create JIT compiler
+    let mut jit = match JitCompiler::new() {
+        Ok(jit) => jit,
+        Err(e) => {
+            eprintln!("Failed to initialize JIT compiler: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Compile
+    if let Err(e) = jit.compile(&source) {
+        eprintln!("Compilation error in '{}': {}", path, e);
+        return ExitCode::from(1);
+    }
+
+    // Run
+    match jit.run() {
+        Ok(result) => {
+            if result != 0 {
+                println!("{}", result);
             }
             ExitCode::SUCCESS
         }
