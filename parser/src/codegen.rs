@@ -482,30 +482,35 @@ pub mod jit {
     }
 
     /// Compilation scope for tracking variables
+    ///
+    /// Uses a shared counter (Rc<Cell>) to ensure all scopes use unique variable indices.
+    /// This prevents the "variable declared multiple times" error in Cranelift.
     struct CompileScope {
         variables: HashMap<String, Variable>,
-        var_counter: usize,
+        /// Shared counter across all scopes to ensure unique Variable indices
+        var_counter: std::rc::Rc<std::cell::Cell<usize>>,
     }
 
     impl CompileScope {
         fn new() -> Self {
             Self {
                 variables: HashMap::new(),
-                var_counter: 0,
+                var_counter: std::rc::Rc::new(std::cell::Cell::new(0)),
             }
         }
 
         fn child(&self) -> Self {
-            // Clone all variables so child scopes can access parent variables
+            // Clone variables so child scopes can access parent variables
+            // Share the counter so all scopes use unique variable indices
             Self {
                 variables: self.variables.clone(),
-                var_counter: self.var_counter,
+                var_counter: std::rc::Rc::clone(&self.var_counter),
             }
         }
 
         fn next_var(&mut self) -> usize {
-            let v = self.var_counter;
-            self.var_counter += 1;
+            let v = self.var_counter.get();
+            self.var_counter.set(v + 1);
             v
         }
 
@@ -937,7 +942,9 @@ pub mod jit {
             }
             Literal::Float { value, .. } => {
                 let val: f64 = value.parse().map_err(|_| "Invalid float")?;
-                Ok(builder.ins().f64const(val))
+                // Store float as i64 bits for uniform value representation
+                // All variables are I64 type, so floats must be bitcast
+                Ok(builder.ins().iconst(types::I64, val.to_bits() as i64))
             }
             Literal::Bool(b) => Ok(builder.ins().iconst(types::I64, if *b { 1 } else { 0 })),
             Literal::String(_) => Ok(builder.ins().iconst(types::I64, 0)),
