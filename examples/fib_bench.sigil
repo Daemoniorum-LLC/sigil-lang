@@ -1,0 +1,41 @@
+// Fibonacci benchmark - test higher n for measurable time
+fn fib(n) {
+    if n <= 1 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn main() {
+    print("=== Sigil LLVM Fib Benchmark ===");
+
+    // Use now() to make base opaque to compiler
+    let offset = now() / 1000000000000;
+    let base = 45 + offset;  // Will be 45 or 46
+
+    print("Computing fib:");
+    print(base);
+
+    let start1 = now();
+    let r1 = fib(base);
+    let t1 = now() - start1;
+    print(r1);
+    print(t1);
+
+    let start2 = now();
+    let r2 = fib(base);
+    let t2 = now() - start2;
+    print(r2);
+    print(t2);
+
+    let start3 = now();
+    let r3 = fib(base);
+    let t3 = now() - start3;
+    print(r3);
+    print(t3);
+
+    print("Average ms:");
+    print((t1 + t2 + t3) / 3);
+
+    return 0;
+}

@@ -110,8 +110,31 @@ pub mod llvm {
 
         /// Create a new LLVM compiler with specific compile mode
         pub fn with_mode(context: &'ctx Context, opt_level: OptLevel, compile_mode: CompileMode) -> Result<Self, String> {
+            // Initialize native target for proper code generation
+            Target::initialize_native(&InitializationConfig::default())
+                .map_err(|e| e.to_string())?;
+
             let module = context.create_module("sigil_main");
             let builder = context.create_builder();
+
+            // Set target triple and data layout for the native machine
+            let triple = TargetMachine::get_default_triple();
+            module.set_triple(&triple);
+
+            // Get native target machine to extract data layout
+            let target = Target::from_triple(&triple).map_err(|e| e.to_string())?;
+            let cpu = TargetMachine::get_host_cpu_name();
+            let features = TargetMachine::get_host_cpu_features();
+            if let Some(tm) = target.create_target_machine(
+                &triple,
+                cpu.to_str().unwrap_or("native"),
+                features.to_str().unwrap_or(""),
+                OptimizationLevel::Aggressive,
+                RelocMode::Default,
+                CodeModel::Default,
+            ) {
+                module.set_data_layout(&tm.get_target_data().get_data_layout());
+            }
 
             Ok(Self {
                 context,
@@ -208,6 +231,14 @@ pub mod llvm {
 
             // Declare the function
             let fn_value = self.module.add_function(&actual_name, fn_type, None);
+
+            // Add optimization attributes
+            // nounwind - function doesn't throw exceptions (enables more optimizations)
+            let nounwind_attr = self.context.create_enum_attribute(
+                inkwell::attributes::Attribute::get_named_enum_kind_id("nounwind"),
+                0,
+            );
+            fn_value.add_attribute(inkwell::attributes::AttributeLoc::Function, nounwind_attr);
 
             // Name parameters
             for (i, param) in func.params.iter().enumerate() {
@@ -739,9 +770,13 @@ pub mod llvm {
                 .collect();
             let compiled_args = compiled_args?;
 
-            // Build call
+            // Build call with tail call hint for potential optimization
             let call = self.builder.build_call(callee, &compiled_args, "call")
                 .map_err(|e| e.to_string())?;
+
+            // Hint to LLVM that this could be a tail call
+            // The optimizer will determine if it's actually in tail position
+            call.set_tail_call(true);
 
             // Get return value
             Ok(call
@@ -758,22 +793,29 @@ pub mod llvm {
 
             let triple = TargetMachine::get_default_triple();
             let target = Target::from_triple(&triple).map_err(|e| e.to_string())?;
+
+            // Use native CPU and features for maximum performance
+            let cpu = TargetMachine::get_host_cpu_name();
+            let features = TargetMachine::get_host_cpu_features();
+
             let target_machine = target
                 .create_target_machine(
                     &triple,
-                    "generic",
-                    "",
+                    cpu.to_str().unwrap_or("native"),
+                    features.to_str().unwrap_or(""),
                     OptimizationLevel::Aggressive,
                     RelocMode::Default,
                     CodeModel::Default,
                 )
                 .ok_or("Failed to create target machine")?;
 
-            // Run the new pass manager
+            // Run aggressive optimization passes
+            // The key is running tailcallelim early and then letting later passes optimize
             let passes = match self.opt_level {
                 OptLevel::None => "default<O0>",
                 OptLevel::Basic => "default<O1>",
                 OptLevel::Standard | OptLevel::Size => "default<O2>",
+                // Run full O3 pipeline which includes tail call elimination
                 OptLevel::Aggressive => "default<O3>",
             };
 
@@ -796,29 +838,27 @@ pub mod llvm {
                 .create_jit_execution_engine(OptimizationLevel::Aggressive)
                 .map_err(|e| e.to_string())?;
 
-            // Register runtime functions
-            ee.add_global_mapping(
-                &self.module.get_function("sigil_now").unwrap(),
-                sigil_now as usize,
-            );
-            ee.add_global_mapping(
-                &self.module.get_function("sigil_print_int").unwrap(),
-                sigil_print_int as usize,
-            );
+            // Register runtime functions (only if declared/used in the program)
+            if let Some(f) = self.module.get_function("sigil_now") {
+                ee.add_global_mapping(&f, sigil_now as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_print_int") {
+                ee.add_global_mapping(&f, sigil_print_int as usize);
+            }
 
-            // Register math functions
-            ee.add_global_mapping(&self.module.get_function("sigil_sqrt").unwrap(), sigil_sqrt as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_sin").unwrap(), sigil_sin as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_cos").unwrap(), sigil_cos as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_tan").unwrap(), sigil_tan as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_exp").unwrap(), sigil_exp as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_ln").unwrap(), sigil_ln as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_pow").unwrap(), sigil_pow as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_floor").unwrap(), sigil_floor as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_ceil").unwrap(), sigil_ceil as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_abs").unwrap(), sigil_abs as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_min").unwrap(), sigil_min as usize);
-            ee.add_global_mapping(&self.module.get_function("sigil_max").unwrap(), sigil_max as usize);
+            // Register math functions (only if declared/used in the program)
+            if let Some(f) = self.module.get_function("sigil_sqrt") { ee.add_global_mapping(&f, sigil_sqrt as usize); }
+            if let Some(f) = self.module.get_function("sigil_sin") { ee.add_global_mapping(&f, sigil_sin as usize); }
+            if let Some(f) = self.module.get_function("sigil_cos") { ee.add_global_mapping(&f, sigil_cos as usize); }
+            if let Some(f) = self.module.get_function("sigil_tan") { ee.add_global_mapping(&f, sigil_tan as usize); }
+            if let Some(f) = self.module.get_function("sigil_exp") { ee.add_global_mapping(&f, sigil_exp as usize); }
+            if let Some(f) = self.module.get_function("sigil_ln") { ee.add_global_mapping(&f, sigil_ln as usize); }
+            if let Some(f) = self.module.get_function("sigil_pow") { ee.add_global_mapping(&f, sigil_pow as usize); }
+            if let Some(f) = self.module.get_function("sigil_floor") { ee.add_global_mapping(&f, sigil_floor as usize); }
+            if let Some(f) = self.module.get_function("sigil_ceil") { ee.add_global_mapping(&f, sigil_ceil as usize); }
+            if let Some(f) = self.module.get_function("sigil_abs") { ee.add_global_mapping(&f, sigil_abs as usize); }
+            if let Some(f) = self.module.get_function("sigil_min") { ee.add_global_mapping(&f, sigil_min as usize); }
+            if let Some(f) = self.module.get_function("sigil_max") { ee.add_global_mapping(&f, sigil_max as usize); }
 
             self.execution_engine = Some(ee);
 
