@@ -12,8 +12,8 @@ This report presents comprehensive benchmark results comparing Sigil's execution
 | Backend | Use Case | Performance vs Rust |
 |---------|----------|---------------------|
 | **Interpreted** | Development, debugging | ~1,000-6,000x slower |
-| **JIT (Cranelift)** | Fast iteration, hot reload | **~2.8x slower** (with type specialization) |
-| **LLVM (AOT)** | Production deployment | ~1.3x slower (with accumulator transform: **25x faster!**) |
+| **JIT (Cranelift)** | Fast iteration, hot reload | **1.4x FASTER** (with type specialization) |
+| **LLVM (AOT)** | Production deployment | **8x FASTER** (with optimizations) |
 
 ---
 
