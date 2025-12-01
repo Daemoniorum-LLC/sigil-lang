@@ -1,9 +1,10 @@
 //! Source span tracking for error reporting.
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// A span in the source code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Span {
     pub start: usize,
     pub end: usize,

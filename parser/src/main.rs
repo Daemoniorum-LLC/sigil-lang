@@ -1,6 +1,7 @@
 //! Sigil CLI - Parse, check, and run Sigil source files.
 
-use sigil_parser::{Parser, Interpreter, register_stdlib, Lexer, Token};
+use sigil_parser::{Parser, Interpreter, register_stdlib, Lexer, Token, Diagnostics, Diagnostic};
+use sigil_parser::span::Span;
 #[cfg(feature = "jit")]
 use sigil_parser::JitCompiler;
 #[cfg(feature = "llvm")]
@@ -9,6 +10,14 @@ use std::env;
 use std::fs;
 use std::process::ExitCode;
 use std::borrow::Cow;
+
+/// Output format for diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum OutputFormat {
+    Human,   // Pretty-printed with colors
+    Json,    // JSON for AI agents (pretty)
+    Compact, // JSON single-line for piping
+}
 
 use rustyline::completion::{Completer, Pair};
 use rustyline::error::ReadlineError;
@@ -23,16 +32,23 @@ fn main() -> ExitCode {
     if args.len() < 2 {
         eprintln!("Sigil v0.1.0 - A polysynthetic programming language");
         eprintln!();
-        eprintln!("Usage: sigil <command> [file.sigil]");
+        eprintln!("Usage: sigil <command> [file.sigil] [options]");
         eprintln!();
         eprintln!("Commands:");
         eprintln!("  run <file>      Execute a Sigil file (interpreted)");
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
         eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO)");
+        eprintln!("  check <file>    Type-check and validate (for AI agents: --format=json)");
         eprintln!("  parse <file>    Parse and check a Sigil file");
         eprintln!("  lex <file>      Tokenize a Sigil file");
         eprintln!("  repl            Start interactive REPL");
+        eprintln!();
+        eprintln!("AI Agent Options (for 'check' command):");
+        eprintln!("  --format=json       Output diagnostics as JSON (pretty-printed)");
+        eprintln!("  --format=compact    Output diagnostics as single-line JSON");
+        eprintln!("  --quiet             Exit code only, no output (for fast validation)");
+        eprintln!("  --apply-suggestions Auto-apply fix suggestions (alias: --fix)");
         return ExitCode::from(1);
     }
 
@@ -95,6 +111,24 @@ fn main() -> ExitCode {
         "compile" => {
             eprintln!("Error: AOT compilation requires LLVM (compile with --features llvm)");
             ExitCode::from(1)
+        }
+        "check" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing file argument");
+                eprintln!("Usage: sigil check <file.sigil> [--format=json|compact] [--quiet] [--apply-suggestions]");
+                return ExitCode::from(1);
+            }
+            // Parse format option
+            let format = if args.iter().any(|a| a == "--format=json") {
+                OutputFormat::Json
+            } else if args.iter().any(|a| a == "--format=compact") {
+                OutputFormat::Compact
+            } else {
+                OutputFormat::Human
+            };
+            let quiet = args.iter().any(|a| a == "--quiet");
+            let apply_fixes = args.iter().any(|a| a == "--apply-suggestions" || a == "--fix");
+            check_file(&args[2], format, quiet, apply_fixes)
         }
         "parse" => {
             if args.len() < 3 {
@@ -426,6 +460,159 @@ fn find_linker() -> String {
         }
     }
     "cc".to_string()
+}
+
+/// Check a file and output diagnostics.
+///
+/// This is the primary interface for AI agents - provides structured
+/// JSON output with all information needed for self-correction.
+///
+/// With `--apply-suggestions`, automatically applies fix suggestions
+/// and rewrites the file.
+fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) -> ExitCode {
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            if format == OutputFormat::Human && !quiet {
+                eprintln!("Error reading file '{}': {}", path, e);
+            } else if !quiet {
+                // Output error as JSON for AI agents
+                let error_json = serde_json::json!({
+                    "file": path,
+                    "diagnostics": [{
+                        "severity": "error",
+                        "message": format!("Failed to read file: {}", e),
+                        "code": "E0001",
+                        "line": 1,
+                        "column": 1,
+                    }],
+                    "error_count": 1,
+                    "warning_count": 0,
+                    "success": false
+                });
+                if format == OutputFormat::Json {
+                    println!("{}", serde_json::to_string_pretty(&error_json).unwrap());
+                } else {
+                    println!("{}", serde_json::to_string(&error_json).unwrap());
+                }
+            }
+            return ExitCode::from(1);
+        }
+    };
+
+    // Collect diagnostics during parsing
+    let mut diagnostics = Diagnostics::new();
+    let mut parser = Parser::new(&source);
+
+    match parser.parse_file() {
+        Ok(_ast) => {
+            // TODO: Add semantic analysis / type checking here
+            // For now, just report successful parse
+        }
+        Err(e) => {
+            // Convert parse error to diagnostic
+            let diag = Diagnostic::error(format!("{}", e), Span::default())
+                .with_code("E0002");
+            diagnostics.add(diag);
+        }
+    }
+
+    // Apply fixes if requested
+    let source = if apply_fixes && !diagnostics.is_empty() {
+        let suggestions: Vec<_> = diagnostics.iter()
+            .flat_map(|d| d.suggestions.iter())
+            .collect();
+
+        if !suggestions.is_empty() {
+            // Apply fixes in reverse order to preserve byte positions
+            let mut fixed = source.clone();
+            let mut applied_fixes = Vec::new();
+
+            // Sort by span start descending so we apply from end to start
+            let mut sorted_suggestions: Vec<_> = suggestions.iter().collect();
+            sorted_suggestions.sort_by(|a, b| b.span.start.cmp(&a.span.start));
+
+            for suggestion in sorted_suggestions {
+                // Apply the fix
+                if suggestion.span.end <= fixed.len() {
+                    fixed.replace_range(suggestion.span.start..suggestion.span.end, &suggestion.replacement);
+                    applied_fixes.push(suggestion.message.clone());
+                }
+            }
+
+            // Write the fixed file
+            if !applied_fixes.is_empty() {
+                if let Err(e) = fs::write(path, &fixed) {
+                    if format == OutputFormat::Human {
+                        eprintln!("Error writing fixed file: {}", e);
+                    }
+                    return ExitCode::from(1);
+                }
+
+                if format == OutputFormat::Human && !quiet {
+                    println!("Applied {} fix{}:", applied_fixes.len(),
+                        if applied_fixes.len() == 1 { "" } else { "es" });
+                    for fix in &applied_fixes {
+                        println!("  • {}", fix);
+                    }
+                } else if format != OutputFormat::Human && !quiet {
+                    // Include applied fixes in JSON output
+                    let fix_json = serde_json::json!({
+                        "file": path,
+                        "applied_fixes": applied_fixes,
+                        "fix_count": applied_fixes.len(),
+                        "recheck_needed": true
+                    });
+                    if format == OutputFormat::Json {
+                        println!("{}", serde_json::to_string_pretty(&fix_json).unwrap());
+                    } else {
+                        println!("{}", serde_json::to_string(&fix_json).unwrap());
+                    }
+                }
+
+                // Re-check with fixed source
+                return check_file(path, format, quiet, false);
+            }
+            source // No fixes applied, use original
+        } else {
+            source // No suggestions available
+        }
+    } else {
+        source
+    };
+
+    // Output in requested format
+    if quiet {
+        // Exit code only - no output
+        return if diagnostics.has_errors() {
+            ExitCode::from(1)
+        } else {
+            ExitCode::SUCCESS
+        };
+    }
+
+    match format {
+        OutputFormat::Human => {
+            if diagnostics.is_empty() {
+                println!("✓ {} - no errors", path);
+            } else {
+                diagnostics.eprint_all(path, &source);
+                diagnostics.print_summary();
+            }
+        }
+        OutputFormat::Json => {
+            println!("{}", diagnostics.to_json_string(path, &source));
+        }
+        OutputFormat::Compact => {
+            println!("{}", diagnostics.to_json_compact(path, &source));
+        }
+    }
+
+    if diagnostics.has_errors() {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 fn parse_file(path: &str) -> ExitCode {

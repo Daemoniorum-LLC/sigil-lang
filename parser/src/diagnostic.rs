@@ -5,8 +5,10 @@
 //! - "Did you mean?" suggestions
 //! - Fix suggestions
 //! - Multi-span support for related information
+//! - JSON output for AI agent consumption
 
 use ariadne::{Color, ColorGenerator, Config, Fmt, Label, Report, ReportKind, Source};
+use serde::{Deserialize, Serialize};
 use std::ops::Range;
 use strsim::jaro_winkler;
 
@@ -14,7 +16,8 @@ use crate::span::Span;
 use crate::lexer::Token;
 
 /// Severity level for diagnostics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Severity {
     Error,
     Warning,
@@ -43,7 +46,7 @@ impl Severity {
 }
 
 /// A fix suggestion that can be applied automatically.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FixSuggestion {
     pub message: String,
     pub span: Span,
@@ -51,23 +54,59 @@ pub struct FixSuggestion {
 }
 
 /// A related location with additional context.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelatedInfo {
     pub message: String,
     pub span: Span,
 }
 
+/// A label at a specific location.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiagnosticLabel {
+    pub span: Span,
+    pub message: String,
+}
+
 /// A rich diagnostic with all context needed for beautiful error reporting.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Diagnostic {
     pub severity: Severity,
     pub code: Option<String>,
     pub message: String,
     pub span: Span,
+    #[serde(skip)]
     pub labels: Vec<(Span, String)>,
     pub notes: Vec<String>,
     pub suggestions: Vec<FixSuggestion>,
     pub related: Vec<RelatedInfo>,
+}
+
+/// JSON-serializable diagnostic output for AI agents.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonDiagnostic {
+    pub severity: Severity,
+    pub code: Option<String>,
+    pub message: String,
+    pub file: String,
+    pub span: Span,
+    pub line: u32,
+    pub column: u32,
+    pub end_line: u32,
+    pub end_column: u32,
+    pub labels: Vec<DiagnosticLabel>,
+    pub notes: Vec<String>,
+    pub suggestions: Vec<FixSuggestion>,
+    pub related: Vec<RelatedInfo>,
+}
+
+/// JSON output wrapper for multiple diagnostics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonDiagnosticsOutput {
+    pub file: String,
+    pub diagnostics: Vec<JsonDiagnostic>,
+    pub error_count: usize,
+    pub warning_count: usize,
+    pub success: bool,
 }
 
 impl Diagnostic {
@@ -201,6 +240,51 @@ impl Diagnostic {
     pub fn eprint(&self, filename: &str, source: &str) {
         self.write_to(std::io::stderr(), filename, source);
     }
+
+    /// Convert to JSON-serializable format with computed line/column positions.
+    pub fn to_json(&self, filename: &str, source: &str) -> JsonDiagnostic {
+        let (line, column) = offset_to_line_col(source, self.span.start);
+        let (end_line, end_column) = offset_to_line_col(source, self.span.end);
+
+        JsonDiagnostic {
+            severity: self.severity,
+            code: self.code.clone(),
+            message: self.message.clone(),
+            file: filename.to_string(),
+            span: self.span,
+            line,
+            column,
+            end_line,
+            end_column,
+            labels: self.labels.iter().map(|(span, msg)| DiagnosticLabel {
+                span: *span,
+                message: msg.clone(),
+            }).collect(),
+            notes: self.notes.clone(),
+            suggestions: self.suggestions.clone(),
+            related: self.related.clone(),
+        }
+    }
+}
+
+/// Convert byte offset to line/column (1-indexed).
+fn offset_to_line_col(source: &str, offset: usize) -> (u32, u32) {
+    let mut line = 1u32;
+    let mut col = 1u32;
+
+    for (i, ch) in source.char_indices() {
+        if i >= offset {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+
+    (line, col)
 }
 
 /// Diagnostic builder for common error patterns.
@@ -489,6 +573,44 @@ impl Diagnostics {
                 );
             }
         }
+    }
+
+    /// Convert all diagnostics to JSON output format.
+    ///
+    /// Returns a structured JSON object suitable for machine consumption,
+    /// with line/column positions, fix suggestions, and metadata.
+    pub fn to_json_output(&self, filename: &str, source: &str) -> JsonDiagnosticsOutput {
+        let diagnostics: Vec<JsonDiagnostic> = self.items
+            .iter()
+            .map(|d| d.to_json(filename, source))
+            .collect();
+
+        let error_count = self.error_count();
+        let warning_count = self.warning_count();
+
+        JsonDiagnosticsOutput {
+            file: filename.to_string(),
+            diagnostics,
+            error_count,
+            warning_count,
+            success: error_count == 0,
+        }
+    }
+
+    /// Render diagnostics as JSON string.
+    ///
+    /// For AI agent consumption - provides structured, machine-readable output.
+    pub fn to_json_string(&self, filename: &str, source: &str) -> String {
+        let output = self.to_json_output(filename, source);
+        serde_json::to_string_pretty(&output).unwrap_or_else(|_| "{}".to_string())
+    }
+
+    /// Render diagnostics as compact JSON (single line).
+    ///
+    /// For piping to other tools or streaming output.
+    pub fn to_json_compact(&self, filename: &str, source: &str) -> String {
+        let output = self.to_json_output(filename, source);
+        serde_json::to_string(&output).unwrap_or_else(|_| "{}".to_string())
     }
 }
 
