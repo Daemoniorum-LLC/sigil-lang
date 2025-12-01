@@ -1,23 +1,28 @@
-//! Hello World in Sigil
-//! Demonstrates basic syntax and morpheme chains.
+// Hello World in Sigil
 
-fn main() {
-    // Simple output
-    print!("Hello, World!")
-
-    // Polysynthetic greeting
-    let names = ["Alice", "Bob", "Charlie"]
-
-    // Morpheme chain: transform each name to greeting, then collect
-    let greetings = names
-        |τ{name => "Hello, {name}!"}  // τ = transform/map
-        |collect
-
-    // Print all greetings
-    greetings|for_each{print!}
+fn greet(name: str) {
+    print("Hello, " + name + "!");
 }
 
-// Function with evidentiality
-fn greet(name: str!) -> str! {
-    "Hello, {name}!"!  // Known result
+fn main() {
+    print("Welcome to Sigil!");
+    greet("World");
+
+    // Test arithmetic
+    let x = 2 + 3 * 4;
+    print("2 + 3 * 4 =", x);
+
+    // Test arrays and pipes
+    let nums = [1, 2, 3, 4, 5];
+    let doubled = nums|τ{_ * 2};
+    print("Doubled:", doubled);
+
+    // Test conditionals
+    if x > 10 {
+        print("x is greater than 10");
+    } else {
+        print("x is 10 or less");
+    }
+
+    return 0;
 }

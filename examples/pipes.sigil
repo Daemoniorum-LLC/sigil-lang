@@ -1,0 +1,13 @@
+fn main() {
+    let nums = [1, 2, 3, 4, 5];
+    
+    // Transform with tau
+    let doubled = nums|τ{_ * 2};
+    print(doubled);
+    
+    // Sum
+    let total = nums|Σ;
+    print(total);
+    
+    return 0;
+}
