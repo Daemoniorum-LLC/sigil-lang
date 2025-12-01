@@ -29,7 +29,7 @@ fn main() -> ExitCode {
         eprintln!("  run <file>      Execute a Sigil file (interpreted)");
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
-        eprintln!("  compile <file>  Compile to native executable (AOT)");
+        eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO)");
         eprintln!("  parse <file>    Parse and check a Sigil file");
         eprintln!("  lex <file>      Tokenize a Sigil file");
         eprintln!("  repl            Start interactive REPL");
@@ -74,16 +74,22 @@ fn main() -> ExitCode {
         "compile" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil compile <file.sigil> [-o output]");
+                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lto]");
                 return ExitCode::from(1);
             }
-            let output = if args.len() >= 5 && args[3] == "-o" {
-                args[4].clone()
+            // Parse flags
+            let use_lto = args.iter().any(|a| a == "--lto");
+            let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
+                if pos + 1 < args.len() {
+                    args[pos + 1].clone()
+                } else {
+                    args[2].trim_end_matches(".sigil").trim_end_matches(".sg").to_string()
+                }
             } else {
-                // Default output name: strip extension and add nothing (executable)
+                // Default output name: strip extension
                 args[2].trim_end_matches(".sigil").trim_end_matches(".sg").to_string()
             };
-            compile_file(&args[2], &output)
+            compile_file(&args[2], &output, use_lto)
         }
         #[cfg(not(feature = "llvm"))]
         "compile" => {
@@ -245,7 +251,7 @@ fn llvm_file(path: &str) -> ExitCode {
 }
 
 #[cfg(feature = "llvm")]
-fn compile_file(path: &str, output: &str) -> ExitCode {
+fn compile_file(path: &str, output: &str, use_lto: bool) -> ExitCode {
     use inkwell::context::Context;
     use std::path::Path;
     use std::process::Command;
@@ -286,28 +292,43 @@ fn compile_file(path: &str, output: &str) -> ExitCode {
         return ExitCode::from(1);
     }
 
-    // Find the runtime directory (relative to the binary or in known locations)
-    let runtime_c = find_runtime();
-    if runtime_c.is_none() {
-        eprintln!("Error: Could not find sigil_runtime.c");
+    // Find the runtime (static library or C source)
+    let runtime_result = find_runtime(use_lto);
+    if runtime_result.is_none() {
+        eprintln!("Error: Could not find sigil runtime");
         eprintln!("Expected locations:");
-        eprintln!("  - ./runtime/sigil_runtime.c");
-        eprintln!("  - ../runtime/sigil_runtime.c");
+        eprintln!("  - ./runtime/libsigil_runtime.a (pre-built, faster)");
+        eprintln!("  - ./runtime/sigil_runtime.c (source, required for --lto)");
+        eprintln!("Run 'make' in the runtime directory to build.");
         return ExitCode::from(1);
     }
-    let runtime_c = runtime_c.unwrap();
+    let (runtime, should_use_lto) = runtime_result.unwrap();
+    let is_static_lib = runtime.ends_with(".a");
 
     // Link with clang/gcc
-    println!("Compiling {} -> {}", path, output);
+    let mode_str = if should_use_lto {
+        "with LTO"
+    } else if is_static_lib {
+        "pre-built runtime"
+    } else {
+        "compiling from source"
+    };
+    println!("Compiling {} -> {} ({})", path, output, mode_str);
     let linker = find_linker();
+
+    // Build linker arguments based on runtime type and LTO
+    let mut args = vec![&obj_path as &str, &runtime, "-o", output, "-lm"];
+    if should_use_lto {
+        // Add LTO flags for cross-module optimization
+        args.insert(0, "-flto");
+        args.insert(0, "-O3");
+    } else if !is_static_lib {
+        // Add optimization flag when compiling C source without LTO
+        args.insert(0, "-O3");
+    }
+
     let link_result = Command::new(&linker)
-        .args([
-            "-O3",
-            &obj_path,
-            &runtime_c,
-            "-o", output,
-            "-lm",  // Link math library
-        ])
+        .args(&args)
         .status();
 
     // Clean up object file
@@ -330,25 +351,61 @@ fn compile_file(path: &str, output: &str) -> ExitCode {
 }
 
 #[cfg(feature = "llvm")]
-fn find_runtime() -> Option<String> {
-    let candidates = [
+fn find_runtime(use_lto: bool) -> Option<(String, bool)> {
+    // For LTO, prefer C source so it can be compiled with -flto
+    // This enables cross-module optimization between Sigil code and runtime
+    if use_lto {
+        let source_candidates = [
+            "runtime/sigil_runtime.c",
+            "../runtime/sigil_runtime.c",
+            "sigil/parser/runtime/sigil_runtime.c",
+        ];
+
+        for candidate in source_candidates {
+            if std::path::Path::new(candidate).exists() {
+                return Some((candidate.to_string(), true));
+            }
+        }
+    }
+
+    // Prefer pre-compiled static library for faster linking
+    let static_lib_candidates = [
+        "runtime/libsigil_runtime.a",
+        "../runtime/libsigil_runtime.a",
+        "sigil/parser/runtime/libsigil_runtime.a",
+    ];
+
+    for candidate in static_lib_candidates {
+        if std::path::Path::new(candidate).exists() {
+            return Some((candidate.to_string(), false));
+        }
+    }
+
+    // Fall back to C source (slower but works without pre-build)
+    let source_candidates = [
         "runtime/sigil_runtime.c",
         "../runtime/sigil_runtime.c",
         "sigil/parser/runtime/sigil_runtime.c",
     ];
 
-    for candidate in candidates {
+    for candidate in source_candidates {
         if std::path::Path::new(candidate).exists() {
-            return Some(candidate.to_string());
+            return Some((candidate.to_string(), false));
         }
     }
 
     // Try relative to executable
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let path = dir.join("runtime/sigil_runtime.c");
-            if path.exists() {
-                return path.to_string_lossy().into_owned().into();
+            // Try static library
+            let lib_path = dir.join("runtime/libsigil_runtime.a");
+            if lib_path.exists() {
+                return Some((lib_path.to_string_lossy().into_owned(), false));
+            }
+            // Fall back to source
+            let src_path = dir.join("runtime/sigil_runtime.c");
+            if src_path.exists() {
+                return Some((src_path.to_string_lossy().into_owned(), use_lto));
             }
         }
     }

@@ -59,6 +59,49 @@ pub mod llvm {
             .unwrap_or(0)
     }
 
+    // Runtime helper: print an integer (for JIT mode)
+    extern "C" fn sigil_print_int(value: i64) {
+        println!("{}", value);
+    }
+
+    // Math runtime helpers (JIT mode) - operate on i64 bits representing f64
+    extern "C" fn sigil_sqrt(x: i64) -> i64 {
+        f64::to_bits(f64::from_bits(x as u64).sqrt()) as i64
+    }
+    extern "C" fn sigil_sin(x: i64) -> i64 {
+        f64::to_bits(f64::from_bits(x as u64).sin()) as i64
+    }
+    extern "C" fn sigil_cos(x: i64) -> i64 {
+        f64::to_bits(f64::from_bits(x as u64).cos()) as i64
+    }
+    extern "C" fn sigil_tan(x: i64) -> i64 {
+        f64::to_bits(f64::from_bits(x as u64).tan()) as i64
+    }
+    extern "C" fn sigil_exp(x: i64) -> i64 {
+        f64::to_bits(f64::from_bits(x as u64).exp()) as i64
+    }
+    extern "C" fn sigil_ln(x: i64) -> i64 {
+        f64::to_bits(f64::from_bits(x as u64).ln()) as i64
+    }
+    extern "C" fn sigil_pow(x: i64, y: i64) -> i64 {
+        f64::to_bits(f64::from_bits(x as u64).powf(f64::from_bits(y as u64))) as i64
+    }
+    extern "C" fn sigil_floor(x: i64) -> i64 {
+        f64::to_bits(f64::from_bits(x as u64).floor()) as i64
+    }
+    extern "C" fn sigil_ceil(x: i64) -> i64 {
+        f64::to_bits(f64::from_bits(x as u64).ceil()) as i64
+    }
+    extern "C" fn sigil_abs(x: i64) -> i64 {
+        x.abs()
+    }
+    extern "C" fn sigil_min(a: i64, b: i64) -> i64 {
+        a.min(b)
+    }
+    extern "C" fn sigil_max(a: i64, b: i64) -> i64 {
+        a.max(b)
+    }
+
     impl<'ctx> LlvmCompiler<'ctx> {
         /// Create a new LLVM compiler for JIT execution
         pub fn new(context: &'ctx Context, opt_level: OptLevel) -> Result<Self, String> {
@@ -122,11 +165,21 @@ pub mod llvm {
             let now_type = i64_type.fn_type(&[], false);
             self.module.add_function("sigil_now", now_type, None);
 
-            // For AOT mode, also declare print functions as external
-            if self.compile_mode == CompileMode::Aot {
-                // sigil_print_int(i64) -> void
-                let print_int_type = void_type.fn_type(&[i64_type.into()], false);
-                self.module.add_function("sigil_print_int", print_int_type, None);
+            // sigil_print_int(i64) -> void
+            let print_int_type = void_type.fn_type(&[i64_type.into()], false);
+            self.module.add_function("sigil_print_int", print_int_type, None);
+
+            // Math functions: (i64) -> i64
+            let unary_math_type = i64_type.fn_type(&[i64_type.into()], false);
+            for name in ["sigil_sqrt", "sigil_sin", "sigil_cos", "sigil_tan",
+                         "sigil_exp", "sigil_ln", "sigil_floor", "sigil_ceil", "sigil_abs"] {
+                self.module.add_function(name, unary_math_type, None);
+            }
+
+            // Math functions: (i64, i64) -> i64
+            let binary_math_type = i64_type.fn_type(&[i64_type.into(), i64_type.into()], false);
+            for name in ["sigil_pow", "sigil_min", "sigil_max"] {
+                self.module.add_function(name, binary_math_type, None);
             }
         }
 
@@ -614,13 +667,11 @@ pub mod llvm {
                 "print" => {
                     if !args.is_empty() {
                         let arg_val = self.compile_expr(fn_value, scope, &args[0])?;
-                        // In AOT mode, call the external print function
-                        if self.compile_mode == CompileMode::Aot {
-                            let print_fn = self.module.get_function("sigil_print_int")
-                                .ok_or("sigil_print_int not declared")?;
-                            self.builder.build_call(print_fn, &[arg_val.into()], "")
-                                .map_err(|e| e.to_string())?;
-                        }
+                        // Call sigil_print_int (works in both JIT and AOT)
+                        let print_fn = self.module.get_function("sigil_print_int")
+                            .ok_or("sigil_print_int not declared")?;
+                        self.builder.build_call(print_fn, &[arg_val.into()], "")
+                            .map_err(|e| e.to_string())?;
                         return Ok(arg_val);
                     }
                     return Ok(self.context.i64_type().const_int(0, false));
@@ -630,6 +681,37 @@ pub mod llvm {
                     let now_fn = self.module.get_function("sigil_now")
                         .ok_or("sigil_now not declared")?;
                     let call = self.builder.build_call(now_fn, &[], "now")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call.try_as_basic_value().left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                // Unary math functions
+                "sqrt" | "sin" | "cos" | "tan" | "exp" | "ln" | "floor" | "ceil" | "abs" => {
+                    if args.is_empty() {
+                        return Err(format!("{} requires 1 argument", fn_name));
+                    }
+                    let arg = self.compile_expr(fn_value, scope, &args[0])?;
+                    let rt_name = format!("sigil_{}", fn_name);
+                    let rt_fn = self.module.get_function(&rt_name)
+                        .ok_or(format!("{} not declared", rt_name))?;
+                    let call = self.builder.build_call(rt_fn, &[arg.into()], fn_name)
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call.try_as_basic_value().left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                // Binary math functions
+                "pow" | "min" | "max" => {
+                    if args.len() < 2 {
+                        return Err(format!("{} requires 2 arguments", fn_name));
+                    }
+                    let arg1 = self.compile_expr(fn_value, scope, &args[0])?;
+                    let arg2 = self.compile_expr(fn_value, scope, &args[1])?;
+                    let rt_name = format!("sigil_{}", fn_name);
+                    let rt_fn = self.module.get_function(&rt_name)
+                        .ok_or(format!("{} not declared", rt_name))?;
+                    let call = self.builder.build_call(rt_fn, &[arg1.into(), arg2.into()], fn_name)
                         .map_err(|e| e.to_string())?;
                     return Ok(call.try_as_basic_value().left()
                         .map(|v| v.into_int_value())
@@ -719,6 +801,24 @@ pub mod llvm {
                 &self.module.get_function("sigil_now").unwrap(),
                 sigil_now as usize,
             );
+            ee.add_global_mapping(
+                &self.module.get_function("sigil_print_int").unwrap(),
+                sigil_print_int as usize,
+            );
+
+            // Register math functions
+            ee.add_global_mapping(&self.module.get_function("sigil_sqrt").unwrap(), sigil_sqrt as usize);
+            ee.add_global_mapping(&self.module.get_function("sigil_sin").unwrap(), sigil_sin as usize);
+            ee.add_global_mapping(&self.module.get_function("sigil_cos").unwrap(), sigil_cos as usize);
+            ee.add_global_mapping(&self.module.get_function("sigil_tan").unwrap(), sigil_tan as usize);
+            ee.add_global_mapping(&self.module.get_function("sigil_exp").unwrap(), sigil_exp as usize);
+            ee.add_global_mapping(&self.module.get_function("sigil_ln").unwrap(), sigil_ln as usize);
+            ee.add_global_mapping(&self.module.get_function("sigil_pow").unwrap(), sigil_pow as usize);
+            ee.add_global_mapping(&self.module.get_function("sigil_floor").unwrap(), sigil_floor as usize);
+            ee.add_global_mapping(&self.module.get_function("sigil_ceil").unwrap(), sigil_ceil as usize);
+            ee.add_global_mapping(&self.module.get_function("sigil_abs").unwrap(), sigil_abs as usize);
+            ee.add_global_mapping(&self.module.get_function("sigil_min").unwrap(), sigil_min as usize);
+            ee.add_global_mapping(&self.module.get_function("sigil_max").unwrap(), sigil_max as usize);
 
             self.execution_engine = Some(ee);
 
