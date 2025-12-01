@@ -1,0 +1,39 @@
+fn main() {
+    let names = ["Alice", "Bob", "Charlie"];
+    let result = names|τ{double}|φ{is_valid}|σ;
+    return result;
+}
+
+fn double(x: i32) -> i32 {
+    return x * 2;
+}
+
+fn is_valid(x: i32) -> bool {
+    return x > 0;
+}
+
+struct User {
+    id: u64,
+    name: str,
+    email: str,
+}
+
+async fn fetch_user(id: u64!) -> User~ {
+    return http·get(id)|await;
+}
+
+fn numbers_example() {
+    let decimal = 42;
+    let binary = 0b101010;
+    let hex = 0x2A;
+    let vigesimal = 0v22;
+    let sexagesimal = 0s42;
+    return decimal;
+}
+
+actor Counter {
+    state: i64 = 0
+    on GetValue() -> i64 {
+        return self.state;
+    }
+}

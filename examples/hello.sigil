@@ -1,0 +1,23 @@
+//! Hello World in Sigil
+//! Demonstrates basic syntax and morpheme chains.
+
+fn main() {
+    // Simple output
+    print!("Hello, World!")
+
+    // Polysynthetic greeting
+    let names = ["Alice", "Bob", "Charlie"]
+
+    // Morpheme chain: transform each name to greeting, then collect
+    let greetings = names
+        |τ{name => "Hello, {name}!"}  // τ = transform/map
+        |collect
+
+    // Print all greetings
+    greetings|for_each{print!}
+}
+
+// Function with evidentiality
+fn greet(name: str!) -> str! {
+    "Hello, {name}!"!  // Known result
+}

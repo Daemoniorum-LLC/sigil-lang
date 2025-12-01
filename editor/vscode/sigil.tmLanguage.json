@@ -1,0 +1,313 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Sigil",
+  "scopeName": "source.sigil",
+  "fileTypes": ["sigil", "sg"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#runes" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#operators" },
+    { "include": "#morphemes" },
+    { "include": "#evidentiality" },
+    { "include": "#types" },
+    { "include": "#functions" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.sigil",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.line.documentation.sigil",
+          "match": "//!.*$"
+        },
+        {
+          "name": "comment.block.sigil",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "patterns": [
+            { "include": "#comments" }
+          ]
+        }
+      ]
+    },
+    "runes": {
+      "patterns": [
+        {
+          "name": "meta.rune.sigil",
+          "match": "//@\\s*rune:\\s*([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "entity.name.tag.rune.sigil" }
+          }
+        },
+        {
+          "name": "meta.inscription.sigil",
+          "match": "#\\[([a-zA-Z_][a-zA-Z0-9_]*)(?:\\(([^)]*)\\))?\\]",
+          "captures": {
+            "1": { "name": "entity.name.tag.inscription.sigil" },
+            "2": { "name": "string.quoted.other.sigil" }
+          }
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.sigil",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.sigil",
+              "match": "\\\\."
+            },
+            {
+              "name": "meta.interpolation.sigil",
+              "begin": "\\{",
+              "end": "\\}",
+              "patterns": [
+                { "include": "$self" }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.sigil",
+          "match": "'([^'\\\\]|\\\\.)'",
+          "captures": {
+            "0": { "name": "string.quoted.single.sigil" }
+          }
+        },
+        {
+          "name": "string.quoted.raw.sigil",
+          "begin": "r#*\"",
+          "end": "\"#*"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.binary.sigil",
+          "match": "\\b0b[01_]+\\b"
+        },
+        {
+          "name": "constant.numeric.octal.sigil",
+          "match": "\\b0o[0-7_]+\\b"
+        },
+        {
+          "name": "constant.numeric.hex.sigil",
+          "match": "\\b0x[0-9a-fA-F_]+\\b"
+        },
+        {
+          "name": "constant.numeric.vigesimal.sigil",
+          "match": "\\b0v[0-9a-jA-J_]+\\b"
+        },
+        {
+          "name": "constant.numeric.sexagesimal.sigil",
+          "match": "\\b0s[0-9a-zA-Z_]+\\b"
+        },
+        {
+          "name": "constant.numeric.duodecimal.sigil",
+          "match": "\\b0z[0-9a-bA-B_]+\\b"
+        },
+        {
+          "name": "constant.numeric.explicit-base.sigil",
+          "match": "\\b[0-9a-zA-Z]+:[₀-₉]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.sigil",
+          "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*([eE][+-]?[0-9_]+)?\\b"
+        },
+        {
+          "name": "constant.numeric.integer.sigil",
+          "match": "\\b[0-9][0-9_]*\\b"
+        },
+        {
+          "name": "constant.numeric.duration.sigil",
+          "match": "\\b[0-9][0-9_]*·(sec|ms|us|ns|min|hour|day)\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.sigil",
+          "match": "\\b(if|else|match|loop|while|for|in|break|continue|return|yield|await)\\b"
+        },
+        {
+          "name": "keyword.declaration.sigil",
+          "match": "\\b(fn|async|let|mut|const|type|struct|enum|trait|impl|mod|use|pub|actor|saga|scope)\\b"
+        },
+        {
+          "name": "keyword.other.sigil",
+          "match": "\\b(self|Self|super|crate|where|as|dyn|move|ref|static|unsafe|extern)\\b"
+        },
+        {
+          "name": "constant.language.sigil",
+          "match": "\\b(true|false|None|Some|Ok|Err)\\b"
+        },
+        {
+          "name": "constant.language.special.sigil",
+          "match": "(∅|◯|∞|ananta|śūnya)"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.pipe.sigil",
+          "match": "\\|"
+        },
+        {
+          "name": "keyword.operator.arrow.sigil",
+          "match": "(->|=>|<-)"
+        },
+        {
+          "name": "keyword.operator.comparison.sigil",
+          "match": "(==|!=|<=|>=|<|>)"
+        },
+        {
+          "name": "keyword.operator.arithmetic.sigil",
+          "match": "(\\+|-|\\*|/|%|\\*\\*)"
+        },
+        {
+          "name": "keyword.operator.logical.sigil",
+          "match": "(&&|\\|\\||!)"
+        },
+        {
+          "name": "keyword.operator.bitwise.sigil",
+          "match": "(&|\\||\\^|<<|>>)"
+        },
+        {
+          "name": "keyword.operator.assignment.sigil",
+          "match": "(=|\\+=|-=|\\*=|/=)"
+        },
+        {
+          "name": "keyword.operator.range.sigil",
+          "match": "(\\.\\.|\\.\\.=)"
+        },
+        {
+          "name": "keyword.operator.incorporation.sigil",
+          "match": "·"
+        },
+        {
+          "name": "keyword.operator.concatenate.sigil",
+          "match": "\\+\\+"
+        }
+      ]
+    },
+    "morphemes": {
+      "patterns": [
+        {
+          "name": "support.function.morpheme.transform.sigil",
+          "match": "[τΤ]"
+        },
+        {
+          "name": "support.function.morpheme.filter.sigil",
+          "match": "[φΦ]"
+        },
+        {
+          "name": "support.function.morpheme.sort.sigil",
+          "match": "[σΣ]"
+        },
+        {
+          "name": "support.function.morpheme.reduce.sigil",
+          "match": "[ρΡ]"
+        },
+        {
+          "name": "support.function.morpheme.lambda.sigil",
+          "match": "[λΛ]"
+        },
+        {
+          "name": "support.function.morpheme.sum.sigil",
+          "match": "Σ"
+        },
+        {
+          "name": "support.function.morpheme.product.sigil",
+          "match": "Π"
+        },
+        {
+          "name": "support.function.morpheme.await.sigil",
+          "match": "⌛"
+        },
+        {
+          "name": "support.function.morpheme.named.sigil",
+          "match": "·(map|filter|sort|reduce|fold|collect|flatten|take|skip|zip|enumerate|reverse|clone|ref|mut|own|move|drop|box|rc|arc|spin|voice|listen|hold|gather|tell|ask|flow|await|par|async|sync)"
+        }
+      ]
+    },
+    "evidentiality": {
+      "patterns": [
+        {
+          "name": "storage.modifier.evidentiality.known.sigil",
+          "match": "!"
+        },
+        {
+          "name": "storage.modifier.evidentiality.uncertain.sigil",
+          "match": "\\?"
+        },
+        {
+          "name": "storage.modifier.evidentiality.reported.sigil",
+          "match": "~"
+        },
+        {
+          "name": "storage.modifier.evidentiality.paradox.sigil",
+          "match": "‽"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.primitive.sigil",
+          "match": "\\b(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize|f32|f64|bool|char|str|void|never)\\b"
+        },
+        {
+          "name": "storage.type.collection.sigil",
+          "match": "\\b(Vec|Map|Set|Array|Slice|Option|Result|Future|Stream|Channel|Mutex|RwLock|Arc|Rc|Box|Cell|RefCell)\\b"
+        },
+        {
+          "name": "storage.type.cultural.sigil",
+          "match": "\\b(Cycle|Ratio|Complex|Quaternion|BalancedTernary|Phinary|PAdicApprox|Cuneiform|MayanDigit|Hexagram|Trigram|Shruti|Tala|Raga|Maqam)\\b"
+        },
+        {
+          "name": "entity.name.type.sigil",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.sigil",
+          "match": "\\b([a-z_][a-z0-9_]*)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.sigil" }
+          }
+        },
+        {
+          "name": "entity.name.function.macro.sigil",
+          "match": "\\b([a-z_][a-z0-9_]*)!",
+          "captures": {
+            "1": { "name": "entity.name.function.macro.sigil" }
+          }
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.sigil",
+          "match": "\\b[a-z_][a-z0-9_]*\\b"
+        }
+      ]
+    }
+  }
+}

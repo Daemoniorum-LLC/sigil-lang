@@ -1,0 +1,234 @@
+//! Poly-Cultural Mathematics
+//! Number systems from diverse traditions.
+
+use math·numeral·{
+    babylonian, mayan, balanced_ternary, phinary,
+    negabinary, quater_imaginary, residue, p_adic
+}
+use math·cycle·Cycle
+use math·ratio·Ratio
+use math·complex·{Complex, I}
+
+// === Number Bases ===
+
+fn number_bases() {
+    // Standard bases with prefixes
+    let decimal     = 42              // Base 10
+    let binary      = 0b101010        // Base 2
+    let octal       = 0o52            // Base 8
+    let hex         = 0x2A            // Base 16
+    let vigesimal   = 0v22            // Base 20 (Mayan)
+    let sexagesimal = 0s42            // Base 60 (Babylonian)
+    let duodecimal  = 0z36            // Base 12
+
+    // Explicit base annotation
+    let base7 = 60:₇                  // 42 in base 7
+
+    print!("All equal: {decimal == binary == hex}")
+}
+
+// === Historical Numeral Systems ===
+
+fn babylonian_math() {
+    // Babylonian cuneiform (base 60)
+    let n = 3661  // 1×60² + 1×60 + 1
+    let cuneiform = n|babylonian·to_cuneiform
+    let rendered = cuneiform|babylonian·render
+    print!("3661 in Babylonian: {rendered}")
+
+    // Used for time and angles
+    let angle_deg = 90·deg
+    let angle_dms = angle_deg|to_dms  // degrees, minutes, seconds
+}
+
+fn mayan_calendar() {
+    // Mayan Long Count
+    type LongCount = mayan·LongCount
+
+    let days_since_creation = 1_872_000
+    let long_count = days_since_creation|mayan·from_days
+    // [baktun, katun, tun, winal, kin]
+
+    print!("Long Count: {long_count|mayan·render}")
+
+    // Calendar Round (cyclical)
+    type Tzolkin = Cycle<260>
+    type Haab = Cycle<365>
+
+    let sacred: Tzolkin = 1
+    let civil: Haab = 1
+    let round = (sacred, civil)|calendar_round
+}
+
+// === Balanced Number Systems ===
+
+fn balanced_systems() {
+    // Balanced ternary (Soviet Setun computer)
+    // Digits: T (-1), 0, 1
+    let bt = 42|balanced_ternary·from_int
+    print!("42 in balanced ternary: {bt|balanced_ternary·to_string}")
+
+    // Negation is trivial: flip all signs
+    let neg_bt = bt|balanced_ternary·negate
+    print!("-42 in balanced ternary: {neg_bt|balanced_ternary·to_string}")
+}
+
+// === Non-Integer Bases ===
+
+fn irrational_bases() {
+    // Golden ratio base (phinary)
+    // φ = (1 + √5) / 2
+    let phi_42 = 42|phinary·from_int
+    print!("42 in base φ (Zeckendorf): {phi_42}")
+
+    // Property: no consecutive 1s when normalized
+    let normalized = phi_42|phinary·normalize
+}
+
+// === Negative Bases ===
+
+fn negative_bases() {
+    // Negabinary (base -2)
+    // No sign bit needed!
+    let pos = 42|negabinary·from_int
+    let neg = (-42)|negabinary·from_int
+
+    print!("42 in negabinary: {pos}")
+    print!("-42 in negabinary: {neg}")  // No minus sign!
+}
+
+// === Complex Bases ===
+
+fn complex_bases() {
+    // Quater-imaginary (base 2i)
+    // Represents Gaussian integers without sign
+    let z = Complex(5, 3)
+    let qi = z|quater_imaginary·from_gaussian
+
+    print!("5+3i in base 2i: {qi}")
+
+    // Dragon base (-1+i)
+    // Related to dragon curve fractal
+    let dragon = z|dragon_base·from_gaussian
+}
+
+// === Residue Number Systems ===
+
+fn rns_parallel_math() {
+    // RNS enables parallel arithmetic
+    const MODULI: [u64; 4] = [257, 263, 269, 271]
+
+    let a = 1000|residue·encode(MODULI)  // [229, 211, 193, 187]
+    let b = 2000|residue·encode(MODULI)
+
+    // Parallel multiplication (no carry propagation!)
+    let c = residue·mul(&a, &b)
+
+    // Decode result
+    let result = c|residue·decode
+    print!("1000 × 2000 = {result}")
+}
+
+// === p-Adic Numbers ===
+
+fn p_adic_numbers() {
+    // 2-adic numbers (dyadic)
+    type Dyadic = p_adic<2>
+
+    // In 2-adics: ...1111 + 1 = 0, so ...1111 = -1
+    let minus_one = Dyadic·neg_one(8)
+
+    // p-adic norm: |n|_p = p^(-v) where p^v || n
+    let norm = 12|Dyadic·norm  // 12 = 2² × 3, so |12|₂ = 1/4
+}
+
+// === Cyclical Time ===
+
+fn cyclical_time() {
+    // Chinese sexagenary cycle (60 years)
+    type HeavenlyStem = Cycle<10>
+    type EarthlyBranch = Cycle<12>
+
+    struct ChineseYear {
+        stem: HeavenlyStem,
+        branch: EarthlyBranch,
+    }
+
+    let this_year = ChineseYear {
+        stem: 1,   // 甲 (jiǎ)
+        branch: 5, // 辰 (chén) - Dragon
+    }
+
+    // Cycle operations wrap automatically
+    let next: HeavenlyStem = this_year.stem + 1
+    let in_60_years = this_year.stem + 60  // Same as this_year.stem
+}
+
+// === Tuning Systems ===
+
+fn musical_math() {
+    use math·tuning·{pythagorean, just, maqam, shruti}
+
+    // Pythagorean (Greek/Chinese)
+    let fifth = pythagorean·FIFTH  // 3:2
+    let fourth = pythagorean·FOURTH  // 4:3
+
+    // Just intonation (pure ratios)
+    let major_third = just·RATIOS[4]  // 5:4
+
+    // Arabic maqam (quarter tones)
+    type QuarterTone = Cycle<24>
+    let rast_scale: [QuarterTone; 8] = maqam·RAST
+
+    // Indian shruti (22 divisions)
+    type Shruti = Cycle<22>
+    let sa: Shruti = shruti·SA
+}
+
+// === Gematria ===
+
+fn symbolic_numbers() {
+    use math·gematria·{Hebrew, Greek, Arabic}
+
+    // Hebrew gematria
+    let aleph = 'א'|Hebrew·value  // 1
+    let word_value = "שלום"|Hebrew·word_value
+
+    // Greek isopsephy
+    let alpha = 'α'|Greek·value  // 1
+
+    // Find words with same numerical value
+    let isopsephic = corpus|find_isopsephic(word_value)
+}
+
+// === Sacred Geometry ===
+
+fn sacred_ratios() {
+    use math·sacred·{φ, √2, √3, √5}
+
+    // Golden ratio
+    let golden = φ  // (1 + √5) / 2 ≈ 1.618
+
+    // Fibonacci sequence approaches φ
+    let fibs = fibonacci()|take(20)|collect
+    let ratio = fibs[19] / fibs[18]  // ≈ φ
+
+    // Ad quadratum (√2) - diagonal of unit square
+    let diagonal = √2
+
+    // Vesica piscis ratio
+    let vesica = √3
+}
+
+fn main() {
+    number_bases()
+    babylonian_math()
+    mayan_calendar()
+    balanced_systems()
+    irrational_bases()
+    negative_bases()
+    complex_bases()
+    rns_parallel_math()
+    cyclical_time()
+    musical_math()
+}

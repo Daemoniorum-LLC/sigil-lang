@@ -1,0 +1,23 @@
+[package]
+name = "sigil-parser"
+version = "0.1.0"
+edition = "2021"
+description = "Parser for the Sigil programming language"
+authors = ["Daemoniorum, Inc."]
+license = "MIT"
+
+[dependencies]
+thiserror = "1.0"
+unicode-xid = "0.2"
+logos = "0.14"
+
+[dev-dependencies]
+pretty_assertions = "1.4"
+
+[[bin]]
+name = "sigil"
+path = "src/main.rs"
+
+[lib]
+name = "sigil_parser"
+path = "src/lib.rs"

@@ -1,0 +1,190 @@
+//! Concurrency with Cultural Metaphors
+//! Weaving threads, ancestor voices, water flow.
+
+use concurrency·weave·{Thread, Loom}
+use concurrency·voice·{Channel, Sender, Receiver}
+use concurrency·flow·{Stream, Source}
+use concurrency·market·{Actor, Address}
+use concurrency·dance·{Barrier, Mutex}
+
+// === Async/Await ===
+
+async fn fetch_data(url: str) -> Data~ {
+    // Standard await with |await or ⌛
+    let response~ = http·get(url)|await
+    let data~ = response~|json·parse|await
+    data~
+}
+
+async fn parallel_fetch() -> [Data~] {
+    // Parallel await - all at once
+    let (a, b, c) = (
+        fetch_data("/api/a"),
+        fetch_data("/api/b"),
+        fetch_data("/api/c"),
+    )|await·all
+
+    [a, b, c]
+}
+
+async fn race_fetch() -> Data~ {
+    // Race - first to complete wins
+    (fetch_fast(), fetch_slow())|await·race
+}
+
+async fn with_timeout() -> Data? {
+    // Timeout as evidentiality
+    fetch_slow()|await·timeout(5·sec)
+}
+
+// === Weaving (Threads) ===
+
+fn weave_example() {
+    // Spawn a thread (spin a new strand)
+    let handle = Thread·spin {
+        heavy_computation()
+    }
+
+    // Join threads (bring strands together)
+    let result = handle|weave·join
+
+    // Loom: manage multiple threads
+    let loom = Loom·new()
+    let threads = (0..4)|τ{i =>
+        loom|spin{ compute_chunk(i) }
+    }
+
+    // Gather all results
+    let results = threads|weave·gather
+}
+
+// === Ancestor Voices (Channels) ===
+
+fn channel_example() {
+    // Create channel
+    let (send, recv): (Sender<Message>, Receiver<Message>) = Channel·new(100)
+
+    // Send message (speak to ancestors)
+    send|voice(Message { data: 42 })
+
+    // Receive message (hear from ancestors)
+    let msg? = recv|listen        // Non-blocking
+    let msg! = recv|listen·await  // Blocking
+
+    // Close channel (complete the ritual)
+    send|silence
+}
+
+async fn select_example(a: Receiver<i32>, b: Receiver<str>) {
+    // Listen to multiple voices
+    let result = select! {
+        num = a|listen => handle_number(num),
+        text = b|listen => handle_text(text),
+        () = timeout(1·sec) => handle_timeout(),
+    }
+}
+
+// === Water Flow (Streams) ===
+
+async fn stream_example() {
+    let events: Stream<Event~> = websocket·connect(url)|stream
+
+    // Stream operators with flow morphemes
+    events
+        |τ·flow{parse_event}        // Transform each element
+        |φ·flow{.is_valid}          // Filter
+        |buffer(100)                // Backpressure
+        |throttle(10·per_sec)       // Rate limit
+        |for_each·await{handle}     // Process each
+}
+
+// === Dance (Synchronization) ===
+
+fn sync_example() {
+    // Barrier: all dancers must arrive
+    let barrier = Barrier·new(num_threads)
+
+    // In each thread:
+    do_preparation()
+    barrier|gather    // Wait for all
+    do_main_work()    // All proceed together
+
+    // Mutex: one dancer at a time
+    let shared = Mutex·new(data)
+    {
+        let guard = shared|hold
+        guard|mutate()
+    }  // Released when guard drops
+}
+
+// === Market (Actors) ===
+
+actor Counter {
+    state: i64 = 0
+
+    on Increment(n: i64) {
+        self.state += n
+    }
+
+    on Decrement(n: i64) {
+        self.state -= n
+    }
+
+    on GetValue -> i64 {
+        self.state
+    }
+}
+
+async fn actor_example() {
+    // Open shop (spawn actor)
+    let counter: Address<Counter> = Counter·open()
+
+    // Fire-and-forget messages
+    counter|tell(Increment(5))
+    counter|tell(Decrement(2))
+
+    // Request-response (negotiate)
+    let value = counter|ask(GetValue)|await
+    print!("Counter value: {value}")
+}
+
+// === Structured Concurrency ===
+
+async fn structured_example() -> (A, B) {
+    // All tasks must complete before scope exits
+    scope |s| {
+        let a = s|spawn{ fetch_a() }
+        let b = s|spawn{ fetch_b() }
+
+        // Cancel others if any fails
+        s|cancel_on_error
+
+        (a|await, b|await)
+    }
+}
+
+// === Parallel Iteration ===
+
+fn parallel_iteration() {
+    let data = load_large_dataset()
+
+    // Sequential (default)
+    data|τ{process}
+
+    // Parallel
+    data|par·τ{process}
+
+    // Parallel with limit
+    data|par(4)·τ{process}
+
+    // Work stealing (ayni - reciprocal exchange)
+    data|par·ayni·τ{process}
+}
+
+fn main() {
+    // Run async main
+    async {
+        let data = parallel_fetch()|await
+        print!("Fetched {data.len} items")
+    }|block_on
+}
