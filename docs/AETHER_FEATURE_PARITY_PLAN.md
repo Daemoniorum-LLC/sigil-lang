@@ -1081,22 +1081,22 @@ PHYSICS (FFI)                      Status    Target
 └─ Time travel                     [✓]       Phase 2 - Complete (native)
 
 GRAPHICS (FFI)                     Status    Target
-├─ Renderer core                   [ ]       Phase 3
-├─ Mesh/Material/Texture           [ ]       Phase 3
-├─ PBR pipeline                    [ ]       Phase 3
-├─ Dynamic lighting                [ ]       Phase 3
-├─ Shadows                         [ ]       Phase 3
-├─ 3D Gaussian Splatting           [ ]       Phase 3
-├─ NeRF                            [ ]       Phase 3
-├─ Neural texture compression      [ ]       Phase 3
-├─ AI upscaling                    [ ]       Phase 3
-├─ ReSTIR GI                       [ ]       Phase 3
-├─ Radiance cascades               [ ]       Phase 3
-├─ DDGI                            [ ]       Phase 3
-├─ VRS                             [ ]       Phase 3
-├─ Bindless resources              [ ]       Phase 3
-├─ GPU-driven rendering            [ ]       Phase 3
-└─ Shader DSL                      [ ]       Phase 3 (native)
+├─ Renderer core                   [✓]       Phase 3 - Complete
+├─ Mesh/Material/Texture           [✓]       Phase 3 - Complete
+├─ PBR pipeline                    [✓]       Phase 3 - Complete
+├─ Dynamic lighting                [✓]       Phase 3 - Complete
+├─ Shadows                         [✓]       Phase 3 - Complete
+├─ 3D Gaussian Splatting           [✓]       Phase 3 - Complete
+├─ NeRF                            [✓]       Phase 3 - Complete
+├─ Neural texture compression      [✓]       Phase 3 - Complete
+├─ AI upscaling                    [✓]       Phase 3 - Complete
+├─ ReSTIR GI                       [✓]       Phase 3 - Complete
+├─ Radiance cascades               [✓]       Phase 3 - Complete
+├─ DDGI                            [✓]       Phase 3 - Complete
+├─ VRS                             [✓]       Phase 3 - Complete
+├─ Bindless resources              [✓]       Phase 3 - Complete
+├─ GPU-driven rendering            [✓]       Phase 3 - Complete
+└─ Shader DSL                      [✓]       Phase 3 - Complete (native)
 
 SCENE                              Status    Target
 ├─ Hierarchical nodes              [ ]       Phase 4
