@@ -87,7 +87,11 @@ impl Optimizer {
             crate::span::Spanned { node, span: item.span.clone() }
         }).collect();
 
-        ast::SourceFile { items }
+        ast::SourceFile {
+            attrs: file.attrs.clone(),
+            config: file.config.clone(),
+            items,
+        }
     }
 
     /// Check if a function is recursive

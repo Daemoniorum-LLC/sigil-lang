@@ -4,9 +4,72 @@
 
 use crate::span::{Span, Spanned};
 
+// ============================================
+// Attributes (for no_std, entry points, etc.)
+// ============================================
+
+/// An attribute applied to an item or crate.
+/// Outer: `#[name]` or `#[name(args)]`
+/// Inner: `#![name]` or `#![name(args)]`
+#[derive(Debug, Clone, PartialEq)]
+pub struct Attribute {
+    pub name: Ident,
+    pub args: Option<AttrArgs>,
+    pub is_inner: bool,  // true for #![...], false for #[...]
+}
+
+/// Arguments to an attribute.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AttrArgs {
+    /// Parenthesized arguments: `#[attr(a, b, c)]`
+    Paren(Vec<AttrArg>),
+    /// Key-value: `#[attr = "value"]`
+    Eq(Box<Expr>),
+}
+
+/// A single argument in an attribute.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AttrArg {
+    /// Simple identifier: `no_std`
+    Ident(Ident),
+    /// Literal value: `"entry"`
+    Literal(Literal),
+    /// Nested attribute: `cfg(target_os = "none")`
+    Nested(Attribute),
+    /// Key-value pair: `target = "x86_64"`
+    KeyValue { key: Ident, value: Box<Expr> },
+}
+
+/// Crate-level configuration derived from inner attributes.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CrateConfig {
+    /// `#![no_std]` - disable standard library
+    pub no_std: bool,
+    /// `#![no_main]` - custom entry point, no main function required
+    pub no_main: bool,
+    /// `#![feature(...)]` - enabled features
+    pub features: Vec<String>,
+    /// Target architecture (from `#![target(...)]`)
+    pub target: Option<TargetConfig>,
+}
+
+/// Target-specific configuration.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct TargetConfig {
+    pub arch: Option<String>,      // "x86_64", "aarch64", "riscv64"
+    pub os: Option<String>,        // "none", "linux", "windows"
+    pub abi: Option<String>,       // "gnu", "musl", "msvc"
+    pub features: Vec<String>,     // CPU features
+}
+
 /// A complete Sigil source file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SourceFile {
+    /// Inner attributes: `#![no_std]`, `#![feature(...)]`
+    pub attrs: Vec<Attribute>,
+    /// Crate configuration derived from attributes
+    pub config: CrateConfig,
+    /// Top-level items
     pub items: Vec<Spanned<Item>>,
 }
 

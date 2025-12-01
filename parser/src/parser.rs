@@ -42,6 +42,15 @@ impl<'a> Parser<'a> {
 
     /// Parse a complete source file.
     pub fn parse_file(&mut self) -> ParseResult<SourceFile> {
+        // Parse inner attributes first (#![...])
+        let mut attrs = Vec::new();
+        while matches!(self.current_token(), Some(Token::HashBang)) {
+            attrs.push(self.parse_inner_attribute()?);
+        }
+
+        // Build crate config from attributes
+        let config = self.build_crate_config(&attrs);
+
         let mut items = Vec::new();
         while !self.is_eof() {
             // Skip comments
@@ -53,7 +62,190 @@ impl<'a> Parser<'a> {
             }
             items.push(self.parse_item()?);
         }
-        Ok(SourceFile { items })
+        Ok(SourceFile { attrs, config, items })
+    }
+
+    /// Parse an inner attribute: `#![name]` or `#![name(args)]`
+    fn parse_inner_attribute(&mut self) -> ParseResult<Attribute> {
+        self.expect(Token::HashBang)?;
+        self.expect(Token::LBracket)?;
+
+        let name = self.parse_ident()?;
+        let args = self.parse_attr_args()?;
+
+        self.expect(Token::RBracket)?;
+
+        Ok(Attribute {
+            name,
+            args,
+            is_inner: true,
+        })
+    }
+
+    /// Parse an outer attribute: `#[name]` or `#[name(args)]`
+    #[allow(dead_code)]
+    fn parse_outer_attribute(&mut self) -> ParseResult<Attribute> {
+        self.expect(Token::Hash)?;
+        self.expect(Token::LBracket)?;
+
+        let name = self.parse_ident()?;
+        let args = self.parse_attr_args()?;
+
+        self.expect(Token::RBracket)?;
+
+        Ok(Attribute {
+            name,
+            args,
+            is_inner: false,
+        })
+    }
+
+    /// Parse attribute arguments if present.
+    fn parse_attr_args(&mut self) -> ParseResult<Option<AttrArgs>> {
+        if self.consume_if(&Token::LParen) {
+            let mut args = Vec::new();
+
+            while !self.check(&Token::RParen) {
+                args.push(self.parse_attr_arg()?);
+                if !self.consume_if(&Token::Comma) {
+                    break;
+                }
+            }
+
+            self.expect(Token::RParen)?;
+            Ok(Some(AttrArgs::Paren(args)))
+        } else if self.consume_if(&Token::Eq) {
+            let expr = self.parse_expr()?;
+            Ok(Some(AttrArgs::Eq(Box::new(expr))))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Parse a single attribute argument.
+    fn parse_attr_arg(&mut self) -> ParseResult<AttrArg> {
+        match self.current_token().cloned() {
+            Some(Token::StringLit(s)) => {
+                self.advance();
+                Ok(AttrArg::Literal(Literal::String(s)))
+            }
+            Some(Token::IntLit(s)) => {
+                self.advance();
+                Ok(AttrArg::Literal(Literal::Int {
+                    value: s,
+                    base: NumBase::Decimal,
+                    suffix: None,
+                }))
+            }
+            Some(Token::Ident(_)) => {
+                let ident = self.parse_ident()?;
+                self.parse_attr_arg_after_ident(ident)
+            }
+            // Handle keywords that might appear as feature names in attributes
+            Some(Token::Asm) => {
+                let span = self.current_span();
+                self.advance();
+                let ident = Ident { name: "asm".to_string(), evidentiality: None, span };
+                self.parse_attr_arg_after_ident(ident)
+            }
+            Some(Token::Volatile) => {
+                let span = self.current_span();
+                self.advance();
+                let ident = Ident { name: "volatile".to_string(), evidentiality: None, span };
+                self.parse_attr_arg_after_ident(ident)
+            }
+            Some(Token::Naked) => {
+                let span = self.current_span();
+                self.advance();
+                let ident = Ident { name: "naked".to_string(), evidentiality: None, span };
+                self.parse_attr_arg_after_ident(ident)
+            }
+            Some(Token::Packed) => {
+                let span = self.current_span();
+                self.advance();
+                let ident = Ident { name: "packed".to_string(), evidentiality: None, span };
+                self.parse_attr_arg_after_ident(ident)
+            }
+            Some(Token::Unsafe) => {
+                let span = self.current_span();
+                self.advance();
+                let ident = Ident { name: "unsafe".to_string(), evidentiality: None, span };
+                self.parse_attr_arg_after_ident(ident)
+            }
+            Some(t) => Err(ParseError::UnexpectedToken {
+                expected: "attribute argument".to_string(),
+                found: t,
+                span: self.current_span(),
+            }),
+            None => Err(ParseError::UnexpectedEof),
+        }
+    }
+
+    /// Helper to continue parsing after an identifier in an attribute argument.
+    fn parse_attr_arg_after_ident(&mut self, ident: Ident) -> ParseResult<AttrArg> {
+        // Check for key = value
+        if self.consume_if(&Token::Eq) {
+            let value = self.parse_expr()?;
+            Ok(AttrArg::KeyValue {
+                key: ident,
+                value: Box::new(value),
+            })
+        }
+        // Check for nested attr(...)
+        else if self.check(&Token::LParen) {
+            let args = self.parse_attr_args()?;
+            Ok(AttrArg::Nested(Attribute {
+                name: ident,
+                args,
+                is_inner: false,
+            }))
+        }
+        // Just an identifier
+        else {
+            Ok(AttrArg::Ident(ident))
+        }
+    }
+
+    /// Build crate configuration from parsed inner attributes.
+    fn build_crate_config(&self, attrs: &[Attribute]) -> CrateConfig {
+        let mut config = CrateConfig::default();
+
+        for attr in attrs {
+            match attr.name.name.as_str() {
+                "no_std" => config.no_std = true,
+                "no_main" => config.no_main = true,
+                "feature" => {
+                    if let Some(AttrArgs::Paren(args)) = &attr.args {
+                        for arg in args {
+                            if let AttrArg::Ident(ident) = arg {
+                                config.features.push(ident.name.clone());
+                            }
+                        }
+                    }
+                }
+                "target" => {
+                    let mut target = TargetConfig::default();
+                    if let Some(AttrArgs::Paren(args)) = &attr.args {
+                        for arg in args {
+                            if let AttrArg::KeyValue { key, value } = arg {
+                                if let Expr::Literal(Literal::String(s)) = value.as_ref() {
+                                    match key.name.as_str() {
+                                        "arch" => target.arch = Some(s.clone()),
+                                        "os" => target.os = Some(s.clone()),
+                                        "abi" => target.abi = Some(s.clone()),
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    config.target = Some(target);
+                }
+                _ => {}
+            }
+        }
+
+        config
     }
 
     // === Token utilities ===
@@ -2308,5 +2500,55 @@ mod tests {
         } else {
             panic!("Expected struct");
         }
+    }
+
+    #[test]
+    fn test_parse_no_std_attribute() {
+        let source = r#"
+            #![no_std]
+            #![no_main]
+
+            fn kernel_main() -> ! {
+                loop {}
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        assert!(file.config.no_std, "Should have no_std");
+        assert!(file.config.no_main, "Should have no_main");
+        assert_eq!(file.attrs.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_feature_attribute() {
+        let source = r#"
+            #![feature(asm, naked_functions)]
+
+            fn main() -> i64 { 0 }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        assert_eq!(file.config.features.len(), 2);
+        assert!(file.config.features.contains(&"asm".to_string()));
+        assert!(file.config.features.contains(&"naked_functions".to_string()));
+    }
+
+    #[test]
+    fn test_parse_target_attribute() {
+        let source = r#"
+            #![no_std]
+            #![target(arch = "x86_64", os = "none")]
+
+            fn kernel_main() { }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        assert!(file.config.no_std);
+        let target = file.config.target.as_ref().expect("Should have target config");
+        assert_eq!(target.arch, Some("x86_64".to_string()));
+        assert_eq!(target.os, Some("none".to_string()));
     }
 }

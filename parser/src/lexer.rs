@@ -332,6 +332,8 @@ pub enum Token {
     Dot,
     #[token("@")]
     At,
+    #[token("#!")]
+    HashBang,  // Inner attribute prefix #![...]
     #[token("#")]
     Hash,
     #[token("_", priority = 3)]
