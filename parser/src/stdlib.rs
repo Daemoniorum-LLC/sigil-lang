@@ -137,6 +137,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_multibase(interp);
     // Phase 14: Polycultural audio - world tuning, sacred frequencies, synthesis
     register_audio(interp);
+    // Phase 15: Spirituality - divination, sacred geometry, gematria, archetypes
+    register_spirituality(interp);
 }
 
 // Helper to define a builtin
@@ -17377,6 +17379,1020 @@ fn generate_waveform(args: &[Value], wave_fn: fn(f64) -> f64) -> Result<Value, R
         .collect();
 
     Ok(Value::Array(Rc::new(RefCell::new(samples))))
+}
+
+// ============================================================================
+// SPIRITUALITY: Divination, sacred geometry, gematria, archetypes
+// ============================================================================
+//
+// This module treats computation as potentially sacred - numbers have meaning,
+// patterns have significance, and randomness can be oracle.
+//
+// I Ching Trigrams:
+//   ☰ Heaven (乾)  ☱ Lake (兌)   ☲ Fire (離)   ☳ Thunder (震)
+//   ☴ Wind (巽)    ☵ Water (坎)  ☶ Mountain (艮) ☷ Earth (坤)
+//
+// Sacred Geometry:
+//   φ = 1.618033... (Golden Ratio)
+//   √φ, φ², 1/φ (related constants)
+//   Fibonacci sequence
+//   Platonic solid relationships
+//
+// Gematria Systems:
+//   Hebrew (Kabbalah), Greek (Isopsephy), Arabic (Abjad)
+//   Each letter is a number; words have numerical souls
+
+fn register_spirituality(interp: &mut Interpreter) {
+    // =========================================================================
+    // I CHING - Book of Changes
+    // =========================================================================
+
+    // The 8 trigrams
+    const TRIGRAMS: [(&str, &str, &str, &str, &str); 8] = [
+        ("☰", "乾", "Heaven", "Creative", "strong, initiating, persisting"),
+        ("☱", "兌", "Lake", "Joyous", "pleasure, satisfaction, openness"),
+        ("☲", "離", "Fire", "Clinging", "clarity, awareness, dependence"),
+        ("☳", "震", "Thunder", "Arousing", "movement, initiative, action"),
+        ("☴", "巽", "Wind", "Gentle", "penetrating, following, flexible"),
+        ("☵", "坎", "Water", "Abysmal", "danger, flowing, depth"),
+        ("☶", "艮", "Mountain", "Keeping Still", "stopping, resting, meditation"),
+        ("☷", "坤", "Earth", "Receptive", "yielding, nurturing, devoted"),
+    ];
+
+    // trigram - get trigram information
+    define(interp, "trigram", Some(1), |_, args| {
+        let input = match &args[0] {
+            Value::Int(n) => (*n as usize).min(7),
+            Value::String(s) => {
+                match s.as_str() {
+                    "☰" | "heaven" | "qian" | "乾" => 0,
+                    "☱" | "lake" | "dui" | "兌" => 1,
+                    "☲" | "fire" | "li" | "離" => 2,
+                    "☳" | "thunder" | "zhen" | "震" => 3,
+                    "☴" | "wind" | "xun" | "巽" => 4,
+                    "☵" | "water" | "kan" | "坎" => 5,
+                    "☶" | "mountain" | "gen" | "艮" => 6,
+                    "☷" | "earth" | "kun" | "坤" => 7,
+                    _ => return Err(RuntimeError::new(format!("Unknown trigram: {}", s))),
+                }
+            }
+            _ => return Err(RuntimeError::new("trigram() requires number or name")),
+        };
+
+        let (symbol, chinese, english, name, meaning) = TRIGRAMS[input];
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("number".to_string(), Value::Int(input as i64));
+        result.insert("symbol".to_string(), Value::String(Rc::new(symbol.to_string())));
+        result.insert("chinese".to_string(), Value::String(Rc::new(chinese.to_string())));
+        result.insert("english".to_string(), Value::String(Rc::new(english.to_string())));
+        result.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        result.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+
+        // Binary representation (yang=1, yin=0)
+        let binary = match input {
+            0 => "111", // ☰
+            1 => "110", // ☱
+            2 => "101", // ☲
+            3 => "100", // ☳
+            4 => "011", // ☴
+            5 => "010", // ☵
+            6 => "001", // ☶
+            7 => "000", // ☷
+            _ => "000",
+        };
+        result.insert("binary".to_string(), Value::String(Rc::new(binary.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // hexagram - get one of 64 I Ching hexagrams
+    define(interp, "hexagram", Some(1), |_, args| {
+        let num = match &args[0] {
+            Value::Int(n) => ((*n - 1) as usize).min(63),
+            _ => return Err(RuntimeError::new("hexagram() requires number 1-64")),
+        };
+
+        let hex = &HEXAGRAMS[num];
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("number".to_string(), Value::Int((num + 1) as i64));
+        result.insert("chinese".to_string(), Value::String(Rc::new(hex.0.to_string())));
+        result.insert("pinyin".to_string(), Value::String(Rc::new(hex.1.to_string())));
+        result.insert("english".to_string(), Value::String(Rc::new(hex.2.to_string())));
+        result.insert("judgment".to_string(), Value::String(Rc::new(hex.3.to_string())));
+        result.insert("upper_trigram".to_string(), Value::String(Rc::new(hex.4.to_string())));
+        result.insert("lower_trigram".to_string(), Value::String(Rc::new(hex.5.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // cast_iching - divine using I Ching (uses randomness as oracle)
+    define(interp, "cast_iching", Some(0), |_, _| {
+        let mut rng = rand::thread_rng();
+
+        // Traditional yarrow stalk method produces numbers 6,7,8,9
+        // 6 = old yin (changing), 7 = young yang, 8 = young yin, 9 = old yang (changing)
+        let mut lines = Vec::new();
+        let mut hexagram_num = 0u8;
+        let mut changing_lines = Vec::new();
+
+        for i in 0..6 {
+            // Simulate yarrow stalk probabilities
+            let r: f64 = rng.gen();
+            let line = if r < 0.0625 { 6 }      // 1/16 - old yin
+                      else if r < 0.3125 { 7 }  // 5/16 - young yang
+                      else if r < 0.5625 { 8 }  // 5/16 - young yin
+                      else { 9 };               // 5/16 - old yang
+
+            let is_yang = line == 7 || line == 9;
+            if is_yang {
+                hexagram_num |= 1 << i;
+            }
+
+            if line == 6 || line == 9 {
+                changing_lines.push(i + 1);
+            }
+
+            lines.push(Value::Int(line));
+        }
+
+        // Convert to King Wen sequence
+        let king_wen_num = binary_to_king_wen(hexagram_num) + 1;
+        let hex = &HEXAGRAMS[(king_wen_num - 1) as usize];
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("hexagram".to_string(), Value::Int(king_wen_num as i64));
+        result.insert("chinese".to_string(), Value::String(Rc::new(hex.0.to_string())));
+        result.insert("english".to_string(), Value::String(Rc::new(hex.2.to_string())));
+        result.insert("judgment".to_string(), Value::String(Rc::new(hex.3.to_string())));
+        result.insert("lines".to_string(), Value::Array(Rc::new(RefCell::new(lines))));
+
+        let changing: Vec<Value> = changing_lines.iter().map(|&n| Value::Int(n)).collect();
+        result.insert("changing_lines".to_string(), Value::Array(Rc::new(RefCell::new(changing))));
+
+        // Calculate resulting hexagram if there are changing lines
+        if !changing_lines.is_empty() {
+            let mut result_hex = hexagram_num;
+            for &line in &changing_lines {
+                result_hex ^= 1 << (line - 1);  // Flip the changing lines
+            }
+            let result_king_wen = binary_to_king_wen(result_hex) + 1;
+            result.insert("transforms_to".to_string(), Value::Int(result_king_wen as i64));
+        }
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // =========================================================================
+    // SACRED GEOMETRY
+    // =========================================================================
+
+    // phi - Golden Ratio
+    define(interp, "phi", Some(0), |_, _| {
+        Ok(Value::Float((1.0 + 5.0_f64.sqrt()) / 2.0))
+    });
+
+    // sacred_ratio - get various sacred ratios
+    define(interp, "sacred_ratio", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("sacred_ratio() requires string")),
+        };
+
+        let (value, symbol, meaning) = match name.as_str() {
+            "phi" | "φ" | "golden" => (
+                (1.0 + 5.0_f64.sqrt()) / 2.0,
+                "φ",
+                "Golden Ratio - divine proportion found in nature, art, architecture"
+            ),
+            "phi_conjugate" | "1/phi" => (
+                2.0 / (1.0 + 5.0_f64.sqrt()),
+                "1/φ",
+                "Golden Ratio conjugate - φ - 1 = 1/φ"
+            ),
+            "phi_squared" | "phi2" => (
+                ((1.0 + 5.0_f64.sqrt()) / 2.0).powi(2),
+                "φ²",
+                "Golden Ratio squared - φ + 1 = φ²"
+            ),
+            "sqrt_phi" => (
+                ((1.0 + 5.0_f64.sqrt()) / 2.0).sqrt(),
+                "√φ",
+                "Square root of Golden Ratio"
+            ),
+            "pi" | "π" => (
+                std::f64::consts::PI,
+                "π",
+                "Circle constant - circumference/diameter, transcendental"
+            ),
+            "tau" | "τ" => (
+                std::f64::consts::TAU,
+                "τ",
+                "Full circle constant - 2π, one complete revolution"
+            ),
+            "e" | "euler" => (
+                std::f64::consts::E,
+                "e",
+                "Euler's number - natural growth, compound interest"
+            ),
+            "sqrt2" | "√2" | "pythagoras" => (
+                std::f64::consts::SQRT_2,
+                "√2",
+                "Pythagorean constant - diagonal of unit square"
+            ),
+            "sqrt3" | "√3" | "vesica" => (
+                3.0_f64.sqrt(),
+                "√3",
+                "Vesica Piscis ratio - sacred geometry foundation"
+            ),
+            "sqrt5" | "√5" => (
+                5.0_f64.sqrt(),
+                "√5",
+                "Related to Golden Ratio: φ = (1 + √5) / 2"
+            ),
+            "silver" | "δs" => (
+                1.0 + 2.0_f64.sqrt(),
+                "δs",
+                "Silver Ratio - related to octagon"
+            ),
+            "plastic" | "ρ" => (
+                1.324717957244746,
+                "ρ",
+                "Plastic Number - smallest Pisot number"
+            ),
+            "feigenbaum" | "δ" => (
+                4.669201609102990,
+                "δ",
+                "Feigenbaum constant - chaos theory, period doubling"
+            ),
+            _ => return Err(RuntimeError::new(format!("Unknown sacred ratio: {}", name))),
+        };
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("value".to_string(), Value::Float(value));
+        result.insert("symbol".to_string(), Value::String(Rc::new(symbol.to_string())));
+        result.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // fibonacci - generate Fibonacci sequence
+    define(interp, "fibonacci", Some(1), |_, args| {
+        let count = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("fibonacci() requires count")),
+        };
+
+        let mut seq = Vec::with_capacity(count);
+        let (mut a, mut b) = (0i64, 1i64);
+
+        for _ in 0..count {
+            seq.push(Value::Int(a));
+            let next = a.saturating_add(b);
+            a = b;
+            b = next;
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(seq))))
+    });
+
+    // is_fibonacci - check if a number is in the Fibonacci sequence
+    define(interp, "is_fibonacci", Some(1), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("is_fibonacci() requires integer")),
+        };
+
+        // A number is Fibonacci iff one of (5n² + 4) or (5n² - 4) is a perfect square
+        fn is_perfect_square(n: i64) -> bool {
+            if n < 0 { return false; }
+            let root = (n as f64).sqrt() as i64;
+            root * root == n
+        }
+
+        let n_sq = n.saturating_mul(n);
+        let test1 = 5i64.saturating_mul(n_sq).saturating_add(4);
+        let test2 = 5i64.saturating_mul(n_sq).saturating_sub(4);
+
+        Ok(Value::Bool(is_perfect_square(test1) || is_perfect_square(test2)))
+    });
+
+    // platonic_solid - get information about Platonic solids
+    define(interp, "platonic_solid", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("platonic_solid() requires string")),
+        };
+
+        let (faces, vertices, edges, face_shape, element, meaning) = match name.as_str() {
+            "tetrahedron" | "fire" => (4, 4, 6, "triangle", "Fire", "Sharpness, heat, transformation"),
+            "cube" | "hexahedron" | "earth" => (6, 8, 12, "square", "Earth", "Stability, grounding, material"),
+            "octahedron" | "air" => (8, 6, 12, "triangle", "Air", "Balance, intellect, communication"),
+            "dodecahedron" | "aether" | "spirit" => (12, 20, 30, "pentagon", "Aether/Spirit", "The cosmos, divine thought"),
+            "icosahedron" | "water" => (20, 12, 30, "triangle", "Water", "Flow, emotion, adaptability"),
+            _ => return Err(RuntimeError::new(format!("Unknown Platonic solid: {}", name))),
+        };
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("name".to_string(), Value::String(Rc::new(name)));
+        result.insert("faces".to_string(), Value::Int(faces));
+        result.insert("vertices".to_string(), Value::Int(vertices));
+        result.insert("edges".to_string(), Value::Int(edges));
+        result.insert("face_shape".to_string(), Value::String(Rc::new(face_shape.to_string())));
+        result.insert("element".to_string(), Value::String(Rc::new(element.to_string())));
+        result.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+
+        // Euler's formula: V - E + F = 2
+        result.insert("euler_characteristic".to_string(), Value::Int(2));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // =========================================================================
+    // GEMATRIA - Letter-Number Correspondences
+    // =========================================================================
+
+    // gematria - calculate numerical value of text
+    define(interp, "gematria", Some(2), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("gematria() requires string")),
+        };
+
+        let system = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("gematria() requires system name")),
+        };
+
+        let total: i64 = match system.as_str() {
+            "hebrew" | "kabbalah" => {
+                text.chars().map(|c| hebrew_gematria(c)).sum()
+            }
+            "greek" | "isopsephy" => {
+                text.chars().map(|c| greek_isopsephy(c)).sum()
+            }
+            "arabic" | "abjad" => {
+                text.chars().map(|c| arabic_abjad(c)).sum()
+            }
+            "english" | "simple" => {
+                // Simple English: A=1, B=2, ... Z=26
+                text.to_uppercase().chars().filter_map(|c| {
+                    if c.is_ascii_alphabetic() {
+                        Some((c as i64) - ('A' as i64) + 1)
+                    } else {
+                        None
+                    }
+                }).sum()
+            }
+            "english_ordinal" => {
+                // Same as simple
+                text.to_uppercase().chars().filter_map(|c| {
+                    if c.is_ascii_alphabetic() {
+                        Some((c as i64) - ('A' as i64) + 1)
+                    } else {
+                        None
+                    }
+                }).sum()
+            }
+            "english_reduction" => {
+                // Reduce each letter: A=1, B=2, ... I=9, J=1, K=2, etc.
+                text.to_uppercase().chars().filter_map(|c| {
+                    if c.is_ascii_alphabetic() {
+                        let val = ((c as i64) - ('A' as i64)) % 9 + 1;
+                        Some(val)
+                    } else {
+                        None
+                    }
+                }).sum()
+            }
+            _ => return Err(RuntimeError::new(format!("Unknown gematria system: {}", system))),
+        };
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("text".to_string(), Value::String(Rc::new(text)));
+        result.insert("system".to_string(), Value::String(Rc::new(system)));
+        result.insert("value".to_string(), Value::Int(total));
+
+        // Digital root (reduce to single digit)
+        let mut digital_root = total;
+        while digital_root > 9 {
+            digital_root = digital_root.to_string().chars()
+                .filter_map(|c| c.to_digit(10))
+                .map(|d| d as i64)
+                .sum();
+        }
+        result.insert("digital_root".to_string(), Value::Int(digital_root));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // gematria_match - find words with same gematria value
+    define(interp, "gematria_match", Some(2), |_, args| {
+        let value = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("gematria_match() requires integer value")),
+        };
+
+        let system = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("gematria_match() requires system name")),
+        };
+
+        // Return known significant matches for common values
+        let matches = match (value, system.as_str()) {
+            (26, "hebrew") => vec!["יהוה (YHWH - Tetragrammaton)"],
+            (18, "hebrew") => vec!["חי (Chai - Life)"],
+            (86, "hebrew") => vec!["אלהים (Elohim - God)"],
+            (72, "hebrew") => vec!["חסד (Chesed - Loving-kindness)"],
+            (93, "english") => vec!["Love", "Will", "Thelema"],
+            (666, "greek") => vec!["Nero Caesar (in Hebrew letters)"],
+            (888, "greek") => vec!["Ἰησοῦς (Jesus)"],
+            _ => vec![],
+        };
+
+        let match_values: Vec<Value> = matches.iter()
+            .map(|s| Value::String(Rc::new(s.to_string())))
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(match_values))))
+    });
+
+    // =========================================================================
+    // ARCHETYPES (Jung)
+    // =========================================================================
+
+    // archetype - get information about Jungian archetypes
+    define(interp, "archetype", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("archetype() requires string")),
+        };
+
+        let (description, shadow, gift, challenge) = match name.as_str() {
+            // Core archetypes
+            "self" => (
+                "The unified conscious and unconscious, the goal of individuation",
+                "Inflation or deflation of ego",
+                "Wholeness, integration, meaning",
+                "Integrating all aspects of psyche"
+            ),
+            "shadow" => (
+                "The unconscious aspect containing repressed weaknesses and instincts",
+                "Projection onto others, denial",
+                "Creativity, spontaneity, insight",
+                "Acknowledging and integrating darkness"
+            ),
+            "anima" => (
+                "The feminine inner personality in a man's unconscious",
+                "Moodiness, seduction, possession",
+                "Relatedness, creativity, soul connection",
+                "Developing emotional intelligence"
+            ),
+            "animus" => (
+                "The masculine inner personality in a woman's unconscious",
+                "Brutality, reckless action, opinionation",
+                "Courage, initiative, spiritual depth",
+                "Developing assertiveness with wisdom"
+            ),
+            "persona" => (
+                "The social mask, the face we present to the world",
+                "Over-identification, inauthenticity",
+                "Social adaptation, professional competence",
+                "Maintaining authenticity within role"
+            ),
+
+            // Major archetypes
+            "hero" => (
+                "The courageous one who overcomes obstacles and achieves great deeds",
+                "Arrogance, ruthlessness, eternal battle",
+                "Courage, perseverance, accomplishment",
+                "Knowing when to fight and when to surrender"
+            ),
+            "sage" | "wise_old_man" => (
+                "The wise figure who offers guidance and insight",
+                "Dogmatism, disconnection, ivory tower",
+                "Wisdom, knowledge, truth-seeking",
+                "Applying wisdom practically"
+            ),
+            "magician" | "wizard" => (
+                "The transformer who makes things happen through understanding laws",
+                "Manipulation, disconnection from ethics",
+                "Transformation, vision, manifestation",
+                "Using power responsibly"
+            ),
+            "lover" => (
+                "The one who pursues connection, beauty, and passion",
+                "Obsession, jealousy, loss of identity",
+                "Passion, commitment, appreciation",
+                "Maintaining boundaries while connecting deeply"
+            ),
+            "caregiver" | "mother" => (
+                "The nurturing one who protects and provides",
+                "Martyrdom, enabling, smothering",
+                "Compassion, generosity, nurturing",
+                "Caring for self while caring for others"
+            ),
+            "ruler" | "king" | "queen" => (
+                "The one who takes responsibility for the realm",
+                "Tyranny, authoritarianism, being overthrown",
+                "Order, leadership, prosperity",
+                "Serving the greater good, not just power"
+            ),
+            "creator" | "artist" => (
+                "The one who brings new things into being",
+                "Perfectionism, self-indulgence, drama",
+                "Creativity, imagination, expression",
+                "Completing projects, accepting imperfection"
+            ),
+            "innocent" | "child" => (
+                "The pure one with faith and optimism",
+                "Naivety, denial, dependence",
+                "Faith, optimism, loyalty",
+                "Growing without becoming cynical"
+            ),
+            "explorer" | "seeker" => (
+                "The one who seeks new experiences and self-discovery",
+                "Aimless wandering, inability to commit",
+                "Autonomy, ambition, authenticity",
+                "Finding what you seek"
+            ),
+            "rebel" | "outlaw" => (
+                "The one who breaks rules and challenges the status quo",
+                "Crime, self-destruction, alienation",
+                "Liberation, revolution, radical freedom",
+                "Channeling rebellion constructively"
+            ),
+            "jester" | "fool" | "trickster" => (
+                "The one who uses humor and playfulness",
+                "Cruelty, debauchery, irresponsibility",
+                "Joy, freedom, living in the moment",
+                "Knowing when to be serious"
+            ),
+            "everyman" | "orphan" => (
+                "The regular person who wants belonging",
+                "Victim mentality, losing self in group",
+                "Realism, empathy, connection",
+                "Standing out when necessary"
+            ),
+            _ => return Err(RuntimeError::new(format!("Unknown archetype: {}", name))),
+        };
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("name".to_string(), Value::String(Rc::new(name)));
+        result.insert("description".to_string(), Value::String(Rc::new(description.to_string())));
+        result.insert("shadow".to_string(), Value::String(Rc::new(shadow.to_string())));
+        result.insert("gift".to_string(), Value::String(Rc::new(gift.to_string())));
+        result.insert("challenge".to_string(), Value::String(Rc::new(challenge.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // =========================================================================
+    // ASTROLOGY
+    // =========================================================================
+
+    // zodiac - get zodiac sign information
+    define(interp, "zodiac", Some(1), |_, args| {
+        let input = match &args[0] {
+            Value::Int(n) => (*n as usize - 1).min(11),
+            Value::String(s) => {
+                match s.to_lowercase().as_str() {
+                    "aries" | "♈" => 0,
+                    "taurus" | "♉" => 1,
+                    "gemini" | "♊" => 2,
+                    "cancer" | "♋" => 3,
+                    "leo" | "♌" => 4,
+                    "virgo" | "♍" => 5,
+                    "libra" | "♎" => 6,
+                    "scorpio" | "♏" => 7,
+                    "sagittarius" | "♐" => 8,
+                    "capricorn" | "♑" => 9,
+                    "aquarius" | "♒" => 10,
+                    "pisces" | "♓" => 11,
+                    _ => return Err(RuntimeError::new(format!("Unknown sign: {}", s))),
+                }
+            }
+            _ => return Err(RuntimeError::new("zodiac() requires number or name")),
+        };
+
+        let signs = [
+            ("♈", "Aries", "Fire", "Cardinal", "Mars", "I Am", "Mar 21 - Apr 19"),
+            ("♉", "Taurus", "Earth", "Fixed", "Venus", "I Have", "Apr 20 - May 20"),
+            ("♊", "Gemini", "Air", "Mutable", "Mercury", "I Think", "May 21 - Jun 20"),
+            ("♋", "Cancer", "Water", "Cardinal", "Moon", "I Feel", "Jun 21 - Jul 22"),
+            ("♌", "Leo", "Fire", "Fixed", "Sun", "I Will", "Jul 23 - Aug 22"),
+            ("♍", "Virgo", "Earth", "Mutable", "Mercury", "I Analyze", "Aug 23 - Sep 22"),
+            ("♎", "Libra", "Air", "Cardinal", "Venus", "I Balance", "Sep 23 - Oct 22"),
+            ("♏", "Scorpio", "Water", "Fixed", "Pluto/Mars", "I Transform", "Oct 23 - Nov 21"),
+            ("♐", "Sagittarius", "Fire", "Mutable", "Jupiter", "I Seek", "Nov 22 - Dec 21"),
+            ("♑", "Capricorn", "Earth", "Cardinal", "Saturn", "I Use", "Dec 22 - Jan 19"),
+            ("♒", "Aquarius", "Air", "Fixed", "Uranus/Saturn", "I Know", "Jan 20 - Feb 18"),
+            ("♓", "Pisces", "Water", "Mutable", "Neptune/Jupiter", "I Believe", "Feb 19 - Mar 20"),
+        ];
+
+        let (symbol, name, element, modality, ruler, motto, dates) = signs[input];
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("number".to_string(), Value::Int((input + 1) as i64));
+        result.insert("symbol".to_string(), Value::String(Rc::new(symbol.to_string())));
+        result.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        result.insert("element".to_string(), Value::String(Rc::new(element.to_string())));
+        result.insert("modality".to_string(), Value::String(Rc::new(modality.to_string())));
+        result.insert("ruler".to_string(), Value::String(Rc::new(ruler.to_string())));
+        result.insert("motto".to_string(), Value::String(Rc::new(motto.to_string())));
+        result.insert("dates".to_string(), Value::String(Rc::new(dates.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // tarot_major - Major Arcana information
+    define(interp, "tarot_major", Some(1), |_, args| {
+        let num = match &args[0] {
+            Value::Int(n) => (*n as usize).min(21),
+            Value::String(s) => {
+                match s.to_lowercase().as_str() {
+                    "fool" => 0, "magician" => 1, "high_priestess" | "priestess" => 2,
+                    "empress" => 3, "emperor" => 4, "hierophant" | "pope" => 5,
+                    "lovers" => 6, "chariot" => 7, "strength" => 8,
+                    "hermit" => 9, "wheel" | "fortune" => 10, "justice" => 11,
+                    "hanged_man" | "hanged" => 12, "death" => 13, "temperance" => 14,
+                    "devil" => 15, "tower" => 16, "star" => 17,
+                    "moon" => 18, "sun" => 19, "judgement" | "judgment" => 20, "world" => 21,
+                    _ => return Err(RuntimeError::new(format!("Unknown card: {}", s))),
+                }
+            }
+            _ => return Err(RuntimeError::new("tarot_major() requires number or name")),
+        };
+
+        let cards = [
+            ("The Fool", "New beginnings, innocence, spontaneity", "Naivety, recklessness, risk-taking"),
+            ("The Magician", "Willpower, creation, manifestation", "Manipulation, trickery, unused talent"),
+            ("The High Priestess", "Intuition, mystery, inner knowledge", "Secrets, withdrawal, silence"),
+            ("The Empress", "Abundance, nurturing, fertility", "Dependence, smothering, emptiness"),
+            ("The Emperor", "Authority, structure, control", "Tyranny, rigidity, coldness"),
+            ("The Hierophant", "Tradition, conformity, spirituality", "Dogma, restriction, challenging status quo"),
+            ("The Lovers", "Love, harmony, relationships, choices", "Disharmony, imbalance, misalignment"),
+            ("The Chariot", "Direction, willpower, victory", "Aggression, lack of direction, obstacles"),
+            ("Strength", "Courage, patience, inner power", "Self-doubt, weakness, insecurity"),
+            ("The Hermit", "Contemplation, search for truth, inner guidance", "Isolation, loneliness, withdrawal"),
+            ("Wheel of Fortune", "Change, cycles, fate, destiny", "Resistance to change, bad luck, setbacks"),
+            ("Justice", "Truth, fairness, law, cause and effect", "Unfairness, dishonesty, lack of accountability"),
+            ("The Hanged Man", "Surrender, letting go, new perspective", "Stalling, resistance, indecision"),
+            ("Death", "Endings, transformation, transition", "Fear of change, stagnation, decay"),
+            ("Temperance", "Balance, moderation, patience", "Imbalance, excess, lack of purpose"),
+            ("The Devil", "Bondage, materialism, shadow self", "Freedom, release, exploring dark side"),
+            ("The Tower", "Sudden change, upheaval, revelation", "Disaster averted, fear of change, prolonged pain"),
+            ("The Star", "Hope, faith, renewal, inspiration", "Despair, disconnection, lack of faith"),
+            ("The Moon", "Illusion, intuition, the unconscious", "Fear, confusion, misinterpretation"),
+            ("The Sun", "Joy, success, vitality, positivity", "Negativity, depression, sadness"),
+            ("Judgement", "Rebirth, inner calling, absolution", "Self-doubt, refusal of self-examination"),
+            ("The World", "Completion, accomplishment, wholeness", "Incompletion, lack of closure, emptiness"),
+        ];
+
+        let (name, upright, reversed) = cards[num];
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("number".to_string(), Value::Int(num as i64));
+        result.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        result.insert("upright".to_string(), Value::String(Rc::new(upright.to_string())));
+        result.insert("reversed".to_string(), Value::String(Rc::new(reversed.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // draw_tarot - draw random tarot card
+    define(interp, "draw_tarot", Some(0), |_, _| {
+        let mut rng = rand::thread_rng();
+        let card: usize = rng.gen_range(0..22);
+        let reversed: bool = rng.gen();
+
+        let cards = [
+            "The Fool", "The Magician", "The High Priestess", "The Empress",
+            "The Emperor", "The Hierophant", "The Lovers", "The Chariot",
+            "Strength", "The Hermit", "Wheel of Fortune", "Justice",
+            "The Hanged Man", "Death", "Temperance", "The Devil",
+            "The Tower", "The Star", "The Moon", "The Sun",
+            "Judgement", "The World"
+        ];
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("number".to_string(), Value::Int(card as i64));
+        result.insert("name".to_string(), Value::String(Rc::new(cards[card].to_string())));
+        result.insert("reversed".to_string(), Value::Bool(reversed));
+        result.insert("orientation".to_string(), Value::String(Rc::new(
+            if reversed { "reversed" } else { "upright" }.to_string()
+        )));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // =========================================================================
+    // SYNCHRONICITY
+    // =========================================================================
+
+    // synchronicity_score - calculate "meaningful coincidence" between values
+    define(interp, "synchronicity_score", Some(2), |_, args| {
+        // This is intentionally mysterious - combining multiple systems
+        let a = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Int(n) => n.to_string(),
+            _ => return Err(RuntimeError::new("synchronicity_score() requires string or int")),
+        };
+
+        let b = match &args[1] {
+            Value::String(s) => s.to_string(),
+            Value::Int(n) => n.to_string(),
+            _ => return Err(RuntimeError::new("synchronicity_score() requires string or int")),
+        };
+
+        // Calculate gematria values (simple English)
+        let val_a: i64 = a.to_uppercase().chars().filter_map(|c| {
+            if c.is_ascii_alphabetic() {
+                Some((c as i64) - ('A' as i64) + 1)
+            } else if c.is_ascii_digit() {
+                c.to_digit(10).map(|d| d as i64)
+            } else {
+                None
+            }
+        }).sum();
+
+        let val_b: i64 = b.to_uppercase().chars().filter_map(|c| {
+            if c.is_ascii_alphabetic() {
+                Some((c as i64) - ('A' as i64) + 1)
+            } else if c.is_ascii_digit() {
+                c.to_digit(10).map(|d| d as i64)
+            } else {
+                None
+            }
+        }).sum();
+
+        // Multiple synchronicity factors
+        let mut factors = Vec::new();
+
+        // Same value
+        if val_a == val_b {
+            factors.push("identical_gematria".to_string());
+        }
+
+        // One divides the other
+        if val_a > 0 && val_b > 0 && (val_a % val_b == 0 || val_b % val_a == 0) {
+            factors.push("divisibility".to_string());
+        }
+
+        // Fibonacci relationship
+        let fib_set: std::collections::HashSet<i64> = [1,2,3,5,8,13,21,34,55,89,144,233,377,610,987].iter().cloned().collect();
+        if fib_set.contains(&val_a) && fib_set.contains(&val_b) {
+            factors.push("both_fibonacci".to_string());
+        }
+
+        // Digital root match
+        fn digital_root(mut n: i64) -> i64 {
+            while n > 9 { n = n.to_string().chars().filter_map(|c| c.to_digit(10)).map(|d| d as i64).sum(); }
+            n
+        }
+        if digital_root(val_a) == digital_root(val_b) {
+            factors.push("same_digital_root".to_string());
+        }
+
+        // Golden ratio relationship (within 1%)
+        let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
+        let ratio = if val_a > 0 && val_b > 0 {
+            (val_a as f64 / val_b as f64).max(val_b as f64 / val_a as f64)
+        } else { 0.0 };
+        if (ratio - phi).abs() < 0.02 || (ratio - 1.0/phi).abs() < 0.02 {
+            factors.push("golden_ratio".to_string());
+        }
+
+        let score = (factors.len() as f64 / 5.0).min(1.0);
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("score".to_string(), Value::Float(score));
+        result.insert("value_a".to_string(), Value::Int(val_a));
+        result.insert("value_b".to_string(), Value::Int(val_b));
+        let factor_values: Vec<Value> = factors.iter().map(|s| Value::String(Rc::new(s.clone()))).collect();
+        result.insert("factors".to_string(), Value::Array(Rc::new(RefCell::new(factor_values))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // spirituality_info
+    define(interp, "spirituality_info", Some(0), |_, _| {
+        let mut info = std::collections::HashMap::new();
+
+        info.insert("i_ching".to_string(), Value::String(Rc::new(
+            "trigram(), hexagram(), cast_iching() - 64 hexagrams of change".to_string()
+        )));
+        info.insert("sacred_geometry".to_string(), Value::String(Rc::new(
+            "phi(), sacred_ratio(), fibonacci(), platonic_solid()".to_string()
+        )));
+        info.insert("gematria".to_string(), Value::String(Rc::new(
+            "Hebrew, Greek, Arabic, English letter-number systems".to_string()
+        )));
+        info.insert("archetypes".to_string(), Value::String(Rc::new(
+            "17 Jungian archetypes with shadow and gift".to_string()
+        )));
+        info.insert("astrology".to_string(), Value::String(Rc::new(
+            "zodiac() - 12 signs with elements and modalities".to_string()
+        )));
+        info.insert("tarot".to_string(), Value::String(Rc::new(
+            "tarot_major(), draw_tarot() - 22 Major Arcana".to_string()
+        )));
+
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+}
+
+// I Ching hexagram data (64 hexagrams in King Wen sequence)
+const HEXAGRAMS: [(&str, &str, &str, &str, &str, &str); 64] = [
+    ("乾", "Qián", "The Creative", "Sublime success through perseverance", "Heaven", "Heaven"),
+    ("坤", "Kūn", "The Receptive", "Devoted success through the mare's perseverance", "Earth", "Earth"),
+    ("屯", "Zhūn", "Difficulty at the Beginning", "Persevere, seek helpers, don't act alone", "Water", "Thunder"),
+    ("蒙", "Méng", "Youthful Folly", "Success through education and guidance", "Mountain", "Water"),
+    ("需", "Xū", "Waiting", "Sincerity brings success; cross the great water", "Water", "Heaven"),
+    ("訟", "Sòng", "Conflict", "Seek counsel; don't cross the great water", "Heaven", "Water"),
+    ("師", "Shī", "The Army", "Perseverance and an experienced leader bring success", "Earth", "Water"),
+    ("比", "Bǐ", "Holding Together", "Through perseverance, those who hesitate should reflect", "Water", "Earth"),
+    ("小畜", "Xiǎo Chù", "Small Taming", "Success; dense clouds but no rain", "Wind", "Heaven"),
+    ("履", "Lǚ", "Treading", "Tread on the tiger's tail carefully; success", "Heaven", "Lake"),
+    ("泰", "Tài", "Peace", "The small departs, the great approaches; success", "Earth", "Heaven"),
+    ("否", "Pǐ", "Standstill", "The great departs, the small approaches; persevere", "Heaven", "Earth"),
+    ("同人", "Tóng Rén", "Fellowship", "Success in the open; cross the great water", "Heaven", "Fire"),
+    ("大有", "Dà Yǒu", "Great Possession", "Supreme success", "Fire", "Heaven"),
+    ("謙", "Qiān", "Modesty", "Success; the superior person carries things through", "Earth", "Mountain"),
+    ("豫", "Yù", "Enthusiasm", "Appoint helpers and set armies marching", "Thunder", "Earth"),
+    ("隨", "Suí", "Following", "Supreme success through perseverance", "Lake", "Thunder"),
+    ("蠱", "Gǔ", "Work on the Decayed", "Success; cross the great water; three days before and after", "Mountain", "Wind"),
+    ("臨", "Lín", "Approach", "Great success through perseverance; misfortune in eighth month", "Earth", "Lake"),
+    ("觀", "Guān", "Contemplation", "Ablution, but not yet sacrifice; confidence inspires", "Wind", "Earth"),
+    ("噬嗑", "Shì Kè", "Biting Through", "Success; favorable for legal matters", "Fire", "Thunder"),
+    ("賁", "Bì", "Grace", "Success in small matters", "Mountain", "Fire"),
+    ("剝", "Bō", "Splitting Apart", "Unfavorable to go anywhere", "Mountain", "Earth"),
+    ("復", "Fù", "Return", "Success; going out and coming in without error", "Earth", "Thunder"),
+    ("無妄", "Wú Wàng", "Innocence", "Supreme success through perseverance", "Heaven", "Thunder"),
+    ("大畜", "Dà Chù", "Great Taming", "Perseverance; eat away from home", "Mountain", "Heaven"),
+    ("頤", "Yí", "Nourishment", "Perseverance; watch what you nurture", "Mountain", "Thunder"),
+    ("大過", "Dà Guò", "Great Exceeding", "The ridgepole sags; favorable to have somewhere to go", "Lake", "Wind"),
+    ("坎", "Kǎn", "The Abysmal", "Sincerity brings success of the heart", "Water", "Water"),
+    ("離", "Lí", "The Clinging", "Perseverance; success; care for the cow", "Fire", "Fire"),
+    ("咸", "Xián", "Influence", "Success; perseverance; taking a maiden brings fortune", "Lake", "Mountain"),
+    ("恆", "Héng", "Duration", "Success without blame; perseverance; favorable to have somewhere to go", "Thunder", "Wind"),
+    ("遯", "Dùn", "Retreat", "Success; small perseverance", "Heaven", "Mountain"),
+    ("大壯", "Dà Zhuàng", "Great Power", "Perseverance", "Thunder", "Heaven"),
+    ("晉", "Jìn", "Progress", "The powerful prince is honored with horses", "Fire", "Earth"),
+    ("明夷", "Míng Yí", "Darkening of the Light", "Perseverance in adversity", "Earth", "Fire"),
+    ("家人", "Jiā Rén", "The Family", "Perseverance of the woman", "Wind", "Fire"),
+    ("睽", "Kuí", "Opposition", "Good fortune in small matters", "Fire", "Lake"),
+    ("蹇", "Jiǎn", "Obstruction", "Southwest favorable; northeast unfavorable; see the great person", "Water", "Mountain"),
+    ("解", "Xiè", "Deliverance", "Southwest favorable; return brings fortune; haste brings fortune", "Thunder", "Water"),
+    ("損", "Sǔn", "Decrease", "Sincerity; supreme fortune; persistence; favorable to undertake", "Mountain", "Lake"),
+    ("益", "Yì", "Increase", "Favorable to undertake and cross the great water", "Wind", "Thunder"),
+    ("夬", "Guài", "Breakthrough", "Proclaim at the king's court; sincerity in danger", "Lake", "Heaven"),
+    ("姤", "Gòu", "Coming to Meet", "The maiden is powerful; don't marry such a maiden", "Heaven", "Wind"),
+    ("萃", "Cuì", "Gathering", "Success; the king approaches his temple; see the great person", "Lake", "Earth"),
+    ("升", "Shēng", "Pushing Upward", "Supreme success; see the great person; don't worry", "Earth", "Wind"),
+    ("困", "Kùn", "Oppression", "Success; perseverance of the great person; no blame", "Lake", "Water"),
+    ("井", "Jǐng", "The Well", "The town may change but not the well", "Water", "Wind"),
+    ("革", "Gé", "Revolution", "On your own day you are believed; great success", "Lake", "Fire"),
+    ("鼎", "Dǐng", "The Cauldron", "Supreme good fortune; success", "Fire", "Wind"),
+    ("震", "Zhèn", "The Arousing", "Success; thunder comes with fright; laughing and talking after", "Thunder", "Thunder"),
+    ("艮", "Gèn", "Keeping Still", "Keep your back still; go into the courtyard without seeing anyone", "Mountain", "Mountain"),
+    ("漸", "Jiàn", "Development", "The maiden is given in marriage; good fortune; perseverance", "Wind", "Mountain"),
+    ("歸妹", "Guī Mèi", "The Marrying Maiden", "Undertakings bring misfortune", "Thunder", "Lake"),
+    ("豐", "Fēng", "Abundance", "Success; the king attains it; don't worry; be like the sun at noon", "Thunder", "Fire"),
+    ("旅", "Lǚ", "The Wanderer", "Success through smallness; perseverance brings fortune", "Fire", "Mountain"),
+    ("巽", "Xùn", "The Gentle", "Success through small things; favorable to have somewhere to go", "Wind", "Wind"),
+    ("兌", "Duì", "The Joyous", "Success; perseverance", "Lake", "Lake"),
+    ("渙", "Huàn", "Dispersion", "Success; the king approaches his temple; cross the great water", "Wind", "Water"),
+    ("節", "Jié", "Limitation", "Success; bitter limitation should not be persevered in", "Water", "Lake"),
+    ("中孚", "Zhōng Fú", "Inner Truth", "Pigs and fishes; good fortune; cross the great water", "Wind", "Lake"),
+    ("小過", "Xiǎo Guò", "Small Exceeding", "Success; perseverance; small things yes, great things no", "Thunder", "Mountain"),
+    ("既濟", "Jì Jì", "After Completion", "Success in small matters; perseverance; good at start, disorder at end", "Water", "Fire"),
+    ("未濟", "Wèi Jì", "Before Completion", "Success; the young fox almost across; tail gets wet; no goal", "Fire", "Water"),
+];
+
+fn binary_to_king_wen(binary: u8) -> u8 {
+    // Maps binary hexagram representation to King Wen sequence number
+    // This is a complex mapping based on traditional ordering
+    const KING_WEN_ORDER: [u8; 64] = [
+        1, 43, 14, 34, 9, 5, 26, 11,
+        10, 58, 38, 54, 61, 60, 41, 19,
+        13, 49, 30, 55, 37, 63, 22, 36,
+        25, 17, 21, 51, 42, 3, 27, 24,
+        44, 28, 50, 32, 57, 48, 18, 46,
+        6, 47, 64, 40, 59, 29, 4, 7,
+        33, 31, 56, 62, 53, 39, 52, 15,
+        12, 45, 35, 16, 20, 8, 23, 2,
+    ];
+    KING_WEN_ORDER[binary as usize] - 1
+}
+
+fn hebrew_gematria(c: char) -> i64 {
+    match c {
+        'א' | 'A' | 'a' => 1,
+        'ב' | 'B' | 'b' => 2,
+        'ג' | 'G' | 'g' => 3,
+        'ד' | 'D' | 'd' => 4,
+        'ה' | 'H' | 'h' => 5,
+        'ו' | 'V' | 'v' | 'W' | 'w' => 6,
+        'ז' | 'Z' | 'z' => 7,
+        'ח' => 8,
+        'ט' => 9,
+        'י' | 'Y' | 'y' | 'I' | 'i' | 'J' | 'j' => 10,
+        'כ' | 'K' | 'k' => 20,
+        'ל' | 'L' | 'l' => 30,
+        'מ' | 'M' | 'm' => 40,
+        'נ' | 'N' | 'n' => 50,
+        'ס' | 'S' | 's' | 'X' | 'x' => 60,
+        'ע' | 'O' | 'o' => 70,
+        'פ' | 'P' | 'p' | 'F' | 'f' => 80,
+        'צ' => 90,
+        'ק' | 'Q' | 'q' => 100,
+        'ר' | 'R' | 'r' => 200,
+        'ש' => 300,
+        'ת' | 'T' | 't' => 400,
+        'ך' => 500,   // Final kaph
+        'ם' => 600,   // Final mem
+        'ן' => 700,   // Final nun
+        'ף' => 800,   // Final pe
+        'ץ' | 'C' | 'c' => 900,   // Final tzadi / C approximation
+        'E' | 'e' => 5,    // Map to He
+        'U' | 'u' => 6,    // Map to Vav
+        _ => 0,
+    }
+}
+
+fn greek_isopsephy(c: char) -> i64 {
+    match c {
+        'Α' | 'α' | 'A' | 'a' => 1,
+        'Β' | 'β' | 'B' | 'b' => 2,
+        'Γ' | 'γ' | 'G' | 'g' => 3,
+        'Δ' | 'δ' | 'D' | 'd' => 4,
+        'Ε' | 'ε' | 'E' | 'e' => 5,
+        'Ϛ' | 'ϛ' => 6,  // Stigma (archaic)
+        'Ζ' | 'ζ' | 'Z' | 'z' => 7,
+        'Η' | 'η' | 'H' | 'h' => 8,
+        'Θ' | 'θ' => 9,
+        'Ι' | 'ι' | 'I' | 'i' => 10,
+        'Κ' | 'κ' | 'K' | 'k' => 20,
+        'Λ' | 'λ' | 'L' | 'l' => 30,
+        'Μ' | 'μ' | 'M' | 'm' => 40,
+        'Ν' | 'ν' | 'N' | 'n' => 50,
+        'Ξ' | 'ξ' | 'X' | 'x' => 60,
+        'Ο' | 'ο' | 'O' | 'o' => 70,
+        'Π' | 'π' | 'P' | 'p' => 80,
+        'Ϙ' | 'ϙ' | 'Q' | 'q' => 90,  // Qoppa
+        'Ρ' | 'ρ' | 'R' | 'r' => 100,
+        'Σ' | 'σ' | 'ς' | 'S' | 's' => 200,
+        'Τ' | 'τ' | 'T' | 't' => 300,
+        'Υ' | 'υ' | 'U' | 'u' | 'Y' | 'y' => 400,
+        'Φ' | 'φ' | 'F' | 'f' => 500,
+        'Χ' | 'χ' | 'C' | 'c' => 600,
+        'Ψ' | 'ψ' => 700,
+        'Ω' | 'ω' | 'W' | 'w' => 800,
+        'Ϡ' | 'ϡ' => 900,  // Sampi
+        'J' | 'j' => 10,  // Map to Iota
+        'V' | 'v' => 400, // Map to Upsilon
+        _ => 0,
+    }
+}
+
+fn arabic_abjad(c: char) -> i64 {
+    match c {
+        'ا' | 'أ' | 'إ' | 'آ' | 'A' | 'a' => 1,
+        'ب' | 'B' | 'b' => 2,
+        'ج' | 'J' | 'j' | 'G' | 'g' => 3,
+        'د' | 'D' | 'd' => 4,
+        'ه' | 'H' | 'h' => 5,
+        'و' | 'W' | 'w' | 'V' | 'v' => 6,
+        'ز' | 'Z' | 'z' => 7,
+        'ح' => 8,
+        'ط' => 9,
+        'ي' | 'Y' | 'y' | 'I' | 'i' => 10,
+        'ك' | 'K' | 'k' => 20,
+        'ل' | 'L' | 'l' => 30,
+        'م' | 'M' | 'm' => 40,
+        'ن' | 'N' | 'n' => 50,
+        'س' | 'S' | 's' => 60,
+        'ع' | 'E' | 'e' => 70,
+        'ف' | 'F' | 'f' => 80,
+        'ص' => 90,
+        'ق' | 'Q' | 'q' => 100,
+        'ر' | 'R' | 'r' => 200,
+        'ش' => 300,
+        'ت' | 'T' | 't' => 400,
+        'ث' => 500,
+        'خ' | 'X' | 'x' => 600,
+        'ذ' => 700,
+        'ض' => 800,
+        'ظ' => 900,
+        'غ' => 1000,
+        'C' | 'c' => 600,  // Map to خ
+        'O' | 'o' => 70,   // Map to ع
+        'P' | 'p' => 80,   // Map to ف
+        'U' | 'u' => 6,    // Map to و
+        _ => 0,
+    }
 }
 
 #[cfg(test)]
