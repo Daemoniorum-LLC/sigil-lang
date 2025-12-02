@@ -73,6 +73,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_format(interp);
     // Phase 6: Pattern matching power-ups
     register_pattern(interp);
+    // Phase 7: DevEx enhancements
+    register_devex(interp);
 }
 
 // Helper to define a builtin
@@ -6302,6 +6304,676 @@ fn value_eq(a: &Value, b: &Value) -> bool {
             (*a as f64 - b).abs() < f64::EPSILON
         }
         _ => false,
+    }
+}
+
+// ============================================================================
+// DEVEX FUNCTIONS (Phase 7)
+// ============================================================================
+// Developer experience enhancements: debugging, assertions, profiling,
+// documentation, and introspection utilities.
+// ============================================================================
+
+fn register_devex(interp: &mut Interpreter) {
+    // --- DEBUGGING AND INTROSPECTION ---
+
+    // debug - print value with type info for debugging
+    define(interp, "debug", Some(1), |_, args| {
+        let type_name = match &args[0] {
+            Value::Null => "null".to_string(),
+            Value::Bool(_) => "bool".to_string(),
+            Value::Int(_) => "int".to_string(),
+            Value::Float(_) => "float".to_string(),
+            Value::String(_) => "string".to_string(),
+            Value::Char(_) => "char".to_string(),
+            Value::Array(a) => format!("array[{}]", a.borrow().len()),
+            Value::Tuple(t) => format!("tuple[{}]", t.len()),
+            Value::Map(m) => format!("map[{}]", m.borrow().len()),
+            Value::Set(s) => format!("set[{}]", s.borrow().len()),
+            Value::Struct { name, fields } => format!("struct {}[{}]", name, fields.borrow().len()),
+            Value::Variant { enum_name, variant_name, .. } => format!("{}::{}", enum_name, variant_name),
+            Value::Function(_) => "function".to_string(),
+            Value::BuiltIn(_) => "builtin".to_string(),
+            Value::Ref(_) => "ref".to_string(),
+            Value::Infinity => "infinity".to_string(),
+            Value::Empty => "empty".to_string(),
+            Value::Evidential { evidence, .. } => format!("evidential[{:?}]", evidence),
+            Value::Channel(_) => "channel".to_string(),
+            Value::ThreadHandle(_) => "thread".to_string(),
+            Value::Actor(_) => "actor".to_string(),
+            Value::Future(_) => "future".to_string(),
+        };
+        let value_repr = format_value_debug(&args[0]);
+        println!("[DEBUG] {}: {}", type_name, value_repr);
+        Ok(args[0].clone())
+    });
+
+    // inspect - return detailed string representation of value
+    define(interp, "inspect", Some(1), |_, args| {
+        Ok(Value::String(Rc::new(format_value_debug(&args[0]))))
+    });
+
+    // dbg - print and return value (tap for debugging)
+    define(interp, "dbg", Some(1), |_, args| {
+        println!("{}", format_value_debug(&args[0]));
+        Ok(args[0].clone())
+    });
+
+    // trace - print message and value, return value
+    define(interp, "trace", Some(2), |_, args| {
+        let label = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => format_value_debug(&args[0]),
+        };
+        println!("[TRACE] {}: {}", label, format_value_debug(&args[1]));
+        Ok(args[1].clone())
+    });
+
+    // pp - pretty print with indentation
+    define(interp, "pp", Some(1), |_, args| {
+        println!("{}", pretty_print_value(&args[0], 0));
+        Ok(Value::Null)
+    });
+
+    // --- RICH ASSERTIONS ---
+
+    // assert_eq - assert two values are equal
+    define(interp, "assert_eq", Some(2), |_, args| {
+        if deep_value_eq(&args[0], &args[1]) {
+            Ok(Value::Bool(true))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Assertion failed: expected {} to equal {}",
+                format_value_debug(&args[0]),
+                format_value_debug(&args[1])
+            )))
+        }
+    });
+
+    // assert_ne - assert two values are not equal
+    define(interp, "assert_ne", Some(2), |_, args| {
+        if !deep_value_eq(&args[0], &args[1]) {
+            Ok(Value::Bool(true))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Assertion failed: expected {} to not equal {}",
+                format_value_debug(&args[0]),
+                format_value_debug(&args[1])
+            )))
+        }
+    });
+
+    // assert_lt - assert first value is less than second
+    define(interp, "assert_lt", Some(2), |_, args| {
+        let cmp = devex_compare(&args[0], &args[1])?;
+        if cmp < 0 {
+            Ok(Value::Bool(true))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Assertion failed: expected {} < {}",
+                format_value_debug(&args[0]),
+                format_value_debug(&args[1])
+            )))
+        }
+    });
+
+    // assert_le - assert first value is less than or equal to second
+    define(interp, "assert_le", Some(2), |_, args| {
+        let cmp = devex_compare(&args[0], &args[1])?;
+        if cmp <= 0 {
+            Ok(Value::Bool(true))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Assertion failed: expected {} <= {}",
+                format_value_debug(&args[0]),
+                format_value_debug(&args[1])
+            )))
+        }
+    });
+
+    // assert_gt - assert first value is greater than second
+    define(interp, "assert_gt", Some(2), |_, args| {
+        let cmp = devex_compare(&args[0], &args[1])?;
+        if cmp > 0 {
+            Ok(Value::Bool(true))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Assertion failed: expected {} > {}",
+                format_value_debug(&args[0]),
+                format_value_debug(&args[1])
+            )))
+        }
+    });
+
+    // assert_ge - assert first value is greater than or equal to second
+    define(interp, "assert_ge", Some(2), |_, args| {
+        let cmp = devex_compare(&args[0], &args[1])?;
+        if cmp >= 0 {
+            Ok(Value::Bool(true))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Assertion failed: expected {} >= {}",
+                format_value_debug(&args[0]),
+                format_value_debug(&args[1])
+            )))
+        }
+    });
+
+    // assert_true - assert value is truthy
+    define(interp, "assert_true", Some(1), |_, args| {
+        if is_truthy(&args[0]) {
+            Ok(Value::Bool(true))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Assertion failed: expected {} to be truthy",
+                format_value_debug(&args[0])
+            )))
+        }
+    });
+
+    // assert_false - assert value is falsy
+    define(interp, "assert_false", Some(1), |_, args| {
+        if !is_truthy(&args[0]) {
+            Ok(Value::Bool(true))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Assertion failed: expected {} to be falsy",
+                format_value_debug(&args[0])
+            )))
+        }
+    });
+
+    // assert_null - assert value is null
+    define(interp, "assert_null", Some(1), |_, args| {
+        if matches!(&args[0], Value::Null) {
+            Ok(Value::Bool(true))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Assertion failed: expected null, got {}",
+                format_value_debug(&args[0])
+            )))
+        }
+    });
+
+    // assert_not_null - assert value is not null
+    define(interp, "assert_not_null", Some(1), |_, args| {
+        if !matches!(&args[0], Value::Null) {
+            Ok(Value::Bool(true))
+        } else {
+            Err(RuntimeError::new("Assertion failed: expected non-null value, got null"))
+        }
+    });
+
+    // assert_type - assert value has expected type
+    define(interp, "assert_type", Some(2), |_, args| {
+        let expected = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("assert_type: second argument must be type name string")),
+        };
+        let actual = get_type_name(&args[0]).to_lowercase();
+        if actual == expected || matches_type_alias(&args[0], &expected) {
+            Ok(Value::Bool(true))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Assertion failed: expected type '{}', got '{}'",
+                expected, actual
+            )))
+        }
+    });
+
+    // assert_contains - assert collection contains value
+    define(interp, "assert_contains", Some(2), |_, args| {
+        let contains = match &args[0] {
+            Value::Array(a) => a.borrow().iter().any(|v| deep_value_eq(v, &args[1])),
+            Value::String(s) => {
+                if let Value::String(sub) = &args[1] {
+                    s.contains(&**sub)
+                } else {
+                    false
+                }
+            }
+            Value::Map(m) => {
+                if let Value::String(k) = &args[1] {
+                    m.borrow().contains_key(&**k)
+                } else {
+                    false
+                }
+            }
+            Value::Set(s) => {
+                if let Value::String(k) = &args[1] {
+                    s.borrow().contains(&**k)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
+        if contains {
+            Ok(Value::Bool(true))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Assertion failed: {} does not contain {}",
+                format_value_debug(&args[0]),
+                format_value_debug(&args[1])
+            )))
+        }
+    });
+
+    // assert_len - assert collection has expected length
+    define(interp, "assert_len", Some(2), |_, args| {
+        let expected = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("assert_len: second argument must be integer")),
+        };
+        let actual = match &args[0] {
+            Value::String(s) => s.len(),
+            Value::Array(a) => a.borrow().len(),
+            Value::Tuple(t) => t.len(),
+            Value::Map(m) => m.borrow().len(),
+            Value::Set(s) => s.borrow().len(),
+            _ => return Err(RuntimeError::new("assert_len: first argument must be a collection")),
+        };
+        if actual == expected {
+            Ok(Value::Bool(true))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Assertion failed: expected length {}, got {}",
+                expected, actual
+            )))
+        }
+    });
+
+    // assert_match - assert string matches regex
+    define(interp, "assert_match", Some(2), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("assert_match: first argument must be string")),
+        };
+        let pattern = match &args[1] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("assert_match: second argument must be regex pattern")),
+        };
+        let re = Regex::new(&pattern).map_err(|e| RuntimeError::new(format!("Invalid regex: {}", e)))?;
+        if re.is_match(&text) {
+            Ok(Value::Bool(true))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Assertion failed: '{}' does not match pattern '{}'",
+                text, pattern
+            )))
+        }
+    });
+
+    // --- TESTING UTILITIES ---
+
+    // test - run a test function and report result
+    define(interp, "test", Some(2), |interp, args| {
+        let name = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("test: first argument must be test name string")),
+        };
+        let func = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("test: second argument must be test function")),
+        };
+
+        let start = Instant::now();
+        let result = interp.call_function(&func, vec![]);
+        let elapsed = start.elapsed();
+
+        match result {
+            Ok(_) => {
+                println!("✓ {} ({:.2}ms)", name, elapsed.as_secs_f64() * 1000.0);
+                Ok(Value::Bool(true))
+            }
+            Err(e) => {
+                println!("✗ {} ({:.2}ms): {}", name, elapsed.as_secs_f64() * 1000.0, e);
+                Ok(Value::Bool(false))
+            }
+        }
+    });
+
+    // skip - mark a test as skipped
+    define(interp, "skip", Some(1), |_, args| {
+        let reason = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => "skipped".to_string(),
+        };
+        println!("⊘ {}", reason);
+        Ok(Value::Null)
+    });
+
+    // --- PROFILING ---
+
+    // profile - profile a function call and return [result, timing_info]
+    define(interp, "profile", Some(1), |interp, args| {
+        let func = match &args[0] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("profile: argument must be function")),
+        };
+
+        let start = Instant::now();
+        let result = interp.call_function(&func, vec![])?;
+        let elapsed = start.elapsed();
+
+        let mut timing = HashMap::new();
+        timing.insert("ms".to_string(), Value::Float(elapsed.as_secs_f64() * 1000.0));
+        timing.insert("us".to_string(), Value::Float(elapsed.as_micros() as f64));
+        timing.insert("ns".to_string(), Value::Int(elapsed.as_nanos() as i64));
+
+        Ok(Value::Tuple(Rc::new(vec![
+            result,
+            Value::Map(Rc::new(RefCell::new(timing))),
+        ])))
+    });
+
+    // measure - measure execution time of function N times
+    define(interp, "measure", Some(2), |interp, args| {
+        let func = match &args[0] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("measure: first argument must be function")),
+        };
+        let iterations = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("measure: second argument must be iteration count")),
+        };
+
+        let mut times: Vec<f64> = Vec::new();
+        let mut last_result = Value::Null;
+
+        for _ in 0..iterations {
+            let start = Instant::now();
+            last_result = interp.call_function(&func, vec![])?;
+            times.push(start.elapsed().as_secs_f64() * 1000.0);
+        }
+
+        let sum: f64 = times.iter().sum();
+        let avg = sum / iterations as f64;
+        let min = times.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max = times.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+        let variance: f64 = times.iter().map(|t| (t - avg).powi(2)).sum::<f64>() / iterations as f64;
+        let stddev = variance.sqrt();
+
+        let mut stats = HashMap::new();
+        stats.insert("iterations".to_string(), Value::Int(iterations as i64));
+        stats.insert("total_ms".to_string(), Value::Float(sum));
+        stats.insert("avg_ms".to_string(), Value::Float(avg));
+        stats.insert("min_ms".to_string(), Value::Float(min));
+        stats.insert("max_ms".to_string(), Value::Float(max));
+        stats.insert("stddev_ms".to_string(), Value::Float(stddev));
+
+        Ok(Value::Tuple(Rc::new(vec![
+            last_result,
+            Value::Map(Rc::new(RefCell::new(stats))),
+        ])))
+    });
+
+    // --- DOCUMENTATION ---
+
+    // help - get help text for a builtin function
+    define(interp, "help", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            Value::BuiltIn(f) => f.name.clone(),
+            _ => return Err(RuntimeError::new("help: argument must be function name or builtin")),
+        };
+
+        // Return documentation for known functions
+        let doc = get_function_doc(&name);
+        Ok(Value::String(Rc::new(doc)))
+    });
+
+    // list_builtins - list common builtin functions (categories)
+    define(interp, "list_builtins", Some(0), |_, _| {
+        let categories = vec![
+            "Core: print, println, assert, panic, len, type_of",
+            "Math: abs, floor, ceil, round, sqrt, pow, log, sin, cos, tan",
+            "Collections: map, filter, reduce, zip, flatten, first, last, sort, reverse",
+            "Strings: upper, lower, trim, split, join, contains, replace, format",
+            "IO: read_file, write_file, file_exists, read_line",
+            "Time: now, sleep, timestamp, format_time",
+            "JSON: json_parse, json_stringify",
+            "Crypto: sha256, sha512, md5, base64_encode, base64_decode",
+            "Regex: regex_match, regex_replace, regex_split",
+            "Pattern: type_of, is_type, match_regex, match_struct, guard, when",
+            "DevEx: debug, inspect, trace, assert_eq, assert_ne, test, profile",
+        ];
+        let values: Vec<Value> = categories.iter()
+            .map(|s| Value::String(Rc::new(s.to_string())))
+            .collect();
+        Ok(Value::Array(Rc::new(RefCell::new(values))))
+    });
+
+    // --- UTILITY ---
+
+    // todo - placeholder that throws with message
+    define(interp, "todo", Some(0), |_, _| {
+        Err(RuntimeError::new("not yet implemented"))
+    });
+
+    // unreachable - mark code as unreachable
+    define(interp, "unreachable", Some(0), |_, _| {
+        Err(RuntimeError::new("reached unreachable code"))
+    });
+
+    // unimplemented - mark feature as unimplemented
+    define(interp, "unimplemented", Some(1), |_, args| {
+        let msg = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => "unimplemented".to_string(),
+        };
+        Err(RuntimeError::new(format!("unimplemented: {}", msg)))
+    });
+
+    // deprecated - warn about deprecated usage and return value
+    define(interp, "deprecated", Some(2), |_, args| {
+        let msg = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => "deprecated".to_string(),
+        };
+        eprintln!("[DEPRECATED] {}", msg);
+        Ok(args[1].clone())
+    });
+
+    // version - return Sigil version info
+    define(interp, "version", Some(0), |_, _| {
+        let mut info = HashMap::new();
+        info.insert("sigil".to_string(), Value::String(Rc::new("0.1.0".to_string())));
+        info.insert("stdlib".to_string(), Value::String(Rc::new("7.0".to_string())));
+        info.insert("phase".to_string(), Value::String(Rc::new("Phase 7 - DevEx".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+}
+
+// Helper to format value for debug output
+fn format_value_debug(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Int(n) => n.to_string(),
+        Value::Float(f) => format!("{:.6}", f),
+        Value::String(s) => format!("\"{}\"", s),
+        Value::Char(c) => format!("'{}'", c),
+        Value::Array(a) => {
+            let items: Vec<String> = a.borrow().iter().take(10).map(format_value_debug).collect();
+            if a.borrow().len() > 10 {
+                format!("[{}, ... ({} more)]", items.join(", "), a.borrow().len() - 10)
+            } else {
+                format!("[{}]", items.join(", "))
+            }
+        }
+        Value::Tuple(t) => {
+            let items: Vec<String> = t.iter().map(format_value_debug).collect();
+            format!("({})", items.join(", "))
+        }
+        Value::Map(m) => {
+            let items: Vec<String> = m.borrow().iter().take(5)
+                .map(|(k, v)| format!("{}: {}", k, format_value_debug(v)))
+                .collect();
+            if m.borrow().len() > 5 {
+                format!("{{{}, ... ({} more)}}", items.join(", "), m.borrow().len() - 5)
+            } else {
+                format!("{{{}}}", items.join(", "))
+            }
+        }
+        Value::Set(s) => {
+            let items: Vec<String> = s.borrow().iter().take(5).cloned().collect();
+            if s.borrow().len() > 5 {
+                format!("#{{{}, ... ({} more)}}", items.join(", "), s.borrow().len() - 5)
+            } else {
+                format!("#{{{}}}", items.join(", "))
+            }
+        }
+        Value::Struct { name, fields } => {
+            let items: Vec<String> = fields.borrow().iter()
+                .map(|(k, v)| format!("{}: {}", k, format_value_debug(v)))
+                .collect();
+            format!("{} {{{}}}", name, items.join(", "))
+        }
+        Value::Variant { enum_name, variant_name, fields } => {
+            match fields {
+                Some(f) => {
+                    let items: Vec<String> = f.iter().map(format_value_debug).collect();
+                    format!("{}::{}({})", enum_name, variant_name, items.join(", "))
+                }
+                None => format!("{}::{}", enum_name, variant_name),
+            }
+        }
+        Value::Function(_) => "<function>".to_string(),
+        Value::BuiltIn(f) => format!("<builtin:{}>", f.name),
+        Value::Ref(r) => format!("&{}", format_value_debug(&r.borrow())),
+        Value::Infinity => "∞".to_string(),
+        Value::Empty => "∅".to_string(),
+        Value::Evidential { value, evidence } => format!("{:?}({})", evidence, format_value_debug(value)),
+        Value::Channel(_) => "<channel>".to_string(),
+        Value::ThreadHandle(_) => "<thread>".to_string(),
+        Value::Actor(_) => "<actor>".to_string(),
+        Value::Future(_) => "<future>".to_string(),
+    }
+}
+
+// Helper for pretty printing with indentation
+fn pretty_print_value(value: &Value, indent: usize) -> String {
+    let prefix = "  ".repeat(indent);
+    match value {
+        Value::Array(a) => {
+            if a.borrow().is_empty() {
+                "[]".to_string()
+            } else {
+                let items: Vec<String> = a.borrow().iter()
+                    .map(|v| format!("{}{}", "  ".repeat(indent + 1), pretty_print_value(v, indent + 1)))
+                    .collect();
+                format!("[\n{}\n{}]", items.join(",\n"), prefix)
+            }
+        }
+        Value::Map(m) => {
+            if m.borrow().is_empty() {
+                "{}".to_string()
+            } else {
+                let items: Vec<String> = m.borrow().iter()
+                    .map(|(k, v)| format!("{}\"{}\": {}", "  ".repeat(indent + 1), k, pretty_print_value(v, indent + 1)))
+                    .collect();
+                format!("{{\n{}\n{}}}", items.join(",\n"), prefix)
+            }
+        }
+        Value::Struct { name, fields } => {
+            if fields.borrow().is_empty() {
+                format!("{} {{}}", name)
+            } else {
+                let items: Vec<String> = fields.borrow().iter()
+                    .map(|(k, v)| format!("{}{}: {}", "  ".repeat(indent + 1), k, pretty_print_value(v, indent + 1)))
+                    .collect();
+                format!("{} {{\n{}\n{}}}", name, items.join(",\n"), prefix)
+            }
+        }
+        _ => format_value_debug(value),
+    }
+}
+
+// Helper to compare values for ordering (DevEx assertions)
+fn devex_compare(a: &Value, b: &Value) -> Result<i64, RuntimeError> {
+    match (a, b) {
+        (Value::Int(a), Value::Int(b)) => Ok(if a < b { -1 } else if a > b { 1 } else { 0 }),
+        (Value::Float(a), Value::Float(b)) => Ok(if a < b { -1 } else if a > b { 1 } else { 0 }),
+        (Value::Int(a), Value::Float(b)) => {
+            let a = *a as f64;
+            Ok(if a < *b { -1 } else if a > *b { 1 } else { 0 })
+        }
+        (Value::Float(a), Value::Int(b)) => {
+            let b = *b as f64;
+            Ok(if *a < b { -1 } else if *a > b { 1 } else { 0 })
+        }
+        (Value::String(a), Value::String(b)) => Ok(if a < b { -1 } else if a > b { 1 } else { 0 }),
+        _ => Err(RuntimeError::new("cannot compare these types")),
+    }
+}
+
+// Helper to get type name
+fn get_type_name(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(_) => "bool".to_string(),
+        Value::Int(_) => "int".to_string(),
+        Value::Float(_) => "float".to_string(),
+        Value::String(_) => "string".to_string(),
+        Value::Char(_) => "char".to_string(),
+        Value::Array(_) => "array".to_string(),
+        Value::Tuple(_) => "tuple".to_string(),
+        Value::Map(_) => "map".to_string(),
+        Value::Set(_) => "set".to_string(),
+        Value::Struct { name, .. } => name.clone(),
+        Value::Variant { enum_name, .. } => enum_name.clone(),
+        Value::Function(_) => "function".to_string(),
+        Value::BuiltIn(_) => "builtin".to_string(),
+        Value::Ref(_) => "ref".to_string(),
+        Value::Infinity => "infinity".to_string(),
+        Value::Empty => "empty".to_string(),
+        Value::Evidential { .. } => "evidential".to_string(),
+        Value::Channel(_) => "channel".to_string(),
+        Value::ThreadHandle(_) => "thread".to_string(),
+        Value::Actor(_) => "actor".to_string(),
+        Value::Future(_) => "future".to_string(),
+    }
+}
+
+// Helper to check type aliases
+fn matches_type_alias(value: &Value, type_name: &str) -> bool {
+    match (value, type_name) {
+        (Value::Int(_), "number") | (Value::Float(_), "number") => true,
+        (Value::Int(_), "integer") => true,
+        (Value::Array(_), "list") => true,
+        (Value::Map(_), "dict") | (Value::Map(_), "object") => true,
+        (Value::Function(_), "fn") | (Value::BuiltIn(_), "fn") => true,
+        (Value::BuiltIn(_), "function") => true,
+        _ => false,
+    }
+}
+
+// Helper to get function documentation
+fn get_function_doc(name: &str) -> String {
+    match name {
+        "print" => "print(value) - Print value to stdout".to_string(),
+        "println" => "println(value) - Print value with newline".to_string(),
+        "len" => "len(collection) - Get length of string, array, map, or set".to_string(),
+        "type_of" => "type_of(value) - Get type name as string".to_string(),
+        "assert" => "assert(condition) - Assert condition is truthy, panic if false".to_string(),
+        "assert_eq" => "assert_eq(a, b) - Assert two values are deeply equal".to_string(),
+        "debug" => "debug(value) - Print value with type info and return it".to_string(),
+        "map" => "map(array, fn) - Apply function to each element".to_string(),
+        "filter" => "filter(array, fn) - Keep elements where predicate is true".to_string(),
+        "reduce" => "reduce(array, init, fn) - Fold array with function".to_string(),
+        "range" => "range(start, end) - Create array of integers from start to end".to_string(),
+        "sum" => "sum(array) - Sum all numeric elements".to_string(),
+        "product" => "product(array) - Multiply all numeric elements".to_string(),
+        "sort" => "sort(array) - Sort array in ascending order".to_string(),
+        "reverse" => "reverse(array) - Reverse array order".to_string(),
+        "join" => "join(array, sep) - Join array elements with separator".to_string(),
+        "split" => "split(string, sep) - Split string by separator".to_string(),
+        "trim" => "trim(string) - Remove leading/trailing whitespace".to_string(),
+        "upper" => "upper(string) - Convert to uppercase".to_string(),
+        "lower" => "lower(string) - Convert to lowercase".to_string(),
+        _ => format!("No documentation available for '{}'", name),
     }
 }
 
