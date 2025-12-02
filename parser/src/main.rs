@@ -753,9 +753,21 @@ impl SigilHighlighter {
             Token::SelfLower | Token::SelfUpper |
             Token::True | Token::False => colors::KEYWORD,
 
-            // Morphemes (polysynthetic operators)
+            // Morphemes (polysynthetic operators) - including new access morphemes
             Token::Tau | Token::Phi | Token::Sigma | Token::Rho | Token::Lambda |
-            Token::Pi => colors::MORPHEME,
+            Token::Pi | Token::Alpha | Token::Omega | Token::Mu | Token::Chi |
+            Token::Nu | Token::Xi => colors::MORPHEME,
+
+            // Aspect morphemes
+            Token::AspectProgressive | Token::AspectPerfective |
+            Token::AspectPotential | Token::AspectResultative => colors::MORPHEME,
+
+            // Bitwise operators (Unicode)
+            Token::BitwiseAndSymbol | Token::BitwiseOrSymbol => colors::OPERATOR,
+
+            // Data operation symbols
+            Token::Bowtie | Token::ElementSmallVerticalBar |
+            Token::SquareCup | Token::SquareCap => colors::SPECIAL,
 
             // Evidentiality markers
             Token::Bang | Token::Question | Token::Tilde | Token::Interrobang => colors::EVIDENCE,
@@ -818,9 +830,44 @@ impl SigilHelper {
             "fn", "let", "mut", "if", "else", "while", "for", "in", "match",
             "return", "break", "continue", "struct", "enum", "impl", "trait",
             "pub", "use", "mod", "const", "static", "type", "where", "async", "await",
-            "actor", "handler", "receive", "send", "true", "false",
-            // Morphemes
-            "τ", "φ", "σ", "ρ", "λ", "Σ", "Π",
+            "actor", "handler", "receive", "send", "true", "false", "null",
+
+            // Transform morphemes (Greek letters)
+            "τ", "Τ", "φ", "Φ", "σ", "Σ", "ρ", "Ρ", "λ", "Λ", "Π",
+
+            // Access morphemes
+            "α", "ω", "Ω", "μ", "Μ", "χ", "Χ", "ν", "Ν", "ξ", "Ξ",
+
+            // Other Greek letters
+            "δ", "Δ", "ε", "ζ",
+
+            // Aspect suffixes
+            "·ing", "·ed", "·able", "·ive",
+
+            // Logic operators (Unicode)
+            "∧", "∨", "¬", "⊻", "⊤", "⊥",
+
+            // Bitwise operators (Unicode)
+            "⋏", "⋎",
+
+            // Set operators
+            "∪", "∩", "∖", "⊂", "⊆", "⊃", "⊇", "∈", "∉",
+
+            // Math operators
+            "∘", "⊗", "⊕", "∫", "∂", "√", "∛",
+
+            // Data operations
+            "⋈", "⋳", "⊔", "⊓",
+
+            // Special literals
+            "∅", "∞", "◯",
+
+            // Quantifiers
+            "∀", "∃",
+
+            // Evidentiality markers
+            "!", "?", "~", "‽",
+
             // Stdlib functions
             "print", "println", "dbg", "assert", "panic", "todo", "unreachable",
             "clone", "id", "default",
@@ -841,8 +888,13 @@ impl SigilHelper {
             "to_string", "to_int", "to_float", "hex", "oct", "bin", "parse_int",
             "cycle", "mod_add", "mod_sub", "mod_mul", "mod_pow", "mod_inv",
             "octave", "interval", "cents", "freq", "midi",
+
+            // New stdlib functions
+            "middle", "choice", "nth", "next", "peek",
+            "zip_with", "supremum", "infimum",
+
             // REPL commands
-            ":help", ":ast", ":exit", ":quit", ":clear", ":type",
+            ":help", ":ast", ":exit", ":quit", ":clear", ":type", ":symbols",
         ].into_iter().map(String::from).collect();
 
         Self { completions }
@@ -1008,6 +1060,10 @@ fn repl() -> ExitCode {
                         print_help();
                         continue;
                     }
+                    ":symbols" => {
+                        print_symbols();
+                        continue;
+                    }
                     ":ast" => {
                         show_ast = !show_ast;
                         println!("AST display: {}{}{}",
@@ -1053,6 +1109,7 @@ fn print_help() {
     println!("{}{}Sigil REPL Commands:{}", colors::BOLD, colors::MORPHEME, colors::RESET);
     println!();
     println!("  {}:help{}      Show this help", colors::KEYWORD, colors::RESET);
+    println!("  {}:symbols{}   Show all Unicode symbols", colors::KEYWORD, colors::RESET);
     println!("  {}:ast{}       Toggle AST display mode", colors::KEYWORD, colors::RESET);
     println!("  {}:clear{}     Clear the screen", colors::KEYWORD, colors::RESET);
     println!("  {}:exit{}      Exit the REPL", colors::KEYWORD, colors::RESET);
@@ -1086,6 +1143,109 @@ fn print_help() {
         colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET,
         colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET,
         colors::MORPHEME, colors::RESET);
+    println!();
+    println!("Type {}:symbols{} for a complete symbol reference.", colors::KEYWORD, colors::RESET);
+    println!();
+}
+
+fn print_symbols() {
+    println!("{}{}Sigil Unicode Symbols Reference{}", colors::BOLD, colors::MORPHEME, colors::RESET);
+    println!();
+
+    // Transform Morphemes
+    println!("{}{}Transform Morphemes (Pipe Syntax: data|morpheme):{}", colors::BOLD, colors::MORPHEME, colors::RESET);
+    println!("  {}τ{}/{}Τ{}  transform/map   data|τ{{_ * 2}}", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
+    println!("  {}φ{}/{}Φ{}  filter          data|φ{{_ > 0}}", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
+    println!("  {}σ{}     sort            data|σ", colors::MORPHEME, colors::RESET);
+    println!("  {}Σ{}     sum             data|Σ", colors::MORPHEME, colors::RESET);
+    println!("  {}ρ{}/{}Ρ{}  reduce/fold     data|ρ{{acc + _}}", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
+    println!("  {}λ{}/{}Λ{}  lambda          λ x -> x + 1", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
+    println!("  {}Π{}     product         data|Π", colors::MORPHEME, colors::RESET);
+    println!();
+
+    // Access Morphemes
+    println!("{}{}Access Morphemes (Pipe Syntax: data|morpheme):{}", colors::BOLD, colors::MORPHEME, colors::RESET);
+    println!("  {}α{}     first element   data|α", colors::MORPHEME, colors::RESET);
+    println!("  {}ω{}/{}Ω{}  last element    data|ω", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
+    println!("  {}μ{}/{}Μ{}  middle/median   data|μ", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
+    println!("  {}χ{}/{}Χ{}  random choice   data|χ", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
+    println!("  {}ν{}/{}Ν{}  nth element     data|ν{{2}}", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
+    println!("  {}ξ{}/{}Ξ{}  next in iter    data|ξ", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
+    println!();
+
+    // Evidentiality
+    println!("{}{}Evidentiality Markers:{}", colors::BOLD, colors::EVIDENCE, colors::RESET);
+    println!("  {}!{}  known/direct     let x{}!{} = verified();", colors::EVIDENCE, colors::RESET, colors::EVIDENCE, colors::RESET);
+    println!("  {}?{}  uncertain        let x{}?{} = maybe_get();", colors::EVIDENCE, colors::RESET, colors::EVIDENCE, colors::RESET);
+    println!("  {}~{}  reported         let x{}~{} = fetch_api();", colors::EVIDENCE, colors::RESET, colors::EVIDENCE, colors::RESET);
+    println!("  {}‽{}  paradox          let x{}‽{} = contradict();", colors::EVIDENCE, colors::RESET, colors::EVIDENCE, colors::RESET);
+    println!();
+
+    // Logic Operators
+    println!("{}{}Logic Operators:{}", colors::BOLD, colors::OPERATOR, colors::RESET);
+    println!("  {}∧{}  AND (&&)        a ∧ b", colors::OPERATOR, colors::RESET);
+    println!("  {}∨{}  OR (||)         a ∨ b", colors::OPERATOR, colors::RESET);
+    println!("  {}¬{}  NOT (!)         ¬a", colors::OPERATOR, colors::RESET);
+    println!("  {}⊻{}  XOR             a ⊻ b", colors::OPERATOR, colors::RESET);
+    println!("  {}⊤{}  true/top", colors::OPERATOR, colors::RESET);
+    println!("  {}⊥{}  false/bottom", colors::OPERATOR, colors::RESET);
+    println!();
+
+    // Bitwise Operators
+    println!("{}{}Bitwise Operators:{}", colors::BOLD, colors::OPERATOR, colors::RESET);
+    println!("  {}⋏{}  AND (&)         a ⋏ b", colors::OPERATOR, colors::RESET);
+    println!("  {}⋎{}  OR              a ⋎ b", colors::OPERATOR, colors::RESET);
+    println!();
+
+    // Set Operators
+    println!("{}{}Set Operators:{}", colors::BOLD, colors::OPERATOR, colors::RESET);
+    println!("  {}∪{}  union           a ∪ b", colors::OPERATOR, colors::RESET);
+    println!("  {}∩{}  intersection    a ∩ b", colors::OPERATOR, colors::RESET);
+    println!("  {}∖{}  difference      a ∖ b", colors::OPERATOR, colors::RESET);
+    println!("  {}⊂{}  proper subset   a ⊂ b", colors::OPERATOR, colors::RESET);
+    println!("  {}⊆{}  subset/equal    a ⊆ b", colors::OPERATOR, colors::RESET);
+    println!("  {}∈{}  element of      x ∈ set", colors::OPERATOR, colors::RESET);
+    println!("  {}∉{}  not element of  x ∉ set", colors::OPERATOR, colors::RESET);
+    println!();
+
+    // Data Operations
+    println!("{}{}Data Operations:{}", colors::BOLD, colors::SPECIAL, colors::RESET);
+    println!("  {}⋈{}  zip with op     zip_with(a, b, \"add\")", colors::SPECIAL, colors::RESET);
+    println!("  {}⋳{}  flatten         flatten(nested)", colors::SPECIAL, colors::RESET);
+    println!("  {}⊔{}  supremum/max    supremum(a, b)", colors::SPECIAL, colors::RESET);
+    println!("  {}⊓{}  infimum/min     infimum(a, b)", colors::SPECIAL, colors::RESET);
+    println!();
+
+    // Math Operations
+    println!("{}{}Math Operations:{}", colors::BOLD, colors::OPERATOR, colors::RESET);
+    println!("  {}∘{}  compose         f ∘ g", colors::OPERATOR, colors::RESET);
+    println!("  {}⊗{}  tensor          a ⊗ b", colors::OPERATOR, colors::RESET);
+    println!("  {}⊕{}  direct sum      a ⊕ b", colors::OPERATOR, colors::RESET);
+    println!("  {}∫{}  integral/cumsum", colors::OPERATOR, colors::RESET);
+    println!("  {}∂{}  partial/deriv", colors::OPERATOR, colors::RESET);
+    println!("  {}√{}  sqrt            √x", colors::OPERATOR, colors::RESET);
+    println!("  {}∛{}  cbrt            ∛x", colors::OPERATOR, colors::RESET);
+    println!();
+
+    // Special Literals
+    println!("{}{}Special Literals:{}", colors::BOLD, colors::SPECIAL, colors::RESET);
+    println!("  {}∅{}  empty/void      let x = ∅;", colors::SPECIAL, colors::RESET);
+    println!("  {}∞{}  infinity        let x = ∞;", colors::SPECIAL, colors::RESET);
+    println!("  {}◯{}  geometric zero", colors::SPECIAL, colors::RESET);
+    println!();
+
+    // Quantifiers
+    println!("{}{}Quantifiers:{}", colors::BOLD, colors::OPERATOR, colors::RESET);
+    println!("  {}∀{}  for all", colors::OPERATOR, colors::RESET);
+    println!("  {}∃{}  exists", colors::OPERATOR, colors::RESET);
+    println!();
+
+    // Aspect Morphemes
+    println!("{}{}Aspect Suffixes (Function naming):{}", colors::BOLD, colors::MORPHEME, colors::RESET);
+    println!("  {}·ing{}  progressive   fn read·ing() -> Stream", colors::MORPHEME, colors::RESET);
+    println!("  {}·ed{}   perfective    fn process·ed() -> Result", colors::MORPHEME, colors::RESET);
+    println!("  {}·able{} potential     fn parse·able() -> Bool", colors::MORPHEME, colors::RESET);
+    println!("  {}·ive{}  resultative   fn destruct·ive() -> Parts", colors::MORPHEME, colors::RESET);
     println!();
 }
 

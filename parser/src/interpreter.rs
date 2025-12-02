@@ -9,7 +9,7 @@ use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex, mpsc};
-use std::thread::{self, JoinHandle};
+use std::thread::JoinHandle;
 
 /// Runtime value in Sigil.
 #[derive(Clone)]
@@ -1120,7 +1120,7 @@ impl Interpreter {
                     // Return first completed future
                     // In interpreter, just poll in order
                     for f in futures {
-                        let mut f_inner = f.borrow_mut();
+                        let f_inner = f.borrow_mut();
                         if matches!(f_inner.state, FutureState::Ready(_)) {
                             if let FutureState::Ready(v) = &f_inner.state {
                                 fut.state = FutureState::Ready(v.clone());
@@ -1657,6 +1657,112 @@ impl Interpreter {
             PipeOp::Await => {
                 // Await a future - resolve it to a value
                 self.await_value(value)
+            }
+            // New access morphemes
+            PipeOp::First => {
+                // α - first element
+                match &value {
+                    Value::Array(arr) => arr.borrow().first().cloned()
+                        .ok_or_else(|| RuntimeError::new("first (α) on empty array")),
+                    Value::Tuple(t) => t.first().cloned()
+                        .ok_or_else(|| RuntimeError::new("first (α) on empty tuple")),
+                    _ => Err(RuntimeError::new("first (α) requires array or tuple")),
+                }
+            }
+            PipeOp::Last => {
+                // ω - last element
+                match &value {
+                    Value::Array(arr) => arr.borrow().last().cloned()
+                        .ok_or_else(|| RuntimeError::new("last (ω) on empty array")),
+                    Value::Tuple(t) => t.last().cloned()
+                        .ok_or_else(|| RuntimeError::new("last (ω) on empty tuple")),
+                    _ => Err(RuntimeError::new("last (ω) requires array or tuple")),
+                }
+            }
+            PipeOp::Middle => {
+                // μ - middle/median element
+                match &value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        if arr.is_empty() {
+                            return Err(RuntimeError::new("middle (μ) on empty array"));
+                        }
+                        let mid = arr.len() / 2;
+                        Ok(arr[mid].clone())
+                    }
+                    Value::Tuple(t) => {
+                        if t.is_empty() {
+                            return Err(RuntimeError::new("middle (μ) on empty tuple"));
+                        }
+                        let mid = t.len() / 2;
+                        Ok(t[mid].clone())
+                    }
+                    _ => Err(RuntimeError::new("middle (μ) requires array or tuple")),
+                }
+            }
+            PipeOp::Choice => {
+                // χ - random element
+                use std::time::{SystemTime, UNIX_EPOCH};
+                match &value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        if arr.is_empty() {
+                            return Err(RuntimeError::new("choice (χ) on empty array"));
+                        }
+                        let seed = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or(std::time::Duration::ZERO)
+                            .as_nanos() as u64;
+                        let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % arr.len();
+                        Ok(arr[idx].clone())
+                    }
+                    Value::Tuple(t) => {
+                        if t.is_empty() {
+                            return Err(RuntimeError::new("choice (χ) on empty tuple"));
+                        }
+                        let seed = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or(std::time::Duration::ZERO)
+                            .as_nanos() as u64;
+                        let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % t.len();
+                        Ok(t[idx].clone())
+                    }
+                    _ => Err(RuntimeError::new("choice (χ) requires array or tuple")),
+                }
+            }
+            PipeOp::Nth(index_expr) => {
+                // ν{n} - nth element
+                let index = match self.evaluate(index_expr)? {
+                    Value::Int(n) => n,
+                    _ => return Err(RuntimeError::new("nth (ν) index must be integer")),
+                };
+                match &value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        if index < 0 || index as usize >= arr.len() {
+                            return Err(RuntimeError::new("nth (ν) index out of bounds"));
+                        }
+                        Ok(arr[index as usize].clone())
+                    }
+                    Value::Tuple(t) => {
+                        if index < 0 || index as usize >= t.len() {
+                            return Err(RuntimeError::new("nth (ν) index out of bounds"));
+                        }
+                        Ok(t[index as usize].clone())
+                    }
+                    _ => Err(RuntimeError::new("nth (ν) requires array or tuple")),
+                }
+            }
+            PipeOp::Next => {
+                // ξ - next element (for iterators, currently just returns first)
+                // In a full implementation, this would advance an iterator
+                match &value {
+                    Value::Array(arr) => arr.borrow().first().cloned()
+                        .ok_or_else(|| RuntimeError::new("next (ξ) on empty array")),
+                    Value::Tuple(t) => t.first().cloned()
+                        .ok_or_else(|| RuntimeError::new("next (ξ) on empty tuple")),
+                    _ => Err(RuntimeError::new("next (ξ) requires array or tuple")),
+                }
             }
             PipeOp::Named { prefix, body } => {
                 // Named morpheme like ·map{f}

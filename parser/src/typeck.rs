@@ -922,6 +922,24 @@ impl TypeChecker {
                 // Future<T> -> T
                 inner
             }
+
+            // Access morphemes: [T] -> T (return element type)
+            PipeOp::First | PipeOp::Last | PipeOp::Middle |
+            PipeOp::Choice | PipeOp::Nth(_) | PipeOp::Next => {
+                if let Type::Array { element, .. } | Type::Slice(element) = inner {
+                    *element
+                } else if let Type::Tuple(elements) = inner {
+                    // For tuple, return Any since elements might be different types
+                    if let Some(first) = elements.first() {
+                        first.clone()
+                    } else {
+                        Type::Unit
+                    }
+                } else {
+                    self.error(TypeError::new("access morpheme requires array, slice, or tuple"));
+                    Type::Error
+                }
+            }
         };
 
         // Preserve evidence through pipe

@@ -425,6 +425,12 @@ impl DiagnosticBuilder {
             ("λ", "lambda", "anonymous function"),
             ("Σ", "sum", "sum all"),
             ("Π", "pi", "product"),
+            ("α", "alpha", "first element"),
+            ("ω", "omega", "last element"),
+            ("μ", "mu", "middle element"),
+            ("χ", "chi", "random choice"),
+            ("ν", "nu", "nth element"),
+            ("ξ", "xi", "next in sequence"),
         ];
 
         if let Some((greek, _ascii, desc)) = morphemes.iter().find(|(g, a, _)| {
@@ -437,9 +443,146 @@ impl DiagnosticBuilder {
             );
         }
 
-        diag = diag.with_note("available morphemes: τ (map), φ (filter), σ (sort), ρ (reduce), λ (lambda), Σ (sum), Π (product)");
+        diag = diag.with_note("transform morphemes: τ (map), φ (filter), σ (sort), ρ (reduce), Σ (sum), Π (product)");
+        diag = diag.with_note("access morphemes: α (first), ω (last), μ (middle), χ (choice), ν (nth), ξ (next)");
 
         diag
+    }
+
+    /// Suggest a Unicode symbol for an ASCII operator or name.
+    /// Returns (unicode_symbol, description) if a suggestion exists.
+    pub fn suggest_unicode_symbol(ascii: &str) -> Option<(&'static str, &'static str)> {
+        match ascii {
+            // Logic operators
+            "&&" => Some(("∧", "logical AND")),
+            "||" => Some(("∨", "logical OR")),
+            "^^" => Some(("⊻", "logical XOR")),
+
+            // Bitwise operators
+            "&" => Some(("⋏", "bitwise AND")),
+            "|" => Some(("⋎", "bitwise OR")),
+
+            // Set operations
+            "union" => Some(("∪", "set union")),
+            "intersect" | "intersection" => Some(("∩", "set intersection")),
+            "subset" => Some(("⊂", "proper subset")),
+            "superset" => Some(("⊃", "proper superset")),
+            "in" | "element_of" => Some(("∈", "element of")),
+            "not_in" => Some(("∉", "not element of")),
+
+            // Math symbols
+            "sqrt" => Some(("√", "square root")),
+            "cbrt" => Some(("∛", "cube root")),
+            "infinity" | "inf" => Some(("∞", "infinity")),
+            "pi" => Some(("π", "pi constant")),
+            "sum" => Some(("Σ", "summation")),
+            "product" => Some(("Π", "product")),
+            "integral" => Some(("∫", "integral/cumulative sum")),
+            "partial" | "derivative" => Some(("∂", "partial/derivative")),
+
+            // Morphemes
+            "tau" | "map" | "transform" => Some(("τ", "transform morpheme")),
+            "phi" | "filter" => Some(("φ", "filter morpheme")),
+            "sigma" | "sort" => Some(("σ", "sort morpheme")),
+            "rho" | "reduce" | "fold" => Some(("ρ", "reduce morpheme")),
+            "lambda" => Some(("λ", "lambda")),
+            "alpha" | "first" => Some(("α", "first element")),
+            "omega" | "last" => Some(("ω", "last element")),
+            "mu" | "middle" | "median" => Some(("μ", "middle element")),
+            "chi" | "choice" | "random" => Some(("χ", "random choice")),
+            "nu" | "nth" => Some(("ν", "nth element")),
+            "xi" | "next" => Some(("ξ", "next in sequence")),
+            "delta" | "diff" | "change" => Some(("δ", "delta/change")),
+            "epsilon" | "empty" => Some(("ε", "epsilon/empty")),
+            "zeta" | "zip" => Some(("ζ", "zeta/zip")),
+
+            // Category theory
+            "compose" => Some(("∘", "function composition")),
+            "tensor" => Some(("⊗", "tensor product")),
+            "direct_sum" | "xor" => Some(("⊕", "direct sum/XOR")),
+
+            // Special values
+            "null" | "void" | "nothing" => Some(("∅", "empty set")),
+            "true" | "top" | "any" => Some(("⊤", "top/true")),
+            "false" | "bottom" | "never" => Some(("⊥", "bottom/false")),
+
+            // Quantifiers
+            "forall" | "for_all" => Some(("∀", "universal quantifier")),
+            "exists" => Some(("∃", "existential quantifier")),
+
+            // Data operations
+            "join" | "zip_with" => Some(("⋈", "join/zip with")),
+            "flatten" => Some(("⋳", "flatten")),
+            "max" | "supremum" => Some(("⊔", "supremum/max")),
+            "min" | "infimum" => Some(("⊓", "infimum/min")),
+
+            _ => None,
+        }
+    }
+
+    /// Create a hint diagnostic suggesting a Unicode symbol.
+    pub fn suggest_symbol_upgrade(
+        ascii: &str,
+        span: Span,
+    ) -> Option<Diagnostic> {
+        Self::suggest_unicode_symbol(ascii).map(|(unicode, desc)| {
+            Diagnostic::warning(
+                format!("consider using Unicode symbol `{}` for {}", unicode, desc),
+                span,
+            )
+            .with_code("W0200")
+            .with_suggestion(
+                format!("use `{}` for clearer, more idiomatic Sigil", unicode),
+                span,
+                unicode.to_string(),
+            )
+            .with_note(format!(
+                "Sigil supports Unicode symbols. `{}` → `{}` ({})",
+                ascii, unicode, desc
+            ))
+        })
+    }
+
+    /// Get all available symbol mappings for documentation/completion.
+    pub fn all_symbol_mappings() -> Vec<(&'static str, &'static str, &'static str)> {
+        vec![
+            // (ascii, unicode, description)
+            ("&&", "∧", "logical AND"),
+            ("||", "∨", "logical OR"),
+            ("^^", "⊻", "logical XOR"),
+            ("&", "⋏", "bitwise AND"),
+            ("|", "⋎", "bitwise OR"),
+            ("union", "∪", "set union"),
+            ("intersect", "∩", "set intersection"),
+            ("subset", "⊂", "proper subset"),
+            ("superset", "⊃", "proper superset"),
+            ("in", "∈", "element of"),
+            ("not_in", "∉", "not element of"),
+            ("sqrt", "√", "square root"),
+            ("cbrt", "∛", "cube root"),
+            ("infinity", "∞", "infinity"),
+            ("tau", "τ", "transform"),
+            ("phi", "φ", "filter"),
+            ("sigma", "σ", "sort"),
+            ("rho", "ρ", "reduce"),
+            ("lambda", "λ", "lambda"),
+            ("alpha", "α", "first"),
+            ("omega", "ω", "last"),
+            ("mu", "μ", "middle"),
+            ("chi", "χ", "choice"),
+            ("nu", "ν", "nth"),
+            ("xi", "ξ", "next"),
+            ("sum", "Σ", "sum"),
+            ("product", "Π", "product"),
+            ("compose", "∘", "compose"),
+            ("tensor", "⊗", "tensor"),
+            ("xor", "⊕", "direct sum"),
+            ("forall", "∀", "for all"),
+            ("exists", "∃", "exists"),
+            ("null", "∅", "empty"),
+            ("true", "⊤", "top/true"),
+            ("false", "⊥", "bottom/false"),
+        ]
     }
 
     /// Find a similar name using Jaro-Winkler distance.
@@ -631,5 +774,60 @@ mod tests {
         let diag = DiagnosticBuilder::evidentiality_mismatch("!", "~", Span::new(0, 5));
 
         assert!(diag.notes.iter().any(|n| n.contains("validate")));
+    }
+
+    #[test]
+    fn test_unicode_symbol_suggestions() {
+        // Logic operators
+        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("&&"), Some(("∧", "logical AND")));
+        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("||"), Some(("∨", "logical OR")));
+
+        // Bitwise operators
+        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("&"), Some(("⋏", "bitwise AND")));
+        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("|"), Some(("⋎", "bitwise OR")));
+
+        // Morphemes
+        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("tau"), Some(("τ", "transform morpheme")));
+        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("filter"), Some(("φ", "filter morpheme")));
+        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("alpha"), Some(("α", "first element")));
+
+        // Math
+        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("sqrt"), Some(("√", "square root")));
+        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("infinity"), Some(("∞", "infinity")));
+
+        // Unknown
+        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("foobar"), None);
+    }
+
+    #[test]
+    fn test_symbol_upgrade_diagnostic() {
+        let diag = DiagnosticBuilder::suggest_symbol_upgrade("&&", Span::new(0, 2));
+        assert!(diag.is_some());
+
+        let d = diag.unwrap();
+        assert!(d.suggestions.iter().any(|s| s.replacement == "∧"));
+        assert!(d.notes.iter().any(|n| n.contains("logical AND")));
+    }
+
+    #[test]
+    fn test_unknown_morpheme_with_access_morphemes() {
+        let diag = DiagnosticBuilder::unknown_morpheme("alph", Span::new(0, 4));
+
+        // Should suggest alpha
+        assert!(diag.suggestions.iter().any(|s| s.replacement == "α"));
+        // Should have notes about both transform and access morphemes
+        assert!(diag.notes.iter().any(|n| n.contains("transform morphemes")));
+        assert!(diag.notes.iter().any(|n| n.contains("access morphemes")));
+    }
+
+    #[test]
+    fn test_all_symbol_mappings() {
+        let mappings = DiagnosticBuilder::all_symbol_mappings();
+        assert!(!mappings.is_empty());
+
+        // Check that essential mappings exist
+        assert!(mappings.iter().any(|(a, u, _)| *a == "&&" && *u == "∧"));
+        assert!(mappings.iter().any(|(a, u, _)| *a == "tau" && *u == "τ"));
+        assert!(mappings.iter().any(|(a, u, _)| *a == "sqrt" && *u == "√"));
     }
 }

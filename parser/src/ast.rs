@@ -397,6 +397,19 @@ pub enum InlineHint {
     Never,
 }
 
+/// Verb aspect for function semantics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Aspect {
+    /// ·ing - Progressive aspect: ongoing/streaming operation
+    Progressive,
+    /// ·ed - Perfective aspect: completed operation
+    Perfective,
+    /// ·able - Potential aspect: capability check (returns bool)
+    Potential,
+    /// ·ive - Resultative aspect: produces a result
+    Resultative,
+}
+
 /// Function definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
@@ -404,6 +417,7 @@ pub struct Function {
     pub is_async: bool,
     pub attrs: FunctionAttrs,
     pub name: Ident,
+    pub aspect: Option<Aspect>,  // Verb aspect: ·ing, ·ed, ·able, ·ive
     pub generics: Option<Generics>,
     pub params: Vec<Param>,
     pub return_type: Option<TypeExpr>,
@@ -1049,6 +1063,18 @@ pub enum PipeOp {
     Sort(Option<Ident>),
     /// Reduce morpheme: `ρ{f}`
     Reduce(Box<Expr>),
+    /// Middle morpheme: `μ` - get middle/median element
+    Middle,
+    /// Choice morpheme: `χ` - random element selection
+    Choice,
+    /// Nth morpheme: `ν{n}` - get nth element
+    Nth(Box<Expr>),
+    /// Next morpheme: `ξ` - get next element (iterator)
+    Next,
+    /// First morpheme: `α` - get first element
+    First,
+    /// Last morpheme: `ω` - get last element
+    Last,
     /// Method call
     Method {
         name: Ident,
@@ -1080,6 +1106,12 @@ pub enum MorphemeKind {
     Lambda,     // λ
     Sum,        // Σ
     Product,    // Π
+    Middle,     // μ
+    Choice,     // χ
+    Nth,        // ν
+    Next,       // ξ
+    First,      // α
+    Last,       // ω
 }
 
 /// Binary operators.

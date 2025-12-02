@@ -82,6 +82,7 @@ pub mod jit {
 
     /// Compiled function signature
     type CompiledFn = unsafe extern "C" fn() -> i64;
+    #[allow(dead_code)]
     type CompiledFnWithArgs = unsafe extern "C" fn(i64) -> i64;
 
     /// Extern function signature info for FFI
@@ -107,8 +108,10 @@ pub mod jit {
         /// Extern "C" function declarations
         extern_functions: HashMap<String, ExternFnSig>,
         /// Variable counter for unique variable indices
+        #[allow(dead_code)]
         var_counter: usize,
         /// Built-in function addresses
+        #[allow(dead_code)]
         builtins: HashMap<String, *const u8>,
     }
 
@@ -596,6 +599,7 @@ pub mod jit {
             v
         }
 
+        #[allow(dead_code)]
         fn define(&mut self, name: &str, var: Variable) {
             self.variables.insert(name.to_string(), var);
         }
@@ -613,6 +617,7 @@ pub mod jit {
             self.var_types.get(name).copied().unwrap_or(ValueType::Unknown)
         }
 
+        #[allow(dead_code)]
         fn set_type(&mut self, name: &str, ty: ValueType) {
             self.var_types.insert(name.to_string(), ty);
         }
@@ -837,6 +842,7 @@ pub mod jit {
     // ============================================
 
     /// Check if a return expression is a tail call to the specified function
+    #[allow(dead_code)]
     fn is_tail_call_to<'a>(expr: &'a Expr, func_name: &str) -> Option<&'a Vec<Expr>> {
         if let Expr::Return(Some(inner)) = expr {
             if let Expr::Call { func, args } = inner.as_ref() {

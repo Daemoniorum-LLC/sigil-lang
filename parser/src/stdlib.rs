@@ -789,6 +789,31 @@ fn register_collections(interp: &mut Interpreter) {
         }
     });
 
+    // ξ (xi) - next: pop and return first element (advances iterator)
+    define(interp, "next", Some(1), |_, args| {
+        match &args[0] {
+            Value::Array(arr) => {
+                let mut arr = arr.borrow_mut();
+                if arr.is_empty() {
+                    return Err(RuntimeError::new("next() on empty array"));
+                }
+                Ok(arr.remove(0))
+            }
+            _ => Err(RuntimeError::new("next() requires array")),
+        }
+    });
+
+    // peek - look at first element without consuming (for iterators)
+    define(interp, "peek", Some(1), |_, args| {
+        match &args[0] {
+            Value::Array(arr) => {
+                arr.borrow().first().cloned()
+                    .ok_or_else(|| RuntimeError::new("peek() on empty array"))
+            }
+            _ => Err(RuntimeError::new("peek() requires array")),
+        }
+    });
+
     define(interp, "get", Some(2), |_, args| {
         let index = match &args[1] {
             Value::Int(i) => *i,
@@ -8006,5 +8031,213 @@ mod tests {
         let mut lexer = Lexer::new("⋏ ⋎");
         assert!(matches!(lexer.next_token(), Some((Token::BitwiseAndSymbol, _))));
         assert!(matches!(lexer.next_token(), Some((Token::BitwiseOrSymbol, _))));
+    }
+
+    // ========== PIPE MORPHEME SYNTAX TESTS ==========
+
+    #[test]
+    fn test_pipe_alpha_first() {
+        // α in pipe gets first element
+        let result = eval("fn main() { return [10, 20, 30] |α; }");
+        assert!(matches!(result, Ok(Value::Int(10))), "pipe α got: {:?}", result);
+    }
+
+    #[test]
+    fn test_pipe_omega_last() {
+        // ω in pipe gets last element
+        let result = eval("fn main() { return [10, 20, 30] |ω; }");
+        assert!(matches!(result, Ok(Value::Int(30))), "pipe ω got: {:?}", result);
+    }
+
+    #[test]
+    fn test_pipe_mu_middle() {
+        // μ in pipe gets middle element
+        let result = eval("fn main() { return [10, 20, 30, 40, 50] |μ; }");
+        assert!(matches!(result, Ok(Value::Int(30))), "pipe μ got: {:?}", result);
+    }
+
+    #[test]
+    fn test_pipe_chi_choice() {
+        // χ in pipe gets random element (just verify it's in range)
+        let result = eval("fn main() { let x = [10, 20, 30] |χ; return x >= 10; }");
+        assert!(matches!(result, Ok(Value::Bool(true))), "pipe χ got: {:?}", result);
+    }
+
+    #[test]
+    fn test_pipe_nu_nth() {
+        // ν{n} in pipe gets nth element
+        let result = eval("fn main() { return [10, 20, 30, 40] |ν{2}; }");
+        assert!(matches!(result, Ok(Value::Int(30))), "pipe ν got: {:?}", result);
+    }
+
+    #[test]
+    fn test_pipe_chain() {
+        // Chain multiple pipe operations
+        let result = eval("fn main() { return [3, 1, 4, 1, 5] |σ |α; }");
+        assert!(matches!(result, Ok(Value::Int(1))), "pipe chain got: {:?}", result);
+    }
+
+    // ========== ASPECT PARSING TESTS ==========
+
+    #[test]
+    fn test_aspect_progressive_parsing() {
+        // fn name·ing should parse with progressive aspect
+        use crate::parser::Parser;
+        use crate::ast::Aspect;
+        let mut parser = Parser::new("fn stream·ing() { return 42; }");
+        let file = parser.parse_file().unwrap();
+        if let crate::ast::Item::Function(f) = &file.items[0].node {
+            assert_eq!(f.name.name, "stream");
+            assert_eq!(f.aspect, Some(Aspect::Progressive));
+        } else {
+            panic!("Expected function item");
+        }
+    }
+
+    #[test]
+    fn test_aspect_perfective_parsing() {
+        // fn name·ed should parse with perfective aspect
+        use crate::parser::Parser;
+        use crate::ast::Aspect;
+        let mut parser = Parser::new("fn process·ed() { return 42; }");
+        let file = parser.parse_file().unwrap();
+        if let crate::ast::Item::Function(f) = &file.items[0].node {
+            assert_eq!(f.name.name, "process");
+            assert_eq!(f.aspect, Some(Aspect::Perfective));
+        } else {
+            panic!("Expected function item");
+        }
+    }
+
+    #[test]
+    fn test_aspect_potential_parsing() {
+        // fn name·able should parse with potential aspect
+        use crate::parser::Parser;
+        use crate::ast::Aspect;
+        let mut parser = Parser::new("fn parse·able() { return true; }");
+        let file = parser.parse_file().unwrap();
+        if let crate::ast::Item::Function(f) = &file.items[0].node {
+            assert_eq!(f.name.name, "parse");
+            assert_eq!(f.aspect, Some(Aspect::Potential));
+        } else {
+            panic!("Expected function item");
+        }
+    }
+
+    #[test]
+    fn test_aspect_resultative_parsing() {
+        // fn name·ive should parse with resultative aspect
+        use crate::parser::Parser;
+        use crate::ast::Aspect;
+        let mut parser = Parser::new("fn destruct·ive() { return 42; }");
+        let file = parser.parse_file().unwrap();
+        if let crate::ast::Item::Function(f) = &file.items[0].node {
+            assert_eq!(f.name.name, "destruct");
+            assert_eq!(f.aspect, Some(Aspect::Resultative));
+        } else {
+            panic!("Expected function item");
+        }
+    }
+
+    // ========== EDGE CASE TESTS ==========
+
+    #[test]
+    fn test_choice_single_element() {
+        // Single element should always return that element
+        assert!(matches!(eval("fn main() { return choice([42]); }"), Ok(Value::Int(42))));
+    }
+
+    #[test]
+    fn test_nth_edge_cases() {
+        // Last element
+        assert!(matches!(eval("fn main() { return nth([10, 20, 30], 2); }"), Ok(Value::Int(30))));
+        // First element
+        assert!(matches!(eval("fn main() { return nth([10, 20, 30], 0); }"), Ok(Value::Int(10))));
+    }
+
+    #[test]
+    fn test_next_peek_usage() {
+        // next returns first element
+        assert!(matches!(eval("fn main() { return next([1, 2, 3]); }"), Ok(Value::Int(1))));
+        // peek returns first element without consuming
+        assert!(matches!(eval("fn main() { return peek([1, 2, 3]); }"), Ok(Value::Int(1))));
+    }
+
+    #[test]
+    fn test_zip_with_empty() {
+        // Empty arrays should return empty
+        let result = eval(r#"fn main() { return len(zip_with([], [], "add")); }"#);
+        assert!(matches!(result, Ok(Value::Int(0))));
+    }
+
+    #[test]
+    fn test_zip_with_different_lengths() {
+        // Shorter array determines length
+        let result = eval(r#"fn main() { return len(zip_with([1, 2], [3, 4, 5], "add")); }"#);
+        assert!(matches!(result, Ok(Value::Int(2))));
+    }
+
+    #[test]
+    fn test_supremum_edge_cases() {
+        // Same values
+        assert!(matches!(eval("fn main() { return supremum(5, 5); }"), Ok(Value::Int(5))));
+        // Negative values
+        assert!(matches!(eval("fn main() { return supremum(-5, -3); }"), Ok(Value::Int(-3))));
+        // Floats
+        assert!(matches!(eval("fn main() { return supremum(1.5, 2.5); }"), Ok(Value::Float(f)) if (f - 2.5).abs() < 0.001));
+    }
+
+    #[test]
+    fn test_infimum_edge_cases() {
+        // Same values
+        assert!(matches!(eval("fn main() { return infimum(5, 5); }"), Ok(Value::Int(5))));
+        // Negative values
+        assert!(matches!(eval("fn main() { return infimum(-5, -3); }"), Ok(Value::Int(-5))));
+        // Floats
+        assert!(matches!(eval("fn main() { return infimum(1.5, 2.5); }"), Ok(Value::Float(f)) if (f - 1.5).abs() < 0.001));
+    }
+
+    #[test]
+    fn test_supremum_infimum_arrays() {
+        // Element-wise max
+        let result = eval("fn main() { return supremum([1, 5, 3], [2, 4, 6]); }");
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            assert_eq!(arr.len(), 3);
+            assert!(matches!(arr[0], Value::Int(2)));
+            assert!(matches!(arr[1], Value::Int(5)));
+            assert!(matches!(arr[2], Value::Int(6)));
+        } else {
+            panic!("Expected array");
+        }
+
+        // Element-wise min
+        let result = eval("fn main() { return infimum([1, 5, 3], [2, 4, 6]); }");
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            assert_eq!(arr.len(), 3);
+            assert!(matches!(arr[0], Value::Int(1)));
+            assert!(matches!(arr[1], Value::Int(4)));
+            assert!(matches!(arr[2], Value::Int(3)));
+        } else {
+            panic!("Expected array");
+        }
+    }
+
+    #[test]
+    fn test_pipe_access_morphemes() {
+        // First with pipe syntax
+        assert!(matches!(eval("fn main() { return [10, 20, 30] |α; }"), Ok(Value::Int(10))));
+        // Last with pipe syntax
+        assert!(matches!(eval("fn main() { return [10, 20, 30] |ω; }"), Ok(Value::Int(30))));
+        // Middle with pipe syntax
+        assert!(matches!(eval("fn main() { return [10, 20, 30] |μ; }"), Ok(Value::Int(20))));
+    }
+
+    #[test]
+    fn test_pipe_nth_syntax() {
+        // Nth with pipe syntax
+        assert!(matches!(eval("fn main() { return [10, 20, 30, 40] |ν{1}; }"), Ok(Value::Int(20))));
+        assert!(matches!(eval("fn main() { return [10, 20, 30, 40] |ν{3}; }"), Ok(Value::Int(40))));
     }
 }

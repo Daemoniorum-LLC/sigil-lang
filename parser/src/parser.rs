@@ -549,6 +549,28 @@ impl<'a> Parser<'a> {
         self.expect(Token::Fn)?;
 
         let name = self.parse_ident()?;
+
+        // Parse optional aspect suffix: ·ing, ·ed, ·able, ·ive
+        let aspect = match self.current_token() {
+            Some(Token::AspectProgressive) => {
+                self.advance();
+                Some(Aspect::Progressive)
+            }
+            Some(Token::AspectPerfective) => {
+                self.advance();
+                Some(Aspect::Perfective)
+            }
+            Some(Token::AspectPotential) => {
+                self.advance();
+                Some(Aspect::Potential)
+            }
+            Some(Token::AspectResultative) => {
+                self.advance();
+                Some(Aspect::Resultative)
+            }
+            _ => None,
+        };
+
         let generics = self.parse_generics_opt()?;
 
         self.expect(Token::LParen)?;
@@ -575,6 +597,7 @@ impl<'a> Parser<'a> {
             is_async,
             attrs,
             name,
+            aspect,
             generics,
             params,
             return_type,
@@ -2402,6 +2425,44 @@ impl<'a> Parser<'a> {
                 let body = self.parse_expr()?;
                 self.expect(Token::RBrace)?;
                 Ok(PipeOp::Reduce(Box::new(body)))
+            }
+            // New access morphemes
+            Some(Token::Alpha) => {
+                self.advance();
+                Ok(PipeOp::First)
+            }
+            Some(Token::Omega) => {
+                self.advance();
+                Ok(PipeOp::Last)
+            }
+            Some(Token::Mu) => {
+                self.advance();
+                Ok(PipeOp::Middle)
+            }
+            Some(Token::Chi) => {
+                self.advance();
+                Ok(PipeOp::Choice)
+            }
+            Some(Token::Nu) => {
+                self.advance();
+                // ν can take an optional index: ν{2}
+                if self.check(&Token::LBrace) {
+                    self.advance();
+                    let index = self.parse_expr()?;
+                    self.expect(Token::RBrace)?;
+                    Ok(PipeOp::Nth(Box::new(index)))
+                } else {
+                    // Default to first element if no index given
+                    Ok(PipeOp::Nth(Box::new(Expr::Literal(Literal::Int {
+                        value: "0".to_string(),
+                        base: NumBase::Decimal,
+                        suffix: None,
+                    }))))
+                }
+            }
+            Some(Token::Xi) => {
+                self.advance();
+                Ok(PipeOp::Next)
             }
             Some(Token::Await) => {
                 self.advance();
