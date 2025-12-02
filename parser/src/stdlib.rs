@@ -135,6 +135,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_experimental_crypto(interp);
     // Phase 13: Multi-base encoding and cultural numerology
     register_multibase(interp);
+    // Phase 14: Polycultural audio - world tuning, sacred frequencies, synthesis
+    register_audio(interp);
 }
 
 // Helper to define a builtin
@@ -16621,6 +16623,760 @@ fn parse_base_prefix(s: &str, prefix: &str) -> (bool, String) {
                  .trim_start_matches(prefix)
                  .to_string();
     (negative, clean)
+}
+
+// ============================================================================
+// POLYCULTURAL AUDIO: World tuning systems, sacred frequencies, synthesis
+// ============================================================================
+//
+// Sigil's audio system respects that music is not universal - different cultures
+// have fundamentally different relationships with pitch, scale, and meaning.
+//
+// Waveform Morphemes:
+//   ∿  sine     - pure tone, fundamental
+//   ⊓  square   - digital, odd harmonics
+//   ⋀  sawtooth - bright, all harmonics
+//   △  triangle - mellow, odd harmonics (weaker)
+//
+// Tuning Systems:
+//   12-TET     - Western equal temperament (default)
+//   24-TET     - Arabic maqam (quarter tones)
+//   22-Shruti  - Indian classical (microtones)
+//   Just       - Pure ratios (Pythagorean, etc.)
+//   Gamelan    - Indonesian (pelog, slendro)
+//   53-TET     - Turkish/Persian (commas)
+//
+// Sacred Frequencies:
+//   ॐ Om       - 136.1 Hz (Earth year frequency)
+//   Solfeggio  - 396, 417, 528, 639, 741, 852 Hz
+//   Schumann   - 7.83 Hz (Earth resonance)
+//   Planetary  - Kepler's music of the spheres
+
+fn register_audio(interp: &mut Interpreter) {
+    // =========================================================================
+    // TUNING SYSTEMS
+    // =========================================================================
+
+    // tune - convert a note to frequency in a specific tuning system
+    // Supports: "12tet", "24tet", "just", "pythagorean", "meantone", "gamelan_pelog", "gamelan_slendro"
+    define(interp, "tune", Some(3), |_, args| {
+        let note = match &args[0] {
+            Value::Int(n) => *n as f64,      // MIDI note number
+            Value::Float(f) => *f,            // Fractional note
+            Value::String(s) => parse_note_name(s)?,
+            _ => return Err(RuntimeError::new("tune() requires note number or name")),
+        };
+
+        let system = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("tune() requires tuning system name")),
+        };
+
+        let root_freq = match &args[2] {
+            Value::Float(f) => *f,
+            Value::Int(i) => *i as f64,
+            _ => return Err(RuntimeError::new("tune() requires root frequency")),
+        };
+
+        let freq = match system.as_str() {
+            "12tet" | "equal" | "western" => {
+                // Standard 12-tone equal temperament
+                root_freq * 2.0_f64.powf((note - 69.0) / 12.0)
+            }
+            "24tet" | "quarter" | "arabic" | "maqam" => {
+                // 24-tone equal temperament (quarter tones)
+                root_freq * 2.0_f64.powf((note - 69.0) / 24.0)
+            }
+            "just" | "pure" => {
+                // Just intonation ratios from root
+                let interval = ((note - 69.0) % 12.0 + 12.0) % 12.0;
+                let octave = ((note - 69.0) / 12.0).floor();
+                let ratio = just_intonation_ratio(interval as i32);
+                root_freq * ratio * 2.0_f64.powf(octave)
+            }
+            "pythagorean" => {
+                // Pythagorean tuning (pure fifths)
+                let interval = ((note - 69.0) % 12.0 + 12.0) % 12.0;
+                let octave = ((note - 69.0) / 12.0).floor();
+                let ratio = pythagorean_ratio(interval as i32);
+                root_freq * ratio * 2.0_f64.powf(octave)
+            }
+            "meantone" | "quarter_comma" => {
+                // Quarter-comma meantone
+                let interval = ((note - 69.0) % 12.0 + 12.0) % 12.0;
+                let octave = ((note - 69.0) / 12.0).floor();
+                let ratio = meantone_ratio(interval as i32);
+                root_freq * ratio * 2.0_f64.powf(octave)
+            }
+            "53tet" | "turkish" | "persian" | "comma" => {
+                // 53-TET (Turkish/Persian music, approximates just intonation)
+                root_freq * 2.0_f64.powf((note - 69.0) / 53.0)
+            }
+            "22shruti" | "shruti" | "indian" => {
+                // Indian 22-shruti system
+                let shruti = (note - 69.0) % 22.0;
+                let octave = ((note - 69.0) / 22.0).floor();
+                let ratio = shruti_ratio(shruti as i32);
+                root_freq * ratio * 2.0_f64.powf(octave)
+            }
+            "gamelan_pelog" | "pelog" => {
+                // Javanese pelog (7-note)
+                let degree = ((note - 69.0) % 7.0 + 7.0) % 7.0;
+                let octave = ((note - 69.0) / 7.0).floor();
+                let ratio = pelog_ratio(degree as i32);
+                root_freq * ratio * 2.0_f64.powf(octave)
+            }
+            "gamelan_slendro" | "slendro" => {
+                // Javanese slendro (5-note, roughly equal)
+                let degree = ((note - 69.0) % 5.0 + 5.0) % 5.0;
+                let octave = ((note - 69.0) / 5.0).floor();
+                let ratio = slendro_ratio(degree as i32);
+                root_freq * ratio * 2.0_f64.powf(octave)
+            }
+            "bohlen_pierce" | "bp" => {
+                // Bohlen-Pierce scale (tritave-based, 13 steps)
+                root_freq * 3.0_f64.powf((note - 69.0) / 13.0)
+            }
+            _ => return Err(RuntimeError::new(format!("Unknown tuning system: {}", system))),
+        };
+
+        Ok(Value::Float(freq))
+    });
+
+    // tuning_info - get information about a tuning system
+    define(interp, "tuning_info", Some(1), |_, args| {
+        let system = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("tuning_info() requires string")),
+        };
+
+        let (name, notes_per_octave, origin, description) = match system.as_str() {
+            "12tet" | "equal" | "western" => (
+                "12-TET", 12, "Western (18th century)",
+                "Equal temperament - every semitone is exactly 2^(1/12). Universal but slightly impure."
+            ),
+            "24tet" | "quarter" | "arabic" | "maqam" => (
+                "24-TET", 24, "Arabic/Turkish",
+                "Quarter-tone system for maqam music. Enables neutral seconds and other microtones."
+            ),
+            "just" | "pure" => (
+                "Just Intonation", 12, "Ancient (Ptolemy)",
+                "Pure frequency ratios (3:2 fifth, 5:4 third). Beatless intervals but limited modulation."
+            ),
+            "pythagorean" => (
+                "Pythagorean", 12, "Ancient Greece",
+                "Built entirely from perfect fifths (3:2). Pure fifths but harsh thirds."
+            ),
+            "meantone" | "quarter_comma" => (
+                "Quarter-Comma Meantone", 12, "Renaissance Europe",
+                "Tempered fifths for pure major thirds. Beautiful in limited keys."
+            ),
+            "53tet" | "turkish" | "persian" | "comma" => (
+                "53-TET", 53, "Turkish/Persian",
+                "53 notes per octave. Closely approximates just intonation and allows maqam/dastgah."
+            ),
+            "22shruti" | "shruti" | "indian" => (
+                "22-Shruti", 22, "Indian Classical",
+                "Ancient Indian system. Each shruti is a 'microtone' - the smallest perceptible interval."
+            ),
+            "gamelan_pelog" | "pelog" => (
+                "Pelog", 7, "Javanese Gamelan",
+                "Heptatonic scale with unequal steps. Each gamelan has unique tuning - instruments are married."
+            ),
+            "gamelan_slendro" | "slendro" => (
+                "Slendro", 5, "Javanese Gamelan",
+                "Pentatonic scale, roughly equal steps (~240 cents). Each ensemble uniquely tuned."
+            ),
+            "bohlen_pierce" | "bp" => (
+                "Bohlen-Pierce", 13, "Modern (1970s)",
+                "Non-octave scale based on 3:1 tritave. Alien but mathematically beautiful."
+            ),
+            _ => return Err(RuntimeError::new(format!("Unknown tuning system: {}", system))),
+        };
+
+        let mut info = std::collections::HashMap::new();
+        info.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        info.insert("notes_per_octave".to_string(), Value::Int(notes_per_octave));
+        info.insert("origin".to_string(), Value::String(Rc::new(origin.to_string())));
+        info.insert("description".to_string(), Value::String(Rc::new(description.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+
+    // list_tuning_systems - list all available tuning systems
+    define(interp, "list_tuning_systems", Some(0), |_, _| {
+        let systems = vec![
+            ("12tet", "Western equal temperament", 12),
+            ("24tet", "Arabic/Turkish quarter-tones", 24),
+            ("just", "Pure ratio just intonation", 12),
+            ("pythagorean", "Ancient Greek pure fifths", 12),
+            ("meantone", "Renaissance quarter-comma", 12),
+            ("53tet", "Turkish/Persian comma system", 53),
+            ("22shruti", "Indian microtonal", 22),
+            ("pelog", "Javanese gamelan 7-note", 7),
+            ("slendro", "Javanese gamelan 5-note", 5),
+            ("bohlen_pierce", "Non-octave tritave scale", 13),
+        ];
+
+        let result: Vec<Value> = systems.iter().map(|(name, desc, notes)| {
+            let mut entry = std::collections::HashMap::new();
+            entry.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+            entry.insert("description".to_string(), Value::String(Rc::new(desc.to_string())));
+            entry.insert("notes_per_octave".to_string(), Value::Int(*notes));
+            Value::Map(Rc::new(RefCell::new(entry)))
+        }).collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // =========================================================================
+    // SACRED FREQUENCIES
+    // =========================================================================
+
+    // sacred_freq - get sacred/spiritual frequency by name
+    define(interp, "sacred_freq", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("sacred_freq() requires string")),
+        };
+
+        let (freq, description) = match name.as_str() {
+            // Om and Earth frequencies
+            "om" | "ॐ" | "aum" => (136.1, "Om - Earth year frequency (Cosmic Om)"),
+            "earth_day" => (194.18, "Earth day - one rotation"),
+            "earth_year" => (136.1, "Earth year - one orbit (Om frequency)"),
+            "schumann" | "earth_resonance" => (7.83, "Schumann resonance - Earth's electromagnetic heartbeat"),
+
+            // Solfeggio frequencies
+            "ut" | "do" | "396" => (396.0, "UT/DO - Liberating guilt and fear"),
+            "re" | "417" => (417.0, "RE - Undoing situations, facilitating change"),
+            "mi" | "528" => (528.0, "MI - Transformation, miracles, DNA repair"),
+            "fa" | "639" => (639.0, "FA - Connecting relationships"),
+            "sol" | "741" => (741.0, "SOL - Awakening intuition"),
+            "la" | "852" => (852.0, "LA - Returning to spiritual order"),
+            "si" | "963" => (963.0, "SI - Divine consciousness, enlightenment"),
+            "174" => (174.0, "Solfeggio foundation - pain relief"),
+            "285" => (285.0, "Solfeggio - healing tissue"),
+
+            // Planetary frequencies (Kepler/Cousto)
+            "sun" | "☉" => (126.22, "Sun - ego, vitality, leadership"),
+            "moon" | "☽" | "☾" => (210.42, "Moon - emotion, intuition, cycles"),
+            "mercury" | "☿" => (141.27, "Mercury - communication, intellect"),
+            "venus" | "♀" => (221.23, "Venus - love, beauty, harmony"),
+            "mars" | "♂" => (144.72, "Mars - energy, action, courage"),
+            "jupiter" | "♃" => (183.58, "Jupiter - expansion, wisdom, luck"),
+            "saturn" | "♄" => (147.85, "Saturn - discipline, structure, time"),
+
+            // Chakra frequencies
+            "root" | "muladhara" => (256.0, "Root chakra - survival, grounding (C)"),
+            "sacral" | "svadhisthana" => (288.0, "Sacral chakra - creativity, sexuality (D)"),
+            "solar" | "manipura" => (320.0, "Solar plexus - will, power (E)"),
+            "heart" | "anahata" => (341.3, "Heart chakra - love, compassion (F)"),
+            "throat" | "vishuddha" => (384.0, "Throat chakra - expression, truth (G)"),
+            "third_eye" | "ajna" => (426.7, "Third eye - intuition, insight (A)"),
+            "crown" | "sahasrara" => (480.0, "Crown chakra - consciousness, unity (B)"),
+
+            // Concert pitch standards
+            "a440" | "iso" => (440.0, "ISO standard concert pitch (1955)"),
+            "a432" | "verdi" => (432.0, "Verdi pitch - 'mathematically consistent with universe'"),
+            "a415" | "baroque" => (415.0, "Baroque pitch - period instrument standard"),
+            "a466" | "chorton" => (466.0, "Choir pitch - high Baroque German"),
+
+            // Binaural/brainwave
+            "delta" => (2.0, "Delta waves - deep sleep, healing (0.5-4 Hz)"),
+            "theta" => (6.0, "Theta waves - meditation, creativity (4-8 Hz)"),
+            "alpha" => (10.0, "Alpha waves - relaxation, calm focus (8-13 Hz)"),
+            "beta" => (20.0, "Beta waves - alertness, concentration (13-30 Hz)"),
+            "gamma" => (40.0, "Gamma waves - insight, peak performance (30-100 Hz)"),
+
+            _ => return Err(RuntimeError::new(format!("Unknown sacred frequency: {}", name))),
+        };
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("frequency".to_string(), Value::Float(freq));
+        result.insert("name".to_string(), Value::String(Rc::new(name)));
+        result.insert("meaning".to_string(), Value::String(Rc::new(description.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // solfeggio - get all solfeggio frequencies
+    define(interp, "solfeggio", Some(0), |_, _| {
+        let frequencies = vec![
+            (174.0, "Foundation", "Pain relief, security"),
+            (285.0, "Quantum", "Healing tissue, safety"),
+            (396.0, "UT", "Liberating guilt and fear"),
+            (417.0, "RE", "Undoing situations, change"),
+            (528.0, "MI", "Transformation, DNA repair, miracles"),
+            (639.0, "FA", "Connecting relationships"),
+            (741.0, "SOL", "Awakening intuition"),
+            (852.0, "LA", "Spiritual order"),
+            (963.0, "SI", "Divine consciousness"),
+        ];
+
+        let result: Vec<Value> = frequencies.iter().map(|(freq, name, meaning)| {
+            let mut entry = std::collections::HashMap::new();
+            entry.insert("frequency".to_string(), Value::Float(*freq));
+            entry.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+            entry.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+            Value::Map(Rc::new(RefCell::new(entry)))
+        }).collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // chakras - get all chakra frequencies
+    define(interp, "chakras", Some(0), |_, _| {
+        let chakras = vec![
+            (256.0, "Muladhara", "Root", "Red", "Survival, grounding, stability"),
+            (288.0, "Svadhisthana", "Sacral", "Orange", "Creativity, sexuality, emotion"),
+            (320.0, "Manipura", "Solar Plexus", "Yellow", "Will, power, self-esteem"),
+            (341.3, "Anahata", "Heart", "Green", "Love, compassion, connection"),
+            (384.0, "Vishuddha", "Throat", "Blue", "Expression, truth, communication"),
+            (426.7, "Ajna", "Third Eye", "Indigo", "Intuition, insight, wisdom"),
+            (480.0, "Sahasrara", "Crown", "Violet", "Consciousness, unity, transcendence"),
+        ];
+
+        let result: Vec<Value> = chakras.iter().map(|(freq, sanskrit, english, color, meaning)| {
+            let mut entry = std::collections::HashMap::new();
+            entry.insert("frequency".to_string(), Value::Float(*freq));
+            entry.insert("sanskrit".to_string(), Value::String(Rc::new(sanskrit.to_string())));
+            entry.insert("english".to_string(), Value::String(Rc::new(english.to_string())));
+            entry.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
+            entry.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+            Value::Map(Rc::new(RefCell::new(entry)))
+        }).collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // =========================================================================
+    // WAVEFORM GENERATION
+    // =========================================================================
+
+    // Generate waveform samples - returns array of floats [-1.0, 1.0]
+
+    // sine - pure sine wave ∿
+    define(interp, "sine", Some(3), |_, args| {
+        generate_waveform(&args, |phase| phase.sin())
+    });
+
+    // square - square wave ⊓
+    define(interp, "square", Some(3), |_, args| {
+        generate_waveform(&args, |phase| if phase.sin() >= 0.0 { 1.0 } else { -1.0 })
+    });
+
+    // sawtooth - sawtooth wave ⋀
+    define(interp, "sawtooth", Some(3), |_, args| {
+        generate_waveform(&args, |phase| {
+            let normalized = (phase / std::f64::consts::TAU).fract();
+            2.0 * normalized - 1.0
+        })
+    });
+
+    // triangle - triangle wave △
+    define(interp, "triangle", Some(3), |_, args| {
+        generate_waveform(&args, |phase| {
+            let normalized = (phase / std::f64::consts::TAU).fract();
+            if normalized < 0.5 {
+                4.0 * normalized - 1.0
+            } else {
+                3.0 - 4.0 * normalized
+            }
+        })
+    });
+
+    // noise - white noise
+    define(interp, "noise", Some(1), |_, args| {
+        let samples = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("noise() requires integer sample count")),
+        };
+
+        let mut rng = rand::thread_rng();
+        let result: Vec<Value> = (0..samples)
+            .map(|_| Value::Float(rng.gen::<f64>() * 2.0 - 1.0))
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // =========================================================================
+    // CULTURAL SCALES
+    // =========================================================================
+
+    // scale - get scale degrees for a cultural scale
+    define(interp, "scale", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("scale() requires string")),
+        };
+
+        let (intervals, origin, description) = match name.as_str() {
+            // Western modes
+            "major" | "ionian" => (vec![0, 2, 4, 5, 7, 9, 11], "Western", "Happy, bright, resolved"),
+            "minor" | "aeolian" => (vec![0, 2, 3, 5, 7, 8, 10], "Western", "Sad, dark, introspective"),
+            "dorian" => (vec![0, 2, 3, 5, 7, 9, 10], "Western/Jazz", "Minor with bright 6th"),
+            "phrygian" => (vec![0, 1, 3, 5, 7, 8, 10], "Western/Flamenco", "Spanish, exotic, tense"),
+            "lydian" => (vec![0, 2, 4, 6, 7, 9, 11], "Western", "Dreamy, floating, ethereal"),
+            "mixolydian" => (vec![0, 2, 4, 5, 7, 9, 10], "Western/Blues", "Bluesy major"),
+            "locrian" => (vec![0, 1, 3, 5, 6, 8, 10], "Western", "Unstable, dissonant"),
+
+            // Pentatonic
+            "pentatonic_major" => (vec![0, 2, 4, 7, 9], "Universal", "No dissonance, universal"),
+            "pentatonic_minor" => (vec![0, 3, 5, 7, 10], "Universal", "Blues foundation"),
+
+            // Japanese
+            "hirajoshi" => (vec![0, 2, 3, 7, 8], "Japanese", "Melancholic, mysterious"),
+            "insen" => (vec![0, 1, 5, 7, 10], "Japanese", "Dark, zen, contemplative"),
+            "iwato" => (vec![0, 1, 5, 6, 10], "Japanese", "Most dark and dissonant"),
+            "kumoi" => (vec![0, 2, 3, 7, 9], "Japanese", "Gentle, peaceful"),
+            "yo" => (vec![0, 2, 5, 7, 9], "Japanese", "Bright, folk, celebratory"),
+
+            // Arabic maqamat
+            "hijaz" => (vec![0, 1, 4, 5, 7, 8, 11], "Arabic", "Exotic, Middle Eastern"),
+            "bayati" => (vec![0, 1.5 as i32, 3, 5, 7, 8, 10], "Arabic", "Quarter-tone, soulful"),
+            "rast" => (vec![0, 2, 3.5 as i32, 5, 7, 9, 10.5 as i32], "Arabic", "Foundation maqam"),
+            "saba" => (vec![0, 1.5 as i32, 3, 4, 5, 8, 10], "Arabic", "Sad, spiritual"),
+
+            // Indian ragas (approximated to 12-TET)
+            "bhairav" => (vec![0, 1, 4, 5, 7, 8, 11], "Indian", "Morning raga, devotional"),
+            "yaman" | "kalyan" => (vec![0, 2, 4, 6, 7, 9, 11], "Indian", "Evening, romantic"),
+            "bhairavi" => (vec![0, 1, 3, 5, 7, 8, 10], "Indian", "Concluding raga, devotional"),
+            "todi" => (vec![0, 1, 3, 6, 7, 8, 11], "Indian", "Serious, pathos"),
+            "marwa" => (vec![0, 1, 4, 6, 7, 9, 11], "Indian", "Evening, longing"),
+
+            // Blues
+            "blues" => (vec![0, 3, 5, 6, 7, 10], "American", "Blue notes, soul"),
+
+            // Hungarian/Eastern European
+            "hungarian_minor" => (vec![0, 2, 3, 6, 7, 8, 11], "Hungarian", "Gypsy, dramatic"),
+            "romanian" => (vec![0, 2, 3, 6, 7, 9, 10], "Romanian", "Folk, energetic"),
+
+            // Jewish
+            "ahava_raba" | "freygish" => (vec![0, 1, 4, 5, 7, 8, 10], "Jewish/Klezmer", "Cantorial, emotional"),
+            "mi_sheberach" => (vec![0, 2, 3, 6, 7, 9, 10], "Jewish", "Prayer mode"),
+
+            // Chinese
+            "gong" => (vec![0, 2, 4, 7, 9], "Chinese", "Palace mode, major-like"),
+            "shang" => (vec![0, 2, 5, 7, 9], "Chinese", "Merchant mode"),
+            "jue" => (vec![0, 3, 5, 7, 10], "Chinese", "Angle mode"),
+            "zhi" => (vec![0, 2, 5, 7, 10], "Chinese", "Emblem mode"),
+            "yu" => (vec![0, 3, 5, 8, 10], "Chinese", "Wings mode, minor-like"),
+
+            // Indonesian
+            "pelog" => (vec![0, 1, 3, 7, 8], "Javanese", "7-note unequal temperament"),
+            "slendro" => (vec![0, 2, 5, 7, 9], "Javanese", "5-note roughly equal"),
+
+            // Other
+            "whole_tone" => (vec![0, 2, 4, 6, 8, 10], "Impressionist", "Dreamlike, no resolution"),
+            "chromatic" => (vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], "Western", "All 12 notes"),
+            "diminished" => (vec![0, 2, 3, 5, 6, 8, 9, 11], "Jazz", "Symmetric, tense"),
+            "augmented" => (vec![0, 3, 4, 7, 8, 11], "Jazz", "Symmetric, floating"),
+
+            _ => return Err(RuntimeError::new(format!("Unknown scale: {}", name))),
+        };
+
+        let mut result = std::collections::HashMap::new();
+        let intervals_values: Vec<Value> = intervals.iter().map(|&i| Value::Int(i as i64)).collect();
+        result.insert("intervals".to_string(), Value::Array(Rc::new(RefCell::new(intervals_values))));
+        result.insert("origin".to_string(), Value::String(Rc::new(origin.to_string())));
+        result.insert("character".to_string(), Value::String(Rc::new(description.to_string())));
+        result.insert("name".to_string(), Value::String(Rc::new(name)));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // list_scales - list all available scales grouped by culture
+    define(interp, "list_scales", Some(0), |_, _| {
+        let mut cultures = std::collections::HashMap::new();
+
+        cultures.insert("western".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("major".to_string())),
+            Value::String(Rc::new("minor".to_string())),
+            Value::String(Rc::new("dorian".to_string())),
+            Value::String(Rc::new("phrygian".to_string())),
+            Value::String(Rc::new("lydian".to_string())),
+            Value::String(Rc::new("mixolydian".to_string())),
+            Value::String(Rc::new("locrian".to_string())),
+        ]))));
+
+        cultures.insert("japanese".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("hirajoshi".to_string())),
+            Value::String(Rc::new("insen".to_string())),
+            Value::String(Rc::new("iwato".to_string())),
+            Value::String(Rc::new("kumoi".to_string())),
+            Value::String(Rc::new("yo".to_string())),
+        ]))));
+
+        cultures.insert("arabic".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("hijaz".to_string())),
+            Value::String(Rc::new("bayati".to_string())),
+            Value::String(Rc::new("rast".to_string())),
+            Value::String(Rc::new("saba".to_string())),
+        ]))));
+
+        cultures.insert("indian".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("bhairav".to_string())),
+            Value::String(Rc::new("yaman".to_string())),
+            Value::String(Rc::new("bhairavi".to_string())),
+            Value::String(Rc::new("todi".to_string())),
+            Value::String(Rc::new("marwa".to_string())),
+        ]))));
+
+        cultures.insert("chinese".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("gong".to_string())),
+            Value::String(Rc::new("shang".to_string())),
+            Value::String(Rc::new("jue".to_string())),
+            Value::String(Rc::new("zhi".to_string())),
+            Value::String(Rc::new("yu".to_string())),
+        ]))));
+
+        cultures.insert("jewish".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("ahava_raba".to_string())),
+            Value::String(Rc::new("mi_sheberach".to_string())),
+        ]))));
+
+        cultures.insert("indonesian".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("pelog".to_string())),
+            Value::String(Rc::new("slendro".to_string())),
+        ]))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(cultures))))
+    });
+
+    // =========================================================================
+    // INTERVALS AND HARMONY
+    // =========================================================================
+
+    // interval_ratio - get the frequency ratio for an interval
+    define(interp, "interval_ratio", Some(2), |_, args| {
+        let semitones = match &args[0] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("interval_ratio() requires number")),
+        };
+
+        let tuning = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("interval_ratio() requires tuning system")),
+        };
+
+        let ratio = match tuning.as_str() {
+            "12tet" | "equal" => 2.0_f64.powf(semitones / 12.0),
+            "just" => just_intonation_ratio(semitones as i32),
+            "pythagorean" => pythagorean_ratio(semitones as i32),
+            _ => 2.0_f64.powf(semitones / 12.0),
+        };
+
+        Ok(Value::Float(ratio))
+    });
+
+    // cents_between - calculate cents between two frequencies
+    define(interp, "cents_between", Some(2), |_, args| {
+        let f1 = match &args[0] {
+            Value::Float(f) => *f,
+            Value::Int(i) => *i as f64,
+            _ => return Err(RuntimeError::new("cents_between() requires numbers")),
+        };
+        let f2 = match &args[1] {
+            Value::Float(f) => *f,
+            Value::Int(i) => *i as f64,
+            _ => return Err(RuntimeError::new("cents_between() requires numbers")),
+        };
+
+        let cents = 1200.0 * (f2 / f1).log2();
+        Ok(Value::Float(cents))
+    });
+
+    // harmonic_series - generate harmonic series from fundamental
+    define(interp, "harmonic_series", Some(2), |_, args| {
+        let fundamental = match &args[0] {
+            Value::Float(f) => *f,
+            Value::Int(i) => *i as f64,
+            _ => return Err(RuntimeError::new("harmonic_series() requires frequency")),
+        };
+        let count = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("harmonic_series() requires count")),
+        };
+
+        let harmonics: Vec<Value> = (1..=count)
+            .map(|n| {
+                let mut entry = std::collections::HashMap::new();
+                entry.insert("harmonic".to_string(), Value::Int(n as i64));
+                entry.insert("frequency".to_string(), Value::Float(fundamental * n as f64));
+                entry.insert("cents_from_root".to_string(), Value::Float(1200.0 * (n as f64).log2()));
+                Value::Map(Rc::new(RefCell::new(entry)))
+            })
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(harmonics))))
+    });
+
+    // =========================================================================
+    // AUDIO INFO
+    // =========================================================================
+
+    define(interp, "audio_info", Some(0), |_, _| {
+        let mut info = std::collections::HashMap::new();
+
+        info.insert("tuning_systems".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("12tet, 24tet, just, pythagorean, meantone".to_string())),
+            Value::String(Rc::new("53tet, 22shruti, pelog, slendro, bohlen_pierce".to_string())),
+        ]))));
+
+        info.insert("waveforms".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("sine (∿)".to_string())),
+            Value::String(Rc::new("square (⊓)".to_string())),
+            Value::String(Rc::new("sawtooth (⋀)".to_string())),
+            Value::String(Rc::new("triangle (△)".to_string())),
+            Value::String(Rc::new("noise".to_string())),
+        ]))));
+
+        info.insert("sacred_frequencies".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("om, solfeggio, chakras, planets".to_string())),
+            Value::String(Rc::new("schumann, brainwaves (delta/theta/alpha/beta/gamma)".to_string())),
+        ]))));
+
+        info.insert("scale_cultures".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("western, japanese, arabic, indian".to_string())),
+            Value::String(Rc::new("chinese, jewish, indonesian".to_string())),
+        ]))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+}
+
+// Helper functions for tuning systems
+
+fn parse_note_name(s: &str) -> Result<f64, RuntimeError> {
+    let s = s.trim().to_uppercase();
+    let (note, octave_offset) = if s.ends_with(|c: char| c.is_ascii_digit()) {
+        let octave: i32 = s.chars().last().unwrap().to_digit(10).unwrap() as i32;
+        let note_part = &s[..s.len()-1];
+        (note_part, (octave - 4) * 12)  // Octave 4 = MIDI 60 area
+    } else {
+        (&s[..], 0)
+    };
+
+    let semitone = match note {
+        "C" => 0, "C#" | "DB" => 1, "D" => 2, "D#" | "EB" => 3,
+        "E" => 4, "F" => 5, "F#" | "GB" => 6, "G" => 7,
+        "G#" | "AB" => 8, "A" => 9, "A#" | "BB" => 10, "B" => 11,
+        _ => return Err(RuntimeError::new(format!("Unknown note: {}", s))),
+    };
+
+    Ok(69.0 + semitone as f64 - 9.0 + octave_offset as f64)  // A4 = 69
+}
+
+fn just_intonation_ratio(semitones: i32) -> f64 {
+    // Classic 5-limit just intonation ratios
+    match semitones.rem_euclid(12) {
+        0 => 1.0,           // Unison
+        1 => 16.0 / 15.0,   // Minor second
+        2 => 9.0 / 8.0,     // Major second
+        3 => 6.0 / 5.0,     // Minor third
+        4 => 5.0 / 4.0,     // Major third
+        5 => 4.0 / 3.0,     // Perfect fourth
+        6 => 45.0 / 32.0,   // Tritone
+        7 => 3.0 / 2.0,     // Perfect fifth
+        8 => 8.0 / 5.0,     // Minor sixth
+        9 => 5.0 / 3.0,     // Major sixth
+        10 => 9.0 / 5.0,    // Minor seventh
+        11 => 15.0 / 8.0,   // Major seventh
+        _ => 1.0,
+    }
+}
+
+fn pythagorean_ratio(semitones: i32) -> f64 {
+    // Pythagorean tuning (pure fifths, 3:2 ratio)
+    match semitones.rem_euclid(12) {
+        0 => 1.0,
+        1 => 256.0 / 243.0,
+        2 => 9.0 / 8.0,
+        3 => 32.0 / 27.0,
+        4 => 81.0 / 64.0,
+        5 => 4.0 / 3.0,
+        6 => 729.0 / 512.0,
+        7 => 3.0 / 2.0,
+        8 => 128.0 / 81.0,
+        9 => 27.0 / 16.0,
+        10 => 16.0 / 9.0,
+        11 => 243.0 / 128.0,
+        _ => 1.0,
+    }
+}
+
+fn meantone_ratio(semitones: i32) -> f64 {
+    // Quarter-comma meantone - fifths narrowed by 1/4 syntonic comma
+    let fifth = 5.0_f64.powf(0.25);  // Pure major third, tempered fifth
+    match semitones.rem_euclid(12) {
+        0 => 1.0,
+        1 => 8.0 / (fifth.powi(5)),
+        2 => fifth.powi(2) / 2.0,
+        3 => 4.0 / (fifth.powi(3)),
+        4 => fifth.powi(4) / 4.0,
+        5 => 2.0 / fifth,
+        6 => fifth.powi(6) / 8.0,
+        7 => fifth,
+        8 => 8.0 / (fifth.powi(4)),
+        9 => fifth.powi(3) / 2.0,
+        10 => 4.0 / (fifth.powi(2)),
+        11 => fifth.powi(5) / 4.0,
+        _ => 1.0,
+    }
+}
+
+fn shruti_ratio(shruti: i32) -> f64 {
+    // 22 shruti ratios (traditional Indian)
+    let ratios = [
+        1.0, 256.0/243.0, 16.0/15.0, 10.0/9.0, 9.0/8.0, 32.0/27.0, 6.0/5.0,
+        5.0/4.0, 81.0/64.0, 4.0/3.0, 27.0/20.0, 45.0/32.0, 729.0/512.0, 3.0/2.0,
+        128.0/81.0, 8.0/5.0, 5.0/3.0, 27.0/16.0, 16.0/9.0, 9.0/5.0, 15.0/8.0, 243.0/128.0
+    ];
+    ratios[shruti.rem_euclid(22) as usize]
+}
+
+fn pelog_ratio(degree: i32) -> f64 {
+    // Approximate pelog ratios (varies by gamelan)
+    let ratios = [1.0, 1.12, 1.26, 1.5, 1.68, 1.89, 2.12];
+    ratios[degree.rem_euclid(7) as usize]
+}
+
+fn slendro_ratio(degree: i32) -> f64 {
+    // Approximate slendro ratios (roughly equal ~240 cents)
+    let ratios = [1.0, 1.148, 1.318, 1.516, 1.741];
+    ratios[degree.rem_euclid(5) as usize]
+}
+
+fn generate_waveform(args: &[Value], wave_fn: fn(f64) -> f64) -> Result<Value, RuntimeError> {
+    let freq = match &args[0] {
+        Value::Float(f) => *f,
+        Value::Int(i) => *i as f64,
+        _ => return Err(RuntimeError::new("Waveform requires frequency")),
+    };
+    let sample_rate = match &args[1] {
+        Value::Float(f) => *f as usize,
+        Value::Int(i) => *i as usize,
+        _ => return Err(RuntimeError::new("Waveform requires sample rate")),
+    };
+    let duration = match &args[2] {
+        Value::Float(f) => *f,
+        Value::Int(i) => *i as f64,
+        _ => return Err(RuntimeError::new("Waveform requires duration")),
+    };
+
+    let num_samples = (sample_rate as f64 * duration) as usize;
+    let samples: Vec<Value> = (0..num_samples)
+        .map(|i| {
+            let t = i as f64 / sample_rate as f64;
+            let phase = 2.0 * std::f64::consts::PI * freq * t;
+            Value::Float(wave_fn(phase))
+        })
+        .collect();
+
+    Ok(Value::Array(Rc::new(RefCell::new(samples))))
 }
 
 #[cfg(test)]
