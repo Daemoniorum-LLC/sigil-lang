@@ -269,6 +269,85 @@ Most IDEs support:
 
 ---
 
+---
+
+## I Ching Trigrams
+
+The 8 fundamental trigrams used in spirituality functions:
+
+| Symbol | Name | Element | Meaning |
+|--------|------|---------|---------|
+| `☰` | Qian | Heaven | Creative, strong, initiating |
+| `☱` | Dui | Lake | Joyous, pleasure, openness |
+| `☲` | Li | Fire | Clinging, clarity, awareness |
+| `☳` | Zhen | Thunder | Arousing, movement, action |
+| `☴` | Xun | Wind | Gentle, penetrating, flexible |
+| `☵` | Kan | Water | Abysmal, danger, depth |
+| `☶` | Gen | Mountain | Keeping Still, meditation |
+| `☷` | Kun | Earth | Receptive, yielding, devoted |
+
+---
+
+## Zodiac Signs
+
+Used by `zodiac()` function:
+
+| Symbol | Sign | Element | Dates |
+|--------|------|---------|-------|
+| `♈` | Aries | Fire | Mar 21 - Apr 19 |
+| `♉` | Taurus | Earth | Apr 20 - May 20 |
+| `♊` | Gemini | Air | May 21 - Jun 20 |
+| `♋` | Cancer | Water | Jun 21 - Jul 22 |
+| `♌` | Leo | Fire | Jul 23 - Aug 22 |
+| `♍` | Virgo | Earth | Aug 23 - Sep 22 |
+| `♎` | Libra | Air | Sep 23 - Oct 22 |
+| `♏` | Scorpio | Water | Oct 23 - Nov 21 |
+| `♐` | Sagittarius | Fire | Nov 22 - Dec 21 |
+| `♑` | Capricorn | Earth | Dec 22 - Jan 19 |
+| `♒` | Aquarius | Air | Jan 20 - Feb 18 |
+| `♓` | Pisces | Water | Feb 19 - Mar 20 |
+
+---
+
+## Waveform Morphemes
+
+Audio synthesis symbols:
+
+| Symbol | Name | Function |
+|--------|------|----------|
+| `∿` | Sine | `sine_wave(freq, t)` |
+| `⊓` | Square | `square_wave(freq, t)` |
+| `⋀` | Sawtooth | `sawtooth_wave(freq, t)` |
+| `△` | Triangle | `triangle_wave(freq, t)` |
+
+---
+
+## Cultural Color Systems
+
+### Wu Xing (五行) Elements
+
+| Element | Chinese | Color | Direction |
+|---------|---------|-------|-----------|
+| Wood | 木 | Green | East |
+| Fire | 火 | Red | South |
+| Earth | 土 | Yellow | Center |
+| Metal | 金 | White/Gold | West |
+| Water | 水 | Black/Blue | North |
+
+### Chakra Colors
+
+| Chakra | Sanskrit | Color | Frequency |
+|--------|----------|-------|-----------|
+| Root | मूलाधार | Red | 396 Hz |
+| Sacral | स्वाधिष्ठान | Orange | 417 Hz |
+| Solar | मणिपूर | Yellow | 528 Hz |
+| Heart | अनाहत | Green | 639 Hz |
+| Throat | विशुद्ध | Blue | 741 Hz |
+| Third Eye | आज्ञा | Indigo | 852 Hz |
+| Crown | सहस्रार | Violet | 963 Hz |
+
+---
+
 ## Quick Reference Card
 
 ```
@@ -283,4 +362,7 @@ MATH:           ∘  ⊗  ⊕  ∫  ∂  √  ∛
 LITERALS:       ∅  ∞  ◯
 QUANTIFIERS:    ∀  ∃
 ASPECTS:        ·ing  ·ed  ·able  ·ive
+I CHING:        ☰  ☱  ☲  ☳  ☴  ☵  ☶  ☷
+ZODIAC:         ♈  ♉  ♊  ♋  ♌  ♍  ♎  ♏  ♐  ♑  ♒  ♓
+WAVEFORMS:      ∿  ⊓  ⋀  △
 ```
