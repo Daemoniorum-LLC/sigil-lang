@@ -12717,11 +12717,804 @@ fn register_text_intelligence(interp: &mut Interpreter) {
             _ => Err(RuntimeError::new("text_formality() requires string")),
         }
     });
+
+    // =========================================================================
+    // VADER-STYLE SENTIMENT ANALYSIS
+    // =========================================================================
+
+    // sentiment_vader - VADER-inspired sentiment analysis with intensity
+    define(interp, "sentiment_vader", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let result = compute_vader_sentiment(s);
+                let mut map = HashMap::new();
+                map.insert("positive".to_string(), Value::Float(result.0));
+                map.insert("negative".to_string(), Value::Float(result.1));
+                map.insert("neutral".to_string(), Value::Float(result.2));
+                map.insert("compound".to_string(), Value::Float(result.3));
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
+            _ => Err(RuntimeError::new("sentiment_vader() requires string")),
+        }
+    });
+
+    // emotion_detect - detect specific emotions
+    define(interp, "emotion_detect", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let emotions = compute_emotions(s);
+                let map: HashMap<String, Value> = emotions.into_iter()
+                    .map(|(k, v)| (k, Value::Float(v)))
+                    .collect();
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
+            _ => Err(RuntimeError::new("emotion_detect() requires string")),
+        }
+    });
+
+    // intensity_words - detect intensity modifiers
+    define(interp, "intensity_score", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let score = compute_intensity(s);
+                Ok(Value::Float(score))
+            }
+            _ => Err(RuntimeError::new("intensity_score() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // SARCASM AND IRONY DETECTION
+    // =========================================================================
+
+    // detect_sarcasm - detect potential sarcasm/irony markers
+    define(interp, "detect_sarcasm", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let result = compute_sarcasm_score(s);
+                let mut map = HashMap::new();
+                map.insert("score".to_string(), Value::Float(result.0));
+                map.insert("confidence".to_string(), Value::Float(result.1));
+                let markers: Vec<Value> = result.2.into_iter()
+                    .map(|m| Value::String(Rc::new(m)))
+                    .collect();
+                map.insert("markers".to_string(), Value::Array(Rc::new(RefCell::new(markers))));
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
+            _ => Err(RuntimeError::new("detect_sarcasm() requires string")),
+        }
+    });
+
+    // is_sarcastic - simple boolean sarcasm check
+    define(interp, "is_sarcastic", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let result = compute_sarcasm_score(s);
+                Ok(Value::Bool(result.0 > 0.5))
+            }
+            _ => Err(RuntimeError::new("is_sarcastic() requires string")),
+        }
+    });
+
+    // detect_irony - detect verbal irony patterns
+    define(interp, "detect_irony", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let score = compute_irony_score(s);
+                Ok(Value::Float(score))
+            }
+            _ => Err(RuntimeError::new("detect_irony() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // NAMED ENTITY RECOGNITION (Pattern-based)
+    // =========================================================================
+
+    // extract_emails - extract email addresses
+    define(interp, "extract_emails", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let re = Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap();
+                let emails: Vec<Value> = re.find_iter(s)
+                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(emails))))
+            }
+            _ => Err(RuntimeError::new("extract_emails() requires string")),
+        }
+    });
+
+    // extract_urls - extract URLs
+    define(interp, "extract_urls", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let re = Regex::new(r"https?://[^\s<>\[\]{}|\\^]+").unwrap();
+                let urls: Vec<Value> = re.find_iter(s)
+                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(urls))))
+            }
+            _ => Err(RuntimeError::new("extract_urls() requires string")),
+        }
+    });
+
+    // extract_phone_numbers - extract phone numbers
+    define(interp, "extract_phone_numbers", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let re = Regex::new(r"(?:\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}").unwrap();
+                let phones: Vec<Value> = re.find_iter(s)
+                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(phones))))
+            }
+            _ => Err(RuntimeError::new("extract_phone_numbers() requires string")),
+        }
+    });
+
+    // extract_dates - extract date patterns
+    define(interp, "extract_dates", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                // Various date formats
+                let patterns = vec![
+                    r"\d{4}-\d{2}-\d{2}",                    // 2024-01-15
+                    r"\d{2}/\d{2}/\d{4}",                    // 01/15/2024
+                    r"\d{2}-\d{2}-\d{4}",                    // 01-15-2024
+                    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}",
+                    r"\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}",
+                ];
+                let mut dates = Vec::new();
+                for pattern in patterns {
+                    if let Ok(re) = Regex::new(pattern) {
+                        for m in re.find_iter(s) {
+                            dates.push(Value::String(Rc::new(m.as_str().to_string())));
+                        }
+                    }
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(dates))))
+            }
+            _ => Err(RuntimeError::new("extract_dates() requires string")),
+        }
+    });
+
+    // extract_money - extract monetary values
+    define(interp, "extract_money", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let re = Regex::new(r"[$€£¥]\s*\d+(?:,\d{3})*(?:\.\d{2})?|\d+(?:,\d{3})*(?:\.\d{2})?\s*(?:dollars?|euros?|pounds?|USD|EUR|GBP)").unwrap();
+                let money: Vec<Value> = re.find_iter(s)
+                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(money))))
+            }
+            _ => Err(RuntimeError::new("extract_money() requires string")),
+        }
+    });
+
+    // extract_hashtags - extract hashtags
+    define(interp, "extract_hashtags", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let re = Regex::new(r"#\w+").unwrap();
+                let tags: Vec<Value> = re.find_iter(s)
+                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(tags))))
+            }
+            _ => Err(RuntimeError::new("extract_hashtags() requires string")),
+        }
+    });
+
+    // extract_mentions - extract @mentions
+    define(interp, "extract_mentions", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let re = Regex::new(r"@\w+").unwrap();
+                let mentions: Vec<Value> = re.find_iter(s)
+                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(mentions))))
+            }
+            _ => Err(RuntimeError::new("extract_mentions() requires string")),
+        }
+    });
+
+    // extract_numbers - extract all numbers
+    define(interp, "extract_numbers", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let re = Regex::new(r"-?\d+(?:,\d{3})*(?:\.\d+)?").unwrap();
+                let numbers: Vec<Value> = re.find_iter(s)
+                    .filter_map(|m| {
+                        let num_str = m.as_str().replace(",", "");
+                        if let Ok(n) = num_str.parse::<f64>() {
+                            Some(Value::Float(n))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(numbers))))
+            }
+            _ => Err(RuntimeError::new("extract_numbers() requires string")),
+        }
+    });
+
+    // extract_entities - extract likely named entities (capitalized words)
+    define(interp, "extract_entities", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                // Simple heuristic: capitalized words not at sentence start
+                let re = Regex::new(r"(?:[.!?]\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)").unwrap();
+                let mut entities = std::collections::HashSet::new();
+                for cap in re.captures_iter(s) {
+                    if let Some(m) = cap.get(1) {
+                        let entity = m.as_str().to_string();
+                        // Filter out common sentence starters
+                        let starters = ["The", "A", "An", "This", "That", "It", "I", "We", "They", "He", "She"];
+                        if !starters.contains(&entity.as_str()) {
+                            entities.insert(entity);
+                        }
+                    }
+                }
+                let results: Vec<Value> = entities.into_iter()
+                    .map(|e| Value::String(Rc::new(e)))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(results))))
+            }
+            _ => Err(RuntimeError::new("extract_entities() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // TEXT EMBEDDINGS (Hash-based, no ML required)
+    // =========================================================================
+
+    // text_hash_vector - create a simple hash-based embedding
+    define(interp, "text_hash_vector", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::Int(dims)) => {
+                let dims = *dims as usize;
+                let mut vector = vec![0.0f64; dims];
+
+                // Hash each word and add to vector
+                for word in s.to_lowercase().split_whitespace() {
+                    let hash = compute_hash(word, 0);
+                    let idx = (hash as usize) % dims;
+                    vector[idx] += 1.0;
+                }
+
+                // Normalize
+                let magnitude: f64 = vector.iter().map(|x| x * x).sum::<f64>().sqrt();
+                if magnitude > 0.0 {
+                    for v in vector.iter_mut() {
+                        *v /= magnitude;
+                    }
+                }
+
+                let values: Vec<Value> = vector.into_iter().map(Value::Float).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(values))))
+            }
+            _ => Err(RuntimeError::new("text_hash_vector() requires string and dimensions")),
+        }
+    });
+
+    // text_fingerprint - create a compact fingerprint of text
+    define(interp, "text_fingerprint", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                // Create 64-bit fingerprint using multiple hashes
+                let lower = s.to_lowercase();
+                let words: Vec<&str> = lower.split_whitespace().collect();
+
+                let mut fp: u64 = 0;
+                for (i, word) in words.iter().enumerate() {
+                    let h = compute_hash(word, i as u64);
+                    fp ^= h.rotate_left((i % 64) as u32);
+                }
+
+                Ok(Value::String(Rc::new(format!("{:016x}", fp))))
+            }
+            _ => Err(RuntimeError::new("text_fingerprint() requires string")),
+        }
+    });
+
+    // cosine_similarity - compute cosine similarity between two vectors
+    define(interp, "cosine_similarity", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::Array(a), Value::Array(b)) => {
+                let a_ref = a.borrow();
+                let b_ref = b.borrow();
+
+                if a_ref.len() != b_ref.len() {
+                    return Err(RuntimeError::new("Vectors must have same length"));
+                }
+
+                let mut dot = 0.0;
+                let mut mag_a = 0.0;
+                let mut mag_b = 0.0;
+
+                for (va, vb) in a_ref.iter().zip(b_ref.iter()) {
+                    let fa = match va {
+                        Value::Float(f) => *f,
+                        Value::Int(i) => *i as f64,
+                        _ => continue,
+                    };
+                    let fb = match vb {
+                        Value::Float(f) => *f,
+                        Value::Int(i) => *i as f64,
+                        _ => continue,
+                    };
+                    dot += fa * fb;
+                    mag_a += fa * fa;
+                    mag_b += fb * fb;
+                }
+
+                let denom = (mag_a.sqrt()) * (mag_b.sqrt());
+                if denom == 0.0 {
+                    Ok(Value::Float(0.0))
+                } else {
+                    Ok(Value::Float(dot / denom))
+                }
+            }
+            _ => Err(RuntimeError::new("cosine_similarity() requires two arrays")),
+        }
+    });
+
+    // text_similarity_embedding - compare texts using hash embeddings
+    define(interp, "text_similarity_embedding", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let dims = 128;
+
+                // Create vectors for both texts
+                let vec_a = create_hash_vector(a, dims);
+                let vec_b = create_hash_vector(b, dims);
+
+                // Compute cosine similarity
+                let mut dot = 0.0;
+                let mut mag_a = 0.0;
+                let mut mag_b = 0.0;
+
+                for i in 0..dims {
+                    dot += vec_a[i] * vec_b[i];
+                    mag_a += vec_a[i] * vec_a[i];
+                    mag_b += vec_b[i] * vec_b[i];
+                }
+
+                let denom = (mag_a.sqrt()) * (mag_b.sqrt());
+                if denom == 0.0 {
+                    Ok(Value::Float(0.0))
+                } else {
+                    Ok(Value::Float(dot / denom))
+                }
+            }
+            _ => Err(RuntimeError::new("text_similarity_embedding() requires two strings")),
+        }
+    });
+
+    // =========================================================================
+    // READABILITY METRICS
+    // =========================================================================
+
+    // flesch_reading_ease - Flesch Reading Ease score
+    define(interp, "flesch_reading_ease", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let (words, sentences, syllables) = count_text_stats(s);
+                if words == 0 || sentences == 0 {
+                    return Ok(Value::Float(0.0));
+                }
+                let score = 206.835
+                    - 1.015 * (words as f64 / sentences as f64)
+                    - 84.6 * (syllables as f64 / words as f64);
+                Ok(Value::Float(score.max(0.0).min(100.0)))
+            }
+            _ => Err(RuntimeError::new("flesch_reading_ease() requires string")),
+        }
+    });
+
+    // flesch_kincaid_grade - Flesch-Kincaid Grade Level
+    define(interp, "flesch_kincaid_grade", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let (words, sentences, syllables) = count_text_stats(s);
+                if words == 0 || sentences == 0 {
+                    return Ok(Value::Float(0.0));
+                }
+                let grade = 0.39 * (words as f64 / sentences as f64)
+                    + 11.8 * (syllables as f64 / words as f64)
+                    - 15.59;
+                Ok(Value::Float(grade.max(0.0)))
+            }
+            _ => Err(RuntimeError::new("flesch_kincaid_grade() requires string")),
+        }
+    });
+
+    // automated_readability_index - ARI score
+    define(interp, "automated_readability_index", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let chars: usize = s.chars().filter(|c| c.is_alphanumeric()).count();
+                let words: usize = s.split_whitespace().count();
+                let sentences: usize = s.matches(|c| c == '.' || c == '!' || c == '?').count().max(1);
+
+                if words == 0 {
+                    return Ok(Value::Float(0.0));
+                }
+
+                let ari = 4.71 * (chars as f64 / words as f64)
+                    + 0.5 * (words as f64 / sentences as f64)
+                    - 21.43;
+                Ok(Value::Float(ari.max(0.0)))
+            }
+            _ => Err(RuntimeError::new("automated_readability_index() requires string")),
+        }
+    });
+
+    // reading_time - estimated reading time in minutes
+    define(interp, "reading_time", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let words = s.split_whitespace().count();
+                let minutes = words as f64 / 200.0; // Average reading speed
+                Ok(Value::Float(minutes))
+            }
+            _ => Err(RuntimeError::new("reading_time() requires string")),
+        }
+    });
+
+    // speaking_time - estimated speaking time in minutes
+    define(interp, "speaking_time", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let words = s.split_whitespace().count();
+                let minutes = words as f64 / 150.0; // Average speaking speed
+                Ok(Value::Float(minutes))
+            }
+            _ => Err(RuntimeError::new("speaking_time() requires string")),
+        }
+    });
 }
 
 // =============================================================================
 // HELPER FUNCTIONS FOR TEXT INTELLIGENCE
 // =============================================================================
+
+/// VADER-style sentiment computation
+fn compute_vader_sentiment(s: &str) -> (f64, f64, f64, f64) {
+    // Sentiment lexicon with intensity
+    let positive_words: Vec<(&str, f64)> = vec![
+        ("love", 3.0), ("loved", 3.0), ("loving", 3.0),
+        ("excellent", 3.0), ("amazing", 3.0), ("fantastic", 3.0), ("wonderful", 3.0),
+        ("great", 2.5), ("awesome", 2.5), ("brilliant", 2.5), ("superb", 2.5),
+        ("good", 2.0), ("nice", 2.0), ("pleasant", 2.0), ("happy", 2.0),
+        ("like", 1.5), ("enjoy", 1.5), ("fine", 1.5), ("okay", 1.0),
+        ("best", 3.0), ("perfect", 3.0), ("beautiful", 2.5), ("delightful", 2.5),
+        ("excited", 2.5), ("thrilled", 3.0), ("glad", 2.0), ("pleased", 2.0),
+    ];
+
+    let negative_words: Vec<(&str, f64)> = vec![
+        ("hate", 3.0), ("hated", 3.0), ("hating", 3.0),
+        ("terrible", 3.0), ("horrible", 3.0), ("awful", 3.0), ("disgusting", 3.0),
+        ("bad", 2.5), ("poor", 2.5), ("worst", 3.0), ("pathetic", 2.5),
+        ("sad", 2.0), ("angry", 2.5), ("upset", 2.0), ("disappointed", 2.0),
+        ("dislike", 1.5), ("annoying", 2.0), ("boring", 1.5), ("mediocre", 1.0),
+        ("ugly", 2.5), ("stupid", 2.5), ("dumb", 2.0), ("useless", 2.5),
+        ("painful", 2.5), ("miserable", 3.0), ("depressing", 2.5), ("frustrating", 2.0),
+    ];
+
+    // Intensity modifiers
+    let boosters = vec!["very", "really", "extremely", "absolutely", "incredibly", "totally", "so"];
+    let dampeners = vec!["somewhat", "slightly", "a bit", "kind of", "sort of", "barely"];
+
+    let lower = s.to_lowercase();
+    let words: Vec<&str> = lower.split_whitespace().collect();
+
+    let mut pos_score = 0.0;
+    let mut neg_score = 0.0;
+    let mut word_count = 0;
+
+    for (i, word) in words.iter().enumerate() {
+        let mut modifier = 1.0;
+
+        // Check for boosters/dampeners before this word
+        if i > 0 {
+            if boosters.contains(&words[i-1]) {
+                modifier = 1.5;
+            } else if dampeners.iter().any(|d| words[i-1].contains(d)) {
+                modifier = 0.5;
+            }
+        }
+
+        // Check for negation
+        let negated = i > 0 && ["not", "no", "never", "neither", "don't", "doesn't", "didn't", "won't", "wouldn't", "couldn't", "shouldn't"]
+            .contains(&words[i-1]);
+
+        if let Some((_, score)) = positive_words.iter().find(|(w, _)| w == word) {
+            if negated {
+                neg_score += score * modifier;
+            } else {
+                pos_score += score * modifier;
+            }
+            word_count += 1;
+        } else if let Some((_, score)) = negative_words.iter().find(|(w, _)| w == word) {
+            if negated {
+                pos_score += score * modifier * 0.5; // Negated negative is mildly positive
+            } else {
+                neg_score += score * modifier;
+            }
+            word_count += 1;
+        }
+    }
+
+    // Normalize scores
+    let total = pos_score + neg_score;
+    let (pos_norm, neg_norm) = if total > 0.0 {
+        (pos_score / total, neg_score / total)
+    } else {
+        (0.0, 0.0)
+    };
+
+    let neutral = 1.0 - pos_norm - neg_norm;
+
+    // Compound score: normalized to [-1, 1]
+    let compound = if word_count > 0 {
+        ((pos_score - neg_score) / (word_count as f64 * 3.0)).max(-1.0).min(1.0)
+    } else {
+        0.0
+    };
+
+    (pos_norm, neg_norm, neutral.max(0.0), compound)
+}
+
+/// Detect specific emotions
+fn compute_emotions(s: &str) -> HashMap<String, f64> {
+    let emotion_words: Vec<(&str, &str)> = vec![
+        // Joy
+        ("happy", "joy"), ("joyful", "joy"), ("delighted", "joy"), ("cheerful", "joy"),
+        ("excited", "joy"), ("thrilled", "joy"), ("ecstatic", "joy"), ("elated", "joy"),
+        // Sadness
+        ("sad", "sadness"), ("unhappy", "sadness"), ("depressed", "sadness"), ("miserable", "sadness"),
+        ("gloomy", "sadness"), ("heartbroken", "sadness"), ("sorrowful", "sadness"), ("melancholy", "sadness"),
+        // Anger
+        ("angry", "anger"), ("furious", "anger"), ("enraged", "anger"), ("irritated", "anger"),
+        ("annoyed", "anger"), ("outraged", "anger"), ("livid", "anger"), ("mad", "anger"),
+        // Fear
+        ("afraid", "fear"), ("scared", "fear"), ("terrified", "fear"), ("frightened", "fear"),
+        ("anxious", "fear"), ("worried", "fear"), ("nervous", "fear"), ("panicked", "fear"),
+        // Surprise
+        ("surprised", "surprise"), ("amazed", "surprise"), ("astonished", "surprise"), ("shocked", "surprise"),
+        ("stunned", "surprise"), ("startled", "surprise"), ("bewildered", "surprise"),
+        // Disgust
+        ("disgusted", "disgust"), ("revolted", "disgust"), ("repulsed", "disgust"), ("sickened", "disgust"),
+        ("nauseated", "disgust"), ("appalled", "disgust"),
+        // Trust
+        ("trust", "trust"), ("confident", "trust"), ("secure", "trust"), ("reliable", "trust"),
+        ("faithful", "trust"), ("loyal", "trust"),
+        // Anticipation
+        ("eager", "anticipation"), ("hopeful", "anticipation"), ("expectant", "anticipation"),
+        ("looking forward", "anticipation"), ("excited", "anticipation"),
+    ];
+
+    let lower = s.to_lowercase();
+    let mut counts: HashMap<String, f64> = HashMap::new();
+
+    for (word, emotion) in emotion_words {
+        if lower.contains(word) {
+            *counts.entry(emotion.to_string()).or_insert(0.0) += 1.0;
+        }
+    }
+
+    // Normalize
+    let total: f64 = counts.values().sum();
+    if total > 0.0 {
+        for v in counts.values_mut() {
+            *v /= total;
+        }
+    }
+
+    counts
+}
+
+/// Compute text intensity
+fn compute_intensity(s: &str) -> f64 {
+    let intensifiers = vec![
+        ("very", 1.5), ("really", 1.5), ("extremely", 2.0), ("incredibly", 2.0),
+        ("absolutely", 2.0), ("totally", 1.5), ("completely", 1.5), ("utterly", 2.0),
+        ("so", 1.3), ("such", 1.3), ("quite", 1.2), ("rather", 1.1),
+    ];
+
+    let exclamation_boost = 0.5;
+    let caps_boost = 0.3;
+
+    let lower = s.to_lowercase();
+    let mut score = 1.0;
+
+    for (word, boost) in intensifiers {
+        if lower.contains(word) {
+            score *= boost;
+        }
+    }
+
+    // Check for exclamation marks
+    let exclamations = s.matches('!').count();
+    score += exclamations as f64 * exclamation_boost;
+
+    // Check for ALL CAPS words
+    let caps_words = s.split_whitespace()
+        .filter(|w| w.len() > 2 && w.chars().all(|c| c.is_uppercase()))
+        .count();
+    score += caps_words as f64 * caps_boost;
+
+    score.min(5.0)
+}
+
+/// Detect sarcasm markers
+fn compute_sarcasm_score(s: &str) -> (f64, f64, Vec<String>) {
+    let mut markers = Vec::new();
+    let mut score: f64 = 0.0;
+
+    let lower = s.to_lowercase();
+
+    // Explicit sarcasm markers
+    let explicit = vec![
+        "/s", "not!", "yeah right", "sure thing", "oh really", "oh great",
+        "wow, just wow", "thanks a lot", "how wonderful", "isn't that special",
+        "clearly", "obviously", "shocking", "no way", "what a surprise",
+    ];
+
+    for marker in &explicit {
+        if lower.contains(marker) {
+            markers.push(format!("explicit: {}", marker));
+            score += 0.4;
+        }
+    }
+
+    // Hyperbolic expressions
+    let hyperbolic = vec![
+        "best thing ever", "worst thing ever", "literally dying", "absolutely perfect",
+        "world's greatest", "totally awesome", "so much fun", "couldn't be happier",
+    ];
+
+    for h in &hyperbolic {
+        if lower.contains(h) {
+            markers.push(format!("hyperbole: {}", h));
+            score += 0.3;
+        }
+    }
+
+    // Positive-negative contradiction patterns
+    let has_positive = ["great", "wonderful", "amazing", "love", "best", "awesome"]
+        .iter().any(|w| lower.contains(w));
+    let has_negative_context = ["but", "however", "although", "except", "unfortunately"]
+        .iter().any(|w| lower.contains(w));
+
+    if has_positive && has_negative_context {
+        markers.push("positive-negative contrast".to_string());
+        score += 0.25;
+    }
+
+    // Quotation marks around positive words (air quotes)
+    let quote_pattern = Regex::new(r#"["'](\w+)["']"#).unwrap();
+    for cap in quote_pattern.captures_iter(s) {
+        if let Some(m) = cap.get(1) {
+            let word = m.as_str().to_lowercase();
+            if ["great", "wonderful", "helpful", "useful", "smart", "genius", "brilliant"].contains(&word.as_str()) {
+                markers.push(format!("air quotes: \"{}\"", word));
+                score += 0.35;
+            }
+        }
+    }
+
+    // Excessive punctuation
+    if s.contains("...") || s.contains("!!!") || s.contains("???") {
+        markers.push("excessive punctuation".to_string());
+        score += 0.15;
+    }
+
+    // Calculate confidence based on number of markers
+    let confidence = if markers.is_empty() {
+        0.0
+    } else {
+        (markers.len() as f64 * 0.25).min(1.0)
+    };
+
+    (score.min(1.0), confidence, markers)
+}
+
+/// Detect irony patterns
+fn compute_irony_score(s: &str) -> f64 {
+    let mut score: f64 = 0.0;
+    let lower = s.to_lowercase();
+
+    // Situational irony markers
+    let irony_phrases = vec![
+        "of course", "as expected", "naturally", "predictably",
+        "who would have thought", "surprise surprise", "go figure",
+        "typical", "as usual", "yet again", "once again",
+    ];
+
+    for phrase in irony_phrases {
+        if lower.contains(phrase) {
+            score += 0.2;
+        }
+    }
+
+    // Contrast indicators
+    if lower.contains("but") || lower.contains("yet") || lower.contains("however") {
+        score += 0.1;
+    }
+
+    // Rhetorical questions
+    if s.contains('?') && (lower.starts_with("isn't") || lower.starts_with("aren't") ||
+                           lower.starts_with("doesn't") || lower.starts_with("don't") ||
+                           lower.contains("right?") || lower.contains("isn't it")) {
+        score += 0.25;
+    }
+
+    score.min(1.0)
+}
+
+/// Create hash-based vector for text
+fn create_hash_vector(s: &str, dims: usize) -> Vec<f64> {
+    let mut vector = vec![0.0f64; dims];
+
+    for word in s.to_lowercase().split_whitespace() {
+        let hash = compute_hash(word, 0);
+        let idx = (hash as usize) % dims;
+        vector[idx] += 1.0;
+    }
+
+    // Normalize
+    let magnitude: f64 = vector.iter().map(|x| x * x).sum::<f64>().sqrt();
+    if magnitude > 0.0 {
+        for v in vector.iter_mut() {
+            *v /= magnitude;
+        }
+    }
+
+    vector
+}
+
+/// Count text statistics for readability
+fn count_text_stats(s: &str) -> (usize, usize, usize) {
+    let words: Vec<&str> = s.split_whitespace().collect();
+    let word_count = words.len();
+    let sentence_count = s.matches(|c| c == '.' || c == '!' || c == '?').count().max(1);
+
+    let mut syllable_count = 0;
+    for word in &words {
+        syllable_count += count_syllables(word);
+    }
+
+    (word_count, sentence_count, syllable_count)
+}
+
+/// Count syllables in a word (English approximation)
+fn count_syllables(word: &str) -> usize {
+    let word = word.to_lowercase();
+    let vowels = ['a', 'e', 'i', 'o', 'u', 'y'];
+    let mut count = 0;
+    let mut prev_was_vowel = false;
+
+    for c in word.chars() {
+        let is_vowel = vowels.contains(&c);
+        if is_vowel && !prev_was_vowel {
+            count += 1;
+        }
+        prev_was_vowel = is_vowel;
+    }
+
+    // Adjust for silent e
+    if word.ends_with('e') && count > 1 {
+        count -= 1;
+    }
+
+    count.max(1)
+}
 
 /// Compute American Soundex encoding
 fn compute_soundex(s: &str) -> String {
@@ -13008,6 +13801,102 @@ fn get_stopwords(lang: &str) -> Vec<&'static str> {
             "ser", "estar", "tiene", "tienen", "yo", "tú", "él", "ella",
             "nosotros", "ustedes", "ellos", "ellas", "no", "sí", "muy", "más",
             "menos", "también", "que", "quien", "cual", "como", "cuando",
+        ],
+        "it" | "italian" => vec![
+            "il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "e", "o",
+            "ma", "in", "di", "a", "da", "per", "con", "su", "tra", "fra",
+            "è", "sono", "era", "erano", "essere", "avere", "ha", "hanno",
+            "io", "tu", "lui", "lei", "noi", "voi", "loro", "mi", "ti", "ci",
+            "non", "più", "molto", "anche", "come", "che", "chi", "quale",
+            "questo", "quello", "quando", "dove", "perché", "se", "però",
+        ],
+        "pt" | "portuguese" => vec![
+            "o", "a", "os", "as", "um", "uma", "uns", "umas", "e", "ou",
+            "mas", "em", "de", "para", "por", "com", "sem", "sob", "sobre",
+            "é", "são", "era", "eram", "ser", "estar", "ter", "tem", "têm",
+            "eu", "tu", "ele", "ela", "nós", "vós", "eles", "elas", "me", "te",
+            "não", "mais", "muito", "também", "como", "que", "quem", "qual",
+            "este", "esse", "aquele", "quando", "onde", "porque", "se", "já",
+        ],
+        "nl" | "dutch" => vec![
+            "de", "het", "een", "en", "of", "maar", "in", "op", "aan", "van",
+            "voor", "met", "bij", "naar", "om", "te", "tot", "uit", "over",
+            "is", "zijn", "was", "waren", "worden", "wordt", "werd", "hebben",
+            "ik", "je", "jij", "hij", "zij", "wij", "jullie", "ze", "mij", "jou",
+            "niet", "geen", "meer", "ook", "als", "dat", "die", "wat", "wie",
+            "dit", "deze", "wanneer", "waar", "waarom", "hoe", "dan", "nog",
+        ],
+        "ru" | "russian" => vec![
+            "и", "в", "на", "с", "к", "по", "за", "из", "у", "о", "от", "до",
+            "для", "при", "без", "под", "над", "между", "через", "после",
+            "это", "то", "что", "как", "так", "но", "а", "или", "если", "же",
+            "я", "ты", "он", "она", "мы", "вы", "они", "его", "её", "их",
+            "не", "ни", "да", "нет", "был", "была", "были", "быть", "есть",
+            "все", "всё", "весь", "этот", "тот", "который", "когда", "где",
+        ],
+        "ar" | "arabic" => vec![
+            "في", "من", "إلى", "على", "عن", "مع", "هذا", "هذه", "ذلك", "تلك",
+            "التي", "الذي", "اللذان", "اللتان", "الذين", "اللاتي", "اللواتي",
+            "هو", "هي", "هم", "هن", "أنا", "أنت", "نحن", "أنتم", "أنتن",
+            "كان", "كانت", "كانوا", "يكون", "تكون", "ليس", "ليست", "ليسوا",
+            "و", "أو", "ثم", "لكن", "بل", "إن", "أن", "لأن", "كي", "حتى",
+            "ما", "لا", "قد", "كل", "بعض", "غير", "أي", "كيف", "متى", "أين",
+        ],
+        "zh" | "chinese" => vec![
+            "的", "了", "是", "在", "有", "和", "与", "或", "但", "而",
+            "我", "你", "他", "她", "它", "我们", "你们", "他们", "她们",
+            "这", "那", "这个", "那个", "这些", "那些", "什么", "哪", "哪个",
+            "不", "没", "没有", "很", "也", "都", "就", "才", "只", "还",
+            "把", "被", "给", "从", "到", "为", "以", "因为", "所以", "如果",
+            "会", "能", "可以", "要", "想", "应该", "必须", "可能", "一", "个",
+        ],
+        "ja" | "japanese" => vec![
+            "の", "に", "は", "を", "た", "が", "で", "て", "と", "し",
+            "れ", "さ", "ある", "いる", "も", "する", "から", "な", "こと",
+            "として", "い", "や", "など", "なっ", "ない", "この", "ため",
+            "その", "あっ", "よう", "また", "もの", "という", "あり", "まで",
+            "られ", "なる", "へ", "か", "だ", "これ", "によって", "により",
+            "おり", "より", "による", "ず", "なり", "られる", "において",
+        ],
+        "ko" | "korean" => vec![
+            "이", "그", "저", "것", "수", "등", "들", "및", "에", "의",
+            "가", "을", "를", "은", "는", "로", "으로", "와", "과", "도",
+            "에서", "까지", "부터", "만", "뿐", "처럼", "같이", "보다",
+            "하다", "있다", "되다", "없다", "않다", "이다", "아니다",
+            "나", "너", "우리", "그들", "이것", "그것", "저것", "무엇",
+            "어디", "언제", "왜", "어떻게", "누구", "어느", "모든", "각",
+        ],
+        "hi" | "hindi" => vec![
+            "का", "के", "की", "में", "है", "हैं", "को", "से", "पर", "था",
+            "थे", "थी", "और", "या", "लेकिन", "अगर", "तो", "भी", "ही",
+            "यह", "वह", "इस", "उस", "ये", "वे", "जो", "कि", "क्या", "कैसे",
+            "मैं", "तुम", "आप", "हम", "वे", "उन्हें", "उनके", "अपने",
+            "नहीं", "न", "कुछ", "कोई", "सब", "बहुत", "कम", "ज्यादा",
+            "होना", "करना", "जाना", "आना", "देना", "लेना", "रहना", "सकना",
+        ],
+        "tr" | "turkish" => vec![
+            "bir", "ve", "bu", "da", "de", "için", "ile", "mi", "ne", "o",
+            "var", "ben", "sen", "biz", "siz", "onlar", "ki", "ama", "çok",
+            "daha", "gibi", "kadar", "sonra", "şey", "kendi", "bütün", "her",
+            "bazı", "olan", "olarak", "değil", "ya", "hem", "veya", "ancak",
+            "ise", "göre", "rağmen", "dolayı", "üzere", "karşı", "arasında",
+            "olan", "oldu", "olur", "olmak", "etmek", "yapmak", "demek",
+        ],
+        "pl" | "polish" => vec![
+            "i", "w", "z", "na", "do", "o", "że", "to", "nie", "się",
+            "jest", "tak", "jak", "ale", "po", "co", "czy", "lub", "oraz",
+            "ja", "ty", "on", "ona", "my", "wy", "oni", "one", "pan", "pani",
+            "ten", "ta", "te", "tego", "tej", "tym", "tych", "który", "która",
+            "być", "mieć", "móc", "musieć", "chcieć", "wiedzieć", "mówić",
+            "bardzo", "tylko", "już", "jeszcze", "też", "więc", "jednak",
+        ],
+        "sv" | "swedish" => vec![
+            "och", "i", "att", "det", "som", "en", "på", "är", "av", "för",
+            "med", "till", "den", "har", "de", "inte", "om", "ett", "men",
+            "jag", "du", "han", "hon", "vi", "ni", "de", "dem", "sig", "sin",
+            "var", "från", "eller", "när", "kan", "ska", "så", "än", "nu",
+            "också", "bara", "mycket", "mer", "andra", "detta", "sedan",
+            "hade", "varit", "skulle", "vara", "bli", "blev", "blir", "göra",
         ],
         _ => vec![
             "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
