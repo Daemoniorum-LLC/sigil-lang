@@ -82,6 +82,10 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_autodiff(interp);
     register_spatial(interp);
     register_physics(interp);
+    // Phase 9: Differentiating features
+    register_geometric_algebra(interp);
+    register_dimensional(interp);
+    register_ecs(interp);
 }
 
 // Helper to define a builtin
@@ -9117,6 +9121,1098 @@ fn register_physics(interp: &mut Interpreter) {
         } else {
             Ok(Value::Float(-1.0))
         }
+    });
+}
+
+// ============================================================================
+// GEOMETRIC ALGEBRA (GA3D - Cl(3,0,0))
+// ============================================================================
+// Multivectors in 3D: scalar + 3 vectors + 3 bivectors + 1 trivector = 8 components
+// Basis: 1, e₁, e₂, e₃, e₁₂, e₂₃, e₃₁, e₁₂₃
+// This is THE most elegant way to handle rotations, reflections, and projections
+
+fn register_geometric_algebra(interp: &mut Interpreter) {
+    // Helper to create a multivector from 8 components
+    fn make_multivector(components: [f64; 8]) -> Value {
+        let mut mv = HashMap::new();
+        mv.insert("s".to_string(), Value::Float(components[0]));    // scalar
+        mv.insert("e1".to_string(), Value::Float(components[1]));   // e₁
+        mv.insert("e2".to_string(), Value::Float(components[2]));   // e₂
+        mv.insert("e3".to_string(), Value::Float(components[3]));   // e₃
+        mv.insert("e12".to_string(), Value::Float(components[4]));  // e₁₂
+        mv.insert("e23".to_string(), Value::Float(components[5]));  // e₂₃
+        mv.insert("e31".to_string(), Value::Float(components[6]));  // e₃₁
+        mv.insert("e123".to_string(), Value::Float(components[7])); // e₁₂₃ (pseudoscalar)
+        mv.insert("_type".to_string(), Value::String(Rc::new("multivector".to_string())));
+        Value::Map(Rc::new(RefCell::new(mv)))
+    }
+
+    fn extract_multivector(v: &Value, fn_name: &str) -> Result<[f64; 8], RuntimeError> {
+        match v {
+            Value::Map(map) => {
+                let map = map.borrow();
+                let get_component = |key: &str| -> f64 {
+                    match map.get(key) {
+                        Some(Value::Float(f)) => *f,
+                        Some(Value::Int(n)) => *n as f64,
+                        _ => 0.0,
+                    }
+                };
+                Ok([
+                    get_component("s"),
+                    get_component("e1"),
+                    get_component("e2"),
+                    get_component("e3"),
+                    get_component("e12"),
+                    get_component("e23"),
+                    get_component("e31"),
+                    get_component("e123"),
+                ])
+            }
+            _ => Err(RuntimeError::new(format!("{}: expected multivector", fn_name))),
+        }
+    }
+
+    // mv_new(s, e1, e2, e3, e12, e23, e31, e123) - Create multivector from components
+    define(interp, "mv_new", Some(8), |_, args| {
+        let mut components = [0.0f64; 8];
+        for (i, arg) in args.iter().enumerate().take(8) {
+            components[i] = match arg {
+                Value::Float(f) => *f,
+                Value::Int(n) => *n as f64,
+                _ => 0.0,
+            };
+        }
+        Ok(make_multivector(components))
+    });
+
+    // mv_scalar(s) - Create scalar multivector
+    define(interp, "mv_scalar", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => return Err(RuntimeError::new("mv_scalar: expected number")),
+        };
+        Ok(make_multivector([s, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+    });
+
+    // mv_vector(x, y, z) - Create vector (grade-1 multivector)
+    define(interp, "mv_vector", Some(3), |_, args| {
+        let x = match &args[0] { Value::Float(f) => *f, Value::Int(n) => *n as f64, _ => 0.0 };
+        let y = match &args[1] { Value::Float(f) => *f, Value::Int(n) => *n as f64, _ => 0.0 };
+        let z = match &args[2] { Value::Float(f) => *f, Value::Int(n) => *n as f64, _ => 0.0 };
+        Ok(make_multivector([0.0, x, y, z, 0.0, 0.0, 0.0, 0.0]))
+    });
+
+    // mv_bivector(xy, yz, zx) - Create bivector (grade-2, represents oriented planes)
+    define(interp, "mv_bivector", Some(3), |_, args| {
+        let xy = match &args[0] { Value::Float(f) => *f, Value::Int(n) => *n as f64, _ => 0.0 };
+        let yz = match &args[1] { Value::Float(f) => *f, Value::Int(n) => *n as f64, _ => 0.0 };
+        let zx = match &args[2] { Value::Float(f) => *f, Value::Int(n) => *n as f64, _ => 0.0 };
+        Ok(make_multivector([0.0, 0.0, 0.0, 0.0, xy, yz, zx, 0.0]))
+    });
+
+    // mv_trivector(xyz) - Create trivector/pseudoscalar (grade-3, represents oriented volume)
+    define(interp, "mv_trivector", Some(1), |_, args| {
+        let xyz = match &args[0] { Value::Float(f) => *f, Value::Int(n) => *n as f64, _ => 0.0 };
+        Ok(make_multivector([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, xyz]))
+    });
+
+    // mv_add(a, b) - Add two multivectors
+    define(interp, "mv_add", Some(2), |_, args| {
+        let a = extract_multivector(&args[0], "mv_add")?;
+        let b = extract_multivector(&args[1], "mv_add")?;
+        Ok(make_multivector([
+            a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3],
+            a[4] + b[4], a[5] + b[5], a[6] + b[6], a[7] + b[7],
+        ]))
+    });
+
+    // mv_sub(a, b) - Subtract two multivectors
+    define(interp, "mv_sub", Some(2), |_, args| {
+        let a = extract_multivector(&args[0], "mv_sub")?;
+        let b = extract_multivector(&args[1], "mv_sub")?;
+        Ok(make_multivector([
+            a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3],
+            a[4] - b[4], a[5] - b[5], a[6] - b[6], a[7] - b[7],
+        ]))
+    });
+
+    // mv_scale(mv, scalar) - Scale a multivector
+    define(interp, "mv_scale", Some(2), |_, args| {
+        let a = extract_multivector(&args[0], "mv_scale")?;
+        let s = match &args[1] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => return Err(RuntimeError::new("mv_scale: second argument must be number")),
+        };
+        Ok(make_multivector([
+            a[0] * s, a[1] * s, a[2] * s, a[3] * s,
+            a[4] * s, a[5] * s, a[6] * s, a[7] * s,
+        ]))
+    });
+
+    // mv_geometric(a, b) - Geometric product (THE fundamental operation)
+    // This is what makes GA powerful: ab = a·b + a∧b
+    define(interp, "mv_geometric", Some(2), |_, args| {
+        let a = extract_multivector(&args[0], "mv_geometric")?;
+        let b = extract_multivector(&args[1], "mv_geometric")?;
+
+        // Full geometric product in Cl(3,0,0)
+        // Using: e₁² = e₂² = e₃² = 1, eᵢeⱼ = -eⱼeᵢ for i≠j
+        let mut r = [0.0f64; 8];
+
+        // Scalar part
+        r[0] = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3]
+             - a[4]*b[4] - a[5]*b[5] - a[6]*b[6] - a[7]*b[7];
+
+        // e₁ part
+        r[1] = a[0]*b[1] + a[1]*b[0] - a[2]*b[4] + a[3]*b[6]
+             + a[4]*b[2] - a[5]*b[7] - a[6]*b[3] - a[7]*b[5];
+
+        // e₂ part
+        r[2] = a[0]*b[2] + a[1]*b[4] + a[2]*b[0] - a[3]*b[5]
+             - a[4]*b[1] + a[5]*b[3] - a[6]*b[7] - a[7]*b[6];
+
+        // e₃ part
+        r[3] = a[0]*b[3] - a[1]*b[6] + a[2]*b[5] + a[3]*b[0]
+             - a[4]*b[7] - a[5]*b[2] + a[6]*b[1] - a[7]*b[4];
+
+        // e₁₂ part
+        r[4] = a[0]*b[4] + a[1]*b[2] - a[2]*b[1] + a[3]*b[7]
+             + a[4]*b[0] + a[5]*b[6] - a[6]*b[5] + a[7]*b[3];
+
+        // e₂₃ part
+        r[5] = a[0]*b[5] + a[1]*b[7] + a[2]*b[3] - a[3]*b[2]
+             - a[4]*b[6] + a[5]*b[0] + a[6]*b[4] + a[7]*b[1];
+
+        // e₃₁ part
+        r[6] = a[0]*b[6] - a[1]*b[3] + a[2]*b[7] + a[3]*b[1]
+             + a[4]*b[5] - a[5]*b[4] + a[6]*b[0] + a[7]*b[2];
+
+        // e₁₂₃ part
+        r[7] = a[0]*b[7] + a[1]*b[5] + a[2]*b[6] + a[3]*b[4]
+             + a[4]*b[3] + a[5]*b[1] + a[6]*b[2] + a[7]*b[0];
+
+        Ok(make_multivector(r))
+    });
+
+    // mv_wedge(a, b) - Outer/wedge product (∧) - antisymmetric part
+    // Creates higher-grade elements: vector ∧ vector = bivector
+    define(interp, "mv_wedge", Some(2), |_, args| {
+        let a = extract_multivector(&args[0], "mv_wedge")?;
+        let b = extract_multivector(&args[1], "mv_wedge")?;
+
+        let mut r = [0.0f64; 8];
+
+        // Scalar ∧ anything = scalar * anything (grade 0)
+        r[0] = a[0] * b[0];
+
+        // Vector parts (grade 1): s∧v + v∧s
+        r[1] = a[0]*b[1] + a[1]*b[0];
+        r[2] = a[0]*b[2] + a[2]*b[0];
+        r[3] = a[0]*b[3] + a[3]*b[0];
+
+        // Bivector parts (grade 2): s∧B + v∧v + B∧s
+        r[4] = a[0]*b[4] + a[1]*b[2] - a[2]*b[1] + a[4]*b[0];
+        r[5] = a[0]*b[5] + a[2]*b[3] - a[3]*b[2] + a[5]*b[0];
+        r[6] = a[0]*b[6] + a[3]*b[1] - a[1]*b[3] + a[6]*b[0];
+
+        // Trivector part (grade 3): s∧T + v∧B + B∧v + T∧s
+        r[7] = a[0]*b[7] + a[7]*b[0]
+             + a[1]*b[5] + a[2]*b[6] + a[3]*b[4]
+             - a[4]*b[3] - a[5]*b[1] - a[6]*b[2];
+
+        Ok(make_multivector(r))
+    });
+
+    // mv_inner(a, b) - Inner/dot product (⟂) - symmetric contraction
+    // Lowers grade: vector · vector = scalar, bivector · vector = vector
+    define(interp, "mv_inner", Some(2), |_, args| {
+        let a = extract_multivector(&args[0], "mv_inner")?;
+        let b = extract_multivector(&args[1], "mv_inner")?;
+
+        let mut r = [0.0f64; 8];
+
+        // Left contraction formula
+        // Scalar (vectors dotted)
+        r[0] = a[1]*b[1] + a[2]*b[2] + a[3]*b[3]
+             - a[4]*b[4] - a[5]*b[5] - a[6]*b[6]
+             - a[7]*b[7];
+
+        // Vector parts (bivector · vector)
+        r[1] = a[4]*b[2] - a[6]*b[3] - a[5]*b[7];
+        r[2] = -a[4]*b[1] + a[5]*b[3] - a[6]*b[7];
+        r[3] = a[6]*b[1] - a[5]*b[2] - a[4]*b[7];
+
+        // Bivector parts (trivector · vector)
+        r[4] = a[7]*b[3];
+        r[5] = a[7]*b[1];
+        r[6] = a[7]*b[2];
+
+        Ok(make_multivector(r))
+    });
+
+    // mv_reverse(a) - Reverse (†) - reverses order of basis vectors
+    // (e₁e₂)† = e₂e₁ = -e₁e₂
+    define(interp, "mv_reverse", Some(1), |_, args| {
+        let a = extract_multivector(&args[0], "mv_reverse")?;
+        // Grade 0,1 unchanged; Grade 2,3 negated
+        Ok(make_multivector([
+            a[0], a[1], a[2], a[3],
+            -a[4], -a[5], -a[6], -a[7],
+        ]))
+    });
+
+    // mv_dual(a) - Dual (Hodge star) - multiply by pseudoscalar
+    // Maps grade k to grade (n-k) in n dimensions
+    define(interp, "mv_dual", Some(1), |_, args| {
+        let a = extract_multivector(&args[0], "mv_dual")?;
+        // In 3D: dual(1) = e123, dual(e1) = e23, etc.
+        // Multiplying by e123: since e123² = -1 in Cl(3,0,0)
+        Ok(make_multivector([
+            -a[7],  // s ← -e123
+            -a[5],  // e1 ← -e23
+            -a[6],  // e2 ← -e31
+            -a[4],  // e3 ← -e12
+            a[3],   // e12 ← e3
+            a[1],   // e23 ← e1
+            a[2],   // e31 ← e2
+            a[0],   // e123 ← s
+        ]))
+    });
+
+    // mv_magnitude(a) - Magnitude/norm of multivector
+    define(interp, "mv_magnitude", Some(1), |_, args| {
+        let a = extract_multivector(&args[0], "mv_magnitude")?;
+        let mag_sq = a[0]*a[0] + a[1]*a[1] + a[2]*a[2] + a[3]*a[3]
+                   + a[4]*a[4] + a[5]*a[5] + a[6]*a[6] + a[7]*a[7];
+        Ok(Value::Float(mag_sq.sqrt()))
+    });
+
+    // mv_normalize(a) - Normalize multivector
+    define(interp, "mv_normalize", Some(1), |_, args| {
+        let a = extract_multivector(&args[0], "mv_normalize")?;
+        let mag = (a[0]*a[0] + a[1]*a[1] + a[2]*a[2] + a[3]*a[3]
+                 + a[4]*a[4] + a[5]*a[5] + a[6]*a[6] + a[7]*a[7]).sqrt();
+        if mag < 1e-10 {
+            return Ok(make_multivector([0.0; 8]));
+        }
+        Ok(make_multivector([
+            a[0]/mag, a[1]/mag, a[2]/mag, a[3]/mag,
+            a[4]/mag, a[5]/mag, a[6]/mag, a[7]/mag,
+        ]))
+    });
+
+    // rotor_from_axis_angle(axis, angle) - Create rotor from axis-angle
+    // Rotor R = cos(θ/2) + sin(θ/2) * B where B is the normalized bivector plane
+    define(interp, "rotor_from_axis_angle", Some(2), |_, args| {
+        let axis = extract_vec3(&args[0], "rotor_from_axis_angle")?;
+        let angle = match &args[1] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => return Err(RuntimeError::new("rotor_from_axis_angle: angle must be number")),
+        };
+
+        // Normalize axis
+        let len = (axis[0]*axis[0] + axis[1]*axis[1] + axis[2]*axis[2]).sqrt();
+        if len < 1e-10 {
+            // Return identity rotor
+            return Ok(make_multivector([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]));
+        }
+        let (nx, ny, nz) = (axis[0]/len, axis[1]/len, axis[2]/len);
+
+        let half_angle = angle / 2.0;
+        let (s, c) = half_angle.sin_cos();
+
+        // Rotor: cos(θ/2) - sin(θ/2) * (n₁e₂₃ + n₂e₃₁ + n₃e₁₂)
+        // Note: axis maps to bivector via dual
+        Ok(make_multivector([
+            c,                // scalar
+            0.0, 0.0, 0.0,    // no vector part
+            -s * nz,          // e12 (axis z → bivector xy)
+            -s * nx,          // e23 (axis x → bivector yz)
+            -s * ny,          // e31 (axis y → bivector zx)
+            0.0,              // no trivector
+        ]))
+    });
+
+    // rotor_apply(rotor, vector) - Apply rotor to vector: RvR†
+    // This is the sandwich product - THE way to rotate in GA
+    define(interp, "rotor_apply", Some(2), |_, args| {
+        let r = extract_multivector(&args[0], "rotor_apply")?;
+        let v = extract_vec3(&args[1], "rotor_apply")?;
+
+        // Create vector multivector
+        let v_mv = [0.0, v[0], v[1], v[2], 0.0, 0.0, 0.0, 0.0];
+
+        // Compute R† (reverse of rotor)
+        let r_rev = [r[0], r[1], r[2], r[3], -r[4], -r[5], -r[6], -r[7]];
+
+        // First: R * v
+        let mut rv = [0.0f64; 8];
+        rv[0] = r[0]*v_mv[0] + r[1]*v_mv[1] + r[2]*v_mv[2] + r[3]*v_mv[3]
+              - r[4]*v_mv[4] - r[5]*v_mv[5] - r[6]*v_mv[6] - r[7]*v_mv[7];
+        rv[1] = r[0]*v_mv[1] + r[1]*v_mv[0] - r[2]*v_mv[4] + r[3]*v_mv[6]
+              + r[4]*v_mv[2] - r[5]*v_mv[7] - r[6]*v_mv[3] - r[7]*v_mv[5];
+        rv[2] = r[0]*v_mv[2] + r[1]*v_mv[4] + r[2]*v_mv[0] - r[3]*v_mv[5]
+              - r[4]*v_mv[1] + r[5]*v_mv[3] - r[6]*v_mv[7] - r[7]*v_mv[6];
+        rv[3] = r[0]*v_mv[3] - r[1]*v_mv[6] + r[2]*v_mv[5] + r[3]*v_mv[0]
+              - r[4]*v_mv[7] - r[5]*v_mv[2] + r[6]*v_mv[1] - r[7]*v_mv[4];
+        rv[4] = r[0]*v_mv[4] + r[1]*v_mv[2] - r[2]*v_mv[1] + r[3]*v_mv[7]
+              + r[4]*v_mv[0] + r[5]*v_mv[6] - r[6]*v_mv[5] + r[7]*v_mv[3];
+        rv[5] = r[0]*v_mv[5] + r[1]*v_mv[7] + r[2]*v_mv[3] - r[3]*v_mv[2]
+              - r[4]*v_mv[6] + r[5]*v_mv[0] + r[6]*v_mv[4] + r[7]*v_mv[1];
+        rv[6] = r[0]*v_mv[6] - r[1]*v_mv[3] + r[2]*v_mv[7] + r[3]*v_mv[1]
+              + r[4]*v_mv[5] - r[5]*v_mv[4] + r[6]*v_mv[0] + r[7]*v_mv[2];
+        rv[7] = r[0]*v_mv[7] + r[1]*v_mv[5] + r[2]*v_mv[6] + r[3]*v_mv[4]
+              + r[4]*v_mv[3] + r[5]*v_mv[1] + r[6]*v_mv[2] + r[7]*v_mv[0];
+
+        // Then: (R * v) * R†
+        let mut result = [0.0f64; 8];
+        result[1] = rv[0]*r_rev[1] + rv[1]*r_rev[0] - rv[2]*r_rev[4] + rv[3]*r_rev[6]
+                  + rv[4]*r_rev[2] - rv[5]*r_rev[7] - rv[6]*r_rev[3] - rv[7]*r_rev[5];
+        result[2] = rv[0]*r_rev[2] + rv[1]*r_rev[4] + rv[2]*r_rev[0] - rv[3]*r_rev[5]
+                  - rv[4]*r_rev[1] + rv[5]*r_rev[3] - rv[6]*r_rev[7] - rv[7]*r_rev[6];
+        result[3] = rv[0]*r_rev[3] - rv[1]*r_rev[6] + rv[2]*r_rev[5] + rv[3]*r_rev[0]
+                  - rv[4]*r_rev[7] - rv[5]*r_rev[2] + rv[6]*r_rev[1] - rv[7]*r_rev[4];
+
+        // Return as vec3
+        Ok(make_vec3(result[1], result[2], result[3]))
+    });
+
+    // rotor_compose(r1, r2) - Compose rotors: R1 * R2
+    define(interp, "rotor_compose", Some(2), |_, args| {
+        let a = extract_multivector(&args[0], "rotor_compose")?;
+        let b = extract_multivector(&args[1], "rotor_compose")?;
+
+        // Same as geometric product
+        let mut r = [0.0f64; 8];
+        r[0] = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3]
+             - a[4]*b[4] - a[5]*b[5] - a[6]*b[6] - a[7]*b[7];
+        r[1] = a[0]*b[1] + a[1]*b[0] - a[2]*b[4] + a[3]*b[6]
+             + a[4]*b[2] - a[5]*b[7] - a[6]*b[3] - a[7]*b[5];
+        r[2] = a[0]*b[2] + a[1]*b[4] + a[2]*b[0] - a[3]*b[5]
+             - a[4]*b[1] + a[5]*b[3] - a[6]*b[7] - a[7]*b[6];
+        r[3] = a[0]*b[3] - a[1]*b[6] + a[2]*b[5] + a[3]*b[0]
+             - a[4]*b[7] - a[5]*b[2] + a[6]*b[1] - a[7]*b[4];
+        r[4] = a[0]*b[4] + a[1]*b[2] - a[2]*b[1] + a[3]*b[7]
+             + a[4]*b[0] + a[5]*b[6] - a[6]*b[5] + a[7]*b[3];
+        r[5] = a[0]*b[5] + a[1]*b[7] + a[2]*b[3] - a[3]*b[2]
+             - a[4]*b[6] + a[5]*b[0] + a[6]*b[4] + a[7]*b[1];
+        r[6] = a[0]*b[6] - a[1]*b[3] + a[2]*b[7] + a[3]*b[1]
+             + a[4]*b[5] - a[5]*b[4] + a[6]*b[0] + a[7]*b[2];
+        r[7] = a[0]*b[7] + a[1]*b[5] + a[2]*b[6] + a[3]*b[4]
+             + a[4]*b[3] + a[5]*b[1] + a[6]*b[2] + a[7]*b[0];
+
+        Ok(make_multivector(r))
+    });
+
+    // mv_reflect(v, n) - Reflect vector v in plane with normal n
+    // Reflection: -n * v * n (sandwich with negative)
+    define(interp, "mv_reflect", Some(2), |_, args| {
+        let v = extract_vec3(&args[0], "mv_reflect")?;
+        let n = extract_vec3(&args[1], "mv_reflect")?;
+
+        // Normalize n
+        let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
+        if len < 1e-10 {
+            return Ok(make_vec3(v[0], v[1], v[2]));
+        }
+        let (nx, ny, nz) = (n[0]/len, n[1]/len, n[2]/len);
+
+        // v - 2(v·n)n
+        let dot = v[0]*nx + v[1]*ny + v[2]*nz;
+        Ok(make_vec3(
+            v[0] - 2.0 * dot * nx,
+            v[1] - 2.0 * dot * ny,
+            v[2] - 2.0 * dot * nz,
+        ))
+    });
+
+    // mv_project(v, n) - Project vector v onto plane with normal n
+    define(interp, "mv_project", Some(2), |_, args| {
+        let v = extract_vec3(&args[0], "mv_project")?;
+        let n = extract_vec3(&args[1], "mv_project")?;
+
+        let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
+        if len < 1e-10 {
+            return Ok(make_vec3(v[0], v[1], v[2]));
+        }
+        let (nx, ny, nz) = (n[0]/len, n[1]/len, n[2]/len);
+
+        // v - (v·n)n
+        let dot = v[0]*nx + v[1]*ny + v[2]*nz;
+        Ok(make_vec3(
+            v[0] - dot * nx,
+            v[1] - dot * ny,
+            v[2] - dot * nz,
+        ))
+    });
+
+    // mv_grade(mv, k) - Extract grade-k part of multivector
+    define(interp, "mv_grade", Some(2), |_, args| {
+        let a = extract_multivector(&args[0], "mv_grade")?;
+        let k = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("mv_grade: grade must be integer")),
+        };
+
+        match k {
+            0 => Ok(make_multivector([a[0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])),
+            1 => Ok(make_multivector([0.0, a[1], a[2], a[3], 0.0, 0.0, 0.0, 0.0])),
+            2 => Ok(make_multivector([0.0, 0.0, 0.0, 0.0, a[4], a[5], a[6], 0.0])),
+            3 => Ok(make_multivector([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, a[7]])),
+            _ => Ok(make_multivector([0.0; 8])),
+        }
+    });
+}
+
+// ============================================================================
+// DIMENSIONAL ANALYSIS (Unit-aware arithmetic)
+// ============================================================================
+// Automatic unit tracking and conversion - catch physics errors at runtime
+// Base SI units: m (length), kg (mass), s (time), A (current), K (temperature), mol, cd
+
+fn register_dimensional(interp: &mut Interpreter) {
+    // Helper to create a quantity with units
+    // Units stored as exponents: [m, kg, s, A, K, mol, cd]
+    fn make_quantity(value: f64, units: [i32; 7]) -> Value {
+        let mut q = HashMap::new();
+        q.insert("value".to_string(), Value::Float(value));
+        q.insert("m".to_string(), Value::Int(units[0] as i64));   // meters
+        q.insert("kg".to_string(), Value::Int(units[1] as i64));  // kilograms
+        q.insert("s".to_string(), Value::Int(units[2] as i64));   // seconds
+        q.insert("A".to_string(), Value::Int(units[3] as i64));   // amperes
+        q.insert("K".to_string(), Value::Int(units[4] as i64));   // kelvin
+        q.insert("mol".to_string(), Value::Int(units[5] as i64)); // moles
+        q.insert("cd".to_string(), Value::Int(units[6] as i64));  // candela
+        q.insert("_type".to_string(), Value::String(Rc::new("quantity".to_string())));
+        Value::Map(Rc::new(RefCell::new(q)))
+    }
+
+    fn extract_quantity(v: &Value, fn_name: &str) -> Result<(f64, [i32; 7]), RuntimeError> {
+        match v {
+            Value::Map(map) => {
+                let map = map.borrow();
+                let value = match map.get("value") {
+                    Some(Value::Float(f)) => *f,
+                    Some(Value::Int(n)) => *n as f64,
+                    _ => return Err(RuntimeError::new(format!("{}: missing value", fn_name))),
+                };
+                let get_exp = |key: &str| -> i32 {
+                    match map.get(key) {
+                        Some(Value::Int(n)) => *n as i32,
+                        _ => 0,
+                    }
+                };
+                Ok((value, [
+                    get_exp("m"), get_exp("kg"), get_exp("s"),
+                    get_exp("A"), get_exp("K"), get_exp("mol"), get_exp("cd"),
+                ]))
+            }
+            Value::Float(f) => Ok((*f, [0; 7])),
+            Value::Int(n) => Ok((*n as f64, [0; 7])),
+            _ => Err(RuntimeError::new(format!("{}: expected quantity or number", fn_name))),
+        }
+    }
+
+    fn units_to_string(units: [i32; 7]) -> String {
+        let names = ["m", "kg", "s", "A", "K", "mol", "cd"];
+        let mut parts = Vec::new();
+        for (i, &exp) in units.iter().enumerate() {
+            if exp == 1 {
+                parts.push(names[i].to_string());
+            } else if exp != 0 {
+                parts.push(format!("{}^{}", names[i], exp));
+            }
+        }
+        if parts.is_empty() { "dimensionless".to_string() } else { parts.join("·") }
+    }
+
+    // qty(value, unit_string) - Create quantity with units
+    // e.g., qty(9.8, "m/s^2") for acceleration
+    define(interp, "qty", Some(2), |_, args| {
+        let value = match &args[0] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => return Err(RuntimeError::new("qty: first argument must be number")),
+        };
+        let unit_str = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("qty: second argument must be unit string")),
+        };
+
+        // Parse unit string
+        let mut units = [0i32; 7];
+        // Simplified: if '/' present, treat everything as denominator
+        // For proper parsing, would need to track position relative to '/'
+        let in_denominator = unit_str.contains('/');
+
+        // Simple parser for common units
+        for part in unit_str.split(|c: char| c == '*' || c == '·' || c == ' ') {
+            let part = part.trim();
+            if part.is_empty() { continue; }
+
+            let (base, exp) = if let Some(idx) = part.find('^') {
+                let (b, e) = part.split_at(idx);
+                (b, e[1..].parse::<i32>().unwrap_or(1))
+            } else if part.contains('/') {
+                // Handle division inline
+                continue;
+            } else {
+                (part, 1)
+            };
+
+            let sign = if in_denominator { -1 } else { 1 };
+            match base {
+                "m" | "meter" | "meters" => units[0] += exp * sign,
+                "kg" | "kilogram" | "kilograms" => units[1] += exp * sign,
+                "s" | "sec" | "second" | "seconds" => units[2] += exp * sign,
+                "A" | "amp" | "ampere" | "amperes" => units[3] += exp * sign,
+                "K" | "kelvin" => units[4] += exp * sign,
+                "mol" | "mole" | "moles" => units[5] += exp * sign,
+                "cd" | "candela" => units[6] += exp * sign,
+                // Derived units
+                "N" | "newton" | "newtons" => { units[1] += sign; units[0] += sign; units[2] -= 2 * sign; }
+                "J" | "joule" | "joules" => { units[1] += sign; units[0] += 2 * sign; units[2] -= 2 * sign; }
+                "W" | "watt" | "watts" => { units[1] += sign; units[0] += 2 * sign; units[2] -= 3 * sign; }
+                "Pa" | "pascal" | "pascals" => { units[1] += sign; units[0] -= sign; units[2] -= 2 * sign; }
+                "Hz" | "hertz" => { units[2] -= sign; }
+                "C" | "coulomb" | "coulombs" => { units[3] += sign; units[2] += sign; }
+                "V" | "volt" | "volts" => { units[1] += sign; units[0] += 2 * sign; units[2] -= 3 * sign; units[3] -= sign; }
+                "Ω" | "ohm" | "ohms" => { units[1] += sign; units[0] += 2 * sign; units[2] -= 3 * sign; units[3] -= 2 * sign; }
+                _ => {}
+            }
+        }
+
+        Ok(make_quantity(value, units))
+    });
+
+    // qty_add(a, b) - Add quantities (must have same units)
+    define(interp, "qty_add", Some(2), |_, args| {
+        let (val_a, units_a) = extract_quantity(&args[0], "qty_add")?;
+        let (val_b, units_b) = extract_quantity(&args[1], "qty_add")?;
+
+        if units_a != units_b {
+            return Err(RuntimeError::new(format!(
+                "qty_add: unit mismatch: {} vs {}",
+                units_to_string(units_a), units_to_string(units_b)
+            )));
+        }
+
+        Ok(make_quantity(val_a + val_b, units_a))
+    });
+
+    // qty_sub(a, b) - Subtract quantities (must have same units)
+    define(interp, "qty_sub", Some(2), |_, args| {
+        let (val_a, units_a) = extract_quantity(&args[0], "qty_sub")?;
+        let (val_b, units_b) = extract_quantity(&args[1], "qty_sub")?;
+
+        if units_a != units_b {
+            return Err(RuntimeError::new(format!(
+                "qty_sub: unit mismatch: {} vs {}",
+                units_to_string(units_a), units_to_string(units_b)
+            )));
+        }
+
+        Ok(make_quantity(val_a - val_b, units_a))
+    });
+
+    // qty_mul(a, b) - Multiply quantities (units add)
+    define(interp, "qty_mul", Some(2), |_, args| {
+        let (val_a, units_a) = extract_quantity(&args[0], "qty_mul")?;
+        let (val_b, units_b) = extract_quantity(&args[1], "qty_mul")?;
+
+        let mut result_units = [0i32; 7];
+        for i in 0..7 {
+            result_units[i] = units_a[i] + units_b[i];
+        }
+
+        Ok(make_quantity(val_a * val_b, result_units))
+    });
+
+    // qty_div(a, b) - Divide quantities (units subtract)
+    define(interp, "qty_div", Some(2), |_, args| {
+        let (val_a, units_a) = extract_quantity(&args[0], "qty_div")?;
+        let (val_b, units_b) = extract_quantity(&args[1], "qty_div")?;
+
+        if val_b.abs() < 1e-15 {
+            return Err(RuntimeError::new("qty_div: division by zero"));
+        }
+
+        let mut result_units = [0i32; 7];
+        for i in 0..7 {
+            result_units[i] = units_a[i] - units_b[i];
+        }
+
+        Ok(make_quantity(val_a / val_b, result_units))
+    });
+
+    // qty_pow(q, n) - Raise quantity to power (units multiply)
+    define(interp, "qty_pow", Some(2), |_, args| {
+        let (val, units) = extract_quantity(&args[0], "qty_pow")?;
+        let n = match &args[1] {
+            Value::Int(n) => *n as i32,
+            Value::Float(f) => *f as i32,
+            _ => return Err(RuntimeError::new("qty_pow: exponent must be number")),
+        };
+
+        let mut result_units = [0i32; 7];
+        for i in 0..7 {
+            result_units[i] = units[i] * n;
+        }
+
+        Ok(make_quantity(val.powi(n), result_units))
+    });
+
+    // qty_sqrt(q) - Square root of quantity (units halve)
+    define(interp, "qty_sqrt", Some(1), |_, args| {
+        let (val, units) = extract_quantity(&args[0], "qty_sqrt")?;
+
+        // Check that all exponents are even
+        for (i, &exp) in units.iter().enumerate() {
+            if exp % 2 != 0 {
+                let names = ["m", "kg", "s", "A", "K", "mol", "cd"];
+                return Err(RuntimeError::new(format!(
+                    "qty_sqrt: cannot take sqrt of {} (odd exponent on {})",
+                    units_to_string(units), names[i]
+                )));
+            }
+        }
+
+        let mut result_units = [0i32; 7];
+        for i in 0..7 {
+            result_units[i] = units[i] / 2;
+        }
+
+        Ok(make_quantity(val.sqrt(), result_units))
+    });
+
+    // qty_value(q) - Get numeric value of quantity
+    define(interp, "qty_value", Some(1), |_, args| {
+        let (val, _) = extract_quantity(&args[0], "qty_value")?;
+        Ok(Value::Float(val))
+    });
+
+    // qty_units(q) - Get units as string
+    define(interp, "qty_units", Some(1), |_, args| {
+        let (_, units) = extract_quantity(&args[0], "qty_units")?;
+        Ok(Value::String(Rc::new(units_to_string(units))))
+    });
+
+    // qty_convert(q, target_units) - Convert to different units
+    // Currently just validates compatible dimensions
+    define(interp, "qty_convert", Some(2), |_, args| {
+        let (val, units) = extract_quantity(&args[0], "qty_convert")?;
+        let _target = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("qty_convert: target must be unit string")),
+        };
+
+        // For now, just return with same value if dimensions match
+        // A full implementation would handle unit prefixes (kilo, milli, etc.)
+        Ok(make_quantity(val, units))
+    });
+
+    // qty_check(q, expected_units) - Check if quantity has expected dimensions
+    define(interp, "qty_check", Some(2), |_, args| {
+        let (_, units) = extract_quantity(&args[0], "qty_check")?;
+        let expected = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("qty_check: expected string")),
+        };
+
+        // Quick dimension check by comparing unit string patterns
+        let actual_str = units_to_string(units);
+        Ok(Value::Bool(actual_str.contains(&expected) || expected.contains(&actual_str)))
+    });
+
+    // Common physical constants with units
+    // c - speed of light
+    define(interp, "c_light", Some(0), |_, _| {
+        Ok(make_quantity(299792458.0, [1, 0, -1, 0, 0, 0, 0])) // m/s
+    });
+
+    // G - gravitational constant
+    define(interp, "G_gravity", Some(0), |_, _| {
+        Ok(make_quantity(6.67430e-11, [3, -1, -2, 0, 0, 0, 0])) // m³/(kg·s²)
+    });
+
+    // h - Planck constant
+    define(interp, "h_planck", Some(0), |_, _| {
+        Ok(make_quantity(6.62607015e-34, [2, 1, -1, 0, 0, 0, 0])) // J·s = m²·kg/s
+    });
+
+    // e - elementary charge
+    define(interp, "e_charge", Some(0), |_, _| {
+        Ok(make_quantity(1.602176634e-19, [0, 0, 1, 1, 0, 0, 0])) // C = A·s
+    });
+
+    // k_B - Boltzmann constant
+    define(interp, "k_boltzmann", Some(0), |_, _| {
+        Ok(make_quantity(1.380649e-23, [2, 1, -2, 0, -1, 0, 0])) // J/K = m²·kg/(s²·K)
+    });
+}
+
+// ============================================================================
+// ENTITY COMPONENT SYSTEM (ECS)
+// ============================================================================
+// Game engine patterns: World, Entity, Component, Query
+// Ideal for high-performance game logic and simulations
+
+fn register_ecs(interp: &mut Interpreter) {
+    // ecs_world() - Create new ECS world
+    define(interp, "ecs_world", Some(0), |_, _| {
+        let mut world = HashMap::new();
+        world.insert("_type".to_string(), Value::String(Rc::new("ecs_world".to_string())));
+        world.insert("next_id".to_string(), Value::Int(0));
+        world.insert("entities".to_string(), Value::Map(Rc::new(RefCell::new(HashMap::new()))));
+        world.insert("components".to_string(), Value::Map(Rc::new(RefCell::new(HashMap::new()))));
+        Ok(Value::Map(Rc::new(RefCell::new(world))))
+    });
+
+    // ecs_spawn(world) - Spawn new entity, returns entity ID
+    define(interp, "ecs_spawn", Some(1), |_, args| {
+        let world = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("ecs_spawn: expected world")),
+        };
+
+        let mut world_ref = world.borrow_mut();
+        let id = match world_ref.get("next_id") {
+            Some(Value::Int(n)) => *n,
+            _ => 0,
+        };
+
+        // Increment next_id
+        world_ref.insert("next_id".to_string(), Value::Int(id + 1));
+
+        // Add to entities set
+        if let Some(Value::Map(entities)) = world_ref.get("entities") {
+            entities.borrow_mut().insert(id.to_string(), Value::Bool(true));
+        }
+
+        Ok(Value::Int(id))
+    });
+
+    // ecs_despawn(world, entity_id) - Remove entity and all its components
+    define(interp, "ecs_despawn", Some(2), |_, args| {
+        let world = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("ecs_despawn: expected world")),
+        };
+        let id = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("ecs_despawn: expected entity id")),
+        };
+
+        let world_ref = world.borrow();
+
+        // Remove from entities
+        if let Some(Value::Map(entities)) = world_ref.get("entities") {
+            entities.borrow_mut().remove(&id.to_string());
+        }
+
+        // Remove all components for this entity
+        if let Some(Value::Map(components)) = world_ref.get("components") {
+            let comps = components.borrow();
+            for (_, comp_storage) in comps.iter() {
+                if let Value::Map(storage) = comp_storage {
+                    storage.borrow_mut().remove(&id.to_string());
+                }
+            }
+        }
+
+        Ok(Value::Bool(true))
+    });
+
+    // ecs_attach(world, entity_id, component_name, data) - Add component to entity
+    define(interp, "ecs_attach", Some(4), |_, args| {
+        let world = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("ecs_attach: expected world")),
+        };
+        let id = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("ecs_attach: expected entity id")),
+        };
+        let comp_name = match &args[2] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("ecs_attach: expected component name")),
+        };
+        let data = args[3].clone();
+
+        let world_ref = world.borrow();
+
+        // Get or create component storage
+        if let Some(Value::Map(components)) = world_ref.get("components") {
+            let mut comps = components.borrow_mut();
+
+            let storage = comps.entry(comp_name.clone())
+                .or_insert_with(|| Value::Map(Rc::new(RefCell::new(HashMap::new()))));
+
+            if let Value::Map(storage_map) = storage {
+                storage_map.borrow_mut().insert(id.to_string(), data);
+            }
+        }
+
+        Ok(Value::Bool(true))
+    });
+
+    // ecs_get(world, entity_id, component_name) - Get component data
+    define(interp, "ecs_get", Some(3), |_, args| {
+        let world = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("ecs_get: expected world")),
+        };
+        let id = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("ecs_get: expected entity id")),
+        };
+        let comp_name = match &args[2] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("ecs_get: expected component name")),
+        };
+
+        let world_ref = world.borrow();
+
+        if let Some(Value::Map(components)) = world_ref.get("components") {
+            let comps = components.borrow();
+            if let Some(Value::Map(storage)) = comps.get(&comp_name) {
+                if let Some(data) = storage.borrow().get(&id.to_string()) {
+                    return Ok(data.clone());
+                }
+            }
+        }
+
+        Ok(Value::Null)
+    });
+
+    // ecs_has(world, entity_id, component_name) - Check if entity has component
+    define(interp, "ecs_has", Some(3), |_, args| {
+        let world = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("ecs_has: expected world")),
+        };
+        let id = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("ecs_has: expected entity id")),
+        };
+        let comp_name = match &args[2] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("ecs_has: expected component name")),
+        };
+
+        let world_ref = world.borrow();
+
+        if let Some(Value::Map(components)) = world_ref.get("components") {
+            let comps = components.borrow();
+            if let Some(Value::Map(storage)) = comps.get(&comp_name) {
+                return Ok(Value::Bool(storage.borrow().contains_key(&id.to_string())));
+            }
+        }
+
+        Ok(Value::Bool(false))
+    });
+
+    // ecs_remove(world, entity_id, component_name) - Remove component from entity
+    define(interp, "ecs_remove", Some(3), |_, args| {
+        let world = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("ecs_remove: expected world")),
+        };
+        let id = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("ecs_remove: expected entity id")),
+        };
+        let comp_name = match &args[2] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("ecs_remove: expected component name")),
+        };
+
+        let world_ref = world.borrow();
+
+        if let Some(Value::Map(components)) = world_ref.get("components") {
+            let comps = components.borrow();
+            if let Some(Value::Map(storage)) = comps.get(&comp_name) {
+                storage.borrow_mut().remove(&id.to_string());
+                return Ok(Value::Bool(true));
+            }
+        }
+
+        Ok(Value::Bool(false))
+    });
+
+    // ecs_query(world, component_names...) - Get all entities with all specified components
+    // Returns array of entity IDs
+    define(interp, "ecs_query", None, |_, args| {
+        if args.is_empty() {
+            return Err(RuntimeError::new("ecs_query: expected at least world argument"));
+        }
+
+        let world = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("ecs_query: expected world")),
+        };
+
+        let comp_names: Vec<String> = args[1..].iter()
+            .filter_map(|a| match a {
+                Value::String(s) => Some(s.to_string()),
+                _ => None,
+            })
+            .collect();
+
+        if comp_names.is_empty() {
+            // Return all entities
+            let world_ref = world.borrow();
+            if let Some(Value::Map(entities)) = world_ref.get("entities") {
+                let result: Vec<Value> = entities.borrow().keys()
+                    .filter_map(|k| k.parse::<i64>().ok().map(Value::Int))
+                    .collect();
+                return Ok(Value::Array(Rc::new(RefCell::new(result))));
+            }
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+        }
+
+        let world_ref = world.borrow();
+        let mut result_ids: Option<Vec<String>> = None;
+
+        if let Some(Value::Map(components)) = world_ref.get("components") {
+            let comps = components.borrow();
+
+            for comp_name in &comp_names {
+                if let Some(Value::Map(storage)) = comps.get(comp_name) {
+                    let keys: Vec<String> = storage.borrow().keys().cloned().collect();
+
+                    result_ids = Some(match result_ids {
+                        None => keys,
+                        Some(existing) => existing.into_iter()
+                            .filter(|k| keys.contains(k))
+                            .collect(),
+                    });
+                } else {
+                    // Component type doesn't exist, no entities match
+                    return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                }
+            }
+        }
+
+        let result: Vec<Value> = result_ids.unwrap_or_default()
+            .iter()
+            .filter_map(|k| k.parse::<i64>().ok().map(Value::Int))
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // ecs_query_with(world, component_names, callback) - Iterate over matching entities
+    // Callback receives (entity_id, components_map)
+    define(interp, "ecs_query_with", Some(3), |interp, args| {
+        let world = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("ecs_query_with: expected world")),
+        };
+        let comp_names: Vec<String> = match &args[1] {
+            Value::Array(arr) => arr.borrow().iter()
+                .filter_map(|v| match v {
+                    Value::String(s) => Some(s.to_string()),
+                    _ => None,
+                })
+                .collect(),
+            _ => return Err(RuntimeError::new("ecs_query_with: expected array of component names")),
+        };
+        let callback = match &args[2] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("ecs_query_with: expected callback function")),
+        };
+
+        // Pre-collect all data to avoid borrow issues during callbacks
+        let mut callback_data: Vec<(i64, HashMap<String, Value>)> = Vec::new();
+
+        {
+            let world_ref = world.borrow();
+            let mut result_ids: Option<Vec<String>> = None;
+
+            if let Some(Value::Map(components)) = world_ref.get("components") {
+                let comps = components.borrow();
+
+                for comp_name in &comp_names {
+                    if let Some(Value::Map(storage)) = comps.get(comp_name) {
+                        let keys: Vec<String> = storage.borrow().keys().cloned().collect();
+                        result_ids = Some(match result_ids {
+                            None => keys,
+                            Some(existing) => existing.into_iter()
+                                .filter(|k| keys.contains(k))
+                                .collect(),
+                        });
+                    } else {
+                        result_ids = Some(vec![]);
+                        break;
+                    }
+                }
+
+                // Collect data for each matching entity
+                for id_str in result_ids.unwrap_or_default() {
+                    if let Ok(id) = id_str.parse::<i64>() {
+                        let mut entity_comps = HashMap::new();
+                        for comp_name in &comp_names {
+                            if let Some(Value::Map(storage)) = comps.get(comp_name) {
+                                if let Some(data) = storage.borrow().get(&id_str) {
+                                    entity_comps.insert(comp_name.clone(), data.clone());
+                                }
+                            }
+                        }
+                        callback_data.push((id, entity_comps));
+                    }
+                }
+            }
+        } // Release borrows here
+
+        // Now call callbacks without holding borrows
+        for (id, entity_comps) in callback_data {
+            let callback_args = vec![
+                Value::Int(id),
+                Value::Map(Rc::new(RefCell::new(entity_comps))),
+            ];
+            interp.call_function(&callback, callback_args)?;
+        }
+
+        Ok(Value::Null)
+    });
+
+    // ecs_count(world) - Count total entities
+    define(interp, "ecs_count", Some(1), |_, args| {
+        let world = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("ecs_count: expected world")),
+        };
+
+        let world_ref = world.borrow();
+        if let Some(Value::Map(entities)) = world_ref.get("entities") {
+            return Ok(Value::Int(entities.borrow().len() as i64));
+        }
+
+        Ok(Value::Int(0))
+    });
+
+    // ecs_alive(world, entity_id) - Check if entity is alive
+    define(interp, "ecs_alive", Some(2), |_, args| {
+        let world = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("ecs_alive: expected world")),
+        };
+        let id = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("ecs_alive: expected entity id")),
+        };
+
+        let world_ref = world.borrow();
+        if let Some(Value::Map(entities)) = world_ref.get("entities") {
+            return Ok(Value::Bool(entities.borrow().contains_key(&id.to_string())));
+        }
+
+        Ok(Value::Bool(false))
     });
 }
 
