@@ -3,8 +3,14 @@ name = "sigil-parser"
 version = "0.1.0"
 edition = "2021"
 description = "Parser and native compiler for the Sigil programming language"
-authors = ["Daemoniorum, Inc."]
-license = "MIT"
+authors = ["Lilith Crook <lilith@daemoniorum.com>"]
+license = "SEE LICENSE IN LICENSE"
+repository = "https://github.com/Daemoniorum-LLC/sigil-lang"
+homepage = "https://www.daemoniorum.com"
+documentation = "https://github.com/Daemoniorum-LLC/sigil-lang/tree/main/docs"
+readme = "../README.md"
+keywords = ["parser", "compiler", "programming-language", "jit", "ai"]
+categories = ["compilers", "development-tools"]
 
 [features]
 default = ["jit"]
