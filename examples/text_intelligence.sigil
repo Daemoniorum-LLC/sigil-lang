@@ -1,0 +1,251 @@
+//! Text Intelligence in Sigil
+//!
+//! AI-native text analysis for the modern AI-first language.
+//! Features: similarity metrics, phonetic encoding, language detection,
+//! LLM token counting, stemming, stopwords, n-grams, and sentiment analysis.
+
+fn main() {
+    println("=== Sigil Text Intelligence Demo ===")
+    println("")
+
+    // =========================================================================
+    // STRING SIMILARITY METRICS
+    // =========================================================================
+    println("--- String Similarity ---")
+
+    let str1 = "kitten"
+    let str2 = "sitting"
+
+    println("Comparing: '" + str1 + "' vs '" + str2 + "'")
+    println("  Levenshtein distance: " + to_string(levenshtein(str1, str2)))
+    println("  Normalized Levenshtein: " + to_string(levenshtein_normalized(str1, str2)))
+    println("  Jaro similarity: " + to_string(jaro(str1, str2)))
+    println("  Jaro-Winkler: " + to_string(jaro_winkler(str1, str2)))
+    println("  Sørensen-Dice: " + to_string(sorensen_dice(str1, str2)))
+    println("  Damerau-Levenshtein: " + to_string(damerau_levenshtein(str1, str2)))
+
+    println("")
+
+    // Fuzzy matching
+    let query = "hello"
+    let candidates = ["hallo", "hello", "hullo", "help", "helicopter", "goodbye"]
+    println("Fuzzy search for '" + query + "' in candidates:")
+    let matches = fuzzy_search(query, candidates, 3)
+    println("  Top 3 matches: " + to_string(matches))
+    println("  fuzzy_match('hello', 'helo', 0.8): " + to_string(fuzzy_match("hello", "helo", 0.8)))
+
+    println("")
+
+    // =========================================================================
+    // PHONETIC ENCODING
+    // =========================================================================
+    println("--- Phonetic Encoding ---")
+
+    let names = ["Smith", "Smyth", "Schmidt", "Robert", "Rupert"]
+    for name in names {
+        println("'" + name + "':")
+        println("  Soundex: " + soundex(name))
+        println("  Metaphone: " + metaphone(name))
+    }
+
+    println("")
+    println("Phonetic matching:")
+    println("  soundex_match('Smith', 'Smyth'): " + to_string(soundex_match("Smith", "Smyth")))
+    println("  metaphone_match('Smith', 'Schmidt'): " + to_string(metaphone_match("Smith", "Schmidt")))
+
+    // German phonetic encoding
+    println("")
+    println("Cologne phonetic (German):")
+    println("  'Müller': " + cologne_phonetic("Muller"))
+    println("  'Meyer': " + cologne_phonetic("Meyer"))
+
+    println("")
+
+    // =========================================================================
+    // LANGUAGE DETECTION
+    // =========================================================================
+    println("--- Language Detection ---")
+
+    let texts = [
+        "Hello, how are you today?",
+        "Bonjour, comment allez-vous?",
+        "Hola, como estas?",
+        "Guten Tag, wie geht es Ihnen?",
+        "Ciao, come stai?",
+        "Привет, как дела?",
+    ]
+
+    for text in texts {
+        let lang = detect_language(text)
+        println("'" + text + "' → " + lang)
+    }
+
+    println("")
+    let confidence = detect_language_confidence("This is definitely English text.")
+    println("Confidence detection: " + to_string(confidence))
+
+    println("")
+
+    // =========================================================================
+    // LLM TOKEN COUNTING
+    // =========================================================================
+    println("--- LLM Token Counting ---")
+
+    let prompt = "What is the capital of France? Please provide a detailed answer."
+    println("Text: '" + prompt + "'")
+    println("  Token count (cl100k/GPT-4): " + to_string(token_count(prompt)))
+    println("  Token count (p50k/GPT-3): " + to_string(token_count_model(prompt, "gpt3")))
+
+    // Token IDs
+    let short_text = "Hello world"
+    println("")
+    println("Token IDs for '" + short_text + "': " + to_string(tokenize_ids(short_text)))
+
+    // Truncation
+    let long_text = "This is a longer piece of text that we want to truncate to a specific number of tokens for API calls."
+    println("")
+    println("Original: '" + long_text + "'")
+    println("Truncated to 10 tokens: '" + truncate_tokens(long_text, 10) + "'")
+
+    // Cost estimation
+    let cost = estimate_cost(prompt, 0.01, 0.03)  // $0.01/1K input, $0.03/1K output
+    println("")
+    println("Cost estimation for prompt:")
+    println("  Tokens: " + to_string(cost["tokens"]))
+    println("  Est. input cost: $" + to_string(cost["input_cost"]))
+
+    println("")
+
+    // =========================================================================
+    // STEMMING
+    // =========================================================================
+    println("--- Stemming ---")
+
+    let words = ["running", "runs", "ran", "runner", "connection", "connected", "connecting"]
+    println("English stems:")
+    for word in words {
+        println("  '" + word + "' → '" + stem(word) + "'")
+    }
+
+    println("")
+    println("Multi-language stemming:")
+    println("  French 'manger': " + stem_language("manger", "fr"))
+    println("  German 'laufen': " + stem_language("laufen", "de"))
+    println("  Spanish 'correr': " + stem_language("correr", "es"))
+
+    println("")
+
+    // =========================================================================
+    // STOPWORDS
+    // =========================================================================
+    println("--- Stopwords ---")
+
+    let sentence = "The quick brown fox jumps over the lazy dog"
+    println("Original: '" + sentence + "'")
+    println("Without stopwords: '" + remove_stopwords_text(sentence) + "'")
+
+    println("")
+    println("is_stopword('the'): " + to_string(is_stopword("the")))
+    println("is_stopword('fox'): " + to_string(is_stopword("fox")))
+
+    println("")
+
+    // =========================================================================
+    // N-GRAMS AND SHINGLES
+    // =========================================================================
+    println("--- N-grams and Shingles ---")
+
+    let text = "the quick brown fox jumps"
+    println("Text: '" + text + "'")
+    println("  Word bigrams: " + to_string(ngrams(text, 2)))
+    println("  Word trigrams: " + to_string(ngrams(text, 3)))
+    println("  Char trigrams of 'hello': " + to_string(char_ngrams("hello", 3)))
+
+    println("")
+
+    // Jaccard similarity
+    let doc1 = "the quick brown fox"
+    let doc2 = "the quick brown dog"
+    let shingles1 = shingles(doc1, 2)
+    let shingles2 = shingles(doc2, 2)
+    println("Document similarity via shingles:")
+    println("  Doc1 shingles: " + to_string(shingles1))
+    println("  Doc2 shingles: " + to_string(shingles2))
+    println("  Jaccard similarity: " + to_string(jaccard_similarity(shingles1, shingles2)))
+
+    println("")
+
+    // MinHash signature for LSH
+    let sig = minhash_signature(shingles1, 5)
+    println("MinHash signature (5 hashes): " + to_string(sig))
+
+    println("")
+
+    // =========================================================================
+    // TEXT PREPROCESSING
+    // =========================================================================
+    println("--- Text Preprocessing ---")
+
+    let messy = "  Hello, World!!! How ARE you???  "
+    println("Original: '" + messy + "'")
+    println("Preprocessed: '" + preprocess_text(messy) + "'")
+
+    println("")
+    println("Tokenized words: " + to_string(tokenize_words("Hello beautiful world")))
+    println("Keywords extracted: " + to_string(extract_keywords("The quick brown fox jumps over the lazy dog")))
+
+    // Word frequency
+    let freq = word_frequency("the cat sat on the mat the cat was happy")
+    println("Word frequencies: " + to_string(freq))
+
+    println("")
+
+    // =========================================================================
+    // AFFECTIVE MARKERS (Emotional Intelligence)
+    // =========================================================================
+    println("--- Affective Analysis ---")
+
+    let positive_text = "This is amazing! I love it, absolutely wonderful and fantastic!"
+    let negative_text = "This is terrible, I hate it. Awful and disappointing experience."
+    let neutral_text = "The meeting is scheduled for tomorrow at 3pm."
+
+    println("Sentiment analysis:")
+    println("")
+    println("Positive text: '" + positive_text + "'")
+    let pos_sentiment = sentiment_words(positive_text)
+    println("  Score: " + to_string(pos_sentiment["score"]))
+    println("  Positive words: " + to_string(pos_sentiment["positive"]))
+    println("  Negative words: " + to_string(pos_sentiment["negative"]))
+
+    println("")
+    println("Negative text: '" + negative_text + "'")
+    let neg_sentiment = sentiment_words(negative_text)
+    println("  Score: " + to_string(neg_sentiment["score"]))
+
+    println("")
+    println("Neutral text: '" + neutral_text + "'")
+    let neut_sentiment = sentiment_words(neutral_text)
+    println("  Score: " + to_string(neut_sentiment["score"]))
+
+    println("")
+    println("Question detection:")
+    println("  has_question('How are you?'): " + to_string(has_question("How are you?")))
+    println("  has_question('I am fine.'): " + to_string(has_question("I am fine.")))
+    println("  has_question('What time'): " + to_string(has_question("What time")))
+
+    println("")
+    println("Exclamation detection:")
+    println("  has_exclamation('Wow!'): " + to_string(has_exclamation("Wow!")))
+    println("  has_exclamation('okay'): " + to_string(has_exclamation("okay")))
+
+    println("")
+    println("Formality estimation (0=informal, 1=formal):")
+    println("  'gonna wanna lol': " + to_string(text_formality("gonna wanna lol")))
+    println("  'furthermore, moreover': " + to_string(text_formality("therefore furthermore moreover")))
+    println("  'hello world': " + to_string(text_formality("hello world")))
+
+    println("")
+    println("=== Text Intelligence Demo Complete ===")
+
+    return 0
+}

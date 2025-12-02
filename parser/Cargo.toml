@@ -25,11 +25,16 @@ rustyline = { version = "14.0", features = ["derive"] }
 
 # Rich error reporting
 ariadne = "0.4"
-strsim = "0.11"  # For "did you mean?" suggestions
+strsim = "0.11"  # String similarity (Levenshtein, Jaro-Winkler, etc.)
 
 # JSON output for AI agents
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+# Text intelligence
+whatlang = "0.16"            # Language detection
+rust-stemmers = "1.2"        # Stemming (Porter, Snowball)
+tiktoken-rs = "0.5"          # OpenAI tokenizer for LLM token counting
 
 # Crypto and encoding
 sha2 = "0.10"

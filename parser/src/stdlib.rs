@@ -32,6 +32,15 @@
 //!   - Transliteration to ASCII
 //!   - Emoji handling
 //!   - Diacritic manipulation
+//! - **text_intelligence**: AI-native text analysis
+//!   - String similarity (Levenshtein, Jaro-Winkler, Sørensen-Dice)
+//!   - Phonetic encoding (Soundex, Metaphone, Cologne)
+//!   - Language detection with confidence scores
+//!   - LLM token counting (OpenAI, Claude-compatible)
+//!   - Stemming (Porter, Snowball for 15+ languages)
+//!   - Stopword filtering
+//!   - N-grams and shingles for similarity
+//!   - Fuzzy matching utilities
 
 use crate::interpreter::{Interpreter, Value, Evidence, RuntimeError, BuiltInFn, ChannelInner, ActorInner};
 use std::rc::Rc;
@@ -61,6 +70,11 @@ use icu_locid::{Locale, LanguageIdentifier};
 use icu_casemap::CaseMapper;
 use icu_casemap::titlecase::TitlecaseOptions;
 use icu_segmenter::{SentenceSegmenter, WordSegmenter};
+
+// Text intelligence
+use whatlang::{detect, Lang, Script as WhatLangScript};
+use rust_stemmers::{Algorithm as StemAlgorithm, Stemmer};
+use tiktoken_rs::{cl100k_base, p50k_base, r50k_base};
 
 /// Register all standard library functions
 pub fn register_stdlib(interp: &mut Interpreter) {
@@ -110,6 +124,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_ecs(interp);
     // Phase 10: Polycultural text processing
     register_polycultural_text(interp);
+    // Phase 11: Text intelligence (AI-native)
+    register_text_intelligence(interp);
 }
 
 // Helper to define a builtin
@@ -11793,6 +11809,1219 @@ fn register_polycultural_text(interp: &mut Interpreter) {
             .collect();
         Ok(Value::Array(Rc::new(RefCell::new(values))))
     });
+}
+
+// =============================================================================
+// TEXT INTELLIGENCE MODULE - AI-Native Text Analysis
+// =============================================================================
+
+fn register_text_intelligence(interp: &mut Interpreter) {
+    // =========================================================================
+    // STRING SIMILARITY METRICS
+    // =========================================================================
+
+    // levenshtein - edit distance between strings
+    define(interp, "levenshtein", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let distance = strsim::levenshtein(a, b);
+                Ok(Value::Int(distance as i64))
+            }
+            _ => Err(RuntimeError::new("levenshtein() requires two strings")),
+        }
+    });
+
+    // levenshtein_normalized - normalized edit distance (0.0 to 1.0)
+    define(interp, "levenshtein_normalized", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let distance = strsim::normalized_levenshtein(a, b);
+                Ok(Value::Float(distance))
+            }
+            _ => Err(RuntimeError::new("levenshtein_normalized() requires two strings")),
+        }
+    });
+
+    // jaro - Jaro similarity (0.0 to 1.0)
+    define(interp, "jaro", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let sim = strsim::jaro(a, b);
+                Ok(Value::Float(sim))
+            }
+            _ => Err(RuntimeError::new("jaro() requires two strings")),
+        }
+    });
+
+    // jaro_winkler - Jaro-Winkler similarity (0.0 to 1.0, favors common prefixes)
+    define(interp, "jaro_winkler", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let sim = strsim::jaro_winkler(a, b);
+                Ok(Value::Float(sim))
+            }
+            _ => Err(RuntimeError::new("jaro_winkler() requires two strings")),
+        }
+    });
+
+    // sorensen_dice - Sørensen-Dice coefficient (0.0 to 1.0)
+    define(interp, "sorensen_dice", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let sim = strsim::sorensen_dice(a, b);
+                Ok(Value::Float(sim))
+            }
+            _ => Err(RuntimeError::new("sorensen_dice() requires two strings")),
+        }
+    });
+
+    // damerau_levenshtein - edit distance with transpositions
+    define(interp, "damerau_levenshtein", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let distance = strsim::damerau_levenshtein(a, b);
+                Ok(Value::Int(distance as i64))
+            }
+            _ => Err(RuntimeError::new("damerau_levenshtein() requires two strings")),
+        }
+    });
+
+    // osa_distance - Optimal String Alignment distance
+    define(interp, "osa_distance", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let distance = strsim::osa_distance(a, b);
+                Ok(Value::Int(distance as i64))
+            }
+            _ => Err(RuntimeError::new("osa_distance() requires two strings")),
+        }
+    });
+
+    // fuzzy_match - check if strings are similar above threshold
+    define(interp, "fuzzy_match", Some(3), |_, args| {
+        match (&args[0], &args[1], &args[2]) {
+            (Value::String(a), Value::String(b), Value::Float(threshold)) => {
+                let sim = strsim::jaro_winkler(a, b);
+                Ok(Value::Bool(sim >= *threshold))
+            }
+            (Value::String(a), Value::String(b), Value::Int(threshold)) => {
+                let sim = strsim::jaro_winkler(a, b);
+                Ok(Value::Bool(sim >= *threshold as f64))
+            }
+            _ => Err(RuntimeError::new("fuzzy_match() requires two strings and threshold")),
+        }
+    });
+
+    // fuzzy_search - find best matches in array
+    define(interp, "fuzzy_search", Some(3), |_, args| {
+        match (&args[0], &args[1], &args[2]) {
+            (Value::String(query), Value::Array(items), Value::Int(limit)) => {
+                let items_ref = items.borrow();
+                let mut scores: Vec<(f64, &str)> = items_ref.iter()
+                    .filter_map(|v| {
+                        if let Value::String(s) = v {
+                            Some((strsim::jaro_winkler(query, s), s.as_str()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                scores.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+                let results: Vec<Value> = scores.into_iter()
+                    .take(*limit as usize)
+                    .map(|(_, s)| Value::String(Rc::new(s.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(results))))
+            }
+            _ => Err(RuntimeError::new("fuzzy_search() requires query string, array, and limit")),
+        }
+    });
+
+    // =========================================================================
+    // PHONETIC ENCODING
+    // =========================================================================
+
+    // soundex - American Soundex encoding
+    define(interp, "soundex", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let code = compute_soundex(s);
+                Ok(Value::String(Rc::new(code)))
+            }
+            _ => Err(RuntimeError::new("soundex() requires string")),
+        }
+    });
+
+    // soundex_match - check if two strings have same Soundex code
+    define(interp, "soundex_match", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let code_a = compute_soundex(a);
+                let code_b = compute_soundex(b);
+                Ok(Value::Bool(code_a == code_b))
+            }
+            _ => Err(RuntimeError::new("soundex_match() requires two strings")),
+        }
+    });
+
+    // metaphone - Metaphone encoding (better for English)
+    define(interp, "metaphone", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let code = compute_metaphone(s);
+                Ok(Value::String(Rc::new(code)))
+            }
+            _ => Err(RuntimeError::new("metaphone() requires string")),
+        }
+    });
+
+    // metaphone_match - check if two strings have same Metaphone code
+    define(interp, "metaphone_match", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let code_a = compute_metaphone(a);
+                let code_b = compute_metaphone(b);
+                Ok(Value::Bool(code_a == code_b))
+            }
+            _ => Err(RuntimeError::new("metaphone_match() requires two strings")),
+        }
+    });
+
+    // cologne_phonetic - Cologne phonetic encoding (for German)
+    define(interp, "cologne_phonetic", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let code = compute_cologne(s);
+                Ok(Value::String(Rc::new(code)))
+            }
+            _ => Err(RuntimeError::new("cologne_phonetic() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // LANGUAGE DETECTION
+    // =========================================================================
+
+    // detect_language - detect the language of text
+    define(interp, "detect_language", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                if let Some(info) = detect(s) {
+                    let lang_code = match info.lang() {
+                        Lang::Eng => "en",
+                        Lang::Spa => "es",
+                        Lang::Fra => "fr",
+                        Lang::Deu => "de",
+                        Lang::Ita => "it",
+                        Lang::Por => "pt",
+                        Lang::Rus => "ru",
+                        Lang::Ara => "ar",
+                        Lang::Hin => "hi",
+                        Lang::Cmn => "zh",
+                        Lang::Jpn => "ja",
+                        Lang::Kor => "ko",
+                        Lang::Nld => "nl",
+                        Lang::Swe => "sv",
+                        Lang::Tur => "tr",
+                        Lang::Pol => "pl",
+                        Lang::Ukr => "uk",
+                        Lang::Ces => "cs",
+                        Lang::Dan => "da",
+                        Lang::Fin => "fi",
+                        Lang::Ell => "el",
+                        Lang::Heb => "he",
+                        Lang::Hun => "hu",
+                        Lang::Ind => "id",
+                        Lang::Nob => "no",
+                        Lang::Ron => "ro",
+                        Lang::Slk => "sk",
+                        Lang::Tha => "th",
+                        Lang::Vie => "vi",
+                        _ => "unknown",
+                    };
+                    Ok(Value::String(Rc::new(lang_code.to_string())))
+                } else {
+                    Ok(Value::String(Rc::new("unknown".to_string())))
+                }
+            }
+            _ => Err(RuntimeError::new("detect_language() requires string")),
+        }
+    });
+
+    // detect_language_confidence - detect language with confidence score
+    define(interp, "detect_language_confidence", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                if let Some(info) = detect(s) {
+                    let lang_code = match info.lang() {
+                        Lang::Eng => "en",
+                        Lang::Spa => "es",
+                        Lang::Fra => "fr",
+                        Lang::Deu => "de",
+                        Lang::Ita => "it",
+                        Lang::Por => "pt",
+                        Lang::Rus => "ru",
+                        Lang::Ara => "ar",
+                        Lang::Cmn => "zh",
+                        Lang::Jpn => "ja",
+                        _ => "unknown",
+                    };
+                    let confidence = info.confidence();
+                    let mut map = HashMap::new();
+                    map.insert(
+                        "lang".to_string(),
+                        Value::String(Rc::new(lang_code.to_string())),
+                    );
+                    map.insert("confidence".to_string(), Value::Float(confidence as f64));
+                    Ok(Value::Map(Rc::new(RefCell::new(map))))
+                } else {
+                    let mut map = HashMap::new();
+                    map.insert(
+                        "lang".to_string(),
+                        Value::String(Rc::new("unknown".to_string())),
+                    );
+                    map.insert("confidence".to_string(), Value::Float(0.0));
+                    Ok(Value::Map(Rc::new(RefCell::new(map))))
+                }
+            }
+            _ => Err(RuntimeError::new("detect_language_confidence() requires string")),
+        }
+    });
+
+    // detect_script - detect the script of text using whatlang
+    define(interp, "detect_script_whatlang", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                if let Some(info) = detect(s) {
+                    let script_name = match info.script() {
+                        WhatLangScript::Latin => "Latin",
+                        WhatLangScript::Cyrillic => "Cyrillic",
+                        WhatLangScript::Arabic => "Arabic",
+                        WhatLangScript::Devanagari => "Devanagari",
+                        WhatLangScript::Ethiopic => "Ethiopic",
+                        WhatLangScript::Georgian => "Georgian",
+                        WhatLangScript::Greek => "Greek",
+                        WhatLangScript::Gujarati => "Gujarati",
+                        WhatLangScript::Gurmukhi => "Gurmukhi",
+                        WhatLangScript::Hangul => "Hangul",
+                        WhatLangScript::Hebrew => "Hebrew",
+                        WhatLangScript::Hiragana => "Hiragana",
+                        WhatLangScript::Kannada => "Kannada",
+                        WhatLangScript::Katakana => "Katakana",
+                        WhatLangScript::Khmer => "Khmer",
+                        WhatLangScript::Malayalam => "Malayalam",
+                        WhatLangScript::Mandarin => "Mandarin",
+                        WhatLangScript::Myanmar => "Myanmar",
+                        WhatLangScript::Oriya => "Oriya",
+                        WhatLangScript::Sinhala => "Sinhala",
+                        WhatLangScript::Tamil => "Tamil",
+                        WhatLangScript::Telugu => "Telugu",
+                        WhatLangScript::Thai => "Thai",
+                        WhatLangScript::Bengali => "Bengali",
+                        WhatLangScript::Armenian => "Armenian",
+                    };
+                    Ok(Value::String(Rc::new(script_name.to_string())))
+                } else {
+                    Ok(Value::String(Rc::new("Unknown".to_string())))
+                }
+            }
+            _ => Err(RuntimeError::new("detect_script_whatlang() requires string")),
+        }
+    });
+
+    // is_language - check if text is in a specific language
+    define(interp, "is_language", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(lang)) => {
+                if let Some(info) = detect(s) {
+                    let detected = match info.lang() {
+                        Lang::Eng => "en",
+                        Lang::Spa => "es",
+                        Lang::Fra => "fr",
+                        Lang::Deu => "de",
+                        Lang::Ita => "it",
+                        Lang::Por => "pt",
+                        Lang::Rus => "ru",
+                        _ => "unknown",
+                    };
+                    Ok(Value::Bool(detected == lang.as_str()))
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            }
+            _ => Err(RuntimeError::new("is_language() requires string and language code")),
+        }
+    });
+
+    // =========================================================================
+    // LLM TOKEN COUNTING
+    // =========================================================================
+
+    // token_count - count tokens using cl100k_base (GPT-4, Claude compatible)
+    define(interp, "token_count", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                if let Ok(bpe) = cl100k_base() {
+                    let tokens = bpe.encode_with_special_tokens(s);
+                    Ok(Value::Int(tokens.len() as i64))
+                } else {
+                    Err(RuntimeError::new("Failed to initialize tokenizer"))
+                }
+            }
+            _ => Err(RuntimeError::new("token_count() requires string")),
+        }
+    });
+
+    // token_count_model - count tokens for specific model
+    define(interp, "token_count_model", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(model)) => {
+                let bpe_result = match model.as_str() {
+                    "gpt4" | "gpt-4" | "claude" | "cl100k" => cl100k_base(),
+                    "gpt3" | "gpt-3" | "p50k" => p50k_base(),
+                    "codex" | "r50k" => r50k_base(),
+                    _ => cl100k_base(), // Default to GPT-4/Claude
+                };
+                if let Ok(bpe) = bpe_result {
+                    let tokens = bpe.encode_with_special_tokens(s);
+                    Ok(Value::Int(tokens.len() as i64))
+                } else {
+                    Err(RuntimeError::new("Failed to initialize tokenizer"))
+                }
+            }
+            _ => Err(RuntimeError::new("token_count_model() requires string and model name")),
+        }
+    });
+
+    // tokenize_ids - get token IDs as array
+    define(interp, "tokenize_ids", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                if let Ok(bpe) = cl100k_base() {
+                    let tokens = bpe.encode_with_special_tokens(s);
+                    let values: Vec<Value> = tokens.into_iter()
+                        .map(|t| Value::Int(t as i64))
+                        .collect();
+                    Ok(Value::Array(Rc::new(RefCell::new(values))))
+                } else {
+                    Err(RuntimeError::new("Failed to initialize tokenizer"))
+                }
+            }
+            _ => Err(RuntimeError::new("tokenize_ids() requires string")),
+        }
+    });
+
+    // truncate_tokens - truncate string to max tokens
+    define(interp, "truncate_tokens", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::Int(max_tokens)) => {
+                if let Ok(bpe) = cl100k_base() {
+                    let tokens = bpe.encode_with_special_tokens(s);
+                    if tokens.len() <= *max_tokens as usize {
+                        Ok(Value::String(s.clone()))
+                    } else {
+                        let truncated: Vec<usize> = tokens.into_iter()
+                            .take(*max_tokens as usize)
+                            .collect();
+                        if let Ok(decoded) = bpe.decode(truncated) {
+                            Ok(Value::String(Rc::new(decoded)))
+                        } else {
+                            Err(RuntimeError::new("Failed to decode tokens"))
+                        }
+                    }
+                } else {
+                    Err(RuntimeError::new("Failed to initialize tokenizer"))
+                }
+            }
+            _ => Err(RuntimeError::new("truncate_tokens() requires string and max tokens")),
+        }
+    });
+
+    // estimate_cost - estimate API cost based on token count
+    define(interp, "estimate_cost", Some(3), |_, args| {
+        match (&args[0], &args[1], &args[2]) {
+            (Value::String(s), Value::Float(input_cost), Value::Float(output_cost)) => {
+                if let Ok(bpe) = cl100k_base() {
+                    let tokens = bpe.encode_with_special_tokens(s);
+                    let count = tokens.len() as f64;
+                    // Cost per 1K tokens
+                    let input_total = (count / 1000.0) * input_cost;
+                    let output_total = (count / 1000.0) * output_cost;
+                    let mut map = HashMap::new();
+                    map.insert("tokens".to_string(), Value::Int(tokens.len() as i64));
+                    map.insert("input_cost".to_string(), Value::Float(input_total));
+                    map.insert("output_cost".to_string(), Value::Float(output_total));
+                    Ok(Value::Map(Rc::new(RefCell::new(map))))
+                } else {
+                    Err(RuntimeError::new("Failed to initialize tokenizer"))
+                }
+            }
+            _ => Err(RuntimeError::new("estimate_cost() requires string, input cost, output cost")),
+        }
+    });
+
+    // =========================================================================
+    // STEMMING
+    // =========================================================================
+
+    // stem - stem a word using Porter algorithm
+    define(interp, "stem", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let stemmer = Stemmer::create(StemAlgorithm::English);
+                let stemmed = stemmer.stem(s);
+                Ok(Value::String(Rc::new(stemmed.to_string())))
+            }
+            _ => Err(RuntimeError::new("stem() requires string")),
+        }
+    });
+
+    // stem_language - stem a word for specific language
+    define(interp, "stem_language", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(lang)) => {
+                let algorithm = match lang.as_str() {
+                    "en" | "english" => StemAlgorithm::English,
+                    "fr" | "french" => StemAlgorithm::French,
+                    "de" | "german" => StemAlgorithm::German,
+                    "es" | "spanish" => StemAlgorithm::Spanish,
+                    "it" | "italian" => StemAlgorithm::Italian,
+                    "pt" | "portuguese" => StemAlgorithm::Portuguese,
+                    "nl" | "dutch" => StemAlgorithm::Dutch,
+                    "sv" | "swedish" => StemAlgorithm::Swedish,
+                    "no" | "norwegian" => StemAlgorithm::Norwegian,
+                    "da" | "danish" => StemAlgorithm::Danish,
+                    "fi" | "finnish" => StemAlgorithm::Finnish,
+                    "ru" | "russian" => StemAlgorithm::Russian,
+                    "ro" | "romanian" => StemAlgorithm::Romanian,
+                    "hu" | "hungarian" => StemAlgorithm::Hungarian,
+                    "tr" | "turkish" => StemAlgorithm::Turkish,
+                    "ar" | "arabic" => StemAlgorithm::Arabic,
+                    _ => StemAlgorithm::English,
+                };
+                let stemmer = Stemmer::create(algorithm);
+                let stemmed = stemmer.stem(s);
+                Ok(Value::String(Rc::new(stemmed.to_string())))
+            }
+            _ => Err(RuntimeError::new("stem_language() requires string and language code")),
+        }
+    });
+
+    // stem_all - stem all words in array
+    define(interp, "stem_all", Some(1), |_, args| {
+        match &args[0] {
+            Value::Array(arr) => {
+                let stemmer = Stemmer::create(StemAlgorithm::English);
+                let arr_ref = arr.borrow();
+                let results: Vec<Value> = arr_ref.iter()
+                    .filter_map(|v| {
+                        if let Value::String(s) = v {
+                            Some(Value::String(Rc::new(stemmer.stem(s).to_string())))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(results))))
+            }
+            _ => Err(RuntimeError::new("stem_all() requires array of strings")),
+        }
+    });
+
+    // =========================================================================
+    // STOPWORDS
+    // =========================================================================
+
+    // is_stopword - check if word is a stopword
+    define(interp, "is_stopword", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let word = s.to_lowercase();
+                let stopwords = get_stopwords("en");
+                Ok(Value::Bool(stopwords.contains(&word.as_str())))
+            }
+            _ => Err(RuntimeError::new("is_stopword() requires string")),
+        }
+    });
+
+    // is_stopword_language - check if word is stopword in language
+    define(interp, "is_stopword_language", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(lang)) => {
+                let word = s.to_lowercase();
+                let stopwords = get_stopwords(lang);
+                Ok(Value::Bool(stopwords.contains(&word.as_str())))
+            }
+            _ => Err(RuntimeError::new("is_stopword_language() requires string and language")),
+        }
+    });
+
+    // remove_stopwords - remove stopwords from array
+    define(interp, "remove_stopwords", Some(1), |_, args| {
+        match &args[0] {
+            Value::Array(arr) => {
+                let stopwords = get_stopwords("en");
+                let arr_ref = arr.borrow();
+                let results: Vec<Value> = arr_ref.iter()
+                    .filter(|v| {
+                        if let Value::String(s) = v {
+                            !stopwords.contains(&s.to_lowercase().as_str())
+                        } else {
+                            true
+                        }
+                    })
+                    .cloned()
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(results))))
+            }
+            _ => Err(RuntimeError::new("remove_stopwords() requires array of strings")),
+        }
+    });
+
+    // remove_stopwords_text - remove stopwords from text string
+    define(interp, "remove_stopwords_text", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let stopwords = get_stopwords("en");
+                let words: Vec<&str> = s.split_whitespace()
+                    .filter(|w| !stopwords.contains(&w.to_lowercase().as_str()))
+                    .collect();
+                Ok(Value::String(Rc::new(words.join(" "))))
+            }
+            _ => Err(RuntimeError::new("remove_stopwords_text() requires string")),
+        }
+    });
+
+    // get_stopwords_list - get list of stopwords for language
+    define(interp, "get_stopwords_list", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(lang) => {
+                let stopwords = get_stopwords(lang);
+                let values: Vec<Value> = stopwords.iter()
+                    .map(|s| Value::String(Rc::new(s.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(values))))
+            }
+            _ => Err(RuntimeError::new("get_stopwords_list() requires language code")),
+        }
+    });
+
+    // =========================================================================
+    // N-GRAMS AND SHINGLES
+    // =========================================================================
+
+    // ngrams - extract word n-grams
+    define(interp, "ngrams", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::Int(n)) => {
+                let words: Vec<&str> = s.split_whitespace().collect();
+                let n = *n as usize;
+                if n == 0 || n > words.len() {
+                    return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                }
+                let ngrams: Vec<Value> = words.windows(n)
+                    .map(|w| Value::String(Rc::new(w.join(" "))))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(ngrams))))
+            }
+            _ => Err(RuntimeError::new("ngrams() requires string and n")),
+        }
+    });
+
+    // char_ngrams - extract character n-grams
+    define(interp, "char_ngrams", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::Int(n)) => {
+                let chars: Vec<char> = s.chars().collect();
+                let n = *n as usize;
+                if n == 0 || n > chars.len() {
+                    return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                }
+                let ngrams: Vec<Value> = chars.windows(n)
+                    .map(|w| Value::String(Rc::new(w.iter().collect())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(ngrams))))
+            }
+            _ => Err(RuntimeError::new("char_ngrams() requires string and n")),
+        }
+    });
+
+    // shingles - extract word shingles (same as ngrams, but as set)
+    define(interp, "shingles", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::Int(n)) => {
+                let words: Vec<&str> = s.split_whitespace().collect();
+                let n = *n as usize;
+                if n == 0 || n > words.len() {
+                    return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                }
+                let mut seen = std::collections::HashSet::new();
+                let shingles: Vec<Value> = words.windows(n)
+                    .filter_map(|w| {
+                        let s = w.join(" ");
+                        if seen.insert(s.clone()) {
+                            Some(Value::String(Rc::new(s)))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(shingles))))
+            }
+            _ => Err(RuntimeError::new("shingles() requires string and n")),
+        }
+    });
+
+    // jaccard_similarity - Jaccard similarity between two sets of shingles
+    define(interp, "jaccard_similarity", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::Array(a), Value::Array(b)) => {
+                let a_ref = a.borrow();
+                let b_ref = b.borrow();
+                let set_a: std::collections::HashSet<String> = a_ref.iter()
+                    .filter_map(|v| {
+                        if let Value::String(s) = v {
+                            Some(s.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                let set_b: std::collections::HashSet<String> = b_ref.iter()
+                    .filter_map(|v| {
+                        if let Value::String(s) = v {
+                            Some(s.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                let intersection = set_a.intersection(&set_b).count();
+                let union = set_a.union(&set_b).count();
+                if union == 0 {
+                    Ok(Value::Float(0.0))
+                } else {
+                    Ok(Value::Float(intersection as f64 / union as f64))
+                }
+            }
+            _ => Err(RuntimeError::new("jaccard_similarity() requires two arrays")),
+        }
+    });
+
+    // minhash_signature - compute MinHash signature for LSH
+    define(interp, "minhash_signature", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::Array(arr), Value::Int(num_hashes)) => {
+                let arr_ref = arr.borrow();
+                let items: std::collections::HashSet<String> = arr_ref.iter()
+                    .filter_map(|v| {
+                        if let Value::String(s) = v {
+                            Some(s.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                // Simple MinHash using polynomial rolling hash
+                let mut signature: Vec<Value> = Vec::with_capacity(*num_hashes as usize);
+                for i in 0..*num_hashes {
+                    let mut min_hash: u64 = u64::MAX;
+                    for item in &items {
+                        let hash = compute_hash(item, i as u64);
+                        if hash < min_hash {
+                            min_hash = hash;
+                        }
+                    }
+                    signature.push(Value::Int(min_hash as i64));
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(signature))))
+            }
+            _ => Err(RuntimeError::new("minhash_signature() requires array and num_hashes")),
+        }
+    });
+
+    // =========================================================================
+    // TEXT PREPROCESSING
+    // =========================================================================
+
+    // preprocess_text - full text preprocessing pipeline
+    define(interp, "preprocess_text", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                // Lowercase
+                let lower = s.to_lowercase();
+                // Remove punctuation (keep letters, numbers, spaces)
+                let clean: String = lower.chars()
+                    .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+                    .collect();
+                // Normalize whitespace
+                let normalized: String = clean.split_whitespace().collect::<Vec<_>>().join(" ");
+                Ok(Value::String(Rc::new(normalized)))
+            }
+            _ => Err(RuntimeError::new("preprocess_text() requires string")),
+        }
+    });
+
+    // tokenize_words - split text into word tokens
+    define(interp, "tokenize_words", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let words: Vec<Value> = s.split_whitespace()
+                    .map(|w| Value::String(Rc::new(w.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(words))))
+            }
+            _ => Err(RuntimeError::new("tokenize_words() requires string")),
+        }
+    });
+
+    // extract_keywords - extract likely keywords (content words)
+    define(interp, "extract_keywords", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let stopwords = get_stopwords("en");
+                let words: Vec<Value> = s.split_whitespace()
+                    .filter(|w| {
+                        let lower = w.to_lowercase();
+                        !stopwords.contains(&lower.as_str()) && lower.len() > 2
+                    })
+                    .map(|w| Value::String(Rc::new(w.to_lowercase())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(words))))
+            }
+            _ => Err(RuntimeError::new("extract_keywords() requires string")),
+        }
+    });
+
+    // word_frequency - count word frequencies
+    define(interp, "word_frequency", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let mut freq: HashMap<String, i64> = HashMap::new();
+                for word in s.split_whitespace() {
+                    let lower = word.to_lowercase();
+                    *freq.entry(lower).or_insert(0) += 1;
+                }
+                let map: HashMap<String, Value> = freq.into_iter()
+                    .map(|(k, v)| (k, Value::Int(v)))
+                    .collect();
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
+            _ => Err(RuntimeError::new("word_frequency() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // AFFECTIVE MARKERS (Emotional Intelligence)
+    // =========================================================================
+
+    // sentiment_words - basic sentiment word detection
+    define(interp, "sentiment_words", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let positive = vec![
+                    "good", "great", "excellent", "amazing", "wonderful", "fantastic",
+                    "love", "happy", "joy", "beautiful", "awesome", "perfect",
+                    "best", "brilliant", "delightful", "pleasant", "positive",
+                ];
+                let negative = vec![
+                    "bad", "terrible", "awful", "horrible", "hate", "sad",
+                    "angry", "worst", "poor", "negative", "disappointing",
+                    "ugly", "disgusting", "painful", "miserable", "annoying",
+                ];
+
+                let lower = s.to_lowercase();
+                let words: Vec<&str> = lower.split_whitespace().collect();
+                let pos_count: i64 = words.iter()
+                    .filter(|w| positive.contains(w))
+                    .count() as i64;
+                let neg_count: i64 = words.iter()
+                    .filter(|w| negative.contains(w))
+                    .count() as i64;
+
+                let mut map = HashMap::new();
+                map.insert("positive".to_string(), Value::Int(pos_count));
+                map.insert("negative".to_string(), Value::Int(neg_count));
+                map.insert("total".to_string(), Value::Int(words.len() as i64));
+
+                let score = if pos_count + neg_count > 0 {
+                    (pos_count - neg_count) as f64 / (pos_count + neg_count) as f64
+                } else {
+                    0.0
+                };
+                map.insert("score".to_string(), Value::Float(score));
+
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
+            _ => Err(RuntimeError::new("sentiment_words() requires string")),
+        }
+    });
+
+    // has_question - detect if text contains a question
+    define(interp, "has_question", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_q_mark = s.contains('?');
+                let lower = s.to_lowercase();
+                let question_words = ["what", "where", "when", "why", "how", "who", "which", "whose", "whom"];
+                let starts_with_q = question_words.iter().any(|w| lower.starts_with(w));
+                Ok(Value::Bool(has_q_mark || starts_with_q))
+            }
+            _ => Err(RuntimeError::new("has_question() requires string")),
+        }
+    });
+
+    // has_exclamation - detect if text has strong emotion markers
+    define(interp, "has_exclamation", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                Ok(Value::Bool(s.contains('!')))
+            }
+            _ => Err(RuntimeError::new("has_exclamation() requires string")),
+        }
+    });
+
+    // text_formality - estimate text formality (0=informal, 1=formal)
+    define(interp, "text_formality", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let lower = s.to_lowercase();
+                let informal_markers = vec![
+                    "gonna", "wanna", "gotta", "kinda", "sorta", "dunno",
+                    "yeah", "yep", "nope", "ok", "lol", "omg", "btw",
+                    "u", "ur", "r", "y", "2", "4",
+                ];
+                let formal_markers = vec![
+                    "therefore", "furthermore", "moreover", "consequently",
+                    "nevertheless", "however", "whereas", "hereby",
+                    "respectfully", "sincerely", "accordingly",
+                ];
+
+                let words: Vec<&str> = lower.split_whitespace().collect();
+                let informal_count = words.iter()
+                    .filter(|w| informal_markers.contains(w))
+                    .count();
+                let formal_count = words.iter()
+                    .filter(|w| formal_markers.contains(w))
+                    .count();
+
+                let score = if informal_count + formal_count > 0 {
+                    formal_count as f64 / (informal_count + formal_count) as f64
+                } else {
+                    0.5 // Neutral if no markers
+                };
+
+                Ok(Value::Float(score))
+            }
+            _ => Err(RuntimeError::new("text_formality() requires string")),
+        }
+    });
+}
+
+// =============================================================================
+// HELPER FUNCTIONS FOR TEXT INTELLIGENCE
+// =============================================================================
+
+/// Compute American Soundex encoding
+fn compute_soundex(s: &str) -> String {
+    if s.is_empty() {
+        return "0000".to_string();
+    }
+
+    let s = s.to_uppercase();
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if chars.is_empty() {
+        return "0000".to_string();
+    }
+
+    let first = chars[0];
+    let mut code = String::new();
+    code.push(first);
+
+    let get_code = |c: char| -> char {
+        match c {
+            'B' | 'F' | 'P' | 'V' => '1',
+            'C' | 'G' | 'J' | 'K' | 'Q' | 'S' | 'X' | 'Z' => '2',
+            'D' | 'T' => '3',
+            'L' => '4',
+            'M' | 'N' => '5',
+            'R' => '6',
+            _ => '0',
+        }
+    };
+
+    let mut prev_code = get_code(first);
+
+    for &c in chars.iter().skip(1) {
+        let curr_code = get_code(c);
+        if curr_code != '0' && curr_code != prev_code {
+            code.push(curr_code);
+            if code.len() == 4 {
+                break;
+            }
+        }
+        prev_code = curr_code;
+    }
+
+    while code.len() < 4 {
+        code.push('0');
+    }
+
+    code
+}
+
+/// Compute Metaphone encoding
+fn compute_metaphone(s: &str) -> String {
+    let s = s.to_uppercase();
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    let mut result = String::new();
+    let mut i = 0;
+
+    // Skip initial KN, GN, PN, AE, WR
+    if chars.len() >= 2 {
+        let prefix: String = chars[0..2].iter().collect();
+        if ["KN", "GN", "PN", "AE", "WR"].contains(&prefix.as_str()) {
+            i = 1;
+        }
+    }
+
+    while i < chars.len() && result.len() < 6 {
+        let c = chars[i];
+        let prev = if i > 0 { Some(chars[i - 1]) } else { None };
+        let next = chars.get(i + 1).copied();
+
+        let code = match c {
+            'A' | 'E' | 'I' | 'O' | 'U' => {
+                if i == 0 { Some(c) } else { None }
+            }
+            'B' => {
+                if prev != Some('M') || i == chars.len() - 1 {
+                    Some('B')
+                } else {
+                    None
+                }
+            }
+            'C' => {
+                if next == Some('H') {
+                    Some('X')
+                } else if matches!(next, Some('I') | Some('E') | Some('Y')) {
+                    Some('S')
+                } else {
+                    Some('K')
+                }
+            }
+            'D' => {
+                if next == Some('G') && matches!(chars.get(i + 2), Some('E') | Some('I') | Some('Y')) {
+                    Some('J')
+                } else {
+                    Some('T')
+                }
+            }
+            'F' => Some('F'),
+            'G' => {
+                if next == Some('H') && !matches!(chars.get(i + 2), Some('A') | Some('E') | Some('I') | Some('O') | Some('U')) {
+                    None
+                } else if matches!(next, Some('N') | Some('E') | Some('I') | Some('Y')) {
+                    Some('J')
+                } else {
+                    Some('K')
+                }
+            }
+            'H' => {
+                if matches!(prev, Some('A') | Some('E') | Some('I') | Some('O') | Some('U')) {
+                    None
+                } else if matches!(next, Some('A') | Some('E') | Some('I') | Some('O') | Some('U')) {
+                    Some('H')
+                } else {
+                    None
+                }
+            }
+            'J' => Some('J'),
+            'K' => if prev != Some('C') { Some('K') } else { None },
+            'L' => Some('L'),
+            'M' => Some('M'),
+            'N' => Some('N'),
+            'P' => if next == Some('H') { Some('F') } else { Some('P') },
+            'Q' => Some('K'),
+            'R' => Some('R'),
+            'S' => if next == Some('H') { Some('X') } else { Some('S') },
+            'T' => {
+                if next == Some('H') {
+                    Some('0') // TH sound
+                } else if next == Some('I') && matches!(chars.get(i + 2), Some('O') | Some('A')) {
+                    Some('X')
+                } else {
+                    Some('T')
+                }
+            }
+            'V' => Some('F'),
+            'W' | 'Y' => {
+                if matches!(next, Some('A') | Some('E') | Some('I') | Some('O') | Some('U')) {
+                    Some(c)
+                } else {
+                    None
+                }
+            }
+            'X' => {
+                result.push('K');
+                Some('S')
+            }
+            'Z' => Some('S'),
+            _ => None,
+        };
+
+        if let Some(ch) = code {
+            result.push(ch);
+        }
+
+        // Skip double letters
+        if next == Some(c) {
+            i += 1;
+        }
+        i += 1;
+    }
+
+    result
+}
+
+/// Compute Cologne phonetic encoding (for German)
+fn compute_cologne(s: &str) -> String {
+    let s = s.to_uppercase();
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    let mut result = String::new();
+
+    for (i, &c) in chars.iter().enumerate() {
+        let prev = if i > 0 { Some(chars[i - 1]) } else { None };
+        let next = chars.get(i + 1).copied();
+
+        let code = match c {
+            'A' | 'E' | 'I' | 'O' | 'U' | 'J' | 'Y' => '0',
+            'H' => continue,
+            'B' | 'P' => '1',
+            'D' | 'T' => {
+                if matches!(next, Some('C') | Some('S') | Some('Z')) {
+                    '8'
+                } else {
+                    '2'
+                }
+            }
+            'F' | 'V' | 'W' => '3',
+            'G' | 'K' | 'Q' => '4',
+            'C' => {
+                if i == 0 {
+                    if matches!(next, Some('A') | Some('H') | Some('K') | Some('L') | Some('O') | Some('Q') | Some('R') | Some('U') | Some('X')) {
+                        '4'
+                    } else {
+                        '8'
+                    }
+                } else if matches!(prev, Some('S') | Some('Z')) {
+                    '8'
+                } else if matches!(next, Some('A') | Some('H') | Some('K') | Some('O') | Some('Q') | Some('U') | Some('X')) {
+                    '4'
+                } else {
+                    '8'
+                }
+            }
+            'X' => {
+                if matches!(prev, Some('C') | Some('K') | Some('Q')) {
+                    '8'
+                } else {
+                    result.push('4');
+                    '8'
+                }
+            }
+            'L' => '5',
+            'M' | 'N' => '6',
+            'R' => '7',
+            'S' | 'Z' => '8',
+            _ => continue,
+        };
+
+        result.push(code);
+    }
+
+    // Remove consecutive duplicates
+    let mut deduped = String::new();
+    let mut prev = None;
+    for c in result.chars() {
+        if prev != Some(c) {
+            deduped.push(c);
+        }
+        prev = Some(c);
+    }
+
+    // Remove leading zeros (except if all zeros)
+    let trimmed: String = deduped.trim_start_matches('0').to_string();
+    if trimmed.is_empty() {
+        "0".to_string()
+    } else {
+        trimmed
+    }
+}
+
+/// Get stopwords for a language
+fn get_stopwords(lang: &str) -> Vec<&'static str> {
+    match lang {
+        "en" | "english" => vec![
+            "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+            "of", "with", "by", "from", "as", "is", "was", "are", "were", "been",
+            "be", "have", "has", "had", "do", "does", "did", "will", "would",
+            "could", "should", "may", "might", "must", "shall", "can", "need",
+            "it", "its", "this", "that", "these", "those", "i", "you", "he",
+            "she", "we", "they", "me", "him", "her", "us", "them", "my", "your",
+            "his", "her", "our", "their", "what", "which", "who", "whom", "whose",
+            "when", "where", "why", "how", "all", "each", "every", "both", "few",
+            "more", "most", "other", "some", "such", "no", "nor", "not", "only",
+            "own", "same", "so", "than", "too", "very", "just", "also", "now",
+        ],
+        "de" | "german" => vec![
+            "der", "die", "das", "den", "dem", "des", "ein", "eine", "einer",
+            "einem", "einen", "und", "oder", "aber", "in", "auf", "an", "zu",
+            "für", "von", "mit", "bei", "als", "ist", "war", "sind", "waren",
+            "sein", "haben", "hat", "hatte", "werden", "wird", "wurde", "kann",
+            "können", "muss", "müssen", "soll", "sollen", "will", "wollen",
+            "es", "sie", "er", "wir", "ihr", "ich", "du", "man", "sich",
+            "nicht", "auch", "nur", "noch", "schon", "mehr", "sehr", "so",
+        ],
+        "fr" | "french" => vec![
+            "le", "la", "les", "un", "une", "des", "et", "ou", "mais", "dans",
+            "sur", "à", "de", "pour", "par", "avec", "ce", "cette", "ces",
+            "est", "sont", "était", "être", "avoir", "a", "ont", "avait",
+            "je", "tu", "il", "elle", "nous", "vous", "ils", "elles", "on",
+            "ne", "pas", "plus", "moins", "très", "aussi", "que", "qui",
+        ],
+        "es" | "spanish" => vec![
+            "el", "la", "los", "las", "un", "una", "unos", "unas", "y", "o",
+            "pero", "en", "de", "a", "para", "por", "con", "es", "son", "era",
+            "ser", "estar", "tiene", "tienen", "yo", "tú", "él", "ella",
+            "nosotros", "ustedes", "ellos", "ellas", "no", "sí", "muy", "más",
+            "menos", "también", "que", "quien", "cual", "como", "cuando",
+        ],
+        _ => vec![
+            "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+        ],
+    }
+}
+
+/// Simple hash function for MinHash
+fn compute_hash(s: &str, seed: u64) -> u64 {
+    let mut hash: u64 = seed.wrapping_mul(0x517cc1b727220a95);
+    for b in s.bytes() {
+        hash = hash.wrapping_mul(31).wrapping_add(b as u64);
+    }
+    hash
 }
 
 #[cfg(test)]
