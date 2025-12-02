@@ -2069,6 +2069,384 @@ impl Interpreter {
                     _ => self.apply_pipe_op(value, inner_op)
                 }
             }
+
+            // ==========================================
+            // Protocol Operations - Sigil-native networking
+            // All protocol results are wrapped with Reported evidentiality
+            // since network data comes from external sources ("hearsay")
+            // ==========================================
+
+            PipeOp::Send(data_expr) => {
+                // |send{data} or |⇒{data} - Send data over a connection
+                // The value should be a connection object
+                let data = self.evaluate(data_expr)?;
+
+                // Create a protocol response with Reported evidentiality
+                // In production, this would actually send data over the network
+                let response = self.protocol_send(&value, &data)?;
+
+                // Wrap in Reported evidentiality - network responses are hearsay
+                Ok(self.wrap_reported(response))
+            }
+
+            PipeOp::Recv => {
+                // |recv or |⇐ - Receive data from a connection
+                // The value should be a connection object
+
+                // In production, this would actually receive data from the network
+                let response = self.protocol_recv(&value)?;
+
+                // Wrap in Reported evidentiality - network data is hearsay
+                Ok(self.wrap_reported(response))
+            }
+
+            PipeOp::Stream(handler_expr) => {
+                // |stream{handler} or |≋{handler} - Stream data with a handler
+                let handler = self.evaluate(handler_expr)?;
+
+                // Create a streaming iterator over network data
+                // Each element will be wrapped in Reported evidentiality
+                let stream = self.protocol_stream(&value, &handler)?;
+                Ok(stream)
+            }
+
+            PipeOp::Connect(config_expr) => {
+                // |connect or |connect{config} or |⊸{config} - Establish connection
+                let config = match config_expr {
+                    Some(expr) => Some(self.evaluate(expr)?),
+                    None => None,
+                };
+
+                // Create a connection object
+                let connection = self.protocol_connect(&value, config.as_ref())?;
+                Ok(connection)
+            }
+
+            PipeOp::Close => {
+                // |close or |⊗ - Close connection gracefully
+                self.protocol_close(&value)?;
+                Ok(Value::Null)
+            }
+
+            PipeOp::Header { name, value: value_expr } => {
+                // |header{name, value} - Add/set header on request
+                let header_name = self.evaluate(name)?;
+                let header_value = self.evaluate(value_expr)?;
+
+                // Add header to the request builder
+                self.protocol_add_header(value, &header_name, &header_value)
+            }
+
+            PipeOp::Body(data_expr) => {
+                // |body{data} - Set request body
+                let body_data = self.evaluate(data_expr)?;
+
+                // Set body on the request builder
+                self.protocol_set_body(value, &body_data)
+            }
+
+            PipeOp::Timeout(ms_expr) => {
+                // |timeout{ms} or |⏱{ms} - Set operation timeout
+                let ms = self.evaluate(ms_expr)?;
+
+                // Set timeout on the request/connection
+                self.protocol_set_timeout(value, &ms)
+            }
+
+            PipeOp::Retry { count, strategy } => {
+                // |retry{count} or |retry{count, strategy} - Set retry policy
+                let retry_count = self.evaluate(count)?;
+                let retry_strategy = match strategy {
+                    Some(s) => Some(self.evaluate(s)?),
+                    None => None,
+                };
+
+                // Set retry policy on the request
+                self.protocol_set_retry(value, &retry_count, retry_strategy.as_ref())
+            }
+        }
+    }
+
+    // ==========================================
+    // Protocol Helper Methods
+    // ==========================================
+
+    /// Wrap a value in Reported evidentiality
+    /// Network data is "hearsay" - it comes from external sources we can't verify
+    fn wrap_reported(&self, value: Value) -> Value {
+        Value::Evidential {
+            value: Box::new(value),
+            evidence: Evidence::Reported,
+        }
+    }
+
+    /// Send data over a protocol connection
+    fn protocol_send(&mut self, connection: &Value, data: &Value) -> Result<Value, RuntimeError> {
+        // Extract connection info and send data
+        match connection {
+            Value::Map(obj) => {
+                let obj = obj.borrow();
+                if let Some(Value::String(protocol)) = obj.get("__protocol__") {
+                    match protocol.as_str() {
+                        "http" | "https" => {
+                            // For HTTP, "send" means execute the request
+                            // The data becomes the body
+                            #[cfg(debug_assertions)]
+                            eprintln!("[HTTP] Would send request with body: {:?}", data);
+                            Ok(Value::Map(Rc::new(RefCell::new({
+                                let mut response = HashMap::new();
+                                response.insert("status".to_string(), Value::Int(200));
+                                response.insert("body".to_string(), data.clone());
+                                response.insert("__protocol__".to_string(), Value::String(Rc::new("http_response".to_string())));
+                                response
+                            }))))
+                        }
+                        "ws" | "wss" => {
+                            // For WebSocket, send a message
+                            #[cfg(debug_assertions)]
+                            eprintln!("[WebSocket] Would send message: {:?}", data);
+                            Ok(Value::Bool(true)) // Message sent successfully
+                        }
+                        "grpc" => {
+                            // For gRPC, send the request message
+                            #[cfg(debug_assertions)]
+                            eprintln!("[gRPC] Would send message: {:?}", data);
+                            Ok(Value::Map(Rc::new(RefCell::new({
+                                let mut response = HashMap::new();
+                                response.insert("status".to_string(), Value::Int(0)); // OK
+                                response.insert("message".to_string(), data.clone());
+                                response.insert("__protocol__".to_string(), Value::String(Rc::new("grpc_response".to_string())));
+                                response
+                            }))))
+                        }
+                        "kafka" => {
+                            // For Kafka, produce a message
+                            #[cfg(debug_assertions)]
+                            eprintln!("[Kafka] Would produce message: {:?}", data);
+                            Ok(Value::Map(Rc::new(RefCell::new({
+                                let mut result = HashMap::new();
+                                result.insert("partition".to_string(), Value::Int(0));
+                                result.insert("offset".to_string(), Value::Int(42));
+                                result
+                            }))))
+                        }
+                        _ => Err(RuntimeError::new(format!("Unknown protocol: {}", protocol))),
+                    }
+                } else {
+                    Err(RuntimeError::new("Connection object missing __protocol__ field"))
+                }
+            }
+            _ => Err(RuntimeError::new("send requires a connection object")),
+        }
+    }
+
+    /// Receive data from a protocol connection
+    fn protocol_recv(&mut self, connection: &Value) -> Result<Value, RuntimeError> {
+        match connection {
+            Value::Map(obj) => {
+                let obj = obj.borrow();
+                if let Some(Value::String(protocol)) = obj.get("__protocol__") {
+                    match protocol.as_str() {
+                        "ws" | "wss" => {
+                            // For WebSocket, receive a message
+                            #[cfg(debug_assertions)]
+                            eprintln!("[WebSocket] Would receive message");
+                            Ok(Value::String(Rc::new("received message".to_string())))
+                        }
+                        "kafka" => {
+                            // For Kafka, consume a message
+                            #[cfg(debug_assertions)]
+                            eprintln!("[Kafka] Would consume message");
+                            Ok(Value::Map(Rc::new(RefCell::new({
+                                let mut msg = HashMap::new();
+                                msg.insert("key".to_string(), Value::Null);
+                                msg.insert("value".to_string(), Value::String(Rc::new("consumed message".to_string())));
+                                msg.insert("partition".to_string(), Value::Int(0));
+                                msg.insert("offset".to_string(), Value::Int(100));
+                                msg
+                            }))))
+                        }
+                        "grpc" => {
+                            // For gRPC streaming, receive next message
+                            #[cfg(debug_assertions)]
+                            eprintln!("[gRPC] Would receive stream message");
+                            Ok(Value::Map(Rc::new(RefCell::new({
+                                let mut msg = HashMap::new();
+                                msg.insert("data".to_string(), Value::String(Rc::new("stream data".to_string())));
+                                msg
+                            }))))
+                        }
+                        _ => Err(RuntimeError::new(format!("recv not supported for protocol: {}", protocol))),
+                    }
+                } else {
+                    Err(RuntimeError::new("Connection object missing __protocol__ field"))
+                }
+            }
+            _ => Err(RuntimeError::new("recv requires a connection object")),
+        }
+    }
+
+    /// Create a streaming iterator over protocol data
+    fn protocol_stream(&mut self, connection: &Value, _handler: &Value) -> Result<Value, RuntimeError> {
+        // Create a lazy stream that yields values with Reported evidentiality
+        match connection {
+            Value::Map(obj) => {
+                let obj = obj.borrow();
+                if let Some(Value::String(protocol)) = obj.get("__protocol__") {
+                    #[cfg(debug_assertions)]
+                    eprintln!("[{}] Would create stream", protocol);
+
+                    // Return a stream object that can be iterated
+                    Ok(Value::Map(Rc::new(RefCell::new({
+                        let mut stream = HashMap::new();
+                        stream.insert("__type__".to_string(), Value::String(Rc::new("Stream".to_string())));
+                        stream.insert("__protocol__".to_string(), Value::String(protocol.clone()));
+                        stream.insert("__evidentiality__".to_string(), Value::String(Rc::new("reported".to_string())));
+                        stream
+                    }))))
+                } else {
+                    Err(RuntimeError::new("Connection object missing __protocol__ field"))
+                }
+            }
+            _ => Err(RuntimeError::new("stream requires a connection object")),
+        }
+    }
+
+    /// Establish a protocol connection
+    fn protocol_connect(&mut self, target: &Value, _config: Option<&Value>) -> Result<Value, RuntimeError> {
+        match target {
+            Value::String(url) => {
+                // Parse URL to determine protocol
+                let protocol = if url.starts_with("wss://") || url.starts_with("ws://") {
+                    if url.starts_with("wss://") { "wss" } else { "ws" }
+                } else if url.starts_with("https://") || url.starts_with("http://") {
+                    if url.starts_with("https://") { "https" } else { "http" }
+                } else if url.starts_with("grpc://") || url.starts_with("grpcs://") {
+                    "grpc"
+                } else if url.starts_with("kafka://") {
+                    "kafka"
+                } else if url.starts_with("amqp://") || url.starts_with("amqps://") {
+                    "amqp"
+                } else {
+                    "unknown"
+                };
+
+                #[cfg(debug_assertions)]
+                eprintln!("[{}] Would connect to: {}", protocol, url);
+
+                // Return a connection object
+                Ok(Value::Map(Rc::new(RefCell::new({
+                    let mut conn = HashMap::new();
+                    conn.insert("__protocol__".to_string(), Value::String(Rc::new(protocol.to_string())));
+                    conn.insert("url".to_string(), Value::String(url.clone()));
+                    conn.insert("connected".to_string(), Value::Bool(true));
+                    conn
+                }))))
+            }
+            Value::Map(obj) => {
+                // Already a connection config object
+                let mut conn = obj.borrow().clone();
+                conn.insert("connected".to_string(), Value::Bool(true));
+                Ok(Value::Map(Rc::new(RefCell::new(conn))))
+            }
+            _ => Err(RuntimeError::new("connect requires URL string or config object")),
+        }
+    }
+
+    /// Close a protocol connection
+    fn protocol_close(&mut self, connection: &Value) -> Result<(), RuntimeError> {
+        match connection {
+            Value::Map(obj) => {
+                let mut obj = obj.borrow_mut();
+                if let Some(Value::String(protocol)) = obj.get("__protocol__").cloned() {
+                    #[cfg(debug_assertions)]
+                    eprintln!("[{}] Would close connection", protocol);
+                    obj.insert("connected".to_string(), Value::Bool(false));
+                    Ok(())
+                } else {
+                    Err(RuntimeError::new("Connection object missing __protocol__ field"))
+                }
+            }
+            _ => Err(RuntimeError::new("close requires a connection object")),
+        }
+    }
+
+    /// Add a header to a protocol request
+    fn protocol_add_header(&mut self, mut request: Value, name: &Value, header_value: &Value) -> Result<Value, RuntimeError> {
+        let name_str = match name {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("Header name must be a string")),
+        };
+        let value_str = match header_value {
+            Value::String(s) => (**s).clone(),
+            Value::Int(i) => i.to_string(),
+            _ => return Err(RuntimeError::new("Header value must be string or int")),
+        };
+
+        match &mut request {
+            Value::Map(obj) => {
+                let mut obj = obj.borrow_mut();
+
+                // Get or create headers map
+                let headers = obj.entry("headers".to_string())
+                    .or_insert_with(|| Value::Map(Rc::new(RefCell::new(HashMap::new()))));
+
+                if let Value::Map(headers_obj) = headers {
+                    headers_obj.borrow_mut().insert(name_str, Value::String(Rc::new(value_str)));
+                }
+                drop(obj);
+                Ok(request)
+            }
+            _ => Err(RuntimeError::new("header requires a request object")),
+        }
+    }
+
+    /// Set the body of a protocol request
+    fn protocol_set_body(&mut self, mut request: Value, body: &Value) -> Result<Value, RuntimeError> {
+        match &mut request {
+            Value::Map(obj) => {
+                obj.borrow_mut().insert("body".to_string(), body.clone());
+                Ok(request)
+            }
+            _ => Err(RuntimeError::new("body requires a request object")),
+        }
+    }
+
+    /// Set the timeout for a protocol operation
+    fn protocol_set_timeout(&mut self, mut request: Value, ms: &Value) -> Result<Value, RuntimeError> {
+        let timeout_ms = match ms {
+            Value::Int(n) => *n,
+            Value::Float(f) => *f as i64,
+            _ => return Err(RuntimeError::new("Timeout must be a number (milliseconds)")),
+        };
+
+        match &mut request {
+            Value::Map(obj) => {
+                obj.borrow_mut().insert("timeout_ms".to_string(), Value::Int(timeout_ms));
+                Ok(request)
+            }
+            _ => Err(RuntimeError::new("timeout requires a request object")),
+        }
+    }
+
+    /// Set the retry policy for a protocol operation
+    fn protocol_set_retry(&mut self, mut request: Value, count: &Value, strategy: Option<&Value>) -> Result<Value, RuntimeError> {
+        let retry_count = match count {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Retry count must be an integer")),
+        };
+
+        match &mut request {
+            Value::Map(obj) => {
+                let mut obj = obj.borrow_mut();
+                obj.insert("retry_count".to_string(), Value::Int(retry_count));
+                if let Some(strat) = strategy {
+                    obj.insert("retry_strategy".to_string(), strat.clone());
+                }
+                drop(obj);
+                Ok(request)
+            }
+            _ => Err(RuntimeError::new("retry requires a request object")),
         }
     }
 

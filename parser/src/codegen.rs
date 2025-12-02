@@ -1286,6 +1286,73 @@ pub mod jit {
                                 _ => result
                             }
                         }
+
+                        // ==========================================
+                        // Protocol Operations - Sigil-native networking
+                        // In JIT context, these call runtime protocol functions
+                        // ==========================================
+
+                        // Send: |send{data} - send data over connection
+                        PipeOp::Send(data_expr) => {
+                            let data = compile_expr(module, functions, extern_fns, builder, scope, data_expr)?;
+                            compile_call(module, functions, extern_fns, builder, "sigil_protocol_send", &[result, data])?
+                        }
+
+                        // Recv: |recv - receive data from connection
+                        PipeOp::Recv => {
+                            compile_call(module, functions, extern_fns, builder, "sigil_protocol_recv", &[result])?
+                        }
+
+                        // Stream: |stream{handler} - create streaming iterator
+                        PipeOp::Stream(handler_expr) => {
+                            let handler = compile_expr(module, functions, extern_fns, builder, scope, handler_expr)?;
+                            compile_call(module, functions, extern_fns, builder, "sigil_protocol_stream", &[result, handler])?
+                        }
+
+                        // Connect: |connect{config} - establish connection
+                        PipeOp::Connect(config_expr) => {
+                            if let Some(config) = config_expr {
+                                let config_val = compile_expr(module, functions, extern_fns, builder, scope, config)?;
+                                compile_call(module, functions, extern_fns, builder, "sigil_protocol_connect", &[result, config_val])?
+                            } else {
+                                compile_call(module, functions, extern_fns, builder, "sigil_protocol_connect_default", &[result])?
+                            }
+                        }
+
+                        // Close: |close - close connection
+                        PipeOp::Close => {
+                            compile_call(module, functions, extern_fns, builder, "sigil_protocol_close", &[result])?
+                        }
+
+                        // Header: |header{name, value} - add header
+                        PipeOp::Header { name, value } => {
+                            let name_val = compile_expr(module, functions, extern_fns, builder, scope, name)?;
+                            let value_val = compile_expr(module, functions, extern_fns, builder, scope, value)?;
+                            compile_call(module, functions, extern_fns, builder, "sigil_protocol_header", &[result, name_val, value_val])?
+                        }
+
+                        // Body: |body{data} - set body
+                        PipeOp::Body(data_expr) => {
+                            let data = compile_expr(module, functions, extern_fns, builder, scope, data_expr)?;
+                            compile_call(module, functions, extern_fns, builder, "sigil_protocol_body", &[result, data])?
+                        }
+
+                        // Timeout: |timeout{ms} - set timeout
+                        PipeOp::Timeout(ms_expr) => {
+                            let ms = compile_expr(module, functions, extern_fns, builder, scope, ms_expr)?;
+                            compile_call(module, functions, extern_fns, builder, "sigil_protocol_timeout", &[result, ms])?
+                        }
+
+                        // Retry: |retry{count, strategy} - set retry policy
+                        PipeOp::Retry { count, strategy } => {
+                            let count_val = compile_expr(module, functions, extern_fns, builder, scope, count)?;
+                            if let Some(strat) = strategy {
+                                let strat_val = compile_expr(module, functions, extern_fns, builder, scope, strat)?;
+                                compile_call(module, functions, extern_fns, builder, "sigil_protocol_retry", &[result, count_val, strat_val])?
+                            } else {
+                                compile_call(module, functions, extern_fns, builder, "sigil_protocol_retry_default", &[result, count_val])?
+                            }
+                        }
                     };
                 }
 

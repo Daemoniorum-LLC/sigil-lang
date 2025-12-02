@@ -1070,6 +1070,70 @@ pub enum Expr {
     AtomicFence {
         ordering: MemoryOrdering,
     },
+
+    // ==========================================
+    // Protocol Expressions - Sigil-native networking
+    // All protocol expressions yield values with Reported evidentiality
+    // ==========================================
+
+    /// HTTP request: `http·get(url)`, `http·post(url)`, etc.
+    /// Incorporation pattern for building HTTP requests
+    HttpRequest {
+        method: HttpMethod,
+        url: Box<Expr>,
+        headers: Vec<(Expr, Expr)>,
+        body: Option<Box<Expr>>,
+        timeout: Option<Box<Expr>>,
+    },
+
+    /// gRPC call: `grpc·call(service, method)`
+    /// Incorporation pattern for gRPC operations
+    GrpcCall {
+        service: Box<Expr>,
+        method: Box<Expr>,
+        message: Option<Box<Expr>>,
+        metadata: Vec<(Expr, Expr)>,
+        timeout: Option<Box<Expr>>,
+    },
+
+    /// WebSocket connection: `ws·connect(url)`
+    /// Incorporation pattern for WebSocket operations
+    WebSocketConnect {
+        url: Box<Expr>,
+        protocols: Vec<Expr>,
+        headers: Vec<(Expr, Expr)>,
+    },
+
+    /// WebSocket message: `ws·message(data)` or `ws·text(str)` / `ws·binary(bytes)`
+    WebSocketMessage {
+        kind: WebSocketMessageKind,
+        data: Box<Expr>,
+    },
+
+    /// Kafka operation: `kafka·produce(topic, message)`, `kafka·consume(topic)`
+    KafkaOp {
+        kind: KafkaOpKind,
+        topic: Box<Expr>,
+        payload: Option<Box<Expr>>,
+        key: Option<Box<Expr>>,
+        partition: Option<Box<Expr>>,
+    },
+
+    /// GraphQL query: `graphql·query(document)` or `graphql·mutation(document)`
+    GraphQLOp {
+        kind: GraphQLOpKind,
+        document: Box<Expr>,
+        variables: Option<Box<Expr>>,
+        operation_name: Option<Box<Expr>>,
+    },
+
+    /// Protocol stream: iterable over network messages
+    /// `http·stream(url)`, `ws·stream()`, `kafka·stream(topic)`
+    ProtocolStream {
+        protocol: ProtocolKind,
+        source: Box<Expr>,
+        config: Option<Box<Expr>>,
+    },
 }
 
 /// Inline assembly expression.
@@ -1171,6 +1235,46 @@ pub enum PipeOp {
         prefix: Vec<Ident>,
         body: Option<Box<Expr>>,
     },
+
+    // ==========================================
+    // Protocol Operations - Sigil-native networking
+    // ==========================================
+
+    /// Send operation: `|send{data}` or `|⇒{data}` - send data over connection
+    /// Results are automatically marked with Reported evidentiality
+    Send(Box<Expr>),
+
+    /// Receive operation: `|recv` or `|⇐` - receive data from connection
+    /// Results are automatically marked with Reported evidentiality
+    Recv,
+
+    /// Stream operation: `|stream{handler}` or `|≋{handler}` - iterate over incoming data
+    /// Each element is marked with Reported evidentiality
+    Stream(Box<Expr>),
+
+    /// Connect operation: `|connect{config}` or `|⊸{config}` - establish connection
+    Connect(Option<Box<Expr>>),
+
+    /// Close operation: `|close` or `|⊗` - close connection gracefully
+    Close,
+
+    /// Protocol header: `|header{name, value}` - add/set header
+    Header {
+        name: Box<Expr>,
+        value: Box<Expr>,
+    },
+
+    /// Protocol body: `|body{data}` - set request body
+    Body(Box<Expr>),
+
+    /// Timeout: `|timeout{ms}` or `|⏱{ms}` - set operation timeout
+    Timeout(Box<Expr>),
+
+    /// Retry: `|retry{count}` or `|retry{count, strategy}` - retry on failure
+    Retry {
+        count: Box<Expr>,
+        strategy: Option<Box<Expr>>,
+    },
 }
 
 /// Incorporation segment.
@@ -1196,6 +1300,93 @@ pub enum MorphemeKind {
     Next,       // ξ
     First,      // α
     Last,       // ω
+}
+
+// ==========================================
+// Protocol Types - Sigil-native networking
+// ==========================================
+
+/// HTTP methods for http· incorporation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HttpMethod {
+    Get,
+    Post,
+    Put,
+    Delete,
+    Patch,
+    Head,
+    Options,
+    Connect,
+    Trace,
+}
+
+impl std::fmt::Display for HttpMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HttpMethod::Get => write!(f, "GET"),
+            HttpMethod::Post => write!(f, "POST"),
+            HttpMethod::Put => write!(f, "PUT"),
+            HttpMethod::Delete => write!(f, "DELETE"),
+            HttpMethod::Patch => write!(f, "PATCH"),
+            HttpMethod::Head => write!(f, "HEAD"),
+            HttpMethod::Options => write!(f, "OPTIONS"),
+            HttpMethod::Connect => write!(f, "CONNECT"),
+            HttpMethod::Trace => write!(f, "TRACE"),
+        }
+    }
+}
+
+/// WebSocket message kinds for ws· incorporation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WebSocketMessageKind {
+    Text,
+    Binary,
+    Ping,
+    Pong,
+    Close,
+}
+
+/// Kafka operation kinds for kafka· incorporation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KafkaOpKind {
+    Produce,
+    Consume,
+    Subscribe,
+    Unsubscribe,
+    Commit,
+    Seek,
+}
+
+/// GraphQL operation kinds for graphql· incorporation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphQLOpKind {
+    Query,
+    Mutation,
+    Subscription,
+}
+
+/// Protocol kinds for stream expressions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProtocolKind {
+    Http,
+    Grpc,
+    WebSocket,
+    Kafka,
+    Amqp,
+    GraphQL,
+}
+
+impl std::fmt::Display for ProtocolKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProtocolKind::Http => write!(f, "http"),
+            ProtocolKind::Grpc => write!(f, "grpc"),
+            ProtocolKind::WebSocket => write!(f, "ws"),
+            ProtocolKind::Kafka => write!(f, "kafka"),
+            ProtocolKind::Amqp => write!(f, "amqp"),
+            ProtocolKind::GraphQL => write!(f, "graphql"),
+        }
+    }
 }
 
 /// Binary operators.

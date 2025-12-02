@@ -627,6 +627,62 @@ pub enum Token {
     #[token("∞")]
     Infinity,  // Ananta
 
+    // === Protocol Operations (Sigil-native networking) ===
+    #[token("⇒")]
+    ProtoSend,  // Send data (U+21D2 - rightwards double arrow)
+
+    #[token("⇐")]
+    ProtoRecv,  // Receive data (U+21D0 - leftwards double arrow)
+
+    #[token("≋")]
+    ProtoStream,  // Stream data (U+224B - triple tilde)
+
+    #[token("⊸")]
+    ProtoConnect,  // Connect/lollipop (U+22B8 - multimap)
+
+    #[token("⏱")]
+    ProtoTimeout,  // Timeout (U+23F1 - stopwatch)
+
+    // Note: ⊗ (Tensor) is used for close in protocol contexts
+
+    // Protocol keywords for ASCII fallback
+    #[token("send")]
+    Send,
+    #[token("recv")]
+    Recv,
+    #[token("stream")]
+    Stream,
+    #[token("connect")]
+    Connect,
+    #[token("close")]
+    Close,
+    #[token("timeout")]
+    Timeout,
+    #[token("retry")]
+    Retry,
+    #[token("header")]
+    Header,
+    #[token("body")]
+    Body,
+
+    // Protocol type identifiers (for incorporation: http·, ws·, grpc·, kafka·)
+    #[token("http")]
+    Http,
+    #[token("https")]
+    Https,
+    #[token("ws")]
+    Ws,
+    #[token("wss")]
+    Wss,
+    #[token("grpc")]
+    Grpc,
+    #[token("kafka")]
+    Kafka,
+    #[token("amqp")]
+    Amqp,
+    #[token("graphql")]
+    GraphQL,
+
     // === Numbers ===
     // Binary: 0b...
     #[regex(r"0b[01_]+", |lex| lex.slice().to_string())]
