@@ -435,11 +435,12 @@ pub enum Visibility {
     Super,
 }
 
-/// Identifier with optional evidentiality.
+/// Identifier with optional evidentiality and affect markers.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ident {
     pub name: String,
     pub evidentiality: Option<Evidentiality>,
+    pub affect: Option<Affect>,
     pub span: Span,
 }
 
@@ -450,6 +451,83 @@ pub enum Evidentiality {
     Uncertain,  // ?
     Reported,   // ~
     Paradox,    // ‽
+}
+
+/// Affective markers for sentiment and emotion tracking.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Affect {
+    pub sentiment: Option<Sentiment>,
+    pub sarcasm: bool,           // ⸮
+    pub intensity: Option<Intensity>,
+    pub formality: Option<Formality>,
+    pub emotion: Option<Emotion>,
+    pub confidence: Option<Confidence>,
+}
+
+impl Default for Affect {
+    fn default() -> Self {
+        Affect {
+            sentiment: None,
+            sarcasm: false,
+            intensity: None,
+            formality: None,
+            emotion: None,
+            confidence: None,
+        }
+    }
+}
+
+impl Affect {
+    pub fn is_empty(&self) -> bool {
+        self.sentiment.is_none()
+            && !self.sarcasm
+            && self.intensity.is_none()
+            && self.formality.is_none()
+            && self.emotion.is_none()
+            && self.confidence.is_none()
+    }
+}
+
+/// Sentiment polarity markers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sentiment {
+    Positive,   // ⊕
+    Negative,   // ⊖
+    Neutral,    // ⊜
+}
+
+/// Intensity modifiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Intensity {
+    Up,         // ↑ (intensifier)
+    Down,       // ↓ (dampener)
+    Max,        // ⇈ (maximum)
+}
+
+/// Formality register.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Formality {
+    Formal,     // ♔
+    Informal,   // ♟
+}
+
+/// Emotion categories (Plutchik's wheel).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Emotion {
+    Joy,        // ☺
+    Sadness,    // ☹
+    Anger,      // ⚡
+    Fear,       // ❄
+    Surprise,   // ✦
+    Love,       // ♡
+}
+
+/// Confidence level markers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Confidence {
+    High,       // ◉
+    Medium,     // ◎
+    Low,        // ○
 }
 
 /// Function parameter.

@@ -83,6 +83,7 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_collections(interp);
     register_string(interp);
     register_evidence(interp);
+    register_affect(interp);
     register_iter(interp);
     register_io(interp);
     register_time(interp);
@@ -215,6 +216,7 @@ fn register_core(interp: &mut Interpreter) {
                 Evidence::Reported => "reported",
                 Evidence::Paradox => "paradox",
             },
+            Value::Affective { .. } => "affective",
             Value::Map(_) => "map",
             Value::Set(_) => "set",
             Value::Channel(_) => "channel",
@@ -2345,6 +2347,460 @@ fn register_evidence(interp: &mut Interpreter) {
             Evidence::Reported => "reported",
             Evidence::Paradox => "paradox",
         }.to_string())))
+    });
+}
+
+// ============================================================================
+// AFFECT FUNCTIONS (Sentiment, Emotion, Sarcasm markers)
+// ============================================================================
+
+fn register_affect(interp: &mut Interpreter) {
+    use crate::interpreter::{RuntimeAffect, RuntimeSentiment, RuntimeIntensity,
+                             RuntimeFormality, RuntimeEmotion, RuntimeConfidence};
+
+    // === Create affective values ===
+
+    // Sentiment markers
+    define(interp, "positive", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: Some(RuntimeSentiment::Positive),
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "negative", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: Some(RuntimeSentiment::Negative),
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "neutral", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: Some(RuntimeSentiment::Neutral),
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    // Sarcasm marker
+    define(interp, "sarcastic", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: true,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    // Intensity markers
+    define(interp, "intensify", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: Some(RuntimeIntensity::Up),
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "dampen", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: Some(RuntimeIntensity::Down),
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "maximize", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: Some(RuntimeIntensity::Max),
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    // Formality markers
+    define(interp, "formal", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: Some(RuntimeFormality::Formal),
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "informal", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: Some(RuntimeFormality::Informal),
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    // Emotion markers (Plutchik's wheel)
+    define(interp, "joyful", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: Some(RuntimeEmotion::Joy),
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "sad", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: Some(RuntimeEmotion::Sadness),
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "angry", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: Some(RuntimeEmotion::Anger),
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "fearful", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: Some(RuntimeEmotion::Fear),
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "surprised", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: Some(RuntimeEmotion::Surprise),
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "loving", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: Some(RuntimeEmotion::Love),
+                confidence: None,
+            },
+        })
+    });
+
+    // Confidence markers
+    define(interp, "high_confidence", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: Some(RuntimeConfidence::High),
+            },
+        })
+    });
+
+    define(interp, "medium_confidence", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: Some(RuntimeConfidence::Medium),
+            },
+        })
+    });
+
+    define(interp, "low_confidence", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: Some(RuntimeConfidence::Low),
+            },
+        })
+    });
+
+    // === Query affect ===
+
+    define(interp, "affect_of", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => {
+                let mut parts = Vec::new();
+                if let Some(s) = &affect.sentiment {
+                    parts.push(match s {
+                        RuntimeSentiment::Positive => "positive",
+                        RuntimeSentiment::Negative => "negative",
+                        RuntimeSentiment::Neutral => "neutral",
+                    });
+                }
+                if affect.sarcasm {
+                    parts.push("sarcastic");
+                }
+                if let Some(i) = &affect.intensity {
+                    parts.push(match i {
+                        RuntimeIntensity::Up => "intensified",
+                        RuntimeIntensity::Down => "dampened",
+                        RuntimeIntensity::Max => "maximized",
+                    });
+                }
+                if let Some(f) = &affect.formality {
+                    parts.push(match f {
+                        RuntimeFormality::Formal => "formal",
+                        RuntimeFormality::Informal => "informal",
+                    });
+                }
+                if let Some(e) = &affect.emotion {
+                    parts.push(match e {
+                        RuntimeEmotion::Joy => "joyful",
+                        RuntimeEmotion::Sadness => "sad",
+                        RuntimeEmotion::Anger => "angry",
+                        RuntimeEmotion::Fear => "fearful",
+                        RuntimeEmotion::Surprise => "surprised",
+                        RuntimeEmotion::Love => "loving",
+                    });
+                }
+                if let Some(c) = &affect.confidence {
+                    parts.push(match c {
+                        RuntimeConfidence::High => "high_confidence",
+                        RuntimeConfidence::Medium => "medium_confidence",
+                        RuntimeConfidence::Low => "low_confidence",
+                    });
+                }
+                Ok(Value::String(Rc::new(parts.join(", "))))
+            }
+            _ => Ok(Value::String(Rc::new("none".to_string()))),
+        }
+    });
+
+    define(interp, "is_sarcastic", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => Ok(Value::Bool(affect.sarcasm)),
+            _ => Ok(Value::Bool(false)),
+        }
+    });
+
+    define(interp, "is_positive", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => {
+                Ok(Value::Bool(matches!(affect.sentiment, Some(RuntimeSentiment::Positive))))
+            }
+            _ => Ok(Value::Bool(false)),
+        }
+    });
+
+    define(interp, "is_negative", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => {
+                Ok(Value::Bool(matches!(affect.sentiment, Some(RuntimeSentiment::Negative))))
+            }
+            _ => Ok(Value::Bool(false)),
+        }
+    });
+
+    define(interp, "is_formal", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => {
+                Ok(Value::Bool(matches!(affect.formality, Some(RuntimeFormality::Formal))))
+            }
+            _ => Ok(Value::Bool(false)),
+        }
+    });
+
+    define(interp, "is_informal", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => {
+                Ok(Value::Bool(matches!(affect.formality, Some(RuntimeFormality::Informal))))
+            }
+            _ => Ok(Value::Bool(false)),
+        }
+    });
+
+    define(interp, "emotion_of", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => {
+                let emotion_str = match &affect.emotion {
+                    Some(RuntimeEmotion::Joy) => "joy",
+                    Some(RuntimeEmotion::Sadness) => "sadness",
+                    Some(RuntimeEmotion::Anger) => "anger",
+                    Some(RuntimeEmotion::Fear) => "fear",
+                    Some(RuntimeEmotion::Surprise) => "surprise",
+                    Some(RuntimeEmotion::Love) => "love",
+                    None => "none",
+                };
+                Ok(Value::String(Rc::new(emotion_str.to_string())))
+            }
+            _ => Ok(Value::String(Rc::new("none".to_string()))),
+        }
+    });
+
+    define(interp, "confidence_of", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => {
+                let conf_str = match &affect.confidence {
+                    Some(RuntimeConfidence::High) => "high",
+                    Some(RuntimeConfidence::Medium) => "medium",
+                    Some(RuntimeConfidence::Low) => "low",
+                    None => "none",
+                };
+                Ok(Value::String(Rc::new(conf_str.to_string())))
+            }
+            _ => Ok(Value::String(Rc::new("none".to_string()))),
+        }
+    });
+
+    // Extract inner value
+    define(interp, "strip_affect", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { value, .. } => Ok(*value.clone()),
+            other => Ok(other.clone()),
+        }
+    });
+
+    // Create full affect with multiple markers
+    define(interp, "with_affect", None, |_, args| {
+        if args.is_empty() {
+            return Err(RuntimeError::new("with_affect requires at least one argument"));
+        }
+
+        let base_value = args[0].clone();
+        let mut affect = RuntimeAffect {
+            sentiment: None,
+            sarcasm: false,
+            intensity: None,
+            formality: None,
+            emotion: None,
+            confidence: None,
+        };
+
+        // Parse string markers from remaining args
+        for arg in args.iter().skip(1) {
+            if let Value::String(s) = arg {
+                match s.as_str() {
+                    "positive" | "⊕" => affect.sentiment = Some(RuntimeSentiment::Positive),
+                    "negative" | "⊖" => affect.sentiment = Some(RuntimeSentiment::Negative),
+                    "neutral" | "⊜" => affect.sentiment = Some(RuntimeSentiment::Neutral),
+                    "sarcastic" | "⸮" => affect.sarcasm = true,
+                    "intensify" | "↑" => affect.intensity = Some(RuntimeIntensity::Up),
+                    "dampen" | "↓" => affect.intensity = Some(RuntimeIntensity::Down),
+                    "maximize" | "⇈" => affect.intensity = Some(RuntimeIntensity::Max),
+                    "formal" | "♔" => affect.formality = Some(RuntimeFormality::Formal),
+                    "informal" | "♟" => affect.formality = Some(RuntimeFormality::Informal),
+                    "joy" | "☺" => affect.emotion = Some(RuntimeEmotion::Joy),
+                    "sadness" | "☹" => affect.emotion = Some(RuntimeEmotion::Sadness),
+                    "anger" | "⚡" => affect.emotion = Some(RuntimeEmotion::Anger),
+                    "fear" | "❄" => affect.emotion = Some(RuntimeEmotion::Fear),
+                    "surprise" | "✦" => affect.emotion = Some(RuntimeEmotion::Surprise),
+                    "love" | "♡" => affect.emotion = Some(RuntimeEmotion::Love),
+                    "high" | "◉" => affect.confidence = Some(RuntimeConfidence::High),
+                    "medium" | "◎" => affect.confidence = Some(RuntimeConfidence::Medium),
+                    "low" | "○" => affect.confidence = Some(RuntimeConfidence::Low),
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(Value::Affective {
+            value: Box::new(base_value),
+            affect,
+        })
     });
 }
 
@@ -7168,6 +7624,7 @@ fn register_pattern(interp: &mut Interpreter) {
             Value::Infinity => "infinity",
             Value::Empty => "empty",
             Value::Evidential { .. } => "evidential",
+            Value::Affective { .. } => "affective",
             Value::Channel(_) => "channel",
             Value::ThreadHandle(_) => "thread",
             Value::Actor(_) => "actor",
@@ -7846,6 +8303,7 @@ fn register_devex(interp: &mut Interpreter) {
             Value::Infinity => "infinity".to_string(),
             Value::Empty => "empty".to_string(),
             Value::Evidential { evidence, .. } => format!("evidential[{:?}]", evidence),
+            Value::Affective { affect, .. } => format!("affective[sarcasm={}]", affect.sarcasm),
             Value::Channel(_) => "channel".to_string(),
             Value::ThreadHandle(_) => "thread".to_string(),
             Value::Actor(_) => "actor".to_string(),
@@ -8354,6 +8812,16 @@ fn format_value_debug(value: &Value) -> String {
         Value::Infinity => "∞".to_string(),
         Value::Empty => "∅".to_string(),
         Value::Evidential { value, evidence } => format!("{:?}({})", evidence, format_value_debug(value)),
+        Value::Affective { value, affect } => {
+            let mut markers = Vec::new();
+            if let Some(s) = &affect.sentiment { markers.push(format!("{:?}", s)); }
+            if affect.sarcasm { markers.push("sarcasm".to_string()); }
+            if let Some(i) = &affect.intensity { markers.push(format!("{:?}", i)); }
+            if let Some(f) = &affect.formality { markers.push(format!("{:?}", f)); }
+            if let Some(e) = &affect.emotion { markers.push(format!("{:?}", e)); }
+            if let Some(c) = &affect.confidence { markers.push(format!("{:?}", c)); }
+            format!("{}[{}]", format_value_debug(value), markers.join(","))
+        }
         Value::Channel(_) => "<channel>".to_string(),
         Value::ThreadHandle(_) => "<thread>".to_string(),
         Value::Actor(_) => "<actor>".to_string(),
@@ -8438,6 +8906,7 @@ fn get_type_name(value: &Value) -> String {
         Value::Infinity => "infinity".to_string(),
         Value::Empty => "empty".to_string(),
         Value::Evidential { .. } => "evidential".to_string(),
+        Value::Affective { .. } => "affective".to_string(),
         Value::Channel(_) => "channel".to_string(),
         Value::ThreadHandle(_) => "thread".to_string(),
         Value::Actor(_) => "actor".to_string(),
