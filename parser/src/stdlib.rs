@@ -110,6 +110,8 @@ fn register_core(interp: &mut Interpreter) {
                 Evidence::Reported => "reported",
                 Evidence::Paradox => "paradox",
             },
+            Value::Map(_) => "map",
+            Value::Set(_) => "set",
         };
         Ok(Value::String(Rc::new(type_name.to_string())))
     });
@@ -602,7 +604,9 @@ fn register_collections(interp: &mut Interpreter) {
             Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
             Value::String(s) => Ok(Value::Int(s.chars().count() as i64)),
             Value::Tuple(t) => Ok(Value::Int(t.len() as i64)),
-            _ => Err(RuntimeError::new("len() requires array, string, or tuple")),
+            Value::Map(m) => Ok(Value::Int(m.borrow().len() as i64)),
+            Value::Set(s) => Ok(Value::Int(s.borrow().len() as i64)),
+            _ => Err(RuntimeError::new("len() requires array, string, tuple, map, or set")),
         }
     });
 
@@ -611,6 +615,8 @@ fn register_collections(interp: &mut Interpreter) {
             Value::Array(arr) => Ok(Value::Bool(arr.borrow().is_empty())),
             Value::String(s) => Ok(Value::Bool(s.is_empty())),
             Value::Tuple(t) => Ok(Value::Bool(t.is_empty())),
+            Value::Map(m) => Ok(Value::Bool(m.borrow().is_empty())),
+            Value::Set(s) => Ok(Value::Bool(s.borrow().is_empty())),
             _ => Err(RuntimeError::new("is_empty() requires collection")),
         }
     });
@@ -1019,6 +1025,199 @@ fn register_collections(interp: &mut Interpreter) {
         };
         let repeated: Vec<Value> = std::iter::repeat(args[0].clone()).take(n).collect();
         Ok(Value::Array(Rc::new(RefCell::new(repeated))))
+    });
+
+    // ========================================
+    // HashMap operations
+    // ========================================
+
+    // map_new - create empty HashMap
+    define(interp, "map_new", Some(0), |_, _| {
+        Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
+    });
+
+    // map_get - get value by key
+    define(interp, "map_get", Some(2), |_, args| {
+        let key = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("map_get() key must be string")),
+        };
+        match &args[0] {
+            Value::Map(map) => {
+                Ok(map.borrow().get(&key).cloned().unwrap_or(Value::Null))
+            }
+            _ => Err(RuntimeError::new("map_get() requires map")),
+        }
+    });
+
+    // map_set - set key-value pair
+    define(interp, "map_set", Some(3), |_, args| {
+        let key = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("map_set() key must be string")),
+        };
+        match &args[0] {
+            Value::Map(map) => {
+                map.borrow_mut().insert(key, args[2].clone());
+                Ok(Value::Null)
+            }
+            _ => Err(RuntimeError::new("map_set() requires map")),
+        }
+    });
+
+    // map_has - check if key exists
+    define(interp, "map_has", Some(2), |_, args| {
+        let key = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("map_has() key must be string")),
+        };
+        match &args[0] {
+            Value::Map(map) => {
+                Ok(Value::Bool(map.borrow().contains_key(&key)))
+            }
+            _ => Err(RuntimeError::new("map_has() requires map")),
+        }
+    });
+
+    // map_remove - remove key from map
+    define(interp, "map_remove", Some(2), |_, args| {
+        let key = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("map_remove() key must be string")),
+        };
+        match &args[0] {
+            Value::Map(map) => {
+                Ok(map.borrow_mut().remove(&key).unwrap_or(Value::Null))
+            }
+            _ => Err(RuntimeError::new("map_remove() requires map")),
+        }
+    });
+
+    // map_keys - get all keys as array
+    define(interp, "map_keys", Some(1), |_, args| {
+        match &args[0] {
+            Value::Map(map) => {
+                let keys: Vec<Value> = map.borrow().keys()
+                    .map(|k| Value::String(Rc::new(k.clone())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(keys))))
+            }
+            _ => Err(RuntimeError::new("map_keys() requires map")),
+        }
+    });
+
+    // map_values - get all values as array
+    define(interp, "map_values", Some(1), |_, args| {
+        match &args[0] {
+            Value::Map(map) => {
+                let values: Vec<Value> = map.borrow().values().cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(values))))
+            }
+            _ => Err(RuntimeError::new("map_values() requires map")),
+        }
+    });
+
+    // map_len - get number of entries
+    define(interp, "map_len", Some(1), |_, args| {
+        match &args[0] {
+            Value::Map(map) => Ok(Value::Int(map.borrow().len() as i64)),
+            _ => Err(RuntimeError::new("map_len() requires map")),
+        }
+    });
+
+    // map_clear - remove all entries
+    define(interp, "map_clear", Some(1), |_, args| {
+        match &args[0] {
+            Value::Map(map) => {
+                map.borrow_mut().clear();
+                Ok(Value::Null)
+            }
+            _ => Err(RuntimeError::new("map_clear() requires map")),
+        }
+    });
+
+    // ========================================
+    // HashSet operations
+    // ========================================
+
+    // set_new - create empty HashSet
+    define(interp, "set_new", Some(0), |_, _| {
+        Ok(Value::Set(Rc::new(RefCell::new(std::collections::HashSet::new()))))
+    });
+
+    // set_add - add item to set
+    define(interp, "set_add", Some(2), |_, args| {
+        let item = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("set_add() item must be string")),
+        };
+        match &args[0] {
+            Value::Set(set) => {
+                set.borrow_mut().insert(item);
+                Ok(Value::Null)
+            }
+            _ => Err(RuntimeError::new("set_add() requires set")),
+        }
+    });
+
+    // set_has - check if item exists
+    define(interp, "set_has", Some(2), |_, args| {
+        let item = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("set_has() item must be string")),
+        };
+        match &args[0] {
+            Value::Set(set) => {
+                Ok(Value::Bool(set.borrow().contains(&item)))
+            }
+            _ => Err(RuntimeError::new("set_has() requires set")),
+        }
+    });
+
+    // set_remove - remove item from set
+    define(interp, "set_remove", Some(2), |_, args| {
+        let item = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("set_remove() item must be string")),
+        };
+        match &args[0] {
+            Value::Set(set) => {
+                Ok(Value::Bool(set.borrow_mut().remove(&item)))
+            }
+            _ => Err(RuntimeError::new("set_remove() requires set")),
+        }
+    });
+
+    // set_to_array - convert set to array
+    define(interp, "set_to_array", Some(1), |_, args| {
+        match &args[0] {
+            Value::Set(set) => {
+                let items: Vec<Value> = set.borrow().iter()
+                    .map(|s| Value::String(Rc::new(s.clone())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(items))))
+            }
+            _ => Err(RuntimeError::new("set_to_array() requires set")),
+        }
+    });
+
+    // set_len - get number of items
+    define(interp, "set_len", Some(1), |_, args| {
+        match &args[0] {
+            Value::Set(set) => Ok(Value::Int(set.borrow().len() as i64)),
+            _ => Err(RuntimeError::new("set_len() requires set")),
+        }
+    });
+
+    // set_clear - remove all items
+    define(interp, "set_clear", Some(1), |_, args| {
+        match &args[0] {
+            Value::Set(set) => {
+                set.borrow_mut().clear();
+                Ok(Value::Null)
+            }
+            _ => Err(RuntimeError::new("set_clear() requires set")),
+        }
     });
 }
 

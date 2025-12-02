@@ -53,6 +53,10 @@ pub enum Value {
         value: Box<Value>,
         evidence: Evidence,
     },
+    /// HashMap
+    Map(Rc<RefCell<HashMap<String, Value>>>),
+    /// HashSet (stores keys only, values are unit)
+    Set(Rc<RefCell<std::collections::HashSet<String>>>),
 }
 
 /// Evidence level at runtime
@@ -141,6 +145,24 @@ impl fmt::Debug for Value {
                     Evidence::Reported => write!(f, "~"),
                     Evidence::Paradox => write!(f, "‽"),
                 }
+            }
+            Value::Map(map) => {
+                let map = map.borrow();
+                write!(f, "{{")?;
+                for (i, (k, v)) in map.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{:?}: {:?}", k, v)?;
+                }
+                write!(f, "}}")
+            }
+            Value::Set(set) => {
+                let set = set.borrow();
+                write!(f, "Set{{")?;
+                for (i, k) in set.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{:?}", k)?;
+                }
+                write!(f, "}}")
             }
         }
     }
@@ -374,6 +396,8 @@ impl Interpreter {
                 Value::Infinity => "infinity",
                 Value::Empty => "empty",
                 Value::Evidential { .. } => "evidential",
+                Value::Map(_) => "map",
+                Value::Set(_) => "set",
             };
             Ok(Value::String(Rc::new(type_name.to_string())))
         });
@@ -687,8 +711,49 @@ impl Interpreter {
             self.environment.borrow().get(name)
                 .ok_or_else(|| RuntimeError::new(format!("Undefined variable: {}", name)))
         } else {
-            // Multi-segment path (module::item)
-            Err(RuntimeError::new("Module paths not yet supported"))
+            // Multi-segment path (module::item or Type·method)
+            // Try full qualified name first (joined with ·)
+            let full_name = path.segments.iter()
+                .map(|s| s.ident.name.as_str())
+                .collect::<Vec<_>>()
+                .join("·");
+
+            if let Some(val) = self.environment.borrow().get(&full_name) {
+                return Ok(val);
+            }
+
+            // Try looking up the last segment (for Math·sqrt -> sqrt)
+            let last_name = &path.segments.last().unwrap().ident.name;
+            if let Some(val) = self.environment.borrow().get(last_name) {
+                return Ok(val);
+            }
+
+            // Check for enum variant syntax (EnumName::Variant)
+            if path.segments.len() == 2 {
+                let type_name = &path.segments[0].ident.name;
+                let variant_name = &path.segments[1].ident.name;
+
+                // Check if this is an enum variant
+                if let Some(TypeDef::Enum(enum_def)) = self.types.get(type_name) {
+                    for variant in &enum_def.variants {
+                        if &variant.name.name == variant_name {
+                            // Return a variant constructor or unit variant
+                            if matches!(variant.fields, crate::ast::StructFields::Unit) {
+                                return Ok(Value::Variant {
+                                    enum_name: type_name.clone(),
+                                    variant_name: variant_name.clone(),
+                                    fields: None,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            Err(RuntimeError::new(format!(
+                "Undefined: {} (tried {} and {})",
+                full_name, full_name, last_name
+            )))
         }
     }
 

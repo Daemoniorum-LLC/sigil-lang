@@ -15,7 +15,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 use tracing::info;
 
-use sigil_parser::{Lexer, Parser, Token, Span};
+use sigil_parser::{Lexer, Parser, Token, Span, TypeChecker};
 use std::collections::HashMap;
 
 /// A symbol definition in the document.
@@ -118,9 +118,39 @@ impl OracleServer {
         // Parse the document
         let mut parser = Parser::new(&content);
         match parser.parse_file() {
-            Ok(_ast) => {
-                // TODO: Run type checker and collect type errors
-                // For now, successful parse means no errors
+            Ok(ast) => {
+                // Run type checker and collect type errors
+                let mut type_checker = TypeChecker::new();
+                if let Err(type_errors) = type_checker.check_file(&ast) {
+                    for err in type_errors {
+                        let (line, col, end_col) = self.span_to_position(&content, err.span);
+
+                        let mut message = err.message.clone();
+                        if !err.notes.is_empty() {
+                            message.push_str("\n\nNotes:\n");
+                            for note in &err.notes {
+                                message.push_str("  • ");
+                                message.push_str(note);
+                                message.push('\n');
+                            }
+                        }
+
+                        diagnostics.push(Diagnostic {
+                            range: Range {
+                                start: Position { line, character: col },
+                                end: Position { line, character: end_col },
+                            },
+                            severity: Some(DiagnosticSeverity::ERROR),
+                            code: Some(NumberOrString::String("type-error".to_string())),
+                            source: Some("sigil-oracle".to_string()),
+                            message,
+                            related_information: None,
+                            tags: None,
+                            code_description: None,
+                            data: None,
+                        });
+                    }
+                }
             }
             Err(e) => {
                 // Convert parse error to diagnostic
