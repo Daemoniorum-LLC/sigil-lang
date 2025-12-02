@@ -141,6 +141,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_spirituality(interp);
     // Phase 16: Polycultural color - synesthesia, cultural color systems, color spaces
     register_color(interp);
+    // Phase 17: Protocol support - HTTP, gRPC, WebSocket, Kafka, AMQP, GraphQL
+    register_protocol(interp);
 }
 
 // Helper to define a builtin
@@ -18855,6 +18857,362 @@ fn register_color(interp: &mut Interpreter) {
         map.insert("aa_normal".to_string(), Value::Bool(ratio >= 4.5));
         map.insert("aa_large".to_string(), Value::Bool(ratio >= 3.0));
         map.insert("aaa_normal".to_string(), Value::Bool(ratio >= 7.0));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+}
+
+// ============================================================================
+// PROTOCOL FUNCTIONS (Phase 17)
+// ============================================================================
+
+/// Register protocol functions for HTTP, gRPC, WebSocket, Kafka, AMQP, GraphQL
+/// Note: Actual async network operations require runtime support.
+/// These functions provide protocol information and synchronous utilities.
+fn register_protocol(interp: &mut Interpreter) {
+    // protocol_info - Get information about supported protocols
+    define(interp, "protocol_info", Some(0), |_, _args| {
+        let mut map = std::collections::HashMap::new();
+        map.insert("http".to_string(), Value::Map(Rc::new(RefCell::new({
+            let mut m = std::collections::HashMap::new();
+            m.insert("name".to_string(), Value::String(Rc::new("HTTP".to_string())));
+            m.insert("versions".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("1.1".to_string())),
+                Value::String(Rc::new("2".to_string())),
+            ]))));
+            m.insert("methods".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("GET".to_string())),
+                Value::String(Rc::new("POST".to_string())),
+                Value::String(Rc::new("PUT".to_string())),
+                Value::String(Rc::new("DELETE".to_string())),
+                Value::String(Rc::new("PATCH".to_string())),
+                Value::String(Rc::new("HEAD".to_string())),
+                Value::String(Rc::new("OPTIONS".to_string())),
+            ]))));
+            m
+        }))));
+        map.insert("grpc".to_string(), Value::Map(Rc::new(RefCell::new({
+            let mut m = std::collections::HashMap::new();
+            m.insert("name".to_string(), Value::String(Rc::new("gRPC".to_string())));
+            m.insert("streaming_modes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("unary".to_string())),
+                Value::String(Rc::new("server_streaming".to_string())),
+                Value::String(Rc::new("client_streaming".to_string())),
+                Value::String(Rc::new("bidirectional".to_string())),
+            ]))));
+            m
+        }))));
+        map.insert("websocket".to_string(), Value::Map(Rc::new(RefCell::new({
+            let mut m = std::collections::HashMap::new();
+            m.insert("name".to_string(), Value::String(Rc::new("WebSocket".to_string())));
+            m.insert("message_types".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("text".to_string())),
+                Value::String(Rc::new("binary".to_string())),
+                Value::String(Rc::new("ping".to_string())),
+                Value::String(Rc::new("pong".to_string())),
+                Value::String(Rc::new("close".to_string())),
+            ]))));
+            m
+        }))));
+        map.insert("kafka".to_string(), Value::Map(Rc::new(RefCell::new({
+            let mut m = std::collections::HashMap::new();
+            m.insert("name".to_string(), Value::String(Rc::new("Apache Kafka".to_string())));
+            m.insert("acks".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("none".to_string())),
+                Value::String(Rc::new("leader".to_string())),
+                Value::String(Rc::new("all".to_string())),
+            ]))));
+            m
+        }))));
+        map.insert("amqp".to_string(), Value::Map(Rc::new(RefCell::new({
+            let mut m = std::collections::HashMap::new();
+            m.insert("name".to_string(), Value::String(Rc::new("AMQP".to_string())));
+            m.insert("exchange_types".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("direct".to_string())),
+                Value::String(Rc::new("fanout".to_string())),
+                Value::String(Rc::new("topic".to_string())),
+                Value::String(Rc::new("headers".to_string())),
+            ]))));
+            m
+        }))));
+        map.insert("graphql".to_string(), Value::Map(Rc::new(RefCell::new({
+            let mut m = std::collections::HashMap::new();
+            m.insert("name".to_string(), Value::String(Rc::new("GraphQL".to_string())));
+            m.insert("operations".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("query".to_string())),
+                Value::String(Rc::new("mutation".to_string())),
+                Value::String(Rc::new("subscription".to_string())),
+            ]))));
+            m
+        }))));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // http_status_text - Get status text for HTTP status code
+    define(interp, "http_status_text", Some(1), |_, args| {
+        let code = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("http_status_text requires integer status code")),
+        };
+        let text = match code {
+            100 => "Continue",
+            101 => "Switching Protocols",
+            200 => "OK",
+            201 => "Created",
+            202 => "Accepted",
+            204 => "No Content",
+            301 => "Moved Permanently",
+            302 => "Found",
+            304 => "Not Modified",
+            307 => "Temporary Redirect",
+            308 => "Permanent Redirect",
+            400 => "Bad Request",
+            401 => "Unauthorized",
+            403 => "Forbidden",
+            404 => "Not Found",
+            405 => "Method Not Allowed",
+            409 => "Conflict",
+            422 => "Unprocessable Entity",
+            429 => "Too Many Requests",
+            500 => "Internal Server Error",
+            502 => "Bad Gateway",
+            503 => "Service Unavailable",
+            504 => "Gateway Timeout",
+            _ => "Unknown",
+        };
+        Ok(Value::String(Rc::new(text.to_string())))
+    });
+
+    // http_status_type - Get status type (informational, success, redirect, client_error, server_error)
+    define(interp, "http_status_type", Some(1), |_, args| {
+        let code = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("http_status_type requires integer status code")),
+        };
+        let status_type = match code {
+            100..=199 => "informational",
+            200..=299 => "success",
+            300..=399 => "redirect",
+            400..=499 => "client_error",
+            500..=599 => "server_error",
+            _ => "unknown",
+        };
+        Ok(Value::String(Rc::new(status_type.to_string())))
+    });
+
+    // grpc_status_text - Get status text for gRPC status code
+    define(interp, "grpc_status_text", Some(1), |_, args| {
+        let code = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("grpc_status_text requires integer status code")),
+        };
+        let text = match code {
+            0 => "OK",
+            1 => "CANCELLED",
+            2 => "UNKNOWN",
+            3 => "INVALID_ARGUMENT",
+            4 => "DEADLINE_EXCEEDED",
+            5 => "NOT_FOUND",
+            6 => "ALREADY_EXISTS",
+            7 => "PERMISSION_DENIED",
+            8 => "RESOURCE_EXHAUSTED",
+            9 => "FAILED_PRECONDITION",
+            10 => "ABORTED",
+            11 => "OUT_OF_RANGE",
+            12 => "UNIMPLEMENTED",
+            13 => "INTERNAL",
+            14 => "UNAVAILABLE",
+            15 => "DATA_LOSS",
+            16 => "UNAUTHENTICATED",
+            _ => "UNKNOWN",
+        };
+        Ok(Value::String(Rc::new(text.to_string())))
+    });
+
+    // url_parse - Parse a URL into components
+    define(interp, "url_parse", Some(1), |_, args| {
+        let url_str = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("url_parse requires string URL")),
+        };
+
+        // Simple URL parsing
+        let mut map = std::collections::HashMap::new();
+
+        // Parse scheme
+        let (scheme, rest) = if let Some(pos) = url_str.find("://") {
+            (url_str[..pos].to_string(), &url_str[pos + 3..])
+        } else {
+            return Err(RuntimeError::new("Invalid URL: missing scheme"));
+        };
+        map.insert("scheme".to_string(), Value::String(Rc::new(scheme)));
+
+        // Parse host and path
+        let (authority, path_and_rest) = if let Some(pos) = rest.find('/') {
+            (&rest[..pos], &rest[pos..])
+        } else {
+            (rest, "/")
+        };
+
+        // Parse host and port
+        let (host, port) = if let Some(pos) = authority.rfind(':') {
+            if let Ok(p) = authority[pos + 1..].parse::<i64>() {
+                (authority[..pos].to_string(), Some(p))
+            } else {
+                (authority.to_string(), None)
+            }
+        } else {
+            (authority.to_string(), None)
+        };
+        map.insert("host".to_string(), Value::String(Rc::new(host)));
+        map.insert("port".to_string(), port.map(Value::Int).unwrap_or(Value::Null));
+
+        // Parse path and query
+        let (path, query) = if let Some(pos) = path_and_rest.find('?') {
+            (&path_and_rest[..pos], Some(&path_and_rest[pos + 1..]))
+        } else {
+            (path_and_rest, None)
+        };
+        map.insert("path".to_string(), Value::String(Rc::new(path.to_string())));
+        map.insert("query".to_string(), query.map(|q| Value::String(Rc::new(q.to_string()))).unwrap_or(Value::Null));
+
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // url_encode - URL-encode a string
+    define(interp, "url_encode", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.as_str(),
+            _ => return Err(RuntimeError::new("url_encode requires string")),
+        };
+        let mut result = String::new();
+        for c in s.chars() {
+            match c {
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' => {
+                    result.push(c);
+                }
+                ' ' => result.push_str("%20"),
+                _ => {
+                    for b in c.to_string().as_bytes() {
+                        result.push_str(&format!("%{:02X}", b));
+                    }
+                }
+            }
+        }
+        Ok(Value::String(Rc::new(result)))
+    });
+
+    // url_decode - URL-decode a string
+    define(interp, "url_decode", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("url_decode requires string")),
+        };
+        let mut result = Vec::new();
+        let bytes = s.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'%' && i + 2 < bytes.len() {
+                if let Ok(b) = u8::from_str_radix(
+                    &String::from_utf8_lossy(&bytes[i + 1..i + 3]),
+                    16,
+                ) {
+                    result.push(b);
+                    i += 3;
+                    continue;
+                }
+            } else if bytes[i] == b'+' {
+                result.push(b' ');
+                i += 1;
+                continue;
+            }
+            result.push(bytes[i]);
+            i += 1;
+        }
+        Ok(Value::String(Rc::new(String::from_utf8_lossy(&result).to_string())))
+    });
+
+    // ws_close_code_text - Get text for WebSocket close code
+    define(interp, "ws_close_code_text", Some(1), |_, args| {
+        let code = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("ws_close_code_text requires integer code")),
+        };
+        let text = match code {
+            1000 => "Normal Closure",
+            1001 => "Going Away",
+            1002 => "Protocol Error",
+            1003 => "Unsupported Data",
+            1005 => "No Status Received",
+            1006 => "Abnormal Closure",
+            1007 => "Invalid Payload Data",
+            1008 => "Policy Violation",
+            1009 => "Message Too Big",
+            1010 => "Missing Extension",
+            1011 => "Internal Error",
+            1015 => "TLS Handshake Failure",
+            _ => "Unknown",
+        };
+        Ok(Value::String(Rc::new(text.to_string())))
+    });
+
+    // mime_type - Get MIME type for file extension
+    define(interp, "mime_type", Some(1), |_, args| {
+        let ext = match &args[0] {
+            Value::String(s) => s.as_str().to_lowercase(),
+            _ => return Err(RuntimeError::new("mime_type requires string extension")),
+        };
+        let ext = ext.trim_start_matches('.');
+        let mime = match ext {
+            "html" | "htm" => "text/html",
+            "css" => "text/css",
+            "js" | "mjs" => "text/javascript",
+            "json" => "application/json",
+            "xml" => "application/xml",
+            "txt" => "text/plain",
+            "csv" => "text/csv",
+            "png" => "image/png",
+            "jpg" | "jpeg" => "image/jpeg",
+            "gif" => "image/gif",
+            "svg" => "image/svg+xml",
+            "webp" => "image/webp",
+            "ico" => "image/x-icon",
+            "pdf" => "application/pdf",
+            "zip" => "application/zip",
+            "gz" | "gzip" => "application/gzip",
+            "mp3" => "audio/mpeg",
+            "mp4" => "video/mp4",
+            "webm" => "video/webm",
+            "woff" => "font/woff",
+            "woff2" => "font/woff2",
+            "ttf" => "font/ttf",
+            "otf" => "font/otf",
+            "wasm" => "application/wasm",
+            "proto" => "application/protobuf",
+            _ => "application/octet-stream",
+        };
+        Ok(Value::String(Rc::new(mime.to_string())))
+    });
+
+    // content_type_parse - Parse Content-Type header
+    define(interp, "content_type_parse", Some(1), |_, args| {
+        let ct = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("content_type_parse requires string")),
+        };
+        let mut map = std::collections::HashMap::new();
+        let parts: Vec<&str> = ct.split(';').collect();
+        map.insert("media_type".to_string(), Value::String(Rc::new(parts[0].trim().to_string())));
+
+        let mut params = std::collections::HashMap::new();
+        for part in parts.iter().skip(1) {
+            let kv: Vec<&str> = part.splitn(2, '=').collect();
+            if kv.len() == 2 {
+                let key = kv[0].trim().to_lowercase();
+                let value = kv[1].trim().trim_matches('"').to_string();
+                params.insert(key, Value::String(Rc::new(value)));
+            }
+        }
+        map.insert("params".to_string(), Value::Map(Rc::new(RefCell::new(params))));
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 }

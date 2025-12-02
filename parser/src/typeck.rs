@@ -961,6 +961,56 @@ impl TypeChecker {
             PipeOp::Gpu(inner_op) => {
                 self.infer_pipe_op(inner_op, input)
             }
+
+            // ==========================================
+            // Protocol Operations - Sigil-native networking
+            // All protocol results have Reported evidentiality
+            // ==========================================
+
+            // Send: connection -> response (with Reported evidence)
+            PipeOp::Send(_) => {
+                // Returns response object with Reported evidentiality
+                Type::Evidential {
+                    inner: Box::new(self.fresh_var()),
+                    evidence: EvidenceLevel::Reported,
+                }
+            }
+
+            // Recv: connection -> data (with Reported evidence)
+            PipeOp::Recv => {
+                // Returns received data with Reported evidentiality
+                Type::Evidential {
+                    inner: Box::new(self.fresh_var()),
+                    evidence: EvidenceLevel::Reported,
+                }
+            }
+
+            // Stream: connection -> Stream<T> (elements have Reported evidence)
+            PipeOp::Stream(_) => {
+                // Returns a stream type
+                self.fresh_var()
+            }
+
+            // Connect: url/config -> connection
+            PipeOp::Connect(_) => {
+                // Returns connection object
+                self.fresh_var()
+            }
+
+            // Close: connection -> ()
+            PipeOp::Close => Type::Unit,
+
+            // Header: request -> request (adds header)
+            PipeOp::Header { .. } => inner,
+
+            // Body: request -> request (sets body)
+            PipeOp::Body(_) => inner,
+
+            // Timeout: request -> request (sets timeout)
+            PipeOp::Timeout(_) => inner,
+
+            // Retry: request -> request (sets retry policy)
+            PipeOp::Retry { .. } => inner,
         };
 
         // Preserve evidence through pipe

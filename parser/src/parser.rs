@@ -2629,6 +2629,98 @@ impl<'a> Parser<'a> {
                 };
                 Ok(PipeOp::Method { name, args })
             }
+
+            // ==========================================
+            // Protocol Operations - Sigil-native networking
+            // ==========================================
+
+            // Send: |send{data} or |⇒{data}
+            Some(Token::Send) | Some(Token::ProtoSend) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let data = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Send(Box::new(data)))
+            }
+
+            // Recv: |recv or |⇐
+            Some(Token::Recv) | Some(Token::ProtoRecv) => {
+                self.advance();
+                Ok(PipeOp::Recv)
+            }
+
+            // Stream: |stream{handler} or |≋{handler}
+            Some(Token::Stream) | Some(Token::ProtoStream) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let handler = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Stream(Box::new(handler)))
+            }
+
+            // Connect: |connect or |connect{config} or |⊸{config}
+            Some(Token::Connect) | Some(Token::ProtoConnect) => {
+                self.advance();
+                let config = if self.check(&Token::LBrace) {
+                    self.advance();
+                    let expr = self.parse_expr()?;
+                    self.expect(Token::RBrace)?;
+                    Some(Box::new(expr))
+                } else {
+                    None
+                };
+                Ok(PipeOp::Connect(config))
+            }
+
+            // Close: |close or |⊗
+            Some(Token::Close) | Some(Token::Tensor) => {
+                self.advance();
+                Ok(PipeOp::Close)
+            }
+
+            // Timeout: |timeout{ms} or |⏱{ms}
+            Some(Token::Timeout) | Some(Token::ProtoTimeout) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let ms = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Timeout(Box::new(ms)))
+            }
+
+            // Retry: |retry{count} or |retry{count, strategy}
+            Some(Token::Retry) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let count = self.parse_expr()?;
+                let strategy = if self.consume_if(&Token::Comma) {
+                    Some(Box::new(self.parse_expr()?))
+                } else {
+                    None
+                };
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Retry { count: Box::new(count), strategy })
+            }
+
+            // Header: |header{name, value}
+            Some(Token::Header) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let name = self.parse_expr()?;
+                self.expect(Token::Comma)?;
+                let value = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Header { name: Box::new(name), value: Box::new(value) })
+            }
+
+            // Body: |body{data}
+            Some(Token::Body) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let data = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Body(Box::new(data)))
+            }
+
             Some(token) => Err(ParseError::UnexpectedToken {
                 expected: "pipe operation".to_string(),
                 found: token.clone(),

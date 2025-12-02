@@ -26,6 +26,9 @@ pub mod codegen;
 #[cfg(feature = "llvm")]
 pub mod llvm_codegen;
 
+#[cfg(feature = "protocol-core")]
+pub mod protocol;
+
 pub use lexer::{Token, Lexer};
 pub use ast::*;
 pub use parser::Parser;
