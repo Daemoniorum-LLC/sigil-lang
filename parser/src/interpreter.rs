@@ -65,6 +65,59 @@ pub enum Value {
     ThreadHandle(Arc<Mutex<Option<JoinHandle<Value>>>>),
     /// Actor (mailbox + state)
     Actor(Arc<ActorInner>),
+    /// Future - represents an async computation
+    Future(Rc<RefCell<FutureInner>>),
+}
+
+/// Future state for async computations
+#[derive(Clone)]
+pub enum FutureState {
+    /// Not yet started
+    Pending,
+    /// Currently executing
+    Running,
+    /// Completed with value
+    Ready(Box<Value>),
+    /// Failed with error
+    Failed(String),
+}
+
+/// Inner future representation
+pub struct FutureInner {
+    /// Current state
+    pub state: FutureState,
+    /// The computation to run (if pending)
+    pub computation: Option<FutureComputation>,
+    /// Completion time for timer futures
+    pub complete_at: Option<std::time::Instant>,
+}
+
+impl Clone for FutureInner {
+    fn clone(&self) -> Self {
+        FutureInner {
+            state: self.state.clone(),
+            computation: self.computation.clone(),
+            complete_at: self.complete_at,
+        }
+    }
+}
+
+/// Types of future computations
+#[derive(Clone)]
+pub enum FutureComputation {
+    /// Immediate value (already resolved)
+    Immediate(Box<Value>),
+    /// Timer - completes after duration
+    Timer(std::time::Duration),
+    /// Lazy computation - function + captured args
+    Lazy {
+        func: Rc<Function>,
+        args: Vec<Value>,
+    },
+    /// Join multiple futures
+    Join(Vec<Rc<RefCell<FutureInner>>>),
+    /// Race multiple futures (first to complete wins)
+    Race(Vec<Rc<RefCell<FutureInner>>>),
 }
 
 /// Inner channel state - wraps mpsc channel
@@ -197,6 +250,15 @@ impl fmt::Debug for Value {
             Value::Channel(_) => write!(f, "<channel>"),
             Value::ThreadHandle(_) => write!(f, "<thread>"),
             Value::Actor(actor) => write!(f, "<actor {}>", actor.name),
+            Value::Future(fut) => {
+                let fut = fut.borrow();
+                match &fut.state {
+                    FutureState::Pending => write!(f, "<future pending>"),
+                    FutureState::Running => write!(f, "<future running>"),
+                    FutureState::Ready(v) => write!(f, "<future ready: {:?}>", v),
+                    FutureState::Failed(e) => write!(f, "<future failed: {}>", e),
+                }
+            }
         }
     }
 }
@@ -434,6 +496,7 @@ impl Interpreter {
                 Value::Channel(_) => "channel",
                 Value::ThreadHandle(_) => "thread",
                 Value::Actor(_) => "actor",
+                Value::Future(_) => "future",
             };
             Ok(Value::String(Rc::new(type_name.to_string())))
         });
@@ -656,6 +719,10 @@ impl Interpreter {
             Expr::Evidential { expr, evidentiality } => self.eval_evidential(expr, evidentiality),
             Expr::Range { start, end, inclusive } => self.eval_range(start, end, *inclusive),
             Expr::Assign { target, value } => self.eval_assign(target, value),
+            Expr::Await(inner) => {
+                let value = self.evaluate(inner)?;
+                self.await_value(value)
+            }
             _ => Err(RuntimeError::new(format!("Unsupported expression: {:?}", expr))),
         }
     }
@@ -972,6 +1039,133 @@ impl Interpreter {
             }
         }
         (builtin.func)(self, args)
+    }
+
+    /// Await a value - if it's a future, resolve it; otherwise return as-is
+    pub fn await_value(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Future(fut) => {
+                let mut fut_inner = fut.borrow_mut();
+                self.poll_future(&mut fut_inner)
+            }
+            // Non-futures return immediately
+            other => Ok(other),
+        }
+    }
+
+    /// Poll a future to completion
+    fn poll_future(&mut self, fut: &mut FutureInner) -> Result<Value, RuntimeError> {
+        // Check if already resolved
+        match &fut.state {
+            FutureState::Ready(v) => return Ok((**v).clone()),
+            FutureState::Failed(e) => return Err(RuntimeError::new(e.clone())),
+            _ => {}
+        }
+
+        // Check if it's a timer future
+        if let Some(complete_at) = fut.complete_at {
+            if std::time::Instant::now() >= complete_at {
+                fut.state = FutureState::Ready(Box::new(Value::Null));
+                return Ok(Value::Null);
+            } else {
+                // Timer not complete - in interpreter, we just sleep
+                let remaining = complete_at - std::time::Instant::now();
+                std::thread::sleep(remaining);
+                fut.state = FutureState::Ready(Box::new(Value::Null));
+                return Ok(Value::Null);
+            }
+        }
+
+        // Execute computation if pending
+        if let Some(computation) = fut.computation.take() {
+            fut.state = FutureState::Running;
+
+            match computation {
+                FutureComputation::Immediate(v) => {
+                    fut.state = FutureState::Ready(v.clone());
+                    Ok((*v).clone())
+                }
+                FutureComputation::Timer(duration) => {
+                    // Sleep for the duration
+                    std::thread::sleep(duration);
+                    fut.state = FutureState::Ready(Box::new(Value::Null));
+                    Ok(Value::Null)
+                }
+                FutureComputation::Lazy { func, args } => {
+                    // Execute the function
+                    match self.call_function(&func, args) {
+                        Ok(result) => {
+                            fut.state = FutureState::Ready(Box::new(result.clone()));
+                            Ok(result)
+                        }
+                        Err(e) => {
+                            fut.state = FutureState::Failed(e.message.clone());
+                            Err(e)
+                        }
+                    }
+                }
+                FutureComputation::Join(futures) => {
+                    // Await all futures and collect results
+                    let mut results = Vec::new();
+                    for f in futures {
+                        let mut f_inner = f.borrow_mut();
+                        results.push(self.poll_future(&mut f_inner)?);
+                    }
+                    let result = Value::Array(Rc::new(RefCell::new(results)));
+                    fut.state = FutureState::Ready(Box::new(result.clone()));
+                    Ok(result)
+                }
+                FutureComputation::Race(futures) => {
+                    // Return first completed future
+                    // In interpreter, just poll in order
+                    for f in futures {
+                        let mut f_inner = f.borrow_mut();
+                        if matches!(f_inner.state, FutureState::Ready(_)) {
+                            if let FutureState::Ready(v) = &f_inner.state {
+                                fut.state = FutureState::Ready(v.clone());
+                                return Ok((**v).clone());
+                            }
+                        }
+                    }
+                    // None ready, poll first one
+                    Err(RuntimeError::new("No futures ready in race"))
+                }
+            }
+        } else {
+            // No computation - return current state
+            match &fut.state {
+                FutureState::Ready(v) => Ok((**v).clone()),
+                FutureState::Failed(e) => Err(RuntimeError::new(e.clone())),
+                _ => Err(RuntimeError::new("Future has no computation")),
+            }
+        }
+    }
+
+    /// Create a new future from a value
+    pub fn make_future_immediate(&self, value: Value) -> Value {
+        Value::Future(Rc::new(RefCell::new(FutureInner {
+            state: FutureState::Ready(Box::new(value)),
+            computation: None,
+            complete_at: None,
+        })))
+    }
+
+    /// Create a pending future with lazy computation
+    pub fn make_future_lazy(&self, func: Rc<Function>, args: Vec<Value>) -> Value {
+        Value::Future(Rc::new(RefCell::new(FutureInner {
+            state: FutureState::Pending,
+            computation: Some(FutureComputation::Lazy { func, args }),
+            complete_at: None,
+        })))
+    }
+
+    /// Create a timer future
+    pub fn make_future_timer(&self, duration: std::time::Duration) -> Value {
+        Value::Future(Rc::new(RefCell::new(FutureInner {
+            state: FutureState::Pending,
+            computation: Some(FutureComputation::Timer(duration)),
+            complete_at: Some(std::time::Instant::now() + duration),
+        })))
     }
 
     fn eval_array(&mut self, elements: &[Expr]) -> Result<Value, RuntimeError> {
@@ -1460,8 +1654,8 @@ impl Interpreter {
                 }
             }
             PipeOp::Await => {
-                // For now, just return the value (no async yet)
-                Ok(value)
+                // Await a future - resolve it to a value
+                self.await_value(value)
             }
             PipeOp::Named { prefix, body } => {
                 // Named morpheme like ·map{f}

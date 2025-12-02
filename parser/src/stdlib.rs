@@ -118,6 +118,7 @@ fn register_core(interp: &mut Interpreter) {
             Value::Channel(_) => "channel",
             Value::ThreadHandle(_) => "thread",
             Value::Actor(_) => "actor",
+            Value::Future(_) => "future",
         };
         Ok(Value::String(Rc::new(type_name.to_string())))
     });
@@ -3080,6 +3081,128 @@ fn register_concurrency(interp: &mut Interpreter) {
         // Returns range as array
         let range: Vec<Value> = (start..end).map(|i| Value::Int(i)).collect();
         Ok(Value::Array(Rc::new(RefCell::new(range))))
+    });
+
+    // --- ASYNC/AWAIT FUNCTIONS ---
+
+    // async_sleep - create a future that completes after specified milliseconds
+    define(interp, "async_sleep", Some(1), |interp, args| {
+        let ms = match &args[0] {
+            Value::Int(ms) => *ms as u64,
+            Value::Float(ms) => *ms as u64,
+            _ => return Err(RuntimeError::new("async_sleep() requires integer milliseconds")),
+        };
+
+        Ok(interp.make_future_timer(std::time::Duration::from_millis(ms)))
+    });
+
+    // future_ready - create an immediately resolved future
+    define(interp, "future_ready", Some(1), |interp, args| {
+        Ok(interp.make_future_immediate(args[0].clone()))
+    });
+
+    // future_pending - create a pending future (never resolves)
+    define(interp, "future_pending", Some(0), |_, _| {
+        Ok(Value::Future(Rc::new(RefCell::new(crate::interpreter::FutureInner {
+            state: crate::interpreter::FutureState::Pending,
+            computation: None,
+            complete_at: None,
+        }))))
+    });
+
+    // is_future - check if a value is a future
+    define(interp, "is_future", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(&args[0], Value::Future(_))))
+    });
+
+    // is_ready - check if a future is ready
+    define(interp, "is_ready", Some(1), |_, args| {
+        match &args[0] {
+            Value::Future(fut) => {
+                let f = fut.borrow();
+                Ok(Value::Bool(matches!(f.state, crate::interpreter::FutureState::Ready(_))))
+            }
+            _ => Ok(Value::Bool(true)), // Non-futures are always "ready"
+        }
+    });
+
+    // join_futures - join multiple futures into one that resolves to array
+    define(interp, "join_futures", Some(1), |_, args| {
+        let futures = match &args[0] {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                let mut futs = Vec::new();
+                for v in arr.iter() {
+                    match v {
+                        Value::Future(f) => futs.push(f.clone()),
+                        _ => return Err(RuntimeError::new("join_futures() requires array of futures")),
+                    }
+                }
+                futs
+            }
+            _ => return Err(RuntimeError::new("join_futures() requires array of futures")),
+        };
+
+        Ok(Value::Future(Rc::new(RefCell::new(crate::interpreter::FutureInner {
+            state: crate::interpreter::FutureState::Pending,
+            computation: Some(crate::interpreter::FutureComputation::Join(futures)),
+            complete_at: None,
+        }))))
+    });
+
+    // race_futures - return first future to complete
+    define(interp, "race_futures", Some(1), |_, args| {
+        let futures = match &args[0] {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                let mut futs = Vec::new();
+                for v in arr.iter() {
+                    match v {
+                        Value::Future(f) => futs.push(f.clone()),
+                        _ => return Err(RuntimeError::new("race_futures() requires array of futures")),
+                    }
+                }
+                futs
+            }
+            _ => return Err(RuntimeError::new("race_futures() requires array of futures")),
+        };
+
+        Ok(Value::Future(Rc::new(RefCell::new(crate::interpreter::FutureInner {
+            state: crate::interpreter::FutureState::Pending,
+            computation: Some(crate::interpreter::FutureComputation::Race(futures)),
+            complete_at: None,
+        }))))
+    });
+
+    // poll_future - try to resolve a future without blocking (returns Option)
+    define(interp, "poll_future", Some(1), |_, args| {
+        match &args[0] {
+            Value::Future(fut) => {
+                let f = fut.borrow();
+                match &f.state {
+                    crate::interpreter::FutureState::Ready(v) => {
+                        Ok(Value::Variant {
+                            enum_name: "Option".to_string(),
+                            variant_name: "Some".to_string(),
+                            fields: Some(Rc::new(vec![(**v).clone()])),
+                        })
+                    }
+                    _ => {
+                        Ok(Value::Variant {
+                            enum_name: "Option".to_string(),
+                            variant_name: "None".to_string(),
+                            fields: None,
+                        })
+                    }
+                }
+            }
+            // Non-futures return Some(value)
+            other => Ok(Value::Variant {
+                enum_name: "Option".to_string(),
+                variant_name: "Some".to_string(),
+                fields: Some(Rc::new(vec![other.clone()])),
+            }),
+        }
     });
 }
 
