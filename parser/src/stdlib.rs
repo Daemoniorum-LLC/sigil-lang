@@ -71,6 +71,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_ranges(interp);
     register_bitwise(interp);
     register_format(interp);
+    // Phase 6: Pattern matching power-ups
+    register_pattern(interp);
 }
 
 // Helper to define a builtin
@@ -5623,6 +5625,669 @@ fn register_format(interp: &mut Interpreter) {
             .join(" ");
         Ok(Value::String(Rc::new(result)))
     });
+}
+
+// ============================================================================
+// PATTERN MATCHING FUNCTIONS (Phase 6)
+// ============================================================================
+// Advanced pattern matching utilities for expressive data manipulation.
+// These complement Sigil's match expressions with functional alternatives.
+// ============================================================================
+
+fn register_pattern(interp: &mut Interpreter) {
+    // --- TYPE MATCHING ---
+
+    // type_of - get the type name as a string
+    define(interp, "type_of", Some(1), |_, args| {
+        let type_name = match &args[0] {
+            Value::Null => "null",
+            Value::Bool(_) => "bool",
+            Value::Int(_) => "int",
+            Value::Float(_) => "float",
+            Value::String(_) => "string",
+            Value::Char(_) => "char",
+            Value::Array(_) => "array",
+            Value::Tuple(_) => "tuple",
+            Value::Map(_) => "map",
+            Value::Set(_) => "set",
+            Value::Struct { name, .. } => return Ok(Value::String(Rc::new(format!("struct:{}", name)))),
+            Value::Variant { enum_name, variant_name, .. } => return Ok(Value::String(Rc::new(format!("{}::{}", enum_name, variant_name)))),
+            Value::Function(_) => "function",
+            Value::BuiltIn(_) => "builtin",
+            Value::Ref(_) => "ref",
+            Value::Infinity => "infinity",
+            Value::Empty => "empty",
+            Value::Evidential { .. } => "evidential",
+            Value::Channel(_) => "channel",
+            Value::ThreadHandle(_) => "thread",
+            Value::Actor(_) => "actor",
+            Value::Future(_) => "future",
+        };
+        Ok(Value::String(Rc::new(type_name.to_string())))
+    });
+
+    // is_type - check if value matches type name
+    define(interp, "is_type", Some(2), |_, args| {
+        let type_name = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("is_type: second argument must be type name string")),
+        };
+        let matches = match (&args[0], type_name.as_str()) {
+            (Value::Null, "null") => true,
+            (Value::Bool(_), "bool") => true,
+            (Value::Int(_), "int") | (Value::Int(_), "integer") => true,
+            (Value::Float(_), "float") | (Value::Float(_), "number") => true,
+            (Value::Int(_), "number") => true,
+            (Value::String(_), "string") => true,
+            (Value::Array(_), "array") | (Value::Array(_), "list") => true,
+            (Value::Tuple(_), "tuple") => true,
+            (Value::Map(_), "map") | (Value::Map(_), "dict") | (Value::Map(_), "object") => true,
+            (Value::Set(_), "set") => true,
+            (Value::Function(_), "function") | (Value::Function(_), "fn") => true,
+            (Value::BuiltIn(_), "function") | (Value::BuiltIn(_), "builtin") => true,
+            (Value::Struct { name, .. }, t) => t == "struct" || t == &name.to_lowercase(),
+            (Value::Variant { enum_name, .. }, t) => t == "variant" || t == "enum" || t == &enum_name.to_lowercase(),
+            (Value::Channel(_), "channel") => true,
+            (Value::ThreadHandle(_), "thread") => true,
+            (Value::Actor(_), "actor") => true,
+            (Value::Future(_), "future") => true,
+            _ => false,
+        };
+        Ok(Value::Bool(matches))
+    });
+
+    // is_null, is_bool, is_int, is_float, is_string, is_array, is_map - type predicates
+    define(interp, "is_null", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Null))));
+    define(interp, "is_bool", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Bool(_)))));
+    define(interp, "is_int", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Int(_)))));
+    define(interp, "is_float", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Float(_)))));
+    define(interp, "is_number", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Int(_) | Value::Float(_)))));
+    define(interp, "is_string", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::String(_)))));
+    define(interp, "is_array", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Array(_)))));
+    define(interp, "is_tuple", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Tuple(_)))));
+    define(interp, "is_map", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Map(_)))));
+    define(interp, "is_set", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Set(_)))));
+    define(interp, "is_function", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Function(_) | Value::BuiltIn(_)))));
+    define(interp, "is_struct", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Struct { .. }))));
+    define(interp, "is_variant", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Variant { .. }))));
+    define(interp, "is_future", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Future(_)))));
+    define(interp, "is_channel", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Channel(_)))));
+
+    // is_empty - check if collection is empty
+    define(interp, "is_empty", Some(1), |_, args| {
+        let empty = match &args[0] {
+            Value::Null => true,
+            Value::String(s) => s.is_empty(),
+            Value::Array(a) => a.borrow().is_empty(),
+            Value::Tuple(t) => t.is_empty(),
+            Value::Map(m) => m.borrow().is_empty(),
+            Value::Set(s) => s.borrow().is_empty(),
+            _ => false,
+        };
+        Ok(Value::Bool(empty))
+    });
+
+    // --- REGEX PATTERN MATCHING ---
+
+    // match_regex - match string against regex, return captures or null
+    define(interp, "match_regex", Some(2), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("match_regex: first argument must be a string")),
+        };
+        let pattern = match &args[1] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("match_regex: second argument must be a regex pattern string")),
+        };
+
+        let re = match Regex::new(&pattern) {
+            Ok(r) => r,
+            Err(e) => return Err(RuntimeError::new(format!("match_regex: invalid regex: {}", e))),
+        };
+
+        match re.captures(&text) {
+            Some(caps) => {
+                let mut captures: Vec<Value> = Vec::new();
+                for i in 0..caps.len() {
+                    if let Some(m) = caps.get(i) {
+                        captures.push(Value::String(Rc::new(m.as_str().to_string())));
+                    } else {
+                        captures.push(Value::Null);
+                    }
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(captures))))
+            }
+            None => Ok(Value::Null),
+        }
+    });
+
+    // match_all_regex - find all matches of regex in string
+    define(interp, "match_all_regex", Some(2), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("match_all_regex: first argument must be a string")),
+        };
+        let pattern = match &args[1] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("match_all_regex: second argument must be a regex pattern string")),
+        };
+
+        let re = match Regex::new(&pattern) {
+            Ok(r) => r,
+            Err(e) => return Err(RuntimeError::new(format!("match_all_regex: invalid regex: {}", e))),
+        };
+
+        let matches: Vec<Value> = re.find_iter(&text)
+            .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+            .collect();
+        Ok(Value::Array(Rc::new(RefCell::new(matches))))
+    });
+
+    // capture_named - extract named captures from regex match
+    define(interp, "capture_named", Some(2), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("capture_named: first argument must be a string")),
+        };
+        let pattern = match &args[1] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("capture_named: second argument must be a regex pattern string")),
+        };
+
+        let re = match Regex::new(&pattern) {
+            Ok(r) => r,
+            Err(e) => return Err(RuntimeError::new(format!("capture_named: invalid regex: {}", e))),
+        };
+
+        match re.captures(&text) {
+            Some(caps) => {
+                let mut result: HashMap<String, Value> = HashMap::new();
+                for name in re.capture_names().flatten() {
+                    if let Some(m) = caps.name(name) {
+                        result.insert(name.to_string(), Value::String(Rc::new(m.as_str().to_string())));
+                    }
+                }
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+            None => Ok(Value::Null),
+        }
+    });
+
+    // --- STRUCTURAL PATTERN MATCHING ---
+
+    // match_struct - check if value is a struct with given name
+    define(interp, "match_struct", Some(2), |_, args| {
+        let expected_name = match &args[1] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("match_struct: second argument must be struct name string")),
+        };
+        match &args[0] {
+            Value::Struct { name, .. } => Ok(Value::Bool(name == &expected_name)),
+            _ => Ok(Value::Bool(false)),
+        }
+    });
+
+    // match_variant - check if value is a variant with given enum and variant name
+    define(interp, "match_variant", Some(3), |_, args| {
+        let expected_enum = match &args[1] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("match_variant: second argument must be enum name string")),
+        };
+        let expected_variant = match &args[2] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("match_variant: third argument must be variant name string")),
+        };
+        match &args[0] {
+            Value::Variant { enum_name, variant_name, .. } => {
+                Ok(Value::Bool(enum_name == &expected_enum && variant_name == &expected_variant))
+            }
+            _ => Ok(Value::Bool(false)),
+        }
+    });
+
+    // get_field - get field from struct by name (returns null if not found)
+    define(interp, "get_field", Some(2), |_, args| {
+        let field_name = match &args[1] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("get_field: second argument must be field name string")),
+        };
+        match &args[0] {
+            Value::Struct { fields, .. } => {
+                Ok(fields.borrow().get(&field_name).cloned().unwrap_or(Value::Null))
+            }
+            Value::Map(m) => {
+                Ok(m.borrow().get(&field_name).cloned().unwrap_or(Value::Null))
+            }
+            _ => Ok(Value::Null),
+        }
+    });
+
+    // has_field - check if struct/map has a field
+    define(interp, "has_field", Some(2), |_, args| {
+        let field_name = match &args[1] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("has_field: second argument must be field name string")),
+        };
+        match &args[0] {
+            Value::Struct { fields, .. } => Ok(Value::Bool(fields.borrow().contains_key(&field_name))),
+            Value::Map(m) => Ok(Value::Bool(m.borrow().contains_key(&field_name))),
+            _ => Ok(Value::Bool(false)),
+        }
+    });
+
+    // get_fields - get all field names from struct/map
+    define(interp, "get_fields", Some(1), |_, args| {
+        let fields: Vec<Value> = match &args[0] {
+            Value::Struct { fields, .. } => {
+                fields.borrow().keys().map(|k| Value::String(Rc::new(k.clone()))).collect()
+            }
+            Value::Map(m) => {
+                m.borrow().keys().map(|k| Value::String(Rc::new(k.clone()))).collect()
+            }
+            _ => return Err(RuntimeError::new("get_fields: argument must be struct or map")),
+        };
+        Ok(Value::Array(Rc::new(RefCell::new(fields))))
+    });
+
+    // struct_name - get the name of a struct
+    define(interp, "struct_name", Some(1), |_, args| {
+        match &args[0] {
+            Value::Struct { name, .. } => Ok(Value::String(Rc::new(name.clone()))),
+            _ => Ok(Value::Null),
+        }
+    });
+
+    // variant_name - get the variant name of an enum value
+    define(interp, "variant_name", Some(1), |_, args| {
+        match &args[0] {
+            Value::Variant { variant_name, .. } => Ok(Value::String(Rc::new(variant_name.clone()))),
+            _ => Ok(Value::Null),
+        }
+    });
+
+    // variant_data - get the data payload of a variant
+    define(interp, "variant_data", Some(1), |_, args| {
+        match &args[0] {
+            Value::Variant { fields, .. } => {
+                match fields {
+                    Some(f) => Ok(Value::Array(Rc::new(RefCell::new((**f).clone())))),
+                    None => Ok(Value::Null),
+                }
+            }
+            _ => Ok(Value::Null),
+        }
+    });
+
+    // --- GUARDS AND CONDITIONALS ---
+
+    // guard - conditionally return value or null (for pattern guard chains)
+    define(interp, "guard", Some(2), |_, args| {
+        if is_truthy(&args[0]) {
+            Ok(args[1].clone())
+        } else {
+            Ok(Value::Null)
+        }
+    });
+
+    // when - like guard but evaluates a function if condition is true
+    define(interp, "when", Some(2), |interp, args| {
+        if is_truthy(&args[0]) {
+            match &args[1] {
+                Value::Function(f) => interp.call_function(f, vec![]),
+                other => Ok(other.clone()),
+            }
+        } else {
+            Ok(Value::Null)
+        }
+    });
+
+    // unless - opposite of when
+    define(interp, "unless", Some(2), |interp, args| {
+        if !is_truthy(&args[0]) {
+            match &args[1] {
+                Value::Function(f) => interp.call_function(f, vec![]),
+                other => Ok(other.clone()),
+            }
+        } else {
+            Ok(Value::Null)
+        }
+    });
+
+    // cond - evaluate conditions in order, return first matching result
+    // cond([[cond1, val1], [cond2, val2], ...])
+    define(interp, "cond", Some(1), |interp, args| {
+        let clauses = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("cond: argument must be array of [condition, value] pairs")),
+        };
+
+        for clause in clauses {
+            let pair = match &clause {
+                Value::Array(a) => a.borrow().clone(),
+                Value::Tuple(t) => (**t).clone(),
+                _ => return Err(RuntimeError::new("cond: each clause must be [condition, value] pair")),
+            };
+            if pair.len() != 2 {
+                return Err(RuntimeError::new("cond: each clause must have exactly 2 elements"));
+            }
+
+            if is_truthy(&pair[0]) {
+                return match &pair[1] {
+                    Value::Function(f) => interp.call_function(f, vec![]),
+                    other => Ok(other.clone()),
+                };
+            }
+        }
+        Ok(Value::Null)
+    });
+
+    // case - match value against patterns, return matching result
+    // case(val, [[pattern1, result1], [pattern2, result2], ...])
+    define(interp, "case", Some(2), |interp, args| {
+        let value = &args[0];
+        let clauses = match &args[1] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("case: second argument must be array of [pattern, result] pairs")),
+        };
+
+        for clause in clauses {
+            let pair = match &clause {
+                Value::Array(a) => a.borrow().clone(),
+                Value::Tuple(t) => (**t).clone(),
+                _ => return Err(RuntimeError::new("case: each clause must be [pattern, result] pair")),
+            };
+            if pair.len() != 2 {
+                return Err(RuntimeError::new("case: each clause must have exactly 2 elements"));
+            }
+
+            if value_eq(value, &pair[0]) {
+                return match &pair[1] {
+                    Value::Function(f) => interp.call_function(f, vec![value.clone()]),
+                    other => Ok(other.clone()),
+                };
+            }
+        }
+        Ok(Value::Null)
+    });
+
+    // --- DESTRUCTURING ---
+
+    // destructure_array - extract elements at specified indices
+    define(interp, "destructure_array", Some(2), |_, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            Value::Tuple(t) => (**t).clone(),
+            _ => return Err(RuntimeError::new("destructure_array: first argument must be array or tuple")),
+        };
+        let indices = match &args[1] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("destructure_array: second argument must be array of indices")),
+        };
+
+        let mut result = Vec::new();
+        for idx in indices {
+            match idx {
+                Value::Int(i) => {
+                    let i = if i < 0 { arr.len() as i64 + i } else { i } as usize;
+                    result.push(arr.get(i).cloned().unwrap_or(Value::Null));
+                }
+                _ => result.push(Value::Null),
+            }
+        }
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // destructure_map - extract values for specified keys
+    define(interp, "destructure_map", Some(2), |_, args| {
+        let map = match &args[0] {
+            Value::Map(m) => m.borrow().clone(),
+            Value::Struct { fields, .. } => fields.borrow().clone(),
+            _ => return Err(RuntimeError::new("destructure_map: first argument must be map or struct")),
+        };
+        let keys = match &args[1] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("destructure_map: second argument must be array of keys")),
+        };
+
+        let mut result = Vec::new();
+        for key in keys {
+            match key {
+                Value::String(k) => {
+                    result.push(map.get(&*k).cloned().unwrap_or(Value::Null));
+                }
+                _ => result.push(Value::Null),
+            }
+        }
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // head_tail - split array into [head, tail]
+    define(interp, "head_tail", Some(1), |_, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("head_tail: argument must be array")),
+        };
+
+        if arr.is_empty() {
+            Ok(Value::Tuple(Rc::new(vec![Value::Null, Value::Array(Rc::new(RefCell::new(vec![])))])))
+        } else {
+            let head = arr[0].clone();
+            let tail = arr[1..].to_vec();
+            Ok(Value::Tuple(Rc::new(vec![head, Value::Array(Rc::new(RefCell::new(tail)))])))
+        }
+    });
+
+    // init_last - split array into [init, last]
+    define(interp, "init_last", Some(1), |_, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("init_last: argument must be array")),
+        };
+
+        if arr.is_empty() {
+            Ok(Value::Tuple(Rc::new(vec![Value::Array(Rc::new(RefCell::new(vec![]))), Value::Null])))
+        } else {
+            let last = arr[arr.len() - 1].clone();
+            let init = arr[..arr.len() - 1].to_vec();
+            Ok(Value::Tuple(Rc::new(vec![Value::Array(Rc::new(RefCell::new(init))), last])))
+        }
+    });
+
+    // split_at - split array at index into [left, right]
+    define(interp, "split_at", Some(2), |_, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("split_at: first argument must be array")),
+        };
+        let idx = match &args[1] {
+            Value::Int(i) => *i as usize,
+            _ => return Err(RuntimeError::new("split_at: second argument must be integer")),
+        };
+
+        let idx = idx.min(arr.len());
+        let left = arr[..idx].to_vec();
+        let right = arr[idx..].to_vec();
+        Ok(Value::Tuple(Rc::new(vec![
+            Value::Array(Rc::new(RefCell::new(left))),
+            Value::Array(Rc::new(RefCell::new(right))),
+        ])))
+    });
+
+    // --- OPTIONAL/NULLABLE HELPERS ---
+
+    // unwrap_or - return value if not null, else default
+    define(interp, "unwrap_or", Some(2), |_, args| {
+        if matches!(&args[0], Value::Null) {
+            Ok(args[1].clone())
+        } else {
+            Ok(args[0].clone())
+        }
+    });
+
+    // unwrap_or_else - return value if not null, else call function
+    define(interp, "unwrap_or_else", Some(2), |interp, args| {
+        if matches!(&args[0], Value::Null) {
+            match &args[1] {
+                Value::Function(f) => interp.call_function(f, vec![]),
+                other => Ok(other.clone()),
+            }
+        } else {
+            Ok(args[0].clone())
+        }
+    });
+
+    // map_or - if value is not null, apply function, else return default
+    define(interp, "map_or", Some(3), |interp, args| {
+        if matches!(&args[0], Value::Null) {
+            Ok(args[1].clone())
+        } else {
+            match &args[2] {
+                Value::Function(f) => interp.call_function(f, vec![args[0].clone()]),
+                _ => Err(RuntimeError::new("map_or: third argument must be a function")),
+            }
+        }
+    });
+
+    // coalesce - return first non-null value from array
+    define(interp, "coalesce", Some(1), |_, args| {
+        let values = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("coalesce: argument must be array")),
+        };
+
+        for v in values {
+            if !matches!(v, Value::Null) {
+                return Ok(v);
+            }
+        }
+        Ok(Value::Null)
+    });
+
+    // --- EQUALITY AND COMPARISON ---
+
+    // deep_eq - deep structural equality check
+    define(interp, "deep_eq", Some(2), |_, args| {
+        Ok(Value::Bool(deep_value_eq(&args[0], &args[1])))
+    });
+
+    // same_type - check if two values have the same type
+    define(interp, "same_type", Some(2), |_, args| {
+        let same = match (&args[0], &args[1]) {
+            (Value::Null, Value::Null) => true,
+            (Value::Bool(_), Value::Bool(_)) => true,
+            (Value::Int(_), Value::Int(_)) => true,
+            (Value::Float(_), Value::Float(_)) => true,
+            (Value::String(_), Value::String(_)) => true,
+            (Value::Array(_), Value::Array(_)) => true,
+            (Value::Tuple(_), Value::Tuple(_)) => true,
+            (Value::Map(_), Value::Map(_)) => true,
+            (Value::Set(_), Value::Set(_)) => true,
+            (Value::Function(_), Value::Function(_)) => true,
+            (Value::BuiltIn(_), Value::BuiltIn(_)) => true,
+            (Value::Struct { name: n1, .. }, Value::Struct { name: n2, .. }) => n1 == n2,
+            (Value::Variant { enum_name: e1, .. }, Value::Variant { enum_name: e2, .. }) => e1 == e2,
+            _ => false,
+        };
+        Ok(Value::Bool(same))
+    });
+
+    // compare - three-way comparison: -1, 0, or 1
+    define(interp, "compare", Some(2), |_, args| {
+        let cmp = match (&args[0], &args[1]) {
+            (Value::Int(a), Value::Int(b)) => a.cmp(b),
+            (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+            (Value::Int(a), Value::Float(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+            (Value::Float(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal),
+            (Value::String(a), Value::String(b)) => a.cmp(b),
+            _ => return Err(RuntimeError::new("compare: can only compare numbers or strings")),
+        };
+        Ok(Value::Int(match cmp {
+            std::cmp::Ordering::Less => -1,
+            std::cmp::Ordering::Equal => 0,
+            std::cmp::Ordering::Greater => 1,
+        }))
+    });
+
+    // between - check if value is between min and max (inclusive)
+    define(interp, "between", Some(3), |_, args| {
+        let in_range = match (&args[0], &args[1], &args[2]) {
+            (Value::Int(v), Value::Int(min), Value::Int(max)) => v >= min && v <= max,
+            (Value::Float(v), Value::Float(min), Value::Float(max)) => v >= min && v <= max,
+            (Value::Int(v), Value::Int(min), Value::Float(max)) => (*v as f64) >= (*min as f64) && (*v as f64) <= *max,
+            (Value::Int(v), Value::Float(min), Value::Int(max)) => (*v as f64) >= *min && (*v as f64) <= (*max as f64),
+            (Value::Float(v), Value::Int(min), Value::Int(max)) => *v >= (*min as f64) && *v <= (*max as f64),
+            (Value::String(v), Value::String(min), Value::String(max)) => v >= min && v <= max,
+            _ => return Err(RuntimeError::new("between: arguments must be comparable (numbers or strings)")),
+        };
+        Ok(Value::Bool(in_range))
+    });
+
+    // clamp - constrain value to range
+    define(interp, "clamp", Some(3), |_, args| {
+        match (&args[0], &args[1], &args[2]) {
+            (Value::Int(v), Value::Int(min), Value::Int(max)) => {
+                Ok(Value::Int((*v).max(*min).min(*max)))
+            }
+            (Value::Float(v), Value::Float(min), Value::Float(max)) => {
+                Ok(Value::Float(v.max(*min).min(*max)))
+            }
+            (Value::Int(v), Value::Int(min), Value::Float(max)) => {
+                Ok(Value::Float((*v as f64).max(*min as f64).min(*max)))
+            }
+            _ => Err(RuntimeError::new("clamp: arguments must be numbers")),
+        }
+    });
+}
+
+// Deep value equality for nested structures
+fn deep_value_eq(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Null, Value::Null) => true,
+        (Value::Bool(a), Value::Bool(b)) => a == b,
+        (Value::Int(a), Value::Int(b)) => a == b,
+        (Value::Float(a), Value::Float(b)) => (a - b).abs() < f64::EPSILON,
+        (Value::Int(a), Value::Float(b)) | (Value::Float(b), Value::Int(a)) => {
+            (*a as f64 - b).abs() < f64::EPSILON
+        }
+        (Value::String(a), Value::String(b)) => a == b,
+        (Value::Array(a), Value::Array(b)) => {
+            let a = a.borrow();
+            let b = b.borrow();
+            a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| deep_value_eq(x, y))
+        }
+        (Value::Tuple(a), Value::Tuple(b)) => {
+            a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| deep_value_eq(x, y))
+        }
+        (Value::Map(a), Value::Map(b)) => {
+            let a = a.borrow();
+            let b = b.borrow();
+            a.len() == b.len() && a.iter().all(|(k, v)| {
+                b.get(k).map_or(false, |bv| deep_value_eq(v, bv))
+            })
+        }
+        (Value::Set(a), Value::Set(b)) => {
+            let a = a.borrow();
+            let b = b.borrow();
+            a.len() == b.len() && a.iter().all(|k| b.contains(k))
+        }
+        (Value::Struct { name: n1, fields: f1 }, Value::Struct { name: n2, fields: f2 }) => {
+            let f1 = f1.borrow();
+            let f2 = f2.borrow();
+            n1 == n2 && f1.len() == f2.len() && f1.iter().all(|(k, v)| {
+                f2.get(k).map_or(false, |v2| deep_value_eq(v, v2))
+            })
+        }
+        (Value::Variant { enum_name: e1, variant_name: v1, fields: d1 },
+         Value::Variant { enum_name: e2, variant_name: v2, fields: d2 }) => {
+            if e1 != e2 || v1 != v2 { return false; }
+            match (d1, d2) {
+                (Some(f1), Some(f2)) => f1.len() == f2.len() && f1.iter().zip(f2.iter()).all(|(x, y)| deep_value_eq(x, y)),
+                (None, None) => true,
+                _ => false,
+            }
+        }
+        _ => false,
+    }
 }
 
 // Helper for value equality comparison
