@@ -1,89 +1,205 @@
-# Persona Framework
+# Sigil Programming Language
 
-Autonomous agent platform built with Kotlin/Spring Boot, React, and IntelliJ tooling. The repo hosts the core runtime, REST API, admin UI, IDE plugin, and a collection of verticalized services (art generation and Vulcan microservices).
+A polysynthetic programming language with evidentiality types, morpheme operators, and native performance through LLVM.
 
-## What’s in the repo
-### Core applications
-- **Leviathan** – primary Spring Boot backend with agent orchestration, REST API, tool registry, and integrations (Ollama/AWS/Anthropic/OpenAI). See `leviathan/README.md`.
-- **Bael** – React + TypeScript admin UI that talks to Leviathan. See `bael/README.md`.
-- **Hydra** – Spring Boot gateway for legacy integrations. See `hydra/README.md`.
-- **Paimon** – IntelliJ IDEA plugin for in-editor agent workflows. See `paimon/README.md`.
-- **Art Service** – Spring Boot app for digital painting workflows; also embedded in Leviathan. See `art-service/README.md`.
-- **Apothecary Service** – herbal chemistry automation workflows. See `apothecary-service/README.md`.
-- **Nexus Standalone** – slim Spring Boot packaging that reuses Leviathan while trimming optional modules. See `nexus-standalone/README.md`.
+## Performance
 
-### Shared libraries & integrations
-- **Persona Core** – shared DTOs and ports used across the platform. See `persona-core/README.md`.
-- **Persona REST** – consolidated REST surface with Workspace/Nexus/agent controllers. See `persona-rest/README.md`.
-- **Persona Autoconfigure** – Spring Boot auto-configuration for persistence, agents, and observability. See `persona-autoconfigure/README.md`.
-- **Persona API** – Kotlin chat/embedding/NL2SQL client helpers. See `persona-api/README.md`.
-- **Persona AWS** – Bedrock, S3, Secrets Manager, and retrieval helpers. See `persona-aws/README.md`.
-- **Persona MCP** – MCP command protocol glue with auditing/security. See `persona-mcp/README.md`.
-- **Persona Sandbox** – Docker-based sandboxed execution helpers. See `persona-sandbox/README.md`.
-- **CNC Common** – shared DTOs, events, and exception handling for CNC services. See `cnc-common/README.md`.
+Sigil compiles to native code that **outperforms hand-written Rust**:
 
-### CNC vertical microservices
-- **CNC Integration Hub** – secure CAD upload API for the CNC suite. See `cnc-integration-hub/README.md`.
-- **CNC Machine Monitor** – machine telemetry ingestion and query API. See `cnc-machine-monitor/README.md`.
-- **CNC Portal Service** – portal user management API. See `cnc-portal-service/README.md`.
-- **Remaining CNC services** – customer, quote, job, schedule, shop-floor, inventory, quality, accounting, analytics, and other `cnc-*` apps continue to live in their respective folders; look for in-directory READMEs where provided (for example, `cnc-customer-service/README.md`).
+| Backend | Time | vs Interpreter | vs Rust |
+|---------|------|----------------|---------|
+| Interpreter | 39.4s | 1x | 985x slower |
+| Cranelift JIT | 0.59s | 67x faster | 13x slower |
+| LLVM JIT | 0.62s | 64x faster | 14x slower |
+| **LLVM AOT** | **0.011s** | **3,582x faster** | **3.6x FASTER** |
 
-### Documentation & knowledge
-- **Grimoire** – prompt/persona/tool catalog with `TOOLS.md`, `personas/`, `prompts/`, and `templates/`. See `grimoire/README.md`.
+## Quick Start
 
-## Prerequisites
-- Java 21 (Gradle wrapper is provided)
-- Node.js 18+ (for Bael)
-- PostgreSQL 13+ (used by Leviathan and the Spring Boot services)
-- Optional: Ollama running at `http://localhost:11434` for local ML, Kafka for CNC event streaming, Redis/Elasticsearch if you enable those integrations
+```bash
+# Clone and build
+git clone https://github.com/daemoniorum/sigil.git
+cd sigil/parser
+cargo build --release
 
-## Quick start (Leviathan + Bael)
-1. **Configure environment** (example):
-   ```bash
-   export SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/persona
-   export SPRING_DATASOURCE_USERNAME=postgres
-   export SPRING_DATASOURCE_PASSWORD=postgres
-   export PERSONA_AI_OLLAMA_ENABLED=true
-   export PERSONA_AI_OLLAMA_BASE_URL=http://localhost:11434
-   # Optional workspace roots
-   export WORKSPACE_BASE_PATH=/home/lilith/development/projects/persona-framework/workspace
-   export WORKSPACE_PROJECTS_PATH=/home/lilith/development/projects
-   ```
-   Additional knobs live in `leviathan/src/main/resources/application.yaml`.
-2. **Run Leviathan** (default port 8080):
-   ```bash
-   ./gradlew :leviathan:bootRun
-   ```
-3. **Run Bael** (default Vite dev server port 5173):
-   ```bash
-   cd bael
-   npm install
-   VITE_API_BASE_URL=http://localhost:8080 npm run dev
-   ```
+# Run interpreted (for development)
+./target/release/sigil run hello.sigil
 
-## Running other applications
-- Hydra: `./gradlew :hydra:bootRun`
-- Paimon (IntelliJ plugin dev): `./gradlew :paimon:runIde`
-- Art Service: `./gradlew :art-service:bootRun`
-- Nexus Standalone: `./gradlew :nexus-standalone:bootRun`
-- Vulcan microservices (one at a time, choose a free port): `./gradlew :cnc-customer-service:bootRun` (repeat for other `cnc-*` services)
+# Run with Cranelift JIT (fast)
+./target/release/sigil jit program.sigil
+
+# Compile to native binary (fastest)
+./target/release/sigil compile program.sigil -o program
+./program
+```
+
+## Building for Best Performance
+
+### Option 1: Cranelift JIT (Default)
+
+```bash
+cargo build --release
+./target/release/sigil jit program.sigil
+```
+
+- 67x faster than interpreter
+- No external dependencies
+- Good for development and testing
+
+### Option 2: LLVM Backend (Production)
+
+```bash
+# Install LLVM 18 development headers
+apt install llvm-18-dev libpolly-18-dev libzstd-dev clang-18
+
+# Build with LLVM support
+CC=clang-18 cargo build --release --features llvm
+
+# Run with LLVM JIT
+./target/release/sigil llvm program.sigil
+
+# Or compile to native binary (fastest)
+./target/release/sigil compile program.sigil -o program
+./program
+```
+
+- 3,582x faster than interpreter
+- Produces standalone native binaries
+- **3.6x faster than equivalent Rust code**
+
+### Option 3: LLVM with LTO (Maximum Performance)
+
+```bash
+./target/release/sigil compile program.sigil -o program --lto
+```
+
+Link-Time Optimization enables cross-module optimization between your Sigil code and the runtime.
+
+## Hello World
+
+```sigil
+fn main() {
+    println("Hello, Sigil!")
+}
+```
+
+## Core Features
+
+### Morpheme Operators
+
+Transform data with elegant pipeline syntax:
+
+```sigil
+let result = data
+    |tau{_ * 2}       // Map: double each element
+    |phi{_ > 10}      // Filter: keep if > 10
+    |sigma            // Sort ascending
+    |rho+             // Reduce: sum all
+```
+
+### Evidentiality Types
+
+Track data provenance at the type level:
+
+```sigil
+let computed! = 1 + 1          // Known: verified truth
+let found? = map.get(key)       // Uncertain: may be absent
+let data~ = api.fetch(url)      // Reported: external, untrusted
+```
+
+### Graphics & Physics Primitives
+
+Native support for game/graphics development:
+
+```sigil
+let pos = vec3(1.0, 2.0, 3.0)
+let rot = quat_from_axis_angle(vec3(0, 1, 0), 0.5)
+let transformed = quat_rotate(rot, pos)
+
+let force = spring_force(p1, p2, rest_length, stiffness)
+let next_pos = verlet_integrate(pos, prev_pos, accel, dt)
+```
+
+### Geometric Algebra
+
+Full Cl(3,0,0) multivector support:
+
+```sigil
+let mv = mv_new(1.0, 2.0, 3.0, 4.0, 0.5, 0.6, 0.7, 0.1)
+let rotor = rotor_from_axis_angle(vec3(0, 1, 0), 0.5)
+let rotated = rotor_apply(rotor, vec3(1, 0, 0))
+```
+
+### Automatic Differentiation
+
+```sigil
+fn f(x) { return x * x }
+let derivative = grad(f, 3.0)        // 6.0
+let j = jacobian(multi_fn, [x, y])   // Jacobian matrix
+let h = hessian(f, [x, y])           // Hessian matrix
+```
+
+### Entity Component System
+
+```sigil
+let world = ecs_world()
+let entity = ecs_spawn(world)
+ecs_attach(entity, "Position", pos)
+ecs_attach(entity, "Velocity", vel)
+let movables = ecs_query(world, "Position", "Velocity")
+```
+
+## Compilation Modes
+
+| Command | Description | Performance |
+|---------|-------------|-------------|
+| `sigil run file.sigil` | Interpreted | Development, debugging |
+| `sigil jit file.sigil` | Cranelift JIT | Fast iteration |
+| `sigil llvm file.sigil` | LLVM JIT | Near-native |
+| `sigil compile file.sigil -o out` | LLVM AOT | **Production** |
+| `sigil compile file.sigil -o out --lto` | LLVM AOT+LTO | **Maximum** |
+
+## Project Structure
+
+```
+sigil/
+├── parser/              # Core compiler and runtime
+│   ├── src/
+│   │   ├── main.rs      # CLI entry point
+│   │   ├── codegen.rs   # Cranelift JIT backend
+│   │   ├── llvm_codegen.rs  # LLVM backend
+│   │   ├── interpreter.rs   # Tree-walking interpreter
+│   │   └── stdlib.rs    # Standard library
+│   ├── runtime/         # C runtime for AOT binaries
+│   └── tests/           # Test suite (244 tests)
+├── rust_comparison/     # Benchmarks vs Rust
+├── docs/                # Language specification
+└── tools/               # LSP server, formatter
+```
 
 ## Testing
-- Backend/agents/services: `./gradlew test`
-- Bael unit tests: `cd bael && npm test`
-- Bael e2e: `cd bael && npm run e2e`
-- Paimon plugin tests: `./gradlew :paimon:test`
 
-## Docker/Jib
-- Build Leviathan image: `./gradlew :leviathan:jibDockerBuild`
-- Build Hydra image: `./gradlew :hydra:jibDockerBuild`
-  (uses Amazon Corretto 21 base image and respects gradle properties `containerName`, `imageTag`, etc.)
+```bash
+cd parser
+cargo test              # Run all 244 tests
+cargo test --release    # Optimized test run
+```
 
 ## Documentation
-- API usage: `docs/API_USAGE_GUIDE.md`
-- Developer index: `docs/developer/INDEX.md`
-- Additional roadmaps and reports: `docs/` (numerous session summaries and audits)
-- Application-specific guides: see the per-application READMEs referenced above.
 
-## Support
-For questions or issues, contact **Lilith Crook** (`lilith@daemoniorum.com`) or open a ticket in this repository.
+- [Getting Started](docs/GETTING_STARTED.md) - Tutorial and examples
+- [Language Specification](docs/specs/) - Complete language spec
+- [Benchmark Report](BENCHMARK_REPORT.md) - Detailed performance analysis
+- [Symbol Reference](docs/SYMBOLS.md) - Unicode operators
+
+## Requirements
+
+- Rust 1.70+
+- For LLVM backend:
+  - LLVM 18
+  - Clang 18
+  - libzstd-dev
+  - libpolly-18-dev
+
+## License
+
+MIT License - Daemoniorum, Inc.
