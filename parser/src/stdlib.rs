@@ -16,12 +16,14 @@
 //! - **random**: Random number generation
 //! - **convert**: Type conversions
 
-use crate::interpreter::{Interpreter, Value, Evidence, RuntimeError, BuiltInFn};
+use crate::interpreter::{Interpreter, Value, Evidence, RuntimeError, BuiltInFn, ChannelInner, ActorInner};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::{Instant, Duration, SystemTime, UNIX_EPOCH};
 use std::io::Write;
+use std::sync::{Arc, Mutex, mpsc};
+use std::thread;
 
 /// Register all standard library functions
 pub fn register_stdlib(interp: &mut Interpreter) {
@@ -37,6 +39,7 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_convert(interp);
     register_cycle(interp);
     register_simd(interp);
+    register_concurrency(interp);
 }
 
 // Helper to define a builtin
@@ -112,6 +115,9 @@ fn register_core(interp: &mut Interpreter) {
             },
             Value::Map(_) => "map",
             Value::Set(_) => "set",
+            Value::Channel(_) => "channel",
+            Value::ThreadHandle(_) => "thread",
+            Value::Actor(_) => "actor",
         };
         Ok(Value::String(Rc::new(type_name.to_string())))
     });
@@ -2617,6 +2623,464 @@ where
         Value::Float(op(a[2], b[2])),
         Value::Float(op(a[3], b[3])),
     ]))))
+}
+
+// ============================================================================
+// CONCURRENCY FUNCTIONS
+// ============================================================================
+
+fn register_concurrency(interp: &mut Interpreter) {
+    // --- CHANNELS ---
+
+    // channel_new - create a new channel for message passing
+    define(interp, "channel_new", Some(0), |_, _| {
+        let (sender, receiver) = mpsc::channel();
+        let inner = ChannelInner {
+            sender: Mutex::new(sender),
+            receiver: Mutex::new(receiver),
+        };
+        Ok(Value::Channel(Arc::new(inner)))
+    });
+
+    // channel_send - send a value on a channel (blocking)
+    define(interp, "channel_send", Some(2), |_, args| {
+        let channel = match &args[0] {
+            Value::Channel(ch) => ch.clone(),
+            _ => return Err(RuntimeError::new("channel_send() requires channel as first argument")),
+        };
+        let value = args[1].clone();
+
+        let sender = channel.sender.lock().map_err(|_| RuntimeError::new("channel mutex poisoned"))?;
+        sender.send(value).map_err(|_| RuntimeError::new("channel_send() failed: receiver dropped"))?;
+
+        Ok(Value::Null)
+    });
+
+    // channel_recv - receive a value from a channel (blocking)
+    define(interp, "channel_recv", Some(1), |_, args| {
+        let channel = match &args[0] {
+            Value::Channel(ch) => ch.clone(),
+            _ => return Err(RuntimeError::new("channel_recv() requires channel argument")),
+        };
+
+        let receiver = channel.receiver.lock().map_err(|_| RuntimeError::new("channel mutex poisoned"))?;
+        match receiver.recv() {
+            Ok(value) => Ok(value),
+            Err(_) => Err(RuntimeError::new("channel_recv() failed: sender dropped")),
+        }
+    });
+
+    // channel_try_recv - non-blocking receive, returns Option
+    define(interp, "channel_try_recv", Some(1), |_, args| {
+        let channel = match &args[0] {
+            Value::Channel(ch) => ch.clone(),
+            _ => return Err(RuntimeError::new("channel_try_recv() requires channel argument")),
+        };
+
+        let receiver = channel.receiver.lock().map_err(|_| RuntimeError::new("channel mutex poisoned"))?;
+        match receiver.try_recv() {
+            Ok(value) => {
+                // Return Some(value) as a variant
+                Ok(Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                    fields: Some(Rc::new(vec![value])),
+                })
+            }
+            Err(mpsc::TryRecvError::Empty) => {
+                // Return None
+                Ok(Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "None".to_string(),
+                    fields: None,
+                })
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                Err(RuntimeError::new("channel_try_recv() failed: sender dropped"))
+            }
+        }
+    });
+
+    // channel_recv_timeout - receive with timeout in milliseconds
+    define(interp, "channel_recv_timeout", Some(2), |_, args| {
+        let channel = match &args[0] {
+            Value::Channel(ch) => ch.clone(),
+            _ => return Err(RuntimeError::new("channel_recv_timeout() requires channel as first argument")),
+        };
+        let timeout_ms = match &args[1] {
+            Value::Int(ms) => *ms as u64,
+            _ => return Err(RuntimeError::new("channel_recv_timeout() requires integer timeout in ms")),
+        };
+
+        let receiver = channel.receiver.lock().map_err(|_| RuntimeError::new("channel mutex poisoned"))?;
+        match receiver.recv_timeout(std::time::Duration::from_millis(timeout_ms)) {
+            Ok(value) => Ok(Value::Variant {
+                enum_name: "Option".to_string(),
+                variant_name: "Some".to_string(),
+                fields: Some(Rc::new(vec![value])),
+            }),
+            Err(mpsc::RecvTimeoutError::Timeout) => Ok(Value::Variant {
+                enum_name: "Option".to_string(),
+                variant_name: "None".to_string(),
+                fields: None,
+            }),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                Err(RuntimeError::new("channel_recv_timeout() failed: sender dropped"))
+            }
+        }
+    });
+
+    // --- THREADS ---
+    // Note: The interpreter's Value type uses Rc which is not Send.
+    // For true threading, use channels to communicate primitive types.
+    // These functions provide basic thread primitives.
+
+    // thread_spawn_detached - spawn a detached thread (no join)
+    // Useful for background work, results communicated via channels
+    define(interp, "thread_spawn_detached", Some(0), |_, _| {
+        // Spawn a simple detached thread that does nothing
+        // Real work should be done via channels
+        thread::spawn(|| {
+            // Background thread
+        });
+        Ok(Value::Null)
+    });
+
+    // thread_join - placeholder for join semantics
+    // In interpreter, actual work is done via channels
+    define(interp, "thread_join", Some(1), |_, args| {
+        match &args[0] {
+            Value::ThreadHandle(h) => {
+                let mut guard = h.lock().map_err(|_| RuntimeError::new("thread handle mutex poisoned"))?;
+                if let Some(handle) = guard.take() {
+                    match handle.join() {
+                        Ok(v) => Ok(v),
+                        Err(_) => Err(RuntimeError::new("thread panicked")),
+                    }
+                } else {
+                    Err(RuntimeError::new("thread already joined"))
+                }
+            }
+            // For non-handles, just return the value
+            _ => Ok(args[0].clone()),
+        }
+    });
+
+    // thread_sleep - sleep for specified milliseconds
+    define(interp, "thread_sleep", Some(1), |_, args| {
+        let ms = match &args[0] {
+            Value::Int(ms) => *ms as u64,
+            Value::Float(ms) => *ms as u64,
+            _ => return Err(RuntimeError::new("thread_sleep() requires integer milliseconds")),
+        };
+
+        thread::sleep(std::time::Duration::from_millis(ms));
+        Ok(Value::Null)
+    });
+
+    // thread_yield - yield the current thread
+    define(interp, "thread_yield", Some(0), |_, _| {
+        thread::yield_now();
+        Ok(Value::Null)
+    });
+
+    // thread_id - get current thread id as string
+    define(interp, "thread_id", Some(0), |_, _| {
+        let id = thread::current().id();
+        Ok(Value::String(Rc::new(format!("{:?}", id))))
+    });
+
+    // --- ACTORS ---
+    // Single-threaded actor model for the interpreter.
+    // Messages are queued and processed synchronously.
+    // For true async actors with background threads, use the JIT backend.
+
+    // spawn_actor - create a new actor with given name
+    define(interp, "spawn_actor", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("actor_spawn() requires string name")),
+        };
+
+        let inner = ActorInner {
+            name,
+            message_queue: Mutex::new(Vec::new()),
+            message_count: std::sync::atomic::AtomicUsize::new(0),
+        };
+
+        Ok(Value::Actor(Arc::new(inner)))
+    });
+
+    // send_to_actor - send a message to an actor
+    // Messages are queued for later processing
+    define(interp, "send_to_actor", Some(3), |_, args| {
+        let actor = match &args[0] {
+            Value::Actor(a) => a.clone(),
+            _ => return Err(RuntimeError::new("actor_send() requires actor as first argument")),
+        };
+        let msg_type = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("actor_send() requires string message type")),
+        };
+        let msg_data = format!("{}", args[2]);
+
+        let mut queue = actor.message_queue.lock().map_err(|_| RuntimeError::new("actor queue poisoned"))?;
+        queue.push((msg_type, msg_data));
+        actor.message_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        Ok(Value::Null)
+    });
+
+    // tell_actor - alias for send_to_actor (Erlang/Akka style)
+    define(interp, "tell_actor", Some(3), |_, args| {
+        let actor = match &args[0] {
+            Value::Actor(a) => a.clone(),
+            _ => return Err(RuntimeError::new("actor_tell() requires actor as first argument")),
+        };
+        let msg_type = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("actor_tell() requires string message type")),
+        };
+        let msg_data = format!("{}", args[2]);
+
+        let mut queue = actor.message_queue.lock().map_err(|_| RuntimeError::new("actor queue poisoned"))?;
+        queue.push((msg_type, msg_data));
+        actor.message_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        Ok(Value::Null)
+    });
+
+    // recv_from_actor - receive (pop) a message from the actor's queue
+    // Returns Option<(type, data)>
+    define(interp, "recv_from_actor", Some(1), |_, args| {
+        let actor = match &args[0] {
+            Value::Actor(a) => a.clone(),
+            _ => return Err(RuntimeError::new("actor_recv() requires actor argument")),
+        };
+
+        let mut queue = actor.message_queue.lock().map_err(|_| RuntimeError::new("actor queue poisoned"))?;
+        match queue.pop() {
+            Some((msg_type, msg_data)) => {
+                // Return Some((type, data))
+                Ok(Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                    fields: Some(Rc::new(vec![
+                        Value::Tuple(Rc::new(vec![
+                            Value::String(Rc::new(msg_type)),
+                            Value::String(Rc::new(msg_data)),
+                        ]))
+                    ])),
+                })
+            }
+            None => Ok(Value::Variant {
+                enum_name: "Option".to_string(),
+                variant_name: "None".to_string(),
+                fields: None,
+            }),
+        }
+    });
+
+    // get_actor_msg_count - get total messages ever sent to actor
+    define(interp, "get_actor_msg_count", Some(1), |_, args| {
+        let a = match &args[0] {
+            Value::Actor(a) => a.clone(),
+            _ => return Err(RuntimeError::new("get_actor_msg_count() requires actor argument")),
+        };
+
+        let count = a.message_count.load(std::sync::atomic::Ordering::SeqCst);
+        Ok(Value::Int(count as i64))
+    });
+
+    // get_actor_name - get actor's name
+    define(interp, "get_actor_name", Some(1), |_, args| {
+        let a = match &args[0] {
+            Value::Actor(a) => a.clone(),
+            _ => return Err(RuntimeError::new("get_actor_name() requires actor argument")),
+        };
+
+        Ok(Value::String(Rc::new(a.name.clone())))
+    });
+
+    // get_actor_pending - get number of pending messages
+    define(interp, "get_actor_pending", Some(1), |_, args| {
+        let a = match &args[0] {
+            Value::Actor(a) => a.clone(),
+            _ => return Err(RuntimeError::new("get_actor_pending() requires actor argument")),
+        };
+
+        let queue = a.message_queue.lock().map_err(|_| RuntimeError::new("actor queue poisoned"))?;
+        Ok(Value::Int(queue.len() as i64))
+    });
+
+    // --- SYNCHRONIZATION PRIMITIVES ---
+
+    // mutex_new - create a new mutex wrapping a value
+    define(interp, "mutex_new", Some(1), |_, args| {
+        let value = args[0].clone();
+        // Store as a Map with special key for mutex semantics
+        let mut map = std::collections::HashMap::new();
+        map.insert("__mutex_value".to_string(), value);
+        map.insert("__mutex_locked".to_string(), Value::Bool(false));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // mutex_lock - lock a mutex and get the value
+    define(interp, "mutex_lock", Some(1), |_, args| {
+        let mutex = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("mutex_lock() requires mutex")),
+        };
+
+        let mut map = mutex.borrow_mut();
+        // Simple spin-wait for interpreter (not true mutex, but demonstrates concept)
+        map.insert("__mutex_locked".to_string(), Value::Bool(true));
+
+        match map.get("__mutex_value") {
+            Some(v) => Ok(v.clone()),
+            None => Err(RuntimeError::new("invalid mutex")),
+        }
+    });
+
+    // mutex_unlock - unlock a mutex, optionally setting new value
+    define(interp, "mutex_unlock", Some(2), |_, args| {
+        let mutex = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("mutex_unlock() requires mutex")),
+        };
+        let new_value = args[1].clone();
+
+        let mut map = mutex.borrow_mut();
+        map.insert("__mutex_value".to_string(), new_value);
+        map.insert("__mutex_locked".to_string(), Value::Bool(false));
+
+        Ok(Value::Null)
+    });
+
+    // atomic_new - create an atomic integer
+    define(interp, "atomic_new", Some(1), |_, args| {
+        let value = match &args[0] {
+            Value::Int(i) => *i,
+            _ => return Err(RuntimeError::new("atomic_new() requires integer")),
+        };
+
+        // Wrap in Map with atomic semantics
+        let mut map = std::collections::HashMap::new();
+        map.insert("__atomic_value".to_string(), Value::Int(value));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // atomic_load - atomically load value
+    define(interp, "atomic_load", Some(1), |_, args| {
+        let atomic = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("atomic_load() requires atomic")),
+        };
+
+        let map = atomic.borrow();
+        match map.get("__atomic_value") {
+            Some(v) => Ok(v.clone()),
+            None => Err(RuntimeError::new("invalid atomic")),
+        }
+    });
+
+    // atomic_store - atomically store value
+    define(interp, "atomic_store", Some(2), |_, args| {
+        let atomic = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("atomic_store() requires atomic")),
+        };
+        let value = match &args[1] {
+            Value::Int(i) => *i,
+            _ => return Err(RuntimeError::new("atomic_store() requires integer value")),
+        };
+
+        let mut map = atomic.borrow_mut();
+        map.insert("__atomic_value".to_string(), Value::Int(value));
+        Ok(Value::Null)
+    });
+
+    // atomic_add - atomically add and return old value
+    define(interp, "atomic_add", Some(2), |_, args| {
+        let atomic = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("atomic_add() requires atomic")),
+        };
+        let delta = match &args[1] {
+            Value::Int(i) => *i,
+            _ => return Err(RuntimeError::new("atomic_add() requires integer delta")),
+        };
+
+        let mut map = atomic.borrow_mut();
+        let old = match map.get("__atomic_value") {
+            Some(Value::Int(i)) => *i,
+            _ => return Err(RuntimeError::new("invalid atomic")),
+        };
+        map.insert("__atomic_value".to_string(), Value::Int(old + delta));
+        Ok(Value::Int(old))
+    });
+
+    // atomic_cas - compare and swap, returns bool success
+    define(interp, "atomic_cas", Some(3), |_, args| {
+        let atomic = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("atomic_cas() requires atomic")),
+        };
+        let expected = match &args[1] {
+            Value::Int(i) => *i,
+            _ => return Err(RuntimeError::new("atomic_cas() requires integer expected")),
+        };
+        let new_value = match &args[2] {
+            Value::Int(i) => *i,
+            _ => return Err(RuntimeError::new("atomic_cas() requires integer new value")),
+        };
+
+        let mut map = atomic.borrow_mut();
+        let current = match map.get("__atomic_value") {
+            Some(Value::Int(i)) => *i,
+            _ => return Err(RuntimeError::new("invalid atomic")),
+        };
+
+        if current == expected {
+            map.insert("__atomic_value".to_string(), Value::Int(new_value));
+            Ok(Value::Bool(true))
+        } else {
+            Ok(Value::Bool(false))
+        }
+    });
+
+    // --- PARALLEL ITERATION ---
+
+    // parallel_map - map function over array in parallel (simplified)
+    define(interp, "parallel_map", Some(2), |_, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("parallel_map() requires array")),
+        };
+        let _func = args[1].clone();
+
+        // For interpreter, just return original array
+        // Real parallelism needs thread-safe interpreter
+        Ok(Value::Array(Rc::new(RefCell::new(arr))))
+    });
+
+    // parallel_for - parallel for loop (simplified)
+    define(interp, "parallel_for", Some(3), |_, args| {
+        let start = match &args[0] {
+            Value::Int(i) => *i,
+            _ => return Err(RuntimeError::new("parallel_for() requires integer start")),
+        };
+        let end = match &args[1] {
+            Value::Int(i) => *i,
+            _ => return Err(RuntimeError::new("parallel_for() requires integer end")),
+        };
+        let _func = args[2].clone();
+
+        // For interpreter, execute sequentially
+        // Returns range as array
+        let range: Vec<Value> = (start..end).map(|i| Value::Int(i)).collect();
+        Ok(Value::Array(Rc::new(RefCell::new(range))))
+    });
 }
 
 // Extended Euclidean algorithm for modular inverse

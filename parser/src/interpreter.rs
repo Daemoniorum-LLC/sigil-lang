@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::sync::{Arc, Mutex, mpsc};
+use std::thread::{self, JoinHandle};
 
 /// Runtime value in Sigil.
 #[derive(Clone)]
@@ -57,6 +59,34 @@ pub enum Value {
     Map(Rc<RefCell<HashMap<String, Value>>>),
     /// HashSet (stores keys only, values are unit)
     Set(Rc<RefCell<std::collections::HashSet<String>>>),
+    /// Channel for message passing (sender, receiver)
+    Channel(Arc<ChannelInner>),
+    /// Thread handle
+    ThreadHandle(Arc<Mutex<Option<JoinHandle<Value>>>>),
+    /// Actor (mailbox + state)
+    Actor(Arc<ActorInner>),
+}
+
+/// Inner channel state - wraps mpsc channel
+pub struct ChannelInner {
+    pub sender: Mutex<mpsc::Sender<Value>>,
+    pub receiver: Mutex<mpsc::Receiver<Value>>,
+}
+
+impl Clone for ChannelInner {
+    fn clone(&self) -> Self {
+        // Channels can't really be cloned - create a dummy
+        // This is for the Clone requirement on Value
+        panic!("Channels cannot be cloned directly - use channel_clone()")
+    }
+}
+
+/// Inner actor state - single-threaded for interpreter (Value contains Rc)
+/// For true async actors, use the JIT backend
+pub struct ActorInner {
+    pub name: String,
+    pub message_queue: Mutex<Vec<(String, String)>>,  // (msg_type, serialized_data)
+    pub message_count: std::sync::atomic::AtomicUsize,
 }
 
 /// Evidence level at runtime
@@ -164,6 +194,9 @@ impl fmt::Debug for Value {
                 }
                 write!(f, "}}")
             }
+            Value::Channel(_) => write!(f, "<channel>"),
+            Value::ThreadHandle(_) => write!(f, "<thread>"),
+            Value::Actor(actor) => write!(f, "<actor {}>", actor.name),
         }
     }
 }
@@ -398,6 +431,9 @@ impl Interpreter {
                 Value::Evidential { .. } => "evidential",
                 Value::Map(_) => "map",
                 Value::Set(_) => "set",
+                Value::Channel(_) => "channel",
+                Value::ThreadHandle(_) => "thread",
+                Value::Actor(_) => "actor",
             };
             Ok(Value::String(Rc::new(type_name.to_string())))
         });
