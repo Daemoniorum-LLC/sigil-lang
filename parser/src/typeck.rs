@@ -742,6 +742,7 @@ impl TypeChecker {
             Literal::Bool(_) => Type::Bool,
             Literal::Char(_) => Type::Char,
             Literal::String(_) => Type::Str,
+            Literal::Null => Type::Unit,  // null has unit type
             Literal::Empty => Type::Unit,
             Literal::Infinity => Type::Float(FloatSize::F64),
             Literal::Circle => Type::Float(FloatSize::F64),

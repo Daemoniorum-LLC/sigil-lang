@@ -126,6 +126,10 @@ pub enum Token {
     #[token("false")]
     False,
 
+    // Null literal
+    #[token("null")]
+    Null,
+
     // === Morphemes (Greek letters) ===
     #[token("τ")]
     #[token("Τ")]

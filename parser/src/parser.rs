@@ -1656,6 +1656,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Expr::Literal(Literal::Bool(false)))
             }
+            Some(Token::Null) => {
+                self.advance();
+                Ok(Expr::Literal(Literal::Null))
+            }
             Some(Token::Empty) => {
                 self.advance();
                 Ok(Expr::Literal(Literal::Empty))
@@ -2669,7 +2673,8 @@ impl<'a> Parser<'a> {
                 Ok(Pattern::Slice(patterns))
             }
             Some(Token::IntLit(_)) | Some(Token::StringLit(_)) |
-            Some(Token::CharLit(_)) | Some(Token::True) | Some(Token::False) => {
+            Some(Token::CharLit(_)) | Some(Token::True) | Some(Token::False) |
+            Some(Token::Null) => {
                 let lit = self.parse_literal()?;
                 Ok(Pattern::Literal(lit))
             }
@@ -2723,6 +2728,10 @@ impl<'a> Parser<'a> {
             Some(Token::False) => {
                 self.advance();
                 Ok(Literal::Bool(false))
+            }
+            Some(Token::Null) => {
+                self.advance();
+                Ok(Literal::Null)
             }
             _ => Err(ParseError::Custom("expected literal".to_string())),
         }

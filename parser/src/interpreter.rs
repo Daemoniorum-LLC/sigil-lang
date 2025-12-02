@@ -784,6 +784,7 @@ impl Interpreter {
             Literal::String(s) => Ok(Value::String(Rc::new(s.clone()))),
             Literal::Char(c) => Ok(Value::Char(*c)),
             Literal::Bool(b) => Ok(Value::Bool(*b)),
+            Literal::Null => Ok(Value::Null),
             Literal::Empty => Ok(Value::Empty),
             Literal::Infinity => Ok(Value::Infinity),
             Literal::Circle => Ok(Value::Int(0)), // ◯ = zero

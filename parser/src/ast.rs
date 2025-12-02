@@ -1132,6 +1132,7 @@ pub enum Literal {
     String(String),
     Char(char),
     Bool(bool),
+    Null,      // null
     /// Special mathematical constants
     Empty,     // ∅
     Infinity,  // ∞
