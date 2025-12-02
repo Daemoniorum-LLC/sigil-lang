@@ -769,7 +769,7 @@ impl Interpreter {
         }
     }
 
-    fn eval_literal(&self, lit: &Literal) -> Result<Value, RuntimeError> {
+    fn eval_literal(&mut self, lit: &Literal) -> Result<Value, RuntimeError> {
         match lit {
             Literal::Int { value, base, .. } => {
                 let n = self.parse_int(value, base)?;
@@ -782,6 +782,37 @@ impl Interpreter {
                 Ok(Value::Float(n))
             }
             Literal::String(s) => Ok(Value::String(Rc::new(s.clone()))),
+            Literal::MultiLineString(s) => Ok(Value::String(Rc::new(s.clone()))),
+            Literal::RawString(s) => Ok(Value::String(Rc::new(s.clone()))),
+            Literal::ByteString(bytes) => {
+                // Convert byte array to an array of integers
+                let arr: Vec<Value> = bytes.iter().map(|&b| Value::Int(b as i64)).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(arr))))
+            }
+            Literal::InterpolatedString { parts } => {
+                // Evaluate each part and concatenate
+                let mut result = String::new();
+                for part in parts {
+                    match part {
+                        InterpolationPart::Text(s) => result.push_str(s),
+                        InterpolationPart::Expr(expr) => {
+                            let value = self.evaluate(expr)?;
+                            result.push_str(&format!("{}", value));
+                        }
+                    }
+                }
+                Ok(Value::String(Rc::new(result)))
+            }
+            Literal::SigilStringSql(s) => {
+                // SQL sigil string - for now just return as string
+                // Future: could add SQL validation or templating
+                Ok(Value::String(Rc::new(s.clone())))
+            }
+            Literal::SigilStringRoute(s) => {
+                // Route sigil string - for now just return as string
+                // Future: could add route validation or templating
+                Ok(Value::String(Rc::new(s.clone())))
+            }
             Literal::Char(c) => Ok(Value::Char(*c)),
             Literal::Bool(b) => Ok(Value::Bool(*b)),
             Literal::Null => Ok(Value::Null),
@@ -1289,7 +1320,7 @@ impl Interpreter {
         Err(RuntimeError::new("No matching pattern"))
     }
 
-    fn pattern_matches(&self, pattern: &Pattern, value: &Value) -> Result<bool, RuntimeError> {
+    fn pattern_matches(&mut self, pattern: &Pattern, value: &Value) -> Result<bool, RuntimeError> {
         match (pattern, value) {
             (Pattern::Wildcard, _) => Ok(true),
             (Pattern::Ident { .. }, _) => Ok(true),

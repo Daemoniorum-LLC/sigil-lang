@@ -39,6 +39,8 @@ use md5::Md5;
 use base64::{Engine as _, engine::general_purpose};
 use regex::Regex;
 use uuid::Uuid;
+use unicode_normalization::UnicodeNormalization;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Register all standard library functions
 pub fn register_stdlib(interp: &mut Interpreter) {
@@ -101,6 +103,22 @@ fn define(
         func,
     }));
     interp.globals.borrow_mut().define(name.to_string(), builtin);
+}
+
+// Helper function for value equality comparison
+fn values_equal_simple(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Int(x), Value::Int(y)) => x == y,
+        (Value::Float(x), Value::Float(y)) => (x - y).abs() < f64::EPSILON,
+        (Value::Int(x), Value::Float(y)) | (Value::Float(y), Value::Int(x)) => (*x as f64 - y).abs() < f64::EPSILON,
+        (Value::Bool(x), Value::Bool(y)) => x == y,
+        (Value::String(x), Value::String(y)) => x == y,
+        (Value::Char(x), Value::Char(y)) => x == y,
+        (Value::Null, Value::Null) => true,
+        (Value::Empty, Value::Empty) => true,
+        (Value::Infinity, Value::Infinity) => true,
+        _ => false,
+    }
 }
 
 // ============================================================================
@@ -1707,6 +1725,437 @@ fn register_string(interp: &mut Interpreter) {
             Value::Char(c) => Ok(Value::Bool(c.is_whitespace())),
             _ => Err(RuntimeError::new("is_space() requires string or char")),
         }
+    });
+
+    // =========================================================================
+    // ADVANCED STRING FUNCTIONS
+    // =========================================================================
+
+    // find - find first occurrence of substring, returns index or -1
+    define(interp, "find", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(sub)) => {
+                match s.find(sub.as_str()) {
+                    Some(byte_idx) => {
+                        // Convert byte index to character index
+                        let char_idx = s[..byte_idx].chars().count() as i64;
+                        Ok(Value::Int(char_idx))
+                    }
+                    None => Ok(Value::Int(-1)),
+                }
+            }
+            (Value::String(s), Value::Char(c)) => {
+                match s.find(*c) {
+                    Some(byte_idx) => {
+                        let char_idx = s[..byte_idx].chars().count() as i64;
+                        Ok(Value::Int(char_idx))
+                    }
+                    None => Ok(Value::Int(-1)),
+                }
+            }
+            _ => Err(RuntimeError::new("find() requires string and substring/char")),
+        }
+    });
+
+    // index_of - find index of element in array or substring in string
+    define(interp, "index_of", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(sub)) => {
+                match s.find(sub.as_str()) {
+                    Some(byte_idx) => {
+                        let char_idx = s[..byte_idx].chars().count() as i64;
+                        Ok(Value::Int(char_idx))
+                    }
+                    None => Ok(Value::Int(-1)),
+                }
+            }
+            (Value::String(s), Value::Char(c)) => {
+                match s.find(*c) {
+                    Some(byte_idx) => {
+                        let char_idx = s[..byte_idx].chars().count() as i64;
+                        Ok(Value::Int(char_idx))
+                    }
+                    None => Ok(Value::Int(-1)),
+                }
+            }
+            (Value::Array(arr), search) => {
+                // Array index_of - use Value comparison
+                for (i, v) in arr.borrow().iter().enumerate() {
+                    if values_equal_simple(v, search) {
+                        return Ok(Value::Int(i as i64));
+                    }
+                }
+                Ok(Value::Int(-1))
+            }
+            _ => Err(RuntimeError::new("index_of() requires array/string and element/substring")),
+        }
+    });
+
+    // last_index_of - find last occurrence of substring
+    define(interp, "last_index_of", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(sub)) => {
+                match s.rfind(sub.as_str()) {
+                    Some(byte_idx) => {
+                        let char_idx = s[..byte_idx].chars().count() as i64;
+                        Ok(Value::Int(char_idx))
+                    }
+                    None => Ok(Value::Int(-1)),
+                }
+            }
+            (Value::String(s), Value::Char(c)) => {
+                match s.rfind(*c) {
+                    Some(byte_idx) => {
+                        let char_idx = s[..byte_idx].chars().count() as i64;
+                        Ok(Value::Int(char_idx))
+                    }
+                    None => Ok(Value::Int(-1)),
+                }
+            }
+            _ => Err(RuntimeError::new("last_index_of() requires string and substring/char")),
+        }
+    });
+
+    // substring - extract substring by character indices
+    define(interp, "substring", Some(3), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("substring: first argument must be a string")) };
+        let start = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("substring: start must be a non-negative integer")) };
+        let end = match &args[2] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("substring: end must be a non-negative integer")) };
+        let chars: Vec<char> = s.chars().collect();
+        let len = chars.len();
+        let actual_start = start.min(len);
+        let actual_end = end.min(len);
+        if actual_start >= actual_end {
+            return Ok(Value::String(Rc::new(String::new())));
+        }
+        let result: String = chars[actual_start..actual_end].iter().collect();
+        Ok(Value::String(Rc::new(result)))
+    });
+
+    // count - count occurrences of substring
+    define(interp, "count", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(sub)) => {
+                if sub.is_empty() {
+                    return Err(RuntimeError::new("count: cannot count empty string"));
+                }
+                let count = s.matches(sub.as_str()).count() as i64;
+                Ok(Value::Int(count))
+            }
+            (Value::String(s), Value::Char(c)) => {
+                let count = s.chars().filter(|&ch| ch == *c).count() as i64;
+                Ok(Value::Int(count))
+            }
+            _ => Err(RuntimeError::new("count() requires string and substring/char")),
+        }
+    });
+
+    // char_at - get character at index (safer than indexing)
+    define(interp, "char_at", Some(2), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("char_at: first argument must be a string")) };
+        let idx = match &args[1] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("char_at: second argument must be an integer")) };
+        let chars: Vec<char> = s.chars().collect();
+        let actual_idx = if idx < 0 {
+            (chars.len() as i64 + idx) as usize
+        } else {
+            idx as usize
+        };
+        match chars.get(actual_idx) {
+            Some(c) => Ok(Value::Char(*c)),
+            None => Ok(Value::Null),
+        }
+    });
+
+    // char_code_at - get Unicode code point at index
+    define(interp, "char_code_at", Some(2), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("char_code_at: first argument must be a string")) };
+        let idx = match &args[1] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("char_code_at: second argument must be an integer")) };
+        let chars: Vec<char> = s.chars().collect();
+        let actual_idx = if idx < 0 {
+            (chars.len() as i64 + idx) as usize
+        } else {
+            idx as usize
+        };
+        match chars.get(actual_idx) {
+            Some(c) => Ok(Value::Int(*c as i64)),
+            None => Ok(Value::Null),
+        }
+    });
+
+    // from_char_code - create string from Unicode code point
+    define(interp, "from_char_code", Some(1), |_, args| {
+        let code = match &args[0] { Value::Int(n) => *n as u32, _ => return Err(RuntimeError::new("from_char_code: argument must be an integer")) };
+        match char::from_u32(code) {
+            Some(c) => Ok(Value::String(Rc::new(c.to_string()))),
+            None => Err(RuntimeError::new("from_char_code: invalid Unicode code point")),
+        }
+    });
+
+    // insert - insert string at index
+    define(interp, "insert", Some(3), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("insert: first argument must be a string")) };
+        let idx = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("insert: index must be a non-negative integer")) };
+        let insertion = match &args[2] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("insert: third argument must be a string")) };
+        let chars: Vec<char> = s.chars().collect();
+        let actual_idx = idx.min(chars.len());
+        let mut result: String = chars[..actual_idx].iter().collect();
+        result.push_str(&insertion);
+        result.extend(chars[actual_idx..].iter());
+        Ok(Value::String(Rc::new(result)))
+    });
+
+    // remove - remove range from string
+    define(interp, "remove", Some(3), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("remove: first argument must be a string")) };
+        let start = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("remove: start must be a non-negative integer")) };
+        let len = match &args[2] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("remove: length must be a non-negative integer")) };
+        let chars: Vec<char> = s.chars().collect();
+        let str_len = chars.len();
+        let actual_start = start.min(str_len);
+        let actual_end = (start + len).min(str_len);
+        let mut result: String = chars[..actual_start].iter().collect();
+        result.extend(chars[actual_end..].iter());
+        Ok(Value::String(Rc::new(result)))
+    });
+
+    // compare - compare two strings, returns -1, 0, or 1
+    define(interp, "compare", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let result = match a.cmp(b) {
+                    std::cmp::Ordering::Less => -1,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Greater => 1,
+                };
+                Ok(Value::Int(result))
+            }
+            _ => Err(RuntimeError::new("compare() requires two strings")),
+        }
+    });
+
+    // compare_ignore_case - case-insensitive comparison
+    define(interp, "compare_ignore_case", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let result = match a.to_lowercase().cmp(&b.to_lowercase()) {
+                    std::cmp::Ordering::Less => -1,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Greater => 1,
+                };
+                Ok(Value::Int(result))
+            }
+            _ => Err(RuntimeError::new("compare_ignore_case() requires two strings")),
+        }
+    });
+
+    // char_count - get character count (not byte length)
+    define(interp, "char_count", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => Ok(Value::Int(s.chars().count() as i64)),
+            _ => Err(RuntimeError::new("char_count() requires string")),
+        }
+    });
+
+    // byte_count - get byte length (for UTF-8 awareness)
+    define(interp, "byte_count", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => Ok(Value::Int(s.len() as i64)),
+            _ => Err(RuntimeError::new("byte_count() requires string")),
+        }
+    });
+
+    // is_empty - check if string is empty
+    define(interp, "is_empty", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => Ok(Value::Bool(s.is_empty())),
+            Value::Array(arr) => Ok(Value::Bool(arr.borrow().is_empty())),
+            _ => Err(RuntimeError::new("is_empty() requires string or array")),
+        }
+    });
+
+    // is_blank - check if string is empty or only whitespace
+    define(interp, "is_blank", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => Ok(Value::Bool(s.trim().is_empty())),
+            _ => Err(RuntimeError::new("is_blank() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // UNICODE NORMALIZATION FUNCTIONS
+    // =========================================================================
+
+    // nfc - Unicode Normalization Form C (Canonical Decomposition, followed by Canonical Composition)
+    define(interp, "nfc", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => Ok(Value::String(Rc::new(s.nfc().collect()))),
+            _ => Err(RuntimeError::new("nfc() requires string")),
+        }
+    });
+
+    // nfd - Unicode Normalization Form D (Canonical Decomposition)
+    define(interp, "nfd", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => Ok(Value::String(Rc::new(s.nfd().collect()))),
+            _ => Err(RuntimeError::new("nfd() requires string")),
+        }
+    });
+
+    // nfkc - Unicode Normalization Form KC (Compatibility Decomposition, followed by Canonical Composition)
+    define(interp, "nfkc", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => Ok(Value::String(Rc::new(s.nfkc().collect()))),
+            _ => Err(RuntimeError::new("nfkc() requires string")),
+        }
+    });
+
+    // nfkd - Unicode Normalization Form KD (Compatibility Decomposition)
+    define(interp, "nfkd", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => Ok(Value::String(Rc::new(s.nfkd().collect()))),
+            _ => Err(RuntimeError::new("nfkd() requires string")),
+        }
+    });
+
+    // is_nfc - check if string is in NFC form
+    define(interp, "is_nfc", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let normalized: String = s.nfc().collect();
+                Ok(Value::Bool(*s.as_ref() == normalized))
+            }
+            _ => Err(RuntimeError::new("is_nfc() requires string")),
+        }
+    });
+
+    // is_nfd - check if string is in NFD form
+    define(interp, "is_nfd", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let normalized: String = s.nfd().collect();
+                Ok(Value::Bool(*s.as_ref() == normalized))
+            }
+            _ => Err(RuntimeError::new("is_nfd() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // GRAPHEME CLUSTER FUNCTIONS
+    // =========================================================================
+
+    // graphemes - split string into grapheme clusters (user-perceived characters)
+    define(interp, "graphemes", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let graphemes: Vec<Value> = s.graphemes(true)
+                    .map(|g| Value::String(Rc::new(g.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(graphemes))))
+            }
+            _ => Err(RuntimeError::new("graphemes() requires string")),
+        }
+    });
+
+    // grapheme_count - count grapheme clusters (correct for emoji, combining chars, etc.)
+    define(interp, "grapheme_count", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => Ok(Value::Int(s.graphemes(true).count() as i64)),
+            _ => Err(RuntimeError::new("grapheme_count() requires string")),
+        }
+    });
+
+    // grapheme_at - get grapheme cluster at index
+    define(interp, "grapheme_at", Some(2), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("grapheme_at: first argument must be a string")) };
+        let idx = match &args[1] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("grapheme_at: second argument must be an integer")) };
+        let graphemes: Vec<&str> = s.graphemes(true).collect();
+        let actual_idx = if idx < 0 {
+            (graphemes.len() as i64 + idx) as usize
+        } else {
+            idx as usize
+        };
+        match graphemes.get(actual_idx) {
+            Some(g) => Ok(Value::String(Rc::new(g.to_string()))),
+            None => Ok(Value::Null),
+        }
+    });
+
+    // grapheme_slice - slice string by grapheme indices (proper Unicode slicing)
+    define(interp, "grapheme_slice", Some(3), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("grapheme_slice: first argument must be a string")) };
+        let start = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("grapheme_slice: start must be a non-negative integer")) };
+        let end = match &args[2] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("grapheme_slice: end must be a non-negative integer")) };
+        let graphemes: Vec<&str> = s.graphemes(true).collect();
+        let len = graphemes.len();
+        let actual_start = start.min(len);
+        let actual_end = end.min(len);
+        if actual_start >= actual_end {
+            return Ok(Value::String(Rc::new(String::new())));
+        }
+        let result: String = graphemes[actual_start..actual_end].join("");
+        Ok(Value::String(Rc::new(result)))
+    });
+
+    // grapheme_reverse - reverse string by grapheme clusters (correct for emoji, etc.)
+    define(interp, "grapheme_reverse", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let reversed: String = s.graphemes(true).rev().collect();
+                Ok(Value::String(Rc::new(reversed)))
+            }
+            _ => Err(RuntimeError::new("grapheme_reverse() requires string")),
+        }
+    });
+
+    // word_indices - get word boundaries
+    define(interp, "word_boundaries", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let words: Vec<Value> = s.unicode_words()
+                    .map(|w| Value::String(Rc::new(w.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(words))))
+            }
+            _ => Err(RuntimeError::new("word_boundaries() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // STRING BUILDER
+    // =========================================================================
+
+    // string_builder - create a new string builder (just returns empty string for now,
+    // operations can be chained with concat)
+    define(interp, "string_builder", Some(0), |_, _| {
+        Ok(Value::String(Rc::new(String::new())))
+    });
+
+    // concat_all - concatenate array of strings efficiently
+    define(interp, "concat_all", Some(1), |_, args| {
+        match &args[0] {
+            Value::Array(arr) => {
+                let parts: Vec<String> = arr.borrow().iter()
+                    .map(|v| match v {
+                        Value::String(s) => (**s).clone(),
+                        other => format!("{}", other),
+                    })
+                    .collect();
+                Ok(Value::String(Rc::new(parts.join(""))))
+            }
+            _ => Err(RuntimeError::new("concat_all() requires array")),
+        }
+    });
+
+    // repeat_join - repeat a string n times with a separator
+    define(interp, "repeat_join", Some(3), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("repeat_join: first argument must be a string")) };
+        let n = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("repeat_join: count must be a non-negative integer")) };
+        let sep = match &args[2] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("repeat_join: separator must be a string")) };
+        if n == 0 {
+            return Ok(Value::String(Rc::new(String::new())));
+        }
+        let parts: Vec<&str> = std::iter::repeat(s.as_str()).take(n).collect();
+        Ok(Value::String(Rc::new(parts.join(&sep))))
     });
 }
 
@@ -6507,33 +6956,36 @@ fn register_format(interp: &mut Interpreter) {
         Ok(Value::String(Rc::new(result)))
     });
 
-    // pad_left - left-pad string to length with char
+    // pad_left - left-pad string to length with char (uses character count, not bytes)
     define(interp, "pad_left", Some(3), |_, args| {
         let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("pad_left: first argument must be a string")) };
         let width = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("pad_left: width must be a non-negative integer")) };
-        let pad_char = match &args[2] { Value::String(s) if !s.is_empty() => s.chars().next().unwrap(), _ => return Err(RuntimeError::new("pad_left: pad character must be a non-empty string")) };
-        if s.len() >= width { return Ok(Value::String(Rc::new(s))); }
-        let padding: String = std::iter::repeat(pad_char).take(width - s.len()).collect();
+        let pad_char = match &args[2] { Value::String(s) if !s.is_empty() => s.chars().next().unwrap(), Value::Char(c) => *c, _ => return Err(RuntimeError::new("pad_left: pad character must be a non-empty string or char")) };
+        let char_count = s.chars().count();
+        if char_count >= width { return Ok(Value::String(Rc::new(s))); }
+        let padding: String = std::iter::repeat(pad_char).take(width - char_count).collect();
         Ok(Value::String(Rc::new(format!("{}{}", padding, s))))
     });
 
-    // pad_right - right-pad string to length with char
+    // pad_right - right-pad string to length with char (uses character count, not bytes)
     define(interp, "pad_right", Some(3), |_, args| {
         let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("pad_right: first argument must be a string")) };
         let width = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("pad_right: width must be a non-negative integer")) };
-        let pad_char = match &args[2] { Value::String(s) if !s.is_empty() => s.chars().next().unwrap(), _ => return Err(RuntimeError::new("pad_right: pad character must be a non-empty string")) };
-        if s.len() >= width { return Ok(Value::String(Rc::new(s))); }
-        let padding: String = std::iter::repeat(pad_char).take(width - s.len()).collect();
+        let pad_char = match &args[2] { Value::String(s) if !s.is_empty() => s.chars().next().unwrap(), Value::Char(c) => *c, _ => return Err(RuntimeError::new("pad_right: pad character must be a non-empty string or char")) };
+        let char_count = s.chars().count();
+        if char_count >= width { return Ok(Value::String(Rc::new(s))); }
+        let padding: String = std::iter::repeat(pad_char).take(width - char_count).collect();
         Ok(Value::String(Rc::new(format!("{}{}", s, padding))))
     });
 
-    // center - center string with padding
+    // center - center string with padding (uses character count, not bytes)
     define(interp, "center", Some(3), |_, args| {
         let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("center: first argument must be a string")) };
         let width = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("center: width must be a non-negative integer")) };
-        let pad_char = match &args[2] { Value::String(s) if !s.is_empty() => s.chars().next().unwrap(), _ => return Err(RuntimeError::new("center: pad character must be a non-empty string")) };
-        if s.len() >= width { return Ok(Value::String(Rc::new(s))); }
-        let total_padding = width - s.len();
+        let pad_char = match &args[2] { Value::String(s) if !s.is_empty() => s.chars().next().unwrap(), Value::Char(c) => *c, _ => return Err(RuntimeError::new("center: pad character must be a non-empty string or char")) };
+        let char_count = s.chars().count();
+        if char_count >= width { return Ok(Value::String(Rc::new(s))); }
+        let total_padding = width - char_count;
         let left_padding = total_padding / 2;
         let right_padding = total_padding - left_padding;
         let left: String = std::iter::repeat(pad_char).take(left_padding).collect();
@@ -6569,11 +7021,12 @@ fn register_format(interp: &mut Interpreter) {
         if count == 1 || count == -1 { Ok(Value::String(singular)) } else { Ok(Value::String(plural)) }
     });
 
-    // truncate - truncate string with ellipsis
+    // truncate - truncate string with ellipsis (uses character count, not bytes)
     define(interp, "truncate", Some(2), |_, args| {
         let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("truncate: first argument must be a string")) };
         let max_len = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("truncate: max length must be a non-negative integer")) };
-        if s.len() <= max_len { return Ok(Value::String(Rc::new(s))); }
+        let char_count = s.chars().count();
+        if char_count <= max_len { return Ok(Value::String(Rc::new(s))); }
         if max_len <= 3 { return Ok(Value::String(Rc::new(s.chars().take(max_len).collect()))); }
         let truncated: String = s.chars().take(max_len - 3).collect();
         Ok(Value::String(Rc::new(format!("{}...", truncated))))

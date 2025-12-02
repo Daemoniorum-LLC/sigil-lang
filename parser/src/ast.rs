@@ -1168,6 +1168,20 @@ pub enum Literal {
         suffix: Option<String>,
     },
     String(String),
+    /// Multi-line string literal (""" ... """)
+    MultiLineString(String),
+    /// Raw string literal (no escape processing)
+    RawString(String),
+    /// Byte string literal (b"...")
+    ByteString(Vec<u8>),
+    /// Interpolated string literal (f"... {expr} ...")
+    InterpolatedString {
+        parts: Vec<InterpolationPart>,
+    },
+    /// SQL sigil string (σ"...")
+    SigilStringSql(String),
+    /// Route sigil string (ρ"...")
+    SigilStringRoute(String),
     Char(char),
     Bool(bool),
     Null,      // null
@@ -1175,6 +1189,15 @@ pub enum Literal {
     Empty,     // ∅
     Infinity,  // ∞
     Circle,    // ◯
+}
+
+/// Part of an interpolated string
+#[derive(Debug, Clone, PartialEq)]
+pub enum InterpolationPart {
+    /// Literal text segment
+    Text(String),
+    /// Expression to be evaluated and converted to string
+    Expr(Box<Expr>),
 }
 
 /// Number bases.

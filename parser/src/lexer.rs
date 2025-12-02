@@ -5,6 +5,143 @@
 use logos::Logos;
 use crate::span::Span;
 
+/// Process escape sequences in a string literal.
+/// Converts \n, \t, \r, \\, \", \', \0, \xNN, \u{NNNN} to their actual characters.
+fn process_escape_sequences(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n') => result.push('\n'),
+                Some('t') => result.push('\t'),
+                Some('r') => result.push('\r'),
+                Some('\\') => result.push('\\'),
+                Some('"') => result.push('"'),
+                Some('\'') => result.push('\''),
+                Some('0') => result.push('\0'),
+                Some('x') => {
+                    // \xNN - two hex digits
+                    let mut hex = String::new();
+                    for _ in 0..2 {
+                        if let Some(&c) = chars.peek() {
+                            if c.is_ascii_hexdigit() {
+                                hex.push(chars.next().unwrap());
+                            }
+                        }
+                    }
+                    if let Ok(val) = u8::from_str_radix(&hex, 16) {
+                        result.push(val as char);
+                    }
+                }
+                Some('u') => {
+                    // \u{NNNN} - Unicode code point
+                    if chars.peek() == Some(&'{') {
+                        chars.next(); // consume '{'
+                        let mut hex = String::new();
+                        while let Some(&c) = chars.peek() {
+                            if c == '}' {
+                                chars.next();
+                                break;
+                            }
+                            if c.is_ascii_hexdigit() {
+                                hex.push(chars.next().unwrap());
+                            } else {
+                                break;
+                            }
+                        }
+                        if let Ok(val) = u32::from_str_radix(&hex, 16) {
+                            if let Some(c) = char::from_u32(val) {
+                                result.push(c);
+                            }
+                        }
+                    }
+                }
+                Some(other) => {
+                    // Unknown escape, keep as-is
+                    result.push('\\');
+                    result.push(other);
+                }
+                None => result.push('\\'),
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// Callback for delimited raw strings (r#"..."#).
+/// Reads until the closing "# is found.
+fn raw_string_delimited_callback(lex: &mut logos::Lexer<'_, Token>) -> Option<String> {
+    let remainder = lex.remainder();
+
+    // Find the closing "#
+    if let Some(end_pos) = remainder.find("\"#") {
+        let content = &remainder[..end_pos];
+        // Bump past content and closing "# (2 chars)
+        lex.bump(end_pos + 2);
+        Some(content.to_string())
+    } else {
+        None
+    }
+}
+
+/// Callback for multi-line string literals.
+/// Reads from """ until the next """ is found.
+fn multiline_string_callback(lex: &mut logos::Lexer<'_, Token>) -> Option<String> {
+    let remainder = lex.remainder();
+
+    // Find the closing """
+    if let Some(end_pos) = remainder.find("\"\"\"") {
+        let content = &remainder[..end_pos];
+        // Bump the lexer past the content and closing quotes
+        lex.bump(end_pos + 3);
+        Some(process_escape_sequences(content))
+    } else {
+        // No closing """ found - skip to end and return what we have
+        None
+    }
+}
+
+/// Process escape sequences in a character literal.
+fn process_char_escape(s: &str) -> char {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some('\\') => {
+            match chars.next() {
+                Some('n') => '\n',
+                Some('t') => '\t',
+                Some('r') => '\r',
+                Some('\\') => '\\',
+                Some('"') => '"',
+                Some('\'') => '\'',
+                Some('0') => '\0',
+                Some('x') => {
+                    let hex: String = chars.take(2).collect();
+                    u8::from_str_radix(&hex, 16).map(|v| v as char).unwrap_or('?')
+                }
+                Some('u') => {
+                    if chars.next() == Some('{') {
+                        let hex: String = chars.take_while(|&c| c != '}').collect();
+                        u32::from_str_radix(&hex, 16)
+                            .ok()
+                            .and_then(char::from_u32)
+                            .unwrap_or('?')
+                    } else {
+                        '?'
+                    }
+                }
+                Some(c) => c,
+                None => '?',
+            }
+        }
+        Some(c) => c,
+        None => '?',
+    }
+}
+
 /// Token types for Sigil.
 #[derive(Logos, Debug, Clone, PartialEq)]
 #[logos(skip r"[ \t\r\n\f]+")]
@@ -464,22 +601,72 @@ pub enum Token {
     IntLit(String),
 
     // === Strings ===
+    // Regular string with escape sequence processing
     #[regex(r#""([^"\\]|\\.)*""#, |lex| {
         let s = lex.slice();
-        s[1..s.len()-1].to_string()
+        let inner = &s[1..s.len()-1];
+        process_escape_sequences(inner)
     })]
     StringLit(String),
 
-    // Char literal
+    // Multi-line string (triple-quoted) - handled via callback
+    #[token(r#"""""#, multiline_string_callback)]
+    MultiLineStringLit(String),
+
+    // Byte string literal
+    #[regex(r#"b"([^"\\]|\\.)*""#, |lex| {
+        let s = lex.slice();
+        let inner = &s[2..s.len()-1];
+        inner.as_bytes().to_vec()
+    })]
+    ByteStringLit(Vec<u8>),
+
+    // Interpolated string (will be parsed further for expressions)
+    #[regex(r#"f"([^"\\]|\\.)*""#, |lex| {
+        let s = lex.slice();
+        let inner = &s[2..s.len()-1];
+        process_escape_sequences(inner)
+    })]
+    InterpolatedStringLit(String),
+
+    // Sigil string - SQL template (σ prefix)
+    #[regex(r#"σ"([^"\\]|\\.)*""#, |lex| {
+        let s = lex.slice();
+        // Get byte index after the σ character (which is 2 bytes in UTF-8)
+        let start = "σ".len() + 1; // σ + opening quote
+        let inner = &s[start..s.len()-1];
+        process_escape_sequences(inner)
+    })]
+    SigilStringSql(String),
+
+    // Sigil string - Route template (ρ prefix)
+    #[regex(r#"ρ"([^"\\]|\\.)*""#, |lex| {
+        let s = lex.slice();
+        // Get byte index after the ρ character (which is 2 bytes in UTF-8)
+        let start = "ρ".len() + 1; // ρ + opening quote
+        let inner = &s[start..s.len()-1];
+        process_escape_sequences(inner)
+    })]
+    SigilStringRoute(String),
+
+    // Char literal with escape sequence processing
     #[regex(r"'([^'\\]|\\.)'", |lex| {
         let s = lex.slice();
-        s.chars().nth(1).unwrap()
+        let inner = &s[1..s.len()-1];
+        process_char_escape(inner)
     })]
     CharLit(char),
 
-    // Raw string (simplified - just r"..." for now)
-    #[regex(r#"r"[^"]*""#, |lex| lex.slice().to_string())]
+    // Raw string (no escape processing)
+    #[regex(r#"r"[^"]*""#, |lex| {
+        let s = lex.slice();
+        s[2..s.len()-1].to_string()
+    })]
     RawStringLit(String),
+
+    // Raw string with delimiter (r#"..."# style) - handles internal quotes
+    #[token(r##"r#""##, raw_string_delimited_callback)]
+    RawStringDelimited(String),
 
     // === Identifiers ===
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
@@ -751,5 +938,188 @@ mod tests {
         assert!(matches!(lexer.next_token(), Some((Token::Parallel, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Gpu, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Gpu, _))));
+    }
+
+    // ==================== STRING LITERAL TESTS ====================
+
+    #[test]
+    fn test_string_escape_sequences() {
+        // Test basic escape sequences
+        let mut lexer = Lexer::new(r#""hello\nworld""#);
+        match lexer.next_token() {
+            Some((Token::StringLit(s), _)) => assert_eq!(s, "hello\nworld"),
+            other => panic!("Expected StringLit, got {:?}", other),
+        }
+
+        // Test tab escape
+        let mut lexer = Lexer::new(r#""hello\tworld""#);
+        match lexer.next_token() {
+            Some((Token::StringLit(s), _)) => assert_eq!(s, "hello\tworld"),
+            other => panic!("Expected StringLit, got {:?}", other),
+        }
+
+        // Test carriage return
+        let mut lexer = Lexer::new(r#""hello\rworld""#);
+        match lexer.next_token() {
+            Some((Token::StringLit(s), _)) => assert_eq!(s, "hello\rworld"),
+            other => panic!("Expected StringLit, got {:?}", other),
+        }
+
+        // Test escaped backslash
+        let mut lexer = Lexer::new(r#""hello\\world""#);
+        match lexer.next_token() {
+            Some((Token::StringLit(s), _)) => assert_eq!(s, "hello\\world"),
+            other => panic!("Expected StringLit, got {:?}", other),
+        }
+
+        // Test escaped quote
+        let mut lexer = Lexer::new(r#""hello\"world""#);
+        match lexer.next_token() {
+            Some((Token::StringLit(s), _)) => assert_eq!(s, "hello\"world"),
+            other => panic!("Expected StringLit, got {:?}", other),
+        }
+
+        // Test null character
+        let mut lexer = Lexer::new(r#""hello\0world""#);
+        match lexer.next_token() {
+            Some((Token::StringLit(s), _)) => assert_eq!(s, "hello\0world"),
+            other => panic!("Expected StringLit, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_string_hex_escape() {
+        // Test \xNN hex escape
+        let mut lexer = Lexer::new(r#""hello\x41world""#);
+        match lexer.next_token() {
+            Some((Token::StringLit(s), _)) => assert_eq!(s, "helloAworld"),
+            other => panic!("Expected StringLit, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_string_unicode_escape() {
+        // Test \u{NNNN} Unicode escape
+        let mut lexer = Lexer::new(r#""hello\u{1F600}world""#);
+        match lexer.next_token() {
+            Some((Token::StringLit(s), _)) => assert_eq!(s, "hello😀world"),
+            other => panic!("Expected StringLit, got {:?}", other),
+        }
+
+        // Test Greek letter
+        let mut lexer = Lexer::new(r#""\u{03C4}""#);
+        match lexer.next_token() {
+            Some((Token::StringLit(s), _)) => assert_eq!(s, "τ"),
+            other => panic!("Expected StringLit, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_char_escape_sequences() {
+        let mut lexer = Lexer::new(r"'\n'");
+        match lexer.next_token() {
+            Some((Token::CharLit(c), _)) => assert_eq!(c, '\n'),
+            other => panic!("Expected CharLit, got {:?}", other),
+        }
+
+        let mut lexer = Lexer::new(r"'\t'");
+        match lexer.next_token() {
+            Some((Token::CharLit(c), _)) => assert_eq!(c, '\t'),
+            other => panic!("Expected CharLit, got {:?}", other),
+        }
+
+        let mut lexer = Lexer::new(r"'\\'");
+        match lexer.next_token() {
+            Some((Token::CharLit(c), _)) => assert_eq!(c, '\\'),
+            other => panic!("Expected CharLit, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_raw_string() {
+        // Raw strings should NOT process escapes
+        let mut lexer = Lexer::new(r#"r"hello\nworld""#);
+        match lexer.next_token() {
+            Some((Token::RawStringLit(s), _)) => assert_eq!(s, r"hello\nworld"),
+            other => panic!("Expected RawStringLit, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_raw_string_delimited() {
+        // r#"..."# style
+        let mut lexer = Lexer::new(r##"r#"hello "world""#"##);
+        match lexer.next_token() {
+            Some((Token::RawStringDelimited(s), _)) => assert_eq!(s, r#"hello "world""#),
+            other => panic!("Expected RawStringDelimited, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_byte_string() {
+        let mut lexer = Lexer::new(r#"b"hello""#);
+        match lexer.next_token() {
+            Some((Token::ByteStringLit(bytes), _)) => {
+                assert_eq!(bytes, vec![104, 101, 108, 108, 111]); // "hello" in ASCII
+            }
+            other => panic!("Expected ByteStringLit, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_interpolated_string() {
+        let mut lexer = Lexer::new(r#"f"hello {name}""#);
+        match lexer.next_token() {
+            Some((Token::InterpolatedStringLit(s), _)) => assert_eq!(s, "hello {name}"),
+            other => panic!("Expected InterpolatedStringLit, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_sigil_string_sql() {
+        let mut lexer = Lexer::new(r#"σ"SELECT * FROM {table}""#);
+        match lexer.next_token() {
+            Some((Token::SigilStringSql(s), _)) => assert_eq!(s, "SELECT * FROM {table}"),
+            other => panic!("Expected SigilStringSql, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_sigil_string_route() {
+        let mut lexer = Lexer::new(r#"ρ"/api/v1/{resource}/{id}""#);
+        match lexer.next_token() {
+            Some((Token::SigilStringRoute(s), _)) => assert_eq!(s, "/api/v1/{resource}/{id}"),
+            other => panic!("Expected SigilStringRoute, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_unicode_in_strings() {
+        // Test direct Unicode in strings
+        let mut lexer = Lexer::new(r#""τφσρ 你好 🦀""#);
+        match lexer.next_token() {
+            Some((Token::StringLit(s), _)) => assert_eq!(s, "τφσρ 你好 🦀"),
+            other => panic!("Expected StringLit, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_empty_string() {
+        let mut lexer = Lexer::new(r#""""#);
+        match lexer.next_token() {
+            Some((Token::StringLit(s), _)) => assert_eq!(s, ""),
+            other => panic!("Expected empty StringLit, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_escape_sequence_helper() {
+        // Unit test the helper function directly
+        assert_eq!(process_escape_sequences(r"hello\nworld"), "hello\nworld");
+        assert_eq!(process_escape_sequences(r"hello\tworld"), "hello\tworld");
+        assert_eq!(process_escape_sequences(r"hello\\world"), "hello\\world");
+        assert_eq!(process_escape_sequences(r#"hello\"world"#), "hello\"world");
+        assert_eq!(process_escape_sequences(r"hello\x41world"), "helloAworld");
+        assert_eq!(process_escape_sequences(r"hello\u{1F600}world"), "hello😀world");
     }
 }
