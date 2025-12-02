@@ -76,6 +76,9 @@ use whatlang::{detect, Lang, Script as WhatLangScript};
 use rust_stemmers::{Algorithm as StemAlgorithm, Stemmer};
 use tiktoken_rs::{cl100k_base, p50k_base, r50k_base};
 
+// Cryptographic primitives for experimental crypto
+use rand::Rng;
+
 /// Register all standard library functions
 pub fn register_stdlib(interp: &mut Interpreter) {
     register_core(interp);
@@ -127,6 +130,9 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_polycultural_text(interp);
     // Phase 11: Text intelligence (AI-native)
     register_text_intelligence(interp);
+    // Phase 12: Emotional hologram and experimental crypto
+    register_hologram(interp);
+    register_experimental_crypto(interp);
 }
 
 // Helper to define a builtin
@@ -14882,6 +14888,957 @@ fn compute_hash(s: &str, seed: u64) -> u64 {
         hash = hash.wrapping_mul(31).wrapping_add(b as u64);
     }
     hash
+}
+
+// ============================================================================
+// EMOTIONAL HOLOGRAM: Multi-dimensional affective projection with cultural awareness
+// ============================================================================
+//
+// The Emotional Hologram is a unique Sigil concept that projects affect onto a
+// normalized coordinate space, enabling:
+// - Emotional distance calculations
+// - Cross-cultural emotion mappings
+// - Emotional fingerprinting and cryptographic signing
+// - Dissonance detection (e.g., positive + sarcastic)
+//
+// Dimensions:
+//   Valence     (-1 to +1): Negative to Positive sentiment
+//   Arousal     (0 to 1):   Low to High intensity
+//   Dominance   (0 to 1):   Submissive to Dominant (formality)
+//   Authenticity(-1 to +1): Sincere to Ironic
+//   Certainty   (0 to 1):   Low to High confidence
+//   Emotion     (0-6):      Discrete emotion index (or -1 for none)
+
+fn register_hologram(interp: &mut Interpreter) {
+    use crate::interpreter::{RuntimeAffect, RuntimeSentiment, RuntimeIntensity,
+                             RuntimeFormality, RuntimeEmotion, RuntimeConfidence};
+
+    // emotional_hologram - project affect onto normalized coordinate space
+    // Returns a map: { valence, arousal, dominance, authenticity, certainty, emotion_index }
+    define(interp, "emotional_hologram", Some(1), |_, args| {
+        let affect = match &args[0] {
+            Value::Affective { affect, .. } => affect.clone(),
+            _ => RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        };
+
+        let mut hologram = std::collections::HashMap::new();
+
+        // Valence: sentiment mapped to -1, 0, +1
+        let valence = match affect.sentiment {
+            Some(RuntimeSentiment::Positive) => 1.0,
+            Some(RuntimeSentiment::Negative) => -1.0,
+            Some(RuntimeSentiment::Neutral) | None => 0.0,
+        };
+        hologram.insert("valence".to_string(), Value::Float(valence));
+
+        // Arousal: intensity mapped to 0, 0.33, 0.66, 1.0
+        let arousal = match affect.intensity {
+            Some(RuntimeIntensity::Down) => 0.25,
+            None => 0.5,
+            Some(RuntimeIntensity::Up) => 0.75,
+            Some(RuntimeIntensity::Max) => 1.0,
+        };
+        hologram.insert("arousal".to_string(), Value::Float(arousal));
+
+        // Dominance: formality mapped to 0 (informal/submissive) to 1 (formal/dominant)
+        let dominance = match affect.formality {
+            Some(RuntimeFormality::Informal) => 0.25,
+            None => 0.5,
+            Some(RuntimeFormality::Formal) => 0.85,
+        };
+        hologram.insert("dominance".to_string(), Value::Float(dominance));
+
+        // Authenticity: -1 (ironic/sarcastic) to +1 (sincere)
+        let authenticity = if affect.sarcasm { -0.9 } else { 0.9 };
+        hologram.insert("authenticity".to_string(), Value::Float(authenticity));
+
+        // Certainty: confidence mapped to 0, 0.5, 1.0
+        let certainty = match affect.confidence {
+            Some(RuntimeConfidence::Low) => 0.2,
+            None | Some(RuntimeConfidence::Medium) => 0.5,
+            Some(RuntimeConfidence::High) => 0.9,
+        };
+        hologram.insert("certainty".to_string(), Value::Float(certainty));
+
+        // Emotion index: 0=joy, 1=sadness, 2=anger, 3=fear, 4=surprise, 5=love, -1=none
+        let emotion_index = match affect.emotion {
+            Some(RuntimeEmotion::Joy) => 0,
+            Some(RuntimeEmotion::Sadness) => 1,
+            Some(RuntimeEmotion::Anger) => 2,
+            Some(RuntimeEmotion::Fear) => 3,
+            Some(RuntimeEmotion::Surprise) => 4,
+            Some(RuntimeEmotion::Love) => 5,
+            None => -1,
+        };
+        hologram.insert("emotion_index".to_string(), Value::Int(emotion_index));
+
+        // Emotion name
+        let emotion_name = match affect.emotion {
+            Some(RuntimeEmotion::Joy) => "joy",
+            Some(RuntimeEmotion::Sadness) => "sadness",
+            Some(RuntimeEmotion::Anger) => "anger",
+            Some(RuntimeEmotion::Fear) => "fear",
+            Some(RuntimeEmotion::Surprise) => "surprise",
+            Some(RuntimeEmotion::Love) => "love",
+            None => "none",
+        };
+        hologram.insert("emotion".to_string(), Value::String(Rc::new(emotion_name.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(hologram))))
+    });
+
+    // emotional_distance - Euclidean distance between two emotional holograms
+    define(interp, "emotional_distance", Some(2), |interp, args| {
+        // Get holograms for both values
+        let h1 = get_hologram_values(&args[0], interp)?;
+        let h2 = get_hologram_values(&args[1], interp)?;
+
+        // Calculate Euclidean distance across dimensions
+        let dist = ((h1.0 - h2.0).powi(2) +    // valence
+                    (h1.1 - h2.1).powi(2) +    // arousal
+                    (h1.2 - h2.2).powi(2) +    // dominance
+                    (h1.3 - h2.3).powi(2) +    // authenticity
+                    (h1.4 - h2.4).powi(2))     // certainty
+                   .sqrt();
+
+        Ok(Value::Float(dist))
+    });
+
+    // emotional_similarity - cosine similarity between emotional states (0 to 1)
+    define(interp, "emotional_similarity", Some(2), |interp, args| {
+        let h1 = get_hologram_values(&args[0], interp)?;
+        let h2 = get_hologram_values(&args[1], interp)?;
+
+        let dot = h1.0 * h2.0 + h1.1 * h2.1 + h1.2 * h2.2 + h1.3 * h2.3 + h1.4 * h2.4;
+        let mag1 = (h1.0.powi(2) + h1.1.powi(2) + h1.2.powi(2) + h1.3.powi(2) + h1.4.powi(2)).sqrt();
+        let mag2 = (h2.0.powi(2) + h2.1.powi(2) + h2.2.powi(2) + h2.3.powi(2) + h2.4.powi(2)).sqrt();
+
+        let similarity = if mag1 > 0.0 && mag2 > 0.0 {
+            (dot / (mag1 * mag2) + 1.0) / 2.0  // Normalize to 0-1
+        } else {
+            0.5
+        };
+
+        Ok(Value::Float(similarity))
+    });
+
+    // emotional_dissonance - detect internal contradictions in affect
+    // Returns score from 0 (coherent) to 1 (highly dissonant)
+    define(interp, "emotional_dissonance", Some(1), |_, args| {
+        let affect = match &args[0] {
+            Value::Affective { affect, .. } => affect.clone(),
+            _ => return Ok(Value::Float(0.0)),
+        };
+
+        let mut dissonance: f64 = 0.0;
+
+        // Positive sentiment + sarcasm = dissonant
+        if matches!(affect.sentiment, Some(RuntimeSentiment::Positive)) && affect.sarcasm {
+            dissonance += 0.4;
+        }
+
+        // Negative sentiment + sarcasm = less dissonant (double negative)
+        if matches!(affect.sentiment, Some(RuntimeSentiment::Negative)) && affect.sarcasm {
+            dissonance += 0.1;
+        }
+
+        // High confidence + low intensity = mildly dissonant
+        if matches!(affect.confidence, Some(RuntimeConfidence::High)) &&
+           matches!(affect.intensity, Some(RuntimeIntensity::Down)) {
+            dissonance += 0.2;
+        }
+
+        // Formal + intense emotion = dissonant
+        if matches!(affect.formality, Some(RuntimeFormality::Formal)) {
+            if matches!(affect.emotion, Some(RuntimeEmotion::Anger) | Some(RuntimeEmotion::Fear)) {
+                dissonance += 0.3;
+            }
+        }
+
+        // Joy/Love + Sadness/Fear indicators (based on sarcasm with positive)
+        if matches!(affect.emotion, Some(RuntimeEmotion::Joy) | Some(RuntimeEmotion::Love)) && affect.sarcasm {
+            dissonance += 0.3;
+        }
+
+        Ok(Value::Float(dissonance.min(1.0)))
+    });
+
+    // emotional_fingerprint - cryptographic hash of emotional state
+    // Creates a unique identifier for this exact emotional configuration
+    define(interp, "emotional_fingerprint", Some(1), |interp, args| {
+        let h = get_hologram_values(&args[0], interp)?;
+
+        // Create deterministic string representation
+        let repr = format!(
+            "hologram:v{:.4}:a{:.4}:d{:.4}:auth{:.4}:c{:.4}",
+            h.0, h.1, h.2, h.3, h.4
+        );
+
+        // Hash using BLAKE3
+        let hash = blake3::hash(repr.as_bytes());
+        Ok(Value::String(Rc::new(hash.to_hex().to_string())))
+    });
+
+    // emotional_morph - interpolate between two emotional states
+    // t=0 returns first state, t=1 returns second state
+    define(interp, "emotional_morph", Some(3), |interp, args| {
+        let h1 = get_hologram_values(&args[0], interp)?;
+        let h2 = get_hologram_values(&args[1], interp)?;
+        let t = match &args[2] {
+            Value::Float(f) => f.max(0.0).min(1.0),
+            Value::Int(i) => (*i as f64).max(0.0).min(1.0),
+            _ => return Err(RuntimeError::new("emotional_morph() requires numeric t value")),
+        };
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("valence".to_string(), Value::Float(h1.0 + (h2.0 - h1.0) * t));
+        result.insert("arousal".to_string(), Value::Float(h1.1 + (h2.1 - h1.1) * t));
+        result.insert("dominance".to_string(), Value::Float(h1.2 + (h2.2 - h1.2) * t));
+        result.insert("authenticity".to_string(), Value::Float(h1.3 + (h2.3 - h1.3) * t));
+        result.insert("certainty".to_string(), Value::Float(h1.4 + (h2.4 - h1.4) * t));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // === Cultural Emotion Mappings ===
+    // Map Sigil emotions to culturally-specific concepts
+
+    // cultural_emotion - get cultural equivalent of an emotion
+    // Supported cultures: japanese, portuguese, german, danish, arabic, korean, russian, hindi
+    define(interp, "cultural_emotion", Some(2), |_, args| {
+        let emotion = match &args[0] {
+            Value::Affective { affect, .. } => affect.emotion.clone(),
+            Value::String(s) => match s.as_str() {
+                "joy" => Some(RuntimeEmotion::Joy),
+                "sadness" => Some(RuntimeEmotion::Sadness),
+                "anger" => Some(RuntimeEmotion::Anger),
+                "fear" => Some(RuntimeEmotion::Fear),
+                "surprise" => Some(RuntimeEmotion::Surprise),
+                "love" => Some(RuntimeEmotion::Love),
+                _ => None,
+            },
+            _ => None,
+        };
+
+        let culture = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("cultural_emotion() requires string culture")),
+        };
+
+        let result = match (emotion, culture.as_str()) {
+            // Japanese concepts
+            (Some(RuntimeEmotion::Joy), "japanese" | "ja") => {
+                create_cultural_entry("木漏れ日", "komorebi", "sunlight filtering through leaves - peaceful joy")
+            }
+            (Some(RuntimeEmotion::Sadness), "japanese" | "ja") => {
+                create_cultural_entry("物の哀れ", "mono no aware", "the pathos of things - bittersweet awareness of impermanence")
+            }
+            (Some(RuntimeEmotion::Love), "japanese" | "ja") => {
+                create_cultural_entry("甘え", "amae", "indulgent dependence on another's benevolence")
+            }
+            (Some(RuntimeEmotion::Fear), "japanese" | "ja") => {
+                create_cultural_entry("空気を読む", "kuuki wo yomu", "anxiety about reading the room")
+            }
+
+            // Portuguese concepts
+            (Some(RuntimeEmotion::Sadness), "portuguese" | "pt") => {
+                create_cultural_entry("saudade", "saudade", "melancholic longing for something or someone absent")
+            }
+            (Some(RuntimeEmotion::Joy), "portuguese" | "pt") => {
+                create_cultural_entry("alegria", "alegria", "exuberant collective joy")
+            }
+
+            // German concepts
+            (Some(RuntimeEmotion::Joy), "german" | "de") => {
+                create_cultural_entry("Schadenfreude", "schadenfreude", "pleasure derived from another's misfortune")
+            }
+            (Some(RuntimeEmotion::Sadness), "german" | "de") => {
+                create_cultural_entry("Weltschmerz", "weltschmerz", "world-weariness, melancholy about the world's state")
+            }
+            (Some(RuntimeEmotion::Fear), "german" | "de") => {
+                create_cultural_entry("Torschlusspanik", "torschlusspanik", "fear of diminishing opportunities with age")
+            }
+
+            // Danish concepts
+            (Some(RuntimeEmotion::Joy), "danish" | "da") => {
+                create_cultural_entry("hygge", "hygge", "cozy contentment and conviviality")
+            }
+
+            // Arabic concepts
+            (Some(RuntimeEmotion::Joy), "arabic" | "ar") => {
+                create_cultural_entry("طرب", "tarab", "musical ecstasy, enchantment through art")
+            }
+            (Some(RuntimeEmotion::Love), "arabic" | "ar") => {
+                create_cultural_entry("هوى", "hawa", "passionate, sometimes irrational love")
+            }
+
+            // Korean concepts
+            (Some(RuntimeEmotion::Sadness), "korean" | "ko") => {
+                create_cultural_entry("한", "han", "collective grief and resentment from historical suffering")
+            }
+            (Some(RuntimeEmotion::Joy), "korean" | "ko") => {
+                create_cultural_entry("정", "jeong", "deep affection and attachment formed over time")
+            }
+
+            // Russian concepts
+            (Some(RuntimeEmotion::Sadness), "russian" | "ru") => {
+                create_cultural_entry("тоска", "toska", "spiritual anguish without specific cause")
+            }
+
+            // Hindi concepts
+            (Some(RuntimeEmotion::Love), "hindi" | "hi") => {
+                create_cultural_entry("विरह", "viraha", "longing for an absent beloved")
+            }
+
+            // Finnish concepts
+            (Some(RuntimeEmotion::Anger), "finnish" | "fi") => {
+                create_cultural_entry("sisu", "sisu", "stoic determination and grit in adversity")
+            }
+
+            // Default: return the base emotion
+            (Some(e), _) => {
+                let name = match e {
+                    RuntimeEmotion::Joy => "joy",
+                    RuntimeEmotion::Sadness => "sadness",
+                    RuntimeEmotion::Anger => "anger",
+                    RuntimeEmotion::Fear => "fear",
+                    RuntimeEmotion::Surprise => "surprise",
+                    RuntimeEmotion::Love => "love",
+                };
+                create_cultural_entry(name, name, "universal emotion")
+            }
+            (None, _) => create_cultural_entry("none", "none", "no emotion"),
+        };
+
+        Ok(result)
+    });
+
+    // list_cultural_emotions - list all emotions for a culture
+    define(interp, "list_cultural_emotions", Some(1), |_, args| {
+        let culture = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("list_cultural_emotions() requires string culture")),
+        };
+
+        let emotions: Vec<(&str, &str, &str)> = match culture.as_str() {
+            "japanese" | "ja" => vec![
+                ("木漏れ日", "komorebi", "sunlight through leaves"),
+                ("物の哀れ", "mono no aware", "pathos of things"),
+                ("甘え", "amae", "indulgent dependence"),
+                ("侘寂", "wabi-sabi", "beauty in imperfection"),
+                ("生きがい", "ikigai", "reason for being"),
+            ],
+            "german" | "de" => vec![
+                ("Schadenfreude", "schadenfreude", "joy at misfortune"),
+                ("Weltschmerz", "weltschmerz", "world-weariness"),
+                ("Torschlusspanik", "torschlusspanik", "gate-closing panic"),
+                ("Sehnsucht", "sehnsucht", "deep longing"),
+                ("Wanderlust", "wanderlust", "desire to travel"),
+            ],
+            "portuguese" | "pt" => vec![
+                ("saudade", "saudade", "melancholic longing"),
+                ("alegria", "alegria", "exuberant joy"),
+                ("desabafar", "desabafar", "emotional unburdening"),
+            ],
+            "danish" | "da" => vec![
+                ("hygge", "hygge", "cozy contentment"),
+            ],
+            "korean" | "ko" => vec![
+                ("한", "han", "collective grief"),
+                ("정", "jeong", "deep affection"),
+                ("눈치", "nunchi", "situational awareness"),
+            ],
+            "arabic" | "ar" => vec![
+                ("طرب", "tarab", "musical ecstasy"),
+                ("هوى", "hawa", "passionate love"),
+                ("صبر", "sabr", "patient perseverance"),
+            ],
+            "russian" | "ru" => vec![
+                ("тоска", "toska", "spiritual anguish"),
+                ("пошлость", "poshlost", "spiritual vulgarity"),
+            ],
+            "finnish" | "fi" => vec![
+                ("sisu", "sisu", "stoic determination"),
+            ],
+            "hindi" | "hi" => vec![
+                ("विरह", "viraha", "longing for beloved"),
+                ("जुगाड़", "jugaad", "creative improvisation"),
+            ],
+            _ => vec![
+                ("joy", "joy", "universal happiness"),
+                ("sadness", "sadness", "universal sorrow"),
+                ("anger", "anger", "universal frustration"),
+                ("fear", "fear", "universal anxiety"),
+                ("surprise", "surprise", "universal amazement"),
+                ("love", "love", "universal affection"),
+            ],
+        };
+
+        let result: Vec<Value> = emotions.iter()
+            .map(|(native, romanized, meaning)| {
+                create_cultural_entry(native, romanized, meaning)
+            })
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // hologram_info - get metadata about the hologram system
+    define(interp, "hologram_info", Some(0), |_, _| {
+        let mut info = std::collections::HashMap::new();
+
+        info.insert("dimensions".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("valence".to_string())),
+            Value::String(Rc::new("arousal".to_string())),
+            Value::String(Rc::new("dominance".to_string())),
+            Value::String(Rc::new("authenticity".to_string())),
+            Value::String(Rc::new("certainty".to_string())),
+            Value::String(Rc::new("emotion_index".to_string())),
+        ]))));
+
+        info.insert("supported_cultures".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("japanese".to_string())),
+            Value::String(Rc::new("german".to_string())),
+            Value::String(Rc::new("portuguese".to_string())),
+            Value::String(Rc::new("danish".to_string())),
+            Value::String(Rc::new("korean".to_string())),
+            Value::String(Rc::new("arabic".to_string())),
+            Value::String(Rc::new("russian".to_string())),
+            Value::String(Rc::new("finnish".to_string())),
+            Value::String(Rc::new("hindi".to_string())),
+        ]))));
+
+        let funcs = vec![
+            "emotional_hologram", "emotional_distance", "emotional_similarity",
+            "emotional_dissonance", "emotional_fingerprint", "emotional_morph",
+            "cultural_emotion", "list_cultural_emotions", "hologram_info"
+        ];
+        let func_values: Vec<Value> = funcs.iter().map(|s| Value::String(Rc::new(s.to_string()))).collect();
+        info.insert("functions".to_string(), Value::Array(Rc::new(RefCell::new(func_values))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+}
+
+/// Helper to extract hologram values from an affective value
+fn get_hologram_values(val: &Value, _interp: &mut Interpreter) -> Result<(f64, f64, f64, f64, f64), RuntimeError> {
+    use crate::interpreter::{RuntimeAffect, RuntimeSentiment, RuntimeIntensity,
+                             RuntimeFormality, RuntimeConfidence};
+
+    let affect = match val {
+        Value::Affective { affect, .. } => affect.clone(),
+        Value::Map(m) => {
+            // Already a hologram map
+            let map = m.borrow();
+            let v = extract_float(&map, "valence").unwrap_or(0.0);
+            let a = extract_float(&map, "arousal").unwrap_or(0.5);
+            let d = extract_float(&map, "dominance").unwrap_or(0.5);
+            let auth = extract_float(&map, "authenticity").unwrap_or(0.9);
+            let c = extract_float(&map, "certainty").unwrap_or(0.5);
+            return Ok((v, a, d, auth, c));
+        }
+        _ => RuntimeAffect {
+            sentiment: None,
+            sarcasm: false,
+            intensity: None,
+            formality: None,
+            emotion: None,
+            confidence: None,
+        },
+    };
+
+    let v = match affect.sentiment {
+        Some(RuntimeSentiment::Positive) => 1.0,
+        Some(RuntimeSentiment::Negative) => -1.0,
+        _ => 0.0,
+    };
+    let a = match affect.intensity {
+        Some(RuntimeIntensity::Down) => 0.25,
+        Some(RuntimeIntensity::Up) => 0.75,
+        Some(RuntimeIntensity::Max) => 1.0,
+        None => 0.5,
+    };
+    let d = match affect.formality {
+        Some(RuntimeFormality::Informal) => 0.25,
+        Some(RuntimeFormality::Formal) => 0.85,
+        None => 0.5,
+    };
+    let auth = if affect.sarcasm { -0.9 } else { 0.9 };
+    let c = match affect.confidence {
+        Some(RuntimeConfidence::Low) => 0.2,
+        Some(RuntimeConfidence::High) => 0.9,
+        _ => 0.5,
+    };
+
+    Ok((v, a, d, auth, c))
+}
+
+fn extract_float(map: &std::collections::HashMap<String, Value>, key: &str) -> Option<f64> {
+    match map.get(key) {
+        Some(Value::Float(f)) => Some(*f),
+        Some(Value::Int(i)) => Some(*i as f64),
+        _ => None,
+    }
+}
+
+fn create_cultural_entry(native: &str, romanized: &str, meaning: &str) -> Value {
+    let mut entry = std::collections::HashMap::new();
+    entry.insert("native".to_string(), Value::String(Rc::new(native.to_string())));
+    entry.insert("romanized".to_string(), Value::String(Rc::new(romanized.to_string())));
+    entry.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+    Value::Map(Rc::new(RefCell::new(entry)))
+}
+
+// ============================================================================
+// EXPERIMENTAL CRYPTOGRAPHY: Threshold crypto, commitments, and more
+// ============================================================================
+
+fn register_experimental_crypto(interp: &mut Interpreter) {
+    // === Commitment Schemes ===
+    // Commit to a value without revealing it, verify later
+
+    // commit - create a cryptographic commitment to a value
+    // Returns { commitment: hash, nonce: random_value }
+    define(interp, "commit", Some(1), |_, args| {
+        let value_str = match &args[0] {
+            Value::String(s) => s.to_string(),
+            other => format!("{:?}", other),
+        };
+
+        // Generate random nonce
+        let mut nonce = [0u8; 32];
+        getrandom::getrandom(&mut nonce).map_err(|e| RuntimeError::new(format!("commit() random failed: {}", e)))?;
+        let nonce_hex = hex::encode(&nonce);
+
+        // Create commitment: H(value || nonce)
+        let commitment_input = format!("{}:{}", value_str, nonce_hex);
+        let commitment = blake3::hash(commitment_input.as_bytes());
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("commitment".to_string(), Value::String(Rc::new(commitment.to_hex().to_string())));
+        result.insert("nonce".to_string(), Value::String(Rc::new(nonce_hex)));
+        result.insert("value".to_string(), args[0].clone());
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // verify_commitment - verify a commitment matches a revealed value
+    define(interp, "verify_commitment", Some(3), |_, args| {
+        let commitment = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("verify_commitment() requires string commitment")),
+        };
+        let value_str = match &args[1] {
+            Value::String(s) => s.to_string(),
+            other => format!("{:?}", other),
+        };
+        let nonce = match &args[2] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("verify_commitment() requires string nonce")),
+        };
+
+        // Recompute commitment
+        let commitment_input = format!("{}:{}", value_str, nonce);
+        let computed = blake3::hash(commitment_input.as_bytes());
+
+        Ok(Value::Bool(computed.to_hex().to_string() == commitment))
+    });
+
+    // === Threshold Cryptography (Shamir's Secret Sharing) ===
+    // Split secrets into shares, requiring threshold to reconstruct
+
+    // secret_split - split a secret into n shares, requiring threshold to recover
+    // Uses Shamir's Secret Sharing over GF(256)
+    define(interp, "secret_split", Some(3), |_, args| {
+        let secret = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            Value::Array(arr) => {
+                let borrowed = arr.borrow();
+                borrowed.iter().filter_map(|v| {
+                    if let Value::Int(i) = v { Some(*i as u8) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("secret_split() requires string or byte array")),
+        };
+
+        let threshold = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("secret_split() requires integer threshold")),
+        };
+
+        let num_shares = match &args[2] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("secret_split() requires integer num_shares")),
+        };
+
+        if threshold < 2 {
+            return Err(RuntimeError::new("secret_split() threshold must be >= 2"));
+        }
+        if num_shares < threshold {
+            return Err(RuntimeError::new("secret_split() num_shares must be >= threshold"));
+        }
+        if num_shares > 255 {
+            return Err(RuntimeError::new("secret_split() max 255 shares"));
+        }
+
+        // Simple implementation: split each byte independently using polynomial interpolation
+        // For production, use vsss-rs properly, but this demonstrates the concept
+        let mut rng = rand::thread_rng();
+        let mut shares: Vec<Vec<u8>> = (0..num_shares).map(|_| Vec::with_capacity(secret.len() + 1)).collect();
+
+        // Assign share indices (1-based to avoid zero)
+        for (i, share) in shares.iter_mut().enumerate() {
+            share.push((i + 1) as u8);
+        }
+
+        // For each byte of the secret, create polynomial shares
+        for &byte in &secret {
+            // Generate random coefficients for polynomial of degree (threshold - 1)
+            // a_0 = secret byte, a_1..a_{t-1} = random
+            let mut coefficients: Vec<u8> = vec![byte];
+            for _ in 1..threshold {
+                coefficients.push(rng.gen());
+            }
+
+            // Evaluate polynomial at each share index
+            for (i, share) in shares.iter_mut().enumerate() {
+                let x = (i + 1) as u8;
+                let y = eval_polynomial_gf256(&coefficients, x);
+                share.push(y);
+            }
+        }
+
+        // Convert shares to output format
+        let share_values: Vec<Value> = shares.iter()
+            .map(|share| {
+                let hex = hex::encode(share);
+                Value::String(Rc::new(hex))
+            })
+            .collect();
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("shares".to_string(), Value::Array(Rc::new(RefCell::new(share_values))));
+        result.insert("threshold".to_string(), Value::Int(threshold as i64));
+        result.insert("total".to_string(), Value::Int(num_shares as i64));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // secret_recover - recover secret from threshold shares
+    define(interp, "secret_recover", Some(1), |_, args| {
+        let shares: Vec<Vec<u8>> = match &args[0] {
+            Value::Array(arr) => {
+                let borrowed = arr.borrow();
+                borrowed.iter().filter_map(|v| {
+                    if let Value::String(s) = v {
+                        hex::decode(s.as_str()).ok()
+                    } else {
+                        None
+                    }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("secret_recover() requires array of share strings")),
+        };
+
+        if shares.is_empty() {
+            return Err(RuntimeError::new("secret_recover() requires at least one share"));
+        }
+
+        let share_len = shares[0].len();
+        if share_len < 2 {
+            return Err(RuntimeError::new("secret_recover() invalid share format"));
+        }
+
+        // Recover each byte using Lagrange interpolation
+        let mut secret = Vec::with_capacity(share_len - 1);
+
+        for byte_idx in 1..share_len {
+            // Collect (x, y) pairs for this byte position
+            let points: Vec<(u8, u8)> = shares.iter()
+                .map(|share| (share[0], share[byte_idx]))
+                .collect();
+
+            // Lagrange interpolation at x=0 to recover the secret byte
+            let recovered_byte = lagrange_interpolate_gf256(&points, 0);
+            secret.push(recovered_byte);
+        }
+
+        // Try to interpret as string
+        match String::from_utf8(secret.clone()) {
+            Ok(s) => Ok(Value::String(Rc::new(s))),
+            Err(_) => {
+                // Return as byte array
+                let byte_values: Vec<Value> = secret.iter().map(|&b| Value::Int(b as i64)).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(byte_values))))
+            }
+        }
+    });
+
+    // === Cryptographic Ceremony Functions ===
+    // Cultural trust models encoded in crypto
+
+    // council_split - split secret using Ubuntu (I am because we are) model
+    // Requires majority consensus
+    define(interp, "council_split", Some(2), |_, args| {
+        let secret = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            _ => return Err(RuntimeError::new("council_split() requires string secret")),
+        };
+
+        let num_elders = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("council_split() requires integer num_elders")),
+        };
+
+        if num_elders < 3 {
+            return Err(RuntimeError::new("council_split() requires at least 3 elders"));
+        }
+
+        // Ubuntu model: majority required (n/2 + 1)
+        let threshold = (num_elders / 2) + 1;
+
+        // Reuse secret_split logic
+        let mut rng = rand::thread_rng();
+        let mut shares: Vec<Vec<u8>> = (0..num_elders).map(|_| Vec::with_capacity(secret.len() + 1)).collect();
+
+        for (i, share) in shares.iter_mut().enumerate() {
+            share.push((i + 1) as u8);
+        }
+
+        for &byte in &secret {
+            let mut coefficients: Vec<u8> = vec![byte];
+            for _ in 1..threshold {
+                coefficients.push(rng.gen());
+            }
+
+            for (i, share) in shares.iter_mut().enumerate() {
+                let x = (i + 1) as u8;
+                let y = eval_polynomial_gf256(&coefficients, x);
+                share.push(y);
+            }
+        }
+
+        let share_values: Vec<Value> = shares.iter()
+            .map(|share| Value::String(Rc::new(hex::encode(share))))
+            .collect();
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("shares".to_string(), Value::Array(Rc::new(RefCell::new(share_values))));
+        result.insert("threshold".to_string(), Value::Int(threshold as i64));
+        result.insert("total".to_string(), Value::Int(num_elders as i64));
+        result.insert("model".to_string(), Value::String(Rc::new("ubuntu".to_string())));
+        result.insert("philosophy".to_string(), Value::String(Rc::new("I am because we are - majority consensus required".to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // witness_chain - create a chain of witnesses (Middle Eastern oral tradition model)
+    // Each witness signs the previous, creating a chain of trust
+    define(interp, "witness_chain", Some(2), |_, args| {
+        let statement = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("witness_chain() requires string statement")),
+        };
+
+        let witnesses: Vec<String> = match &args[1] {
+            Value::Array(arr) => {
+                let borrowed = arr.borrow();
+                borrowed.iter().filter_map(|v| {
+                    if let Value::String(s) = v { Some(s.to_string()) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("witness_chain() requires array of witness names")),
+        };
+
+        if witnesses.is_empty() {
+            return Err(RuntimeError::new("witness_chain() requires at least one witness"));
+        }
+
+        // Build chain: each witness attests to the previous
+        let mut chain = Vec::new();
+        let mut prev_hash = blake3::hash(statement.as_bytes()).to_hex().to_string();
+
+        for (i, witness) in witnesses.iter().enumerate() {
+            let attestation = format!("{}:attests:{}", witness, prev_hash);
+            let hash = blake3::hash(attestation.as_bytes()).to_hex().to_string();
+
+            let mut link = std::collections::HashMap::new();
+            link.insert("witness".to_string(), Value::String(Rc::new(witness.clone())));
+            link.insert("position".to_string(), Value::Int((i + 1) as i64));
+            link.insert("attests_to".to_string(), Value::String(Rc::new(prev_hash.clone())));
+            link.insert("signature".to_string(), Value::String(Rc::new(hash.clone())));
+
+            chain.push(Value::Map(Rc::new(RefCell::new(link))));
+            prev_hash = hash;
+        }
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("statement".to_string(), Value::String(Rc::new(statement)));
+        result.insert("chain".to_string(), Value::Array(Rc::new(RefCell::new(chain))));
+        result.insert("final_seal".to_string(), Value::String(Rc::new(prev_hash)));
+        result.insert("model".to_string(), Value::String(Rc::new("isnad".to_string())));
+        result.insert("philosophy".to_string(), Value::String(Rc::new("Chain of reliable transmitters - each witness validates the previous".to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // verify_witness_chain - verify a witness chain is intact
+    define(interp, "verify_witness_chain", Some(1), |_, args| {
+        let chain_map = match &args[0] {
+            Value::Map(m) => m.borrow(),
+            _ => return Err(RuntimeError::new("verify_witness_chain() requires chain map")),
+        };
+
+        let statement = match chain_map.get("statement") {
+            Some(Value::String(s)) => s.to_string(),
+            _ => return Err(RuntimeError::new("verify_witness_chain() invalid chain format")),
+        };
+
+        let chain = match chain_map.get("chain") {
+            Some(Value::Array(arr)) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("verify_witness_chain() invalid chain format")),
+        };
+
+        let mut prev_hash = blake3::hash(statement.as_bytes()).to_hex().to_string();
+
+        for link_val in chain.iter() {
+            if let Value::Map(link_map) = link_val {
+                let link = link_map.borrow();
+                let witness = match link.get("witness") {
+                    Some(Value::String(s)) => s.to_string(),
+                    _ => return Ok(Value::Bool(false)),
+                };
+                let attests_to = match link.get("attests_to") {
+                    Some(Value::String(s)) => s.to_string(),
+                    _ => return Ok(Value::Bool(false)),
+                };
+                let signature = match link.get("signature") {
+                    Some(Value::String(s)) => s.to_string(),
+                    _ => return Ok(Value::Bool(false)),
+                };
+
+                // Verify attestation
+                if attests_to != prev_hash {
+                    return Ok(Value::Bool(false));
+                }
+
+                let expected = format!("{}:attests:{}", witness, prev_hash);
+                let computed = blake3::hash(expected.as_bytes()).to_hex().to_string();
+
+                if computed != signature {
+                    return Ok(Value::Bool(false));
+                }
+
+                prev_hash = signature;
+            } else {
+                return Ok(Value::Bool(false));
+            }
+        }
+
+        Ok(Value::Bool(true))
+    });
+
+    // === Experimental Crypto Info ===
+    define(interp, "experimental_crypto_info", Some(0), |_, _| {
+        let mut info = std::collections::HashMap::new();
+
+        info.insert("commitment_functions".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("commit".to_string())),
+            Value::String(Rc::new("verify_commitment".to_string())),
+        ]))));
+
+        info.insert("threshold_functions".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("secret_split".to_string())),
+            Value::String(Rc::new("secret_recover".to_string())),
+        ]))));
+
+        info.insert("cultural_ceremonies".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("council_split (Ubuntu - African consensus)".to_string())),
+            Value::String(Rc::new("witness_chain (Isnad - Islamic transmission)".to_string())),
+        ]))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+}
+
+/// Evaluate polynomial in GF(256) at point x
+fn eval_polynomial_gf256(coefficients: &[u8], x: u8) -> u8 {
+    let mut result: u8 = 0;
+    let mut x_power: u8 = 1;
+
+    for &coef in coefficients {
+        result ^= gf256_mul(coef, x_power);
+        x_power = gf256_mul(x_power, x);
+    }
+
+    result
+}
+
+/// Lagrange interpolation in GF(256) to find f(0)
+fn lagrange_interpolate_gf256(points: &[(u8, u8)], _x: u8) -> u8 {
+    let mut result: u8 = 0;
+
+    for (i, &(xi, yi)) in points.iter().enumerate() {
+        let mut numerator: u8 = 1;
+        let mut denominator: u8 = 1;
+
+        for (j, &(xj, _)) in points.iter().enumerate() {
+            if i != j {
+                // numerator *= (0 - xj) = xj (in GF256, subtraction is XOR)
+                numerator = gf256_mul(numerator, xj);
+                // denominator *= (xi - xj)
+                denominator = gf256_mul(denominator, xi ^ xj);
+            }
+        }
+
+        // term = yi * numerator / denominator
+        let term = gf256_mul(yi, gf256_mul(numerator, gf256_inv(denominator)));
+        result ^= term;
+    }
+
+    result
+}
+
+/// GF(256) multiplication using Russian peasant algorithm
+fn gf256_mul(mut a: u8, mut b: u8) -> u8 {
+    let mut result: u8 = 0;
+    let modulus: u16 = 0x11b; // x^8 + x^4 + x^3 + x + 1
+
+    while b != 0 {
+        if b & 1 != 0 {
+            result ^= a;
+        }
+        let high_bit = (a & 0x80) != 0;
+        a <<= 1;
+        if high_bit {
+            a ^= (modulus & 0xff) as u8;
+        }
+        b >>= 1;
+    }
+
+    result
+}
+
+/// GF(256) multiplicative inverse using extended Euclidean algorithm
+fn gf256_inv(a: u8) -> u8 {
+    if a == 0 {
+        return 0;
+    }
+
+    // Use Fermat's little theorem: a^(-1) = a^(254) in GF(256)
+    let mut result = a;
+    for _ in 0..6 {
+        result = gf256_mul(result, result);
+        result = gf256_mul(result, a);
+    }
+    gf256_mul(result, result)
 }
 
 #[cfg(test)]
