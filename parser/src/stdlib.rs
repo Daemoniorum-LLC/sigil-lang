@@ -712,6 +712,83 @@ fn register_collections(interp: &mut Interpreter) {
         }
     });
 
+    // μ (mu) - middle/median element
+    define(interp, "middle", Some(1), |_, args| {
+        match &args[0] {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                if arr.is_empty() {
+                    return Err(RuntimeError::new("middle() on empty array"));
+                }
+                let mid = arr.len() / 2;
+                Ok(arr[mid].clone())
+            }
+            Value::Tuple(t) => {
+                if t.is_empty() {
+                    return Err(RuntimeError::new("middle() on empty tuple"));
+                }
+                let mid = t.len() / 2;
+                Ok(t[mid].clone())
+            }
+            _ => Err(RuntimeError::new("middle() requires array or tuple")),
+        }
+    });
+
+    // χ (chi) - random choice from collection
+    define(interp, "choice", Some(1), |_, args| {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        match &args[0] {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                if arr.is_empty() {
+                    return Err(RuntimeError::new("choice() on empty array"));
+                }
+                let seed = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or(std::time::Duration::ZERO)
+                    .as_nanos() as u64;
+                let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % arr.len();
+                Ok(arr[idx].clone())
+            }
+            Value::Tuple(t) => {
+                if t.is_empty() {
+                    return Err(RuntimeError::new("choice() on empty tuple"));
+                }
+                let seed = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or(std::time::Duration::ZERO)
+                    .as_nanos() as u64;
+                let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % t.len();
+                Ok(t[idx].clone())
+            }
+            _ => Err(RuntimeError::new("choice() requires array or tuple")),
+        }
+    });
+
+    // ν (nu) - nth element (alias for get with better semantics)
+    define(interp, "nth", Some(2), |_, args| {
+        let n = match &args[1] {
+            Value::Int(i) => *i,
+            _ => return Err(RuntimeError::new("nth() index must be integer")),
+        };
+        match &args[0] {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                if n < 0 || n as usize >= arr.len() {
+                    return Err(RuntimeError::new("nth() index out of bounds"));
+                }
+                Ok(arr[n as usize].clone())
+            }
+            Value::Tuple(t) => {
+                if n < 0 || n as usize >= t.len() {
+                    return Err(RuntimeError::new("nth() index out of bounds"));
+                }
+                Ok(t[n as usize].clone())
+            }
+            _ => Err(RuntimeError::new("nth() requires array or tuple")),
+        }
+    });
+
     define(interp, "get", Some(2), |_, args| {
         let index = match &args[1] {
             Value::Int(i) => *i,
@@ -958,6 +1035,81 @@ fn register_collections(interp: &mut Interpreter) {
                 Ok(Value::Array(Rc::new(RefCell::new(enumerated))))
             }
             _ => Err(RuntimeError::new("enumerate() requires array")),
+        }
+    });
+
+    // ⋈ (bowtie) - zip_with: combine two arrays with a function
+    // Since closures are complex, provide a simple zip variant that takes a mode
+    define(interp, "zip_with", Some(3), |_, args| {
+        let mode = match &args[2] {
+            Value::String(s) => s.as_str(),
+            _ => return Err(RuntimeError::new("zip_with() mode must be string")),
+        };
+        match (&args[0], &args[1]) {
+            (Value::Array(a), Value::Array(b)) => {
+                let a = a.borrow();
+                let b = b.borrow();
+                let result: Result<Vec<Value>, RuntimeError> = a.iter().zip(b.iter())
+                    .map(|(x, y)| {
+                        match (x, y, mode) {
+                            (Value::Int(a), Value::Int(b), "add") => Ok(Value::Int(a + b)),
+                            (Value::Int(a), Value::Int(b), "sub") => Ok(Value::Int(a - b)),
+                            (Value::Int(a), Value::Int(b), "mul") => Ok(Value::Int(a * b)),
+                            (Value::Float(a), Value::Float(b), "add") => Ok(Value::Float(a + b)),
+                            (Value::Float(a), Value::Float(b), "sub") => Ok(Value::Float(a - b)),
+                            (Value::Float(a), Value::Float(b), "mul") => Ok(Value::Float(a * b)),
+                            (_, _, "pair") => Ok(Value::Tuple(Rc::new(vec![x.clone(), y.clone()]))),
+                            _ => Err(RuntimeError::new("zip_with() incompatible types or mode")),
+                        }
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(result?))))
+            }
+            _ => Err(RuntimeError::new("zip_with() requires two arrays")),
+        }
+    });
+
+    // ⊔ (square cup) - lattice join / supremum (max of two values)
+    define(interp, "supremum", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(*a.max(b))),
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a.max(*b))),
+            (Value::Array(a), Value::Array(b)) => {
+                // Element-wise max
+                let a = a.borrow();
+                let b = b.borrow();
+                let result: Result<Vec<Value>, RuntimeError> = a.iter().zip(b.iter())
+                    .map(|(x, y)| match (x, y) {
+                        (Value::Int(a), Value::Int(b)) => Ok(Value::Int(*a.max(b))),
+                        (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a.max(*b))),
+                        _ => Err(RuntimeError::new("supremum() requires numeric arrays")),
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(result?))))
+            }
+            _ => Err(RuntimeError::new("supremum() requires numeric values or arrays")),
+        }
+    });
+
+    // ⊓ (square cap) - lattice meet / infimum (min of two values)
+    define(interp, "infimum", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(*a.min(b))),
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a.min(*b))),
+            (Value::Array(a), Value::Array(b)) => {
+                // Element-wise min
+                let a = a.borrow();
+                let b = b.borrow();
+                let result: Result<Vec<Value>, RuntimeError> = a.iter().zip(b.iter())
+                    .map(|(x, y)| match (x, y) {
+                        (Value::Int(a), Value::Int(b)) => Ok(Value::Int(*a.min(b))),
+                        (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a.min(*b))),
+                        _ => Err(RuntimeError::new("infimum() requires numeric arrays")),
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(result?))))
+            }
+            _ => Err(RuntimeError::new("infimum() requires numeric values or arrays")),
         }
     });
 
@@ -7715,5 +7867,144 @@ mod tests {
     fn test_index_of() {
         assert!(matches!(eval("fn main() { return index_of([10, 20, 30], 20); }"), Ok(Value::Int(1))));
         assert!(matches!(eval("fn main() { return index_of([10, 20, 30], 99); }"), Ok(Value::Int(-1))));
+    }
+
+    // ========== NEW SYMBOL TESTS ==========
+
+    // Phase 1: Bitwise Unicode operators (⋏ ⋎)
+    #[test]
+    fn test_bitwise_and_symbol() {
+        // ⋏ is Unicode bitwise AND
+        let result = eval("fn main() { return 0b1100 ⋏ 0b1010; }");
+        assert!(matches!(result, Ok(Value::Int(8))), "bitwise AND got: {:?}", result);  // 0b1000 = 8
+    }
+
+    #[test]
+    fn test_bitwise_or_symbol() {
+        // ⋎ is Unicode bitwise OR
+        let result = eval("fn main() { return 0b1100 ⋎ 0b1010; }");
+        assert!(matches!(result, Ok(Value::Int(14))), "bitwise OR got: {:?}", result);  // 0b1110 = 14
+    }
+
+    // Phase 2: Access morphemes (μ χ ν ξ)
+    #[test]
+    fn test_middle_function() {
+        // μ (mu) - middle element
+        let result = eval("fn main() { return middle([1, 2, 3, 4, 5]); }");
+        assert!(matches!(result, Ok(Value::Int(3))), "middle got: {:?}", result);
+    }
+
+    #[test]
+    fn test_choice_function() {
+        // χ (chi) - random choice (just verify it returns something valid)
+        let result = eval("fn main() { let x = choice([10, 20, 30]); return x >= 10; }");
+        assert!(matches!(result, Ok(Value::Bool(true))), "choice got: {:?}", result);
+    }
+
+    #[test]
+    fn test_nth_function() {
+        // ν (nu) - nth element
+        let result = eval("fn main() { return nth([10, 20, 30, 40], 2); }");
+        assert!(matches!(result, Ok(Value::Int(30))), "nth got: {:?}", result);
+    }
+
+    // Phase 3: Data operations (⋈ ⋳ ⊔ ⊓)
+    #[test]
+    fn test_zip_with_add() {
+        // ⋈ (bowtie) - zip_with
+        let result = eval(r#"fn main() { return first(zip_with([1, 2, 3], [10, 20, 30], "add")); }"#);
+        assert!(matches!(result, Ok(Value::Int(11))), "zip_with add got: {:?}", result);
+    }
+
+    #[test]
+    fn test_zip_with_mul() {
+        let result = eval(r#"fn main() { return first(zip_with([2, 3, 4], [5, 6, 7], "mul")); }"#);
+        assert!(matches!(result, Ok(Value::Int(10))), "zip_with mul got: {:?}", result);
+    }
+
+    #[test]
+    fn test_supremum_scalar() {
+        // ⊔ (square cup) - lattice join / max
+        let result = eval("fn main() { return supremum(5, 10); }");
+        assert!(matches!(result, Ok(Value::Int(10))), "supremum scalar got: {:?}", result);
+    }
+
+    #[test]
+    fn test_supremum_array() {
+        let result = eval("fn main() { return first(supremum([1, 5, 3], [2, 4, 6])); }");
+        assert!(matches!(result, Ok(Value::Int(2))), "supremum array got: {:?}", result);
+    }
+
+    #[test]
+    fn test_infimum_scalar() {
+        // ⊓ (square cap) - lattice meet / min
+        let result = eval("fn main() { return infimum(5, 10); }");
+        assert!(matches!(result, Ok(Value::Int(5))), "infimum scalar got: {:?}", result);
+    }
+
+    #[test]
+    fn test_infimum_array() {
+        let result = eval("fn main() { return first(infimum([1, 5, 3], [2, 4, 6])); }");
+        assert!(matches!(result, Ok(Value::Int(1))), "infimum array got: {:?}", result);
+    }
+
+    // Phase 4: Aspect token lexing tests
+    #[test]
+    fn test_aspect_tokens_lexer() {
+        use crate::lexer::{Lexer, Token};
+
+        // Test progressive aspect ·ing
+        let mut lexer = Lexer::new("process·ing");
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "process"));
+        assert!(matches!(lexer.next_token(), Some((Token::AspectProgressive, _))));
+
+        // Test perfective aspect ·ed
+        let mut lexer = Lexer::new("process·ed");
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "process"));
+        assert!(matches!(lexer.next_token(), Some((Token::AspectPerfective, _))));
+
+        // Test potential aspect ·able
+        let mut lexer = Lexer::new("parse·able");
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "parse"));
+        assert!(matches!(lexer.next_token(), Some((Token::AspectPotential, _))));
+
+        // Test resultative aspect ·ive
+        let mut lexer = Lexer::new("destruct·ive");
+        assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "destruct"));
+        assert!(matches!(lexer.next_token(), Some((Token::AspectResultative, _))));
+    }
+
+    // New morpheme token lexer tests
+    #[test]
+    fn test_new_morpheme_tokens_lexer() {
+        use crate::lexer::{Lexer, Token};
+
+        let mut lexer = Lexer::new("μ χ ν ξ");
+        assert!(matches!(lexer.next_token(), Some((Token::Mu, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Chi, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Nu, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Xi, _))));
+    }
+
+    // Data operation token lexer tests
+    #[test]
+    fn test_data_op_tokens_lexer() {
+        use crate::lexer::{Lexer, Token};
+
+        let mut lexer = Lexer::new("⋈ ⋳ ⊔ ⊓");
+        assert!(matches!(lexer.next_token(), Some((Token::Bowtie, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::ElementSmallVerticalBar, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::SquareCup, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::SquareCap, _))));
+    }
+
+    // Bitwise symbol token lexer tests
+    #[test]
+    fn test_bitwise_symbol_tokens_lexer() {
+        use crate::lexer::{Lexer, Token};
+
+        let mut lexer = Lexer::new("⋏ ⋎");
+        assert!(matches!(lexer.next_token(), Some((Token::BitwiseAndSymbol, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::BitwiseOrSymbol, _))));
     }
 }

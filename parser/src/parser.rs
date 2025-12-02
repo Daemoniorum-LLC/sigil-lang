@@ -1444,6 +1444,9 @@ impl<'a> Parser<'a> {
                 Some(Token::Shl) => BinOp::Shl,
                 Some(Token::Shr) => BinOp::Shr,
                 Some(Token::PlusPlus) => BinOp::Concat,
+                // Unicode bitwise operators
+                Some(Token::BitwiseAndSymbol) => BinOp::BitAnd,  // ⋏
+                Some(Token::BitwiseOrSymbol) => BinOp::BitOr,    // ⋎
                 _ => break,
             };
 
