@@ -64,6 +64,13 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_system(interp);
     register_stats(interp);
     register_matrix(interp);
+    // Phase 5: Language power-ups
+    register_functional(interp);
+    register_benchmark(interp);
+    register_itertools(interp);
+    register_ranges(interp);
+    register_bitwise(interp);
+    register_format(interp);
 }
 
 // Helper to define a builtin
@@ -4590,6 +4597,1010 @@ fn mod_inverse(a: i64, m: i64) -> Option<i64> {
         None // No inverse exists
     } else {
         Some(old_s.rem_euclid(m))
+    }
+}
+
+// ============================================================================
+// Phase 5: Language Power-Ups
+// ============================================================================
+
+/// Functional programming utilities
+fn register_functional(interp: &mut Interpreter) {
+    // identity - returns its argument unchanged
+    define(interp, "identity", Some(1), |_, args| {
+        Ok(args[0].clone())
+    });
+
+    // const_fn - returns a function that always returns the given value
+    define(interp, "const_fn", Some(1), |_, args| {
+        Ok(args[0].clone())
+    });
+
+    // apply - apply a function to an array of arguments
+    define(interp, "apply", Some(2), |interp, args| {
+        let func = match &args[0] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("apply: first argument must be a function")),
+        };
+        let fn_args = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("apply: second argument must be an array")),
+        };
+        interp.call_function(&func, fn_args)
+    });
+
+    // flip - swap the first two arguments of a binary function
+    define(interp, "flip", Some(3), |interp, args| {
+        let func = match &args[0] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("flip: first argument must be a function")),
+        };
+        let flipped_args = vec![args[2].clone(), args[1].clone()];
+        interp.call_function(&func, flipped_args)
+    });
+
+    // tap - execute a function for side effects, return original value
+    define(interp, "tap", Some(2), |interp, args| {
+        let val = args[0].clone();
+        let func = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("tap: second argument must be a function")),
+        };
+        let _ = interp.call_function(&func, vec![val.clone()]);
+        Ok(val)
+    });
+
+    // thunk - create a delayed computation (wrap in array for later forcing)
+    define(interp, "thunk", Some(1), |_, args| {
+        Ok(Value::Array(Rc::new(RefCell::new(vec![args[0].clone()]))))
+    });
+
+    // force - force evaluation of a thunk
+    define(interp, "force", Some(1), |interp, args| {
+        match &args[0] {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                if arr.len() == 1 {
+                    if let Value::Function(f) = &arr[0] {
+                        return interp.call_function(f, vec![]);
+                    }
+                }
+                Ok(arr.get(0).cloned().unwrap_or(Value::Null))
+            }
+            v => Ok(v.clone()),
+        }
+    });
+
+    // negate - negate a predicate function result
+    define(interp, "negate", Some(2), |interp, args| {
+        let func = match &args[0] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("negate: first argument must be a function")),
+        };
+        let result = interp.call_function(&func, vec![args[1].clone()])?;
+        Ok(Value::Bool(!is_truthy(&result)))
+    });
+
+    // complement - same as negate
+    define(interp, "complement", Some(2), |interp, args| {
+        let func = match &args[0] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("complement: first argument must be a function")),
+        };
+        let result = interp.call_function(&func, vec![args[1].clone()])?;
+        Ok(Value::Bool(!is_truthy(&result)))
+    });
+
+    // partial - partially apply a function with some arguments
+    define(interp, "partial", None, |interp, args| {
+        if args.len() < 2 {
+            return Err(RuntimeError::new("partial: requires at least function and one argument"));
+        }
+        let func = match &args[0] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("partial: first argument must be a function")),
+        };
+        let partial_args: Vec<Value> = args[1..].to_vec();
+        interp.call_function(&func, partial_args)
+    });
+
+    // juxt - apply multiple functions to same args, return array of results
+    define(interp, "juxt", None, |interp, args| {
+        if args.len() < 2 {
+            return Err(RuntimeError::new("juxt: requires functions and a value"));
+        }
+        let val = args.last().unwrap().clone();
+        let results: Result<Vec<Value>, _> = args[..args.len()-1].iter().map(|f| {
+            match f {
+                Value::Function(func) => interp.call_function(func, vec![val.clone()]),
+                _ => Err(RuntimeError::new("juxt: all but last argument must be functions")),
+            }
+        }).collect();
+        Ok(Value::Array(Rc::new(RefCell::new(results?))))
+    });
+}
+
+/// Benchmarking and profiling utilities
+fn register_benchmark(interp: &mut Interpreter) {
+    // bench - run a function N times and return average time in ms
+    define(interp, "bench", Some(2), |interp, args| {
+        let func = match &args[0] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("bench: first argument must be a function")),
+        };
+        let iterations = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("bench: second argument must be an integer")),
+        };
+
+        let start = std::time::Instant::now();
+        for _ in 0..iterations {
+            let _ = interp.call_function(&func, vec![])?;
+        }
+        let elapsed = start.elapsed();
+        let avg_ms = elapsed.as_secs_f64() * 1000.0 / iterations as f64;
+        Ok(Value::Float(avg_ms))
+    });
+
+    // time_it - run a function once and return (result, time_ms) tuple
+    define(interp, "time_it", Some(1), |interp, args| {
+        let func = match &args[0] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("time_it: argument must be a function")),
+        };
+
+        let start = std::time::Instant::now();
+        let result = interp.call_function(&func, vec![])?;
+        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+        Ok(Value::Tuple(Rc::new(vec![result, Value::Float(elapsed_ms)])))
+    });
+
+    // stopwatch_start - return current time in ms
+    define(interp, "stopwatch_start", Some(0), |_, _| {
+        let elapsed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        Ok(Value::Float(elapsed.as_secs_f64() * 1000.0))
+    });
+
+    // stopwatch_elapsed - get elapsed time since a stopwatch start
+    define(interp, "stopwatch_elapsed", Some(1), |_, args| {
+        let start_ms = match &args[0] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => return Err(RuntimeError::new("stopwatch_elapsed: argument must be a number")),
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let now_ms = now.as_secs_f64() * 1000.0;
+        Ok(Value::Float(now_ms - start_ms))
+    });
+
+    // compare_bench - compare two functions, return speedup ratio
+    define(interp, "compare_bench", Some(3), |interp, args| {
+        let func1 = match &args[0] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("compare_bench: first argument must be a function")),
+        };
+        let func2 = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("compare_bench: second argument must be a function")),
+        };
+        let iterations = match &args[2] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("compare_bench: third argument must be an integer")),
+        };
+
+        let start1 = std::time::Instant::now();
+        for _ in 0..iterations {
+            let _ = interp.call_function(&func1, vec![])?;
+        }
+        let time1 = start1.elapsed().as_secs_f64();
+
+        let start2 = std::time::Instant::now();
+        for _ in 0..iterations {
+            let _ = interp.call_function(&func2, vec![])?;
+        }
+        let time2 = start2.elapsed().as_secs_f64();
+
+        let mut results = std::collections::HashMap::new();
+        results.insert("time1_ms".to_string(), Value::Float(time1 * 1000.0));
+        results.insert("time2_ms".to_string(), Value::Float(time2 * 1000.0));
+        results.insert("speedup".to_string(), Value::Float(time1 / time2));
+        results.insert("iterations".to_string(), Value::Int(iterations as i64));
+
+        Ok(Value::Struct { name: "BenchResult".to_string(), fields: Rc::new(RefCell::new(results)) })
+    });
+
+    // memory_usage - placeholder
+    define(interp, "memory_usage", Some(0), |_, _| {
+        Ok(Value::Int(0))
+    });
+}
+
+/// Extended iterator utilities (itertools-inspired)
+fn register_itertools(interp: &mut Interpreter) {
+    // cycle - create infinite cycle of array elements (returns first N)
+    define(interp, "cycle", Some(2), |_, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("cycle: first argument must be an array")),
+        };
+        let n = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("cycle: second argument must be an integer")),
+        };
+
+        if arr.is_empty() {
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+        }
+
+        let result: Vec<Value> = (0..n).map(|i| arr[i % arr.len()].clone()).collect();
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // repeat_val - repeat a value N times
+    define(interp, "repeat_val", Some(2), |_, args| {
+        let val = args[0].clone();
+        let n = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("repeat_val: second argument must be an integer")),
+        };
+
+        let result: Vec<Value> = std::iter::repeat(val).take(n).collect();
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // take_while - take elements while predicate is true
+    define(interp, "take_while", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("take_while: first argument must be an array")),
+        };
+        let pred = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("take_while: second argument must be a function")),
+        };
+
+        let mut result = Vec::new();
+        for item in arr {
+            let keep = interp.call_function(&pred, vec![item.clone()])?;
+            if is_truthy(&keep) {
+                result.push(item);
+            } else {
+                break;
+            }
+        }
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // drop_while - drop elements while predicate is true
+    define(interp, "drop_while", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("drop_while: first argument must be an array")),
+        };
+        let pred = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("drop_while: second argument must be a function")),
+        };
+
+        let mut dropping = true;
+        let mut result = Vec::new();
+        for item in arr {
+            if dropping {
+                let drop = interp.call_function(&pred, vec![item.clone()])?;
+                if !is_truthy(&drop) {
+                    dropping = false;
+                    result.push(item);
+                }
+            } else {
+                result.push(item);
+            }
+        }
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // group_by - group consecutive elements by key function
+    define(interp, "group_by", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("group_by: first argument must be an array")),
+        };
+        let key_fn = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("group_by: second argument must be a function")),
+        };
+
+        let mut groups: Vec<Value> = Vec::new();
+        let mut current_group: Vec<Value> = Vec::new();
+        let mut current_key: Option<Value> = None;
+
+        for item in arr {
+            let key = interp.call_function(&key_fn, vec![item.clone()])?;
+            match &current_key {
+                Some(k) if value_eq(k, &key) => {
+                    current_group.push(item);
+                }
+                _ => {
+                    if !current_group.is_empty() {
+                        groups.push(Value::Array(Rc::new(RefCell::new(current_group))));
+                    }
+                    current_group = vec![item];
+                    current_key = Some(key);
+                }
+            }
+        }
+        if !current_group.is_empty() {
+            groups.push(Value::Array(Rc::new(RefCell::new(current_group))));
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(groups))))
+    });
+
+    // partition - split array by predicate into (true_items, false_items)
+    define(interp, "partition", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("partition: first argument must be an array")),
+        };
+        let pred = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("partition: second argument must be a function")),
+        };
+
+        let mut true_items = Vec::new();
+        let mut false_items = Vec::new();
+
+        for item in arr {
+            let result = interp.call_function(&pred, vec![item.clone()])?;
+            if is_truthy(&result) {
+                true_items.push(item);
+            } else {
+                false_items.push(item);
+            }
+        }
+
+        Ok(Value::Tuple(Rc::new(vec![
+            Value::Array(Rc::new(RefCell::new(true_items))),
+            Value::Array(Rc::new(RefCell::new(false_items))),
+        ])))
+    });
+
+    // interleave - interleave two arrays
+    define(interp, "interleave", Some(2), |_, args| {
+        let arr1 = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("interleave: first argument must be an array")),
+        };
+        let arr2 = match &args[1] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("interleave: second argument must be an array")),
+        };
+
+        let mut result = Vec::new();
+        let mut i1 = arr1.into_iter();
+        let mut i2 = arr2.into_iter();
+
+        loop {
+            match (i1.next(), i2.next()) {
+                (Some(a), Some(b)) => {
+                    result.push(a);
+                    result.push(b);
+                }
+                (Some(a), None) => {
+                    result.push(a);
+                    result.extend(i1);
+                    break;
+                }
+                (None, Some(b)) => {
+                    result.push(b);
+                    result.extend(i2);
+                    break;
+                }
+                (None, None) => break,
+            }
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // chunks - split array into chunks of size N
+    define(interp, "chunks", Some(2), |_, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("chunks: first argument must be an array")),
+        };
+        let size = match &args[1] {
+            Value::Int(n) if *n > 0 => *n as usize,
+            _ => return Err(RuntimeError::new("chunks: second argument must be a positive integer")),
+        };
+
+        let chunks: Vec<Value> = arr.chunks(size)
+            .map(|chunk| Value::Array(Rc::new(RefCell::new(chunk.to_vec()))))
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(chunks))))
+    });
+
+    // windows - sliding windows of size N
+    define(interp, "windows", Some(2), |_, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("windows: first argument must be an array")),
+        };
+        let size = match &args[1] {
+            Value::Int(n) if *n > 0 => *n as usize,
+            _ => return Err(RuntimeError::new("windows: second argument must be a positive integer")),
+        };
+
+        if arr.len() < size {
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+        }
+
+        let windows: Vec<Value> = arr.windows(size)
+            .map(|window| Value::Array(Rc::new(RefCell::new(window.to_vec()))))
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(windows))))
+    });
+
+    // scan - like fold but returns all intermediate values
+    define(interp, "scan", Some(3), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("scan: first argument must be an array")),
+        };
+        let init = args[1].clone();
+        let func = match &args[2] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("scan: third argument must be a function")),
+        };
+
+        let mut results = vec![init.clone()];
+        let mut acc = init;
+
+        for item in arr {
+            acc = interp.call_function(&func, vec![acc, item])?;
+            results.push(acc.clone());
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(results))))
+    });
+
+    // frequencies - count occurrences of each element
+    define(interp, "frequencies", Some(1), |_, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("frequencies: argument must be an array")),
+        };
+
+        let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        for item in &arr {
+            let key = format!("{}", item);
+            *counts.entry(key).or_insert(0) += 1;
+        }
+
+        let result: std::collections::HashMap<String, Value> = counts.into_iter()
+            .map(|(k, v)| (k, Value::Int(v)))
+            .collect();
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // dedupe - remove consecutive duplicates
+    define(interp, "dedupe", Some(1), |_, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("dedupe: argument must be an array")),
+        };
+
+        let mut result = Vec::new();
+        let mut prev: Option<Value> = None;
+
+        for item in arr {
+            match &prev {
+                Some(p) if value_eq(p, &item) => continue,
+                _ => {
+                    result.push(item.clone());
+                    prev = Some(item);
+                }
+            }
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // unique - remove all duplicates (not just consecutive)
+    define(interp, "unique", Some(1), |_, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("unique: argument must be an array")),
+        };
+
+        let mut seen = std::collections::HashSet::new();
+        let mut result = Vec::new();
+
+        for item in arr {
+            let key = format!("{}", item);
+            if seen.insert(key) {
+                result.push(item);
+            }
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+}
+
+/// Advanced range utilities
+fn register_ranges(interp: &mut Interpreter) {
+    // range_step - range with custom step
+    define(interp, "range_step", Some(3), |_, args| {
+        let start = match &args[0] {
+            Value::Int(n) => *n,
+            Value::Float(f) => *f as i64,
+            _ => return Err(RuntimeError::new("range_step: start must be a number")),
+        };
+        let end = match &args[1] {
+            Value::Int(n) => *n,
+            Value::Float(f) => *f as i64,
+            _ => return Err(RuntimeError::new("range_step: end must be a number")),
+        };
+        let step = match &args[2] {
+            Value::Int(n) if *n != 0 => *n,
+            Value::Float(f) if *f != 0.0 => *f as i64,
+            _ => return Err(RuntimeError::new("range_step: step must be a non-zero number")),
+        };
+
+        let mut result = Vec::new();
+        if step > 0 {
+            let mut i = start;
+            while i < end {
+                result.push(Value::Int(i));
+                i += step;
+            }
+        } else {
+            let mut i = start;
+            while i > end {
+                result.push(Value::Int(i));
+                i += step;
+            }
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // linspace - N evenly spaced values from start to end (inclusive)
+    define(interp, "linspace", Some(3), |_, args| {
+        let start = match &args[0] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("linspace: start must be a number")),
+        };
+        let end = match &args[1] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("linspace: end must be a number")),
+        };
+        let n = match &args[2] {
+            Value::Int(n) if *n > 0 => *n as usize,
+            _ => return Err(RuntimeError::new("linspace: count must be a positive integer")),
+        };
+
+        if n == 1 {
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![Value::Float(start)]))));
+        }
+
+        let step = (end - start) / (n - 1) as f64;
+        let result: Vec<Value> = (0..n)
+            .map(|i| Value::Float(start + step * i as f64))
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // logspace - N logarithmically spaced values
+    define(interp, "logspace", Some(3), |_, args| {
+        let start_exp = match &args[0] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("logspace: start exponent must be a number")),
+        };
+        let end_exp = match &args[1] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("logspace: end exponent must be a number")),
+        };
+        let n = match &args[2] {
+            Value::Int(n) if *n > 0 => *n as usize,
+            _ => return Err(RuntimeError::new("logspace: count must be a positive integer")),
+        };
+
+        if n == 1 {
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![Value::Float(10f64.powf(start_exp))]))));
+        }
+
+        let step = (end_exp - start_exp) / (n - 1) as f64;
+        let result: Vec<Value> = (0..n)
+            .map(|i| Value::Float(10f64.powf(start_exp + step * i as f64)))
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // arange - like numpy arange (start, stop, step with float support)
+    define(interp, "arange", Some(3), |_, args| {
+        let start = match &args[0] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("arange: start must be a number")),
+        };
+        let stop = match &args[1] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("arange: stop must be a number")),
+        };
+        let step = match &args[2] {
+            Value::Int(n) if *n != 0 => *n as f64,
+            Value::Float(f) if *f != 0.0 => *f,
+            _ => return Err(RuntimeError::new("arange: step must be a non-zero number")),
+        };
+
+        let mut result = Vec::new();
+        if step > 0.0 {
+            let mut x = start;
+            while x < stop {
+                result.push(Value::Float(x));
+                x += step;
+            }
+        } else {
+            let mut x = start;
+            while x > stop {
+                result.push(Value::Float(x));
+                x += step;
+            }
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // geomspace - geometrically spaced values (like logspace but using actual values)
+    define(interp, "geomspace", Some(3), |_, args| {
+        let start = match &args[0] {
+            Value::Int(n) if *n > 0 => *n as f64,
+            Value::Float(f) if *f > 0.0 => *f,
+            _ => return Err(RuntimeError::new("geomspace: start must be a positive number")),
+        };
+        let end = match &args[1] {
+            Value::Int(n) if *n > 0 => *n as f64,
+            Value::Float(f) if *f > 0.0 => *f,
+            _ => return Err(RuntimeError::new("geomspace: end must be a positive number")),
+        };
+        let n = match &args[2] {
+            Value::Int(n) if *n > 0 => *n as usize,
+            _ => return Err(RuntimeError::new("geomspace: count must be a positive integer")),
+        };
+
+        if n == 1 {
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![Value::Float(start)]))));
+        }
+
+        let ratio = (end / start).powf(1.0 / (n - 1) as f64);
+        let result: Vec<Value> = (0..n)
+            .map(|i| Value::Float(start * ratio.powi(i as i32)))
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+}
+
+/// Bitwise operations
+fn register_bitwise(interp: &mut Interpreter) {
+    define(interp, "bit_and", Some(2), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_and: arguments must be integers")) };
+        let b = match &args[1] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_and: arguments must be integers")) };
+        Ok(Value::Int(a & b))
+    });
+
+    define(interp, "bit_or", Some(2), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_or: arguments must be integers")) };
+        let b = match &args[1] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_or: arguments must be integers")) };
+        Ok(Value::Int(a | b))
+    });
+
+    define(interp, "bit_xor", Some(2), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_xor: arguments must be integers")) };
+        let b = match &args[1] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_xor: arguments must be integers")) };
+        Ok(Value::Int(a ^ b))
+    });
+
+    define(interp, "bit_not", Some(1), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_not: argument must be an integer")) };
+        Ok(Value::Int(!a))
+    });
+
+    define(interp, "bit_shl", Some(2), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_shl: first argument must be an integer")) };
+        let b = match &args[1] {
+            Value::Int(n) if *n >= 0 && *n < 64 => *n as u32,
+            _ => return Err(RuntimeError::new("bit_shl: shift amount must be 0-63")),
+        };
+        Ok(Value::Int(a << b))
+    });
+
+    define(interp, "bit_shr", Some(2), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_shr: first argument must be an integer")) };
+        let b = match &args[1] {
+            Value::Int(n) if *n >= 0 && *n < 64 => *n as u32,
+            _ => return Err(RuntimeError::new("bit_shr: shift amount must be 0-63")),
+        };
+        Ok(Value::Int(a >> b))
+    });
+
+    define(interp, "popcount", Some(1), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("popcount: argument must be an integer")) };
+        Ok(Value::Int(a.count_ones() as i64))
+    });
+
+    define(interp, "leading_zeros", Some(1), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("leading_zeros: argument must be an integer")) };
+        Ok(Value::Int(a.leading_zeros() as i64))
+    });
+
+    define(interp, "trailing_zeros", Some(1), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("trailing_zeros: argument must be an integer")) };
+        Ok(Value::Int(a.trailing_zeros() as i64))
+    });
+
+    define(interp, "bit_test", Some(2), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_test: first argument must be an integer")) };
+        let pos = match &args[1] {
+            Value::Int(n) if *n >= 0 && *n < 64 => *n as u32,
+            _ => return Err(RuntimeError::new("bit_test: position must be 0-63")),
+        };
+        Ok(Value::Bool((a >> pos) & 1 == 1))
+    });
+
+    define(interp, "bit_set", Some(2), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_set: first argument must be an integer")) };
+        let pos = match &args[1] {
+            Value::Int(n) if *n >= 0 && *n < 64 => *n as u32,
+            _ => return Err(RuntimeError::new("bit_set: position must be 0-63")),
+        };
+        Ok(Value::Int(a | (1 << pos)))
+    });
+
+    define(interp, "bit_clear", Some(2), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_clear: first argument must be an integer")) };
+        let pos = match &args[1] {
+            Value::Int(n) if *n >= 0 && *n < 64 => *n as u32,
+            _ => return Err(RuntimeError::new("bit_clear: position must be 0-63")),
+        };
+        Ok(Value::Int(a & !(1 << pos)))
+    });
+
+    define(interp, "bit_toggle", Some(2), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_toggle: first argument must be an integer")) };
+        let pos = match &args[1] {
+            Value::Int(n) if *n >= 0 && *n < 64 => *n as u32,
+            _ => return Err(RuntimeError::new("bit_toggle: position must be 0-63")),
+        };
+        Ok(Value::Int(a ^ (1 << pos)))
+    });
+
+    define(interp, "to_binary", Some(1), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("to_binary: argument must be an integer")) };
+        Ok(Value::String(Rc::new(format!("{:b}", a))))
+    });
+
+    define(interp, "from_binary", Some(1), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("from_binary: argument must be a string")) };
+        match i64::from_str_radix(&s, 2) {
+            Ok(n) => Ok(Value::Int(n)),
+            Err(_) => Err(RuntimeError::new("from_binary: invalid binary string")),
+        }
+    });
+
+    define(interp, "to_hex", Some(1), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("to_hex: argument must be an integer")) };
+        Ok(Value::String(Rc::new(format!("{:x}", a))))
+    });
+
+    define(interp, "from_hex", Some(1), |_, args| {
+        let s = match &args[0] { Value::String(s) => s.trim_start_matches("0x").to_string(), _ => return Err(RuntimeError::new("from_hex: argument must be a string")) };
+        match i64::from_str_radix(&s, 16) {
+            Ok(n) => Ok(Value::Int(n)),
+            Err(_) => Err(RuntimeError::new("from_hex: invalid hex string")),
+        }
+    });
+
+    define(interp, "to_octal", Some(1), |_, args| {
+        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("to_octal: argument must be an integer")) };
+        Ok(Value::String(Rc::new(format!("{:o}", a))))
+    });
+
+    define(interp, "from_octal", Some(1), |_, args| {
+        let s = match &args[0] { Value::String(s) => s.trim_start_matches("0o").to_string(), _ => return Err(RuntimeError::new("from_octal: argument must be a string")) };
+        match i64::from_str_radix(&s, 8) {
+            Ok(n) => Ok(Value::Int(n)),
+            Err(_) => Err(RuntimeError::new("from_octal: invalid octal string")),
+        }
+    });
+}
+
+/// String formatting utilities
+fn register_format(interp: &mut Interpreter) {
+    // format - basic string formatting with {} placeholders
+    define(interp, "format", None, |_, args| {
+        if args.is_empty() {
+            return Err(RuntimeError::new("format: requires at least a format string"));
+        }
+        let template = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("format: first argument must be a string")),
+        };
+        let mut result = template;
+        for arg in &args[1..] {
+            if let Some(pos) = result.find("{}") {
+                result = format!("{}{}{}", &result[..pos], arg, &result[pos+2..]);
+            }
+        }
+        Ok(Value::String(Rc::new(result)))
+    });
+
+    // pad_left - left-pad string to length with char
+    define(interp, "pad_left", Some(3), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("pad_left: first argument must be a string")) };
+        let width = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("pad_left: width must be a non-negative integer")) };
+        let pad_char = match &args[2] { Value::String(s) if !s.is_empty() => s.chars().next().unwrap(), _ => return Err(RuntimeError::new("pad_left: pad character must be a non-empty string")) };
+        if s.len() >= width { return Ok(Value::String(Rc::new(s))); }
+        let padding: String = std::iter::repeat(pad_char).take(width - s.len()).collect();
+        Ok(Value::String(Rc::new(format!("{}{}", padding, s))))
+    });
+
+    // pad_right - right-pad string to length with char
+    define(interp, "pad_right", Some(3), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("pad_right: first argument must be a string")) };
+        let width = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("pad_right: width must be a non-negative integer")) };
+        let pad_char = match &args[2] { Value::String(s) if !s.is_empty() => s.chars().next().unwrap(), _ => return Err(RuntimeError::new("pad_right: pad character must be a non-empty string")) };
+        if s.len() >= width { return Ok(Value::String(Rc::new(s))); }
+        let padding: String = std::iter::repeat(pad_char).take(width - s.len()).collect();
+        Ok(Value::String(Rc::new(format!("{}{}", s, padding))))
+    });
+
+    // center - center string with padding
+    define(interp, "center", Some(3), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("center: first argument must be a string")) };
+        let width = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("center: width must be a non-negative integer")) };
+        let pad_char = match &args[2] { Value::String(s) if !s.is_empty() => s.chars().next().unwrap(), _ => return Err(RuntimeError::new("center: pad character must be a non-empty string")) };
+        if s.len() >= width { return Ok(Value::String(Rc::new(s))); }
+        let total_padding = width - s.len();
+        let left_padding = total_padding / 2;
+        let right_padding = total_padding - left_padding;
+        let left: String = std::iter::repeat(pad_char).take(left_padding).collect();
+        let right: String = std::iter::repeat(pad_char).take(right_padding).collect();
+        Ok(Value::String(Rc::new(format!("{}{}{}", left, s, right))))
+    });
+
+    // number_format - format number with thousand separators
+    define(interp, "number_format", Some(1), |_, args| {
+        let n = match &args[0] { Value::Int(n) => *n, Value::Float(f) => *f as i64, _ => return Err(RuntimeError::new("number_format: argument must be a number")) };
+        let s = n.abs().to_string();
+        let mut result = String::new();
+        for (i, c) in s.chars().rev().enumerate() {
+            if i > 0 && i % 3 == 0 { result.push(','); }
+            result.push(c);
+        }
+        let formatted: String = result.chars().rev().collect();
+        if n < 0 { Ok(Value::String(Rc::new(format!("-{}", formatted)))) } else { Ok(Value::String(Rc::new(formatted))) }
+    });
+
+    // ordinal - convert number to ordinal string (1st, 2nd, 3rd, etc)
+    define(interp, "ordinal", Some(1), |_, args| {
+        let n = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("ordinal: argument must be an integer")) };
+        let suffix = match (n % 10, n % 100) { (1, 11) => "th", (2, 12) => "th", (3, 13) => "th", (1, _) => "st", (2, _) => "nd", (3, _) => "rd", _ => "th" };
+        Ok(Value::String(Rc::new(format!("{}{}", n, suffix))))
+    });
+
+    // pluralize - simple pluralization
+    define(interp, "pluralize", Some(3), |_, args| {
+        let count = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("pluralize: first argument must be an integer")) };
+        let singular = match &args[1] { Value::String(s) => s.clone(), _ => return Err(RuntimeError::new("pluralize: second argument must be a string")) };
+        let plural = match &args[2] { Value::String(s) => s.clone(), _ => return Err(RuntimeError::new("pluralize: third argument must be a string")) };
+        if count == 1 || count == -1 { Ok(Value::String(singular)) } else { Ok(Value::String(plural)) }
+    });
+
+    // truncate - truncate string with ellipsis
+    define(interp, "truncate", Some(2), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("truncate: first argument must be a string")) };
+        let max_len = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("truncate: max length must be a non-negative integer")) };
+        if s.len() <= max_len { return Ok(Value::String(Rc::new(s))); }
+        if max_len <= 3 { return Ok(Value::String(Rc::new(s.chars().take(max_len).collect()))); }
+        let truncated: String = s.chars().take(max_len - 3).collect();
+        Ok(Value::String(Rc::new(format!("{}...", truncated))))
+    });
+
+    // word_wrap - wrap text at specified width
+    define(interp, "word_wrap", Some(2), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("word_wrap: first argument must be a string")) };
+        let width = match &args[1] { Value::Int(n) if *n > 0 => *n as usize, _ => return Err(RuntimeError::new("word_wrap: width must be a positive integer")) };
+        let mut result = String::new();
+        let mut line_len = 0;
+        for word in s.split_whitespace() {
+            if line_len > 0 && line_len + 1 + word.len() > width { result.push('\n'); line_len = 0; }
+            else if line_len > 0 { result.push(' '); line_len += 1; }
+            result.push_str(word);
+            line_len += word.len();
+        }
+        Ok(Value::String(Rc::new(result)))
+    });
+
+    // snake_case - convert string to snake_case
+    define(interp, "snake_case", Some(1), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("snake_case: argument must be a string")) };
+        let mut result = String::new();
+        for (i, c) in s.chars().enumerate() {
+            if c.is_uppercase() { if i > 0 { result.push('_'); } result.push(c.to_lowercase().next().unwrap()); }
+            else if c == ' ' || c == '-' { result.push('_'); }
+            else { result.push(c); }
+        }
+        Ok(Value::String(Rc::new(result)))
+    });
+
+    // camel_case - convert string to camelCase
+    define(interp, "camel_case", Some(1), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("camel_case: argument must be a string")) };
+        let mut result = String::new();
+        let mut capitalize_next = false;
+        for (i, c) in s.chars().enumerate() {
+            if c == '_' || c == '-' || c == ' ' { capitalize_next = true; }
+            else if capitalize_next { result.push(c.to_uppercase().next().unwrap()); capitalize_next = false; }
+            else if i == 0 { result.push(c.to_lowercase().next().unwrap()); }
+            else { result.push(c); }
+        }
+        Ok(Value::String(Rc::new(result)))
+    });
+
+    // kebab_case - convert string to kebab-case
+    define(interp, "kebab_case", Some(1), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("kebab_case: argument must be a string")) };
+        let mut result = String::new();
+        for (i, c) in s.chars().enumerate() {
+            if c.is_uppercase() { if i > 0 { result.push('-'); } result.push(c.to_lowercase().next().unwrap()); }
+            else if c == '_' || c == ' ' { result.push('-'); }
+            else { result.push(c); }
+        }
+        Ok(Value::String(Rc::new(result)))
+    });
+
+    // title_case - convert string to Title Case
+    define(interp, "title_case", Some(1), |_, args| {
+        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("title_case: argument must be a string")) };
+        let result: String = s.split_whitespace()
+            .map(|word| {
+                let mut chars = word.chars();
+                match chars.next() { None => String::new(), Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase() }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        Ok(Value::String(Rc::new(result)))
+    });
+}
+
+// Helper for value equality comparison
+fn value_eq(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Null, Value::Null) => true,
+        (Value::Bool(a), Value::Bool(b)) => a == b,
+        (Value::Int(a), Value::Int(b)) => a == b,
+        (Value::Float(a), Value::Float(b)) => (a - b).abs() < f64::EPSILON,
+        (Value::String(a), Value::String(b)) => a == b,
+        (Value::Int(a), Value::Float(b)) | (Value::Float(b), Value::Int(a)) => {
+            (*a as f64 - b).abs() < f64::EPSILON
+        }
+        _ => false,
     }
 }
 
