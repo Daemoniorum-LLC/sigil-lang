@@ -36,10 +36,37 @@ whatlang = "0.16"            # Language detection
 rust-stemmers = "1.2"        # Stemming (Porter, Snowball)
 tiktoken-rs = "0.5"          # OpenAI tokenizer for LLM token counting
 
-# Crypto and encoding
+# Crypto and encoding - comprehensive cryptography suite
 sha2 = "0.10"
+sha3 = "0.10"                        # SHA-3/Keccak
+blake3 = "1.5"                       # BLAKE3 (fast, secure)
 md-5 = "0.10"
 base64 = "0.22"
+hex = "0.4"                          # Hex encoding
+
+# Authenticated encryption
+aes-gcm = "0.10"                     # AES-GCM AEAD
+chacha20poly1305 = "0.10"            # ChaCha20-Poly1305 AEAD
+
+# Asymmetric cryptography
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }  # Ed25519 signatures
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }  # X25519 key exchange
+
+# Key derivation and password hashing
+argon2 = "0.5"                       # Argon2 password hashing
+hkdf = "0.12"                        # HKDF key derivation
+pbkdf2 = { version = "0.12", features = ["simple"] }  # PBKDF2
+
+# Message authentication
+hmac = "0.12"
+
+# Secure random
+rand = "0.8"
+rand_core = "0.6"
+getrandom = "0.2"
+
+# Secret sharing (Shamir)
+vsss-rs = "4.0"                      # Verifiable Secret Sharing
 
 # Regex support
 regex = "1.10"

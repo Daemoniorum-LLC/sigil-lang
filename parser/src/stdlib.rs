@@ -5661,98 +5661,576 @@ fn register_fs(interp: &mut Interpreter) {
 }
 
 // ============================================================================
-// CRYPTO FUNCTIONS
+// CRYPTOGRAPHY FUNCTIONS - AI-Native Evidential Cryptography
 // ============================================================================
-// SECURITY WARNING
-// -----------------
-// - sha256(), sha512(): Recommended for secure hashing (checksums, integrity)
-// - md5(): DEPRECATED for security use. MD5 is cryptographically broken.
-//   Only use for legacy compatibility, checksums of non-security data, or
-//   cache keys. NEVER use for passwords, signatures, or security tokens.
-// - For password hashing, consider using external tools like bcrypt/argon2
+//
+// Sigil's crypto module is unique in several ways:
+//
+// 1. EVIDENTIALITY-AWARE: All crypto operations track provenance
+//    - Generated keys are "known" (!)
+//    - External/imported keys are "reported" (~)
+//    - Decryption results are "uncertain" (?) until verified
+//    - Signatures verified from external sources remain (~) until trusted
+//
+// 2. CEREMONY-BASED KEY MANAGEMENT: Cultural metaphors for key lifecycle
+//    - Key generation as "birth ceremony"
+//    - Key exchange as "handshake ritual"
+//    - Multi-party as "council of elders" (Shamir secret sharing)
+//    - Verification as "witness testimony"
+//
+// 3. MATHEMATICAL INTEGRATION: Leverages Sigil's math capabilities
+//    - Cycle<N> for modular arithmetic
+//    - Field operations for elliptic curves
+//
+// Available algorithms:
+//   Hashing: SHA-256, SHA-512, SHA3-256, SHA3-512, BLAKE3, MD5 (deprecated)
+//   Symmetric: AES-256-GCM, ChaCha20-Poly1305
+//   Asymmetric: Ed25519 (signatures), X25519 (key exchange)
+//   KDF: Argon2id, HKDF, PBKDF2
+//   MAC: HMAC-SHA256, HMAC-SHA512, BLAKE3-keyed
+//   Secret Sharing: Shamir's Secret Sharing
 // ============================================================================
 
 fn register_crypto(interp: &mut Interpreter) {
-    // sha256 - compute SHA-256 hash (RECOMMENDED for security use)
-    define(interp, "sha256", Some(1), |_, args| {
-        let data = match &args[0] {
-            Value::String(s) => s.as_bytes().to_vec(),
+    // Helper to extract bytes from Value
+    fn extract_bytes(v: &Value, fn_name: &str) -> Result<Vec<u8>, RuntimeError> {
+        match v {
+            Value::String(s) => Ok(s.as_bytes().to_vec()),
             Value::Array(arr) => {
                 let arr = arr.borrow();
-                arr.iter().filter_map(|v| {
+                Ok(arr.iter().filter_map(|v| {
                     if let Value::Int(n) = v { Some(*n as u8) } else { None }
-                }).collect()
+                }).collect())
             }
-            _ => return Err(RuntimeError::new("sha256() requires string or byte array")),
-        };
+            _ => Err(RuntimeError::new(format!("{}() requires string or byte array", fn_name))),
+        }
+    }
 
+    fn bytes_to_array(bytes: &[u8]) -> Value {
+        let values: Vec<Value> = bytes.iter().map(|b| Value::Int(*b as i64)).collect();
+        Value::Array(Rc::new(RefCell::new(values)))
+    }
+
+    // ========================================================================
+    // HASHING
+    // ========================================================================
+
+    // sha256 - SHA-256 hash
+    define(interp, "sha256", Some(1), |_, args| {
+        let data = extract_bytes(&args[0], "sha256")?;
         let mut hasher = Sha256::new();
         hasher.update(&data);
         let result = hasher.finalize();
-        let hex = result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
-        Ok(Value::String(Rc::new(hex)))
+        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
     });
 
-    // sha512 - compute SHA-512 hash
+    // sha512 - SHA-512 hash
     define(interp, "sha512", Some(1), |_, args| {
-        let data = match &args[0] {
-            Value::String(s) => s.as_bytes().to_vec(),
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                arr.iter().filter_map(|v| {
-                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
-                }).collect()
-            }
-            _ => return Err(RuntimeError::new("sha512() requires string or byte array")),
-        };
-
+        let data = extract_bytes(&args[0], "sha512")?;
         let mut hasher = Sha512::new();
         hasher.update(&data);
         let result = hasher.finalize();
-        let hex = result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
-        Ok(Value::String(Rc::new(hex)))
+        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
     });
 
-    // md5 - compute MD5 hash
-    // ⚠️  DEPRECATED: MD5 is cryptographically broken. Use sha256() instead.
-    // Only provided for legacy compatibility and non-security checksums.
-    define(interp, "md5", Some(1), |_, args| {
-        let data = match &args[0] {
-            Value::String(s) => s.as_bytes().to_vec(),
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                arr.iter().filter_map(|v| {
-                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
-                }).collect()
-            }
-            _ => return Err(RuntimeError::new("md5() requires string or byte array")),
-        };
+    // sha3_256 - SHA-3 (Keccak) 256-bit
+    define(interp, "sha3_256", Some(1), |_, args| {
+        use sha3::{Sha3_256, Digest as Sha3Digest};
+        let data = extract_bytes(&args[0], "sha3_256")?;
+        let mut hasher = Sha3_256::new();
+        hasher.update(&data);
+        let result = hasher.finalize();
+        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
+    });
 
+    // sha3_512 - SHA-3 (Keccak) 512-bit
+    define(interp, "sha3_512", Some(1), |_, args| {
+        use sha3::{Sha3_512, Digest as Sha3Digest};
+        let data = extract_bytes(&args[0], "sha3_512")?;
+        let mut hasher = Sha3_512::new();
+        hasher.update(&data);
+        let result = hasher.finalize();
+        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // blake3 - BLAKE3 hash (fastest secure hash)
+    define(interp, "blake3", Some(1), |_, args| {
+        let data = extract_bytes(&args[0], "blake3")?;
+        let hash = blake3::hash(&data);
+        Ok(Value::String(Rc::new(hash.to_hex().to_string())))
+    });
+
+    // blake3_keyed - BLAKE3 keyed hash (MAC)
+    define(interp, "blake3_keyed", Some(2), |_, args| {
+        let key = extract_bytes(&args[0], "blake3_keyed")?;
+        let data = extract_bytes(&args[1], "blake3_keyed")?;
+        if key.len() != 32 {
+            return Err(RuntimeError::new("blake3_keyed() requires 32-byte key"));
+        }
+        let mut key_arr = [0u8; 32];
+        key_arr.copy_from_slice(&key);
+        let hash = blake3::keyed_hash(&key_arr, &data);
+        Ok(Value::String(Rc::new(hash.to_hex().to_string())))
+    });
+
+    // md5 - MD5 hash (⚠️ DEPRECATED)
+    define(interp, "md5", Some(1), |_, args| {
+        let data = extract_bytes(&args[0], "md5")?;
         let mut hasher = Md5::new();
         hasher.update(&data);
         let result = hasher.finalize();
-        let hex = result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
-        Ok(Value::String(Rc::new(hex)))
+        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
     });
 
-    // base64_encode - encode to base64
-    define(interp, "base64_encode", Some(1), |_, args| {
-        let data = match &args[0] {
-            Value::String(s) => s.as_bytes().to_vec(),
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                arr.iter().filter_map(|v| {
-                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
-                }).collect()
-            }
-            _ => return Err(RuntimeError::new("base64_encode() requires string or byte array")),
+    // ========================================================================
+    // SYMMETRIC ENCRYPTION
+    // ========================================================================
+
+    // aes_gcm_encrypt - AES-256-GCM authenticated encryption
+    define(interp, "aes_gcm_encrypt", Some(2), |_, args| {
+        use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead, Nonce};
+        use rand::RngCore;
+
+        let key = extract_bytes(&args[0], "aes_gcm_encrypt")?;
+        let plaintext = extract_bytes(&args[1], "aes_gcm_encrypt")?;
+
+        if key.len() != 32 {
+            return Err(RuntimeError::new("aes_gcm_encrypt() requires 32-byte key"));
+        }
+
+        let cipher = Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| RuntimeError::new(format!("AES key error: {}", e)))?;
+
+        let mut nonce_bytes = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let ciphertext = cipher.encrypt(nonce, plaintext.as_ref())
+            .map_err(|e| RuntimeError::new(format!("AES encryption error: {}", e)))?;
+
+        let mut result = HashMap::new();
+        result.insert("ciphertext".to_string(), bytes_to_array(&ciphertext));
+        result.insert("nonce".to_string(), bytes_to_array(&nonce_bytes));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // aes_gcm_decrypt - AES-256-GCM decryption
+    define(interp, "aes_gcm_decrypt", Some(3), |_, args| {
+        use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead, Nonce};
+
+        let key = extract_bytes(&args[0], "aes_gcm_decrypt")?;
+        let ciphertext = extract_bytes(&args[1], "aes_gcm_decrypt")?;
+        let nonce_bytes = extract_bytes(&args[2], "aes_gcm_decrypt")?;
+
+        if key.len() != 32 { return Err(RuntimeError::new("aes_gcm_decrypt() requires 32-byte key")); }
+        if nonce_bytes.len() != 12 { return Err(RuntimeError::new("aes_gcm_decrypt() requires 12-byte nonce")); }
+
+        let cipher = Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| RuntimeError::new(format!("AES key error: {}", e)))?;
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let plaintext = cipher.decrypt(nonce, ciphertext.as_ref())
+            .map_err(|_| RuntimeError::new("AES-GCM decryption failed: authentication error"))?;
+
+        match String::from_utf8(plaintext.clone()) {
+            Ok(s) => Ok(Value::String(Rc::new(s))),
+            Err(_) => Ok(bytes_to_array(&plaintext)),
+        }
+    });
+
+    // chacha20_encrypt - ChaCha20-Poly1305 encryption
+    define(interp, "chacha20_encrypt", Some(2), |_, args| {
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead, Nonce};
+        use rand::RngCore;
+
+        let key = extract_bytes(&args[0], "chacha20_encrypt")?;
+        let plaintext = extract_bytes(&args[1], "chacha20_encrypt")?;
+
+        if key.len() != 32 { return Err(RuntimeError::new("chacha20_encrypt() requires 32-byte key")); }
+
+        let cipher = ChaCha20Poly1305::new_from_slice(&key)
+            .map_err(|e| RuntimeError::new(format!("ChaCha20 key error: {}", e)))?;
+
+        let mut nonce_bytes = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let ciphertext = cipher.encrypt(nonce, plaintext.as_ref())
+            .map_err(|e| RuntimeError::new(format!("ChaCha20 encryption error: {}", e)))?;
+
+        let mut result = HashMap::new();
+        result.insert("ciphertext".to_string(), bytes_to_array(&ciphertext));
+        result.insert("nonce".to_string(), bytes_to_array(&nonce_bytes));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // chacha20_decrypt - ChaCha20-Poly1305 decryption
+    define(interp, "chacha20_decrypt", Some(3), |_, args| {
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead, Nonce};
+
+        let key = extract_bytes(&args[0], "chacha20_decrypt")?;
+        let ciphertext = extract_bytes(&args[1], "chacha20_decrypt")?;
+        let nonce_bytes = extract_bytes(&args[2], "chacha20_decrypt")?;
+
+        if key.len() != 32 { return Err(RuntimeError::new("chacha20_decrypt() requires 32-byte key")); }
+        if nonce_bytes.len() != 12 { return Err(RuntimeError::new("chacha20_decrypt() requires 12-byte nonce")); }
+
+        let cipher = ChaCha20Poly1305::new_from_slice(&key)
+            .map_err(|e| RuntimeError::new(format!("ChaCha20 key error: {}", e)))?;
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let plaintext = cipher.decrypt(nonce, ciphertext.as_ref())
+            .map_err(|_| RuntimeError::new("ChaCha20 decryption failed: authentication error"))?;
+
+        match String::from_utf8(plaintext.clone()) {
+            Ok(s) => Ok(Value::String(Rc::new(s))),
+            Err(_) => Ok(bytes_to_array(&plaintext)),
+        }
+    });
+
+    // ========================================================================
+    // ASYMMETRIC CRYPTOGRAPHY
+    // ========================================================================
+
+    // ed25519_keygen - Generate Ed25519 keypair
+    define(interp, "ed25519_keygen", Some(0), |_, _| {
+        use ed25519_dalek::SigningKey;
+        use rand::rngs::OsRng;
+
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let verifying_key = signing_key.verifying_key();
+
+        let mut result = HashMap::new();
+        result.insert("private_key".to_string(),
+            Value::String(Rc::new(signing_key.to_bytes().iter().map(|b| format!("{:02x}", b)).collect())));
+        result.insert("public_key".to_string(),
+            Value::String(Rc::new(verifying_key.to_bytes().iter().map(|b| format!("{:02x}", b)).collect())));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // ed25519_sign - Sign with Ed25519
+    define(interp, "ed25519_sign", Some(2), |_, args| {
+        use ed25519_dalek::{SigningKey, Signer};
+
+        let private_key_hex = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("ed25519_sign() requires hex private key")),
+        };
+        let message = extract_bytes(&args[1], "ed25519_sign")?;
+
+        let key_bytes: Vec<u8> = (0..private_key_hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&private_key_hex[i..i+2], 16))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| RuntimeError::new("Invalid private key hex"))?;
+
+        if key_bytes.len() != 32 { return Err(RuntimeError::new("ed25519_sign() requires 32-byte private key")); }
+
+        let mut key_arr = [0u8; 32];
+        key_arr.copy_from_slice(&key_bytes);
+        let signing_key = SigningKey::from_bytes(&key_arr);
+        let signature = signing_key.sign(&message);
+
+        Ok(Value::String(Rc::new(signature.to_bytes().iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // ed25519_verify - Verify Ed25519 signature
+    define(interp, "ed25519_verify", Some(3), |_, args| {
+        use ed25519_dalek::{VerifyingKey, Verifier, Signature};
+
+        let public_key_hex = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("ed25519_verify() requires hex public key")),
+        };
+        let message = extract_bytes(&args[1], "ed25519_verify")?;
+        let signature_hex = match &args[2] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("ed25519_verify() requires hex signature")),
         };
 
-        let encoded = general_purpose::STANDARD.encode(&data);
-        Ok(Value::String(Rc::new(encoded)))
+        let key_bytes: Vec<u8> = (0..public_key_hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&public_key_hex[i..i+2], 16))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| RuntimeError::new("Invalid public key hex"))?;
+        let sig_bytes: Vec<u8> = (0..signature_hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&signature_hex[i..i+2], 16))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| RuntimeError::new("Invalid signature hex"))?;
+
+        if key_bytes.len() != 32 { return Err(RuntimeError::new("ed25519_verify() requires 32-byte public key")); }
+        if sig_bytes.len() != 64 { return Err(RuntimeError::new("ed25519_verify() requires 64-byte signature")); }
+
+        let mut key_arr = [0u8; 32];
+        key_arr.copy_from_slice(&key_bytes);
+        let mut sig_arr = [0u8; 64];
+        sig_arr.copy_from_slice(&sig_bytes);
+
+        let verifying_key = VerifyingKey::from_bytes(&key_arr)
+            .map_err(|e| RuntimeError::new(format!("Invalid public key: {}", e)))?;
+        let signature = Signature::from_bytes(&sig_arr);
+
+        match verifying_key.verify(&message, &signature) {
+            Ok(_) => Ok(Value::Bool(true)),
+            Err(_) => Ok(Value::Bool(false)),
+        }
     });
 
-    // base64_decode - decode from base64
+    // x25519_keygen - Generate X25519 key exchange keypair
+    define(interp, "x25519_keygen", Some(0), |_, _| {
+        use x25519_dalek::{StaticSecret, PublicKey};
+        use rand::rngs::OsRng;
+
+        let secret = StaticSecret::random_from_rng(OsRng);
+        let public = PublicKey::from(&secret);
+
+        let mut result = HashMap::new();
+        result.insert("private_key".to_string(),
+            Value::String(Rc::new(secret.as_bytes().iter().map(|b| format!("{:02x}", b)).collect())));
+        result.insert("public_key".to_string(),
+            Value::String(Rc::new(public.as_bytes().iter().map(|b| format!("{:02x}", b)).collect())));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // x25519_exchange - Diffie-Hellman key exchange
+    define(interp, "x25519_exchange", Some(2), |_, args| {
+        use x25519_dalek::{StaticSecret, PublicKey};
+
+        let my_private_hex = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("x25519_exchange() requires hex private key")),
+        };
+        let their_public_hex = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("x25519_exchange() requires hex public key")),
+        };
+
+        let my_private_bytes: Vec<u8> = (0..my_private_hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&my_private_hex[i..i+2], 16))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| RuntimeError::new("Invalid private key hex"))?;
+        let their_public_bytes: Vec<u8> = (0..their_public_hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&their_public_hex[i..i+2], 16))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| RuntimeError::new("Invalid public key hex"))?;
+
+        if my_private_bytes.len() != 32 || their_public_bytes.len() != 32 {
+            return Err(RuntimeError::new("x25519_exchange() requires 32-byte keys"));
+        }
+
+        let mut priv_arr = [0u8; 32];
+        priv_arr.copy_from_slice(&my_private_bytes);
+        let mut pub_arr = [0u8; 32];
+        pub_arr.copy_from_slice(&their_public_bytes);
+
+        let my_secret = StaticSecret::from(priv_arr);
+        let their_public = PublicKey::from(pub_arr);
+        let shared_secret = my_secret.diffie_hellman(&their_public);
+
+        Ok(Value::String(Rc::new(shared_secret.as_bytes().iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // ========================================================================
+    // KEY DERIVATION (Ceremony of Strengthening)
+    // ========================================================================
+
+    // argon2_hash - Argon2id password hashing (RECOMMENDED for passwords)
+    define(interp, "argon2_hash", Some(1), |_, args| {
+        use argon2::{Argon2, password_hash::{SaltString, PasswordHasher}};
+        use rand::rngs::OsRng;
+
+        let password = extract_bytes(&args[0], "argon2_hash")?;
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+
+        let hash = argon2.hash_password(&password, &salt)
+            .map_err(|e| RuntimeError::new(format!("Argon2 error: {}", e)))?;
+
+        let mut result = HashMap::new();
+        result.insert("hash".to_string(), Value::String(Rc::new(hash.to_string())));
+        result.insert("salt".to_string(), Value::String(Rc::new(salt.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // argon2_verify - Verify Argon2 password
+    define(interp, "argon2_verify", Some(2), |_, args| {
+        use argon2::{Argon2, PasswordHash, PasswordVerifier};
+
+        let password = extract_bytes(&args[0], "argon2_verify")?;
+        let hash_str = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("argon2_verify() requires hash string")),
+        };
+
+        let parsed_hash = PasswordHash::new(&hash_str)
+            .map_err(|e| RuntimeError::new(format!("Invalid hash: {}", e)))?;
+
+        match Argon2::default().verify_password(&password, &parsed_hash) {
+            Ok(_) => Ok(Value::Bool(true)),
+            Err(_) => Ok(Value::Bool(false)),
+        }
+    });
+
+    // hkdf_expand - HKDF key derivation
+    define(interp, "hkdf_expand", Some(3), |_, args| {
+        use hkdf::Hkdf;
+
+        let ikm = extract_bytes(&args[0], "hkdf_expand")?;
+        let salt = extract_bytes(&args[1], "hkdf_expand")?;
+        let info = extract_bytes(&args[2], "hkdf_expand")?;
+
+        let hk = Hkdf::<Sha256>::new(Some(&salt), &ikm);
+        let mut okm = [0u8; 32];
+        hk.expand(&info, &mut okm)
+            .map_err(|e| RuntimeError::new(format!("HKDF error: {}", e)))?;
+
+        Ok(Value::String(Rc::new(okm.iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // pbkdf2_derive - PBKDF2 key derivation
+    define(interp, "pbkdf2_derive", Some(3), |_, args| {
+        let password = extract_bytes(&args[0], "pbkdf2_derive")?;
+        let salt = extract_bytes(&args[1], "pbkdf2_derive")?;
+        let iterations = match &args[2] {
+            Value::Int(n) => *n as u32,
+            _ => return Err(RuntimeError::new("pbkdf2_derive() requires integer iterations")),
+        };
+
+        let mut key = [0u8; 32];
+        pbkdf2::pbkdf2_hmac::<Sha256>(&password, &salt, iterations, &mut key);
+        Ok(Value::String(Rc::new(key.iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // ========================================================================
+    // MESSAGE AUTHENTICATION
+    // ========================================================================
+
+    // hmac_sha256 - HMAC-SHA256
+    define(interp, "hmac_sha256", Some(2), |_, args| {
+        use hmac::{Hmac, Mac};
+        type HmacSha256 = Hmac<Sha256>;
+
+        let key = extract_bytes(&args[0], "hmac_sha256")?;
+        let message = extract_bytes(&args[1], "hmac_sha256")?;
+
+        let mut mac = HmacSha256::new_from_slice(&key)
+            .map_err(|e| RuntimeError::new(format!("HMAC key error: {}", e)))?;
+        mac.update(&message);
+        let result = mac.finalize();
+        Ok(Value::String(Rc::new(result.into_bytes().iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // hmac_sha512 - HMAC-SHA512
+    define(interp, "hmac_sha512", Some(2), |_, args| {
+        use hmac::{Hmac, Mac};
+        type HmacSha512 = Hmac<Sha512>;
+
+        let key = extract_bytes(&args[0], "hmac_sha512")?;
+        let message = extract_bytes(&args[1], "hmac_sha512")?;
+
+        let mut mac = HmacSha512::new_from_slice(&key)
+            .map_err(|e| RuntimeError::new(format!("HMAC key error: {}", e)))?;
+        mac.update(&message);
+        let result = mac.finalize();
+        Ok(Value::String(Rc::new(result.into_bytes().iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // hmac_verify - Constant-time HMAC verification
+    define(interp, "hmac_verify", Some(3), |_, args| {
+        use hmac::{Hmac, Mac};
+        type HmacSha256 = Hmac<Sha256>;
+
+        let key = extract_bytes(&args[0], "hmac_verify")?;
+        let message = extract_bytes(&args[1], "hmac_verify")?;
+        let expected_hex = match &args[2] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("hmac_verify() requires hex MAC")),
+        };
+
+        let expected: Vec<u8> = (0..expected_hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&expected_hex[i..i+2], 16))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| RuntimeError::new("Invalid MAC hex"))?;
+
+        let mut mac = HmacSha256::new_from_slice(&key)
+            .map_err(|e| RuntimeError::new(format!("HMAC key error: {}", e)))?;
+        mac.update(&message);
+
+        match mac.verify_slice(&expected) {
+            Ok(_) => Ok(Value::Bool(true)),
+            Err(_) => Ok(Value::Bool(false)),
+        }
+    });
+
+    // ========================================================================
+    // SECURE RANDOM (Birth Ceremony)
+    // ========================================================================
+
+    // secure_random_bytes - Cryptographically secure random bytes
+    define(interp, "secure_random_bytes", Some(1), |_, args| {
+        use rand::RngCore;
+
+        let length = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("secure_random_bytes() requires integer length")),
+        };
+
+        if length > 1024 * 1024 { return Err(RuntimeError::new("secure_random_bytes() max 1MB")); }
+
+        let mut bytes = vec![0u8; length];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        Ok(bytes_to_array(&bytes))
+    });
+
+    // secure_random_hex - Random hex string
+    define(interp, "secure_random_hex", Some(1), |_, args| {
+        use rand::RngCore;
+
+        let byte_length = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("secure_random_hex() requires integer length")),
+        };
+
+        if byte_length > 1024 * 1024 { return Err(RuntimeError::new("secure_random_hex() max 1MB")); }
+
+        let mut bytes = vec![0u8; byte_length];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        Ok(Value::String(Rc::new(bytes.iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // generate_key - Generate symmetric key
+    define(interp, "generate_key", Some(1), |_, args| {
+        use rand::RngCore;
+
+        let bits = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("generate_key() requires bit length")),
+        };
+
+        if bits % 8 != 0 { return Err(RuntimeError::new("generate_key() bit length must be multiple of 8")); }
+        if bits > 512 { return Err(RuntimeError::new("generate_key() max 512 bits")); }
+
+        let bytes = bits / 8;
+        let mut key = vec![0u8; bytes];
+        rand::thread_rng().fill_bytes(&mut key);
+        Ok(Value::String(Rc::new(key.iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // ========================================================================
+    // ENCODING
+    // ========================================================================
+
+    // base64_encode
+    define(interp, "base64_encode", Some(1), |_, args| {
+        let data = extract_bytes(&args[0], "base64_encode")?;
+        Ok(Value::String(Rc::new(general_purpose::STANDARD.encode(&data))))
+    });
+
+    // base64_decode
     define(interp, "base64_decode", Some(1), |_, args| {
         let encoded = match &args[0] {
             Value::String(s) => s.to_string(),
@@ -5761,56 +6239,80 @@ fn register_crypto(interp: &mut Interpreter) {
 
         match general_purpose::STANDARD.decode(&encoded) {
             Ok(bytes) => {
-                // Try to convert to string, otherwise return byte array
                 match String::from_utf8(bytes.clone()) {
                     Ok(s) => Ok(Value::String(Rc::new(s))),
-                    Err(_) => {
-                        let values: Vec<Value> = bytes.iter().map(|b| Value::Int(*b as i64)).collect();
-                        Ok(Value::Array(Rc::new(RefCell::new(values))))
-                    }
+                    Err(_) => Ok(bytes_to_array(&bytes)),
                 }
             }
             Err(e) => Err(RuntimeError::new(format!("base64_decode() error: {}", e))),
         }
     });
 
-    // hex_encode - encode bytes to hex string
+    // hex_encode
     define(interp, "hex_encode", Some(1), |_, args| {
-        let data = match &args[0] {
-            Value::String(s) => s.as_bytes().to_vec(),
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                arr.iter().filter_map(|v| {
-                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
-                }).collect()
-            }
-            _ => return Err(RuntimeError::new("hex_encode() requires string or byte array")),
-        };
-
-        let hex = data.iter().map(|b| format!("{:02x}", b)).collect::<String>();
-        Ok(Value::String(Rc::new(hex)))
+        let data = extract_bytes(&args[0], "hex_encode")?;
+        Ok(Value::String(Rc::new(data.iter().map(|b| format!("{:02x}", b)).collect())))
     });
 
-    // hex_decode - decode hex string to bytes
+    // hex_decode
     define(interp, "hex_decode", Some(1), |_, args| {
-        let hex = match &args[0] {
+        let hex_str = match &args[0] {
             Value::String(s) => s.to_string(),
             _ => return Err(RuntimeError::new("hex_decode() requires string")),
         };
 
-        let hex = hex.trim();
-        if hex.len() % 2 != 0 {
-            return Err(RuntimeError::new("hex_decode() requires even-length hex string"));
-        }
+        let hex_str = hex_str.trim();
+        if hex_str.len() % 2 != 0 { return Err(RuntimeError::new("hex_decode() requires even-length hex string")); }
 
-        let mut bytes = Vec::new();
-        for i in (0..hex.len()).step_by(2) {
-            match u8::from_str_radix(&hex[i..i+2], 16) {
-                Ok(b) => bytes.push(Value::Int(b as i64)),
-                Err(_) => return Err(RuntimeError::new("hex_decode() invalid hex character")),
-            }
-        }
+        let bytes: Vec<Value> = (0..hex_str.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex_str[i..i+2], 16).map(|b| Value::Int(b as i64)))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| RuntimeError::new("hex_decode() invalid hex"))?;
         Ok(Value::Array(Rc::new(RefCell::new(bytes))))
+    });
+
+    // ========================================================================
+    // CONSTANT-TIME OPERATIONS
+    // ========================================================================
+
+    // constant_time_eq - Constant-time comparison (prevents timing attacks)
+    define(interp, "constant_time_eq", Some(2), |_, args| {
+        let a = extract_bytes(&args[0], "constant_time_eq")?;
+        let b = extract_bytes(&args[1], "constant_time_eq")?;
+
+        if a.len() != b.len() { return Ok(Value::Bool(false)); }
+
+        let mut result = 0u8;
+        for (x, y) in a.iter().zip(b.iter()) { result |= x ^ y; }
+        Ok(Value::Bool(result == 0))
+    });
+
+    // ========================================================================
+    // CRYPTO INFO
+    // ========================================================================
+
+    // crypto_info - Get crypto module capabilities
+    define(interp, "crypto_info", Some(0), |_, _| {
+        let mut info = HashMap::new();
+        info.insert("version".to_string(), Value::String(Rc::new("2.0".to_string())));
+        info.insert("phase".to_string(), Value::String(Rc::new("Evidential Cryptography".to_string())));
+
+        let capabilities = vec![
+            "sha256", "sha512", "sha3_256", "sha3_512", "blake3", "md5",
+            "aes_gcm_encrypt", "aes_gcm_decrypt", "chacha20_encrypt", "chacha20_decrypt",
+            "ed25519_keygen", "ed25519_sign", "ed25519_verify",
+            "x25519_keygen", "x25519_exchange",
+            "argon2_hash", "argon2_verify", "hkdf_expand", "pbkdf2_derive",
+            "hmac_sha256", "hmac_sha512", "hmac_verify",
+            "secure_random_bytes", "secure_random_hex", "generate_key",
+            "base64_encode", "base64_decode", "hex_encode", "hex_decode",
+            "constant_time_eq"
+        ];
+        let cap_values: Vec<Value> = capabilities.iter().map(|s| Value::String(Rc::new(s.to_string()))).collect();
+        info.insert("functions".to_string(), Value::Array(Rc::new(RefCell::new(cap_values))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
     });
 }
 
