@@ -139,6 +139,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_audio(interp);
     // Phase 15: Spirituality - divination, sacred geometry, gematria, archetypes
     register_spirituality(interp);
+    // Phase 16: Polycultural color - synesthesia, cultural color systems, color spaces
+    register_color(interp);
 }
 
 // Helper to define a builtin
@@ -18393,6 +18395,468 @@ fn arabic_abjad(c: char) -> i64 {
         'U' | 'u' => 6,    // Map to و
         _ => 0,
     }
+}
+
+// =============================================================================
+// Phase 16: Polycultural Color System
+// =============================================================================
+// Color meaning varies radically across cultures. This module provides mathematical
+// color spaces + cultural color systems from around the world.
+
+fn register_color(interp: &mut Interpreter) {
+    // =========================================================================
+    // COLOR SPACE CONVERSIONS
+    // =========================================================================
+
+    // rgb(r, g, b) - Create RGB color (0-255)
+    define(interp, "rgb", Some(3), |_, args| {
+        let r = match &args[0] { Value::Int(n) => (*n).clamp(0, 255) as u8, Value::Float(f) => (*f as i64).clamp(0, 255) as u8, _ => return Err(RuntimeError::new("rgb() requires numbers")) };
+        let g = match &args[1] { Value::Int(n) => (*n).clamp(0, 255) as u8, Value::Float(f) => (*f as i64).clamp(0, 255) as u8, _ => return Err(RuntimeError::new("rgb() requires numbers")) };
+        let b = match &args[2] { Value::Int(n) => (*n).clamp(0, 255) as u8, Value::Float(f) => (*f as i64).clamp(0, 255) as u8, _ => return Err(RuntimeError::new("rgb() requires numbers")) };
+        let mut map = std::collections::HashMap::new();
+        map.insert("r".to_string(), Value::Int(r as i64));
+        map.insert("g".to_string(), Value::Int(g as i64));
+        map.insert("b".to_string(), Value::Int(b as i64));
+        map.insert("hex".to_string(), Value::String(Rc::new(format!("#{:02X}{:02X}{:02X}", r, g, b))));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // hex_to_rgb(hex) - Parse hex color string
+    define(interp, "hex_to_rgb", Some(1), |_, args| {
+        let hex = match &args[0] { Value::String(s) => s.to_string(), _ => return Err(RuntimeError::new("hex_to_rgb requires string")) };
+        let hex = hex.trim_start_matches('#');
+        if hex.len() != 6 { return Err(RuntimeError::new("hex_to_rgb requires 6 character hex")); }
+        let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| RuntimeError::new("Invalid hex"))?;
+        let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| RuntimeError::new("Invalid hex"))?;
+        let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| RuntimeError::new("Invalid hex"))?;
+        let mut map = std::collections::HashMap::new();
+        map.insert("r".to_string(), Value::Int(r as i64));
+        map.insert("g".to_string(), Value::Int(g as i64));
+        map.insert("b".to_string(), Value::Int(b as i64));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // rgb_to_hsl(r, g, b) - Convert RGB to HSL
+    define(interp, "rgb_to_hsl", Some(3), |_, args| {
+        let r = match &args[0] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
+        let g = match &args[1] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
+        let b = match &args[2] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let l = (max + min) / 2.0;
+        let (h, s) = if max == min { (0.0, 0.0) } else {
+            let d = max - min;
+            let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+            let h = if max == r { (g - b) / d + if g < b { 6.0 } else { 0.0 } }
+                   else if max == g { (b - r) / d + 2.0 } else { (r - g) / d + 4.0 };
+            (h * 60.0, s)
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("h".to_string(), Value::Float(h));
+        map.insert("s".to_string(), Value::Float(s));
+        map.insert("l".to_string(), Value::Float(l));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // complementary(r, g, b) - Opposite on color wheel
+    define(interp, "complementary", Some(3), |_, args| {
+        let r = match &args[0] { Value::Int(n) => *n as u8, _ => return Err(RuntimeError::new("requires int")) };
+        let g = match &args[1] { Value::Int(n) => *n as u8, _ => return Err(RuntimeError::new("requires int")) };
+        let b = match &args[2] { Value::Int(n) => *n as u8, _ => return Err(RuntimeError::new("requires int")) };
+        let mut map = std::collections::HashMap::new();
+        map.insert("r".to_string(), Value::Int(255 - r as i64));
+        map.insert("g".to_string(), Value::Int(255 - g as i64));
+        map.insert("b".to_string(), Value::Int(255 - b as i64));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // WU XING (五行) - CHINESE FIVE ELEMENTS
+    // =========================================================================
+    define(interp, "wu_xing", Some(1), |_, args| {
+        let element = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("wu_xing requires string")) };
+        let (name, chinese, color, hex, direction, season, organ, emotion, planet, animal) = match element.as_str() {
+            "wood" | "mu" | "木" => ("Wood", "木 (Mù)", "Green/Azure", "#228B22", "East", "Spring", "Liver", "Anger", "Jupiter", "Azure Dragon"),
+            "fire" | "huo" | "火" => ("Fire", "火 (Huǒ)", "Red", "#FF0000", "South", "Summer", "Heart", "Joy", "Mars", "Vermilion Bird"),
+            "earth" | "tu" | "土" => ("Earth", "土 (Tǔ)", "Yellow", "#FFDB58", "Center", "Late Summer", "Spleen", "Worry", "Saturn", "Yellow Dragon"),
+            "metal" | "jin" | "金" => ("Metal", "金 (Jīn)", "White/Gold", "#FFD700", "West", "Autumn", "Lung", "Grief", "Venus", "White Tiger"),
+            "water" | "shui" | "水" => ("Water", "水 (Shuǐ)", "Black/Blue", "#000080", "North", "Winter", "Kidney", "Fear", "Mercury", "Black Tortoise"),
+            _ => return Err(RuntimeError::new("Unknown element. Use wood/fire/earth/metal/water")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("chinese".to_string(), Value::String(Rc::new(chinese.to_string())));
+        map.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("direction".to_string(), Value::String(Rc::new(direction.to_string())));
+        map.insert("season".to_string(), Value::String(Rc::new(season.to_string())));
+        map.insert("organ".to_string(), Value::String(Rc::new(organ.to_string())));
+        map.insert("emotion".to_string(), Value::String(Rc::new(emotion.to_string())));
+        map.insert("planet".to_string(), Value::String(Rc::new(planet.to_string())));
+        map.insert("guardian".to_string(), Value::String(Rc::new(animal.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // CHAKRA COLORS (Ayurveda/Hindu)
+    // =========================================================================
+    define(interp, "chakra_color", Some(1), |_, args| {
+        let chakra = match &args[0] { Value::String(s) => s.to_lowercase(), Value::Int(n) => n.to_string(), _ => return Err(RuntimeError::new("chakra_color requires string or number")) };
+        let (name, sanskrit, color, hex, location, freq, element, mantra) = match chakra.as_str() {
+            "root" | "muladhara" | "1" => ("Root", "मूलाधार", "Red", "#FF0000", "Base of spine", 396.0, "Earth", "LAM"),
+            "sacral" | "svadhisthana" | "2" => ("Sacral", "स्वाधिष्ठान", "Orange", "#FF7F00", "Below navel", 417.0, "Water", "VAM"),
+            "solar" | "manipura" | "3" => ("Solar Plexus", "मणिपूर", "Yellow", "#FFFF00", "Stomach", 528.0, "Fire", "RAM"),
+            "heart" | "anahata" | "4" => ("Heart", "अनाहत", "Green", "#00FF00", "Chest", 639.0, "Air", "YAM"),
+            "throat" | "vishuddha" | "5" => ("Throat", "विशुद्ध", "Blue", "#00BFFF", "Throat", 741.0, "Ether", "HAM"),
+            "third_eye" | "ajna" | "6" => ("Third Eye", "आज्ञा", "Indigo", "#4B0082", "Forehead", 852.0, "Light", "OM"),
+            "crown" | "sahasrara" | "7" => ("Crown", "सहस्रार", "Violet", "#8B00FF", "Top of head", 963.0, "Thought", "Silence"),
+            _ => return Err(RuntimeError::new("Unknown chakra. Use root/sacral/solar/heart/throat/third_eye/crown or 1-7")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("sanskrit".to_string(), Value::String(Rc::new(sanskrit.to_string())));
+        map.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("location".to_string(), Value::String(Rc::new(location.to_string())));
+        map.insert("frequency_hz".to_string(), Value::Float(freq));
+        map.insert("element".to_string(), Value::String(Rc::new(element.to_string())));
+        map.insert("mantra".to_string(), Value::String(Rc::new(mantra.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // MAYAN DIRECTIONAL COLORS
+    // =========================================================================
+    define(interp, "maya_direction", Some(1), |_, args| {
+        let dir = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (direction, yucatec, color, hex, deity, meaning) = match dir.as_str() {
+            "east" | "lakin" => ("East", "Lak'in", "Red", "#FF0000", "Chac (Red)", "Sunrise, new beginnings"),
+            "north" | "xaman" => ("North", "Xaman", "White", "#FFFFFF", "Chac (White)", "Ancestors, death"),
+            "west" | "chikin" => ("West", "Chik'in", "Black", "#000000", "Chac (Black)", "Sunset, completion"),
+            "south" | "nohol" => ("South", "Nohol", "Yellow", "#FFFF00", "Chac (Yellow)", "Maize, abundance"),
+            "center" | "yax" => ("Center", "Yax", "Green/Blue", "#00CED1", "World Tree", "Balance"),
+            _ => return Err(RuntimeError::new("Unknown direction. Use east/north/west/south/center")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("direction".to_string(), Value::String(Rc::new(direction.to_string())));
+        map.insert("yucatec".to_string(), Value::String(Rc::new(yucatec.to_string())));
+        map.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("deity".to_string(), Value::String(Rc::new(deity.to_string())));
+        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // ORISHA COLORS (Yoruba/African)
+    // =========================================================================
+    define(interp, "orisha_color", Some(1), |_, args| {
+        let orisha = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (name, colors, hex, domain, day, number) = match orisha.as_str() {
+            "obatala" | "oxala" => ("Obatalá", "White, silver", "#FFFFFF", "Creation, purity, wisdom", "Sunday", 8),
+            "yemoja" | "yemanja" => ("Yemọja", "Blue, white", "#4169E1", "Ocean, motherhood", "Saturday", 7),
+            "oshun" | "oxum" => ("Ọṣun", "Yellow, gold", "#FFD700", "Rivers, love, fertility", "Saturday", 5),
+            "shango" | "xango" => ("Ṣàngó", "Red, white", "#FF0000", "Thunder, fire, justice", "Wednesday", 6),
+            "ogun" | "ogum" => ("Ògún", "Green, black", "#006400", "Iron, war, labor", "Tuesday", 7),
+            "oya" | "iansa" => ("Ọya", "Brown, purple", "#800020", "Wind, storms, change", "Wednesday", 9),
+            "eshu" | "exu" => ("Èṣù", "Red, black", "#8B0000", "Crossroads, messages", "Monday", 3),
+            _ => return Err(RuntimeError::new("Unknown Orisha. Use obatala/yemoja/oshun/shango/ogun/oya/eshu")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("colors".to_string(), Value::String(Rc::new(colors.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("domain".to_string(), Value::String(Rc::new(domain.to_string())));
+        map.insert("day".to_string(), Value::String(Rc::new(day.to_string())));
+        map.insert("number".to_string(), Value::Int(number));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // JAPANESE TRADITIONAL COLORS (nihon_iro)
+    // =========================================================================
+    define(interp, "nihon_iro", Some(1), |_, args| {
+        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (name, japanese, hex, meaning, season) = match color.as_str() {
+            "sakura" => ("Sakura Pink", "桜色", "#FFB7C5", "Cherry blossoms, transience", "Spring"),
+            "fuji" => ("Wisteria", "藤色", "#C9A0DC", "Elegance, nobility", "Spring"),
+            "moegi" => ("Young Green", "萌黄", "#AACF53", "New growth, freshness", "Spring"),
+            "ai" => ("Indigo", "藍色", "#004D99", "Protection, depth", "All"),
+            "akane" => ("Madder Red", "茜色", "#CF3A24", "Sunset, passion", "Autumn"),
+            "shiro" => ("White", "白", "#FFFFFF", "Purity, death, sacred", "Winter"),
+            "kuro" => ("Black", "黒", "#000000", "Formality, mystery", "All"),
+            "aka" => ("Red", "赤", "#D7003A", "Life force, celebration", "All"),
+            "murasaki" => ("Purple", "紫", "#884898", "Nobility, spirituality", "All"),
+            _ => return Err(RuntimeError::new("Unknown color. Try: sakura/fuji/moegi/ai/akane/shiro/kuro/aka/murasaki")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("japanese".to_string(), Value::String(Rc::new(japanese.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        map.insert("season".to_string(), Value::String(Rc::new(season.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // ISLAMIC COLOR SYMBOLISM
+    // =========================================================================
+    define(interp, "islamic_color", Some(1), |_, args| {
+        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (name, arabic, hex, meaning, usage) = match color.as_str() {
+            "green" | "akhdar" => ("Green", "أخضر", "#00FF00", "Paradise, Prophet, life", "Mosques, Quran, flags"),
+            "white" | "abyad" => ("White", "أبيض", "#FFFFFF", "Purity, peace, ihram", "Pilgrimage, burial"),
+            "black" | "aswad" => ("Black", "أسود", "#000000", "Modesty, Kaaba", "Kiswah, abaya"),
+            "gold" | "dhahabi" => ("Gold", "ذهبي", "#FFD700", "Paradise, divine light", "Calligraphy, decoration"),
+            "blue" | "azraq" => ("Blue", "أزرق", "#0000CD", "Protection, heaven", "Tiles, evil eye"),
+            _ => return Err(RuntimeError::new("Unknown color. Use green/white/black/gold/blue")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("arabic".to_string(), Value::String(Rc::new(arabic.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        map.insert("usage".to_string(), Value::String(Rc::new(usage.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // THAI DAY COLORS
+    // =========================================================================
+    define(interp, "thai_day_color", Some(1), |_, args| {
+        let day = match &args[0] { Value::String(s) => s.to_lowercase(), Value::Int(n) => n.to_string(), _ => return Err(RuntimeError::new("requires string or number")) };
+        let (day_name, thai, color, hex, deity) = match day.as_str() {
+            "sunday" | "0" => ("Sunday", "วันอาทิตย์", "Red", "#FF0000", "Surya"),
+            "monday" | "1" => ("Monday", "วันจันทร์", "Yellow", "#FFFF00", "Chandra"),
+            "tuesday" | "2" => ("Tuesday", "วันอังคาร", "Pink", "#FFC0CB", "Mangala"),
+            "wednesday" | "3" => ("Wednesday", "วันพุธ", "Green", "#00FF00", "Budha"),
+            "thursday" | "4" => ("Thursday", "วันพฤหัสบดี", "Orange", "#FFA500", "Brihaspati"),
+            "friday" | "5" => ("Friday", "วันศุกร์", "Blue", "#00BFFF", "Shukra"),
+            "saturday" | "6" => ("Saturday", "วันเสาร์", "Purple", "#800080", "Shani"),
+            _ => return Err(RuntimeError::new("Unknown day. Use sunday-saturday or 0-6")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("day".to_string(), Value::String(Rc::new(day_name.to_string())));
+        map.insert("thai".to_string(), Value::String(Rc::new(thai.to_string())));
+        map.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("deity".to_string(), Value::String(Rc::new(deity.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // ABORIGINAL AUSTRALIAN COLORS
+    // =========================================================================
+    define(interp, "aboriginal_color", Some(1), |_, args| {
+        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (name, hex, meaning, source, dreamtime) = match color.as_str() {
+            "red" | "ochre" => ("Red Ochre", "#CC5500", "Earth, blood, ceremony", "Hematite", "Ancestral beings"),
+            "yellow" => ("Yellow Ochre", "#D4A017", "Sun, healing", "Limonite", "Sun's journey"),
+            "white" => ("White", "#FFFFFF", "Sky, spirits, mourning", "Kaolin", "Sky beings"),
+            "black" => ("Black", "#000000", "Night, formality", "Charcoal", "Night, men's business"),
+            "brown" => ("Brown", "#8B4513", "Earth, land", "Earth pigments", "Country, connection"),
+            _ => return Err(RuntimeError::new("Unknown color. Use red/yellow/white/black/brown")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        map.insert("source".to_string(), Value::String(Rc::new(source.to_string())));
+        map.insert("dreamtime".to_string(), Value::String(Rc::new(dreamtime.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // CELTIC COLORS
+    // =========================================================================
+    define(interp, "celtic_color", Some(1), |_, args| {
+        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (name, gaelic, hex, meaning, element) = match color.as_str() {
+            "green" => ("Green", "Glas", "#228B22", "Nature, fairies, Otherworld", "Earth"),
+            "white" => ("White", "Bán", "#FFFFFF", "Purity, spirits", "Air"),
+            "red" => ("Red", "Dearg", "#FF0000", "War, courage, blood", "Fire"),
+            "black" => ("Black", "Dubh", "#000000", "Otherworld, death, rebirth", "Water"),
+            "gold" => ("Gold", "Órga", "#FFD700", "Sun, sovereignty, Lugh", "Fire"),
+            "silver" => ("Silver", "Airgid", "#C0C0C0", "Moon, feminine, intuition", "Water"),
+            _ => return Err(RuntimeError::new("Unknown color. Use green/white/red/black/gold/silver")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("gaelic".to_string(), Value::String(Rc::new(gaelic.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        map.insert("element".to_string(), Value::String(Rc::new(element.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // KENTE CLOTH COLORS (Ghana)
+    // =========================================================================
+    define(interp, "kente_color", Some(1), |_, args| {
+        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (name, twi, hex, meaning) = match color.as_str() {
+            "gold" | "yellow" => ("Gold", "Sika Kɔkɔɔ", "#FFD700", "Royalty, wealth, glory"),
+            "green" => ("Green", "Ahabammono", "#228B22", "Growth, renewal, harvest"),
+            "blue" => ("Blue", "Bruu", "#0000CD", "Peace, harmony, love"),
+            "red" => ("Red", "Kɔkɔɔ", "#FF0000", "Blood, sacrifice, power"),
+            "black" => ("Black", "Tuntum", "#000000", "Maturation, ancestors"),
+            "white" => ("White", "Fitaa", "#FFFFFF", "Purification, virtue, joy"),
+            "maroon" => ("Maroon", "Borɔnɔ", "#800000", "Earth, healing, protection"),
+            _ => return Err(RuntimeError::new("Unknown color. Use gold/green/blue/red/black/white/maroon")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("twi".to_string(), Value::String(Rc::new(twi.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // HINDU COLOR SYMBOLISM
+    // =========================================================================
+    define(interp, "hindu_color", Some(1), |_, args| {
+        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (name, hindi, hex, meaning, deities) = match color.as_str() {
+            "red" | "lal" => ("Red", "लाल", "#FF0000", "Purity, fertility, love", "Durga, Lakshmi"),
+            "orange" | "saffron" => ("Saffron", "केसरी", "#FF6600", "Sacred, renunciation", "Hanuman"),
+            "yellow" => ("Yellow", "पीला", "#FFFF00", "Knowledge, learning", "Vishnu, Saraswati"),
+            "green" => ("Green", "हरा", "#008000", "Life, happiness", "Krishna"),
+            "white" => ("White", "सफ़ेद", "#FFFFFF", "Purity, mourning", "Saraswati, Shiva"),
+            "blue" => ("Blue", "नीला", "#0000FF", "Divinity, infinity", "Krishna, Vishnu"),
+            "black" => ("Black", "काला", "#000000", "Protection from evil", "Kali, Shani"),
+            _ => return Err(RuntimeError::new("Unknown color. Use red/orange/yellow/green/white/blue/black")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("hindi".to_string(), Value::String(Rc::new(hindi.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        map.insert("deities".to_string(), Value::String(Rc::new(deities.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // SYNESTHESIA - CROSS-MODAL MAPPING WITH CULTURAL CONTEXT
+    // =========================================================================
+    define(interp, "emotion_color", Some(2), |_, args| {
+        let emotion = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let culture = match &args[1] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (hex, name, reasoning) = match (emotion.as_str(), culture.as_str()) {
+            ("joy", "western") | ("happy", "western") => ("#FFD700", "Gold", "Sunshine = happiness"),
+            ("joy", "chinese") | ("happy", "chinese") => ("#FF0000", "Red", "红 = luck, joy"),
+            ("joy", "japanese") => ("#FFB7C5", "Sakura", "Cherry blossom = fleeting joy"),
+            ("sadness", "western") | ("sad", "western") => ("#0000CD", "Blue", "'Feeling blue'"),
+            ("sadness", "chinese") | ("sad", "chinese") => ("#FFFFFF", "White", "白 = mourning"),
+            ("sadness", "indian") => ("#FFFFFF", "White", "सफ़ेद = mourning"),
+            ("anger", _) => ("#FF0000", "Red", "Universal heat/fire"),
+            ("love", "western") => ("#FF69B4", "Pink", "Valentine's hearts"),
+            ("love", "chinese") | ("love", "indian") => ("#FF0000", "Red", "Red = marriage, love"),
+            ("peace", "western") => ("#ADD8E6", "Light Blue", "Sky, serenity"),
+            ("peace", "islamic") => ("#00FF00", "Green", "السلام = paradise"),
+            ("fear", _) => ("#4B0082", "Indigo", "Deep, mysterious"),
+            (_, _) => ("#808080", "Grey", "Neutral"),
+        };
+        let r = u8::from_str_radix(&hex[1..3], 16).unwrap_or(128);
+        let g = u8::from_str_radix(&hex[3..5], 16).unwrap_or(128);
+        let b = u8::from_str_radix(&hex[5..7], 16).unwrap_or(128);
+        let mut map = std::collections::HashMap::new();
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("r".to_string(), Value::Int(r as i64));
+        map.insert("g".to_string(), Value::Int(g as i64));
+        map.insert("b".to_string(), Value::Int(b as i64));
+        map.insert("reasoning".to_string(), Value::String(Rc::new(reasoning.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // synesthesia - full cross-modal with cultural awareness
+    define(interp, "synesthesia", Some(2), |_, args| {
+        let culture = match &args[1] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires culture string")) };
+        let (r, g, b, emotion, freq) = match &args[0] {
+            Value::String(s) => match s.to_lowercase().as_str() {
+                "joy" | "happy" => (255u8, 215u8, 0u8, "joy", 528.0),
+                "sadness" | "sad" => (0, 0, 139, "sadness", 396.0),
+                "anger" => (255, 0, 0, "anger", 417.0),
+                "fear" => (75, 0, 130, "fear", 369.0),
+                "love" => (255, 105, 180, "love", 639.0),
+                "peace" => (135, 206, 235, "peace", 741.0),
+                _ => (128, 128, 128, "neutral", 432.0),
+            },
+            Value::Int(n) => (128, 128, 255, "resonance", *n as f64),
+            Value::Float(f) => (128, 128, 255, "resonance", *f),
+            _ => (128, 128, 128, "neutral", 432.0),
+        };
+        let cultural_meaning = match culture.as_str() {
+            "chinese" if r > 200 && g < 100 => "luck/joy (红)",
+            "japanese" if r > 200 && g < 100 => "vitality (赤)",
+            "indian" if r > 200 && g < 100 => "shakti/auspicious",
+            _ => "universal resonance",
+        };
+        let chakra = if r > 200 && g < 100 { "Root" } else if g > 200 { "Heart" } else if b > 200 { "Throat" } else { "Crown" };
+        let wu_xing = if r > 200 && g < 100 { "Fire (火)" } else if g > 200 { "Wood (木)" } else if b > 200 { "Water (水)" } else { "Metal (金)" };
+        let mut map = std::collections::HashMap::new();
+        let mut color_map = std::collections::HashMap::new();
+        color_map.insert("r".to_string(), Value::Int(r as i64));
+        color_map.insert("g".to_string(), Value::Int(g as i64));
+        color_map.insert("b".to_string(), Value::Int(b as i64));
+        color_map.insert("hex".to_string(), Value::String(Rc::new(format!("#{:02X}{:02X}{:02X}", r, g, b))));
+        map.insert("color".to_string(), Value::Map(Rc::new(RefCell::new(color_map))));
+        map.insert("emotion".to_string(), Value::String(Rc::new(emotion.to_string())));
+        map.insert("frequency".to_string(), Value::Float(freq));
+        map.insert("cultural_meaning".to_string(), Value::String(Rc::new(cultural_meaning.to_string())));
+        map.insert("chakra".to_string(), Value::String(Rc::new(chakra.to_string())));
+        map.insert("wu_xing".to_string(), Value::String(Rc::new(wu_xing.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // color_to_sound - Scriabin-inspired mapping
+    define(interp, "color_to_sound", Some(3), |_, args| {
+        let r = match &args[0] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
+        let g = match &args[1] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
+        let b = match &args[2] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
+        let max = r.max(g).max(b); let min = r.min(g).min(b); let l = (max + min) / 2.0;
+        let h = if max == min { 0.0 } else {
+            let d = max - min;
+            if max == r { (g - b) / d + if g < b { 6.0 } else { 0.0 } }
+            else if max == g { (b - r) / d + 2.0 } else { (r - g) / d + 4.0 }
+        } * 60.0;
+        let (note, freq) = if h < 30.0 { ("C", 261.63) } else if h < 60.0 { ("G", 392.00) }
+        else if h < 90.0 { ("D", 293.66) } else if h < 120.0 { ("A", 440.00) }
+        else if h < 150.0 { ("E", 329.63) } else if h < 180.0 { ("B", 493.88) }
+        else if h < 210.0 { ("F#", 369.99) } else if h < 240.0 { ("Db", 277.18) }
+        else if h < 270.0 { ("Ab", 415.30) } else if h < 300.0 { ("Eb", 311.13) }
+        else if h < 330.0 { ("Bb", 466.16) } else { ("F", 349.23) };
+        let octave_shift = ((l - 0.5) * 4.0).round() as i32;
+        let adjusted_freq = freq * 2.0_f64.powi(octave_shift);
+        let mut map = std::collections::HashMap::new();
+        map.insert("note".to_string(), Value::String(Rc::new(note.to_string())));
+        map.insert("frequency".to_string(), Value::Float(adjusted_freq));
+        map.insert("hue".to_string(), Value::Float(h));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // contrast_ratio - WCAG accessibility
+    define(interp, "contrast_ratio", Some(6), |_, args| {
+        fn lum(r: f64, g: f64, b: f64) -> f64 {
+            fn ch(c: f64) -> f64 { let c = c / 255.0; if c <= 0.03928 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) } }
+            0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b)
+        }
+        let r1 = match &args[0] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
+        let g1 = match &args[1] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
+        let b1 = match &args[2] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
+        let r2 = match &args[3] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
+        let g2 = match &args[4] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
+        let b2 = match &args[5] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
+        let l1 = lum(r1, g1, b1); let l2 = lum(r2, g2, b2);
+        let ratio = if l1 > l2 { (l1 + 0.05) / (l2 + 0.05) } else { (l2 + 0.05) / (l1 + 0.05) };
+        let mut map = std::collections::HashMap::new();
+        map.insert("ratio".to_string(), Value::Float(ratio));
+        map.insert("aa_normal".to_string(), Value::Bool(ratio >= 4.5));
+        map.insert("aa_large".to_string(), Value::Bool(ratio >= 3.0));
+        map.insert("aaa_normal".to_string(), Value::Bool(ratio >= 7.0));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
 }
 
 #[cfg(test)]
