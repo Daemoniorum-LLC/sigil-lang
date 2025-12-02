@@ -39,9 +39,18 @@ base64 = "0.22"
 # Regex support
 regex = "1.10"
 
-# Unicode text processing
+# Unicode text processing - polycultural support
 unicode-normalization = "0.1"
 unicode-segmentation = "1.10"
+unicode-script = "0.5"           # Script detection (Latin, Arabic, CJK, etc.)
+unicode-bidi = "0.3"             # Bidirectional text (RTL/LTR)
+unicode-width = "0.1"            # Display width for CJK
+# unicode_categories - not needed, using unicode-script instead
+deunicode = "1.4"                # Transliteration to ASCII
+icu_collator = "1.5"             # Locale-aware collation
+icu_locid = "1.5"                # Locale identifiers
+icu_casemap = "1.5"              # Case mapping (Turkish İ, etc.)
+icu_segmenter = "1.5"            # Sentence/word segmentation
 
 # UUID generation
 uuid = { version = "1.10", features = ["v4", "fast-rng"] }

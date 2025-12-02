@@ -23,6 +23,15 @@
 //! - **system**: Environment, args, process control
 //! - **stats**: Statistical functions
 //! - **matrix**: Matrix operations
+//! - **polycultural_text**: World-class text handling for all scripts
+//!   - Script detection (Latin, Arabic, CJK, Cyrillic, etc.)
+//!   - Bidirectional text (RTL/LTR)
+//!   - Locale-aware case mapping (Turkish İ, German ß)
+//!   - Locale-aware collation (Swedish ä vs German ä)
+//!   - ICU-based segmentation (Thai, CJK word boundaries)
+//!   - Transliteration to ASCII
+//!   - Emoji handling
+//!   - Diacritic manipulation
 
 use crate::interpreter::{Interpreter, Value, Evidence, RuntimeError, BuiltInFn, ChannelInner, ActorInner};
 use std::rc::Rc;
@@ -41,6 +50,17 @@ use regex::Regex;
 use uuid::Uuid;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
+
+// Polycultural text processing
+use unicode_script::{Script, UnicodeScript};
+use unicode_bidi::BidiInfo;
+use unicode_width::UnicodeWidthStr;
+use deunicode::deunicode;
+use icu_collator::{Collator, CollatorOptions};
+use icu_locid::{Locale, LanguageIdentifier};
+use icu_casemap::CaseMapper;
+use icu_casemap::titlecase::TitlecaseOptions;
+use icu_segmenter::{SentenceSegmenter, WordSegmenter};
 
 /// Register all standard library functions
 pub fn register_stdlib(interp: &mut Interpreter) {
@@ -88,6 +108,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_geometric_algebra(interp);
     register_dimensional(interp);
     register_ecs(interp);
+    // Phase 10: Polycultural text processing
+    register_polycultural_text(interp);
 }
 
 // Helper to define a builtin
@@ -10870,6 +10892,906 @@ fn register_ecs(interp: &mut Interpreter) {
         }
 
         Ok(Value::Bool(false))
+    });
+}
+
+// ============================================================================
+// POLYCULTURAL TEXT PROCESSING
+// ============================================================================
+//
+// Sigil's philosophy: Mathematics is poly-cultural, and so is TEXT.
+// Different writing systems have different needs:
+//
+// | Writing System | Special Needs |
+// |----------------|---------------|
+// | Latin          | Diacritics, ligatures, case folding |
+// | Arabic/Hebrew  | RTL, contextual shaping, vowel marks |
+// | CJK            | No word boundaries, display width, ruby text |
+// | Devanagari     | Complex clusters, conjuncts |
+// | Thai           | No spaces between words |
+// | Hangul         | Jamo composition/decomposition |
+//
+// This module provides world-class text handling for ALL scripts.
+//
+
+fn register_polycultural_text(interp: &mut Interpreter) {
+    // =========================================================================
+    // SCRIPT DETECTION
+    // =========================================================================
+    //
+    // Detect what writing system(s) a text uses.
+    // Essential for choosing appropriate processing strategies.
+    //
+
+    // script - get the dominant script of a string
+    define(interp, "script", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                // Count scripts
+                let mut script_counts: HashMap<String, usize> = HashMap::new();
+                for c in s.chars() {
+                    if !c.is_whitespace() && !c.is_ascii_punctuation() {
+                        let script = c.script();
+                        let name = format!("{:?}", script);
+                        *script_counts.entry(name).or_insert(0) += 1;
+                    }
+                }
+                // Find dominant script
+                let dominant = script_counts.into_iter()
+                    .max_by_key(|(_, count)| *count)
+                    .map(|(name, _)| name)
+                    .unwrap_or_else(|| "Unknown".to_string());
+                Ok(Value::String(Rc::new(dominant)))
+            }
+            _ => Err(RuntimeError::new("script() requires string")),
+        }
+    });
+
+    // scripts - get all scripts present in text
+    define(interp, "scripts", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let mut scripts: Vec<String> = s.chars()
+                    .filter(|c| !c.is_whitespace() && !c.is_ascii_punctuation())
+                    .map(|c| format!("{:?}", c.script()))
+                    .collect();
+                scripts.sort();
+                scripts.dedup();
+                let values: Vec<Value> = scripts.into_iter()
+                    .map(|s| Value::String(Rc::new(s)))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(values))))
+            }
+            _ => Err(RuntimeError::new("scripts() requires string")),
+        }
+    });
+
+    // is_script - check if text is primarily in a specific script
+    define(interp, "is_script", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(script_name)) => {
+                let target = script_name.to_lowercase();
+                let mut matching = 0usize;
+                let mut total = 0usize;
+                for c in s.chars() {
+                    if !c.is_whitespace() && !c.is_ascii_punctuation() {
+                        total += 1;
+                        let script_str = format!("{:?}", c.script()).to_lowercase();
+                        if script_str == target {
+                            matching += 1;
+                        }
+                    }
+                }
+                let ratio = if total > 0 { matching as f64 / total as f64 } else { 0.0 };
+                Ok(Value::Bool(ratio > 0.5))
+            }
+            _ => Err(RuntimeError::new("is_script() requires string and script name")),
+        }
+    });
+
+    // Script-specific detection functions
+    define(interp, "is_latin", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let is_latin = s.chars()
+                    .filter(|c| !c.is_whitespace())
+                    .all(|c| matches!(c.script(), Script::Latin | Script::Common));
+                Ok(Value::Bool(is_latin && !s.is_empty()))
+            }
+            _ => Err(RuntimeError::new("is_latin() requires string")),
+        }
+    });
+
+    define(interp, "is_cjk", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_cjk = s.chars().any(|c| {
+                    matches!(c.script(), Script::Han | Script::Hiragana | Script::Katakana | Script::Hangul | Script::Bopomofo)
+                });
+                Ok(Value::Bool(has_cjk))
+            }
+            _ => Err(RuntimeError::new("is_cjk() requires string")),
+        }
+    });
+
+    define(interp, "is_arabic", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_arabic = s.chars().any(|c| matches!(c.script(), Script::Arabic));
+                Ok(Value::Bool(has_arabic))
+            }
+            _ => Err(RuntimeError::new("is_arabic() requires string")),
+        }
+    });
+
+    define(interp, "is_hebrew", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_hebrew = s.chars().any(|c| matches!(c.script(), Script::Hebrew));
+                Ok(Value::Bool(has_hebrew))
+            }
+            _ => Err(RuntimeError::new("is_hebrew() requires string")),
+        }
+    });
+
+    define(interp, "is_cyrillic", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_cyrillic = s.chars().any(|c| matches!(c.script(), Script::Cyrillic));
+                Ok(Value::Bool(has_cyrillic))
+            }
+            _ => Err(RuntimeError::new("is_cyrillic() requires string")),
+        }
+    });
+
+    define(interp, "is_greek", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_greek = s.chars().any(|c| matches!(c.script(), Script::Greek));
+                Ok(Value::Bool(has_greek))
+            }
+            _ => Err(RuntimeError::new("is_greek() requires string")),
+        }
+    });
+
+    define(interp, "is_devanagari", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_devanagari = s.chars().any(|c| matches!(c.script(), Script::Devanagari));
+                Ok(Value::Bool(has_devanagari))
+            }
+            _ => Err(RuntimeError::new("is_devanagari() requires string")),
+        }
+    });
+
+    define(interp, "is_thai", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_thai = s.chars().any(|c| matches!(c.script(), Script::Thai));
+                Ok(Value::Bool(has_thai))
+            }
+            _ => Err(RuntimeError::new("is_thai() requires string")),
+        }
+    });
+
+    define(interp, "is_hangul", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_hangul = s.chars().any(|c| matches!(c.script(), Script::Hangul));
+                Ok(Value::Bool(has_hangul))
+            }
+            _ => Err(RuntimeError::new("is_hangul() requires string")),
+        }
+    });
+
+    define(interp, "is_hiragana", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_hiragana = s.chars().any(|c| matches!(c.script(), Script::Hiragana));
+                Ok(Value::Bool(has_hiragana))
+            }
+            _ => Err(RuntimeError::new("is_hiragana() requires string")),
+        }
+    });
+
+    define(interp, "is_katakana", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_katakana = s.chars().any(|c| matches!(c.script(), Script::Katakana));
+                Ok(Value::Bool(has_katakana))
+            }
+            _ => Err(RuntimeError::new("is_katakana() requires string")),
+        }
+    });
+
+    // char_script - get script of a single character
+    define(interp, "char_script", Some(1), |_, args| {
+        match &args[0] {
+            Value::Char(c) => {
+                let script = format!("{:?}", c.script());
+                Ok(Value::String(Rc::new(script)))
+            }
+            Value::String(s) if s.chars().count() == 1 => {
+                let c = s.chars().next().unwrap();
+                let script = format!("{:?}", c.script());
+                Ok(Value::String(Rc::new(script)))
+            }
+            _ => Err(RuntimeError::new("char_script() requires single character")),
+        }
+    });
+
+    // =========================================================================
+    // BIDIRECTIONAL TEXT (RTL/LTR)
+    // =========================================================================
+    //
+    // Arabic, Hebrew, and other scripts are written right-to-left.
+    // Mixed text (e.g., Arabic with English) needs bidirectional handling.
+    //
+
+    // text_direction - get overall text direction
+    define(interp, "text_direction", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let bidi_info = BidiInfo::new(s, None);
+                // Check if any paragraph is RTL
+                let has_rtl = bidi_info.paragraphs.iter().any(|p| p.level.is_rtl());
+                let direction = if has_rtl { "rtl" } else { "ltr" };
+                Ok(Value::String(Rc::new(direction.to_string())))
+            }
+            _ => Err(RuntimeError::new("text_direction() requires string")),
+        }
+    });
+
+    // is_rtl - check if text is right-to-left
+    define(interp, "is_rtl", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let bidi_info = BidiInfo::new(s, None);
+                let has_rtl = bidi_info.paragraphs.iter().any(|p| p.level.is_rtl());
+                Ok(Value::Bool(has_rtl))
+            }
+            _ => Err(RuntimeError::new("is_rtl() requires string")),
+        }
+    });
+
+    // is_ltr - check if text is left-to-right
+    define(interp, "is_ltr", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let bidi_info = BidiInfo::new(s, None);
+                let is_ltr = bidi_info.paragraphs.iter().all(|p| !p.level.is_rtl());
+                Ok(Value::Bool(is_ltr))
+            }
+            _ => Err(RuntimeError::new("is_ltr() requires string")),
+        }
+    });
+
+    // is_bidi - check if text contains mixed directions
+    define(interp, "is_bidi", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                // Check for both RTL and LTR characters
+                let has_rtl = s.chars().any(|c| matches!(c.script(), Script::Arabic | Script::Hebrew | Script::Syriac | Script::Thaana));
+                let has_ltr = s.chars().any(|c| matches!(c.script(), Script::Latin | Script::Greek | Script::Cyrillic));
+                Ok(Value::Bool(has_rtl && has_ltr))
+            }
+            _ => Err(RuntimeError::new("is_bidi() requires string")),
+        }
+    });
+
+    // bidi_reorder - reorder text for visual display
+    define(interp, "bidi_reorder", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let bidi_info = BidiInfo::new(s, None);
+                let mut result = String::new();
+                for para in &bidi_info.paragraphs {
+                    let line = para.range.clone();
+                    let reordered = bidi_info.reorder_line(para, line);
+                    result.push_str(&reordered);
+                }
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("bidi_reorder() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // DISPLAY WIDTH (CJK-aware)
+    // =========================================================================
+    //
+    // CJK characters are "full-width" (2 columns), while Latin is "half-width".
+    // Critical for proper terminal output and text alignment.
+    //
+
+    // display_width - get visual width in terminal columns
+    define(interp, "display_width", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let width = UnicodeWidthStr::width(s.as_str());
+                Ok(Value::Int(width as i64))
+            }
+            _ => Err(RuntimeError::new("display_width() requires string")),
+        }
+    });
+
+    // is_fullwidth - check if string contains full-width characters
+    define(interp, "is_fullwidth", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let char_count = s.chars().count();
+                let display_width = UnicodeWidthStr::width(s.as_str());
+                // If display width > char count, we have full-width chars
+                Ok(Value::Bool(display_width > char_count))
+            }
+            _ => Err(RuntimeError::new("is_fullwidth() requires string")),
+        }
+    });
+
+    // pad_display - pad string to display width (CJK-aware)
+    define(interp, "pad_display", Some(3), |_, args| {
+        match (&args[0], &args[1], &args[2]) {
+            (Value::String(s), Value::Int(target_width), Value::String(align)) => {
+                let current_width = UnicodeWidthStr::width(s.as_str());
+                let target = *target_width as usize;
+                if current_width >= target {
+                    return Ok(Value::String(s.clone()));
+                }
+                let padding = target - current_width;
+                let result = match align.as_str() {
+                    "left" => format!("{}{}", s, " ".repeat(padding)),
+                    "right" => format!("{}{}", " ".repeat(padding), s),
+                    "center" => {
+                        let left = padding / 2;
+                        let right = padding - left;
+                        format!("{}{}{}", " ".repeat(left), s, " ".repeat(right))
+                    }
+                    _ => return Err(RuntimeError::new("pad_display: align must be 'left', 'right', or 'center'")),
+                };
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("pad_display() requires string, width, and alignment")),
+        }
+    });
+
+    // =========================================================================
+    // TRANSLITERATION
+    // =========================================================================
+    //
+    // Convert text from any script to ASCII representation.
+    // Essential for: search, URLs, usernames, file names.
+    //
+
+    // transliterate - convert any Unicode text to ASCII
+    define(interp, "transliterate", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let ascii = deunicode(s);
+                Ok(Value::String(Rc::new(ascii)))
+            }
+            _ => Err(RuntimeError::new("transliterate() requires string")),
+        }
+    });
+
+    // to_ascii - alias for transliterate
+    define(interp, "to_ascii", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let ascii = deunicode(s);
+                Ok(Value::String(Rc::new(ascii)))
+            }
+            _ => Err(RuntimeError::new("to_ascii() requires string")),
+        }
+    });
+
+    // slugify - create URL-safe slug from any text
+    define(interp, "slugify", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let ascii = deunicode(s);
+                let slug: String = ascii
+                    .to_lowercase()
+                    .chars()
+                    .map(|c| if c.is_alphanumeric() { c } else { '-' })
+                    .collect();
+                // Collapse multiple dashes and trim
+                let mut result = String::new();
+                let mut last_was_dash = true; // Start true to trim leading dashes
+                for c in slug.chars() {
+                    if c == '-' {
+                        if !last_was_dash {
+                            result.push(c);
+                            last_was_dash = true;
+                        }
+                    } else {
+                        result.push(c);
+                        last_was_dash = false;
+                    }
+                }
+                // Trim trailing dash
+                if result.ends_with('-') {
+                    result.pop();
+                }
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("slugify() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // DIACRITICS AND ACCENTS
+    // =========================================================================
+    //
+    // Many scripts use combining marks: é = e + ́ (combining acute)
+    // Need to handle decomposition, stripping, and normalization.
+    //
+
+    // strip_diacritics - remove accents and combining marks
+    define(interp, "strip_diacritics", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                // NFD decomposition separates base chars from combining marks
+                let decomposed: String = s.nfd().collect();
+                // Filter out combining marks (category Mn, Mc, Me)
+                let stripped: String = decomposed.chars()
+                    .filter(|c| {
+                        // Keep if not a combining mark
+                        // Combining marks are in Unicode categories Mn, Mc, Me
+                        // which are roughly in ranges U+0300-U+036F (common) and others
+                        let code = *c as u32;
+                        // Quick check for common combining diacritical marks
+                        !(0x0300..=0x036F).contains(&code) &&
+                        !(0x1AB0..=0x1AFF).contains(&code) &&
+                        !(0x1DC0..=0x1DFF).contains(&code) &&
+                        !(0x20D0..=0x20FF).contains(&code) &&
+                        !(0xFE20..=0xFE2F).contains(&code)
+                    })
+                    .collect();
+                Ok(Value::String(Rc::new(stripped)))
+            }
+            _ => Err(RuntimeError::new("strip_diacritics() requires string")),
+        }
+    });
+
+    // has_diacritics - check if string contains diacritical marks
+    define(interp, "has_diacritics", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let decomposed: String = s.nfd().collect();
+                let has_marks = decomposed.chars().any(|c| {
+                    let code = c as u32;
+                    (0x0300..=0x036F).contains(&code) ||
+                    (0x1AB0..=0x1AFF).contains(&code) ||
+                    (0x1DC0..=0x1DFF).contains(&code) ||
+                    (0x20D0..=0x20FF).contains(&code) ||
+                    (0xFE20..=0xFE2F).contains(&code)
+                });
+                Ok(Value::Bool(has_marks))
+            }
+            _ => Err(RuntimeError::new("has_diacritics() requires string")),
+        }
+    });
+
+    // normalize_accents - convert composed to decomposed or vice versa
+    define(interp, "normalize_accents", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(form)) => {
+                let result = match form.as_str() {
+                    "composed" | "nfc" => s.nfc().collect(),
+                    "decomposed" | "nfd" => s.nfd().collect(),
+                    _ => return Err(RuntimeError::new("normalize_accents: form must be 'composed' or 'decomposed'")),
+                };
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("normalize_accents() requires string and form")),
+        }
+    });
+
+    // =========================================================================
+    // LOCALE-AWARE CASE MAPPING
+    // =========================================================================
+    //
+    // Case mapping varies by locale:
+    // - Turkish: i ↔ İ, ı ↔ I (dotted/dotless distinction)
+    // - German: ß → SS (uppercase), but SS → ss or ß (lowercase)
+    // - Greek: final sigma rules
+    //
+
+    // upper_locale - locale-aware uppercase
+    define(interp, "upper_locale", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(locale_str)) => {
+                let case_mapper = CaseMapper::new();
+                let langid: LanguageIdentifier = locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
+                let result = case_mapper.uppercase_to_string(s, &langid);
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("upper_locale() requires string and locale")),
+        }
+    });
+
+    // lower_locale - locale-aware lowercase
+    define(interp, "lower_locale", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(locale_str)) => {
+                let case_mapper = CaseMapper::new();
+                let langid: LanguageIdentifier = locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
+                let result = case_mapper.lowercase_to_string(s, &langid);
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("lower_locale() requires string and locale")),
+        }
+    });
+
+    // titlecase_locale - locale-aware titlecase
+    define(interp, "titlecase_locale", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(locale_str)) => {
+                let case_mapper = CaseMapper::new();
+                let langid: LanguageIdentifier = locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
+                let options = TitlecaseOptions::default();
+                let result = case_mapper.titlecase_segment_with_only_case_data_to_string(s, &langid, options);
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("titlecase_locale() requires string and locale")),
+        }
+    });
+
+    // case_fold - Unicode case folding for comparison
+    define(interp, "case_fold", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let case_mapper = CaseMapper::new();
+                let result = case_mapper.fold_string(s);
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("case_fold() requires string")),
+        }
+    });
+
+    // case_insensitive_eq - compare strings ignoring case (using case folding)
+    define(interp, "case_insensitive_eq", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let case_mapper = CaseMapper::new();
+                let folded_a = case_mapper.fold_string(a);
+                let folded_b = case_mapper.fold_string(b);
+                Ok(Value::Bool(folded_a == folded_b))
+            }
+            _ => Err(RuntimeError::new("case_insensitive_eq() requires two strings")),
+        }
+    });
+
+    // =========================================================================
+    // LOCALE-AWARE COLLATION (SORTING)
+    // =========================================================================
+    //
+    // Sorting order varies dramatically by locale:
+    // - German: ä sorts with a
+    // - Swedish: ä sorts after z
+    // - Spanish: ñ is a separate letter after n
+    //
+
+    // compare_locale - locale-aware string comparison
+    define(interp, "compare_locale", Some(3), |_, args| {
+        match (&args[0], &args[1], &args[2]) {
+            (Value::String(a), Value::String(b), Value::String(locale_str)) => {
+                let locale: Locale = locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
+                let options = CollatorOptions::new();
+                let collator = Collator::try_new(&locale.into(), options)
+                    .unwrap_or_else(|_| Collator::try_new(&Default::default(), options).unwrap());
+                let result = match collator.compare(a, b) {
+                    std::cmp::Ordering::Less => -1,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Greater => 1,
+                };
+                Ok(Value::Int(result))
+            }
+            _ => Err(RuntimeError::new("compare_locale() requires two strings and locale")),
+        }
+    });
+
+    // sort_locale - sort array of strings by locale
+    define(interp, "sort_locale", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::Array(arr), Value::String(locale_str)) => {
+                let locale: Locale = locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
+                let options = CollatorOptions::new();
+                let collator = Collator::try_new(&locale.into(), options)
+                    .unwrap_or_else(|_| Collator::try_new(&Default::default(), options).unwrap());
+
+                let mut items: Vec<(String, Value)> = arr.borrow().iter()
+                    .map(|v| {
+                        let s = match v {
+                            Value::String(s) => (**s).clone(),
+                            _ => format!("{}", v),
+                        };
+                        (s, v.clone())
+                    })
+                    .collect();
+
+                items.sort_by(|(a, _), (b, _)| collator.compare(a, b));
+
+                let sorted: Vec<Value> = items.into_iter().map(|(_, v)| v).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(sorted))))
+            }
+            _ => Err(RuntimeError::new("sort_locale() requires array and locale")),
+        }
+    });
+
+    // =========================================================================
+    // ADVANCED SEGMENTATION
+    // =========================================================================
+    //
+    // Different languages have different boundary rules:
+    // - Thai/Lao/Khmer: No spaces between words
+    // - CJK: Characters can be words themselves
+    // - German: Compound words are single words
+    //
+
+    // sentences - split text into sentences (locale-aware)
+    define(interp, "sentences", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let segmenter = SentenceSegmenter::new();
+                let breakpoints: Vec<usize> = segmenter.segment_str(s).collect();
+                let mut sentences = Vec::new();
+                let mut start = 0;
+                for end in breakpoints {
+                    let sentence = s[start..end].trim();
+                    if !sentence.is_empty() {
+                        sentences.push(Value::String(Rc::new(sentence.to_string())));
+                    }
+                    start = end;
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(sentences))))
+            }
+            _ => Err(RuntimeError::new("sentences() requires string")),
+        }
+    });
+
+    // sentence_count - count sentences
+    define(interp, "sentence_count", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let segmenter = SentenceSegmenter::new();
+                let breakpoints: Vec<usize> = segmenter.segment_str(s).collect();
+                // Sentences are between breakpoints
+                let count = breakpoints.len().saturating_sub(1);
+                Ok(Value::Int(count as i64))
+            }
+            _ => Err(RuntimeError::new("sentence_count() requires string")),
+        }
+    });
+
+    // words_icu - ICU-based word segmentation (better for CJK, Thai)
+    define(interp, "words_icu", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let segmenter = WordSegmenter::new_auto();
+                let breakpoints: Vec<usize> = segmenter.segment_str(s).collect();
+                let mut words = Vec::new();
+                let mut start = 0;
+                for end in breakpoints {
+                    let word = &s[start..end];
+                    // Filter out whitespace-only segments
+                    if !word.trim().is_empty() {
+                        words.push(Value::String(Rc::new(word.to_string())));
+                    }
+                    start = end;
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(words))))
+            }
+            _ => Err(RuntimeError::new("words_icu() requires string")),
+        }
+    });
+
+    // word_count_icu - ICU-based word count (handles Thai, CJK correctly)
+    define(interp, "word_count_icu", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let segmenter = WordSegmenter::new_auto();
+                let breakpoints: Vec<usize> = segmenter.segment_str(s).collect();
+                let mut count = 0;
+                let mut start = 0;
+                for end in breakpoints {
+                    let word = &s[start..end];
+                    if !word.trim().is_empty() && word.chars().any(|c| c.is_alphanumeric()) {
+                        count += 1;
+                    }
+                    start = end;
+                }
+                Ok(Value::Int(count))
+            }
+            _ => Err(RuntimeError::new("word_count_icu() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // SCRIPT-SPECIFIC UTILITIES
+    // =========================================================================
+
+    // is_emoji - check if string contains emoji
+    define(interp, "is_emoji", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_emoji = s.chars().any(|c| {
+                    let code = c as u32;
+                    // Common emoji ranges
+                    (0x1F600..=0x1F64F).contains(&code) ||  // Emoticons
+                    (0x1F300..=0x1F5FF).contains(&code) ||  // Misc Symbols and Pictographs
+                    (0x1F680..=0x1F6FF).contains(&code) ||  // Transport and Map
+                    (0x1F1E0..=0x1F1FF).contains(&code) ||  // Flags
+                    (0x2600..=0x26FF).contains(&code) ||    // Misc symbols
+                    (0x2700..=0x27BF).contains(&code) ||    // Dingbats
+                    (0xFE00..=0xFE0F).contains(&code) ||    // Variation Selectors
+                    (0x1F900..=0x1F9FF).contains(&code) ||  // Supplemental Symbols and Pictographs
+                    (0x1FA00..=0x1FA6F).contains(&code) ||  // Chess Symbols
+                    (0x1FA70..=0x1FAFF).contains(&code) ||  // Symbols and Pictographs Extended-A
+                    (0x231A..=0x231B).contains(&code) ||    // Watch, Hourglass
+                    (0x23E9..=0x23F3).contains(&code) ||    // Various symbols
+                    (0x23F8..=0x23FA).contains(&code)       // Various symbols
+                });
+                Ok(Value::Bool(has_emoji))
+            }
+            _ => Err(RuntimeError::new("is_emoji() requires string")),
+        }
+    });
+
+    // extract_emoji - extract all emoji from text
+    define(interp, "extract_emoji", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let emoji: Vec<Value> = s.graphemes(true)
+                    .filter(|g| {
+                        g.chars().any(|c| {
+                            let code = c as u32;
+                            (0x1F600..=0x1F64F).contains(&code) ||
+                            (0x1F300..=0x1F5FF).contains(&code) ||
+                            (0x1F680..=0x1F6FF).contains(&code) ||
+                            (0x1F1E0..=0x1F1FF).contains(&code) ||
+                            (0x2600..=0x26FF).contains(&code) ||
+                            (0x2700..=0x27BF).contains(&code) ||
+                            (0x1F900..=0x1F9FF).contains(&code) ||
+                            (0x1FA00..=0x1FA6F).contains(&code) ||
+                            (0x1FA70..=0x1FAFF).contains(&code)
+                        })
+                    })
+                    .map(|g| Value::String(Rc::new(g.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(emoji))))
+            }
+            _ => Err(RuntimeError::new("extract_emoji() requires string")),
+        }
+    });
+
+    // strip_emoji - remove emoji from text
+    define(interp, "strip_emoji", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let stripped: String = s.graphemes(true)
+                    .filter(|g| {
+                        !g.chars().any(|c| {
+                            let code = c as u32;
+                            (0x1F600..=0x1F64F).contains(&code) ||
+                            (0x1F300..=0x1F5FF).contains(&code) ||
+                            (0x1F680..=0x1F6FF).contains(&code) ||
+                            (0x1F1E0..=0x1F1FF).contains(&code) ||
+                            (0x2600..=0x26FF).contains(&code) ||
+                            (0x2700..=0x27BF).contains(&code) ||
+                            (0x1F900..=0x1F9FF).contains(&code) ||
+                            (0x1FA00..=0x1FA6F).contains(&code) ||
+                            (0x1FA70..=0x1FAFF).contains(&code)
+                        })
+                    })
+                    .collect();
+                Ok(Value::String(Rc::new(stripped)))
+            }
+            _ => Err(RuntimeError::new("strip_emoji() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // MIXED SCRIPT TEXT UTILITIES
+    // =========================================================================
+
+    // script_runs - split text into runs of the same script
+    define(interp, "script_runs", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let mut runs: Vec<Value> = Vec::new();
+                let mut current_run = String::new();
+                let mut current_script: Option<Script> = None;
+
+                for c in s.chars() {
+                    let script = c.script();
+                    // Common and Inherited scripts don't start new runs
+                    if script != Script::Common && script != Script::Inherited {
+                        if let Some(curr) = current_script {
+                            if script != curr {
+                                // New script - save current run
+                                if !current_run.is_empty() {
+                                    runs.push(Value::String(Rc::new(current_run.clone())));
+                                    current_run.clear();
+                                }
+                                current_script = Some(script);
+                            }
+                        } else {
+                            current_script = Some(script);
+                        }
+                    }
+                    current_run.push(c);
+                }
+
+                // Don't forget the last run
+                if !current_run.is_empty() {
+                    runs.push(Value::String(Rc::new(current_run)));
+                }
+
+                Ok(Value::Array(Rc::new(RefCell::new(runs))))
+            }
+            _ => Err(RuntimeError::new("script_runs() requires string")),
+        }
+    });
+
+    // script_ratio - get ratio of scripts in text
+    define(interp, "script_ratio", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let mut script_counts: HashMap<String, usize> = HashMap::new();
+                let mut total = 0usize;
+
+                for c in s.chars() {
+                    if !c.is_whitespace() && c != ' ' {
+                        let script = format!("{:?}", c.script());
+                        *script_counts.entry(script).or_insert(0) += 1;
+                        total += 1;
+                    }
+                }
+
+                // Convert to map of ratios
+                let mut result = HashMap::new();
+                for (script, count) in script_counts {
+                    let ratio = if total > 0 { count as f64 / total as f64 } else { 0.0 };
+                    result.insert(script, Value::Float(ratio));
+                }
+
+                let map = Rc::new(RefCell::new(result));
+                Ok(Value::Map(map))
+            }
+            _ => Err(RuntimeError::new("script_ratio() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // INTERNATIONALIZATION HELPERS
+    // =========================================================================
+
+    // locale_name - get display name for a locale
+    define(interp, "locale_name", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(locale_str) => {
+                // Return the locale code itself as a simple implementation
+                // A full implementation would use ICU's display names
+                Ok(Value::String(locale_str.clone()))
+            }
+            _ => Err(RuntimeError::new("locale_name() requires string")),
+        }
+    });
+
+    // supported_locales - list of supported locales for collation
+    define(interp, "supported_locales", Some(0), |_, _| {
+        // Common locales supported by ICU
+        let locales = vec![
+            "ar", "bg", "ca", "cs", "da", "de", "el", "en", "es", "et",
+            "fi", "fr", "he", "hi", "hr", "hu", "id", "it", "ja", "ko",
+            "lt", "lv", "ms", "nb", "nl", "pl", "pt", "ro", "ru", "sk",
+            "sl", "sr", "sv", "th", "tr", "uk", "vi", "zh",
+        ];
+        let values: Vec<Value> = locales.into_iter()
+            .map(|s| Value::String(Rc::new(s.to_string())))
+            .collect();
+        Ok(Value::Array(Rc::new(RefCell::new(values))))
     });
 }
 

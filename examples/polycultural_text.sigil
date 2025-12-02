@@ -1,0 +1,237 @@
+//! Polycultural Text Processing in Sigil
+//!
+//! Sigil's philosophy: Mathematics is poly-cultural, and so is TEXT.
+//! This example demonstrates world-class text handling for ALL writing systems.
+
+fn main() {
+    println("=== Sigil Polycultural Text Processing ===")
+    println("")
+
+    // =========================================================================
+    // SCRIPT DETECTION
+    // =========================================================================
+    println("--- Script Detection ---")
+
+    // Detect scripts in multilingual text
+    let texts = [
+        "Hello, World!",           // Latin
+        "مرحبا بالعالم",            // Arabic
+        "שלום עולם",               // Hebrew
+        "Привет мир",              // Cyrillic
+        "こんにちは世界",            // Japanese (Hiragana + Kanji)
+        "안녕하세요 세계",           // Korean (Hangul)
+        "你好世界",                 // Chinese (Han)
+        "Γειά σου Κόσμε",          // Greek
+        "नमस्ते दुनिया",            // Devanagari (Hindi)
+        "สวัสดีโลก",               // Thai
+    ]
+
+    for text in texts {
+        let s = script(text)
+        println(text + " → " + s)
+    }
+
+    println("")
+
+    // Check specific scripts
+    println("is_latin('Hello'): " + to_string(is_latin("Hello")))
+    println("is_arabic('مرحبا'): " + to_string(is_arabic("مرحبا")))
+    println("is_cjk('你好'): " + to_string(is_cjk("你好")))
+    println("is_cyrillic('Привет'): " + to_string(is_cyrillic("Привет")))
+
+    println("")
+
+    // =========================================================================
+    // BIDIRECTIONAL TEXT (RTL/LTR)
+    // =========================================================================
+    println("--- Bidirectional Text ---")
+
+    let arabic = "مرحبا بالعالم"
+    let hebrew = "שלום עולם"
+    let english = "Hello World"
+    let mixed = "Hello مرحبا World"
+
+    println("Arabic direction: " + text_direction(arabic))
+    println("Hebrew direction: " + text_direction(hebrew))
+    println("English direction: " + text_direction(english))
+    println("Mixed direction: " + text_direction(mixed))
+
+    println("is_rtl(arabic): " + to_string(is_rtl(arabic)))
+    println("is_bidi(mixed): " + to_string(is_bidi(mixed)))
+
+    println("")
+
+    // =========================================================================
+    // DISPLAY WIDTH (CJK-aware)
+    // =========================================================================
+    println("--- Display Width ---")
+
+    let latin_text = "Hello"
+    let cjk_text = "你好"
+
+    println("'" + latin_text + "' char_count: " + to_string(char_count(latin_text)))
+    println("'" + latin_text + "' display_width: " + to_string(display_width(latin_text)))
+
+    println("'" + cjk_text + "' char_count: " + to_string(char_count(cjk_text)))
+    println("'" + cjk_text + "' display_width: " + to_string(display_width(cjk_text)))
+
+    // CJK characters are full-width (2 columns each)
+    println("is_fullwidth(cjk_text): " + to_string(is_fullwidth(cjk_text)))
+
+    println("")
+
+    // =========================================================================
+    // TRANSLITERATION
+    // =========================================================================
+    println("--- Transliteration ---")
+
+    let samples = [
+        "Привет",          // Cyrillic → Privet
+        "北京",            // Chinese → Bei Jing
+        "東京",            // Japanese → Dong Jing
+        "مرحبا",           // Arabic → mrhb
+        "Ελληνικά",        // Greek → Ellenika
+        "日本語",          // Japanese → Ri Ben Yu
+        "café résumé",     // French → cafe resume
+        "naïve",           // → naive
+    ]
+
+    for text in samples {
+        let ascii = transliterate(text)
+        println(text + " → " + ascii)
+    }
+
+    println("")
+
+    // URL-safe slugs from any language
+    println("Slugify examples:")
+    println("slugify('Привет Мир!'): " + slugify("Привет Мир!"))
+    println("slugify('北京 2024'): " + slugify("北京 2024"))
+    println("slugify('Café Résumé'): " + slugify("Café Résumé"))
+
+    println("")
+
+    // =========================================================================
+    // DIACRITICS
+    // =========================================================================
+    println("--- Diacritics ---")
+
+    let accented = "café résumé naïve"
+    println("Original: " + accented)
+    println("Stripped: " + strip_diacritics(accented))
+    println("has_diacritics: " + to_string(has_diacritics(accented)))
+    println("has_diacritics('hello'): " + to_string(has_diacritics("hello")))
+
+    println("")
+
+    // =========================================================================
+    // LOCALE-AWARE CASE MAPPING
+    // =========================================================================
+    println("--- Locale-Aware Case Mapping ---")
+
+    // Turkish: i ↔ İ (dotted), ı ↔ I (dotless)
+    let turkish_text = "istanbul"
+    println("Turkish uppercase 'istanbul': " + upper_locale(turkish_text, "tr"))
+    println("English uppercase 'istanbul': " + upper_locale(turkish_text, "en"))
+
+    // German: ß → SS
+    let german_text = "straße"
+    println("German uppercase 'straße': " + upper_locale(german_text, "de"))
+
+    // Case folding for comparison
+    println("case_fold('HELLO'): " + case_fold("HELLO"))
+    println("case_insensitive_eq('HELLO', 'hello'): " + to_string(case_insensitive_eq("HELLO", "hello")))
+
+    println("")
+
+    // =========================================================================
+    // LOCALE-AWARE SORTING
+    // =========================================================================
+    println("--- Locale-Aware Sorting ---")
+
+    // Swedish: ä comes after z
+    // German: ä sorts with a
+    let words = ["äpple", "zebra", "apple", "öl"]
+
+    println("Words: " + to_string(words))
+    println("Swedish sort: " + to_string(sort_locale(words, "sv")))
+    println("German sort: " + to_string(sort_locale(words, "de")))
+    println("English sort: " + to_string(sort_locale(words, "en")))
+
+    println("")
+
+    // =========================================================================
+    // ADVANCED SEGMENTATION
+    // =========================================================================
+    println("--- Advanced Segmentation ---")
+
+    // Sentence segmentation
+    let paragraph = "Hello! How are you? I'm fine. Thanks for asking."
+    println("Sentences: " + to_string(sentences(paragraph)))
+    println("Sentence count: " + to_string(sentence_count(paragraph)))
+
+    // ICU word segmentation (works with Thai, CJK)
+    let thai = "สวัสดีครับผมชื่อจอห์น"  // Thai has no spaces between words
+    println("Thai text: " + thai)
+    println("Thai words (ICU): " + to_string(words_icu(thai)))
+    println("Thai word count: " + to_string(word_count_icu(thai)))
+
+    let chinese = "我爱北京天安门"
+    println("Chinese text: " + chinese)
+    println("Chinese words (ICU): " + to_string(words_icu(chinese)))
+
+    println("")
+
+    // =========================================================================
+    // EMOJI HANDLING
+    // =========================================================================
+    println("--- Emoji Handling ---")
+
+    let emoji_text = "Hello 👋 World 🌍! How are you? 😊"
+    println("Text: " + emoji_text)
+    println("is_emoji: " + to_string(is_emoji(emoji_text)))
+    println("extract_emoji: " + to_string(extract_emoji(emoji_text)))
+    println("strip_emoji: " + strip_emoji(emoji_text))
+
+    // Complex emoji (family with ZWJ)
+    let family = "👨‍👩‍👧‍👦"
+    println("Family emoji grapheme_count: " + to_string(grapheme_count(family)))
+    println("Family emoji char_count: " + to_string(char_count(family)))
+
+    println("")
+
+    // =========================================================================
+    // MIXED SCRIPT TEXT
+    // =========================================================================
+    println("--- Mixed Script Text ---")
+
+    let mixed_text = "Hello世界Привет"
+    println("Mixed text: " + mixed_text)
+    println("Scripts present: " + to_string(scripts(mixed_text)))
+    println("Script runs: " + to_string(script_runs(mixed_text)))
+
+    println("")
+
+    // =========================================================================
+    // GRAPHEME-CORRECT OPERATIONS
+    // =========================================================================
+    println("--- Grapheme-Correct Operations ---")
+
+    // Combining characters
+    let combining = "é"  // e + combining acute (2 code points, 1 grapheme)
+    println("Combining 'é' grapheme_count: " + to_string(grapheme_count(combining)))
+
+    // Grapheme-correct reverse
+    let with_emoji = "Hello👋World"
+    println("Original: " + with_emoji)
+    println("grapheme_reverse: " + grapheme_reverse(with_emoji))
+
+    // Grapheme slicing
+    let text = "Héllo🌍Wörld"
+    println("grapheme_slice(0, 5): " + grapheme_slice(text, 0, 5))
+
+    println("")
+    println("=== Polycultural Text Demo Complete ===")
+
+    return 0
+}
