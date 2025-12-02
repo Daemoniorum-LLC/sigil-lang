@@ -15,6 +15,14 @@
 //! - **time**: Date, time, and measurement
 //! - **random**: Random number generation
 //! - **convert**: Type conversions
+//! - **json**: JSON parsing and serialization
+//! - **fs**: File system operations
+//! - **crypto**: Hashing and encoding (SHA256, MD5, base64)
+//! - **regex**: Regular expression matching
+//! - **uuid**: UUID generation
+//! - **system**: Environment, args, process control
+//! - **stats**: Statistical functions
+//! - **matrix**: Matrix operations
 
 use crate::interpreter::{Interpreter, Value, Evidence, RuntimeError, BuiltInFn, ChannelInner, ActorInner};
 use std::rc::Rc;
@@ -24,6 +32,13 @@ use std::time::{Instant, Duration, SystemTime, UNIX_EPOCH};
 use std::io::Write;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
+
+// External crates for extended stdlib
+use sha2::{Sha256, Sha512, Digest};
+use md5::Md5;
+use base64::{Engine as _, engine::general_purpose};
+use regex::Regex;
+use uuid::Uuid;
 
 /// Register all standard library functions
 pub fn register_stdlib(interp: &mut Interpreter) {
@@ -40,6 +55,15 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_cycle(interp);
     register_simd(interp);
     register_concurrency(interp);
+    // Phase 4: Extended stdlib
+    register_json(interp);
+    register_fs(interp);
+    register_crypto(interp);
+    register_regex(interp);
+    register_uuid(interp);
+    register_system(interp);
+    register_stats(interp);
+    register_matrix(interp);
 }
 
 // Helper to define a builtin
@@ -3203,6 +3227,1351 @@ fn register_concurrency(interp: &mut Interpreter) {
                 fields: Some(Rc::new(vec![other.clone()])),
             }),
         }
+    });
+}
+
+// ============================================================================
+// JSON FUNCTIONS
+// ============================================================================
+
+fn register_json(interp: &mut Interpreter) {
+    // json_parse - parse JSON string into Sigil value
+    define(interp, "json_parse", Some(1), |_, args| {
+        let json_str = match &args[0] {
+            Value::String(s) => s.as_str(),
+            _ => return Err(RuntimeError::new("json_parse() requires string argument")),
+        };
+
+        fn json_to_value(json: &serde_json::Value) -> Value {
+            match json {
+                serde_json::Value::Null => Value::Null,
+                serde_json::Value::Bool(b) => Value::Bool(*b),
+                serde_json::Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        Value::Int(i)
+                    } else if let Some(f) = n.as_f64() {
+                        Value::Float(f)
+                    } else {
+                        Value::Null
+                    }
+                }
+                serde_json::Value::String(s) => Value::String(Rc::new(s.clone())),
+                serde_json::Value::Array(arr) => {
+                    let values: Vec<Value> = arr.iter().map(json_to_value).collect();
+                    Value::Array(Rc::new(RefCell::new(values)))
+                }
+                serde_json::Value::Object(obj) => {
+                    let mut map = HashMap::new();
+                    for (k, v) in obj {
+                        map.insert(k.clone(), json_to_value(v));
+                    }
+                    Value::Map(Rc::new(RefCell::new(map)))
+                }
+            }
+        }
+
+        match serde_json::from_str(json_str) {
+            Ok(json) => Ok(json_to_value(&json)),
+            Err(e) => Err(RuntimeError::new(format!("JSON parse error: {}", e))),
+        }
+    });
+
+    // json_stringify - convert Sigil value to JSON string
+    define(interp, "json_stringify", Some(1), |_, args| {
+        fn value_to_json(val: &Value) -> serde_json::Value {
+            match val {
+                Value::Null => serde_json::Value::Null,
+                Value::Bool(b) => serde_json::Value::Bool(*b),
+                Value::Int(n) => serde_json::Value::Number(serde_json::Number::from(*n)),
+                Value::Float(f) => {
+                    serde_json::Number::from_f64(*f)
+                        .map(serde_json::Value::Number)
+                        .unwrap_or(serde_json::Value::Null)
+                }
+                Value::String(s) => serde_json::Value::String(s.to_string()),
+                Value::Array(arr) => {
+                    let arr = arr.borrow();
+                    serde_json::Value::Array(arr.iter().map(value_to_json).collect())
+                }
+                Value::Tuple(t) => {
+                    serde_json::Value::Array(t.iter().map(value_to_json).collect())
+                }
+                Value::Map(map) => {
+                    let map = map.borrow();
+                    let obj: serde_json::Map<String, serde_json::Value> = map
+                        .iter()
+                        .map(|(k, v)| (k.clone(), value_to_json(v)))
+                        .collect();
+                    serde_json::Value::Object(obj)
+                }
+                Value::Struct { fields, .. } => {
+                    let fields = fields.borrow();
+                    let obj: serde_json::Map<String, serde_json::Value> = fields
+                        .iter()
+                        .map(|(k, v)| (k.clone(), value_to_json(v)))
+                        .collect();
+                    serde_json::Value::Object(obj)
+                }
+                _ => serde_json::Value::String(format!("{}", val)),
+            }
+        }
+
+        let json = value_to_json(&args[0]);
+        Ok(Value::String(Rc::new(json.to_string())))
+    });
+
+    // json_pretty - convert to pretty-printed JSON
+    define(interp, "json_pretty", Some(1), |_, args| {
+        fn value_to_json(val: &Value) -> serde_json::Value {
+            match val {
+                Value::Null => serde_json::Value::Null,
+                Value::Bool(b) => serde_json::Value::Bool(*b),
+                Value::Int(n) => serde_json::Value::Number(serde_json::Number::from(*n)),
+                Value::Float(f) => {
+                    serde_json::Number::from_f64(*f)
+                        .map(serde_json::Value::Number)
+                        .unwrap_or(serde_json::Value::Null)
+                }
+                Value::String(s) => serde_json::Value::String(s.to_string()),
+                Value::Array(arr) => {
+                    let arr = arr.borrow();
+                    serde_json::Value::Array(arr.iter().map(value_to_json).collect())
+                }
+                Value::Map(map) => {
+                    let map = map.borrow();
+                    let obj: serde_json::Map<String, serde_json::Value> = map
+                        .iter()
+                        .map(|(k, v)| (k.clone(), value_to_json(v)))
+                        .collect();
+                    serde_json::Value::Object(obj)
+                }
+                _ => serde_json::Value::String(format!("{}", val)),
+            }
+        }
+
+        let json = value_to_json(&args[0]);
+        match serde_json::to_string_pretty(&json) {
+            Ok(s) => Ok(Value::String(Rc::new(s))),
+            Err(e) => Err(RuntimeError::new(format!("JSON stringify error: {}", e))),
+        }
+    });
+
+    // json_get - get value at JSON path (dot notation)
+    define(interp, "json_get", Some(2), |_, args| {
+        let path = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("json_get() requires string path")),
+        };
+
+        let mut current = args[0].clone();
+        for key in path.split('.') {
+            current = match &current {
+                Value::Map(map) => {
+                    let map = map.borrow();
+                    map.get(key).cloned().unwrap_or(Value::Null)
+                }
+                Value::Array(arr) => {
+                    if let Ok(idx) = key.parse::<usize>() {
+                        let arr = arr.borrow();
+                        arr.get(idx).cloned().unwrap_or(Value::Null)
+                    } else {
+                        Value::Null
+                    }
+                }
+                _ => Value::Null,
+            };
+        }
+        Ok(current)
+    });
+
+    // json_set - set value at JSON path
+    define(interp, "json_set", Some(3), |_, args| {
+        let path = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("json_set() requires string path")),
+        };
+        let new_value = args[2].clone();
+
+        // For simplicity, only handle single-level paths
+        match &args[0] {
+            Value::Map(map) => {
+                let mut map = map.borrow_mut();
+                map.insert(path, new_value);
+                Ok(Value::Map(Rc::new(RefCell::new(map.clone()))))
+            }
+            _ => Err(RuntimeError::new("json_set() requires map/object")),
+        }
+    });
+}
+
+// ============================================================================
+// FILE SYSTEM FUNCTIONS
+// ============================================================================
+
+fn register_fs(interp: &mut Interpreter) {
+    // fs_read - read entire file as string
+    define(interp, "fs_read", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_read() requires string path")),
+        };
+
+        match std::fs::read_to_string(&path) {
+            Ok(content) => Ok(Value::String(Rc::new(content))),
+            Err(e) => Err(RuntimeError::new(format!("fs_read() error: {}", e))),
+        }
+    });
+
+    // fs_read_bytes - read file as byte array
+    define(interp, "fs_read_bytes", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_read_bytes() requires string path")),
+        };
+
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                let values: Vec<Value> = bytes.iter().map(|b| Value::Int(*b as i64)).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(values))))
+            }
+            Err(e) => Err(RuntimeError::new(format!("fs_read_bytes() error: {}", e))),
+        }
+    });
+
+    // fs_write - write string to file
+    define(interp, "fs_write", Some(2), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_write() requires string path")),
+        };
+        let content = format!("{}", args[1]);
+
+        match std::fs::write(&path, content) {
+            Ok(()) => Ok(Value::Null),
+            Err(e) => Err(RuntimeError::new(format!("fs_write() error: {}", e))),
+        }
+    });
+
+    // fs_append - append to file
+    define(interp, "fs_append", Some(2), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_append() requires string path")),
+        };
+        let content = format!("{}", args[1]);
+
+        use std::fs::OpenOptions;
+        match OpenOptions::new().append(true).create(true).open(&path) {
+            Ok(mut file) => {
+                use std::io::Write;
+                match file.write_all(content.as_bytes()) {
+                    Ok(()) => Ok(Value::Null),
+                    Err(e) => Err(RuntimeError::new(format!("fs_append() write error: {}", e))),
+                }
+            }
+            Err(e) => Err(RuntimeError::new(format!("fs_append() error: {}", e))),
+        }
+    });
+
+    // fs_exists - check if path exists
+    define(interp, "fs_exists", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_exists() requires string path")),
+        };
+        Ok(Value::Bool(std::path::Path::new(&path).exists()))
+    });
+
+    // fs_is_file - check if path is a file
+    define(interp, "fs_is_file", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_is_file() requires string path")),
+        };
+        Ok(Value::Bool(std::path::Path::new(&path).is_file()))
+    });
+
+    // fs_is_dir - check if path is a directory
+    define(interp, "fs_is_dir", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_is_dir() requires string path")),
+        };
+        Ok(Value::Bool(std::path::Path::new(&path).is_dir()))
+    });
+
+    // fs_mkdir - create directory
+    define(interp, "fs_mkdir", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_mkdir() requires string path")),
+        };
+
+        match std::fs::create_dir_all(&path) {
+            Ok(()) => Ok(Value::Null),
+            Err(e) => Err(RuntimeError::new(format!("fs_mkdir() error: {}", e))),
+        }
+    });
+
+    // fs_remove - remove file or directory
+    define(interp, "fs_remove", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_remove() requires string path")),
+        };
+
+        let p = std::path::Path::new(&path);
+        let result = if p.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+
+        match result {
+            Ok(()) => Ok(Value::Null),
+            Err(e) => Err(RuntimeError::new(format!("fs_remove() error: {}", e))),
+        }
+    });
+
+    // fs_list - list directory contents
+    define(interp, "fs_list", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_list() requires string path")),
+        };
+
+        match std::fs::read_dir(&path) {
+            Ok(entries) => {
+                let mut files = Vec::new();
+                for entry in entries.flatten() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        files.push(Value::String(Rc::new(name.to_string())));
+                    }
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(files))))
+            }
+            Err(e) => Err(RuntimeError::new(format!("fs_list() error: {}", e))),
+        }
+    });
+
+    // fs_copy - copy file
+    define(interp, "fs_copy", Some(2), |_, args| {
+        let src = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_copy() requires string source path")),
+        };
+        let dst = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_copy() requires string destination path")),
+        };
+
+        match std::fs::copy(&src, &dst) {
+            Ok(bytes) => Ok(Value::Int(bytes as i64)),
+            Err(e) => Err(RuntimeError::new(format!("fs_copy() error: {}", e))),
+        }
+    });
+
+    // fs_rename - rename/move file
+    define(interp, "fs_rename", Some(2), |_, args| {
+        let src = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_rename() requires string source path")),
+        };
+        let dst = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_rename() requires string destination path")),
+        };
+
+        match std::fs::rename(&src, &dst) {
+            Ok(()) => Ok(Value::Null),
+            Err(e) => Err(RuntimeError::new(format!("fs_rename() error: {}", e))),
+        }
+    });
+
+    // fs_size - get file size in bytes
+    define(interp, "fs_size", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_size() requires string path")),
+        };
+
+        match std::fs::metadata(&path) {
+            Ok(meta) => Ok(Value::Int(meta.len() as i64)),
+            Err(e) => Err(RuntimeError::new(format!("fs_size() error: {}", e))),
+        }
+    });
+
+    // path_join - join path components
+    define(interp, "path_join", None, |_, args| {
+        let mut path = std::path::PathBuf::new();
+        for arg in &args {
+            match arg {
+                Value::String(s) => path.push(s.as_str()),
+                Value::Array(arr) => {
+                    for v in arr.borrow().iter() {
+                        if let Value::String(s) = v {
+                            path.push(s.as_str());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(Value::String(Rc::new(path.to_string_lossy().to_string())))
+    });
+
+    // path_parent - get parent directory
+    define(interp, "path_parent", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("path_parent() requires string path")),
+        };
+
+        let p = std::path::Path::new(&path);
+        match p.parent() {
+            Some(parent) => Ok(Value::String(Rc::new(parent.to_string_lossy().to_string()))),
+            None => Ok(Value::Null),
+        }
+    });
+
+    // path_filename - get filename component
+    define(interp, "path_filename", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("path_filename() requires string path")),
+        };
+
+        let p = std::path::Path::new(&path);
+        match p.file_name() {
+            Some(name) => Ok(Value::String(Rc::new(name.to_string_lossy().to_string()))),
+            None => Ok(Value::Null),
+        }
+    });
+
+    // path_extension - get file extension
+    define(interp, "path_extension", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("path_extension() requires string path")),
+        };
+
+        let p = std::path::Path::new(&path);
+        match p.extension() {
+            Some(ext) => Ok(Value::String(Rc::new(ext.to_string_lossy().to_string()))),
+            None => Ok(Value::Null),
+        }
+    });
+}
+
+// ============================================================================
+// CRYPTO FUNCTIONS
+// ============================================================================
+
+fn register_crypto(interp: &mut Interpreter) {
+    // sha256 - compute SHA-256 hash
+    define(interp, "sha256", Some(1), |_, args| {
+        let data = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                arr.iter().filter_map(|v| {
+                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("sha256() requires string or byte array")),
+        };
+
+        let mut hasher = Sha256::new();
+        hasher.update(&data);
+        let result = hasher.finalize();
+        let hex = result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+        Ok(Value::String(Rc::new(hex)))
+    });
+
+    // sha512 - compute SHA-512 hash
+    define(interp, "sha512", Some(1), |_, args| {
+        let data = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                arr.iter().filter_map(|v| {
+                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("sha512() requires string or byte array")),
+        };
+
+        let mut hasher = Sha512::new();
+        hasher.update(&data);
+        let result = hasher.finalize();
+        let hex = result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+        Ok(Value::String(Rc::new(hex)))
+    });
+
+    // md5 - compute MD5 hash
+    define(interp, "md5", Some(1), |_, args| {
+        let data = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                arr.iter().filter_map(|v| {
+                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("md5() requires string or byte array")),
+        };
+
+        let mut hasher = Md5::new();
+        hasher.update(&data);
+        let result = hasher.finalize();
+        let hex = result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+        Ok(Value::String(Rc::new(hex)))
+    });
+
+    // base64_encode - encode to base64
+    define(interp, "base64_encode", Some(1), |_, args| {
+        let data = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                arr.iter().filter_map(|v| {
+                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("base64_encode() requires string or byte array")),
+        };
+
+        let encoded = general_purpose::STANDARD.encode(&data);
+        Ok(Value::String(Rc::new(encoded)))
+    });
+
+    // base64_decode - decode from base64
+    define(interp, "base64_decode", Some(1), |_, args| {
+        let encoded = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("base64_decode() requires string")),
+        };
+
+        match general_purpose::STANDARD.decode(&encoded) {
+            Ok(bytes) => {
+                // Try to convert to string, otherwise return byte array
+                match String::from_utf8(bytes.clone()) {
+                    Ok(s) => Ok(Value::String(Rc::new(s))),
+                    Err(_) => {
+                        let values: Vec<Value> = bytes.iter().map(|b| Value::Int(*b as i64)).collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(values))))
+                    }
+                }
+            }
+            Err(e) => Err(RuntimeError::new(format!("base64_decode() error: {}", e))),
+        }
+    });
+
+    // hex_encode - encode bytes to hex string
+    define(interp, "hex_encode", Some(1), |_, args| {
+        let data = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                arr.iter().filter_map(|v| {
+                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("hex_encode() requires string or byte array")),
+        };
+
+        let hex = data.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+        Ok(Value::String(Rc::new(hex)))
+    });
+
+    // hex_decode - decode hex string to bytes
+    define(interp, "hex_decode", Some(1), |_, args| {
+        let hex = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("hex_decode() requires string")),
+        };
+
+        let hex = hex.trim();
+        if hex.len() % 2 != 0 {
+            return Err(RuntimeError::new("hex_decode() requires even-length hex string"));
+        }
+
+        let mut bytes = Vec::new();
+        for i in (0..hex.len()).step_by(2) {
+            match u8::from_str_radix(&hex[i..i+2], 16) {
+                Ok(b) => bytes.push(Value::Int(b as i64)),
+                Err(_) => return Err(RuntimeError::new("hex_decode() invalid hex character")),
+            }
+        }
+        Ok(Value::Array(Rc::new(RefCell::new(bytes))))
+    });
+}
+
+// ============================================================================
+// REGEX FUNCTIONS
+// ============================================================================
+
+fn register_regex(interp: &mut Interpreter) {
+    // regex_match - check if string matches pattern
+    define(interp, "regex_match", Some(2), |_, args| {
+        let pattern = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_match() requires string pattern")),
+        };
+        let text = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_match() requires string text")),
+        };
+
+        match Regex::new(&pattern) {
+            Ok(re) => Ok(Value::Bool(re.is_match(&text))),
+            Err(e) => Err(RuntimeError::new(format!("regex_match() invalid pattern: {}", e))),
+        }
+    });
+
+    // regex_find - find first match
+    define(interp, "regex_find", Some(2), |_, args| {
+        let pattern = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_find() requires string pattern")),
+        };
+        let text = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_find() requires string text")),
+        };
+
+        match Regex::new(&pattern) {
+            Ok(re) => {
+                match re.find(&text) {
+                    Some(m) => Ok(Value::String(Rc::new(m.as_str().to_string()))),
+                    None => Ok(Value::Null),
+                }
+            }
+            Err(e) => Err(RuntimeError::new(format!("regex_find() invalid pattern: {}", e))),
+        }
+    });
+
+    // regex_find_all - find all matches
+    define(interp, "regex_find_all", Some(2), |_, args| {
+        let pattern = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_find_all() requires string pattern")),
+        };
+        let text = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_find_all() requires string text")),
+        };
+
+        match Regex::new(&pattern) {
+            Ok(re) => {
+                let matches: Vec<Value> = re.find_iter(&text)
+                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(matches))))
+            }
+            Err(e) => Err(RuntimeError::new(format!("regex_find_all() invalid pattern: {}", e))),
+        }
+    });
+
+    // regex_replace - replace first match
+    define(interp, "regex_replace", Some(3), |_, args| {
+        let pattern = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_replace() requires string pattern")),
+        };
+        let text = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_replace() requires string text")),
+        };
+        let replacement = match &args[2] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_replace() requires string replacement")),
+        };
+
+        match Regex::new(&pattern) {
+            Ok(re) => {
+                let result = re.replace(&text, replacement.as_str());
+                Ok(Value::String(Rc::new(result.to_string())))
+            }
+            Err(e) => Err(RuntimeError::new(format!("regex_replace() invalid pattern: {}", e))),
+        }
+    });
+
+    // regex_replace_all - replace all matches
+    define(interp, "regex_replace_all", Some(3), |_, args| {
+        let pattern = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_replace_all() requires string pattern")),
+        };
+        let text = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_replace_all() requires string text")),
+        };
+        let replacement = match &args[2] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_replace_all() requires string replacement")),
+        };
+
+        match Regex::new(&pattern) {
+            Ok(re) => {
+                let result = re.replace_all(&text, replacement.as_str());
+                Ok(Value::String(Rc::new(result.to_string())))
+            }
+            Err(e) => Err(RuntimeError::new(format!("regex_replace_all() invalid pattern: {}", e))),
+        }
+    });
+
+    // regex_split - split by pattern
+    define(interp, "regex_split", Some(2), |_, args| {
+        let pattern = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_split() requires string pattern")),
+        };
+        let text = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_split() requires string text")),
+        };
+
+        match Regex::new(&pattern) {
+            Ok(re) => {
+                let parts: Vec<Value> = re.split(&text)
+                    .map(|s| Value::String(Rc::new(s.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(parts))))
+            }
+            Err(e) => Err(RuntimeError::new(format!("regex_split() invalid pattern: {}", e))),
+        }
+    });
+
+    // regex_captures - capture groups
+    define(interp, "regex_captures", Some(2), |_, args| {
+        let pattern = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_captures() requires string pattern")),
+        };
+        let text = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("regex_captures() requires string text")),
+        };
+
+        match Regex::new(&pattern) {
+            Ok(re) => {
+                match re.captures(&text) {
+                    Some(caps) => {
+                        let captures: Vec<Value> = caps.iter()
+                            .map(|m| {
+                                m.map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                                    .unwrap_or(Value::Null)
+                            })
+                            .collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(captures))))
+                    }
+                    None => Ok(Value::Null),
+                }
+            }
+            Err(e) => Err(RuntimeError::new(format!("regex_captures() invalid pattern: {}", e))),
+        }
+    });
+}
+
+// ============================================================================
+// UUID FUNCTIONS
+// ============================================================================
+
+fn register_uuid(interp: &mut Interpreter) {
+    // uuid_v4 - generate random UUID v4
+    define(interp, "uuid_v4", Some(0), |_, _| {
+        let id = Uuid::new_v4();
+        Ok(Value::String(Rc::new(id.to_string())))
+    });
+
+    // uuid_nil - get nil UUID (all zeros)
+    define(interp, "uuid_nil", Some(0), |_, _| {
+        Ok(Value::String(Rc::new(Uuid::nil().to_string())))
+    });
+
+    // uuid_parse - parse UUID string
+    define(interp, "uuid_parse", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("uuid_parse() requires string")),
+        };
+
+        match Uuid::parse_str(&s) {
+            Ok(id) => Ok(Value::String(Rc::new(id.to_string()))),
+            Err(e) => Err(RuntimeError::new(format!("uuid_parse() error: {}", e))),
+        }
+    });
+
+    // uuid_is_valid - check if string is valid UUID
+    define(interp, "uuid_is_valid", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Ok(Value::Bool(false)),
+        };
+        Ok(Value::Bool(Uuid::parse_str(&s).is_ok()))
+    });
+}
+
+// ============================================================================
+// SYSTEM FUNCTIONS
+// ============================================================================
+
+fn register_system(interp: &mut Interpreter) {
+    // env_get - get environment variable
+    define(interp, "env_get", Some(1), |_, args| {
+        let key = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("env_get() requires string key")),
+        };
+
+        match std::env::var(&key) {
+            Ok(val) => Ok(Value::String(Rc::new(val))),
+            Err(_) => Ok(Value::Null),
+        }
+    });
+
+    // env_set - set environment variable
+    define(interp, "env_set", Some(2), |_, args| {
+        let key = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("env_set() requires string key")),
+        };
+        let val = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => format!("{}", args[1]),
+        };
+
+        std::env::set_var(&key, &val);
+        Ok(Value::Null)
+    });
+
+    // env_remove - remove environment variable
+    define(interp, "env_remove", Some(1), |_, args| {
+        let key = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("env_remove() requires string key")),
+        };
+
+        std::env::remove_var(&key);
+        Ok(Value::Null)
+    });
+
+    // env_vars - get all environment variables as map
+    define(interp, "env_vars", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        for (key, val) in std::env::vars() {
+            map.insert(key, Value::String(Rc::new(val)));
+        }
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // args - get command line arguments
+    define(interp, "args", Some(0), |_, _| {
+        let args: Vec<Value> = std::env::args()
+            .map(|s| Value::String(Rc::new(s)))
+            .collect();
+        Ok(Value::Array(Rc::new(RefCell::new(args))))
+    });
+
+    // cwd - get current working directory
+    define(interp, "cwd", Some(0), |_, _| {
+        match std::env::current_dir() {
+            Ok(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
+            Err(e) => Err(RuntimeError::new(format!("cwd() error: {}", e))),
+        }
+    });
+
+    // chdir - change current directory
+    define(interp, "chdir", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("chdir() requires string path")),
+        };
+
+        match std::env::set_current_dir(&path) {
+            Ok(()) => Ok(Value::Null),
+            Err(e) => Err(RuntimeError::new(format!("chdir() error: {}", e))),
+        }
+    });
+
+    // hostname - get system hostname
+    define(interp, "hostname", Some(0), |_, _| {
+        // Try to read from /etc/hostname or use fallback
+        match std::fs::read_to_string("/etc/hostname") {
+            Ok(name) => Ok(Value::String(Rc::new(name.trim().to_string()))),
+            Err(_) => Ok(Value::String(Rc::new("unknown".to_string()))),
+        }
+    });
+
+    // pid - get current process ID
+    define(interp, "pid", Some(0), |_, _| {
+        Ok(Value::Int(std::process::id() as i64))
+    });
+
+    // exit - exit the program with code
+    define(interp, "exit", Some(1), |_, args| {
+        let code = match &args[0] {
+            Value::Int(n) => *n as i32,
+            _ => 0,
+        };
+        std::process::exit(code);
+    });
+
+    // shell - execute shell command and return output
+    define(interp, "shell", Some(1), |_, args| {
+        let cmd = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("shell() requires string command")),
+        };
+
+        match std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&cmd)
+            .output()
+        {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                let code = output.status.code().unwrap_or(-1);
+
+                let mut result = HashMap::new();
+                result.insert("stdout".to_string(), Value::String(Rc::new(stdout)));
+                result.insert("stderr".to_string(), Value::String(Rc::new(stderr)));
+                result.insert("code".to_string(), Value::Int(code as i64));
+                result.insert("success".to_string(), Value::Bool(output.status.success()));
+
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+            Err(e) => Err(RuntimeError::new(format!("shell() error: {}", e))),
+        }
+    });
+
+    // platform - get OS name
+    define(interp, "platform", Some(0), |_, _| {
+        Ok(Value::String(Rc::new(std::env::consts::OS.to_string())))
+    });
+
+    // arch - get CPU architecture
+    define(interp, "arch", Some(0), |_, _| {
+        Ok(Value::String(Rc::new(std::env::consts::ARCH.to_string())))
+    });
+}
+
+// ============================================================================
+// STATISTICS FUNCTIONS
+// ============================================================================
+
+fn register_stats(interp: &mut Interpreter) {
+    // Helper to extract numbers from array
+    fn extract_numbers(val: &Value) -> Result<Vec<f64>, RuntimeError> {
+        match val {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                let mut nums = Vec::new();
+                for v in arr.iter() {
+                    match v {
+                        Value::Int(n) => nums.push(*n as f64),
+                        Value::Float(f) => nums.push(*f),
+                        _ => return Err(RuntimeError::new("stats functions require numeric array")),
+                    }
+                }
+                Ok(nums)
+            }
+            _ => Err(RuntimeError::new("stats functions require array")),
+        }
+    }
+
+    // mean - arithmetic mean
+    define(interp, "mean", Some(1), |_, args| {
+        let nums = extract_numbers(&args[0])?;
+        if nums.is_empty() {
+            return Ok(Value::Float(0.0));
+        }
+        let sum: f64 = nums.iter().sum();
+        Ok(Value::Float(sum / nums.len() as f64))
+    });
+
+    // median - middle value
+    define(interp, "median", Some(1), |_, args| {
+        let mut nums = extract_numbers(&args[0])?;
+        if nums.is_empty() {
+            return Ok(Value::Float(0.0));
+        }
+        nums.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let len = nums.len();
+        if len % 2 == 0 {
+            Ok(Value::Float((nums[len/2 - 1] + nums[len/2]) / 2.0))
+        } else {
+            Ok(Value::Float(nums[len/2]))
+        }
+    });
+
+    // mode - most frequent value
+    define(interp, "mode", Some(1), |_, args| {
+        let nums = extract_numbers(&args[0])?;
+        if nums.is_empty() {
+            return Ok(Value::Null);
+        }
+
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for n in &nums {
+            let key = format!("{:.10}", n);
+            *counts.entry(key).or_insert(0) += 1;
+        }
+
+        let max_count = counts.values().max().unwrap_or(&0);
+        for n in &nums {
+            let key = format!("{:.10}", n);
+            if counts.get(&key) == Some(max_count) {
+                return Ok(Value::Float(*n));
+            }
+        }
+        Ok(Value::Null)
+    });
+
+    // variance - population variance
+    define(interp, "variance", Some(1), |_, args| {
+        let nums = extract_numbers(&args[0])?;
+        if nums.is_empty() {
+            return Ok(Value::Float(0.0));
+        }
+        let mean: f64 = nums.iter().sum::<f64>() / nums.len() as f64;
+        let variance: f64 = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
+        Ok(Value::Float(variance))
+    });
+
+    // stddev - standard deviation
+    define(interp, "stddev", Some(1), |_, args| {
+        let nums = extract_numbers(&args[0])?;
+        if nums.is_empty() {
+            return Ok(Value::Float(0.0));
+        }
+        let mean: f64 = nums.iter().sum::<f64>() / nums.len() as f64;
+        let variance: f64 = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
+        Ok(Value::Float(variance.sqrt()))
+    });
+
+    // percentile - compute nth percentile
+    define(interp, "percentile", Some(2), |_, args| {
+        let mut nums = extract_numbers(&args[0])?;
+        let p = match &args[1] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("percentile() requires numeric percentile")),
+        };
+
+        if nums.is_empty() {
+            return Ok(Value::Float(0.0));
+        }
+
+        nums.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let idx = (p / 100.0 * (nums.len() - 1) as f64).round() as usize;
+        Ok(Value::Float(nums[idx.min(nums.len() - 1)]))
+    });
+
+    // correlation - Pearson correlation coefficient
+    define(interp, "correlation", Some(2), |_, args| {
+        let x = extract_numbers(&args[0])?;
+        let y = extract_numbers(&args[1])?;
+
+        if x.len() != y.len() || x.is_empty() {
+            return Err(RuntimeError::new("correlation() requires equal-length non-empty arrays"));
+        }
+
+        let n = x.len() as f64;
+        let mean_x: f64 = x.iter().sum::<f64>() / n;
+        let mean_y: f64 = y.iter().sum::<f64>() / n;
+
+        let mut cov = 0.0;
+        let mut var_x = 0.0;
+        let mut var_y = 0.0;
+
+        for i in 0..x.len() {
+            let dx = x[i] - mean_x;
+            let dy = y[i] - mean_y;
+            cov += dx * dy;
+            var_x += dx * dx;
+            var_y += dy * dy;
+        }
+
+        if var_x == 0.0 || var_y == 0.0 {
+            return Ok(Value::Float(0.0));
+        }
+
+        Ok(Value::Float(cov / (var_x.sqrt() * var_y.sqrt())))
+    });
+
+    // range - difference between max and min
+    define(interp, "range", Some(1), |_, args| {
+        let nums = extract_numbers(&args[0])?;
+        if nums.is_empty() {
+            return Ok(Value::Float(0.0));
+        }
+        let min = nums.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max = nums.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        Ok(Value::Float(max - min))
+    });
+
+    // zscore - compute z-scores for array
+    define(interp, "zscore", Some(1), |_, args| {
+        let nums = extract_numbers(&args[0])?;
+        if nums.is_empty() {
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+        }
+
+        let mean: f64 = nums.iter().sum::<f64>() / nums.len() as f64;
+        let variance: f64 = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
+        let stddev = variance.sqrt();
+
+        if stddev == 0.0 {
+            let zeros: Vec<Value> = nums.iter().map(|_| Value::Float(0.0)).collect();
+            return Ok(Value::Array(Rc::new(RefCell::new(zeros))));
+        }
+
+        let zscores: Vec<Value> = nums.iter()
+            .map(|x| Value::Float((x - mean) / stddev))
+            .collect();
+        Ok(Value::Array(Rc::new(RefCell::new(zscores))))
+    });
+}
+
+// ============================================================================
+// MATRIX FUNCTIONS
+// ============================================================================
+
+fn register_matrix(interp: &mut Interpreter) {
+    // Helper to extract 2D matrix from nested arrays
+    fn extract_matrix(val: &Value) -> Result<Vec<Vec<f64>>, RuntimeError> {
+        match val {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                let mut matrix = Vec::new();
+                for row in arr.iter() {
+                    match row {
+                        Value::Array(row_arr) => {
+                            let row_arr = row_arr.borrow();
+                            let mut row_vec = Vec::new();
+                            for v in row_arr.iter() {
+                                match v {
+                                    Value::Int(n) => row_vec.push(*n as f64),
+                                    Value::Float(f) => row_vec.push(*f),
+                                    _ => return Err(RuntimeError::new("matrix requires numeric values")),
+                                }
+                            }
+                            matrix.push(row_vec);
+                        }
+                        _ => return Err(RuntimeError::new("matrix requires 2D array")),
+                    }
+                }
+                Ok(matrix)
+            }
+            _ => Err(RuntimeError::new("matrix requires array")),
+        }
+    }
+
+    fn matrix_to_value(m: Vec<Vec<f64>>) -> Value {
+        let rows: Vec<Value> = m.into_iter()
+            .map(|row| {
+                let cols: Vec<Value> = row.into_iter().map(Value::Float).collect();
+                Value::Array(Rc::new(RefCell::new(cols)))
+            })
+            .collect();
+        Value::Array(Rc::new(RefCell::new(rows)))
+    }
+
+    // matrix_new - create matrix filled with value
+    define(interp, "matrix_new", Some(3), |_, args| {
+        let rows = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("matrix_new() requires integer rows")),
+        };
+        let cols = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("matrix_new() requires integer cols")),
+        };
+        let fill = match &args[2] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => 0.0,
+        };
+
+        let matrix = vec![vec![fill; cols]; rows];
+        Ok(matrix_to_value(matrix))
+    });
+
+    // matrix_identity - create identity matrix
+    define(interp, "matrix_identity", Some(1), |_, args| {
+        let size = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("matrix_identity() requires integer size")),
+        };
+
+        let mut matrix = vec![vec![0.0; size]; size];
+        for i in 0..size {
+            matrix[i][i] = 1.0;
+        }
+        Ok(matrix_to_value(matrix))
+    });
+
+    // matrix_add - add two matrices
+    define(interp, "matrix_add", Some(2), |_, args| {
+        let a = extract_matrix(&args[0])?;
+        let b = extract_matrix(&args[1])?;
+
+        if a.len() != b.len() || a.is_empty() || a[0].len() != b[0].len() {
+            return Err(RuntimeError::new("matrix_add() requires same-size matrices"));
+        }
+
+        let result: Vec<Vec<f64>> = a.iter().zip(b.iter())
+            .map(|(row_a, row_b)| {
+                row_a.iter().zip(row_b.iter()).map(|(x, y)| x + y).collect()
+            })
+            .collect();
+
+        Ok(matrix_to_value(result))
+    });
+
+    // matrix_sub - subtract two matrices
+    define(interp, "matrix_sub", Some(2), |_, args| {
+        let a = extract_matrix(&args[0])?;
+        let b = extract_matrix(&args[1])?;
+
+        if a.len() != b.len() || a.is_empty() || a[0].len() != b[0].len() {
+            return Err(RuntimeError::new("matrix_sub() requires same-size matrices"));
+        }
+
+        let result: Vec<Vec<f64>> = a.iter().zip(b.iter())
+            .map(|(row_a, row_b)| {
+                row_a.iter().zip(row_b.iter()).map(|(x, y)| x - y).collect()
+            })
+            .collect();
+
+        Ok(matrix_to_value(result))
+    });
+
+    // matrix_mul - multiply two matrices
+    define(interp, "matrix_mul", Some(2), |_, args| {
+        let a = extract_matrix(&args[0])?;
+        let b = extract_matrix(&args[1])?;
+
+        if a.is_empty() || b.is_empty() || a[0].len() != b.len() {
+            return Err(RuntimeError::new("matrix_mul() requires compatible matrices (a.cols == b.rows)"));
+        }
+
+        let rows = a.len();
+        let cols = b[0].len();
+        let inner = b.len();
+
+        let mut result = vec![vec![0.0; cols]; rows];
+        for i in 0..rows {
+            for j in 0..cols {
+                for k in 0..inner {
+                    result[i][j] += a[i][k] * b[k][j];
+                }
+            }
+        }
+
+        Ok(matrix_to_value(result))
+    });
+
+    // matrix_scale - multiply matrix by scalar
+    define(interp, "matrix_scale", Some(2), |_, args| {
+        let m = extract_matrix(&args[0])?;
+        let scale = match &args[1] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("matrix_scale() requires numeric scalar")),
+        };
+
+        let result: Vec<Vec<f64>> = m.iter()
+            .map(|row| row.iter().map(|x| x * scale).collect())
+            .collect();
+
+        Ok(matrix_to_value(result))
+    });
+
+    // matrix_transpose - transpose matrix
+    define(interp, "matrix_transpose", Some(1), |_, args| {
+        let m = extract_matrix(&args[0])?;
+        if m.is_empty() {
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+        }
+
+        let rows = m.len();
+        let cols = m[0].len();
+        let mut result = vec![vec![0.0; rows]; cols];
+
+        for i in 0..rows {
+            for j in 0..cols {
+                result[j][i] = m[i][j];
+            }
+        }
+
+        Ok(matrix_to_value(result))
+    });
+
+    // matrix_det - determinant (for 2x2 and 3x3)
+    define(interp, "matrix_det", Some(1), |_, args| {
+        let m = extract_matrix(&args[0])?;
+
+        if m.is_empty() || m.len() != m[0].len() {
+            return Err(RuntimeError::new("matrix_det() requires square matrix"));
+        }
+
+        let n = m.len();
+        match n {
+            1 => Ok(Value::Float(m[0][0])),
+            2 => Ok(Value::Float(m[0][0] * m[1][1] - m[0][1] * m[1][0])),
+            3 => {
+                let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+                        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+                        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+                Ok(Value::Float(det))
+            }
+            _ => Err(RuntimeError::new("matrix_det() only supports up to 3x3 matrices")),
+        }
+    });
+
+    // matrix_trace - trace (sum of diagonal)
+    define(interp, "matrix_trace", Some(1), |_, args| {
+        let m = extract_matrix(&args[0])?;
+
+        let size = m.len().min(if m.is_empty() { 0 } else { m[0].len() });
+        let trace: f64 = (0..size).map(|i| m[i][i]).sum();
+
+        Ok(Value::Float(trace))
+    });
+
+    // matrix_dot - dot product of vectors (1D arrays)
+    define(interp, "matrix_dot", Some(2), |_, args| {
+        fn extract_vector(val: &Value) -> Result<Vec<f64>, RuntimeError> {
+            match val {
+                Value::Array(arr) => {
+                    let arr = arr.borrow();
+                    let mut vec = Vec::new();
+                    for v in arr.iter() {
+                        match v {
+                            Value::Int(n) => vec.push(*n as f64),
+                            Value::Float(f) => vec.push(*f),
+                            _ => return Err(RuntimeError::new("dot product requires numeric vectors")),
+                        }
+                    }
+                    Ok(vec)
+                }
+                _ => Err(RuntimeError::new("dot product requires arrays")),
+            }
+        }
+
+        let a = extract_vector(&args[0])?;
+        let b = extract_vector(&args[1])?;
+
+        if a.len() != b.len() {
+            return Err(RuntimeError::new("matrix_dot() requires same-length vectors"));
+        }
+
+        let dot: f64 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+        Ok(Value::Float(dot))
     });
 }
 
