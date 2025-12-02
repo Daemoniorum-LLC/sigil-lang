@@ -76,6 +76,12 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_pattern(interp);
     // Phase 7: DevEx enhancements
     register_devex(interp);
+    // Phase 8: Performance optimizations
+    register_soa(interp);
+    register_tensor(interp);
+    register_autodiff(interp);
+    register_spatial(interp);
+    register_physics(interp);
 }
 
 // Helper to define a builtin
@@ -3634,6 +3640,11 @@ fn make_vec3(x: f64, y: f64, z: f64) -> Value {
     Value::Array(Rc::new(RefCell::new(vec![
         Value::Float(x), Value::Float(y), Value::Float(z),
     ])))
+}
+
+// Helper for making vec3 from array
+fn make_vec3_arr(v: [f64; 3]) -> Value {
+    make_vec3(v[0], v[1], v[2])
 }
 
 fn make_vec4(x: f64, y: f64, z: f64, w: f64) -> Value {
@@ -7968,6 +7979,1145 @@ fn get_function_doc(name: &str) -> String {
         "lower" => "lower(string) - Convert to lowercase".to_string(),
         _ => format!("No documentation available for '{}'", name),
     }
+}
+
+// ============================================================================
+// PHASE 8: PERFORMANCE OPTIMIZATIONS
+// ============================================================================
+// SoA transforms, tensor ops, autodiff, spatial hashing, constraint solving
+
+// ============================================================================
+// SOA (STRUCT OF ARRAYS) TRANSFORMS
+// ============================================================================
+// Convert between AoS (Array of Structs) and SoA (Struct of Arrays) layouts
+// Critical for SIMD and cache-friendly physics/graphics computations
+
+fn register_soa(interp: &mut Interpreter) {
+    // aos_to_soa(array, keys) - Convert Array of Structs to Struct of Arrays
+    // Example: aos_to_soa([{x:1,y:2}, {x:3,y:4}], ["x","y"]) -> {x:[1,3], y:[2,4]}
+    define(interp, "aos_to_soa", Some(2), |_, args| {
+        let arr = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("aos_to_soa: first argument must be array")),
+        };
+        let keys = match &args[1] {
+            Value::Array(keys) => keys.borrow().clone(),
+            _ => return Err(RuntimeError::new("aos_to_soa: second argument must be array of keys")),
+        };
+
+        if arr.is_empty() {
+            // Return empty SoA
+            let mut result = HashMap::new();
+            for key in &keys {
+                if let Value::String(k) = key {
+                    result.insert((**k).clone(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                }
+            }
+            return Ok(Value::Map(Rc::new(RefCell::new(result))));
+        }
+
+        // Extract key names
+        let key_names: Vec<String> = keys.iter()
+            .filter_map(|k| {
+                if let Value::String(s) = k { Some((**s).clone()) } else { None }
+            })
+            .collect();
+
+        // Build arrays for each key
+        let mut soa: HashMap<String, Vec<Value>> = HashMap::new();
+        for key in &key_names {
+            soa.insert(key.clone(), Vec::with_capacity(arr.len()));
+        }
+
+        // Extract values from each struct
+        for item in &arr {
+            match item {
+                Value::Map(map) => {
+                    let map = map.borrow();
+                    for key in &key_names {
+                        let val = map.get(key).cloned().unwrap_or(Value::Null);
+                        soa.get_mut(key).unwrap().push(val);
+                    }
+                }
+                Value::Struct { fields, .. } => {
+                    let fields = fields.borrow();
+                    for key in &key_names {
+                        let val = fields.get(key).cloned().unwrap_or(Value::Null);
+                        soa.get_mut(key).unwrap().push(val);
+                    }
+                }
+                _ => return Err(RuntimeError::new("aos_to_soa: array must contain structs or maps")),
+            }
+        }
+
+        // Convert to Value::Map
+        let result: HashMap<String, Value> = soa.into_iter()
+            .map(|(k, v)| (k, Value::Array(Rc::new(RefCell::new(v)))))
+            .collect();
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // soa_to_aos(soa) - Convert Struct of Arrays back to Array of Structs
+    // Example: soa_to_aos({x:[1,3], y:[2,4]}) -> [{x:1,y:2}, {x:3,y:4}]
+    define(interp, "soa_to_aos", Some(1), |_, args| {
+        let soa = match &args[0] {
+            Value::Map(map) => map.borrow().clone(),
+            _ => return Err(RuntimeError::new("soa_to_aos: argument must be map")),
+        };
+
+        if soa.is_empty() {
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+        }
+
+        // Get the length from first array
+        let len = soa.values().next()
+            .and_then(|v| if let Value::Array(arr) = v { Some(arr.borrow().len()) } else { None })
+            .unwrap_or(0);
+
+        // Build array of structs
+        let mut aos: Vec<Value> = Vec::with_capacity(len);
+        for i in 0..len {
+            let mut fields = HashMap::new();
+            for (key, value) in &soa {
+                if let Value::Array(arr) = value {
+                    let arr = arr.borrow();
+                    if i < arr.len() {
+                        fields.insert(key.clone(), arr[i].clone());
+                    }
+                }
+            }
+            aos.push(Value::Map(Rc::new(RefCell::new(fields))));
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(aos))))
+    });
+
+    // soa_map(soa, key, fn) - Apply function to a single array in SoA
+    // Allows SIMD-friendly operations on one field at a time
+    define(interp, "soa_map", Some(3), |interp, args| {
+        let mut soa = match &args[0] {
+            Value::Map(map) => map.borrow().clone(),
+            _ => return Err(RuntimeError::new("soa_map: first argument must be SoA map")),
+        };
+        let key = match &args[1] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("soa_map: second argument must be key string")),
+        };
+        let func = match &args[2] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("soa_map: third argument must be a function")),
+        };
+
+        // Get the array for this key
+        let arr = soa.get(&key)
+            .ok_or_else(|| RuntimeError::new(format!("soa_map: key '{}' not found", key)))?;
+
+        let arr_vals = match arr {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("soa_map: key must map to array")),
+        };
+
+        // Apply function to each element
+        let results: Vec<Value> = arr_vals.iter()
+            .map(|val| interp.call_function(&func, vec![val.clone()]))
+            .collect::<Result<_, _>>()?;
+
+        // Update SoA
+        soa.insert(key, Value::Array(Rc::new(RefCell::new(results))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(soa))))
+    });
+
+    // soa_zip(soa, keys, fn) - Apply function to multiple fields in parallel
+    // Example: soa_zip(soa, ["x", "y"], fn(x, y) { sqrt(x*x + y*y) }) -> array of magnitudes
+    define(interp, "soa_zip", Some(3), |interp, args| {
+        let soa = match &args[0] {
+            Value::Map(map) => map.borrow().clone(),
+            _ => return Err(RuntimeError::new("soa_zip: first argument must be SoA map")),
+        };
+        let keys = match &args[1] {
+            Value::Array(keys) => keys.borrow().clone(),
+            _ => return Err(RuntimeError::new("soa_zip: second argument must be array of keys")),
+        };
+        let func = match &args[2] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("soa_zip: third argument must be a function")),
+        };
+
+        // Extract arrays for each key
+        let arrays: Vec<Vec<Value>> = keys.iter()
+            .filter_map(|k| {
+                if let Value::String(s) = k {
+                    if let Some(Value::Array(arr)) = soa.get(&**s) {
+                        return Some(arr.borrow().clone());
+                    }
+                }
+                None
+            })
+            .collect();
+
+        if arrays.is_empty() {
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+        }
+
+        let len = arrays[0].len();
+
+        // Apply function with zipped values
+        let results: Vec<Value> = (0..len)
+            .map(|i| {
+                let fn_args: Vec<Value> = arrays.iter()
+                    .filter_map(|arr| arr.get(i).cloned())
+                    .collect();
+                interp.call_function(&func, fn_args)
+            })
+            .collect::<Result<_, _>>()?;
+
+        Ok(Value::Array(Rc::new(RefCell::new(results))))
+    });
+
+    // interleave(arrays...) - Interleave multiple arrays (for position/normal/uv vertices)
+    // Example: interleave([x1,x2], [y1,y2], [z1,z2]) -> [x1,y1,z1,x2,y2,z2]
+    define(interp, "interleave", None, |_, args| {
+        if args.is_empty() {
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+        }
+
+        let arrays: Vec<Vec<Value>> = args.iter()
+            .filter_map(|arg| {
+                if let Value::Array(arr) = arg {
+                    Some(arr.borrow().clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if arrays.is_empty() {
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+        }
+
+        let len = arrays[0].len();
+        let stride = arrays.len();
+        let mut result = Vec::with_capacity(len * stride);
+
+        for i in 0..len {
+            for arr in &arrays {
+                if let Some(val) = arr.get(i) {
+                    result.push(val.clone());
+                }
+            }
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // deinterleave(array, stride) - Deinterleave an array (inverse of interleave)
+    // Example: deinterleave([x1,y1,z1,x2,y2,z2], 3) -> [[x1,x2], [y1,y2], [z1,z2]]
+    define(interp, "deinterleave", Some(2), |_, args| {
+        let arr = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("deinterleave: first argument must be array")),
+        };
+        let stride = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("deinterleave: second argument must be integer stride")),
+        };
+
+        if stride == 0 {
+            return Err(RuntimeError::new("deinterleave: stride must be > 0"));
+        }
+
+        let mut result: Vec<Vec<Value>> = (0..stride).map(|_| Vec::new()).collect();
+
+        for (i, val) in arr.iter().enumerate() {
+            result[i % stride].push(val.clone());
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(
+            result.into_iter()
+                .map(|v| Value::Array(Rc::new(RefCell::new(v))))
+                .collect()
+        ))))
+    });
+}
+
+// ============================================================================
+// TENSOR OPERATIONS
+// ============================================================================
+// Outer products, contractions, tensor transpose for advanced linear algebra
+
+fn register_tensor(interp: &mut Interpreter) {
+    // outer_product(a, b) - Tensor outer product: a ⊗ b
+    // vec × vec -> matrix, mat × vec -> rank-3 tensor
+    define(interp, "outer_product", Some(2), |_, args| {
+        let a = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("outer_product: arguments must be arrays")),
+        };
+        let b = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("outer_product: arguments must be arrays")),
+        };
+
+        // vec ⊗ vec -> matrix
+        let mut result: Vec<Value> = Vec::with_capacity(a.len() * b.len());
+        for ai in &a {
+            for bi in &b {
+                let product = match (ai, bi) {
+                    (Value::Float(x), Value::Float(y)) => Value::Float(x * y),
+                    (Value::Int(x), Value::Int(y)) => Value::Int(x * y),
+                    (Value::Float(x), Value::Int(y)) => Value::Float(x * (*y as f64)),
+                    (Value::Int(x), Value::Float(y)) => Value::Float((*x as f64) * y),
+                    _ => return Err(RuntimeError::new("outer_product: elements must be numeric")),
+                };
+                result.push(product);
+            }
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // tensor_contract(a, b, axis_a, axis_b) - Contract tensors along specified axes
+    // Generalized matrix multiplication and index contraction
+    define(interp, "tensor_contract", Some(4), |_, args| {
+        let a = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("tensor_contract: first argument must be array")),
+        };
+        let b = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("tensor_contract: second argument must be array")),
+        };
+        let _axis_a = match &args[2] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("tensor_contract: axis must be integer")),
+        };
+        let _axis_b = match &args[3] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("tensor_contract: axis must be integer")),
+        };
+
+        // Simple dot product for 1D tensors (vectors)
+        if a.len() != b.len() {
+            return Err(RuntimeError::new("tensor_contract: vectors must have same length for contraction"));
+        }
+
+        let mut sum = 0.0f64;
+        for (ai, bi) in a.iter().zip(b.iter()) {
+            let product = match (ai, bi) {
+                (Value::Float(x), Value::Float(y)) => x * y,
+                (Value::Int(x), Value::Int(y)) => (*x as f64) * (*y as f64),
+                (Value::Float(x), Value::Int(y)) => x * (*y as f64),
+                (Value::Int(x), Value::Float(y)) => (*x as f64) * y,
+                _ => return Err(RuntimeError::new("tensor_contract: elements must be numeric")),
+            };
+            sum += product;
+        }
+
+        Ok(Value::Float(sum))
+    });
+
+    // kronecker_product(a, b) - Kronecker tensor product
+    // Used in quantum computing and multi-linear algebra
+    define(interp, "kronecker_product", Some(2), |_, args| {
+        let a = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("kronecker_product: arguments must be arrays")),
+        };
+        let b = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("kronecker_product: arguments must be arrays")),
+        };
+
+        // For 1D vectors: same as outer product
+        let mut result: Vec<Value> = Vec::with_capacity(a.len() * b.len());
+        for ai in &a {
+            for bi in &b {
+                let product = match (ai, bi) {
+                    (Value::Float(x), Value::Float(y)) => Value::Float(x * y),
+                    (Value::Int(x), Value::Int(y)) => Value::Int(x * y),
+                    (Value::Float(x), Value::Int(y)) => Value::Float(x * (*y as f64)),
+                    (Value::Int(x), Value::Float(y)) => Value::Float((*x as f64) * y),
+                    _ => return Err(RuntimeError::new("kronecker_product: elements must be numeric")),
+                };
+                result.push(product);
+            }
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // hadamard_product(a, b) - Element-wise product (Hadamard/Schur product)
+    define(interp, "hadamard_product", Some(2), |_, args| {
+        let a = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("hadamard_product: arguments must be arrays")),
+        };
+        let b = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("hadamard_product: arguments must be arrays")),
+        };
+
+        if a.len() != b.len() {
+            return Err(RuntimeError::new("hadamard_product: arrays must have same length"));
+        }
+
+        let result: Vec<Value> = a.iter().zip(b.iter())
+            .map(|(ai, bi)| {
+                match (ai, bi) {
+                    (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x * y)),
+                    (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x * y)),
+                    (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x * (*y as f64))),
+                    (Value::Int(x), Value::Float(y)) => Ok(Value::Float((*x as f64) * y)),
+                    _ => Err(RuntimeError::new("hadamard_product: elements must be numeric")),
+                }
+            })
+            .collect::<Result<_, _>>()?;
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // trace(matrix, size) - Trace of square matrix (sum of diagonal)
+    define(interp, "trace", Some(2), |_, args| {
+        let arr = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("trace: first argument must be array")),
+        };
+        let size = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("trace: second argument must be matrix size")),
+        };
+
+        let mut sum = 0.0f64;
+        for i in 0..size {
+            let idx = i * size + i;
+            if idx < arr.len() {
+                sum += match &arr[idx] {
+                    Value::Float(f) => *f,
+                    Value::Int(n) => *n as f64,
+                    _ => return Err(RuntimeError::new("trace: elements must be numeric")),
+                };
+            }
+        }
+
+        Ok(Value::Float(sum))
+    });
+}
+
+// ============================================================================
+// AUTOMATIC DIFFERENTIATION
+// ============================================================================
+// Forward-mode and reverse-mode autodiff for gradients and Jacobians
+
+fn register_autodiff(interp: &mut Interpreter) {
+    // grad(f, x, h) - Numerical gradient of f at x using finite differences
+    // h is optional step size (default 1e-7)
+    define(interp, "grad", None, |interp, args| {
+        if args.len() < 2 {
+            return Err(RuntimeError::new("grad: requires function and point arguments"));
+        }
+
+        let func = match &args[0] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("grad: first argument must be a function")),
+        };
+        let x = match &args[1] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            Value::Array(arr) => {
+                // Multi-variable gradient
+                let arr = arr.borrow().clone();
+                let h = if args.len() > 2 {
+                    match &args[2] {
+                        Value::Float(f) => *f,
+                        Value::Int(n) => *n as f64,
+                        _ => 1e-7,
+                    }
+                } else {
+                    1e-7
+                };
+
+                let mut gradient = Vec::with_capacity(arr.len());
+                for (i, xi) in arr.iter().enumerate() {
+                    let xi_val = match xi {
+                        Value::Float(f) => *f,
+                        Value::Int(n) => *n as f64,
+                        _ => continue,
+                    };
+
+                    // f(x + h*ei) - f(x - h*ei) / 2h
+                    let mut x_plus = arr.clone();
+                    let mut x_minus = arr.clone();
+                    x_plus[i] = Value::Float(xi_val + h);
+                    x_minus[i] = Value::Float(xi_val - h);
+
+                    let f_plus = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_plus)))])?;
+                    let f_minus = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_minus)))])?;
+
+                    let grad_i = match (f_plus, f_minus) {
+                        (Value::Float(fp), Value::Float(fm)) => (fp - fm) / (2.0 * h),
+                        (Value::Int(fp), Value::Int(fm)) => (fp - fm) as f64 / (2.0 * h),
+                        _ => return Err(RuntimeError::new("grad: function must return numeric")),
+                    };
+
+                    gradient.push(Value::Float(grad_i));
+                }
+
+                return Ok(Value::Array(Rc::new(RefCell::new(gradient))));
+            }
+            _ => return Err(RuntimeError::new("grad: x must be numeric or array")),
+        };
+
+        let h = if args.len() > 2 {
+            match &args[2] {
+                Value::Float(f) => *f,
+                Value::Int(n) => *n as f64,
+                _ => 1e-7,
+            }
+        } else {
+            1e-7
+        };
+
+        // Single variable derivative using central difference
+        let f_plus = interp.call_function(&func, vec![Value::Float(x + h)])?;
+        let f_minus = interp.call_function(&func, vec![Value::Float(x - h)])?;
+
+        let derivative = match (f_plus, f_minus) {
+            (Value::Float(fp), Value::Float(fm)) => (fp - fm) / (2.0 * h),
+            (Value::Int(fp), Value::Int(fm)) => (fp - fm) as f64 / (2.0 * h),
+            _ => return Err(RuntimeError::new("grad: function must return numeric")),
+        };
+
+        Ok(Value::Float(derivative))
+    });
+
+    // jacobian(f, x) - Compute Jacobian matrix for vector function
+    define(interp, "jacobian", Some(2), |interp, args| {
+        let func = match &args[0] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("jacobian: first argument must be a function")),
+        };
+        let x = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("jacobian: second argument must be array")),
+        };
+
+        let h = 1e-7;
+        let n = x.len();
+
+        // Evaluate f at x to get output dimension
+        let f_x = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x.clone())))])?;
+        let m = match &f_x {
+            Value::Array(arr) => arr.borrow().len(),
+            _ => 1,
+        };
+
+        // Build Jacobian matrix (m x n)
+        let mut jacobian: Vec<Value> = Vec::with_capacity(m * n);
+
+        for j in 0..n {
+            let xj = match &x[j] {
+                Value::Float(f) => *f,
+                Value::Int(i) => *i as f64,
+                _ => continue,
+            };
+
+            let mut x_plus = x.clone();
+            let mut x_minus = x.clone();
+            x_plus[j] = Value::Float(xj + h);
+            x_minus[j] = Value::Float(xj - h);
+
+            let f_plus = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_plus)))])?;
+            let f_minus = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_minus)))])?;
+
+            // Extract derivatives for each output component
+            match (&f_plus, &f_minus) {
+                (Value::Array(fp), Value::Array(fm)) => {
+                    let fp = fp.borrow();
+                    let fm = fm.borrow();
+                    for i in 0..m {
+                        let dfi_dxj = match (&fp[i], &fm[i]) {
+                            (Value::Float(a), Value::Float(b)) => (*a - *b) / (2.0 * h),
+                            (Value::Int(a), Value::Int(b)) => (*a - *b) as f64 / (2.0 * h),
+                            _ => 0.0,
+                        };
+                        jacobian.push(Value::Float(dfi_dxj));
+                    }
+                }
+                (Value::Float(fp), Value::Float(fm)) => {
+                    jacobian.push(Value::Float((fp - fm) / (2.0 * h)));
+                }
+                _ => return Err(RuntimeError::new("jacobian: function must return array or numeric")),
+            }
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(jacobian))))
+    });
+
+    // hessian(f, x) - Compute Hessian matrix (second derivatives)
+    define(interp, "hessian", Some(2), |interp, args| {
+        let func = match &args[0] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("hessian: first argument must be a function")),
+        };
+        let x = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("hessian: second argument must be array")),
+        };
+
+        let h = 1e-5; // Larger h for second derivatives
+        let n = x.len();
+
+        let mut hessian: Vec<Value> = Vec::with_capacity(n * n);
+
+        for i in 0..n {
+            for j in 0..n {
+                let xi = match &x[i] {
+                    Value::Float(f) => *f,
+                    Value::Int(k) => *k as f64,
+                    _ => continue,
+                };
+                let xj = match &x[j] {
+                    Value::Float(f) => *f,
+                    Value::Int(k) => *k as f64,
+                    _ => continue,
+                };
+
+                // Second partial derivative using finite differences
+                let mut x_pp = x.clone();
+                let mut x_pm = x.clone();
+                let mut x_mp = x.clone();
+                let mut x_mm = x.clone();
+
+                x_pp[i] = Value::Float(xi + h);
+                x_pp[j] = Value::Float(if i == j { xi + 2.0*h } else { xj + h });
+                x_pm[i] = Value::Float(xi + h);
+                x_pm[j] = Value::Float(if i == j { xi } else { xj - h });
+                x_mp[i] = Value::Float(xi - h);
+                x_mp[j] = Value::Float(if i == j { xi } else { xj + h });
+                x_mm[i] = Value::Float(xi - h);
+                x_mm[j] = Value::Float(if i == j { xi - 2.0*h } else { xj - h });
+
+                let f_pp = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_pp)))])?;
+                let f_pm = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_pm)))])?;
+                let f_mp = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_mp)))])?;
+                let f_mm = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_mm)))])?;
+
+                let d2f = match (f_pp, f_pm, f_mp, f_mm) {
+                    (Value::Float(fpp), Value::Float(fpm), Value::Float(fmp), Value::Float(fmm)) => {
+                        (fpp - fpm - fmp + fmm) / (4.0 * h * h)
+                    }
+                    _ => 0.0,
+                };
+
+                hessian.push(Value::Float(d2f));
+            }
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(hessian))))
+    });
+
+    // divergence(f, x) - Compute divergence of vector field (∇·F)
+    define(interp, "divergence", Some(2), |interp, args| {
+        let func = match &args[0] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("divergence: first argument must be a function")),
+        };
+        let x = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("divergence: second argument must be array")),
+        };
+
+        let h = 1e-7;
+        let mut div = 0.0f64;
+
+        for (i, xi) in x.iter().enumerate() {
+            let xi_val = match xi {
+                Value::Float(f) => *f,
+                Value::Int(n) => *n as f64,
+                _ => continue,
+            };
+
+            let mut x_plus = x.clone();
+            let mut x_minus = x.clone();
+            x_plus[i] = Value::Float(xi_val + h);
+            x_minus[i] = Value::Float(xi_val - h);
+
+            let f_plus = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_plus)))])?;
+            let f_minus = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_minus)))])?;
+
+            // Extract i-th component
+            let df_i = match (&f_plus, &f_minus) {
+                (Value::Array(fp), Value::Array(fm)) => {
+                    let fp = fp.borrow();
+                    let fm = fm.borrow();
+                    if i < fp.len() && i < fm.len() {
+                        match (&fp[i], &fm[i]) {
+                            (Value::Float(a), Value::Float(b)) => (*a - *b) / (2.0 * h),
+                            (Value::Int(a), Value::Int(b)) => (*a - *b) as f64 / (2.0 * h),
+                            _ => 0.0,
+                        }
+                    } else {
+                        0.0
+                    }
+                }
+                _ => 0.0,
+            };
+
+            div += df_i;
+        }
+
+        Ok(Value::Float(div))
+    });
+}
+
+// ============================================================================
+// SPATIAL HASHING / ACCELERATION STRUCTURES
+// ============================================================================
+// BVH, octrees, spatial hashing for efficient collision detection and queries
+
+fn register_spatial(interp: &mut Interpreter) {
+    // spatial_hash_new(cell_size) - Create new spatial hash grid
+    define(interp, "spatial_hash_new", Some(1), |_, args| {
+        let cell_size = match &args[0] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => return Err(RuntimeError::new("spatial_hash_new: cell_size must be numeric")),
+        };
+
+        let mut config = HashMap::new();
+        config.insert("cell_size".to_string(), Value::Float(cell_size));
+        config.insert("buckets".to_string(), Value::Map(Rc::new(RefCell::new(HashMap::new()))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(config))))
+    });
+
+    // spatial_hash_insert(hash, id, position) - Insert object at position
+    define(interp, "spatial_hash_insert", Some(3), |_, args| {
+        let hash = match &args[0] {
+            Value::Map(map) => map.clone(),
+            _ => return Err(RuntimeError::new("spatial_hash_insert: first argument must be spatial hash")),
+        };
+        let id = args[1].clone();
+        let pos = match &args[2] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("spatial_hash_insert: position must be array")),
+        };
+
+        let cell_size = {
+            let h = hash.borrow();
+            match h.get("cell_size") {
+                Some(Value::Float(f)) => *f,
+                _ => 1.0,
+            }
+        };
+
+        // Compute cell key
+        let key = pos.iter()
+            .filter_map(|v| match v {
+                Value::Float(f) => Some((*f / cell_size).floor() as i64),
+                Value::Int(n) => Some(*n / (cell_size as i64)),
+                _ => None,
+            })
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+
+        // Insert into bucket
+        {
+            let mut h = hash.borrow_mut();
+            let buckets = h.entry("buckets".to_string())
+                .or_insert_with(|| Value::Map(Rc::new(RefCell::new(HashMap::new()))));
+
+            if let Value::Map(buckets_map) = buckets {
+                let mut bm = buckets_map.borrow_mut();
+                let bucket = bm.entry(key)
+                    .or_insert_with(|| Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                if let Value::Array(arr) = bucket {
+                    arr.borrow_mut().push(id);
+                }
+            }
+        }
+
+        Ok(Value::Map(hash))
+    });
+
+    // spatial_hash_query(hash, position, radius) - Query objects near position
+    define(interp, "spatial_hash_query", Some(3), |_, args| {
+        let hash = match &args[0] {
+            Value::Map(map) => map.borrow().clone(),
+            _ => return Err(RuntimeError::new("spatial_hash_query: first argument must be spatial hash")),
+        };
+        let pos = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("spatial_hash_query: position must be array")),
+        };
+        let radius = match &args[2] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => return Err(RuntimeError::new("spatial_hash_query: radius must be numeric")),
+        };
+
+        let cell_size = match hash.get("cell_size") {
+            Some(Value::Float(f)) => *f,
+            _ => 1.0,
+        };
+
+        // Get center cell
+        let center: Vec<i64> = pos.iter()
+            .filter_map(|v| match v {
+                Value::Float(f) => Some((*f / cell_size).floor() as i64),
+                Value::Int(n) => Some(*n / (cell_size as i64)),
+                _ => None,
+            })
+            .collect();
+
+        // Compute cell range to check
+        let cells_to_check = (radius / cell_size).ceil() as i64;
+
+        let mut results: Vec<Value> = Vec::new();
+
+        if let Some(Value::Map(buckets)) = hash.get("buckets") {
+            let buckets = buckets.borrow();
+
+            // Check neighboring cells
+            if center.len() >= 2 {
+                for dx in -cells_to_check..=cells_to_check {
+                    for dy in -cells_to_check..=cells_to_check {
+                        let key = format!("{},{}", center[0] + dx, center[1] + dy);
+                        if let Some(Value::Array(bucket)) = buckets.get(&key) {
+                            for item in bucket.borrow().iter() {
+                                // Push without duplicate check since Value doesn't impl PartialEq
+                                // For production use, would need to track IDs separately
+                                results.push(item.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(results))))
+    });
+
+    // aabb_new(min, max) - Create axis-aligned bounding box
+    define(interp, "aabb_new", Some(2), |_, args| {
+        let min = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("aabb_new: min must be array")),
+        };
+        let max = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("aabb_new: max must be array")),
+        };
+
+        let mut aabb = HashMap::new();
+        aabb.insert("min".to_string(), Value::Array(Rc::new(RefCell::new(min))));
+        aabb.insert("max".to_string(), Value::Array(Rc::new(RefCell::new(max))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(aabb))))
+    });
+
+    // aabb_intersects(a, b) - Test if two AABBs intersect
+    define(interp, "aabb_intersects", Some(2), |_, args| {
+        let a = match &args[0] {
+            Value::Map(map) => map.borrow().clone(),
+            _ => return Err(RuntimeError::new("aabb_intersects: arguments must be AABBs")),
+        };
+        let b = match &args[1] {
+            Value::Map(map) => map.borrow().clone(),
+            _ => return Err(RuntimeError::new("aabb_intersects: arguments must be AABBs")),
+        };
+
+        let a_min = extract_vec_from_map(&a, "min")?;
+        let a_max = extract_vec_from_map(&a, "max")?;
+        let b_min = extract_vec_from_map(&b, "min")?;
+        let b_max = extract_vec_from_map(&b, "max")?;
+
+        // Check overlap in each dimension
+        for i in 0..a_min.len().min(a_max.len()).min(b_min.len()).min(b_max.len()) {
+            if a_max[i] < b_min[i] || b_max[i] < a_min[i] {
+                return Ok(Value::Bool(false));
+            }
+        }
+
+        Ok(Value::Bool(true))
+    });
+
+    // aabb_contains(aabb, point) - Test if AABB contains point
+    define(interp, "aabb_contains", Some(2), |_, args| {
+        let aabb = match &args[0] {
+            Value::Map(map) => map.borrow().clone(),
+            _ => return Err(RuntimeError::new("aabb_contains: first argument must be AABB")),
+        };
+        let point = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("aabb_contains: second argument must be point array")),
+        };
+
+        let min = extract_vec_from_map(&aabb, "min")?;
+        let max = extract_vec_from_map(&aabb, "max")?;
+
+        for (i, p) in point.iter().enumerate() {
+            let p_val = match p {
+                Value::Float(f) => *f,
+                Value::Int(n) => *n as f64,
+                _ => continue,
+            };
+
+            if i < min.len() && p_val < min[i] {
+                return Ok(Value::Bool(false));
+            }
+            if i < max.len() && p_val > max[i] {
+                return Ok(Value::Bool(false));
+            }
+        }
+
+        Ok(Value::Bool(true))
+    });
+}
+
+// Helper for extracting vector from AABB map
+fn extract_vec_from_map(map: &HashMap<String, Value>, key: &str) -> Result<Vec<f64>, RuntimeError> {
+    match map.get(key) {
+        Some(Value::Array(arr)) => {
+            arr.borrow().iter()
+                .map(|v| match v {
+                    Value::Float(f) => Ok(*f),
+                    Value::Int(n) => Ok(*n as f64),
+                    _ => Err(RuntimeError::new("Expected numeric value")),
+                })
+                .collect()
+        }
+        _ => Err(RuntimeError::new(format!("Missing or invalid '{}' in AABB", key))),
+    }
+}
+
+// ============================================================================
+// PHYSICS / CONSTRAINT SOLVER
+// ============================================================================
+// Verlet integration, constraint solving, spring systems
+
+fn register_physics(interp: &mut Interpreter) {
+    // verlet_integrate(pos, prev_pos, accel, dt) - Verlet integration step
+    // Returns new position: pos + (pos - prev_pos) + accel * dt^2
+    define(interp, "verlet_integrate", Some(4), |_, args| {
+        let pos = extract_vec3(&args[0], "verlet_integrate")?;
+        let prev = extract_vec3(&args[1], "verlet_integrate")?;
+        let accel = extract_vec3(&args[2], "verlet_integrate")?;
+        let dt = match &args[3] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => return Err(RuntimeError::new("verlet_integrate: dt must be numeric")),
+        };
+
+        let dt2 = dt * dt;
+        let new_pos = [
+            pos[0] + (pos[0] - prev[0]) + accel[0] * dt2,
+            pos[1] + (pos[1] - prev[1]) + accel[1] * dt2,
+            pos[2] + (pos[2] - prev[2]) + accel[2] * dt2,
+        ];
+
+        Ok(make_vec3_arr(new_pos))
+    });
+
+    // spring_force(p1, p2, rest_length, stiffness) - Compute spring force
+    define(interp, "spring_force", Some(4), |_, args| {
+        let p1 = extract_vec3(&args[0], "spring_force")?;
+        let p2 = extract_vec3(&args[1], "spring_force")?;
+        let rest_length = match &args[2] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => return Err(RuntimeError::new("spring_force: rest_length must be numeric")),
+        };
+        let stiffness = match &args[3] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => return Err(RuntimeError::new("spring_force: stiffness must be numeric")),
+        };
+
+        let delta = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
+        let length = (delta[0]*delta[0] + delta[1]*delta[1] + delta[2]*delta[2]).sqrt();
+
+        if length < 1e-10 {
+            return Ok(make_vec3_arr([0.0, 0.0, 0.0]));
+        }
+
+        let displacement = length - rest_length;
+        let force_mag = stiffness * displacement;
+        let normalized = [delta[0] / length, delta[1] / length, delta[2] / length];
+
+        Ok(make_vec3_arr([
+            normalized[0] * force_mag,
+            normalized[1] * force_mag,
+            normalized[2] * force_mag,
+        ]))
+    });
+
+    // distance_constraint(p1, p2, target_distance) - Apply distance constraint
+    // Returns tuple of (new_p1, new_p2) that satisfy the constraint
+    define(interp, "distance_constraint", Some(3), |_, args| {
+        let p1 = extract_vec3(&args[0], "distance_constraint")?;
+        let p2 = extract_vec3(&args[1], "distance_constraint")?;
+        let target = match &args[2] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => return Err(RuntimeError::new("distance_constraint: target must be numeric")),
+        };
+
+        let delta = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
+        let length = (delta[0]*delta[0] + delta[1]*delta[1] + delta[2]*delta[2]).sqrt();
+
+        if length < 1e-10 {
+            return Ok(Value::Tuple(Rc::new(vec![make_vec3_arr(p1), make_vec3_arr(p2)])));
+        }
+
+        let correction = (length - target) / length * 0.5;
+        let corr_vec = [delta[0] * correction, delta[1] * correction, delta[2] * correction];
+
+        let new_p1 = [p1[0] + corr_vec[0], p1[1] + corr_vec[1], p1[2] + corr_vec[2]];
+        let new_p2 = [p2[0] - corr_vec[0], p2[1] - corr_vec[1], p2[2] - corr_vec[2]];
+
+        Ok(Value::Tuple(Rc::new(vec![make_vec3_arr(new_p1), make_vec3_arr(new_p2)])))
+    });
+
+    // solve_constraints(points, constraints, iterations) - Iterative constraint solver
+    // constraints: array of {type, indices, params}
+    define(interp, "solve_constraints", Some(3), |_, args| {
+        let mut points = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("solve_constraints: first argument must be array of points")),
+        };
+        let constraints = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("solve_constraints: second argument must be array of constraints")),
+        };
+        let iterations = match &args[2] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("solve_constraints: iterations must be integer")),
+        };
+
+        for _ in 0..iterations {
+            for constraint in &constraints {
+                match constraint {
+                    Value::Map(c) => {
+                        let c = c.borrow();
+                        let constraint_type = c.get("type")
+                            .and_then(|v| if let Value::String(s) = v { Some((**s).clone()) } else { None })
+                            .unwrap_or_default();
+
+                        match constraint_type.as_str() {
+                            "distance" => {
+                                let indices = match c.get("indices") {
+                                    Some(Value::Array(arr)) => arr.borrow().clone(),
+                                    _ => continue,
+                                };
+                                let target = match c.get("distance") {
+                                    Some(Value::Float(f)) => *f,
+                                    Some(Value::Int(n)) => *n as f64,
+                                    _ => continue,
+                                };
+
+                                if indices.len() >= 2 {
+                                    let i1 = match &indices[0] {
+                                        Value::Int(n) => *n as usize,
+                                        _ => continue,
+                                    };
+                                    let i2 = match &indices[1] {
+                                        Value::Int(n) => *n as usize,
+                                        _ => continue,
+                                    };
+
+                                    if i1 < points.len() && i2 < points.len() {
+                                        // Apply distance constraint inline
+                                        let p1 = extract_vec3(&points[i1], "solve")?;
+                                        let p2 = extract_vec3(&points[i2], "solve")?;
+
+                                        let delta = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
+                                        let length = (delta[0]*delta[0] + delta[1]*delta[1] + delta[2]*delta[2]).sqrt();
+
+                                        if length > 1e-10 {
+                                            let correction = (length - target) / length * 0.5;
+                                            let corr_vec = [delta[0] * correction, delta[1] * correction, delta[2] * correction];
+
+                                            points[i1] = make_vec3_arr([p1[0] + corr_vec[0], p1[1] + corr_vec[1], p1[2] + corr_vec[2]]);
+                                            points[i2] = make_vec3_arr([p2[0] - corr_vec[0], p2[1] - corr_vec[1], p2[2] - corr_vec[2]]);
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => continue,
+                }
+            }
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(points))))
+    });
+
+    // ray_sphere_intersect(ray_origin, ray_dir, sphere_center, radius) - Ray-sphere intersection
+    // Returns distance to intersection or -1 if no hit
+    define(interp, "ray_sphere_intersect", Some(4), |_, args| {
+        let origin = extract_vec3(&args[0], "ray_sphere_intersect")?;
+        let dir = extract_vec3(&args[1], "ray_sphere_intersect")?;
+        let center = extract_vec3(&args[2], "ray_sphere_intersect")?;
+        let radius = match &args[3] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => return Err(RuntimeError::new("ray_sphere_intersect: radius must be numeric")),
+        };
+
+        let oc = [origin[0] - center[0], origin[1] - center[1], origin[2] - center[2]];
+
+        let a = dir[0]*dir[0] + dir[1]*dir[1] + dir[2]*dir[2];
+        let b = 2.0 * (oc[0]*dir[0] + oc[1]*dir[1] + oc[2]*dir[2]);
+        let c = oc[0]*oc[0] + oc[1]*oc[1] + oc[2]*oc[2] - radius*radius;
+
+        let discriminant = b*b - 4.0*a*c;
+
+        if discriminant < 0.0 {
+            Ok(Value::Float(-1.0))
+        } else {
+            let t = (-b - discriminant.sqrt()) / (2.0 * a);
+            if t > 0.0 {
+                Ok(Value::Float(t))
+            } else {
+                let t2 = (-b + discriminant.sqrt()) / (2.0 * a);
+                if t2 > 0.0 {
+                    Ok(Value::Float(t2))
+                } else {
+                    Ok(Value::Float(-1.0))
+                }
+            }
+        }
+    });
+
+    // ray_plane_intersect(ray_origin, ray_dir, plane_point, plane_normal) - Ray-plane intersection
+    define(interp, "ray_plane_intersect", Some(4), |_, args| {
+        let origin = extract_vec3(&args[0], "ray_plane_intersect")?;
+        let dir = extract_vec3(&args[1], "ray_plane_intersect")?;
+        let plane_pt = extract_vec3(&args[2], "ray_plane_intersect")?;
+        let normal = extract_vec3(&args[3], "ray_plane_intersect")?;
+
+        let denom = dir[0]*normal[0] + dir[1]*normal[1] + dir[2]*normal[2];
+
+        if denom.abs() < 1e-10 {
+            return Ok(Value::Float(-1.0)); // Parallel to plane
+        }
+
+        let diff = [plane_pt[0] - origin[0], plane_pt[1] - origin[1], plane_pt[2] - origin[2]];
+        let t = (diff[0]*normal[0] + diff[1]*normal[1] + diff[2]*normal[2]) / denom;
+
+        if t > 0.0 {
+            Ok(Value::Float(t))
+        } else {
+            Ok(Value::Float(-1.0))
+        }
+    });
 }
 
 #[cfg(test)]

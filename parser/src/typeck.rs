@@ -940,6 +940,18 @@ impl TypeChecker {
                     Type::Error
                 }
             }
+
+            // Parallel morpheme: ∥ - wraps another operation
+            // Type is determined by the inner operation
+            PipeOp::Parallel(inner_op) => {
+                self.infer_pipe_op(inner_op, input)
+            }
+
+            // GPU morpheme: ⊛ - wraps another operation for GPU execution
+            // Type is determined by the inner operation
+            PipeOp::Gpu(inner_op) => {
+                self.infer_pipe_op(inner_op, input)
+            }
         };
 
         // Preserve evidence through pipe

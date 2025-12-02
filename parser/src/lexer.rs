@@ -192,6 +192,15 @@ pub enum Token {
     #[token("Ξ")]
     Xi,  // Next in sequence
 
+    // === Parallel/Concurrency Morphemes ===
+    #[token("∥")]
+    #[token("parallel")]
+    Parallel,  // Parallel execution (U+2225)
+
+    #[token("⊛")]
+    #[token("gpu")]
+    Gpu,  // GPU compute shader (U+229B - circled asterisk)
+
     // === Quantifiers (for AI-native set operations) ===
     #[token("∀")]
     ForAll,  // Universal quantification
@@ -500,7 +509,8 @@ impl Token {
             Token::Tau | Token::Phi | Token::Sigma | Token::Rho |
             Token::Lambda | Token::Pi | Token::Hourglass |
             Token::Delta | Token::Epsilon | Token::Omega | Token::Alpha | Token::Zeta |
-            Token::Mu | Token::Chi | Token::Nu | Token::Xi |  // New access morphemes
+            Token::Mu | Token::Chi | Token::Nu | Token::Xi |  // Access morphemes
+            Token::Parallel | Token::Gpu |  // Concurrency morphemes
             Token::Integral | Token::Partial | Token::Sqrt | Token::Cbrt |
             Token::Compose
         )
@@ -732,5 +742,14 @@ mod tests {
         let mut lexer = Lexer::new("extern unsafe");
         assert!(matches!(lexer.next_token(), Some((Token::Extern, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Unsafe, _))));
+    }
+
+    #[test]
+    fn test_parallel_morphemes() {
+        let mut lexer = Lexer::new("∥ parallel ⊛ gpu");
+        assert!(matches!(lexer.next_token(), Some((Token::Parallel, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Parallel, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Gpu, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Gpu, _))));
     }
 }

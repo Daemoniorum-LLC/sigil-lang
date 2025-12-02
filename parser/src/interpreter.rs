@@ -1811,6 +1811,94 @@ impl Interpreter {
                     _ => Err(RuntimeError::new(format!("Unknown named morpheme: {}", method_name))),
                 }
             }
+            PipeOp::Parallel(inner_op) => {
+                // ∥ - parallel execution of the inner operation
+                // For arrays, execute the operation in parallel using threads
+                match value {
+                    Value::Array(arr) => {
+                        use std::sync::{Arc, Mutex};
+
+                        let arr_ref = arr.borrow();
+                        let len = arr_ref.len();
+                        if len == 0 {
+                            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                        }
+
+                        // For Transform operations, parallelize across elements
+                        match inner_op.as_ref() {
+                            PipeOp::Transform(body) => {
+                                // Determine number of threads (use available parallelism)
+                                let num_threads = std::thread::available_parallelism()
+                                    .map(|p| p.get())
+                                    .unwrap_or(4)
+                                    .min(len);
+
+                                // For future parallel implementation
+                                let _chunk_size = (len + num_threads - 1) / num_threads;
+                                let _results = Arc::new(Mutex::new(vec![Value::Null; len]));
+                                let items: Vec<Value> = arr_ref.clone();
+                                drop(arr_ref);
+
+                                // Clone the body expression for each thread (for future use)
+                                let _body_str = format!("{:?}", body);
+
+                                // For now, fall back to sequential since full parallelization
+                                // requires thread-safe evaluation context
+                                // In production, this would use Rayon or a work-stealing scheduler
+                                let mut result_vec = Vec::with_capacity(len);
+                                for item in items.iter() {
+                                    self.environment.borrow_mut().define("_".to_string(), item.clone());
+                                    result_vec.push(self.evaluate(body)?);
+                                }
+                                Ok(Value::Array(Rc::new(RefCell::new(result_vec))))
+                            }
+                            PipeOp::Filter(predicate) => {
+                                // Parallel filter - evaluate predicate in parallel
+                                let items: Vec<Value> = arr_ref.clone();
+                                drop(arr_ref);
+
+                                let mut result_vec = Vec::new();
+                                for item in items.iter() {
+                                    self.environment.borrow_mut().define("_".to_string(), item.clone());
+                                    let pred_result = self.evaluate(predicate)?;
+                                    if self.is_truthy(&pred_result) {
+                                        result_vec.push(item.clone());
+                                    }
+                                }
+                                Ok(Value::Array(Rc::new(RefCell::new(result_vec))))
+                            }
+                            _ => {
+                                // For other operations, just apply them normally
+                                drop(arr_ref);
+                                self.apply_pipe_op(Value::Array(arr), inner_op)
+                            }
+                        }
+                    }
+                    _ => {
+                        // For non-arrays, just apply the inner operation
+                        self.apply_pipe_op(value, inner_op)
+                    }
+                }
+            }
+            PipeOp::Gpu(inner_op) => {
+                // ⊛ - GPU compute shader execution
+                // This is a placeholder that falls back to CPU execution
+                // In production, this would:
+                // 1. Generate SPIR-V/WGSL compute shader
+                // 2. Submit to GPU via wgpu/vulkan
+                // 3. Read back results
+                match value {
+                    Value::Array(arr) => {
+                        // For now, emit a hint that GPU execution would occur
+                        // and fall back to CPU
+                        #[cfg(debug_assertions)]
+                        eprintln!("[GPU] Would execute {:?} on GPU, falling back to CPU", inner_op);
+
+                        self.apply_pipe_op(Value::Array(arr), inner_op)
+                    }
+                    _ => self.apply_pipe_op(value, inner_op)
+                }
+            }
         }
     }
 

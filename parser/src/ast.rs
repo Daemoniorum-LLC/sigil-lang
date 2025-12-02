@@ -1075,6 +1075,12 @@ pub enum PipeOp {
     First,
     /// Last morpheme: `ω` - get last element
     Last,
+    /// Parallel morpheme: `∥{op}` or `parallel{op}` - execute operation in parallel
+    /// Wraps another operation to run it across multiple threads
+    Parallel(Box<PipeOp>),
+    /// GPU compute morpheme: `⊛{op}` or `gpu{op}` - execute operation on GPU
+    /// Wraps another operation to run it as a compute shader
+    Gpu(Box<PipeOp>),
     /// Method call
     Method {
         name: Ident,

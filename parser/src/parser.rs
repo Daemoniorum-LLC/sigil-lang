@@ -2464,6 +2464,20 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(PipeOp::Next)
             }
+            // Parallel morpheme: ∥τ{f} or parallel τ{f} - wraps another operation
+            Some(Token::Parallel) => {
+                self.advance();
+                // Parse the inner operation to parallelize
+                let inner_op = self.parse_pipe_op()?;
+                Ok(PipeOp::Parallel(Box::new(inner_op)))
+            }
+            // GPU compute morpheme: ⊛τ{f} or gpu τ{f} - execute on GPU
+            Some(Token::Gpu) => {
+                self.advance();
+                // Parse the inner operation to run on GPU
+                let inner_op = self.parse_pipe_op()?;
+                Ok(PipeOp::Gpu(Box::new(inner_op)))
+            }
             Some(Token::Await) => {
                 self.advance();
                 Ok(PipeOp::Await)
