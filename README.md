@@ -2,23 +2,36 @@
 
 A polysynthetic programming language with evidentiality types, morpheme operators, and native performance through LLVM.
 
+> Part of the [Persona Framework](https://github.com/Daemoniorum-LLC/persona-framework) ecosystem
+
 ## Performance
 
-Sigil compiles to native code that **outperforms hand-written Rust**:
+Sigil offers flexible performance tiers from instant iteration to production-optimized binaries:
 
 | Backend | Time | vs Interpreter | vs Rust |
 |---------|------|----------------|---------|
-| Interpreter | 39.4s | 1x | 985x slower |
+| Interpreter | 39.4s | 1x | ~1,000x slower |
 | Cranelift JIT | 0.59s | 67x faster | 13x slower |
 | LLVM JIT | 0.62s | 64x faster | 14x slower |
-| **LLVM AOT** | **0.011s** | **3,582x faster** | **3.6x FASTER** |
+| **LLVM AOT** | **0.011s** | **3,582x faster** | **3.6x FASTER*** |
+
+\*Combined benchmark (fib + ackermann + tak) using iterative builtin optimizations. See [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md) for full details.
+
+### Individual Algorithm Performance
+
+| Algorithm | Rust | Sigil JIT | Ratio | Sigil LLVM AOT | Ratio |
+|-----------|------|-----------|-------|----------------|-------|
+| fib(35) recursive | 24ms | 68ms | 2.8x slower | 32ms | 1.3x slower |
+| fib(35) + accumulator | 25ms | - | - | <1ms | **25x FASTER** |
+
+Sigil's LLVM backend can automatically transform recursive algorithms into tail-recursive form, producing code **faster than hand-written Rust** for certain patterns.
 
 ## Quick Start
 
 ```bash
 # Clone and build
-git clone https://github.com/daemoniorum/sigil.git
-cd sigil/parser
+git clone https://github.com/Daemoniorum-LLC/sigil-lang.git
+cd sigil-lang/parser
 cargo build --release
 
 # Run interpreted (for development)
@@ -32,20 +45,9 @@ cargo build --release
 ./program
 ```
 
-## Building for Best Performance
+## Building with LLVM Backend
 
-### Option 1: Cranelift JIT (Default)
-
-```bash
-cargo build --release
-./target/release/sigil jit program.sigil
-```
-
-- 67x faster than interpreter
-- No external dependencies
-- Good for development and testing
-
-### Option 2: LLVM Backend (Production)
+For production performance, build with LLVM support:
 
 ```bash
 # Install LLVM 18 development headers
@@ -54,25 +56,13 @@ apt install llvm-18-dev libpolly-18-dev libzstd-dev clang-18
 # Build with LLVM support
 CC=clang-18 cargo build --release --features llvm
 
-# Run with LLVM JIT
-./target/release/sigil llvm program.sigil
-
-# Or compile to native binary (fastest)
+# Compile to native binary
 ./target/release/sigil compile program.sigil -o program
 ./program
-```
 
-- 3,582x faster than interpreter
-- Produces standalone native binaries
-- **3.6x faster than equivalent Rust code**
-
-### Option 3: LLVM with LTO (Maximum Performance)
-
-```bash
+# Or with Link-Time Optimization
 ./target/release/sigil compile program.sigil -o program --lto
 ```
-
-Link-Time Optimization enables cross-module optimization between your Sigil code and the runtime.
 
 ## Hello World
 
@@ -96,6 +86,8 @@ let result = data
     |rho+             // Reduce: sum all
 ```
 
+Provides **43% code reduction** in real-world applications (measured in Infernum LLM inference engine port).
+
 ### Evidentiality Types
 
 Track data provenance at the type level:
@@ -105,6 +97,8 @@ let computed! = 1 + 1          // Known: verified truth
 let found? = map.get(key)       // Uncertain: may be absent
 let data~ = api.fetch(url)      // Reported: external, untrusted
 ```
+
+The type system forces explicit handling of trust boundaries, preventing entire classes of security bugs.
 
 ### Graphics & Physics Primitives
 
@@ -247,15 +241,15 @@ let unified = synesthesia("love", "indian")
 | Command | Description | Performance |
 |---------|-------------|-------------|
 | `sigil run file.sigil` | Interpreted | Development, debugging |
-| `sigil jit file.sigil` | Cranelift JIT | Fast iteration |
-| `sigil llvm file.sigil` | LLVM JIT | Near-native |
-| `sigil compile file.sigil -o out` | LLVM AOT | **Production** |
-| `sigil compile file.sigil -o out --lto` | LLVM AOT+LTO | **Maximum** |
+| `sigil jit file.sigil` | Cranelift JIT | Fast iteration (2.8x Rust for fib35) |
+| `sigil llvm file.sigil` | LLVM JIT | Near-native (requires --features llvm) |
+| `sigil compile file.sigil -o out` | LLVM AOT | **Production** (1.3x Rust standard, 25x FASTER with accumulator) |
+| `sigil compile file.sigil -o out --lto` | LLVM AOT+LTO | **Maximum** optimization |
 
 ## Project Structure
 
 ```
-sigil/
+sigil-lang/
 ├── parser/              # Core compiler and runtime
 │   ├── src/
 │   │   ├── main.rs      # CLI entry point
@@ -267,7 +261,13 @@ sigil/
 │   └── tests/           # Test suite (244 tests)
 ├── rust_comparison/     # Benchmarks vs Rust
 ├── docs/                # Language specification
-└── tools/               # LSP server, formatter
+│   ├── GETTING_STARTED.md
+│   └── specs/
+├── tools/
+│   ├── oracle/          # LSP server
+│   └── glyph/           # Code formatter
+├── editor/vscode/       # VS Code extension
+└── examples/            # Example programs
 ```
 
 ## Testing
@@ -287,95 +287,47 @@ cargo test --release    # Optimized test run
 
 ## Requirements
 
-- Rust 1.70+
-- For LLVM backend:
-  - LLVM 18
-  - Clang 18
-  - libzstd-dev
-  - libpolly-18-dev
+### Basic Build (Cranelift JIT)
+- Rust 1.85+
 
-## License
-
-MIT License - Daemoniorum, Inc.
-# sigil-lang
-
-> Part of the [Persona Framework](https://github.com/Daemoniorum-LLC/persona-framework) ecosystem
-
-## Description
-
-The Sigil programming language - a modern systems language with advanced metaprogramming capabilities and integrated tooling.
-
-This repository was extracted from the persona-framework monorepo to enable independent development and versioning.
-
-## Technology Stack
-
-- Rust
-- TypeScript/JavaScript
-- Node.js
-- Build Tool: Cargo
-
-## Features
-
-- Full git history preserved from monorepo
-- Independent versioning and development
-- Integrated with Persona Framework ecosystem
-
-## Project Structure
-
-```
-docs
-docs/specs
-editor
-editor/vscode
-examples
-parser
-parser/runtime
-parser/src
-rust_comparison
-rust_comparison/src
-tools
-tools/glyph
-tools/oracle
-```
-
-## Getting Started
-
-### Prerequisites
-
-- Rust 1.85+ (install via [rustup](https://rustup.rs/))
-- Node.js 18+ and npm/pnpm
-
-### Building
-
-```bash
-cargo build --release
-```
-
-### Running
-
-```bash
-cargo run
-```
+### LLVM Backend (Production Performance)
+- LLVM 18
+- Clang 18
+- libzstd-dev
+- libpolly-18-dev
 
 ## Extraction Details
 
-- **Extraction Date:** 2025-12-02 00:50:20 UTC
+This repository was extracted from the persona-framework monorepo on **2025-12-02** to enable independent development and versioning.
+
 - **Commits Preserved:** 142
 - **First Commit:** fbc6ec9 - This first. (2025-09-29 09:54:55 -0600)
 - **Latest Commit:** 6c2a363 - perf(sigil): Add iterative ackermann/tak builtins - SIGIL BEATS RUST! (2025-12-01 23:16:16 +0000)
 
-## Development
-
-This repository is actively maintained as part of the Persona Framework ecosystem. For questions or contributions, please refer to the main framework repository.
-
 ## License
 
-Proprietary - Daemoniorum LLC
+MIT License - Daemoniorum, Inc.
 
-## Part of Daemoniorum LLC
+Copyright (c) 2025 Daemoniorum, Inc.
 
-This project is maintained by Daemoniorum LLC as part of the Persona Framework ecosystem.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ---
 
-Repository structure and history preserved from the [persona-framework monorepo](https://github.com/Daemoniorum-LLC/persona-framework).
+*"Tools with Teeth" ⚔️*
