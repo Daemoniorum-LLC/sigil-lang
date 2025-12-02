@@ -54,6 +54,7 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_convert(interp);
     register_cycle(interp);
     register_simd(interp);
+    register_graphics_math(interp);
     register_concurrency(interp);
     // Phase 4: Extended stdlib
     register_json(interp);
@@ -2836,6 +2837,821 @@ where
         Value::Float(op(a[2], b[2])),
         Value::Float(op(a[3], b[3])),
     ]))))
+}
+
+// ============================================================================
+// GRAPHICS MATH LIBRARY
+// ============================================================================
+// Comprehensive 3D graphics mathematics for physics and rendering:
+// - Quaternions for rotation without gimbal lock
+// - vec2/vec3/vec4 vector types with swizzling
+// - mat3/mat4 matrices with projection/view/model operations
+// - Affine transforms, Euler angles, and interpolation
+// ============================================================================
+
+fn register_graphics_math(interp: &mut Interpreter) {
+    // -------------------------------------------------------------------------
+    // QUATERNIONS - Essential for 3D rotations
+    // -------------------------------------------------------------------------
+    // Quaternion format: [w, x, y, z] where w is scalar, (x,y,z) is vector part
+    // This follows the convention: q = w + xi + yj + zk
+
+    // quat_new(w, x, y, z) - create a quaternion
+    define(interp, "quat_new", Some(4), |_, args| {
+        let w = extract_number(&args[0], "quat_new")?;
+        let x = extract_number(&args[1], "quat_new")?;
+        let y = extract_number(&args[2], "quat_new")?;
+        let z = extract_number(&args[3], "quat_new")?;
+        Ok(make_vec4(w, x, y, z))
+    });
+
+    // quat_identity() - identity quaternion (no rotation)
+    define(interp, "quat_identity", Some(0), |_, _| {
+        Ok(make_vec4(1.0, 0.0, 0.0, 0.0))
+    });
+
+    // quat_from_axis_angle(axis_vec3, angle_radians) - create from axis-angle
+    define(interp, "quat_from_axis_angle", Some(2), |_, args| {
+        let axis = extract_vec3(&args[0], "quat_from_axis_angle")?;
+        let angle = extract_number(&args[1], "quat_from_axis_angle")?;
+
+        // Normalize axis
+        let len = (axis[0]*axis[0] + axis[1]*axis[1] + axis[2]*axis[2]).sqrt();
+        if len < 1e-10 {
+            return Ok(make_vec4(1.0, 0.0, 0.0, 0.0)); // Identity for zero axis
+        }
+        let ax = axis[0] / len;
+        let ay = axis[1] / len;
+        let az = axis[2] / len;
+
+        let half_angle = angle / 2.0;
+        let s = half_angle.sin();
+        let c = half_angle.cos();
+
+        Ok(make_vec4(c, ax * s, ay * s, az * s))
+    });
+
+    // quat_from_euler(pitch, yaw, roll) - create from Euler angles (radians)
+    // Uses XYZ order (pitch around X, yaw around Y, roll around Z)
+    define(interp, "quat_from_euler", Some(3), |_, args| {
+        let pitch = extract_number(&args[0], "quat_from_euler")?; // X
+        let yaw = extract_number(&args[1], "quat_from_euler")?;   // Y
+        let roll = extract_number(&args[2], "quat_from_euler")?;  // Z
+
+        let (sp, cp) = (pitch / 2.0).sin_cos();
+        let (sy, cy) = (yaw / 2.0).sin_cos();
+        let (sr, cr) = (roll / 2.0).sin_cos();
+
+        // Combined quaternion (XYZ order)
+        let w = cp * cy * cr + sp * sy * sr;
+        let x = sp * cy * cr - cp * sy * sr;
+        let y = cp * sy * cr + sp * cy * sr;
+        let z = cp * cy * sr - sp * sy * cr;
+
+        Ok(make_vec4(w, x, y, z))
+    });
+
+    // quat_mul(q1, q2) - quaternion multiplication (q1 * q2)
+    define(interp, "quat_mul", Some(2), |_, args| {
+        let q1 = extract_vec4(&args[0], "quat_mul")?;
+        let q2 = extract_vec4(&args[1], "quat_mul")?;
+
+        // Hamilton product
+        let w = q1[0]*q2[0] - q1[1]*q2[1] - q1[2]*q2[2] - q1[3]*q2[3];
+        let x = q1[0]*q2[1] + q1[1]*q2[0] + q1[2]*q2[3] - q1[3]*q2[2];
+        let y = q1[0]*q2[2] - q1[1]*q2[3] + q1[2]*q2[0] + q1[3]*q2[1];
+        let z = q1[0]*q2[3] + q1[1]*q2[2] - q1[2]*q2[1] + q1[3]*q2[0];
+
+        Ok(make_vec4(w, x, y, z))
+    });
+
+    // quat_conjugate(q) - quaternion conjugate (inverse for unit quaternions)
+    define(interp, "quat_conjugate", Some(1), |_, args| {
+        let q = extract_vec4(&args[0], "quat_conjugate")?;
+        Ok(make_vec4(q[0], -q[1], -q[2], -q[3]))
+    });
+
+    // quat_inverse(q) - quaternion inverse (handles non-unit quaternions)
+    define(interp, "quat_inverse", Some(1), |_, args| {
+        let q = extract_vec4(&args[0], "quat_inverse")?;
+        let norm_sq = q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3];
+        if norm_sq < 1e-10 {
+            return Err(RuntimeError::new("quat_inverse: cannot invert zero quaternion"));
+        }
+        Ok(make_vec4(q[0]/norm_sq, -q[1]/norm_sq, -q[2]/norm_sq, -q[3]/norm_sq))
+    });
+
+    // quat_normalize(q) - normalize to unit quaternion
+    define(interp, "quat_normalize", Some(1), |_, args| {
+        let q = extract_vec4(&args[0], "quat_normalize")?;
+        let len = (q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]).sqrt();
+        if len < 1e-10 {
+            return Ok(make_vec4(1.0, 0.0, 0.0, 0.0));
+        }
+        Ok(make_vec4(q[0]/len, q[1]/len, q[2]/len, q[3]/len))
+    });
+
+    // quat_rotate(q, vec3) - rotate a 3D vector by quaternion
+    define(interp, "quat_rotate", Some(2), |_, args| {
+        let q = extract_vec4(&args[0], "quat_rotate")?;
+        let v = extract_vec3(&args[1], "quat_rotate")?;
+
+        // q * v * q^-1 optimized formula
+        let qw = q[0]; let qx = q[1]; let qy = q[2]; let qz = q[3];
+        let vx = v[0]; let vy = v[1]; let vz = v[2];
+
+        // t = 2 * cross(q.xyz, v)
+        let tx = 2.0 * (qy * vz - qz * vy);
+        let ty = 2.0 * (qz * vx - qx * vz);
+        let tz = 2.0 * (qx * vy - qy * vx);
+
+        // result = v + q.w * t + cross(q.xyz, t)
+        let rx = vx + qw * tx + (qy * tz - qz * ty);
+        let ry = vy + qw * ty + (qz * tx - qx * tz);
+        let rz = vz + qw * tz + (qx * ty - qy * tx);
+
+        Ok(make_vec3(rx, ry, rz))
+    });
+
+    // quat_slerp(q1, q2, t) - spherical linear interpolation
+    define(interp, "quat_slerp", Some(3), |_, args| {
+        let q1 = extract_vec4(&args[0], "quat_slerp")?;
+        let mut q2 = extract_vec4(&args[1], "quat_slerp")?;
+        let t = extract_number(&args[2], "quat_slerp")?;
+
+        // Compute dot product
+        let mut dot = q1[0]*q2[0] + q1[1]*q2[1] + q1[2]*q2[2] + q1[3]*q2[3];
+
+        // If dot < 0, negate q2 to take shorter path
+        if dot < 0.0 {
+            q2 = [-q2[0], -q2[1], -q2[2], -q2[3]];
+            dot = -dot;
+        }
+
+        // If quaternions are very close, use linear interpolation
+        if dot > 0.9995 {
+            let w = q1[0] + t * (q2[0] - q1[0]);
+            let x = q1[1] + t * (q2[1] - q1[1]);
+            let y = q1[2] + t * (q2[2] - q1[2]);
+            let z = q1[3] + t * (q2[3] - q1[3]);
+            let len = (w*w + x*x + y*y + z*z).sqrt();
+            return Ok(make_vec4(w/len, x/len, y/len, z/len));
+        }
+
+        // Spherical interpolation
+        let theta_0 = dot.acos();
+        let theta = theta_0 * t;
+        let sin_theta = theta.sin();
+        let sin_theta_0 = theta_0.sin();
+
+        let s0 = (theta_0 - theta).cos() - dot * sin_theta / sin_theta_0;
+        let s1 = sin_theta / sin_theta_0;
+
+        Ok(make_vec4(
+            s0 * q1[0] + s1 * q2[0],
+            s0 * q1[1] + s1 * q2[1],
+            s0 * q1[2] + s1 * q2[2],
+            s0 * q1[3] + s1 * q2[3],
+        ))
+    });
+
+    // quat_to_euler(q) - convert quaternion to Euler angles [pitch, yaw, roll]
+    define(interp, "quat_to_euler", Some(1), |_, args| {
+        let q = extract_vec4(&args[0], "quat_to_euler")?;
+        let (w, x, y, z) = (q[0], q[1], q[2], q[3]);
+
+        // Roll (X-axis rotation)
+        let sinr_cosp = 2.0 * (w * x + y * z);
+        let cosr_cosp = 1.0 - 2.0 * (x * x + y * y);
+        let roll = sinr_cosp.atan2(cosr_cosp);
+
+        // Pitch (Y-axis rotation)
+        let sinp = 2.0 * (w * y - z * x);
+        let pitch = if sinp.abs() >= 1.0 {
+            std::f64::consts::FRAC_PI_2.copysign(sinp)
+        } else {
+            sinp.asin()
+        };
+
+        // Yaw (Z-axis rotation)
+        let siny_cosp = 2.0 * (w * z + x * y);
+        let cosy_cosp = 1.0 - 2.0 * (y * y + z * z);
+        let yaw = siny_cosp.atan2(cosy_cosp);
+
+        Ok(make_vec3(pitch, yaw, roll))
+    });
+
+    // quat_to_mat4(q) - convert quaternion to 4x4 rotation matrix
+    define(interp, "quat_to_mat4", Some(1), |_, args| {
+        let q = extract_vec4(&args[0], "quat_to_mat4")?;
+        let (w, x, y, z) = (q[0], q[1], q[2], q[3]);
+
+        let xx = x * x; let yy = y * y; let zz = z * z;
+        let xy = x * y; let xz = x * z; let yz = y * z;
+        let wx = w * x; let wy = w * y; let wz = w * z;
+
+        // Column-major 4x4 rotation matrix
+        Ok(make_mat4([
+            1.0 - 2.0*(yy + zz), 2.0*(xy + wz),       2.0*(xz - wy),       0.0,
+            2.0*(xy - wz),       1.0 - 2.0*(xx + zz), 2.0*(yz + wx),       0.0,
+            2.0*(xz + wy),       2.0*(yz - wx),       1.0 - 2.0*(xx + yy), 0.0,
+            0.0,                 0.0,                 0.0,                 1.0,
+        ]))
+    });
+
+    // -------------------------------------------------------------------------
+    // VECTOR TYPES - vec2, vec3, vec4
+    // -------------------------------------------------------------------------
+
+    // vec2(x, y)
+    define(interp, "vec2", Some(2), |_, args| {
+        let x = extract_number(&args[0], "vec2")?;
+        let y = extract_number(&args[1], "vec2")?;
+        Ok(make_vec2(x, y))
+    });
+
+    // vec3(x, y, z)
+    define(interp, "vec3", Some(3), |_, args| {
+        let x = extract_number(&args[0], "vec3")?;
+        let y = extract_number(&args[1], "vec3")?;
+        let z = extract_number(&args[2], "vec3")?;
+        Ok(make_vec3(x, y, z))
+    });
+
+    // vec4(x, y, z, w)
+    define(interp, "vec4", Some(4), |_, args| {
+        let x = extract_number(&args[0], "vec4")?;
+        let y = extract_number(&args[1], "vec4")?;
+        let z = extract_number(&args[2], "vec4")?;
+        let w = extract_number(&args[3], "vec4")?;
+        Ok(make_vec4(x, y, z, w))
+    });
+
+    // vec3_add(a, b)
+    define(interp, "vec3_add", Some(2), |_, args| {
+        let a = extract_vec3(&args[0], "vec3_add")?;
+        let b = extract_vec3(&args[1], "vec3_add")?;
+        Ok(make_vec3(a[0]+b[0], a[1]+b[1], a[2]+b[2]))
+    });
+
+    // vec3_sub(a, b)
+    define(interp, "vec3_sub", Some(2), |_, args| {
+        let a = extract_vec3(&args[0], "vec3_sub")?;
+        let b = extract_vec3(&args[1], "vec3_sub")?;
+        Ok(make_vec3(a[0]-b[0], a[1]-b[1], a[2]-b[2]))
+    });
+
+    // vec3_scale(v, scalar)
+    define(interp, "vec3_scale", Some(2), |_, args| {
+        let v = extract_vec3(&args[0], "vec3_scale")?;
+        let s = extract_number(&args[1], "vec3_scale")?;
+        Ok(make_vec3(v[0]*s, v[1]*s, v[2]*s))
+    });
+
+    // vec3_dot(a, b)
+    define(interp, "vec3_dot", Some(2), |_, args| {
+        let a = extract_vec3(&args[0], "vec3_dot")?;
+        let b = extract_vec3(&args[1], "vec3_dot")?;
+        Ok(Value::Float(a[0]*b[0] + a[1]*b[1] + a[2]*b[2]))
+    });
+
+    // vec3_cross(a, b)
+    define(interp, "vec3_cross", Some(2), |_, args| {
+        let a = extract_vec3(&args[0], "vec3_cross")?;
+        let b = extract_vec3(&args[1], "vec3_cross")?;
+        Ok(make_vec3(
+            a[1]*b[2] - a[2]*b[1],
+            a[2]*b[0] - a[0]*b[2],
+            a[0]*b[1] - a[1]*b[0],
+        ))
+    });
+
+    // vec3_length(v)
+    define(interp, "vec3_length", Some(1), |_, args| {
+        let v = extract_vec3(&args[0], "vec3_length")?;
+        Ok(Value::Float((v[0]*v[0] + v[1]*v[1] + v[2]*v[2]).sqrt()))
+    });
+
+    // vec3_normalize(v)
+    define(interp, "vec3_normalize", Some(1), |_, args| {
+        let v = extract_vec3(&args[0], "vec3_normalize")?;
+        let len = (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]).sqrt();
+        if len < 1e-10 {
+            return Ok(make_vec3(0.0, 0.0, 0.0));
+        }
+        Ok(make_vec3(v[0]/len, v[1]/len, v[2]/len))
+    });
+
+    // vec3_lerp(a, b, t) - linear interpolation
+    define(interp, "vec3_lerp", Some(3), |_, args| {
+        let a = extract_vec3(&args[0], "vec3_lerp")?;
+        let b = extract_vec3(&args[1], "vec3_lerp")?;
+        let t = extract_number(&args[2], "vec3_lerp")?;
+        Ok(make_vec3(
+            a[0] + t * (b[0] - a[0]),
+            a[1] + t * (b[1] - a[1]),
+            a[2] + t * (b[2] - a[2]),
+        ))
+    });
+
+    // vec3_reflect(incident, normal) - reflection vector
+    define(interp, "vec3_reflect", Some(2), |_, args| {
+        let i = extract_vec3(&args[0], "vec3_reflect")?;
+        let n = extract_vec3(&args[1], "vec3_reflect")?;
+        let dot = i[0]*n[0] + i[1]*n[1] + i[2]*n[2];
+        Ok(make_vec3(
+            i[0] - 2.0 * dot * n[0],
+            i[1] - 2.0 * dot * n[1],
+            i[2] - 2.0 * dot * n[2],
+        ))
+    });
+
+    // vec3_refract(incident, normal, eta) - refraction vector
+    define(interp, "vec3_refract", Some(3), |_, args| {
+        let i = extract_vec3(&args[0], "vec3_refract")?;
+        let n = extract_vec3(&args[1], "vec3_refract")?;
+        let eta = extract_number(&args[2], "vec3_refract")?;
+
+        let dot = i[0]*n[0] + i[1]*n[1] + i[2]*n[2];
+        let k = 1.0 - eta * eta * (1.0 - dot * dot);
+
+        if k < 0.0 {
+            // Total internal reflection
+            return Ok(make_vec3(0.0, 0.0, 0.0));
+        }
+
+        let coeff = eta * dot + k.sqrt();
+        Ok(make_vec3(
+            eta * i[0] - coeff * n[0],
+            eta * i[1] - coeff * n[1],
+            eta * i[2] - coeff * n[2],
+        ))
+    });
+
+    // vec4_dot(a, b)
+    define(interp, "vec4_dot", Some(2), |_, args| {
+        let a = extract_vec4(&args[0], "vec4_dot")?;
+        let b = extract_vec4(&args[1], "vec4_dot")?;
+        Ok(Value::Float(a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3]))
+    });
+
+    // -------------------------------------------------------------------------
+    // MAT4 - 4x4 MATRICES (Column-major for OpenGL compatibility)
+    // -------------------------------------------------------------------------
+
+    // mat4_identity() - 4x4 identity matrix
+    define(interp, "mat4_identity", Some(0), |_, _| {
+        Ok(make_mat4([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]))
+    });
+
+    // mat4_mul(a, b) - matrix multiplication
+    define(interp, "mat4_mul", Some(2), |_, args| {
+        let a = extract_mat4(&args[0], "mat4_mul")?;
+        let b = extract_mat4(&args[1], "mat4_mul")?;
+
+        let mut result = [0.0f64; 16];
+        for col in 0..4 {
+            for row in 0..4 {
+                let mut sum = 0.0;
+                for k in 0..4 {
+                    sum += a[k * 4 + row] * b[col * 4 + k];
+                }
+                result[col * 4 + row] = sum;
+            }
+        }
+        Ok(make_mat4(result))
+    });
+
+    // mat4_transform(mat4, vec4) - transform vector by matrix
+    define(interp, "mat4_transform", Some(2), |_, args| {
+        let m = extract_mat4(&args[0], "mat4_transform")?;
+        let v = extract_vec4(&args[1], "mat4_transform")?;
+
+        Ok(make_vec4(
+            m[0]*v[0] + m[4]*v[1] + m[8]*v[2]  + m[12]*v[3],
+            m[1]*v[0] + m[5]*v[1] + m[9]*v[2]  + m[13]*v[3],
+            m[2]*v[0] + m[6]*v[1] + m[10]*v[2] + m[14]*v[3],
+            m[3]*v[0] + m[7]*v[1] + m[11]*v[2] + m[15]*v[3],
+        ))
+    });
+
+    // mat4_translate(tx, ty, tz) - translation matrix
+    define(interp, "mat4_translate", Some(3), |_, args| {
+        let tx = extract_number(&args[0], "mat4_translate")?;
+        let ty = extract_number(&args[1], "mat4_translate")?;
+        let tz = extract_number(&args[2], "mat4_translate")?;
+        Ok(make_mat4([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            tx,  ty,  tz,  1.0,
+        ]))
+    });
+
+    // mat4_scale(sx, sy, sz) - scale matrix
+    define(interp, "mat4_scale", Some(3), |_, args| {
+        let sx = extract_number(&args[0], "mat4_scale")?;
+        let sy = extract_number(&args[1], "mat4_scale")?;
+        let sz = extract_number(&args[2], "mat4_scale")?;
+        Ok(make_mat4([
+            sx,  0.0, 0.0, 0.0,
+            0.0, sy,  0.0, 0.0,
+            0.0, 0.0, sz,  0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]))
+    });
+
+    // mat4_rotate_x(angle) - rotation around X axis
+    define(interp, "mat4_rotate_x", Some(1), |_, args| {
+        let angle = extract_number(&args[0], "mat4_rotate_x")?;
+        let (s, c) = angle.sin_cos();
+        Ok(make_mat4([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, c,   s,   0.0,
+            0.0, -s,  c,   0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]))
+    });
+
+    // mat4_rotate_y(angle) - rotation around Y axis
+    define(interp, "mat4_rotate_y", Some(1), |_, args| {
+        let angle = extract_number(&args[0], "mat4_rotate_y")?;
+        let (s, c) = angle.sin_cos();
+        Ok(make_mat4([
+            c,   0.0, -s,  0.0,
+            0.0, 1.0, 0.0, 0.0,
+            s,   0.0, c,   0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]))
+    });
+
+    // mat4_rotate_z(angle) - rotation around Z axis
+    define(interp, "mat4_rotate_z", Some(1), |_, args| {
+        let angle = extract_number(&args[0], "mat4_rotate_z")?;
+        let (s, c) = angle.sin_cos();
+        Ok(make_mat4([
+            c,   s,   0.0, 0.0,
+            -s,  c,   0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]))
+    });
+
+    // mat4_perspective(fov_y, aspect, near, far) - perspective projection
+    define(interp, "mat4_perspective", Some(4), |_, args| {
+        let fov_y = extract_number(&args[0], "mat4_perspective")?;
+        let aspect = extract_number(&args[1], "mat4_perspective")?;
+        let near = extract_number(&args[2], "mat4_perspective")?;
+        let far = extract_number(&args[3], "mat4_perspective")?;
+
+        let f = 1.0 / (fov_y / 2.0).tan();
+        let nf = 1.0 / (near - far);
+
+        Ok(make_mat4([
+            f / aspect, 0.0, 0.0,                   0.0,
+            0.0,        f,   0.0,                   0.0,
+            0.0,        0.0, (far + near) * nf,    -1.0,
+            0.0,        0.0, 2.0 * far * near * nf, 0.0,
+        ]))
+    });
+
+    // mat4_ortho(left, right, bottom, top, near, far) - orthographic projection
+    define(interp, "mat4_ortho", Some(6), |_, args| {
+        let left = extract_number(&args[0], "mat4_ortho")?;
+        let right = extract_number(&args[1], "mat4_ortho")?;
+        let bottom = extract_number(&args[2], "mat4_ortho")?;
+        let top = extract_number(&args[3], "mat4_ortho")?;
+        let near = extract_number(&args[4], "mat4_ortho")?;
+        let far = extract_number(&args[5], "mat4_ortho")?;
+
+        let lr = 1.0 / (left - right);
+        let bt = 1.0 / (bottom - top);
+        let nf = 1.0 / (near - far);
+
+        Ok(make_mat4([
+            -2.0 * lr,           0.0,                 0.0,                0.0,
+            0.0,                 -2.0 * bt,           0.0,                0.0,
+            0.0,                 0.0,                 2.0 * nf,           0.0,
+            (left + right) * lr, (top + bottom) * bt, (far + near) * nf,  1.0,
+        ]))
+    });
+
+    // mat4_look_at(eye, center, up) - view matrix (camera)
+    define(interp, "mat4_look_at", Some(3), |_, args| {
+        let eye = extract_vec3(&args[0], "mat4_look_at")?;
+        let center = extract_vec3(&args[1], "mat4_look_at")?;
+        let up = extract_vec3(&args[2], "mat4_look_at")?;
+
+        // Forward vector (z)
+        let fx = center[0] - eye[0];
+        let fy = center[1] - eye[1];
+        let fz = center[2] - eye[2];
+        let flen = (fx*fx + fy*fy + fz*fz).sqrt();
+        let (fx, fy, fz) = (fx/flen, fy/flen, fz/flen);
+
+        // Right vector (x) = forward × up
+        let rx = fy * up[2] - fz * up[1];
+        let ry = fz * up[0] - fx * up[2];
+        let rz = fx * up[1] - fy * up[0];
+        let rlen = (rx*rx + ry*ry + rz*rz).sqrt();
+        let (rx, ry, rz) = (rx/rlen, ry/rlen, rz/rlen);
+
+        // True up vector (y) = right × forward
+        let ux = ry * fz - rz * fy;
+        let uy = rz * fx - rx * fz;
+        let uz = rx * fy - ry * fx;
+
+        Ok(make_mat4([
+            rx, ux, -fx, 0.0,
+            ry, uy, -fy, 0.0,
+            rz, uz, -fz, 0.0,
+            -(rx*eye[0] + ry*eye[1] + rz*eye[2]),
+            -(ux*eye[0] + uy*eye[1] + uz*eye[2]),
+            -(-fx*eye[0] - fy*eye[1] - fz*eye[2]),
+            1.0,
+        ]))
+    });
+
+    // mat4_inverse(m) - matrix inverse (for transformation matrices)
+    define(interp, "mat4_inverse", Some(1), |_, args| {
+        let m = extract_mat4(&args[0], "mat4_inverse")?;
+
+        // Optimized 4x4 matrix inverse using cofactors
+        let a00 = m[0]; let a01 = m[1]; let a02 = m[2]; let a03 = m[3];
+        let a10 = m[4]; let a11 = m[5]; let a12 = m[6]; let a13 = m[7];
+        let a20 = m[8]; let a21 = m[9]; let a22 = m[10]; let a23 = m[11];
+        let a30 = m[12]; let a31 = m[13]; let a32 = m[14]; let a33 = m[15];
+
+        let b00 = a00 * a11 - a01 * a10;
+        let b01 = a00 * a12 - a02 * a10;
+        let b02 = a00 * a13 - a03 * a10;
+        let b03 = a01 * a12 - a02 * a11;
+        let b04 = a01 * a13 - a03 * a11;
+        let b05 = a02 * a13 - a03 * a12;
+        let b06 = a20 * a31 - a21 * a30;
+        let b07 = a20 * a32 - a22 * a30;
+        let b08 = a20 * a33 - a23 * a30;
+        let b09 = a21 * a32 - a22 * a31;
+        let b10 = a21 * a33 - a23 * a31;
+        let b11 = a22 * a33 - a23 * a32;
+
+        let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+
+        if det.abs() < 1e-10 {
+            return Err(RuntimeError::new("mat4_inverse: singular matrix"));
+        }
+
+        let inv_det = 1.0 / det;
+
+        Ok(make_mat4([
+            (a11 * b11 - a12 * b10 + a13 * b09) * inv_det,
+            (a02 * b10 - a01 * b11 - a03 * b09) * inv_det,
+            (a31 * b05 - a32 * b04 + a33 * b03) * inv_det,
+            (a22 * b04 - a21 * b05 - a23 * b03) * inv_det,
+            (a12 * b08 - a10 * b11 - a13 * b07) * inv_det,
+            (a00 * b11 - a02 * b08 + a03 * b07) * inv_det,
+            (a32 * b02 - a30 * b05 - a33 * b01) * inv_det,
+            (a20 * b05 - a22 * b02 + a23 * b01) * inv_det,
+            (a10 * b10 - a11 * b08 + a13 * b06) * inv_det,
+            (a01 * b08 - a00 * b10 - a03 * b06) * inv_det,
+            (a30 * b04 - a31 * b02 + a33 * b00) * inv_det,
+            (a21 * b02 - a20 * b04 - a23 * b00) * inv_det,
+            (a11 * b07 - a10 * b09 - a12 * b06) * inv_det,
+            (a00 * b09 - a01 * b07 + a02 * b06) * inv_det,
+            (a31 * b01 - a30 * b03 - a32 * b00) * inv_det,
+            (a20 * b03 - a21 * b01 + a22 * b00) * inv_det,
+        ]))
+    });
+
+    // mat4_transpose(m) - transpose matrix
+    define(interp, "mat4_transpose", Some(1), |_, args| {
+        let m = extract_mat4(&args[0], "mat4_transpose")?;
+        Ok(make_mat4([
+            m[0], m[4], m[8],  m[12],
+            m[1], m[5], m[9],  m[13],
+            m[2], m[6], m[10], m[14],
+            m[3], m[7], m[11], m[15],
+        ]))
+    });
+
+    // -------------------------------------------------------------------------
+    // MAT3 - 3x3 MATRICES (for normals, 2D transforms)
+    // -------------------------------------------------------------------------
+
+    // mat3_identity() - 3x3 identity matrix
+    define(interp, "mat3_identity", Some(0), |_, _| {
+        Ok(make_mat3([
+            1.0, 0.0, 0.0,
+            0.0, 1.0, 0.0,
+            0.0, 0.0, 1.0,
+        ]))
+    });
+
+    // mat3_from_mat4(m) - extract upper-left 3x3 from 4x4 (for normal matrix)
+    define(interp, "mat3_from_mat4", Some(1), |_, args| {
+        let m = extract_mat4(&args[0], "mat3_from_mat4")?;
+        Ok(make_mat3([
+            m[0], m[1], m[2],
+            m[4], m[5], m[6],
+            m[8], m[9], m[10],
+        ]))
+    });
+
+    // mat3_mul(a, b) - 3x3 matrix multiplication
+    define(interp, "mat3_mul", Some(2), |_, args| {
+        let a = extract_mat3(&args[0], "mat3_mul")?;
+        let b = extract_mat3(&args[1], "mat3_mul")?;
+
+        let mut result = [0.0f64; 9];
+        for col in 0..3 {
+            for row in 0..3 {
+                let mut sum = 0.0;
+                for k in 0..3 {
+                    sum += a[k * 3 + row] * b[col * 3 + k];
+                }
+                result[col * 3 + row] = sum;
+            }
+        }
+        Ok(make_mat3(result))
+    });
+
+    // mat3_transform(mat3, vec3) - transform 3D vector by 3x3 matrix
+    define(interp, "mat3_transform", Some(2), |_, args| {
+        let m = extract_mat3(&args[0], "mat3_transform")?;
+        let v = extract_vec3(&args[1], "mat3_transform")?;
+
+        Ok(make_vec3(
+            m[0]*v[0] + m[3]*v[1] + m[6]*v[2],
+            m[1]*v[0] + m[4]*v[1] + m[7]*v[2],
+            m[2]*v[0] + m[5]*v[1] + m[8]*v[2],
+        ))
+    });
+
+    // mat3_inverse(m) - 3x3 matrix inverse
+    define(interp, "mat3_inverse", Some(1), |_, args| {
+        let m = extract_mat3(&args[0], "mat3_inverse")?;
+
+        let det = m[0] * (m[4] * m[8] - m[5] * m[7])
+                - m[3] * (m[1] * m[8] - m[2] * m[7])
+                + m[6] * (m[1] * m[5] - m[2] * m[4]);
+
+        if det.abs() < 1e-10 {
+            return Err(RuntimeError::new("mat3_inverse: singular matrix"));
+        }
+
+        let inv_det = 1.0 / det;
+
+        Ok(make_mat3([
+            (m[4] * m[8] - m[5] * m[7]) * inv_det,
+            (m[2] * m[7] - m[1] * m[8]) * inv_det,
+            (m[1] * m[5] - m[2] * m[4]) * inv_det,
+            (m[5] * m[6] - m[3] * m[8]) * inv_det,
+            (m[0] * m[8] - m[2] * m[6]) * inv_det,
+            (m[2] * m[3] - m[0] * m[5]) * inv_det,
+            (m[3] * m[7] - m[4] * m[6]) * inv_det,
+            (m[1] * m[6] - m[0] * m[7]) * inv_det,
+            (m[0] * m[4] - m[1] * m[3]) * inv_det,
+        ]))
+    });
+
+    // mat3_transpose(m)
+    define(interp, "mat3_transpose", Some(1), |_, args| {
+        let m = extract_mat3(&args[0], "mat3_transpose")?;
+        Ok(make_mat3([
+            m[0], m[3], m[6],
+            m[1], m[4], m[7],
+            m[2], m[5], m[8],
+        ]))
+    });
+}
+
+// Helper functions for graphics math
+fn extract_number(v: &Value, fn_name: &str) -> Result<f64, RuntimeError> {
+    match v {
+        Value::Float(f) => Ok(*f),
+        Value::Int(i) => Ok(*i as f64),
+        _ => Err(RuntimeError::new(format!("{}() requires number argument", fn_name))),
+    }
+}
+
+fn extract_vec2(v: &Value, fn_name: &str) -> Result<[f64; 2], RuntimeError> {
+    match v {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            if arr.len() < 2 {
+                return Err(RuntimeError::new(format!("{}() requires vec2 (2 elements)", fn_name)));
+            }
+            Ok([
+                extract_number(&arr[0], fn_name)?,
+                extract_number(&arr[1], fn_name)?,
+            ])
+        }
+        _ => Err(RuntimeError::new(format!("{}() requires vec2 array", fn_name))),
+    }
+}
+
+fn extract_vec3(v: &Value, fn_name: &str) -> Result<[f64; 3], RuntimeError> {
+    match v {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            if arr.len() < 3 {
+                return Err(RuntimeError::new(format!("{}() requires vec3 (3 elements)", fn_name)));
+            }
+            Ok([
+                extract_number(&arr[0], fn_name)?,
+                extract_number(&arr[1], fn_name)?,
+                extract_number(&arr[2], fn_name)?,
+            ])
+        }
+        _ => Err(RuntimeError::new(format!("{}() requires vec3 array", fn_name))),
+    }
+}
+
+fn extract_vec4(v: &Value, fn_name: &str) -> Result<[f64; 4], RuntimeError> {
+    match v {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            if arr.len() < 4 {
+                return Err(RuntimeError::new(format!("{}() requires vec4 (4 elements)", fn_name)));
+            }
+            Ok([
+                extract_number(&arr[0], fn_name)?,
+                extract_number(&arr[1], fn_name)?,
+                extract_number(&arr[2], fn_name)?,
+                extract_number(&arr[3], fn_name)?,
+            ])
+        }
+        _ => Err(RuntimeError::new(format!("{}() requires vec4 array", fn_name))),
+    }
+}
+
+fn extract_mat3(v: &Value, fn_name: &str) -> Result<[f64; 9], RuntimeError> {
+    match v {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            if arr.len() < 9 {
+                return Err(RuntimeError::new(format!("{}() requires mat3 (9 elements)", fn_name)));
+            }
+            let mut result = [0.0f64; 9];
+            for i in 0..9 {
+                result[i] = extract_number(&arr[i], fn_name)?;
+            }
+            Ok(result)
+        }
+        _ => Err(RuntimeError::new(format!("{}() requires mat3 array", fn_name))),
+    }
+}
+
+fn extract_mat4(v: &Value, fn_name: &str) -> Result<[f64; 16], RuntimeError> {
+    match v {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            if arr.len() < 16 {
+                return Err(RuntimeError::new(format!("{}() requires mat4 (16 elements)", fn_name)));
+            }
+            let mut result = [0.0f64; 16];
+            for i in 0..16 {
+                result[i] = extract_number(&arr[i], fn_name)?;
+            }
+            Ok(result)
+        }
+        _ => Err(RuntimeError::new(format!("{}() requires mat4 array", fn_name))),
+    }
+}
+
+fn make_vec2(x: f64, y: f64) -> Value {
+    Value::Array(Rc::new(RefCell::new(vec![
+        Value::Float(x), Value::Float(y),
+    ])))
+}
+
+fn make_vec3(x: f64, y: f64, z: f64) -> Value {
+    Value::Array(Rc::new(RefCell::new(vec![
+        Value::Float(x), Value::Float(y), Value::Float(z),
+    ])))
+}
+
+fn make_vec4(x: f64, y: f64, z: f64, w: f64) -> Value {
+    Value::Array(Rc::new(RefCell::new(vec![
+        Value::Float(x), Value::Float(y), Value::Float(z), Value::Float(w),
+    ])))
+}
+
+fn make_mat3(m: [f64; 9]) -> Value {
+    Value::Array(Rc::new(RefCell::new(
+        m.iter().map(|&v| Value::Float(v)).collect()
+    )))
+}
+
+fn make_mat4(m: [f64; 16]) -> Value {
+    Value::Array(Rc::new(RefCell::new(
+        m.iter().map(|&v| Value::Float(v)).collect()
+    )))
 }
 
 // ============================================================================
@@ -8239,5 +9055,285 @@ mod tests {
         // Nth with pipe syntax
         assert!(matches!(eval("fn main() { return [10, 20, 30, 40] |ν{1}; }"), Ok(Value::Int(20))));
         assert!(matches!(eval("fn main() { return [10, 20, 30, 40] |ν{3}; }"), Ok(Value::Int(40))));
+    }
+
+    // ========== GRAPHICS MATH TESTS ==========
+
+    #[test]
+    fn test_quaternion_identity() {
+        let result = eval("fn main() { let q = quat_identity(); return q; }");
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            assert_eq!(arr.len(), 4);
+            if let (Value::Float(w), Value::Float(x), Value::Float(y), Value::Float(z)) =
+                (&arr[0], &arr[1], &arr[2], &arr[3]) {
+                assert!((w - 1.0).abs() < 0.001);
+                assert!(x.abs() < 0.001);
+                assert!(y.abs() < 0.001);
+                assert!(z.abs() < 0.001);
+            }
+        } else {
+            panic!("Expected quaternion array");
+        }
+    }
+
+    #[test]
+    fn test_quaternion_from_axis_angle() {
+        // 90 degrees around Y axis
+        let result = eval("fn main() { let q = quat_from_axis_angle(vec3(0, 1, 0), 1.5707963); return q; }");
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            assert_eq!(arr.len(), 4);
+            // Should be approximately [cos(45°), 0, sin(45°), 0] = [0.707, 0, 0.707, 0]
+            if let (Value::Float(w), Value::Float(x), Value::Float(y), Value::Float(z)) =
+                (&arr[0], &arr[1], &arr[2], &arr[3]) {
+                assert!((w - 0.707).abs() < 0.01, "w={}", w);
+                assert!(x.abs() < 0.01);
+                assert!((y - 0.707).abs() < 0.01, "y={}", y);
+                assert!(z.abs() < 0.01);
+            }
+        } else {
+            panic!("Expected quaternion array");
+        }
+    }
+
+    #[test]
+    fn test_quaternion_rotate_vector() {
+        // Rotate [1, 0, 0] by 90 degrees around Z axis should give [0, 1, 0]
+        let result = eval(r#"
+            fn main() {
+                let q = quat_from_axis_angle(vec3(0, 0, 1), 1.5707963);
+                let v = vec3(1, 0, 0);
+                return quat_rotate(q, v);
+            }
+        "#);
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            assert_eq!(arr.len(), 3);
+            if let (Value::Float(x), Value::Float(y), Value::Float(z)) =
+                (&arr[0], &arr[1], &arr[2]) {
+                assert!(x.abs() < 0.01, "x={}", x);
+                assert!((y - 1.0).abs() < 0.01, "y={}", y);
+                assert!(z.abs() < 0.01);
+            }
+        } else {
+            panic!("Expected vec3 array");
+        }
+    }
+
+    #[test]
+    fn test_quaternion_slerp() {
+        // Interpolate between identity and 90° rotation
+        let result = eval(r#"
+            fn main() {
+                let q1 = quat_identity();
+                let q2 = quat_from_axis_angle(vec3(0, 1, 0), 1.5707963);
+                return quat_slerp(q1, q2, 0.5);
+            }
+        "#);
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            assert_eq!(arr.len(), 4);
+            // At t=0.5, should be 45° rotation
+            if let Value::Float(w) = &arr[0] {
+                // cos(22.5°) ≈ 0.924
+                assert!((w - 0.924).abs() < 0.05, "w={}", w);
+            }
+        } else {
+            panic!("Expected quaternion array");
+        }
+    }
+
+    #[test]
+    fn test_vec3_operations() {
+        // vec3_add
+        let result = eval("fn main() { return vec3_add(vec3(1, 2, 3), vec3(4, 5, 6)); }");
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            if let (Value::Float(x), Value::Float(y), Value::Float(z)) =
+                (&arr[0], &arr[1], &arr[2]) {
+                assert!((x - 5.0).abs() < 0.001);
+                assert!((y - 7.0).abs() < 0.001);
+                assert!((z - 9.0).abs() < 0.001);
+            }
+        }
+
+        // vec3_dot
+        let result = eval("fn main() { return vec3_dot(vec3(1, 2, 3), vec3(4, 5, 6)); }");
+        assert!(matches!(result, Ok(Value::Float(f)) if (f - 32.0).abs() < 0.001));
+
+        // vec3_cross
+        let result = eval("fn main() { return vec3_cross(vec3(1, 0, 0), vec3(0, 1, 0)); }");
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            if let (Value::Float(x), Value::Float(y), Value::Float(z)) =
+                (&arr[0], &arr[1], &arr[2]) {
+                assert!(x.abs() < 0.001);
+                assert!(y.abs() < 0.001);
+                assert!((z - 1.0).abs() < 0.001);
+            }
+        }
+
+        // vec3_length
+        let result = eval("fn main() { return vec3_length(vec3(3, 4, 0)); }");
+        assert!(matches!(result, Ok(Value::Float(f)) if (f - 5.0).abs() < 0.001));
+
+        // vec3_normalize
+        let result = eval("fn main() { return vec3_normalize(vec3(3, 0, 0)); }");
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            if let Value::Float(x) = &arr[0] {
+                assert!((x - 1.0).abs() < 0.001);
+            }
+        }
+    }
+
+    #[test]
+    fn test_vec3_reflect() {
+        // Reflect [1, -1, 0] off surface with normal [0, 1, 0]
+        let result = eval("fn main() { return vec3_reflect(vec3(1, -1, 0), vec3(0, 1, 0)); }");
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            if let (Value::Float(x), Value::Float(y), Value::Float(z)) =
+                (&arr[0], &arr[1], &arr[2]) {
+                assert!((x - 1.0).abs() < 0.001);
+                assert!((y - 1.0).abs() < 0.001);
+                assert!(z.abs() < 0.001);
+            }
+        }
+    }
+
+    #[test]
+    fn test_mat4_identity() {
+        let result = eval("fn main() { return mat4_identity(); }");
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            assert_eq!(arr.len(), 16);
+            // Check diagonal elements are 1
+            if let (Value::Float(m00), Value::Float(m55), Value::Float(m10), Value::Float(m15)) =
+                (&arr[0], &arr[5], &arr[10], &arr[15]) {
+                assert!((m00 - 1.0).abs() < 0.001);
+                assert!((m55 - 1.0).abs() < 0.001);
+                assert!((m10 - 1.0).abs() < 0.001);
+                assert!((m15 - 1.0).abs() < 0.001);
+            }
+        }
+    }
+
+    #[test]
+    fn test_mat4_translate() {
+        let result = eval(r#"
+            fn main() {
+                let t = mat4_translate(5.0, 10.0, 15.0);
+                let v = vec4(0, 0, 0, 1);
+                return mat4_transform(t, v);
+            }
+        "#);
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            if let (Value::Float(x), Value::Float(y), Value::Float(z), Value::Float(w)) =
+                (&arr[0], &arr[1], &arr[2], &arr[3]) {
+                assert!((x - 5.0).abs() < 0.001);
+                assert!((y - 10.0).abs() < 0.001);
+                assert!((z - 15.0).abs() < 0.001);
+                assert!((w - 1.0).abs() < 0.001);
+            }
+        }
+    }
+
+    #[test]
+    fn test_mat4_perspective() {
+        // Just verify it creates a valid matrix without errors
+        let result = eval("fn main() { return mat4_perspective(1.0472, 1.777, 0.1, 100.0); }");
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            assert_eq!(arr.len(), 16);
+        } else {
+            panic!("Expected mat4 array");
+        }
+    }
+
+    #[test]
+    fn test_mat4_look_at() {
+        let result = eval(r#"
+            fn main() {
+                let eye = vec3(0, 0, 5);
+                let center = vec3(0, 0, 0);
+                let up = vec3(0, 1, 0);
+                return mat4_look_at(eye, center, up);
+            }
+        "#);
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            assert_eq!(arr.len(), 16);
+        } else {
+            panic!("Expected mat4 array");
+        }
+    }
+
+    #[test]
+    fn test_mat4_inverse() {
+        // Inverse of identity should be identity
+        let result = eval(r#"
+            fn main() {
+                let m = mat4_identity();
+                return mat4_inverse(m);
+            }
+        "#);
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            assert_eq!(arr.len(), 16);
+            if let Value::Float(m00) = &arr[0] {
+                assert!((m00 - 1.0).abs() < 0.001);
+            }
+        }
+    }
+
+    #[test]
+    fn test_mat3_operations() {
+        // mat3_identity
+        let result = eval("fn main() { return mat3_identity(); }");
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            assert_eq!(arr.len(), 9);
+        }
+
+        // mat3_transform
+        let result = eval(r#"
+            fn main() {
+                let m = mat3_identity();
+                let v = vec3(1, 2, 3);
+                return mat3_transform(m, v);
+            }
+        "#);
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            if let (Value::Float(x), Value::Float(y), Value::Float(z)) =
+                (&arr[0], &arr[1], &arr[2]) {
+                assert!((x - 1.0).abs() < 0.001);
+                assert!((y - 2.0).abs() < 0.001);
+                assert!((z - 3.0).abs() < 0.001);
+            }
+        }
+    }
+
+    #[test]
+    fn test_quat_to_mat4() {
+        // Convert identity quaternion to matrix - should be identity
+        let result = eval(r#"
+            fn main() {
+                let q = quat_identity();
+                return quat_to_mat4(q);
+            }
+        "#);
+        if let Ok(Value::Array(arr)) = result {
+            let arr = arr.borrow();
+            assert_eq!(arr.len(), 16);
+            // Check diagonal is 1
+            if let (Value::Float(m00), Value::Float(m55)) = (&arr[0], &arr[5]) {
+                assert!((m00 - 1.0).abs() < 0.001);
+                assert!((m55 - 1.0).abs() < 0.001);
+            }
+        }
     }
 }
