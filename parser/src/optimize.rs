@@ -337,6 +337,7 @@ impl Optimizer {
             is_async: false,
             attrs: FunctionAttrs::default(),
             name: Ident { name: name.to_string(), evidentiality: None, span: span.clone() },
+            aspect: None,
             generics: None,
             params,
             return_type: None,
@@ -382,6 +383,7 @@ impl Optimizer {
             is_async: original.is_async,
             attrs: original.attrs.clone(),
             name: Ident { name: name.to_string(), evidentiality: None, span: span.clone() },
+            aspect: original.aspect,
             generics: original.generics.clone(),
             params: original.params.clone(),
             return_type: original.return_type.clone(),
@@ -396,6 +398,7 @@ impl Optimizer {
 
     /// Try to transform a recursive function into a memoized version
     /// Returns: (implementation_func, cache_init_func, wrapper_func)
+    #[allow(dead_code)]
     fn try_memoize_transform(&self, func: &ast::Function) -> Option<(ast::Function, ast::Function, ast::Function)> {
         let param_count = func.params.len();
         if param_count != 1 && param_count != 2 {
@@ -405,7 +408,7 @@ impl Optimizer {
         let span = Span { start: 0, end: 0 };
         let func_name = &func.name.name;
         let impl_name = format!("_memo_impl_{}", func_name);
-        let cache_name = format!("_memo_cache_{}", func_name);
+        let _cache_name = format!("_memo_cache_{}", func_name);
         let init_name = format!("_memo_init_{}", func_name);
 
         // Get parameter names
@@ -427,6 +430,7 @@ impl Optimizer {
             is_async: func.is_async,
             attrs: func.attrs.clone(),
             name: Ident { name: impl_name.clone(), evidentiality: None, span: span.clone() },
+            aspect: func.aspect,
             generics: func.generics.clone(),
             params: func.params.clone(),
             return_type: func.return_type.clone(),
@@ -458,6 +462,7 @@ impl Optimizer {
             is_async: false,
             attrs: FunctionAttrs::default(),
             name: Ident { name: init_name.clone(), evidentiality: None, span: span.clone() },
+            aspect: None,
             generics: None,
             params: vec![],
             return_type: None,
@@ -472,6 +477,7 @@ impl Optimizer {
     }
 
     /// Generate the memoized wrapper function
+    #[allow(dead_code)]
     fn generate_memo_wrapper(&self, original: &ast::Function, impl_name: &str, param_names: &[String]) -> ast::Function {
         let span = Span { start: 0, end: 0 };
         let param_count = param_names.len();
@@ -622,6 +628,7 @@ impl Optimizer {
             is_async: original.is_async,
             attrs: original.attrs.clone(),
             name: original.name.clone(),
+            aspect: original.aspect,
             generics: original.generics.clone(),
             params: original.params.clone(),
             return_type: original.return_type.clone(),
@@ -631,6 +638,7 @@ impl Optimizer {
     }
 
     /// Redirect all recursive calls in a block to call the original wrapper (for memoization)
+    #[allow(dead_code)]
     fn redirect_calls_in_block(&self, _old_name: &str, _new_name: &str, block: &Block) -> Block {
         // For memoization, we keep the calls as-is since they'll go through the wrapper
         block.clone()
@@ -741,13 +749,14 @@ impl Optimizer {
         ast::Function {
             visibility: func.visibility.clone(),
             is_async: func.is_async,
+            attrs: func.attrs.clone(),
             name: func.name.clone(),
+            aspect: func.aspect,
             generics: func.generics.clone(),
             params: func.params.clone(),
             return_type: func.return_type.clone(),
             where_clause: func.where_clause.clone(),
             body,
-            attrs: func.attrs.clone(),
         }
     }
 

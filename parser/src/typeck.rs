@@ -742,6 +742,7 @@ impl TypeChecker {
             Literal::Bool(_) => Type::Bool,
             Literal::Char(_) => Type::Char,
             Literal::String(_) => Type::Str,
+            Literal::Null => Type::Unit,  // null has unit type
             Literal::Empty => Type::Unit,
             Literal::Infinity => Type::Float(FloatSize::F64),
             Literal::Circle => Type::Float(FloatSize::F64),
@@ -920,6 +921,36 @@ impl TypeChecker {
             PipeOp::Await => {
                 // Future<T> -> T
                 inner
+            }
+
+            // Access morphemes: [T] -> T (return element type)
+            PipeOp::First | PipeOp::Last | PipeOp::Middle |
+            PipeOp::Choice | PipeOp::Nth(_) | PipeOp::Next => {
+                if let Type::Array { element, .. } | Type::Slice(element) = inner {
+                    *element
+                } else if let Type::Tuple(elements) = inner {
+                    // For tuple, return Any since elements might be different types
+                    if let Some(first) = elements.first() {
+                        first.clone()
+                    } else {
+                        Type::Unit
+                    }
+                } else {
+                    self.error(TypeError::new("access morpheme requires array, slice, or tuple"));
+                    Type::Error
+                }
+            }
+
+            // Parallel morpheme: ∥ - wraps another operation
+            // Type is determined by the inner operation
+            PipeOp::Parallel(inner_op) => {
+                self.infer_pipe_op(inner_op, input)
+            }
+
+            // GPU morpheme: ⊛ - wraps another operation for GPU execution
+            // Type is determined by the inner operation
+            PipeOp::Gpu(inner_op) => {
+                self.infer_pipe_op(inner_op, input)
             }
         };
 

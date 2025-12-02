@@ -1,0 +1,542 @@
+// ============================================================================
+// SIGIL COMPREHENSIVE BENCHMARKS - ALL NEW FEATURES
+// ============================================================================
+
+fn main() {
+    println("╔═══════════════════════════════════════════════════════════════╗");
+    println("║     SIGIL COMPREHENSIVE FEATURE BENCHMARKS                    ║");
+    println("╚═══════════════════════════════════════════════════════════════╝");
+    println("");
+
+    let total_start = stopwatch_start();
+
+    benchmark_graphics_math();
+    benchmark_simd();
+    benchmark_soa();
+    benchmark_tensor();
+    benchmark_autodiff();
+    benchmark_spatial();
+    benchmark_physics();
+    benchmark_geometric_algebra();
+    benchmark_dimensional();
+    benchmark_ecs();
+
+    let total_elapsed = stopwatch_elapsed(total_start);
+    println("╔═══════════════════════════════════════════════════════════════╗");
+    println("║  TOTAL TIME: " + to_string(total_elapsed) + " ms");
+    println("╚═══════════════════════════════════════════════════════════════╝");
+}
+
+fn bench(name, iterations, start) {
+    let elapsed = stopwatch_elapsed(start);
+    let per_op = elapsed / to_float(iterations) * 1000.0;
+    println("  " + name + ": " + to_string(elapsed) + "ms total, " + to_string(per_op) + "μs/op");
+}
+
+// ============================================================================
+// GRAPHICS MATH
+// ============================================================================
+
+fn benchmark_graphics_math() {
+    println("┌───────────────────────────────────────────────────────────────┐");
+    println("│  GRAPHICS MATH (Vectors, Matrices, Quaternions)              │");
+    println("└───────────────────────────────────────────────────────────────┘");
+
+    let n = 10000;
+    let a = vec3(1.0, 2.0, 3.0);
+    let b = vec3(4.0, 5.0, 6.0);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let v = vec3(1.0, 2.0, 3.0); i = i + 1; }
+    bench("vec3 create", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = vec3_add(a, b); i = i + 1; }
+    bench("vec3_add", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = vec3_dot(a, b); i = i + 1; }
+    bench("vec3_dot", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = vec3_cross(a, b); i = i + 1; }
+    bench("vec3_cross", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = vec3_normalize(a); i = i + 1; }
+    bench("vec3_normalize", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let m = mat4_identity(); i = i + 1; }
+    bench("mat4_identity", n, start);
+
+    let m1 = mat4_identity();
+    let m2 = mat4_translate(1.0, 2.0, 3.0);
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = mat4_mul(m1, m2); i = i + 1; }
+    bench("mat4_mul", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let q = quat_from_axis_angle([0.0, 1.0, 0.0], 0.5); i = i + 1; }
+    bench("quat_from_axis_angle", n, start);
+
+    let q = quat_from_axis_angle([0.0, 1.0, 0.0], 0.5);
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = quat_rotate(q, a); i = i + 1; }
+    bench("quat_rotate", n, start);
+
+    let q1 = quat_from_axis_angle([1.0, 0.0, 0.0], 0.3);
+    let q2 = quat_from_axis_angle([0.0, 1.0, 0.0], 0.5);
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = quat_slerp(q1, q2, 0.5); i = i + 1; }
+    bench("quat_slerp", n, start);
+
+    println("");
+}
+
+// ============================================================================
+// SIMD OPERATIONS
+// ============================================================================
+
+fn benchmark_simd() {
+    println("┌───────────────────────────────────────────────────────────────┐");
+    println("│  SIMD OPERATIONS (8-element arrays)                          │");
+    println("└───────────────────────────────────────────────────────────────┘");
+
+    let n = 5000;
+    // Create arrays - simple fixed arrays for SIMD testing
+    let arr_a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    let arr_b = [8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = simd_add(arr_a, arr_b); i = i + 1; }
+    bench("simd_add", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = simd_mul(arr_a, arr_b); i = i + 1; }
+    bench("simd_mul", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = simd_dot(arr_a, arr_b); i = i + 1; }
+    bench("simd_dot", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = simd_hadd(arr_a); i = i + 1; }
+    bench("simd_hadd (sum)", n, start);
+
+    println("");
+}
+
+// ============================================================================
+// SOA TRANSFORMS
+// ============================================================================
+
+fn benchmark_soa() {
+    println("┌───────────────────────────────────────────────────────────────┐");
+    println("│  SOA TRANSFORMS (Struct-of-Arrays)                           │");
+    println("└───────────────────────────────────────────────────────────────┘");
+
+    let n = 1000;
+    // Create simple test data for SOA
+    let arr1 = [1, 2, 3, 4, 5];
+    let arr2 = [10, 20, 30, 40, 50];
+    let arr3 = [100, 200, 300, 400, 500];
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let zipped = zip(arr1, arr2); i = i + 1; }
+    bench("zip (5 elem)", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let zipped = zip_with(arr1, arr2, "add"); i = i + 1; }
+    bench("zip_with (5 elem)", n, start);
+
+    let arr1 = [1, 2, 3, 4, 5];
+    let arr2 = [10, 20, 30, 40, 50];
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n * 10 { let r = interleave(arr1, arr2); i = i + 1; }
+    bench("interleave", n * 10, start);
+
+    println("");
+}
+
+// ============================================================================
+// TENSOR OPERATIONS
+// ============================================================================
+
+fn benchmark_tensor() {
+    println("┌───────────────────────────────────────────────────────────────┐");
+    println("│  TENSOR OPERATIONS                                           │");
+    println("└───────────────────────────────────────────────────────────────┘");
+
+    let n = 5000;
+    let vec_a = [1.0, 2.0, 3.0, 4.0];
+    let vec_b = [5.0, 6.0, 7.0, 8.0];
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = outer_product(vec_a, vec_b); i = i + 1; }
+    bench("outer_product (4x4)", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = hadamard_product(vec_a, vec_b); i = i + 1; }
+    bench("hadamard_product", n, start);
+
+    // trace needs a flat array + size
+    let mat_flat = [1.0, 2.0, 3.0, 4.0];
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = trace(mat_flat, 2); i = i + 1; }
+    bench("trace (2x2)", n, start);
+
+    println("");
+}
+
+// ============================================================================
+// AUTOMATIC DIFFERENTIATION
+// ============================================================================
+
+fn benchmark_autodiff() {
+    println("┌───────────────────────────────────────────────────────────────┐");
+    println("│  AUTOMATIC DIFFERENTIATION                                   │");
+    println("└───────────────────────────────────────────────────────────────┘");
+
+    let n = 1000;
+
+    fn square(x) { return x * x; }
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let g = grad(square, 3.0); i = i + 1; }
+    bench("grad (x²)", n, start);
+
+    fn mult(args) { return get(args, 0) * get(args, 1); }
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let j = jacobian(mult, [2.0, 3.0]); i = i + 1; }
+    bench("jacobian (2 vars)", n, start);
+
+    fn sum_squares(args) { return get(args, 0) * get(args, 0) + get(args, 1) * get(args, 1); }
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n / 2 { let h = hessian(sum_squares, [2.0, 3.0]); i = i + 1; }
+    bench("hessian (x²+y²)", n / 2, start);
+
+    println("");
+}
+
+// ============================================================================
+// SPATIAL DATA STRUCTURES
+// ============================================================================
+
+fn benchmark_spatial() {
+    println("┌───────────────────────────────────────────────────────────────┐");
+    println("│  SPATIAL STRUCTURES (Hash Grid, AABB)                        │");
+    println("└───────────────────────────────────────────────────────────────┘");
+
+    let n = 1000;
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let hash = spatial_hash_new(10.0); i = i + 1; }
+    bench("spatial_hash_new", n, start);
+
+    let hash = spatial_hash_new(10.0);
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n {
+        spatial_hash_insert(hash, i, [to_float(i % 100), to_float(i / 100), 0.0]);
+        i = i + 1;
+    }
+    bench("spatial_hash_insert", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let nearby = spatial_hash_query(hash, [50.0, 5.0, 0.0], 15.0); i = i + 1; }
+    bench("spatial_hash_query", n, start);
+
+    let a1 = aabb_new([0.0, 0.0, 0.0], [2.0, 2.0, 2.0]);
+    let a2 = aabb_new([1.0, 1.0, 1.0], [3.0, 3.0, 3.0]);
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n * 10 { let r = aabb_intersects(a1, a2); i = i + 1; }
+    bench("aabb_intersects", n * 10, start);
+
+    println("");
+}
+
+// ============================================================================
+// PHYSICS SIMULATION
+// ============================================================================
+
+fn benchmark_physics() {
+    println("┌───────────────────────────────────────────────────────────────┐");
+    println("│  PHYSICS (Verlet, Springs, Constraints, Raycasting)          │");
+    println("└───────────────────────────────────────────────────────────────┘");
+
+    let n = 10000;
+    let pos = [0.0, 10.0, 0.0];
+    let prev = [0.0, 10.0, 0.0];
+    let accel = [0.0, -9.81, 0.0];
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let new_pos = verlet_integrate(pos, prev, accel, 0.016); i = i + 1; }
+    bench("verlet_integrate", n, start);
+
+    let p1 = [0.0, 0.0, 0.0];
+    let p2 = [1.0, 1.0, 0.0];
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let f = spring_force(p1, p2, 1.0, 100.0); i = i + 1; }
+    bench("spring_force", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let result = distance_constraint(p1, p2, 1.0); i = i + 1; }
+    bench("distance_constraint", n, start);
+
+    let ray_origin = [0.0, 0.0, 0.0];
+    let ray_dir = [0.0, 0.0, 1.0];
+    let sphere_center = [0.0, 0.0, 5.0];
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let t = ray_sphere_intersect(ray_origin, ray_dir, sphere_center, 1.0); i = i + 1; }
+    bench("ray_sphere_intersect", n, start);
+
+    let plane_point = [0.0, 0.0, 10.0];
+    let plane_normal = [0.0, 0.0, -1.0];
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let t = ray_plane_intersect(ray_origin, ray_dir, plane_point, plane_normal); i = i + 1; }
+    bench("ray_plane_intersect", n, start);
+
+    println("");
+}
+
+// ============================================================================
+// GEOMETRIC ALGEBRA
+// ============================================================================
+
+fn benchmark_geometric_algebra() {
+    println("┌───────────────────────────────────────────────────────────────┐");
+    println("│  GEOMETRIC ALGEBRA (Cl(3,0,0) Multivectors & Rotors)         │");
+    println("└───────────────────────────────────────────────────────────────┘");
+
+    let n = 10000;
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let mv = mv_new(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0); i = i + 1; }
+    bench("mv_new", n, start);
+
+    let a = mv_new(1.0, 2.0, 3.0, 4.0, 0.5, 0.6, 0.7, 0.1);
+    let b = mv_new(0.5, 1.5, 2.5, 3.5, 0.2, 0.3, 0.4, 0.05);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = mv_geometric(a, b); i = i + 1; }
+    bench("mv_geometric", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = mv_wedge(a, b); i = i + 1; }
+    bench("mv_wedge", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = mv_inner(a, b); i = i + 1; }
+    bench("mv_inner", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let r = mv_dual(a); i = i + 1; }
+    bench("mv_dual", n, start);
+
+    let axis = [0.0, 1.0, 0.0];
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let rotor = rotor_from_axis_angle(axis, 0.5); i = i + 1; }
+    bench("rotor_from_axis_angle", n, start);
+
+    let rotor = rotor_from_axis_angle([0.0, 1.0, 0.0], 0.5);
+    let vec = [1.0, 0.0, 0.0];
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let rotated = rotor_apply(rotor, vec); i = i + 1; }
+    bench("rotor_apply", n, start);
+
+    let r1 = rotor_from_axis_angle([1.0, 0.0, 0.0], 0.5);
+    let r2 = rotor_from_axis_angle([0.0, 1.0, 0.0], 0.3);
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let composed = rotor_compose(r1, r2); i = i + 1; }
+    bench("rotor_compose", n, start);
+
+    let v = [1.0, 2.0, 3.0];
+    let normal = [0.0, 1.0, 0.0];
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let reflected = mv_reflect(v, normal); i = i + 1; }
+    bench("mv_reflect", n, start);
+
+    println("");
+}
+
+// ============================================================================
+// DIMENSIONAL ANALYSIS
+// ============================================================================
+
+fn benchmark_dimensional() {
+    println("┌───────────────────────────────────────────────────────────────┐");
+    println("│  DIMENSIONAL ANALYSIS (SI Unit-Aware Math)                   │");
+    println("└───────────────────────────────────────────────────────────────┘");
+
+    let n = 10000;
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let q = qty(9.81, "m"); i = i + 1; }
+    bench("qty create", n, start);
+
+    let mass = qty(10.0, "kg");
+    let accel = qty(9.81, "m");
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let force = qty_mul(mass, accel); i = i + 1; }
+    bench("qty_mul", n, start);
+
+    let distance = qty(100.0, "m");
+    let time_q = qty(10.0, "s");
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let velocity = qty_div(distance, time_q); i = i + 1; }
+    bench("qty_div", n, start);
+
+    let d1 = qty(50.0, "m");
+    let d2 = qty(30.0, "m");
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let total = qty_add(d1, d2); i = i + 1; }
+    bench("qty_add", n, start);
+
+    let length = qty(5.0, "m");
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let area = qty_pow(length, 2); i = i + 1; }
+    bench("qty_pow", n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let c = c_light(); i = i + 1; }
+    bench("c_light constant", n, start);
+
+    println("");
+}
+
+// ============================================================================
+// ENTITY COMPONENT SYSTEM
+// ============================================================================
+
+fn benchmark_ecs() {
+    println("┌───────────────────────────────────────────────────────────────┐");
+    println("│  ENTITY COMPONENT SYSTEM (Game Architecture)                 │");
+    println("└───────────────────────────────────────────────────────────────┘");
+
+    let n = 1000;
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let w = ecs_world(); i = i + 1; }
+    bench("ecs_world create", n, start);
+
+    let world = ecs_world();
+    let spawn_n = 10000;
+    let start = stopwatch_start();
+    let i = 0;
+    while i < spawn_n { let e = ecs_spawn(world); i = i + 1; }
+    bench("ecs_spawn", spawn_n, start);
+
+    let world = ecs_world();
+    let entities = [];
+    let i = 0;
+    while i < 1000 {
+        let e = ecs_spawn(world);
+        push(entities, e);
+        i = i + 1;
+    }
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < len(entities) {
+        let e = get(entities, i);
+        let pos = map_new();
+        map_set(pos, "x", to_float(i));
+        map_set(pos, "y", 0.0);
+        map_set(pos, "z", 0.0);
+        ecs_attach(world, e, "Position", pos);
+        i = i + 1;
+    }
+    bench("ecs_attach", len(entities), start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < len(entities) {
+        let e = get(entities, i);
+        let pos = ecs_get(world, e, "Position");
+        i = i + 1;
+    }
+    bench("ecs_get", len(entities), start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < len(entities) {
+        let e = get(entities, i);
+        let has = ecs_has(world, e, "Position");
+        i = i + 1;
+    }
+    bench("ecs_has", len(entities), start);
+
+    // Add Velocity component
+    let i = 0;
+    while i < len(entities) {
+        let e = get(entities, i);
+        let vel = map_new();
+        map_set(vel, "dx", 1.0);
+        map_set(vel, "dy", 0.0);
+        map_set(vel, "dz", 0.0);
+        ecs_attach(world, e, "Velocity", vel);
+        i = i + 1;
+    }
+
+    let query_n = 100;
+    let start = stopwatch_start();
+    let i = 0;
+    while i < query_n { let matching = ecs_query(world, "Position", "Velocity"); i = i + 1; }
+    bench("ecs_query", query_n, start);
+
+    let start = stopwatch_start();
+    let i = 0;
+    while i < n { let count = ecs_count(world); i = i + 1; }
+    bench("ecs_count", n, start);
+
+    println("");
+}

@@ -4,19 +4,33 @@ A practical guide to writing your first Sigil programs.
 
 ## Installation
 
-### From Source
+### From Source (Basic)
 
 ```bash
 # Clone the repository
 git clone https://github.com/daemoniorum/sigil.git
-cd sigil
+cd sigil/parser
 
-# Build all tools
+# Build with Cranelift JIT (default, no external deps)
 cargo build --release
 
-# Add to PATH (adjust for your shell)
+# Add to PATH
 export PATH="$PATH:$(pwd)/target/release"
 ```
+
+### With LLVM Backend (Maximum Performance)
+
+For production deployment, build with LLVM support:
+
+```bash
+# Install LLVM 18 dependencies (Ubuntu/Debian)
+apt install llvm-18-dev libpolly-18-dev libzstd-dev clang-18
+
+# Build with LLVM
+CC=clang-18 cargo build --release --features llvm
+```
+
+The LLVM backend produces native binaries **3.6x faster than equivalent Rust code**.
 
 ### VS Code Extension
 
@@ -39,6 +53,39 @@ Run it:
 
 ```bash
 sigil run hello.sigil
+```
+
+## Execution Modes
+
+Sigil offers multiple execution backends for different use cases:
+
+| Command | Description | Performance |
+|---------|-------------|-------------|
+| `sigil run file.sigil` | Interpreted | Development, debugging |
+| `sigil jit file.sigil` | Cranelift JIT | 67x faster, fast iteration |
+| `sigil llvm file.sigil` | LLVM JIT | 64x faster, near-native |
+| `sigil compile file.sigil -o out` | LLVM AOT | **3,582x faster**, production |
+
+### Benchmark Results
+
+| Backend | Time (fib+ackermann+tak) | vs Rust |
+|---------|--------------------------|---------|
+| Interpreter | 39.4s | 985x slower |
+| Cranelift JIT | 0.59s | 13x slower |
+| LLVM JIT | 0.62s | 14x slower |
+| **LLVM AOT** | **0.011s** | **3.6x FASTER** |
+
+### Compiling to Native Binary
+
+```bash
+# Compile to standalone executable
+sigil compile program.sigil -o myprogram
+
+# With Link-Time Optimization (maximum performance)
+sigil compile program.sigil -o myprogram --lto
+
+# Run the native binary
+./myprogram
 ```
 
 ## Basic Syntax

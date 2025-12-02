@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::sync::{Arc, Mutex, mpsc};
+use std::thread::JoinHandle;
 
 /// Runtime value in Sigil.
 #[derive(Clone)]
@@ -53,6 +55,91 @@ pub enum Value {
         value: Box<Value>,
         evidence: Evidence,
     },
+    /// HashMap
+    Map(Rc<RefCell<HashMap<String, Value>>>),
+    /// HashSet (stores keys only, values are unit)
+    Set(Rc<RefCell<std::collections::HashSet<String>>>),
+    /// Channel for message passing (sender, receiver)
+    Channel(Arc<ChannelInner>),
+    /// Thread handle
+    ThreadHandle(Arc<Mutex<Option<JoinHandle<Value>>>>),
+    /// Actor (mailbox + state)
+    Actor(Arc<ActorInner>),
+    /// Future - represents an async computation
+    Future(Rc<RefCell<FutureInner>>),
+}
+
+/// Future state for async computations
+#[derive(Clone)]
+pub enum FutureState {
+    /// Not yet started
+    Pending,
+    /// Currently executing
+    Running,
+    /// Completed with value
+    Ready(Box<Value>),
+    /// Failed with error
+    Failed(String),
+}
+
+/// Inner future representation
+pub struct FutureInner {
+    /// Current state
+    pub state: FutureState,
+    /// The computation to run (if pending)
+    pub computation: Option<FutureComputation>,
+    /// Completion time for timer futures
+    pub complete_at: Option<std::time::Instant>,
+}
+
+impl Clone for FutureInner {
+    fn clone(&self) -> Self {
+        FutureInner {
+            state: self.state.clone(),
+            computation: self.computation.clone(),
+            complete_at: self.complete_at,
+        }
+    }
+}
+
+/// Types of future computations
+#[derive(Clone)]
+pub enum FutureComputation {
+    /// Immediate value (already resolved)
+    Immediate(Box<Value>),
+    /// Timer - completes after duration
+    Timer(std::time::Duration),
+    /// Lazy computation - function + captured args
+    Lazy {
+        func: Rc<Function>,
+        args: Vec<Value>,
+    },
+    /// Join multiple futures
+    Join(Vec<Rc<RefCell<FutureInner>>>),
+    /// Race multiple futures (first to complete wins)
+    Race(Vec<Rc<RefCell<FutureInner>>>),
+}
+
+/// Inner channel state - wraps mpsc channel
+pub struct ChannelInner {
+    pub sender: Mutex<mpsc::Sender<Value>>,
+    pub receiver: Mutex<mpsc::Receiver<Value>>,
+}
+
+impl Clone for ChannelInner {
+    fn clone(&self) -> Self {
+        // Channels can't really be cloned - create a dummy
+        // This is for the Clone requirement on Value
+        panic!("Channels cannot be cloned directly - use channel_clone()")
+    }
+}
+
+/// Inner actor state - single-threaded for interpreter (Value contains Rc)
+/// For true async actors, use the JIT backend
+pub struct ActorInner {
+    pub name: String,
+    pub message_queue: Mutex<Vec<(String, String)>>,  // (msg_type, serialized_data)
+    pub message_count: std::sync::atomic::AtomicUsize,
 }
 
 /// Evidence level at runtime
@@ -140,6 +227,36 @@ impl fmt::Debug for Value {
                     Evidence::Uncertain => write!(f, "?"),
                     Evidence::Reported => write!(f, "~"),
                     Evidence::Paradox => write!(f, "‽"),
+                }
+            }
+            Value::Map(map) => {
+                let map = map.borrow();
+                write!(f, "{{")?;
+                for (i, (k, v)) in map.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{:?}: {:?}", k, v)?;
+                }
+                write!(f, "}}")
+            }
+            Value::Set(set) => {
+                let set = set.borrow();
+                write!(f, "Set{{")?;
+                for (i, k) in set.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{:?}", k)?;
+                }
+                write!(f, "}}")
+            }
+            Value::Channel(_) => write!(f, "<channel>"),
+            Value::ThreadHandle(_) => write!(f, "<thread>"),
+            Value::Actor(actor) => write!(f, "<actor {}>", actor.name),
+            Value::Future(fut) => {
+                let fut = fut.borrow();
+                match &fut.state {
+                    FutureState::Pending => write!(f, "<future pending>"),
+                    FutureState::Running => write!(f, "<future running>"),
+                    FutureState::Ready(v) => write!(f, "<future ready: {:?}>", v),
+                    FutureState::Failed(e) => write!(f, "<future failed: {}>", e),
                 }
             }
         }
@@ -374,6 +491,12 @@ impl Interpreter {
                 Value::Infinity => "infinity",
                 Value::Empty => "empty",
                 Value::Evidential { .. } => "evidential",
+                Value::Map(_) => "map",
+                Value::Set(_) => "set",
+                Value::Channel(_) => "channel",
+                Value::ThreadHandle(_) => "thread",
+                Value::Actor(_) => "actor",
+                Value::Future(_) => "future",
             };
             Ok(Value::String(Rc::new(type_name.to_string())))
         });
@@ -596,6 +719,10 @@ impl Interpreter {
             Expr::Evidential { expr, evidentiality } => self.eval_evidential(expr, evidentiality),
             Expr::Range { start, end, inclusive } => self.eval_range(start, end, *inclusive),
             Expr::Assign { target, value } => self.eval_assign(target, value),
+            Expr::Await(inner) => {
+                let value = self.evaluate(inner)?;
+                self.await_value(value)
+            }
             _ => Err(RuntimeError::new(format!("Unsupported expression: {:?}", expr))),
         }
     }
@@ -657,6 +784,7 @@ impl Interpreter {
             Literal::String(s) => Ok(Value::String(Rc::new(s.clone()))),
             Literal::Char(c) => Ok(Value::Char(*c)),
             Literal::Bool(b) => Ok(Value::Bool(*b)),
+            Literal::Null => Ok(Value::Null),
             Literal::Empty => Ok(Value::Empty),
             Literal::Infinity => Ok(Value::Infinity),
             Literal::Circle => Ok(Value::Int(0)), // ◯ = zero
@@ -687,8 +815,49 @@ impl Interpreter {
             self.environment.borrow().get(name)
                 .ok_or_else(|| RuntimeError::new(format!("Undefined variable: {}", name)))
         } else {
-            // Multi-segment path (module::item)
-            Err(RuntimeError::new("Module paths not yet supported"))
+            // Multi-segment path (module::item or Type·method)
+            // Try full qualified name first (joined with ·)
+            let full_name = path.segments.iter()
+                .map(|s| s.ident.name.as_str())
+                .collect::<Vec<_>>()
+                .join("·");
+
+            if let Some(val) = self.environment.borrow().get(&full_name) {
+                return Ok(val);
+            }
+
+            // Try looking up the last segment (for Math·sqrt -> sqrt)
+            let last_name = &path.segments.last().unwrap().ident.name;
+            if let Some(val) = self.environment.borrow().get(last_name) {
+                return Ok(val);
+            }
+
+            // Check for enum variant syntax (EnumName::Variant)
+            if path.segments.len() == 2 {
+                let type_name = &path.segments[0].ident.name;
+                let variant_name = &path.segments[1].ident.name;
+
+                // Check if this is an enum variant
+                if let Some(TypeDef::Enum(enum_def)) = self.types.get(type_name) {
+                    for variant in &enum_def.variants {
+                        if &variant.name.name == variant_name {
+                            // Return a variant constructor or unit variant
+                            if matches!(variant.fields, crate::ast::StructFields::Unit) {
+                                return Ok(Value::Variant {
+                                    enum_name: type_name.clone(),
+                                    variant_name: variant_name.clone(),
+                                    fields: None,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            Err(RuntimeError::new(format!(
+                "Undefined: {} (tried {} and {})",
+                full_name, full_name, last_name
+            )))
         }
     }
 
@@ -871,6 +1040,133 @@ impl Interpreter {
             }
         }
         (builtin.func)(self, args)
+    }
+
+    /// Await a value - if it's a future, resolve it; otherwise return as-is
+    pub fn await_value(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Future(fut) => {
+                let mut fut_inner = fut.borrow_mut();
+                self.poll_future(&mut fut_inner)
+            }
+            // Non-futures return immediately
+            other => Ok(other),
+        }
+    }
+
+    /// Poll a future to completion
+    fn poll_future(&mut self, fut: &mut FutureInner) -> Result<Value, RuntimeError> {
+        // Check if already resolved
+        match &fut.state {
+            FutureState::Ready(v) => return Ok((**v).clone()),
+            FutureState::Failed(e) => return Err(RuntimeError::new(e.clone())),
+            _ => {}
+        }
+
+        // Check if it's a timer future
+        if let Some(complete_at) = fut.complete_at {
+            if std::time::Instant::now() >= complete_at {
+                fut.state = FutureState::Ready(Box::new(Value::Null));
+                return Ok(Value::Null);
+            } else {
+                // Timer not complete - in interpreter, we just sleep
+                let remaining = complete_at - std::time::Instant::now();
+                std::thread::sleep(remaining);
+                fut.state = FutureState::Ready(Box::new(Value::Null));
+                return Ok(Value::Null);
+            }
+        }
+
+        // Execute computation if pending
+        if let Some(computation) = fut.computation.take() {
+            fut.state = FutureState::Running;
+
+            match computation {
+                FutureComputation::Immediate(v) => {
+                    fut.state = FutureState::Ready(v.clone());
+                    Ok((*v).clone())
+                }
+                FutureComputation::Timer(duration) => {
+                    // Sleep for the duration
+                    std::thread::sleep(duration);
+                    fut.state = FutureState::Ready(Box::new(Value::Null));
+                    Ok(Value::Null)
+                }
+                FutureComputation::Lazy { func, args } => {
+                    // Execute the function
+                    match self.call_function(&func, args) {
+                        Ok(result) => {
+                            fut.state = FutureState::Ready(Box::new(result.clone()));
+                            Ok(result)
+                        }
+                        Err(e) => {
+                            fut.state = FutureState::Failed(e.message.clone());
+                            Err(e)
+                        }
+                    }
+                }
+                FutureComputation::Join(futures) => {
+                    // Await all futures and collect results
+                    let mut results = Vec::new();
+                    for f in futures {
+                        let mut f_inner = f.borrow_mut();
+                        results.push(self.poll_future(&mut f_inner)?);
+                    }
+                    let result = Value::Array(Rc::new(RefCell::new(results)));
+                    fut.state = FutureState::Ready(Box::new(result.clone()));
+                    Ok(result)
+                }
+                FutureComputation::Race(futures) => {
+                    // Return first completed future
+                    // In interpreter, just poll in order
+                    for f in futures {
+                        let f_inner = f.borrow_mut();
+                        if matches!(f_inner.state, FutureState::Ready(_)) {
+                            if let FutureState::Ready(v) = &f_inner.state {
+                                fut.state = FutureState::Ready(v.clone());
+                                return Ok((**v).clone());
+                            }
+                        }
+                    }
+                    // None ready, poll first one
+                    Err(RuntimeError::new("No futures ready in race"))
+                }
+            }
+        } else {
+            // No computation - return current state
+            match &fut.state {
+                FutureState::Ready(v) => Ok((**v).clone()),
+                FutureState::Failed(e) => Err(RuntimeError::new(e.clone())),
+                _ => Err(RuntimeError::new("Future has no computation")),
+            }
+        }
+    }
+
+    /// Create a new future from a value
+    pub fn make_future_immediate(&self, value: Value) -> Value {
+        Value::Future(Rc::new(RefCell::new(FutureInner {
+            state: FutureState::Ready(Box::new(value)),
+            computation: None,
+            complete_at: None,
+        })))
+    }
+
+    /// Create a pending future with lazy computation
+    pub fn make_future_lazy(&self, func: Rc<Function>, args: Vec<Value>) -> Value {
+        Value::Future(Rc::new(RefCell::new(FutureInner {
+            state: FutureState::Pending,
+            computation: Some(FutureComputation::Lazy { func, args }),
+            complete_at: None,
+        })))
+    }
+
+    /// Create a timer future
+    pub fn make_future_timer(&self, duration: std::time::Duration) -> Value {
+        Value::Future(Rc::new(RefCell::new(FutureInner {
+            state: FutureState::Pending,
+            computation: Some(FutureComputation::Timer(duration)),
+            complete_at: Some(std::time::Instant::now() + duration),
+        })))
     }
 
     fn eval_array(&mut self, elements: &[Expr]) -> Result<Value, RuntimeError> {
@@ -1359,8 +1655,114 @@ impl Interpreter {
                 }
             }
             PipeOp::Await => {
-                // For now, just return the value (no async yet)
-                Ok(value)
+                // Await a future - resolve it to a value
+                self.await_value(value)
+            }
+            // New access morphemes
+            PipeOp::First => {
+                // α - first element
+                match &value {
+                    Value::Array(arr) => arr.borrow().first().cloned()
+                        .ok_or_else(|| RuntimeError::new("first (α) on empty array")),
+                    Value::Tuple(t) => t.first().cloned()
+                        .ok_or_else(|| RuntimeError::new("first (α) on empty tuple")),
+                    _ => Err(RuntimeError::new("first (α) requires array or tuple")),
+                }
+            }
+            PipeOp::Last => {
+                // ω - last element
+                match &value {
+                    Value::Array(arr) => arr.borrow().last().cloned()
+                        .ok_or_else(|| RuntimeError::new("last (ω) on empty array")),
+                    Value::Tuple(t) => t.last().cloned()
+                        .ok_or_else(|| RuntimeError::new("last (ω) on empty tuple")),
+                    _ => Err(RuntimeError::new("last (ω) requires array or tuple")),
+                }
+            }
+            PipeOp::Middle => {
+                // μ - middle/median element
+                match &value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        if arr.is_empty() {
+                            return Err(RuntimeError::new("middle (μ) on empty array"));
+                        }
+                        let mid = arr.len() / 2;
+                        Ok(arr[mid].clone())
+                    }
+                    Value::Tuple(t) => {
+                        if t.is_empty() {
+                            return Err(RuntimeError::new("middle (μ) on empty tuple"));
+                        }
+                        let mid = t.len() / 2;
+                        Ok(t[mid].clone())
+                    }
+                    _ => Err(RuntimeError::new("middle (μ) requires array or tuple")),
+                }
+            }
+            PipeOp::Choice => {
+                // χ - random element
+                use std::time::{SystemTime, UNIX_EPOCH};
+                match &value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        if arr.is_empty() {
+                            return Err(RuntimeError::new("choice (χ) on empty array"));
+                        }
+                        let seed = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or(std::time::Duration::ZERO)
+                            .as_nanos() as u64;
+                        let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % arr.len();
+                        Ok(arr[idx].clone())
+                    }
+                    Value::Tuple(t) => {
+                        if t.is_empty() {
+                            return Err(RuntimeError::new("choice (χ) on empty tuple"));
+                        }
+                        let seed = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or(std::time::Duration::ZERO)
+                            .as_nanos() as u64;
+                        let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % t.len();
+                        Ok(t[idx].clone())
+                    }
+                    _ => Err(RuntimeError::new("choice (χ) requires array or tuple")),
+                }
+            }
+            PipeOp::Nth(index_expr) => {
+                // ν{n} - nth element
+                let index = match self.evaluate(index_expr)? {
+                    Value::Int(n) => n,
+                    _ => return Err(RuntimeError::new("nth (ν) index must be integer")),
+                };
+                match &value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        if index < 0 || index as usize >= arr.len() {
+                            return Err(RuntimeError::new("nth (ν) index out of bounds"));
+                        }
+                        Ok(arr[index as usize].clone())
+                    }
+                    Value::Tuple(t) => {
+                        if index < 0 || index as usize >= t.len() {
+                            return Err(RuntimeError::new("nth (ν) index out of bounds"));
+                        }
+                        Ok(t[index as usize].clone())
+                    }
+                    _ => Err(RuntimeError::new("nth (ν) requires array or tuple")),
+                }
+            }
+            PipeOp::Next => {
+                // ξ - next element (for iterators, currently just returns first)
+                // In a full implementation, this would advance an iterator
+                match &value {
+                    Value::Array(arr) => arr.borrow().first().cloned()
+                        .ok_or_else(|| RuntimeError::new("next (ξ) on empty array")),
+                    Value::Tuple(t) => t.first().cloned()
+                        .ok_or_else(|| RuntimeError::new("next (ξ) on empty tuple")),
+                    _ => Err(RuntimeError::new("next (ξ) requires array or tuple")),
+                }
             }
             PipeOp::Named { prefix, body } => {
                 // Named morpheme like ·map{f}
@@ -1407,6 +1809,94 @@ impl Interpreter {
                         }
                     }
                     _ => Err(RuntimeError::new(format!("Unknown named morpheme: {}", method_name))),
+                }
+            }
+            PipeOp::Parallel(inner_op) => {
+                // ∥ - parallel execution of the inner operation
+                // For arrays, execute the operation in parallel using threads
+                match value {
+                    Value::Array(arr) => {
+                        use std::sync::{Arc, Mutex};
+
+                        let arr_ref = arr.borrow();
+                        let len = arr_ref.len();
+                        if len == 0 {
+                            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                        }
+
+                        // For Transform operations, parallelize across elements
+                        match inner_op.as_ref() {
+                            PipeOp::Transform(body) => {
+                                // Determine number of threads (use available parallelism)
+                                let num_threads = std::thread::available_parallelism()
+                                    .map(|p| p.get())
+                                    .unwrap_or(4)
+                                    .min(len);
+
+                                // For future parallel implementation
+                                let _chunk_size = (len + num_threads - 1) / num_threads;
+                                let _results = Arc::new(Mutex::new(vec![Value::Null; len]));
+                                let items: Vec<Value> = arr_ref.clone();
+                                drop(arr_ref);
+
+                                // Clone the body expression for each thread (for future use)
+                                let _body_str = format!("{:?}", body);
+
+                                // For now, fall back to sequential since full parallelization
+                                // requires thread-safe evaluation context
+                                // In production, this would use Rayon or a work-stealing scheduler
+                                let mut result_vec = Vec::with_capacity(len);
+                                for item in items.iter() {
+                                    self.environment.borrow_mut().define("_".to_string(), item.clone());
+                                    result_vec.push(self.evaluate(body)?);
+                                }
+                                Ok(Value::Array(Rc::new(RefCell::new(result_vec))))
+                            }
+                            PipeOp::Filter(predicate) => {
+                                // Parallel filter - evaluate predicate in parallel
+                                let items: Vec<Value> = arr_ref.clone();
+                                drop(arr_ref);
+
+                                let mut result_vec = Vec::new();
+                                for item in items.iter() {
+                                    self.environment.borrow_mut().define("_".to_string(), item.clone());
+                                    let pred_result = self.evaluate(predicate)?;
+                                    if self.is_truthy(&pred_result) {
+                                        result_vec.push(item.clone());
+                                    }
+                                }
+                                Ok(Value::Array(Rc::new(RefCell::new(result_vec))))
+                            }
+                            _ => {
+                                // For other operations, just apply them normally
+                                drop(arr_ref);
+                                self.apply_pipe_op(Value::Array(arr), inner_op)
+                            }
+                        }
+                    }
+                    _ => {
+                        // For non-arrays, just apply the inner operation
+                        self.apply_pipe_op(value, inner_op)
+                    }
+                }
+            }
+            PipeOp::Gpu(inner_op) => {
+                // ⊛ - GPU compute shader execution
+                // This is a placeholder that falls back to CPU execution
+                // In production, this would:
+                // 1. Generate SPIR-V/WGSL compute shader
+                // 2. Submit to GPU via wgpu/vulkan
+                // 3. Read back results
+                match value {
+                    Value::Array(arr) => {
+                        // For now, emit a hint that GPU execution would occur
+                        // and fall back to CPU
+                        #[cfg(debug_assertions)]
+                        eprintln!("[GPU] Would execute {:?} on GPU, falling back to CPU", inner_op);
+
+                        self.apply_pipe_op(Value::Array(arr), inner_op)
+                    }
+                    _ => self.apply_pipe_op(value, inner_op)
                 }
             }
         }

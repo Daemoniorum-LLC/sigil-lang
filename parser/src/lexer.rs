@@ -126,6 +126,10 @@ pub enum Token {
     #[token("false")]
     False,
 
+    // Null literal
+    #[token("null")]
+    Null,
+
     // === Morphemes (Greek letters) ===
     #[token("τ")]
     #[token("Τ")]
@@ -170,6 +174,32 @@ pub enum Token {
 
     #[token("ζ")]
     Zeta,  // Zip/combine
+
+    // === Additional Access Morphemes ===
+    #[token("μ")]
+    #[token("Μ")]
+    Mu,  // Middle/median element
+
+    #[token("χ")]
+    #[token("Χ")]
+    Chi,  // Random/choice (from chaos)
+
+    #[token("ν")]
+    #[token("Ν")]
+    Nu,  // Nth element (ordinal)
+
+    #[token("ξ")]
+    #[token("Ξ")]
+    Xi,  // Next in sequence
+
+    // === Parallel/Concurrency Morphemes ===
+    #[token("∥")]
+    #[token("parallel")]
+    Parallel,  // Parallel execution (U+2225)
+
+    #[token("⊛")]
+    #[token("gpu")]
+    Gpu,  // GPU compute shader (U+229B - circled asterisk)
 
     // === Quantifiers (for AI-native set operations) ===
     #[token("∀")]
@@ -225,6 +255,13 @@ pub enum Token {
     #[token("⊥")]
     Bottom,  // False/never type
 
+    // === Bitwise Operators (Unicode) ===
+    #[token("⋏")]
+    BitwiseAndSymbol,  // Bitwise AND (U+22CF)
+
+    #[token("⋎")]
+    BitwiseOrSymbol,  // Bitwise OR (U+22CE)
+
     // === Type Theory ===
     #[token("∷")]
     TypeAnnotation,  // Type annotation (alternative to :)
@@ -252,10 +289,36 @@ pub enum Token {
     #[token("⊕")]
     DirectSum,  // Direct sum / XOR
 
+    // === Data Operations ===
+    #[token("⋈")]
+    Bowtie,  // Join/zip combining (U+22C8)
+
+    #[token("⋳")]
+    ElementSmallVerticalBar,  // Flatten (U+22F3)
+
+    #[token("⊔")]
+    SquareCup,  // Lattice join / supremum (U+2294)
+
+    #[token("⊓")]
+    SquareCap,  // Lattice meet / infimum (U+2293)
+
     // === Evidentiality Markers ===
     // Note: These are handled contextually since ! and ? have other uses
     #[token("‽")]
     Interrobang,  // Paradox/trust boundary
+
+    // === Aspect Morphemes (verb aspects) ===
+    #[token("·ing")]
+    AspectProgressive,  // Ongoing/streaming aspect
+
+    #[token("·ed")]
+    AspectPerfective,  // Completed aspect
+
+    #[token("·able")]
+    AspectPotential,  // Capability aspect
+
+    #[token("·ive")]
+    AspectResultative,  // Result-producing aspect
 
     // === Operators ===
     #[token("|")]
@@ -446,8 +509,33 @@ impl Token {
             Token::Tau | Token::Phi | Token::Sigma | Token::Rho |
             Token::Lambda | Token::Pi | Token::Hourglass |
             Token::Delta | Token::Epsilon | Token::Omega | Token::Alpha | Token::Zeta |
+            Token::Mu | Token::Chi | Token::Nu | Token::Xi |  // Access morphemes
+            Token::Parallel | Token::Gpu |  // Concurrency morphemes
             Token::Integral | Token::Partial | Token::Sqrt | Token::Cbrt |
             Token::Compose
+        )
+    }
+
+    pub fn is_aspect(&self) -> bool {
+        matches!(
+            self,
+            Token::AspectProgressive | Token::AspectPerfective |
+            Token::AspectPotential | Token::AspectResultative
+        )
+    }
+
+    pub fn is_data_op(&self) -> bool {
+        matches!(
+            self,
+            Token::Bowtie | Token::ElementSmallVerticalBar |
+            Token::SquareCup | Token::SquareCap
+        )
+    }
+
+    pub fn is_bitwise_symbol(&self) -> bool {
+        matches!(
+            self,
+            Token::BitwiseAndSymbol | Token::BitwiseOrSymbol
         )
     }
 
@@ -654,5 +742,14 @@ mod tests {
         let mut lexer = Lexer::new("extern unsafe");
         assert!(matches!(lexer.next_token(), Some((Token::Extern, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Unsafe, _))));
+    }
+
+    #[test]
+    fn test_parallel_morphemes() {
+        let mut lexer = Lexer::new("∥ parallel ⊛ gpu");
+        assert!(matches!(lexer.next_token(), Some((Token::Parallel, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Parallel, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Gpu, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Gpu, _))));
     }
 }

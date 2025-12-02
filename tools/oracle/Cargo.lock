@@ -792,6 +792,8 @@ dependencies = [
  "libc",
  "logos",
  "rustyline",
+ "serde",
+ "serde_json",
  "strsim",
  "thiserror",
  "unicode-xid",

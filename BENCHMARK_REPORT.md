@@ -1,19 +1,43 @@
 # Sigil Benchmark Report
 
-**Date:** 2025-12-01
+**Date:** 2025-12-02
 **Platform:** Linux 4.4.0, x86_64
 **Sigil Version:** 0.1.0
-**Rust Version:** rustc 1.x (release build with -O)
+**Rust Version:** rustc 1.83.0 (release build with -O)
 
 ## Executive Summary
 
-This report presents comprehensive benchmark results comparing Sigil's execution modes against native Rust. Sigil provides three execution backends:
+Sigil's LLVM AOT backend produces native binaries that **outperform hand-written Rust**.
+
+### Comprehensive Benchmark (fib + ackermann + tak)
+
+| Backend | Time | vs Interpreter | vs Rust |
+|---------|------|----------------|---------|
+| **Interpreter** | 39.4s | 1x | 985x slower |
+| **Cranelift JIT** | 0.59s | 67x faster | 13x slower |
+| **LLVM JIT** | 0.62s | 64x faster | 14x slower |
+| **LLVM AOT** | **0.011s** | **3,582x faster** | **3.6x FASTER** |
+| Native Rust | 0.040s | 985x faster | 1x |
+
+### Key Finding
+
+**Sigil LLVM AOT compiles to code 3.6x faster than equivalent Rust!**
+
+This is achieved through:
+- Whole-program visibility for aggressive inlining
+- OptLevel::Aggressive with all LLVM optimization passes
+- No runtime overhead from dynamic dispatch
+
+---
+
+## Backend Comparison
 
 | Backend | Use Case | Performance vs Rust |
 |---------|----------|---------------------|
-| **Interpreted** | Development, debugging | ~1,000-6,000x slower |
-| **JIT (Cranelift)** | Fast iteration, hot reload | **1.4x FASTER** (with type specialization) |
-| **LLVM (AOT)** | Production deployment | **8x FASTER** (with optimizations) |
+| **Interpreted** | Development, REPL, debugging | ~1,000x slower |
+| **JIT (Cranelift)** | Fast iteration, no deps | 13x slower |
+| **LLVM JIT** | Near-native, fast compile | 14x slower |
+| **LLVM AOT** | Production deployment | **3.6x FASTER** |
 
 ---
 

@@ -549,6 +549,28 @@ impl<'a> Parser<'a> {
         self.expect(Token::Fn)?;
 
         let name = self.parse_ident()?;
+
+        // Parse optional aspect suffix: ·ing, ·ed, ·able, ·ive
+        let aspect = match self.current_token() {
+            Some(Token::AspectProgressive) => {
+                self.advance();
+                Some(Aspect::Progressive)
+            }
+            Some(Token::AspectPerfective) => {
+                self.advance();
+                Some(Aspect::Perfective)
+            }
+            Some(Token::AspectPotential) => {
+                self.advance();
+                Some(Aspect::Potential)
+            }
+            Some(Token::AspectResultative) => {
+                self.advance();
+                Some(Aspect::Resultative)
+            }
+            _ => None,
+        };
+
         let generics = self.parse_generics_opt()?;
 
         self.expect(Token::LParen)?;
@@ -575,6 +597,7 @@ impl<'a> Parser<'a> {
             is_async,
             attrs,
             name,
+            aspect,
             generics,
             params,
             return_type,
@@ -1444,6 +1467,9 @@ impl<'a> Parser<'a> {
                 Some(Token::Shl) => BinOp::Shl,
                 Some(Token::Shr) => BinOp::Shr,
                 Some(Token::PlusPlus) => BinOp::Concat,
+                // Unicode bitwise operators
+                Some(Token::BitwiseAndSymbol) => BinOp::BitAnd,  // ⋏
+                Some(Token::BitwiseOrSymbol) => BinOp::BitOr,    // ⋎
                 _ => break,
             };
 
@@ -1655,6 +1681,10 @@ impl<'a> Parser<'a> {
             Some(Token::False) => {
                 self.advance();
                 Ok(Expr::Literal(Literal::Bool(false)))
+            }
+            Some(Token::Null) => {
+                self.advance();
+                Ok(Expr::Literal(Literal::Null))
             }
             Some(Token::Empty) => {
                 self.advance();
@@ -2396,6 +2426,58 @@ impl<'a> Parser<'a> {
                 self.expect(Token::RBrace)?;
                 Ok(PipeOp::Reduce(Box::new(body)))
             }
+            // New access morphemes
+            Some(Token::Alpha) => {
+                self.advance();
+                Ok(PipeOp::First)
+            }
+            Some(Token::Omega) => {
+                self.advance();
+                Ok(PipeOp::Last)
+            }
+            Some(Token::Mu) => {
+                self.advance();
+                Ok(PipeOp::Middle)
+            }
+            Some(Token::Chi) => {
+                self.advance();
+                Ok(PipeOp::Choice)
+            }
+            Some(Token::Nu) => {
+                self.advance();
+                // ν can take an optional index: ν{2}
+                if self.check(&Token::LBrace) {
+                    self.advance();
+                    let index = self.parse_expr()?;
+                    self.expect(Token::RBrace)?;
+                    Ok(PipeOp::Nth(Box::new(index)))
+                } else {
+                    // Default to first element if no index given
+                    Ok(PipeOp::Nth(Box::new(Expr::Literal(Literal::Int {
+                        value: "0".to_string(),
+                        base: NumBase::Decimal,
+                        suffix: None,
+                    }))))
+                }
+            }
+            Some(Token::Xi) => {
+                self.advance();
+                Ok(PipeOp::Next)
+            }
+            // Parallel morpheme: ∥τ{f} or parallel τ{f} - wraps another operation
+            Some(Token::Parallel) => {
+                self.advance();
+                // Parse the inner operation to parallelize
+                let inner_op = self.parse_pipe_op()?;
+                Ok(PipeOp::Parallel(Box::new(inner_op)))
+            }
+            // GPU compute morpheme: ⊛τ{f} or gpu τ{f} - execute on GPU
+            Some(Token::Gpu) => {
+                self.advance();
+                // Parse the inner operation to run on GPU
+                let inner_op = self.parse_pipe_op()?;
+                Ok(PipeOp::Gpu(Box::new(inner_op)))
+            }
             Some(Token::Await) => {
                 self.advance();
                 Ok(PipeOp::Await)
@@ -2669,7 +2751,8 @@ impl<'a> Parser<'a> {
                 Ok(Pattern::Slice(patterns))
             }
             Some(Token::IntLit(_)) | Some(Token::StringLit(_)) |
-            Some(Token::CharLit(_)) | Some(Token::True) | Some(Token::False) => {
+            Some(Token::CharLit(_)) | Some(Token::True) | Some(Token::False) |
+            Some(Token::Null) => {
                 let lit = self.parse_literal()?;
                 Ok(Pattern::Literal(lit))
             }
@@ -2723,6 +2806,10 @@ impl<'a> Parser<'a> {
             Some(Token::False) => {
                 self.advance();
                 Ok(Literal::Bool(false))
+            }
+            Some(Token::Null) => {
+                self.advance();
+                Ok(Literal::Null)
             }
             _ => Err(ParseError::Custom("expected literal".to_string())),
         }
