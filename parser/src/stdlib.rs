@@ -2660,6 +2660,18 @@ where
 // ============================================================================
 // CONCURRENCY FUNCTIONS
 // ============================================================================
+// WARNING: Interpreter Limitations
+// ---------------------------------
+// The interpreter uses Rc<RefCell<>> which is NOT thread-safe (not Send/Sync).
+// This means:
+// - Channels work but block the main thread
+// - Actors run single-threaded with message queuing
+// - Thread primitives simulate behavior but don't provide true parallelism
+// - Atomics work correctly for single-threaded access patterns
+//
+// For true parallel execution, compile with the JIT backend (--jit flag).
+// The JIT uses Arc/Mutex and compiles to native code with proper threading.
+// ============================================================================
 
 fn register_concurrency(interp: &mut Interpreter) {
     // --- CHANNELS ---
@@ -3114,7 +3126,21 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Array(Rc::new(RefCell::new(range))))
     });
 
-    // --- ASYNC/AWAIT FUNCTIONS ---
+    // ============================================================================
+    // ASYNC/AWAIT FUNCTIONS
+    // ============================================================================
+    // WARNING: Interpreter Blocking Behavior
+    // --------------------------------------
+    // In the interpreter, async operations use cooperative scheduling but
+    // execute on the main thread. This means:
+    // - async_sleep() blocks the interpreter for the specified duration
+    // - await() polls futures but may block waiting for completion
+    // - No true concurrent I/O - operations execute sequentially
+    // - Future combinators (race, all) work but don't provide parallelism
+    //
+    // The async model is designed for composability and clean code structure.
+    // For non-blocking async with true concurrency, use the JIT backend.
+    // ============================================================================
 
     // async_sleep - create a future that completes after specified milliseconds
     define(interp, "async_sleep", Some(1), |interp, args| {
@@ -3673,9 +3699,17 @@ fn register_fs(interp: &mut Interpreter) {
 // ============================================================================
 // CRYPTO FUNCTIONS
 // ============================================================================
+// SECURITY WARNING
+// -----------------
+// - sha256(), sha512(): Recommended for secure hashing (checksums, integrity)
+// - md5(): DEPRECATED for security use. MD5 is cryptographically broken.
+//   Only use for legacy compatibility, checksums of non-security data, or
+//   cache keys. NEVER use for passwords, signatures, or security tokens.
+// - For password hashing, consider using external tools like bcrypt/argon2
+// ============================================================================
 
 fn register_crypto(interp: &mut Interpreter) {
-    // sha256 - compute SHA-256 hash
+    // sha256 - compute SHA-256 hash (RECOMMENDED for security use)
     define(interp, "sha256", Some(1), |_, args| {
         let data = match &args[0] {
             Value::String(s) => s.as_bytes().to_vec(),
@@ -3716,6 +3750,8 @@ fn register_crypto(interp: &mut Interpreter) {
     });
 
     // md5 - compute MD5 hash
+    // ⚠️  DEPRECATED: MD5 is cryptographically broken. Use sha256() instead.
+    // Only provided for legacy compatibility and non-security checksums.
     define(interp, "md5", Some(1), |_, args| {
         let data = match &args[0] {
             Value::String(s) => s.as_bytes().to_vec(),
