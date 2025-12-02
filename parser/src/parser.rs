@@ -275,6 +275,85 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse interpolation parts from a string like "hello {name}, you are {age} years old"
+    /// Returns a vector of text segments and expression segments.
+    fn parse_interpolation_parts(&mut self, s: &str) -> ParseResult<Vec<InterpolationPart>> {
+        let mut parts = Vec::new();
+        let mut current_text = String::new();
+        let mut chars = s.chars().peekable();
+        let mut brace_depth = 0;
+        let mut expr_content = String::new();
+        let mut in_expr = false;
+
+        while let Some(c) = chars.next() {
+            if in_expr {
+                if c == '{' {
+                    brace_depth += 1;
+                    expr_content.push(c);
+                } else if c == '}' {
+                    if brace_depth > 0 {
+                        brace_depth -= 1;
+                        expr_content.push(c);
+                    } else {
+                        // End of expression - parse it
+                        in_expr = false;
+                        if !expr_content.is_empty() {
+                            // Parse the expression content
+                            let mut expr_parser = Parser::new(&expr_content);
+                            match expr_parser.parse_expr() {
+                                Ok(expr) => {
+                                    parts.push(InterpolationPart::Expr(Box::new(expr)));
+                                }
+                                Err(_) => {
+                                    // If parsing fails, treat as text
+                                    parts.push(InterpolationPart::Text(format!("{{{}}}", expr_content)));
+                                }
+                            }
+                        }
+                        expr_content.clear();
+                    }
+                } else {
+                    expr_content.push(c);
+                }
+            } else if c == '{' {
+                if chars.peek() == Some(&'{') {
+                    // Escaped brace {{
+                    chars.next();
+                    current_text.push('{');
+                } else {
+                    // Start of expression
+                    if !current_text.is_empty() {
+                        parts.push(InterpolationPart::Text(current_text.clone()));
+                        current_text.clear();
+                    }
+                    in_expr = true;
+                }
+            } else if c == '}' {
+                if chars.peek() == Some(&'}') {
+                    // Escaped brace }}
+                    chars.next();
+                    current_text.push('}');
+                } else {
+                    current_text.push(c);
+                }
+            } else {
+                current_text.push(c);
+            }
+        }
+
+        // Add any remaining text
+        if !current_text.is_empty() {
+            parts.push(InterpolationPart::Text(current_text));
+        }
+
+        // If we have no parts, add an empty text part
+        if parts.is_empty() {
+            parts.push(InterpolationPart::Text(String::new()));
+        }
+
+        Ok(parts)
+    }
+
     /// Build crate configuration from parsed inner attributes.
     fn build_crate_config(&self, attrs: &[Attribute]) -> CrateConfig {
         let mut config = CrateConfig::default();
@@ -1669,6 +1748,32 @@ impl<'a> Parser<'a> {
             Some(Token::StringLit(s)) => {
                 self.advance();
                 Ok(Expr::Literal(Literal::String(s)))
+            }
+            Some(Token::MultiLineStringLit(s)) => {
+                self.advance();
+                Ok(Expr::Literal(Literal::MultiLineString(s)))
+            }
+            Some(Token::RawStringLit(s)) | Some(Token::RawStringDelimited(s)) => {
+                self.advance();
+                Ok(Expr::Literal(Literal::RawString(s)))
+            }
+            Some(Token::ByteStringLit(bytes)) => {
+                self.advance();
+                Ok(Expr::Literal(Literal::ByteString(bytes)))
+            }
+            Some(Token::InterpolatedStringLit(s)) => {
+                self.advance();
+                // Parse the interpolation parts
+                let parts = self.parse_interpolation_parts(&s)?;
+                Ok(Expr::Literal(Literal::InterpolatedString { parts }))
+            }
+            Some(Token::SigilStringSql(s)) => {
+                self.advance();
+                Ok(Expr::Literal(Literal::SigilStringSql(s)))
+            }
+            Some(Token::SigilStringRoute(s)) => {
+                self.advance();
+                Ok(Expr::Literal(Literal::SigilStringRoute(s)))
             }
             Some(Token::CharLit(c)) => {
                 self.advance();

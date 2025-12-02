@@ -742,6 +742,15 @@ impl TypeChecker {
             Literal::Bool(_) => Type::Bool,
             Literal::Char(_) => Type::Char,
             Literal::String(_) => Type::Str,
+            Literal::MultiLineString(_) => Type::Str,
+            Literal::RawString(_) => Type::Str,
+            Literal::ByteString(bytes) => Type::Array {
+                element: Box::new(Type::Int(IntSize::U8)),
+                size: Some(bytes.len()),
+            },
+            Literal::InterpolatedString { .. } => Type::Str,
+            Literal::SigilStringSql(_) => Type::Str,
+            Literal::SigilStringRoute(_) => Type::Str,
             Literal::Null => Type::Unit,  // null has unit type
             Literal::Empty => Type::Unit,
             Literal::Infinity => Type::Float(FloatSize::F64),
