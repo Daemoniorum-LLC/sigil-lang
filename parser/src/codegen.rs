@@ -21,7 +21,7 @@ pub mod jit {
     use std::collections::HashMap;
     use std::mem;
 
-    use crate::ast::{self, BinOp, Expr, Item, Literal, UnaryOp, ExternBlock, ExternItem, ExternFunction, TypeExpr};
+    use crate::ast::{self, BinOp, Expr, Item, Literal, UnaryOp, ExternBlock, ExternItem, ExternFunction, TypeExpr, PipeOp};
     use crate::parser::Parser;
     use crate::optimize::{Optimizer, OptLevel};
     use crate::ffi::ctypes::CType;
@@ -221,6 +221,16 @@ pub mod jit {
             builder.symbol("sigil_array_min", sigil_array_min as *const u8);
             builder.symbol("sigil_array_max", sigil_array_max as *const u8);
             builder.symbol("sigil_array_fill", sigil_array_fill as *const u8);
+
+            // PipeOp array access functions (morphemes)
+            builder.symbol("sigil_array_first", sigil_array_first as *const u8);
+            builder.symbol("sigil_array_last", sigil_array_last as *const u8);
+            builder.symbol("sigil_array_middle", sigil_array_middle as *const u8);
+            builder.symbol("sigil_array_choice", sigil_array_choice as *const u8);
+            builder.symbol("sigil_array_nth", sigil_array_nth as *const u8);
+            builder.symbol("sigil_array_next", sigil_array_next as *const u8);
+            builder.symbol("sigil_array_product", sigil_array_product as *const u8);
+            builder.symbol("sigil_array_sort", sigil_array_sort as *const u8);
 
             // Memoization cache functions
             builder.symbol("sigil_memo_new", sigil_memo_new as *const u8);
@@ -1156,8 +1166,79 @@ pub mod jit {
                 Ok(arr)
             }
 
-            Expr::Pipe { expr, .. } => {
-                compile_expr(module, functions, extern_fns, builder, scope, expr)
+            Expr::Pipe { expr, operations } => {
+                // Compile the base expression first
+                let mut result = compile_expr(module, functions, extern_fns, builder, scope, expr)?;
+
+                // Process each pipe operation in sequence
+                for op in operations {
+                    result = match op {
+                        // Simple array access morphemes - call stdlib functions directly
+                        PipeOp::First => {
+                            compile_call(module, functions, extern_fns, builder, "sigil_array_first", &[result])?
+                        }
+                        PipeOp::Last => {
+                            compile_call(module, functions, extern_fns, builder, "sigil_array_last", &[result])?
+                        }
+                        PipeOp::Middle => {
+                            compile_call(module, functions, extern_fns, builder, "sigil_array_middle", &[result])?
+                        }
+                        PipeOp::Choice => {
+                            compile_call(module, functions, extern_fns, builder, "sigil_array_choice", &[result])?
+                        }
+                        PipeOp::Next => {
+                            compile_call(module, functions, extern_fns, builder, "sigil_array_next", &[result])?
+                        }
+                        PipeOp::Nth(index_expr) => {
+                            let index = compile_expr(module, functions, extern_fns, builder, scope, index_expr)?;
+                            compile_call(module, functions, extern_fns, builder, "sigil_array_nth", &[result, index])?
+                        }
+                        // Sum operation (Σ morpheme)
+                        PipeOp::Reduce(_) => {
+                            // For now, treat reduce as sum for numeric arrays
+                            compile_call(module, functions, extern_fns, builder, "sigil_array_sum", &[result])?
+                        }
+                        // Sort operation (σ morpheme) - returns sorted array pointer
+                        PipeOp::Sort(_) => {
+                            compile_call(module, functions, extern_fns, builder, "sigil_array_sort", &[result])?
+                        }
+                        // Transform and Filter require closure compilation - complex
+                        PipeOp::Transform(_) | PipeOp::Filter(_) => {
+                            // TODO: Implement closure compilation for transform/filter
+                            // For now, pass through the array unchanged
+                            result
+                        }
+                        // Method calls, await, and named morphemes
+                        PipeOp::Method { name, args } => {
+                            // Compile as a method call on the result
+                            let mut call_args = vec![result];
+                            for arg in args {
+                                call_args.push(compile_expr(module, functions, extern_fns, builder, scope, arg)?);
+                            }
+                            compile_call(module, functions, extern_fns, builder, &name.name, &call_args)?
+                        }
+                        PipeOp::Await => {
+                            // Await is a no-op in JIT context (sync execution)
+                            result
+                        }
+                        PipeOp::Named { prefix, body } => {
+                            // Named morphemes like ·map{f} - try to call as function
+                            if !prefix.is_empty() {
+                                let fn_name = &prefix[0].name;
+                                if let Some(body_expr) = body {
+                                    let body_val = compile_expr(module, functions, extern_fns, builder, scope, body_expr)?;
+                                    compile_call(module, functions, extern_fns, builder, fn_name, &[result, body_val])?
+                                } else {
+                                    compile_call(module, functions, extern_fns, builder, fn_name, &[result])?
+                                }
+                            } else {
+                                result
+                            }
+                        }
+                    };
+                }
+
+                Ok(result)
             }
 
             // Unsafe blocks - just compile the inner block
@@ -1392,6 +1473,24 @@ pub mod jit {
                 }
                 "sigil_array_len" => {
                     sig.params.push(AbiParam::new(types::I64));
+                    sig.returns.push(AbiParam::new(types::I64));
+                }
+                // PipeOp array access functions (single array arg -> element)
+                "sigil_array_first" | "sigil_array_last" | "sigil_array_middle" |
+                "sigil_array_choice" | "sigil_array_next" | "sigil_array_sum" |
+                "sigil_array_product" => {
+                    sig.params.push(AbiParam::new(types::I64));
+                    sig.returns.push(AbiParam::new(types::I64));
+                }
+                // Sort returns array pointer (new sorted array)
+                "sigil_array_sort" => {
+                    sig.params.push(AbiParam::new(types::I64)); // input array
+                    sig.returns.push(AbiParam::new(types::I64)); // new sorted array
+                }
+                // Nth requires array + index
+                "sigil_array_nth" => {
+                    sig.params.push(AbiParam::new(types::I64)); // array
+                    sig.params.push(AbiParam::new(types::I64)); // index
                     sig.returns.push(AbiParam::new(types::I64));
                 }
                 _ => {
@@ -2348,6 +2447,124 @@ pub mod jit {
             }
 
             arr_ptr
+        }
+    }
+
+    // ============================================
+    // PipeOp Array Access Functions
+    // ============================================
+    // Functions for the access morphemes: α (first), ω (last), μ (middle), χ (choice), ν (nth), ξ (next)
+
+    /// Get first element of array (α morpheme)
+    #[no_mangle]
+    pub extern "C" fn sigil_array_first(arr_ptr: i64) -> i64 {
+        unsafe {
+            let arr = &*(arr_ptr as *const SigilArray);
+            if arr.len == 0 {
+                return 0; // Return 0 for empty array
+            }
+            *arr.data
+        }
+    }
+
+    /// Get last element of array (ω morpheme)
+    #[no_mangle]
+    pub extern "C" fn sigil_array_last(arr_ptr: i64) -> i64 {
+        unsafe {
+            let arr = &*(arr_ptr as *const SigilArray);
+            if arr.len == 0 {
+                return 0; // Return 0 for empty array
+            }
+            *arr.data.add(arr.len - 1)
+        }
+    }
+
+    /// Get middle element of array (μ morpheme)
+    #[no_mangle]
+    pub extern "C" fn sigil_array_middle(arr_ptr: i64) -> i64 {
+        unsafe {
+            let arr = &*(arr_ptr as *const SigilArray);
+            if arr.len == 0 {
+                return 0; // Return 0 for empty array
+            }
+            let mid = arr.len / 2;
+            *arr.data.add(mid)
+        }
+    }
+
+    /// Get random element of array (χ morpheme)
+    #[no_mangle]
+    pub extern "C" fn sigil_array_choice(arr_ptr: i64) -> i64 {
+        unsafe {
+            let arr = &*(arr_ptr as *const SigilArray);
+            if arr.len == 0 {
+                return 0; // Return 0 for empty array
+            }
+            // Simple LCG-based random using time as seed
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let seed = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(12345);
+            let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % arr.len;
+            *arr.data.add(idx)
+        }
+    }
+
+    /// Get nth element of array (ν morpheme) - same as sigil_array_get but clearer semantics
+    #[no_mangle]
+    pub extern "C" fn sigil_array_nth(arr_ptr: i64, index: i64) -> i64 {
+        sigil_array_get(arr_ptr, index)
+    }
+
+    /// Get next element (iterator advance) - currently returns first element (ξ morpheme)
+    #[no_mangle]
+    pub extern "C" fn sigil_array_next(arr_ptr: i64) -> i64 {
+        // For now, next returns the first element
+        // A full iterator implementation would track state
+        sigil_array_first(arr_ptr)
+    }
+
+    /// Product of all elements in array (Π morpheme)
+    #[no_mangle]
+    pub extern "C" fn sigil_array_product(arr_ptr: i64) -> i64 {
+        unsafe {
+            let arr = &*(arr_ptr as *const SigilArray);
+            if arr.len == 0 {
+                return 1; // Product of empty set is 1 (identity)
+            }
+            let mut product: i64 = 1;
+            for i in 0..arr.len {
+                product = product.wrapping_mul(*arr.data.add(i));
+            }
+            product
+        }
+    }
+
+    /// Sort array in ascending order (σ morpheme) - returns new sorted array
+    #[no_mangle]
+    pub extern "C" fn sigil_array_sort(arr_ptr: i64) -> i64 {
+        unsafe {
+            let arr = &*(arr_ptr as *const SigilArray);
+            if arr.len == 0 {
+                return sigil_array_new(0);
+            }
+
+            // Copy elements to a Vec for sorting
+            let mut elements: Vec<i64> = Vec::with_capacity(arr.len);
+            for i in 0..arr.len {
+                elements.push(*arr.data.add(i));
+            }
+
+            // Sort ascending
+            elements.sort();
+
+            // Create new array with sorted elements
+            let new_arr = sigil_array_new(arr.len as i64);
+            for elem in elements {
+                sigil_array_push(new_arr, elem);
+            }
+            new_arr
         }
     }
 
