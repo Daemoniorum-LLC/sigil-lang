@@ -133,6 +133,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     // Phase 12: Emotional hologram and experimental crypto
     register_hologram(interp);
     register_experimental_crypto(interp);
+    // Phase 13: Multi-base encoding and cultural numerology
+    register_multibase(interp);
 }
 
 // Helper to define a builtin
@@ -15839,6 +15841,786 @@ fn gf256_inv(a: u8) -> u8 {
         result = gf256_mul(result, a);
     }
     gf256_mul(result, result)
+}
+
+// ============================================================================
+// MULTI-BASE ENCODING: Polycultural numeral systems and crypto addresses
+// ============================================================================
+//
+// Sigil supports multiple numeral bases reflecting different mathematical traditions:
+//   Binary (2)      - 0b prefix - Modern computing
+//   Octal (8)       - 0o prefix - Unix permissions
+//   Decimal (10)    - Default   - Indo-Arabic (global standard)
+//   Duodecimal (12) - 0z prefix - Dozen system (time, music)
+//   Hexadecimal (16)- 0x prefix - Computing, colors
+//   Vigesimal (20)  - 0v prefix - Mayan, Celtic, Basque
+//   Sexagesimal (60)- 0s prefix - Babylonian (time, angles)
+//
+// Plus special encodings:
+//   Base58  - Bitcoin addresses (no confusing 0/O/I/l)
+//   Base32  - Case-insensitive, no confusing chars
+//   Base36  - Alphanumeric only
+
+fn register_multibase(interp: &mut Interpreter) {
+    // === Vigesimal (Base 20) - Mayan/Celtic ===
+    // Digits: 0-9, A-J (or a-j)
+
+    define(interp, "to_vigesimal", Some(1), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("to_vigesimal() requires integer")),
+        };
+
+        let result = to_base_string(n.unsigned_abs(), 20, false);
+        let prefix = if n < 0 { "-0v" } else { "0v" };
+        Ok(Value::String(Rc::new(format!("{}{}", prefix, result))))
+    });
+
+    define(interp, "from_vigesimal", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("from_vigesimal() requires string")),
+        };
+
+        let (negative, clean) = parse_base_prefix(&s, "0v");
+        let value = from_base_string(&clean, 20)?;
+        Ok(Value::Int(if negative { -(value as i64) } else { value as i64 }))
+    });
+
+    // === Sexagesimal (Base 60) - Babylonian ===
+    // Uses colon-separated groups for readability: "1:30:45" = 1*3600 + 30*60 + 45
+
+    define(interp, "to_sexagesimal", Some(1), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("to_sexagesimal() requires integer")),
+        };
+
+        let negative = n < 0;
+        let mut value = n.unsigned_abs();
+        let mut parts = Vec::new();
+
+        if value == 0 {
+            parts.push("0".to_string());
+        } else {
+            while value > 0 {
+                parts.push(format!("{}", value % 60));
+                value /= 60;
+            }
+            parts.reverse();
+        }
+
+        let prefix = if negative { "-0s" } else { "0s" };
+        Ok(Value::String(Rc::new(format!("{}[{}]", prefix, parts.join(":")))))
+    });
+
+    define(interp, "from_sexagesimal", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("from_sexagesimal() requires string")),
+        };
+
+        let negative = s.starts_with('-');
+        let clean = s.trim_start_matches('-')
+                     .trim_start_matches("0s")
+                     .trim_start_matches('[')
+                     .trim_end_matches(']');
+
+        let mut result: i64 = 0;
+        for part in clean.split(':') {
+            let digit: i64 = part.trim().parse()
+                .map_err(|_| RuntimeError::new(format!("Invalid sexagesimal digit: {}", part)))?;
+            if digit < 0 || digit >= 60 {
+                return Err(RuntimeError::new(format!("Sexagesimal digit out of range: {}", digit)));
+            }
+            result = result * 60 + digit;
+        }
+
+        Ok(Value::Int(if negative { -result } else { result }))
+    });
+
+    // === Duodecimal (Base 12) - Dozen system ===
+    // Digits: 0-9, X (10), E (11) - Dozenal Society convention
+
+    define(interp, "to_duodecimal", Some(1), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("to_duodecimal() requires integer")),
+        };
+
+        let result = to_base_string_custom(n.unsigned_abs(), 12, "0123456789XE");
+        let prefix = if n < 0 { "-0z" } else { "0z" };
+        Ok(Value::String(Rc::new(format!("{}{}", prefix, result))))
+    });
+
+    define(interp, "from_duodecimal", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("from_duodecimal() requires string")),
+        };
+
+        let (negative, clean) = parse_base_prefix(&s, "0z");
+        let value = from_base_string_custom(&clean.to_uppercase(), "0123456789XE")?;
+        Ok(Value::Int(if negative { -(value as i64) } else { value as i64 }))
+    });
+
+    // === Generic Base Conversion ===
+
+    define(interp, "to_base", Some(2), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("to_base() requires integer")),
+        };
+        let base = match &args[1] {
+            Value::Int(b) => *b as u64,
+            _ => return Err(RuntimeError::new("to_base() requires integer base")),
+        };
+
+        if base < 2 || base > 36 {
+            return Err(RuntimeError::new("to_base() base must be 2-36"));
+        }
+
+        let result = to_base_string(n.unsigned_abs(), base, false);
+        let prefix = if n < 0 { "-" } else { "" };
+        Ok(Value::String(Rc::new(format!("{}{}", prefix, result))))
+    });
+
+    define(interp, "from_base", Some(2), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("from_base() requires string")),
+        };
+        let base = match &args[1] {
+            Value::Int(b) => *b as u64,
+            _ => return Err(RuntimeError::new("from_base() requires integer base")),
+        };
+
+        if base < 2 || base > 36 {
+            return Err(RuntimeError::new("from_base() base must be 2-36"));
+        }
+
+        let negative = s.starts_with('-');
+        let clean = s.trim_start_matches('-');
+        let value = from_base_string(clean, base)?;
+        Ok(Value::Int(if negative { -(value as i64) } else { value as i64 }))
+    });
+
+    // === Base58 - Bitcoin/IPFS addresses ===
+    // Alphabet: 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
+    // Excludes: 0, O, I, l (confusing characters)
+
+    const BASE58_ALPHABET: &str = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+    define(interp, "base58_encode", Some(1), |_, args| {
+        let bytes: Vec<u8> = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            Value::Array(arr) => {
+                arr.borrow().iter().filter_map(|v| {
+                    if let Value::Int(i) = v { Some(*i as u8) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("base58_encode() requires string or byte array")),
+        };
+
+        // Count leading zeros
+        let leading_zeros = bytes.iter().take_while(|&&b| b == 0).count();
+
+        // Convert to big integer and then to base58
+        let mut result = Vec::new();
+        let mut num: Vec<u8> = bytes.clone();
+
+        while !num.is_empty() && !num.iter().all(|&b| b == 0) {
+            let mut remainder = 0u32;
+            let mut new_num = Vec::new();
+
+            for &byte in &num {
+                let acc = (remainder << 8) + byte as u32;
+                let digit = acc / 58;
+                remainder = acc % 58;
+
+                if !new_num.is_empty() || digit > 0 {
+                    new_num.push(digit as u8);
+                }
+            }
+
+            result.push(BASE58_ALPHABET.chars().nth(remainder as usize).unwrap());
+            num = new_num;
+        }
+
+        // Add '1' for each leading zero byte
+        for _ in 0..leading_zeros {
+            result.push('1');
+        }
+
+        result.reverse();
+        Ok(Value::String(Rc::new(result.into_iter().collect())))
+    });
+
+    define(interp, "base58_decode", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("base58_decode() requires string")),
+        };
+
+        // Count leading '1's
+        let leading_ones = s.chars().take_while(|&c| c == '1').count();
+
+        // Convert from base58 to big integer
+        let mut num: Vec<u8> = Vec::new();
+
+        for c in s.chars() {
+            let digit = BASE58_ALPHABET.find(c)
+                .ok_or_else(|| RuntimeError::new(format!("Invalid base58 character: {}", c)))?;
+
+            let mut carry = digit as u32;
+            for byte in num.iter_mut().rev() {
+                let acc = (*byte as u32) * 58 + carry;
+                *byte = (acc & 0xff) as u8;
+                carry = acc >> 8;
+            }
+
+            while carry > 0 {
+                num.insert(0, (carry & 0xff) as u8);
+                carry >>= 8;
+            }
+        }
+
+        // Add leading zeros
+        let mut result = vec![0u8; leading_ones];
+        result.extend(num);
+
+        // Return as hex string for readability
+        Ok(Value::String(Rc::new(hex::encode(&result))))
+    });
+
+    // === Base32 - Case insensitive, no confusing chars ===
+    // RFC 4648 alphabet: A-Z, 2-7
+
+    const BASE32_ALPHABET: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+    define(interp, "base32_encode", Some(1), |_, args| {
+        let bytes: Vec<u8> = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            Value::Array(arr) => {
+                arr.borrow().iter().filter_map(|v| {
+                    if let Value::Int(i) = v { Some(*i as u8) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("base32_encode() requires string or byte array")),
+        };
+
+        let mut result = String::new();
+        let mut buffer: u64 = 0;
+        let mut bits = 0;
+
+        for byte in bytes {
+            buffer = (buffer << 8) | byte as u64;
+            bits += 8;
+
+            while bits >= 5 {
+                bits -= 5;
+                let idx = ((buffer >> bits) & 0x1f) as usize;
+                result.push(BASE32_ALPHABET.chars().nth(idx).unwrap());
+            }
+        }
+
+        if bits > 0 {
+            let idx = ((buffer << (5 - bits)) & 0x1f) as usize;
+            result.push(BASE32_ALPHABET.chars().nth(idx).unwrap());
+        }
+
+        // Padding
+        while result.len() % 8 != 0 {
+            result.push('=');
+        }
+
+        Ok(Value::String(Rc::new(result)))
+    });
+
+    define(interp, "base32_decode", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_uppercase().replace('=', ""),
+            _ => return Err(RuntimeError::new("base32_decode() requires string")),
+        };
+
+        let mut result = Vec::new();
+        let mut buffer: u64 = 0;
+        let mut bits = 0;
+
+        for c in s.chars() {
+            let digit = BASE32_ALPHABET.find(c)
+                .ok_or_else(|| RuntimeError::new(format!("Invalid base32 character: {}", c)))?;
+
+            buffer = (buffer << 5) | digit as u64;
+            bits += 5;
+
+            if bits >= 8 {
+                bits -= 8;
+                result.push((buffer >> bits) as u8);
+                buffer &= (1 << bits) - 1;
+            }
+        }
+
+        Ok(Value::String(Rc::new(hex::encode(&result))))
+    });
+
+    // === Cultural Numerology ===
+
+    // sacred_numbers - get sacred/significant numbers for a culture
+    define(interp, "sacred_numbers", Some(1), |_, args| {
+        let culture = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("sacred_numbers() requires string culture")),
+        };
+
+        let numbers: Vec<(i64, &str)> = match culture.as_str() {
+            "mayan" | "maya" => vec![
+                (13, "Sacred cycle - Tzolkin calendar"),
+                (20, "Base of vigesimal system - human digits"),
+                (52, "Calendar round - 52 years"),
+                (260, "Tzolkin sacred calendar days"),
+                (365, "Haab solar calendar days"),
+                (400, "Baktun - 20×20 years"),
+            ],
+            "babylonian" | "mesopotamian" => vec![
+                (12, "Months, hours - celestial division"),
+                (60, "Sexagesimal base - minutes, seconds, degrees"),
+                (360, "Circle degrees - 6×60"),
+                (3600, "Sar - 60×60, large count"),
+                (7, "Planets visible to naked eye"),
+            ],
+            "chinese" | "zh" => vec![
+                (8, "八 (bā) - prosperity, wealth (sounds like 發)"),
+                (9, "九 (jiǔ) - longevity (sounds like 久)"),
+                (6, "六 (liù) - smooth, flowing"),
+                (2, "二 (èr) - pairs, harmony"),
+                (4, "四 (sì) - AVOID - sounds like death (死)"),
+                (5, "五 (wǔ) - five elements"),
+                (12, "十二 - zodiac animals"),
+            ],
+            "japanese" | "ja" => vec![
+                (7, "七 (nana) - lucky, seven gods of fortune"),
+                (8, "八 (hachi) - prosperity, expansion"),
+                (3, "三 (san) - completeness"),
+                (5, "五 (go) - five elements"),
+                (4, "四 (shi) - AVOID - sounds like death (死)"),
+                (9, "九 (ku) - AVOID - sounds like suffering (苦)"),
+            ],
+            "hebrew" | "jewish" => vec![
+                (7, "Shabbat, creation days, menorah branches"),
+                (18, "Chai (חי) - life - gematria of ח(8) + י(10)"),
+                (40, "Transformation - flood, Sinai, wilderness"),
+                (12, "Tribes of Israel"),
+                (613, "Mitzvot - commandments"),
+                (26, "Gematria of YHWH"),
+            ],
+            "islamic" | "arabic" | "ar" => vec![
+                (5, "Pillars of Islam, daily prayers"),
+                (7, "Heavens, circumambulation of Kaaba"),
+                (40, "Age of prophethood, days of repentance"),
+                (99, "Names of Allah"),
+                (786, "Abjad value of Bismillah"),
+            ],
+            "hindu" | "indian" | "hi" => vec![
+                (108, "Sacred beads, Upanishads, sun's distance"),
+                (7, "Chakras (main), rishis, sacred rivers"),
+                (3, "Trimurti - Brahma, Vishnu, Shiva"),
+                (4, "Vedas, yugas, varnas"),
+                (9, "Planets (navagraha), durga forms"),
+                (1008, "Names of Vishnu"),
+            ],
+            "greek" | "pythagorean" => vec![
+                (1, "Monad - unity, source"),
+                (2, "Dyad - duality, diversity"),
+                (3, "Triad - harmony, completion"),
+                (4, "Tetrad - solidity, earth"),
+                (7, "Heptad - perfection"),
+                (10, "Decad - tetractys, divine"),
+                (12, "Olympian gods"),
+            ],
+            "celtic" | "irish" => vec![
+                (3, "Triple goddess, triquetra"),
+                (5, "Elements including spirit"),
+                (9, "Triple threes - sacred completion"),
+                (13, "Lunar months"),
+                (17, "St. Patrick's Day"),
+                (20, "Vigesimal counting"),
+            ],
+            _ => vec![
+                (1, "Unity"),
+                (7, "Widely considered lucky"),
+                (12, "Dozen - practical division"),
+                (13, "Often considered unlucky in West"),
+            ],
+        };
+
+        let result: Vec<Value> = numbers.iter().map(|(n, meaning)| {
+            let mut entry = std::collections::HashMap::new();
+            entry.insert("number".to_string(), Value::Int(*n));
+            entry.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+            Value::Map(Rc::new(RefCell::new(entry)))
+        }).collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // is_sacred - check if a number is sacred in a culture
+    define(interp, "is_sacred", Some(2), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("is_sacred() requires integer")),
+        };
+        let culture = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("is_sacred() requires string culture")),
+        };
+
+        let sacred = match culture.as_str() {
+            "mayan" | "maya" => vec![13, 20, 52, 260, 365, 400],
+            "babylonian" | "mesopotamian" => vec![12, 60, 360, 3600, 7],
+            "chinese" | "zh" => vec![8, 9, 6, 2, 5, 12],
+            "japanese" | "ja" => vec![7, 8, 3, 5],
+            "hebrew" | "jewish" => vec![7, 18, 40, 12, 613, 26],
+            "islamic" | "arabic" | "ar" => vec![5, 7, 40, 99, 786],
+            "hindu" | "indian" | "hi" => vec![108, 7, 3, 4, 9, 1008],
+            "greek" | "pythagorean" => vec![1, 2, 3, 4, 7, 10, 12],
+            "celtic" | "irish" => vec![3, 5, 9, 13, 17, 20],
+            _ => vec![7, 12],
+        };
+
+        Ok(Value::Bool(sacred.contains(&n)))
+    });
+
+    // is_unlucky - check if a number is unlucky in a culture
+    define(interp, "is_unlucky", Some(2), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("is_unlucky() requires integer")),
+        };
+        let culture = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("is_unlucky() requires string culture")),
+        };
+
+        let unlucky = match culture.as_str() {
+            "chinese" | "zh" => vec![4], // 四 sounds like 死 (death)
+            "japanese" | "ja" => vec![4, 9], // 四=death, 九=suffering
+            "western" | "en" => vec![13], // Friday the 13th
+            "italian" | "it" => vec![17], // XVII = VIXI (I lived = I'm dead)
+            _ => vec![],
+        };
+
+        Ok(Value::Bool(unlucky.contains(&n)))
+    });
+
+    // number_meaning - get the cultural meaning of a specific number
+    define(interp, "number_meaning", Some(2), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("number_meaning() requires integer")),
+        };
+        let culture = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("number_meaning() requires string culture")),
+        };
+
+        let meaning = match (n, culture.as_str()) {
+            // Chinese
+            (8, "chinese" | "zh") => "八 (bā) - Most auspicious, sounds like 發 (prosperity)",
+            (4, "chinese" | "zh") => "四 (sì) - Unlucky, sounds like 死 (death)",
+            (9, "chinese" | "zh") => "九 (jiǔ) - Longevity, sounds like 久 (long-lasting)",
+            (6, "chinese" | "zh") => "六 (liù) - Smooth and well-off",
+            (2, "chinese" | "zh") => "二 (èr) - Good things come in pairs",
+
+            // Japanese
+            (7, "japanese" | "ja") => "七 (nana) - Lucky, seven gods of fortune",
+            (8, "japanese" | "ja") => "八 (hachi) - Lucky, represents spreading prosperity",
+            (4, "japanese" | "ja") => "四 (shi) - Unlucky, homophone of death",
+            (9, "japanese" | "ja") => "九 (ku) - Unlucky, homophone of suffering",
+
+            // Hebrew
+            (18, "hebrew" | "jewish") => "Chai (חי) - Life itself, most auspicious",
+            (7, "hebrew" | "jewish") => "Divine completion - Shabbat, menorah, creation",
+            (40, "hebrew" | "jewish") => "Transformation - flood, Sinai, wilderness years",
+            (613, "hebrew" | "jewish") => "Taryag - total number of mitzvot (commandments)",
+
+            // Mayan
+            (13, "mayan" | "maya") => "Sacred Tzolkin cycle, celestial layers",
+            (20, "mayan" | "maya") => "Vigesimal base - fingers and toes, uinal",
+            (260, "mayan" | "maya") => "Tzolkin calendar - 13 × 20 sacred days",
+
+            // Babylonian
+            (60, "babylonian" | "mesopotamian") => "Sexagesimal base - divisible by 2,3,4,5,6,10,12,15,20,30",
+            (360, "babylonian" | "mesopotamian") => "Circle degrees - celestial observation",
+
+            // Hindu
+            (108, "hindu" | "indian" | "hi") => "Sacred completeness - mala beads, Upanishads, sun ratio",
+            (3, "hindu" | "indian" | "hi") => "Trimurti - Brahma, Vishnu, Shiva",
+            (9, "hindu" | "indian" | "hi") => "Navagraha (9 planets), Durga's 9 forms",
+
+            // Islamic
+            (99, "islamic" | "arabic" | "ar") => "Asma ul-Husna - 99 names of Allah",
+            (5, "islamic" | "arabic" | "ar") => "Five pillars of Islam",
+            (786, "islamic" | "arabic" | "ar") => "Abjad numerology of Bismillah",
+
+            // Greek/Pythagorean
+            (10, "greek" | "pythagorean") => "Tetractys - 1+2+3+4, perfect number",
+            (7, "greek" | "pythagorean") => "Heptad - virgin number, Athena's number",
+
+            _ => "No specific cultural meaning recorded",
+        };
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("number".to_string(), Value::Int(n));
+        result.insert("culture".to_string(), Value::String(Rc::new(culture)));
+        result.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // === Time encoding using Babylonian sexagesimal ===
+
+    // to_babylonian_time - convert seconds to Babylonian notation
+    define(interp, "to_babylonian_time", Some(1), |_, args| {
+        let seconds = match &args[0] {
+            Value::Int(n) => *n,
+            Value::Float(f) => *f as i64,
+            _ => return Err(RuntimeError::new("to_babylonian_time() requires number")),
+        };
+
+        let hours = seconds / 3600;
+        let mins = (seconds % 3600) / 60;
+        let secs = seconds % 60;
+
+        Ok(Value::String(Rc::new(format!("0s[{}:{}:{}]", hours, mins, secs))))
+    });
+
+    // from_babylonian_time - convert Babylonian time to seconds
+    define(interp, "from_babylonian_time", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("from_babylonian_time() requires string")),
+        };
+
+        let clean = s.trim_start_matches("0s")
+                     .trim_start_matches('[')
+                     .trim_end_matches(']');
+
+        let parts: Vec<i64> = clean.split(':')
+            .map(|p| p.trim().parse::<i64>().unwrap_or(0))
+            .collect();
+
+        let seconds = match parts.len() {
+            1 => parts[0],
+            2 => parts[0] * 60 + parts[1],
+            3 => parts[0] * 3600 + parts[1] * 60 + parts[2],
+            _ => return Err(RuntimeError::new("Invalid Babylonian time format")),
+        };
+
+        Ok(Value::Int(seconds))
+    });
+
+    // === Multi-base secret sharing ===
+
+    // vigesimal_shares - split secret with shares in Mayan base-20
+    define(interp, "vigesimal_shares", Some(3), |_, args| {
+        let secret = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            _ => return Err(RuntimeError::new("vigesimal_shares() requires string secret")),
+        };
+
+        let threshold = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("vigesimal_shares() requires integer threshold")),
+        };
+
+        let num_shares = match &args[2] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("vigesimal_shares() requires integer num_shares")),
+        };
+
+        if threshold < 2 || num_shares < threshold || num_shares > 20 {
+            return Err(RuntimeError::new("vigesimal_shares() requires 2 <= threshold <= num_shares <= 20 (Mayan limit)"));
+        }
+
+        // Generate shares using Shamir
+        let mut rng = rand::thread_rng();
+        let mut shares: Vec<Vec<u8>> = (0..num_shares).map(|_| Vec::with_capacity(secret.len() + 1)).collect();
+
+        for (i, share) in shares.iter_mut().enumerate() {
+            share.push((i + 1) as u8);
+        }
+
+        for &byte in &secret {
+            let mut coefficients: Vec<u8> = vec![byte];
+            for _ in 1..threshold {
+                coefficients.push(rng.gen());
+            }
+
+            for (i, share) in shares.iter_mut().enumerate() {
+                let x = (i + 1) as u8;
+                let y = eval_polynomial_gf256(&coefficients, x);
+                share.push(y);
+            }
+        }
+
+        // Encode shares in vigesimal
+        let share_values: Vec<Value> = shares.iter().enumerate()
+            .map(|(i, share)| {
+                let mut entry = std::collections::HashMap::new();
+
+                // Convert share bytes to vigesimal string
+                let mut vig_parts: Vec<String> = Vec::new();
+                for &byte in share {
+                    vig_parts.push(to_base_string(byte as u64, 20, true));
+                }
+
+                entry.insert("index".to_string(), Value::Int((i + 1) as i64));
+                entry.insert("vigesimal".to_string(), Value::String(Rc::new(format!("0v{}", vig_parts.join(".")))));
+                entry.insert("hex".to_string(), Value::String(Rc::new(hex::encode(share))));
+
+                Value::Map(Rc::new(RefCell::new(entry)))
+            })
+            .collect();
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("shares".to_string(), Value::Array(Rc::new(RefCell::new(share_values))));
+        result.insert("threshold".to_string(), Value::Int(threshold as i64));
+        result.insert("total".to_string(), Value::Int(num_shares as i64));
+        result.insert("base".to_string(), Value::String(Rc::new("vigesimal (Mayan base-20)".to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // multibase_info - get information about supported bases
+    define(interp, "multibase_info", Some(0), |_, _| {
+        let mut info = std::collections::HashMap::new();
+
+        let bases = vec![
+            ("binary", 2, "0b", "Modern computing"),
+            ("octal", 8, "0o", "Unix, historical computing"),
+            ("decimal", 10, "", "Indo-Arabic global standard"),
+            ("duodecimal", 12, "0z", "Dozen system - time, music, measurement"),
+            ("hexadecimal", 16, "0x", "Computing, colors, addresses"),
+            ("vigesimal", 20, "0v", "Mayan, Celtic, Basque - human digits"),
+            ("sexagesimal", 60, "0s", "Babylonian - time, angles, astronomy"),
+        ];
+
+        let base_list: Vec<Value> = bases.iter().map(|(name, base, prefix, desc)| {
+            let mut entry = std::collections::HashMap::new();
+            entry.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+            entry.insert("base".to_string(), Value::Int(*base as i64));
+            entry.insert("prefix".to_string(), Value::String(Rc::new(prefix.to_string())));
+            entry.insert("origin".to_string(), Value::String(Rc::new(desc.to_string())));
+            Value::Map(Rc::new(RefCell::new(entry)))
+        }).collect();
+
+        info.insert("numeral_systems".to_string(), Value::Array(Rc::new(RefCell::new(base_list))));
+
+        let encodings = vec!["base58 (Bitcoin)", "base32 (RFC 4648)", "base64 (standard)"];
+        let enc_list: Vec<Value> = encodings.iter()
+            .map(|s| Value::String(Rc::new(s.to_string())))
+            .collect();
+        info.insert("special_encodings".to_string(), Value::Array(Rc::new(RefCell::new(enc_list))));
+
+        let cultures = vec![
+            "mayan", "babylonian", "chinese", "japanese", "hebrew",
+            "islamic", "hindu", "greek", "celtic"
+        ];
+        let cult_list: Vec<Value> = cultures.iter()
+            .map(|s| Value::String(Rc::new(s.to_string())))
+            .collect();
+        info.insert("supported_cultures".to_string(), Value::Array(Rc::new(RefCell::new(cult_list))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+}
+
+// Helper functions for base conversion
+
+fn to_base_string(mut n: u64, base: u64, pad_to_two: bool) -> String {
+    const DIGITS: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    if n == 0 {
+        return if pad_to_two { "00".to_string() } else { "0".to_string() };
+    }
+
+    let mut result = Vec::new();
+    while n > 0 {
+        result.push(DIGITS[(n % base) as usize] as char);
+        n /= base;
+    }
+
+    if pad_to_two && result.len() < 2 {
+        result.push('0');
+    }
+
+    result.reverse();
+    result.into_iter().collect()
+}
+
+fn to_base_string_custom(mut n: u64, base: u64, digits: &str) -> String {
+    if n == 0 {
+        return digits.chars().next().unwrap().to_string();
+    }
+
+    let mut result = Vec::new();
+    let digit_chars: Vec<char> = digits.chars().collect();
+
+    while n > 0 {
+        result.push(digit_chars[(n % base) as usize]);
+        n /= base;
+    }
+
+    result.reverse();
+    result.into_iter().collect()
+}
+
+fn from_base_string(s: &str, base: u64) -> Result<u64, RuntimeError> {
+    let mut result: u64 = 0;
+
+    for c in s.chars() {
+        let digit = match c {
+            '0'..='9' => c as u64 - '0' as u64,
+            'A'..='Z' => c as u64 - 'A' as u64 + 10,
+            'a'..='z' => c as u64 - 'a' as u64 + 10,
+            _ => return Err(RuntimeError::new(format!("Invalid digit: {}", c))),
+        };
+
+        if digit >= base {
+            return Err(RuntimeError::new(format!("Digit {} out of range for base {}", c, base)));
+        }
+
+        result = result.checked_mul(base)
+            .and_then(|r| r.checked_add(digit))
+            .ok_or_else(|| RuntimeError::new("Number overflow"))?;
+    }
+
+    Ok(result)
+}
+
+fn from_base_string_custom(s: &str, digits: &str) -> Result<u64, RuntimeError> {
+    let base = digits.len() as u64;
+    let mut result: u64 = 0;
+
+    for c in s.chars() {
+        let digit = digits.find(c)
+            .ok_or_else(|| RuntimeError::new(format!("Invalid digit: {}", c)))? as u64;
+
+        result = result.checked_mul(base)
+            .and_then(|r| r.checked_add(digit))
+            .ok_or_else(|| RuntimeError::new("Number overflow"))?;
+    }
+
+    Ok(result)
+}
+
+fn parse_base_prefix(s: &str, prefix: &str) -> (bool, String) {
+    let negative = s.starts_with('-');
+    let clean = s.trim_start_matches('-')
+                 .trim_start_matches(prefix)
+                 .to_string();
+    (negative, clean)
 }
 
 #[cfg(test)]
