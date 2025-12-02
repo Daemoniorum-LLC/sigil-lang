@@ -55,6 +55,11 @@ pub enum Value {
         value: Box<Value>,
         evidence: Evidence,
     },
+    /// Affect-wrapped value (sentiment, emotion, sarcasm, etc.)
+    Affective {
+        value: Box<Value>,
+        affect: RuntimeAffect,
+    },
     /// HashMap
     Map(Rc<RefCell<HashMap<String, Value>>>),
     /// HashSet (stores keys only, values are unit)
@@ -149,6 +154,54 @@ pub enum Evidence {
     Uncertain,  // ?
     Reported,   // ~
     Paradox,    // ‽
+}
+
+/// Runtime affect markers for sentiment and emotion tracking
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuntimeAffect {
+    pub sentiment: Option<RuntimeSentiment>,
+    pub sarcasm: bool,           // ⸮
+    pub intensity: Option<RuntimeIntensity>,
+    pub formality: Option<RuntimeFormality>,
+    pub emotion: Option<RuntimeEmotion>,
+    pub confidence: Option<RuntimeConfidence>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeSentiment {
+    Positive,  // ⊕
+    Negative,  // ⊖
+    Neutral,   // ⊜
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeIntensity {
+    Up,   // ↑
+    Down, // ↓
+    Max,  // ⇈
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeFormality {
+    Formal,   // ♔
+    Informal, // ♟
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeEmotion {
+    Joy,      // ☺
+    Sadness,  // ☹
+    Anger,    // ⚡
+    Fear,     // ❄
+    Surprise, // ✦
+    Love,     // ♡
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeConfidence {
+    High,   // ◉
+    Medium, // ◎
+    Low,    // ○
 }
 
 /// A Sigil function
@@ -259,6 +312,48 @@ impl fmt::Debug for Value {
                     FutureState::Failed(e) => write!(f, "<future failed: {}>", e),
                 }
             }
+            Value::Affective { value, affect } => {
+                write!(f, "{:?}", value)?;
+                if let Some(s) = &affect.sentiment {
+                    match s {
+                        RuntimeSentiment::Positive => write!(f, "⊕")?,
+                        RuntimeSentiment::Negative => write!(f, "⊖")?,
+                        RuntimeSentiment::Neutral => write!(f, "⊜")?,
+                    }
+                }
+                if affect.sarcasm { write!(f, "⸮")?; }
+                if let Some(i) = &affect.intensity {
+                    match i {
+                        RuntimeIntensity::Up => write!(f, "↑")?,
+                        RuntimeIntensity::Down => write!(f, "↓")?,
+                        RuntimeIntensity::Max => write!(f, "⇈")?,
+                    }
+                }
+                if let Some(fo) = &affect.formality {
+                    match fo {
+                        RuntimeFormality::Formal => write!(f, "♔")?,
+                        RuntimeFormality::Informal => write!(f, "♟")?,
+                    }
+                }
+                if let Some(e) = &affect.emotion {
+                    match e {
+                        RuntimeEmotion::Joy => write!(f, "☺")?,
+                        RuntimeEmotion::Sadness => write!(f, "☹")?,
+                        RuntimeEmotion::Anger => write!(f, "⚡")?,
+                        RuntimeEmotion::Fear => write!(f, "❄")?,
+                        RuntimeEmotion::Surprise => write!(f, "✦")?,
+                        RuntimeEmotion::Love => write!(f, "♡")?,
+                    }
+                }
+                if let Some(c) = &affect.confidence {
+                    match c {
+                        RuntimeConfidence::High => write!(f, "◉")?,
+                        RuntimeConfidence::Medium => write!(f, "◎")?,
+                        RuntimeConfidence::Low => write!(f, "○")?,
+                    }
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -282,6 +377,49 @@ impl fmt::Display for Value {
                 write!(f, "]")
             }
             Value::Evidential { value, .. } => write!(f, "{}", value),
+            Value::Affective { value, affect } => {
+                // Display affect markers as suffix symbols
+                let mut suffix = String::new();
+                if let Some(sent) = &affect.sentiment {
+                    suffix.push(match sent {
+                        RuntimeSentiment::Positive => '⊕',
+                        RuntimeSentiment::Negative => '⊖',
+                        RuntimeSentiment::Neutral => '⊜',
+                    });
+                }
+                if affect.sarcasm { suffix.push('⸮'); }
+                if let Some(int) = &affect.intensity {
+                    suffix.push(match int {
+                        RuntimeIntensity::Up => '↑',
+                        RuntimeIntensity::Down => '↓',
+                        RuntimeIntensity::Max => '⇈',
+                    });
+                }
+                if let Some(form) = &affect.formality {
+                    suffix.push(match form {
+                        RuntimeFormality::Formal => '♔',
+                        RuntimeFormality::Informal => '♟',
+                    });
+                }
+                if let Some(emo) = &affect.emotion {
+                    suffix.push(match emo {
+                        RuntimeEmotion::Joy => '☺',
+                        RuntimeEmotion::Sadness => '☹',
+                        RuntimeEmotion::Anger => '⚡',
+                        RuntimeEmotion::Fear => '❄',
+                        RuntimeEmotion::Surprise => '✦',
+                        RuntimeEmotion::Love => '♡',
+                    });
+                }
+                if let Some(conf) = &affect.confidence {
+                    suffix.push(match conf {
+                        RuntimeConfidence::High => '◉',
+                        RuntimeConfidence::Medium => '◎',
+                        RuntimeConfidence::Low => '○',
+                    });
+                }
+                write!(f, "{}{}", value, suffix)
+            }
             _ => write!(f, "{:?}", self),
         }
     }
@@ -491,6 +629,7 @@ impl Interpreter {
                 Value::Infinity => "infinity",
                 Value::Empty => "empty",
                 Value::Evidential { .. } => "evidential",
+                Value::Affective { .. } => "affective",
                 Value::Map(_) => "map",
                 Value::Set(_) => "set",
                 Value::Channel(_) => "channel",

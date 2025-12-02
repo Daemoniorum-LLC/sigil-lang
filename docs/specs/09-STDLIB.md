@@ -583,23 +583,9 @@ mod math {
     fn exp(x: f64) -> f64
     fn ln(x: f64) -> f64
     fn log(x: f64, base: f64) -> f64
-    fn log2(x: f64) -> f64
-    fn log10(x: f64) -> f64
     fn sin(x: f64) -> f64
     fn cos(x: f64) -> f64
     fn tan(x: f64) -> f64
-    fn asin(x: f64) -> f64
-    fn acos(x: f64) -> f64
-    fn atan(x: f64) -> f64
-    fn atan2(y: f64, x: f64) -> f64
-    fn sinh(x: f64) -> f64
-    fn cosh(x: f64) -> f64
-    fn tanh(x: f64) -> f64
-    fn floor(x: f64) -> f64
-    fn ceil(x: f64) -> f64
-    fn round(x: f64) -> f64
-    fn trunc(x: f64) -> f64
-    fn fract(x: f64) -> f64
 
     // Constants
     const π: f64 = 3.14159265358979323846
@@ -607,12 +593,174 @@ mod math {
     const e: f64 = 2.71828182845904523536
     const φ: f64 = 1.61803398874989484820  // Golden ratio
 
-    // See 05-MATHEMATICS.md for:
-    mod numeral    // Multi-base systems
-    mod algebra    // Symbolic manipulation
-    mod geometry   // Geometric primitives
-    mod temporal   // Cyclical time
-    mod harmonic   // Music/sound
+    // Multi-base numeral systems
+    mod numeral {
+        fn vigesimal_encode(n: i64) -> str      // Mayan base-20
+        fn vigesimal_decode(s: str) -> i64
+        fn sexagesimal_encode(n: i64) -> str    // Babylonian base-60
+        fn sexagesimal_decode(s: str) -> i64
+        fn duodecimal_encode(n: i64) -> str     // Base-12
+        fn duodecimal_decode(s: str) -> i64
+        fn base58_encode(bytes: [u8]) -> str    // Bitcoin-style
+        fn base58_decode(s: str) -> [u8]
+        fn sacred_number(n: i64, culture: str) -> Map  // Cultural numerology
+    }
+}
+```
+
+---
+
+## 9.1 Polycultural Audio
+
+World tuning systems, sacred frequencies, and cultural scales:
+
+```sigil
+mod audio {
+    // Western tuning
+    fn freq(note: str) -> f64                   // "A4" -> 440.0
+    fn midi_to_freq(midi: i64) -> f64
+    fn freq_to_midi(freq: f64) -> i64
+
+    // World tuning systems
+    fn shruti_freq(shruti: i64) -> f64          // 22-Shruti Indian (0-21)
+    fn arabic_quarter_freq(step: i64) -> f64    // 24-TET Arabic maqam
+    fn gamelan_pelog(step: i64) -> f64          // Javanese pelog
+    fn gamelan_slendro(step: i64) -> f64        // Javanese slendro
+    fn turkish_53tet(step: i64) -> f64          // 53-TET Turkish
+    fn just_ratio(num: i64, denom: i64) -> f64  // Just intonation
+
+    // Sacred frequencies
+    fn sacred_freq(name: str) -> f64
+    // Names: "om" (136.1), "ut/396", "re/417", "mi/528", "fa/639",
+    //        "sol/741", "la/852", "si/963", "schumann" (7.83),
+    //        "earth" (126.22), chakra names
+
+    fn chakra_freq(chakra: str) -> f64
+    // root=396, sacral=417, solar=528, heart=639,
+    // throat=741, third_eye=852, crown=963
+
+    // Cultural scales (returns array of frequency ratios)
+    fn scale(name: str) -> [f64]
+    // Western: major, minor, dorian, phrygian, lydian, mixolydian,
+    //          locrian, harmonic_minor, melodic_minor, chromatic,
+    //          pentatonic, blues, whole_tone, diminished
+    // Japanese: hirajoshi, in_sen, iwato, kumoi
+    // Arabic: hijaz, bayati, rast, saba, nahawand
+    // Indian: bhairav, yaman, todi, marwa, purvi
+    // Chinese: gong, shang, jue, zhi, yu
+    // Jewish: freygish, mishberakh, ahava_raba
+    // Indonesian: pelog, slendro
+
+    // Waveform synthesis
+    fn sine_wave(freq: f64, t: f64) -> f64
+    fn square_wave(freq: f64, t: f64) -> f64
+    fn sawtooth_wave(freq: f64, t: f64) -> f64
+    fn triangle_wave(freq: f64, t: f64) -> f64
+}
+```
+
+---
+
+## 9.2 Spirituality & Divination
+
+I Ching, sacred geometry, gematria, archetypes, astrology, and tarot:
+
+```sigil
+mod spirituality {
+    // I Ching (Book of Changes)
+    fn trigram(n: i64) -> Map               // 8 trigrams (☰☱☲☳☴☵☶☷)
+    fn hexagram(n: i64) -> Map              // 64 hexagrams (1-64)
+    fn cast_iching() -> Map                 // Yarrow stalk divination
+    // Returns {primary: i64, changing: [i64], future: i64}
+
+    // Sacred Geometry
+    fn phi() -> f64                         // 1.618033988749895
+    fn sacred_ratio(name: str) -> f64       // "phi", "pi", "tau", "e", "sqrt2"
+    fn fibonacci(n: i64) -> [i64]           // First n Fibonacci numbers
+    fn is_fibonacci(n: i64) -> bool         // Check if Fibonacci
+    fn platonic_solid(name: str) -> Map     // tetrahedron, cube, octahedron,
+                                            // dodecahedron, icosahedron
+
+    // Gematria (letter-number mysticism)
+    fn gematria(text: str, system: str) -> i64
+    // Systems: "hebrew", "greek", "arabic", "english"
+    fn gematria_match(value: i64, system: str) -> [str]
+
+    // Jungian Archetypes
+    fn archetype(name: str) -> Map
+    // Names: hero, shadow, anima, animus, self, persona, wise_old_man,
+    //        great_mother, trickster, child, maiden, sage, explorer,
+    //        creator, ruler, magician, lover
+    // Returns {shadow: str, gift: str}
+
+    // Astrology
+    fn zodiac(sign: str) -> Map             // 12 signs with symbols ♈♉♊♋♌♍♎♏♐♑♒♓
+    // Returns {symbol, element, modality, ruler, dates}
+
+    // Tarot Major Arcana
+    fn tarot_major(n: i64) -> Map           // Cards 0-21 (Fool to World)
+    fn draw_tarot() -> Map                  // Random card
+
+    // Synchronicity
+    fn synchronicity_score(a, b) -> f64     // Meaningful coincidence detection
+}
+```
+
+---
+
+## 9.3 Polycultural Color
+
+Color meaning varies radically across cultures:
+
+```sigil
+mod color {
+    // Color space conversions
+    fn rgb(r: i64, g: i64, b: i64) -> Map
+    fn hex_to_rgb(hex: str) -> Map
+    fn rgb_to_hsl(r: i64, g: i64, b: i64) -> Map
+    fn complementary(r: i64, g: i64, b: i64) -> Map
+    fn contrast_ratio(r1, g1, b1, r2, g2, b2) -> Map  // WCAG accessibility
+
+    // Chinese Wu Xing (五行 Five Elements)
+    fn wu_xing(element: str) -> Map
+    // Elements: wood/火, fire/火, earth/土, metal/金, water/水
+    // Returns {name, chinese, color, hex, direction, season,
+    //          organ, emotion, planet, guardian}
+
+    // Hindu/Ayurvedic
+    fn chakra_color(chakra: str) -> Map     // root through crown (1-7)
+    // Returns {name, sanskrit, color, hex, location, frequency_hz,
+    //          element, mantra}
+    fn hindu_color(color: str) -> Map       // red, orange, yellow, green...
+
+    // Mesoamerican
+    fn maya_direction(dir: str) -> Map      // east, north, west, south, center
+    // Returns {direction, yucatec, color, hex, deity, meaning}
+
+    // African
+    fn orisha_color(orisha: str) -> Map     // obatala, yemoja, oshun, shango...
+    fn kente_color(color: str) -> Map       // Ghanaian Kente cloth meanings
+
+    // Japanese
+    fn nihon_iro(color: str) -> Map         // sakura, fuji, moegi, ai, akane...
+    // Returns {name, japanese, hex, meaning, season}
+
+    // Other traditions
+    fn islamic_color(color: str) -> Map     // green, white, black, gold, blue
+    fn thai_day_color(day: str) -> Map      // Sunday-Saturday day colors
+    fn aboriginal_color(color: str) -> Map  // Australian ochre traditions
+    fn celtic_color(color: str) -> Map      // Irish/Celtic symbolism
+
+    // Cross-modal synesthesia
+    fn emotion_color(emotion: str, culture: str) -> Map
+    // Culture-aware emotion→color mapping
+    // Joy is gold (Western), red (Chinese), sakura (Japanese)
+
+    fn synesthesia(value, culture: str) -> Map
+    // Full cross-modal mapping: color, sound, chakra, wu_xing, emotion
+
+    fn color_to_sound(r: i64, g: i64, b: i64) -> Map
+    // Scriabin-inspired hue→musical note mapping
 }
 ```
 

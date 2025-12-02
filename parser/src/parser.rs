@@ -105,36 +105,36 @@ impl<'a> Parser<'a> {
         match self.current_token().cloned() {
             Some(Token::Ident(name)) => {
                 self.advance();
-                Ok(Ident { name, evidentiality: None, span })
+                Ok(Ident { name, evidentiality: None, affect: None, span })
             }
             // Handle keywords that can be used as attribute names
             Some(Token::Naked) => {
                 self.advance();
-                Ok(Ident { name: "naked".to_string(), evidentiality: None, span })
+                Ok(Ident { name: "naked".to_string(), evidentiality: None, affect: None, span })
             }
             Some(Token::Unsafe) => {
                 self.advance();
-                Ok(Ident { name: "unsafe".to_string(), evidentiality: None, span })
+                Ok(Ident { name: "unsafe".to_string(), evidentiality: None, affect: None, span })
             }
             Some(Token::Asm) => {
                 self.advance();
-                Ok(Ident { name: "asm".to_string(), evidentiality: None, span })
+                Ok(Ident { name: "asm".to_string(), evidentiality: None, affect: None, span })
             }
             Some(Token::Volatile) => {
                 self.advance();
-                Ok(Ident { name: "volatile".to_string(), evidentiality: None, span })
+                Ok(Ident { name: "volatile".to_string(), evidentiality: None, affect: None, span })
             }
             Some(Token::Derive) => {
                 self.advance();
-                Ok(Ident { name: "derive".to_string(), evidentiality: None, span })
+                Ok(Ident { name: "derive".to_string(), evidentiality: None, affect: None, span })
             }
             Some(Token::Simd) => {
                 self.advance();
-                Ok(Ident { name: "simd".to_string(), evidentiality: None, span })
+                Ok(Ident { name: "simd".to_string(), evidentiality: None, affect: None, span })
             }
             Some(Token::Atomic) => {
                 self.advance();
-                Ok(Ident { name: "atomic".to_string(), evidentiality: None, span })
+                Ok(Ident { name: "atomic".to_string(), evidentiality: None, affect: None, span })
             }
             Some(t) => Err(ParseError::UnexpectedToken {
                 expected: "attribute name".to_string(),
@@ -214,31 +214,31 @@ impl<'a> Parser<'a> {
             Some(Token::Asm) => {
                 let span = self.current_span();
                 self.advance();
-                let ident = Ident { name: "asm".to_string(), evidentiality: None, span };
+                let ident = Ident { name: "asm".to_string(), evidentiality: None, affect: None, span };
                 self.parse_attr_arg_after_ident(ident)
             }
             Some(Token::Volatile) => {
                 let span = self.current_span();
                 self.advance();
-                let ident = Ident { name: "volatile".to_string(), evidentiality: None, span };
+                let ident = Ident { name: "volatile".to_string(), evidentiality: None, affect: None, span };
                 self.parse_attr_arg_after_ident(ident)
             }
             Some(Token::Naked) => {
                 let span = self.current_span();
                 self.advance();
-                let ident = Ident { name: "naked".to_string(), evidentiality: None, span };
+                let ident = Ident { name: "naked".to_string(), evidentiality: None, affect: None, span };
                 self.parse_attr_arg_after_ident(ident)
             }
             Some(Token::Packed) => {
                 let span = self.current_span();
                 self.advance();
-                let ident = Ident { name: "packed".to_string(), evidentiality: None, span };
+                let ident = Ident { name: "packed".to_string(), evidentiality: None, affect: None, span };
                 self.parse_attr_arg_after_ident(ident)
             }
             Some(Token::Unsafe) => {
                 let span = self.current_span();
                 self.advance();
-                let ident = Ident { name: "unsafe".to_string(), evidentiality: None, span };
+                let ident = Ident { name: "unsafe".to_string(), evidentiality: None, affect: None, span };
                 self.parse_attr_arg_after_ident(ident)
             }
             Some(t) => Err(ParseError::UnexpectedToken {
@@ -1906,6 +1906,7 @@ impl<'a> Parser<'a> {
                                 ident: Ident {
                                     name: "_".to_string(),
                                     evidentiality: None,
+                                    affect: None,
                                     span: Span::default(),
                                 },
                                 generics: None,
@@ -1923,6 +1924,7 @@ impl<'a> Parser<'a> {
                         ident: Ident {
                             name: "_".to_string(),
                             evidentiality: None,
+                            affect: None,
                             span,
                         },
                         generics: None,
@@ -1938,6 +1940,7 @@ impl<'a> Parser<'a> {
                         ident: Ident {
                             name: "self".to_string(),
                             evidentiality: None,
+                            affect: None,
                             span,
                         },
                         generics: None,
@@ -2926,9 +2929,12 @@ impl<'a> Parser<'a> {
         match self.current.take() {
             Some((Token::Ident(name), span)) => {
                 self.current = self.lexer.next_token();
+                // Parse optional affective markers after identifier
+                let affect = self.parse_affect_opt();
                 Ok(Ident {
                     name,
                     evidentiality: None,
+                    affect,
                     span,
                 })
             }
@@ -2963,6 +2969,135 @@ impl<'a> Parser<'a> {
                 Some(Evidentiality::Paradox)
             }
             _ => None,
+        }
+    }
+
+    /// Parse optional affective markers: sentiment, sarcasm, intensity, formality, emotion, confidence
+    /// Symbols: ⊕ ⊖ ⊜ (sentiment), ⸮ (sarcasm), ↑ ↓ ⇈ (intensity), ♔ ♟ (formality),
+    ///          ☺ ☹ ⚡ ❄ ✦ ♡ (emotions), ◉ ◎ ○ (confidence)
+    fn parse_affect_opt(&mut self) -> Option<Affect> {
+        let mut sentiment = None;
+        let mut sarcasm = false;
+        let mut intensity = None;
+        let mut formality = None;
+        let mut emotion = None;
+        let mut confidence = None;
+        let mut found_any = false;
+
+        // Parse all consecutive affective markers
+        loop {
+            match self.current_token() {
+                // Sentiment markers
+                Some(Token::DirectSum) => {
+                    self.advance();
+                    sentiment = Some(Sentiment::Positive);
+                    found_any = true;
+                }
+                Some(Token::AffectNegative) => {
+                    self.advance();
+                    sentiment = Some(Sentiment::Negative);
+                    found_any = true;
+                }
+                Some(Token::AffectNeutral) => {
+                    self.advance();
+                    sentiment = Some(Sentiment::Neutral);
+                    found_any = true;
+                }
+                // Sarcasm/Irony
+                Some(Token::IronyMark) => {
+                    self.advance();
+                    sarcasm = true;
+                    found_any = true;
+                }
+                // Intensity
+                Some(Token::IntensityUp) => {
+                    self.advance();
+                    intensity = Some(Intensity::Up);
+                    found_any = true;
+                }
+                Some(Token::IntensityDown) => {
+                    self.advance();
+                    intensity = Some(Intensity::Down);
+                    found_any = true;
+                }
+                Some(Token::IntensityMax) => {
+                    self.advance();
+                    intensity = Some(Intensity::Max);
+                    found_any = true;
+                }
+                // Formality
+                Some(Token::FormalRegister) => {
+                    self.advance();
+                    formality = Some(Formality::Formal);
+                    found_any = true;
+                }
+                Some(Token::InformalRegister) => {
+                    self.advance();
+                    formality = Some(Formality::Informal);
+                    found_any = true;
+                }
+                // Emotions (Plutchik's wheel)
+                Some(Token::EmotionJoy) => {
+                    self.advance();
+                    emotion = Some(Emotion::Joy);
+                    found_any = true;
+                }
+                Some(Token::EmotionSadness) => {
+                    self.advance();
+                    emotion = Some(Emotion::Sadness);
+                    found_any = true;
+                }
+                Some(Token::EmotionAnger) => {
+                    self.advance();
+                    emotion = Some(Emotion::Anger);
+                    found_any = true;
+                }
+                Some(Token::EmotionFear) => {
+                    self.advance();
+                    emotion = Some(Emotion::Fear);
+                    found_any = true;
+                }
+                Some(Token::EmotionSurprise) => {
+                    self.advance();
+                    emotion = Some(Emotion::Surprise);
+                    found_any = true;
+                }
+                Some(Token::EmotionLove) => {
+                    self.advance();
+                    emotion = Some(Emotion::Love);
+                    found_any = true;
+                }
+                // Confidence
+                Some(Token::ConfidenceHigh) => {
+                    self.advance();
+                    confidence = Some(Confidence::High);
+                    found_any = true;
+                }
+                Some(Token::ConfidenceMedium) => {
+                    self.advance();
+                    confidence = Some(Confidence::Medium);
+                    found_any = true;
+                }
+                Some(Token::ConfidenceLow) => {
+                    self.advance();
+                    confidence = Some(Confidence::Low);
+                    found_any = true;
+                }
+                _ => break,
+            }
+        }
+
+        if found_any {
+            Some(Affect {
+                sentiment,
+                sarcasm,
+                intensity,
+                formality,
+                emotion,
+                confidence,
+            })
+        } else {
+            None
         }
     }
 

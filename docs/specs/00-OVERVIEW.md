@@ -13,6 +13,7 @@
 3. **Evidentiality** — The type system tracks the provenance and certainty of values
 4. **Zero-Cost Abstraction** — Polysynthetic ergonomics compile to optimal machine code
 5. **Memory Safety** — Ownership semantics prevent data races and memory corruption at compile time
+6. **Polycultural Awareness** — Color, sound, number systems, and symbolism respect diverse cultural traditions
 
 ### Influences
 
@@ -23,6 +24,10 @@
 | Morpheme Composition | Inuktitut, Mohawk, Yupik |
 | Evidentiality | Quechua, Turkish, Tibetan |
 | Symbolic Operators | Haskell, Scala |
+| Polycultural Mathematics | Mayan vigesimal, Babylonian sexagesimal |
+| World Music | 22-Shruti, Arabic maqam, Gamelan |
+| Sacred Geometry | I Ching, Kabbalah, Ayurveda |
+| Color Systems | Wu Xing, Chakras, Yoruba Orisha |
 | Aesthetic | Daemoniorum mythological tradition |
 
 ---

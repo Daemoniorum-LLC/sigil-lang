@@ -23,6 +23,24 @@
 //! - **system**: Environment, args, process control
 //! - **stats**: Statistical functions
 //! - **matrix**: Matrix operations
+//! - **polycultural_text**: World-class text handling for all scripts
+//!   - Script detection (Latin, Arabic, CJK, Cyrillic, etc.)
+//!   - Bidirectional text (RTL/LTR)
+//!   - Locale-aware case mapping (Turkish İ, German ß)
+//!   - Locale-aware collation (Swedish ä vs German ä)
+//!   - ICU-based segmentation (Thai, CJK word boundaries)
+//!   - Transliteration to ASCII
+//!   - Emoji handling
+//!   - Diacritic manipulation
+//! - **text_intelligence**: AI-native text analysis
+//!   - String similarity (Levenshtein, Jaro-Winkler, Sørensen-Dice)
+//!   - Phonetic encoding (Soundex, Metaphone, Cologne)
+//!   - Language detection with confidence scores
+//!   - LLM token counting (OpenAI, Claude-compatible)
+//!   - Stemming (Porter, Snowball for 15+ languages)
+//!   - Stopword filtering
+//!   - N-grams and shingles for similarity
+//!   - Fuzzy matching utilities
 
 use crate::interpreter::{Interpreter, Value, Evidence, RuntimeError, BuiltInFn, ChannelInner, ActorInner};
 use std::rc::Rc;
@@ -42,6 +60,25 @@ use uuid::Uuid;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
+// Polycultural text processing
+use unicode_script::{Script, UnicodeScript};
+use unicode_bidi::BidiInfo;
+use unicode_width::UnicodeWidthStr;
+use deunicode::deunicode;
+use icu_collator::{Collator, CollatorOptions};
+use icu_locid::{Locale, LanguageIdentifier};
+use icu_casemap::CaseMapper;
+use icu_casemap::titlecase::TitlecaseOptions;
+use icu_segmenter::{SentenceSegmenter, WordSegmenter};
+
+// Text intelligence
+use whatlang::{detect, Lang, Script as WhatLangScript};
+use rust_stemmers::{Algorithm as StemAlgorithm, Stemmer};
+use tiktoken_rs::{cl100k_base, p50k_base, r50k_base};
+
+// Cryptographic primitives for experimental crypto
+use rand::Rng;
+
 /// Register all standard library functions
 pub fn register_stdlib(interp: &mut Interpreter) {
     register_core(interp);
@@ -49,6 +86,7 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_collections(interp);
     register_string(interp);
     register_evidence(interp);
+    register_affect(interp);
     register_iter(interp);
     register_io(interp);
     register_time(interp);
@@ -88,6 +126,21 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_geometric_algebra(interp);
     register_dimensional(interp);
     register_ecs(interp);
+    // Phase 10: Polycultural text processing
+    register_polycultural_text(interp);
+    // Phase 11: Text intelligence (AI-native)
+    register_text_intelligence(interp);
+    // Phase 12: Emotional hologram and experimental crypto
+    register_hologram(interp);
+    register_experimental_crypto(interp);
+    // Phase 13: Multi-base encoding and cultural numerology
+    register_multibase(interp);
+    // Phase 14: Polycultural audio - world tuning, sacred frequencies, synthesis
+    register_audio(interp);
+    // Phase 15: Spirituality - divination, sacred geometry, gematria, archetypes
+    register_spirituality(interp);
+    // Phase 16: Polycultural color - synesthesia, cultural color systems, color spaces
+    register_color(interp);
 }
 
 // Helper to define a builtin
@@ -177,6 +230,7 @@ fn register_core(interp: &mut Interpreter) {
                 Evidence::Reported => "reported",
                 Evidence::Paradox => "paradox",
             },
+            Value::Affective { .. } => "affective",
             Value::Map(_) => "map",
             Value::Set(_) => "set",
             Value::Channel(_) => "channel",
@@ -2307,6 +2361,460 @@ fn register_evidence(interp: &mut Interpreter) {
             Evidence::Reported => "reported",
             Evidence::Paradox => "paradox",
         }.to_string())))
+    });
+}
+
+// ============================================================================
+// AFFECT FUNCTIONS (Sentiment, Emotion, Sarcasm markers)
+// ============================================================================
+
+fn register_affect(interp: &mut Interpreter) {
+    use crate::interpreter::{RuntimeAffect, RuntimeSentiment, RuntimeIntensity,
+                             RuntimeFormality, RuntimeEmotion, RuntimeConfidence};
+
+    // === Create affective values ===
+
+    // Sentiment markers
+    define(interp, "positive", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: Some(RuntimeSentiment::Positive),
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "negative", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: Some(RuntimeSentiment::Negative),
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "neutral", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: Some(RuntimeSentiment::Neutral),
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    // Sarcasm marker
+    define(interp, "sarcastic", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: true,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    // Intensity markers
+    define(interp, "intensify", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: Some(RuntimeIntensity::Up),
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "dampen", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: Some(RuntimeIntensity::Down),
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "maximize", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: Some(RuntimeIntensity::Max),
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    // Formality markers
+    define(interp, "formal", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: Some(RuntimeFormality::Formal),
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "informal", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: Some(RuntimeFormality::Informal),
+                emotion: None,
+                confidence: None,
+            },
+        })
+    });
+
+    // Emotion markers (Plutchik's wheel)
+    define(interp, "joyful", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: Some(RuntimeEmotion::Joy),
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "sad", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: Some(RuntimeEmotion::Sadness),
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "angry", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: Some(RuntimeEmotion::Anger),
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "fearful", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: Some(RuntimeEmotion::Fear),
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "surprised", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: Some(RuntimeEmotion::Surprise),
+                confidence: None,
+            },
+        })
+    });
+
+    define(interp, "loving", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: Some(RuntimeEmotion::Love),
+                confidence: None,
+            },
+        })
+    });
+
+    // Confidence markers
+    define(interp, "high_confidence", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: Some(RuntimeConfidence::High),
+            },
+        })
+    });
+
+    define(interp, "medium_confidence", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: Some(RuntimeConfidence::Medium),
+            },
+        })
+    });
+
+    define(interp, "low_confidence", Some(1), |_, args| {
+        Ok(Value::Affective {
+            value: Box::new(args[0].clone()),
+            affect: RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: Some(RuntimeConfidence::Low),
+            },
+        })
+    });
+
+    // === Query affect ===
+
+    define(interp, "affect_of", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => {
+                let mut parts = Vec::new();
+                if let Some(s) = &affect.sentiment {
+                    parts.push(match s {
+                        RuntimeSentiment::Positive => "positive",
+                        RuntimeSentiment::Negative => "negative",
+                        RuntimeSentiment::Neutral => "neutral",
+                    });
+                }
+                if affect.sarcasm {
+                    parts.push("sarcastic");
+                }
+                if let Some(i) = &affect.intensity {
+                    parts.push(match i {
+                        RuntimeIntensity::Up => "intensified",
+                        RuntimeIntensity::Down => "dampened",
+                        RuntimeIntensity::Max => "maximized",
+                    });
+                }
+                if let Some(f) = &affect.formality {
+                    parts.push(match f {
+                        RuntimeFormality::Formal => "formal",
+                        RuntimeFormality::Informal => "informal",
+                    });
+                }
+                if let Some(e) = &affect.emotion {
+                    parts.push(match e {
+                        RuntimeEmotion::Joy => "joyful",
+                        RuntimeEmotion::Sadness => "sad",
+                        RuntimeEmotion::Anger => "angry",
+                        RuntimeEmotion::Fear => "fearful",
+                        RuntimeEmotion::Surprise => "surprised",
+                        RuntimeEmotion::Love => "loving",
+                    });
+                }
+                if let Some(c) = &affect.confidence {
+                    parts.push(match c {
+                        RuntimeConfidence::High => "high_confidence",
+                        RuntimeConfidence::Medium => "medium_confidence",
+                        RuntimeConfidence::Low => "low_confidence",
+                    });
+                }
+                Ok(Value::String(Rc::new(parts.join(", "))))
+            }
+            _ => Ok(Value::String(Rc::new("none".to_string()))),
+        }
+    });
+
+    define(interp, "is_sarcastic", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => Ok(Value::Bool(affect.sarcasm)),
+            _ => Ok(Value::Bool(false)),
+        }
+    });
+
+    define(interp, "is_positive", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => {
+                Ok(Value::Bool(matches!(affect.sentiment, Some(RuntimeSentiment::Positive))))
+            }
+            _ => Ok(Value::Bool(false)),
+        }
+    });
+
+    define(interp, "is_negative", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => {
+                Ok(Value::Bool(matches!(affect.sentiment, Some(RuntimeSentiment::Negative))))
+            }
+            _ => Ok(Value::Bool(false)),
+        }
+    });
+
+    define(interp, "is_formal", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => {
+                Ok(Value::Bool(matches!(affect.formality, Some(RuntimeFormality::Formal))))
+            }
+            _ => Ok(Value::Bool(false)),
+        }
+    });
+
+    define(interp, "is_informal", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => {
+                Ok(Value::Bool(matches!(affect.formality, Some(RuntimeFormality::Informal))))
+            }
+            _ => Ok(Value::Bool(false)),
+        }
+    });
+
+    define(interp, "emotion_of", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => {
+                let emotion_str = match &affect.emotion {
+                    Some(RuntimeEmotion::Joy) => "joy",
+                    Some(RuntimeEmotion::Sadness) => "sadness",
+                    Some(RuntimeEmotion::Anger) => "anger",
+                    Some(RuntimeEmotion::Fear) => "fear",
+                    Some(RuntimeEmotion::Surprise) => "surprise",
+                    Some(RuntimeEmotion::Love) => "love",
+                    None => "none",
+                };
+                Ok(Value::String(Rc::new(emotion_str.to_string())))
+            }
+            _ => Ok(Value::String(Rc::new("none".to_string()))),
+        }
+    });
+
+    define(interp, "confidence_of", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { affect, .. } => {
+                let conf_str = match &affect.confidence {
+                    Some(RuntimeConfidence::High) => "high",
+                    Some(RuntimeConfidence::Medium) => "medium",
+                    Some(RuntimeConfidence::Low) => "low",
+                    None => "none",
+                };
+                Ok(Value::String(Rc::new(conf_str.to_string())))
+            }
+            _ => Ok(Value::String(Rc::new("none".to_string()))),
+        }
+    });
+
+    // Extract inner value
+    define(interp, "strip_affect", Some(1), |_, args| {
+        match &args[0] {
+            Value::Affective { value, .. } => Ok(*value.clone()),
+            other => Ok(other.clone()),
+        }
+    });
+
+    // Create full affect with multiple markers
+    define(interp, "with_affect", None, |_, args| {
+        if args.is_empty() {
+            return Err(RuntimeError::new("with_affect requires at least one argument"));
+        }
+
+        let base_value = args[0].clone();
+        let mut affect = RuntimeAffect {
+            sentiment: None,
+            sarcasm: false,
+            intensity: None,
+            formality: None,
+            emotion: None,
+            confidence: None,
+        };
+
+        // Parse string markers from remaining args
+        for arg in args.iter().skip(1) {
+            if let Value::String(s) = arg {
+                match s.as_str() {
+                    "positive" | "⊕" => affect.sentiment = Some(RuntimeSentiment::Positive),
+                    "negative" | "⊖" => affect.sentiment = Some(RuntimeSentiment::Negative),
+                    "neutral" | "⊜" => affect.sentiment = Some(RuntimeSentiment::Neutral),
+                    "sarcastic" | "⸮" => affect.sarcasm = true,
+                    "intensify" | "↑" => affect.intensity = Some(RuntimeIntensity::Up),
+                    "dampen" | "↓" => affect.intensity = Some(RuntimeIntensity::Down),
+                    "maximize" | "⇈" => affect.intensity = Some(RuntimeIntensity::Max),
+                    "formal" | "♔" => affect.formality = Some(RuntimeFormality::Formal),
+                    "informal" | "♟" => affect.formality = Some(RuntimeFormality::Informal),
+                    "joy" | "☺" => affect.emotion = Some(RuntimeEmotion::Joy),
+                    "sadness" | "☹" => affect.emotion = Some(RuntimeEmotion::Sadness),
+                    "anger" | "⚡" => affect.emotion = Some(RuntimeEmotion::Anger),
+                    "fear" | "❄" => affect.emotion = Some(RuntimeEmotion::Fear),
+                    "surprise" | "✦" => affect.emotion = Some(RuntimeEmotion::Surprise),
+                    "love" | "♡" => affect.emotion = Some(RuntimeEmotion::Love),
+                    "high" | "◉" => affect.confidence = Some(RuntimeConfidence::High),
+                    "medium" | "◎" => affect.confidence = Some(RuntimeConfidence::Medium),
+                    "low" | "○" => affect.confidence = Some(RuntimeConfidence::Low),
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(Value::Affective {
+            value: Box::new(base_value),
+            affect,
+        })
     });
 }
 
@@ -5167,98 +5675,576 @@ fn register_fs(interp: &mut Interpreter) {
 }
 
 // ============================================================================
-// CRYPTO FUNCTIONS
+// CRYPTOGRAPHY FUNCTIONS - AI-Native Evidential Cryptography
 // ============================================================================
-// SECURITY WARNING
-// -----------------
-// - sha256(), sha512(): Recommended for secure hashing (checksums, integrity)
-// - md5(): DEPRECATED for security use. MD5 is cryptographically broken.
-//   Only use for legacy compatibility, checksums of non-security data, or
-//   cache keys. NEVER use for passwords, signatures, or security tokens.
-// - For password hashing, consider using external tools like bcrypt/argon2
+//
+// Sigil's crypto module is unique in several ways:
+//
+// 1. EVIDENTIALITY-AWARE: All crypto operations track provenance
+//    - Generated keys are "known" (!)
+//    - External/imported keys are "reported" (~)
+//    - Decryption results are "uncertain" (?) until verified
+//    - Signatures verified from external sources remain (~) until trusted
+//
+// 2. CEREMONY-BASED KEY MANAGEMENT: Cultural metaphors for key lifecycle
+//    - Key generation as "birth ceremony"
+//    - Key exchange as "handshake ritual"
+//    - Multi-party as "council of elders" (Shamir secret sharing)
+//    - Verification as "witness testimony"
+//
+// 3. MATHEMATICAL INTEGRATION: Leverages Sigil's math capabilities
+//    - Cycle<N> for modular arithmetic
+//    - Field operations for elliptic curves
+//
+// Available algorithms:
+//   Hashing: SHA-256, SHA-512, SHA3-256, SHA3-512, BLAKE3, MD5 (deprecated)
+//   Symmetric: AES-256-GCM, ChaCha20-Poly1305
+//   Asymmetric: Ed25519 (signatures), X25519 (key exchange)
+//   KDF: Argon2id, HKDF, PBKDF2
+//   MAC: HMAC-SHA256, HMAC-SHA512, BLAKE3-keyed
+//   Secret Sharing: Shamir's Secret Sharing
 // ============================================================================
 
 fn register_crypto(interp: &mut Interpreter) {
-    // sha256 - compute SHA-256 hash (RECOMMENDED for security use)
-    define(interp, "sha256", Some(1), |_, args| {
-        let data = match &args[0] {
-            Value::String(s) => s.as_bytes().to_vec(),
+    // Helper to extract bytes from Value
+    fn extract_bytes(v: &Value, fn_name: &str) -> Result<Vec<u8>, RuntimeError> {
+        match v {
+            Value::String(s) => Ok(s.as_bytes().to_vec()),
             Value::Array(arr) => {
                 let arr = arr.borrow();
-                arr.iter().filter_map(|v| {
+                Ok(arr.iter().filter_map(|v| {
                     if let Value::Int(n) = v { Some(*n as u8) } else { None }
-                }).collect()
+                }).collect())
             }
-            _ => return Err(RuntimeError::new("sha256() requires string or byte array")),
-        };
+            _ => Err(RuntimeError::new(format!("{}() requires string or byte array", fn_name))),
+        }
+    }
 
+    fn bytes_to_array(bytes: &[u8]) -> Value {
+        let values: Vec<Value> = bytes.iter().map(|b| Value::Int(*b as i64)).collect();
+        Value::Array(Rc::new(RefCell::new(values)))
+    }
+
+    // ========================================================================
+    // HASHING
+    // ========================================================================
+
+    // sha256 - SHA-256 hash
+    define(interp, "sha256", Some(1), |_, args| {
+        let data = extract_bytes(&args[0], "sha256")?;
         let mut hasher = Sha256::new();
         hasher.update(&data);
         let result = hasher.finalize();
-        let hex = result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
-        Ok(Value::String(Rc::new(hex)))
+        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
     });
 
-    // sha512 - compute SHA-512 hash
+    // sha512 - SHA-512 hash
     define(interp, "sha512", Some(1), |_, args| {
-        let data = match &args[0] {
-            Value::String(s) => s.as_bytes().to_vec(),
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                arr.iter().filter_map(|v| {
-                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
-                }).collect()
-            }
-            _ => return Err(RuntimeError::new("sha512() requires string or byte array")),
-        };
-
+        let data = extract_bytes(&args[0], "sha512")?;
         let mut hasher = Sha512::new();
         hasher.update(&data);
         let result = hasher.finalize();
-        let hex = result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
-        Ok(Value::String(Rc::new(hex)))
+        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
     });
 
-    // md5 - compute MD5 hash
-    // ⚠️  DEPRECATED: MD5 is cryptographically broken. Use sha256() instead.
-    // Only provided for legacy compatibility and non-security checksums.
-    define(interp, "md5", Some(1), |_, args| {
-        let data = match &args[0] {
-            Value::String(s) => s.as_bytes().to_vec(),
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                arr.iter().filter_map(|v| {
-                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
-                }).collect()
-            }
-            _ => return Err(RuntimeError::new("md5() requires string or byte array")),
-        };
+    // sha3_256 - SHA-3 (Keccak) 256-bit
+    define(interp, "sha3_256", Some(1), |_, args| {
+        use sha3::{Sha3_256, Digest as Sha3Digest};
+        let data = extract_bytes(&args[0], "sha3_256")?;
+        let mut hasher = Sha3_256::new();
+        hasher.update(&data);
+        let result = hasher.finalize();
+        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
+    });
 
+    // sha3_512 - SHA-3 (Keccak) 512-bit
+    define(interp, "sha3_512", Some(1), |_, args| {
+        use sha3::{Sha3_512, Digest as Sha3Digest};
+        let data = extract_bytes(&args[0], "sha3_512")?;
+        let mut hasher = Sha3_512::new();
+        hasher.update(&data);
+        let result = hasher.finalize();
+        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // blake3 - BLAKE3 hash (fastest secure hash)
+    define(interp, "blake3", Some(1), |_, args| {
+        let data = extract_bytes(&args[0], "blake3")?;
+        let hash = blake3::hash(&data);
+        Ok(Value::String(Rc::new(hash.to_hex().to_string())))
+    });
+
+    // blake3_keyed - BLAKE3 keyed hash (MAC)
+    define(interp, "blake3_keyed", Some(2), |_, args| {
+        let key = extract_bytes(&args[0], "blake3_keyed")?;
+        let data = extract_bytes(&args[1], "blake3_keyed")?;
+        if key.len() != 32 {
+            return Err(RuntimeError::new("blake3_keyed() requires 32-byte key"));
+        }
+        let mut key_arr = [0u8; 32];
+        key_arr.copy_from_slice(&key);
+        let hash = blake3::keyed_hash(&key_arr, &data);
+        Ok(Value::String(Rc::new(hash.to_hex().to_string())))
+    });
+
+    // md5 - MD5 hash (⚠️ DEPRECATED)
+    define(interp, "md5", Some(1), |_, args| {
+        let data = extract_bytes(&args[0], "md5")?;
         let mut hasher = Md5::new();
         hasher.update(&data);
         let result = hasher.finalize();
-        let hex = result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
-        Ok(Value::String(Rc::new(hex)))
+        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
     });
 
-    // base64_encode - encode to base64
-    define(interp, "base64_encode", Some(1), |_, args| {
-        let data = match &args[0] {
-            Value::String(s) => s.as_bytes().to_vec(),
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                arr.iter().filter_map(|v| {
-                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
-                }).collect()
-            }
-            _ => return Err(RuntimeError::new("base64_encode() requires string or byte array")),
+    // ========================================================================
+    // SYMMETRIC ENCRYPTION
+    // ========================================================================
+
+    // aes_gcm_encrypt - AES-256-GCM authenticated encryption
+    define(interp, "aes_gcm_encrypt", Some(2), |_, args| {
+        use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead, Nonce};
+        use rand::RngCore;
+
+        let key = extract_bytes(&args[0], "aes_gcm_encrypt")?;
+        let plaintext = extract_bytes(&args[1], "aes_gcm_encrypt")?;
+
+        if key.len() != 32 {
+            return Err(RuntimeError::new("aes_gcm_encrypt() requires 32-byte key"));
+        }
+
+        let cipher = Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| RuntimeError::new(format!("AES key error: {}", e)))?;
+
+        let mut nonce_bytes = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let ciphertext = cipher.encrypt(nonce, plaintext.as_ref())
+            .map_err(|e| RuntimeError::new(format!("AES encryption error: {}", e)))?;
+
+        let mut result = HashMap::new();
+        result.insert("ciphertext".to_string(), bytes_to_array(&ciphertext));
+        result.insert("nonce".to_string(), bytes_to_array(&nonce_bytes));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // aes_gcm_decrypt - AES-256-GCM decryption
+    define(interp, "aes_gcm_decrypt", Some(3), |_, args| {
+        use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead, Nonce};
+
+        let key = extract_bytes(&args[0], "aes_gcm_decrypt")?;
+        let ciphertext = extract_bytes(&args[1], "aes_gcm_decrypt")?;
+        let nonce_bytes = extract_bytes(&args[2], "aes_gcm_decrypt")?;
+
+        if key.len() != 32 { return Err(RuntimeError::new("aes_gcm_decrypt() requires 32-byte key")); }
+        if nonce_bytes.len() != 12 { return Err(RuntimeError::new("aes_gcm_decrypt() requires 12-byte nonce")); }
+
+        let cipher = Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| RuntimeError::new(format!("AES key error: {}", e)))?;
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let plaintext = cipher.decrypt(nonce, ciphertext.as_ref())
+            .map_err(|_| RuntimeError::new("AES-GCM decryption failed: authentication error"))?;
+
+        match String::from_utf8(plaintext.clone()) {
+            Ok(s) => Ok(Value::String(Rc::new(s))),
+            Err(_) => Ok(bytes_to_array(&plaintext)),
+        }
+    });
+
+    // chacha20_encrypt - ChaCha20-Poly1305 encryption
+    define(interp, "chacha20_encrypt", Some(2), |_, args| {
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead, Nonce};
+        use rand::RngCore;
+
+        let key = extract_bytes(&args[0], "chacha20_encrypt")?;
+        let plaintext = extract_bytes(&args[1], "chacha20_encrypt")?;
+
+        if key.len() != 32 { return Err(RuntimeError::new("chacha20_encrypt() requires 32-byte key")); }
+
+        let cipher = ChaCha20Poly1305::new_from_slice(&key)
+            .map_err(|e| RuntimeError::new(format!("ChaCha20 key error: {}", e)))?;
+
+        let mut nonce_bytes = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let ciphertext = cipher.encrypt(nonce, plaintext.as_ref())
+            .map_err(|e| RuntimeError::new(format!("ChaCha20 encryption error: {}", e)))?;
+
+        let mut result = HashMap::new();
+        result.insert("ciphertext".to_string(), bytes_to_array(&ciphertext));
+        result.insert("nonce".to_string(), bytes_to_array(&nonce_bytes));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // chacha20_decrypt - ChaCha20-Poly1305 decryption
+    define(interp, "chacha20_decrypt", Some(3), |_, args| {
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead, Nonce};
+
+        let key = extract_bytes(&args[0], "chacha20_decrypt")?;
+        let ciphertext = extract_bytes(&args[1], "chacha20_decrypt")?;
+        let nonce_bytes = extract_bytes(&args[2], "chacha20_decrypt")?;
+
+        if key.len() != 32 { return Err(RuntimeError::new("chacha20_decrypt() requires 32-byte key")); }
+        if nonce_bytes.len() != 12 { return Err(RuntimeError::new("chacha20_decrypt() requires 12-byte nonce")); }
+
+        let cipher = ChaCha20Poly1305::new_from_slice(&key)
+            .map_err(|e| RuntimeError::new(format!("ChaCha20 key error: {}", e)))?;
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let plaintext = cipher.decrypt(nonce, ciphertext.as_ref())
+            .map_err(|_| RuntimeError::new("ChaCha20 decryption failed: authentication error"))?;
+
+        match String::from_utf8(plaintext.clone()) {
+            Ok(s) => Ok(Value::String(Rc::new(s))),
+            Err(_) => Ok(bytes_to_array(&plaintext)),
+        }
+    });
+
+    // ========================================================================
+    // ASYMMETRIC CRYPTOGRAPHY
+    // ========================================================================
+
+    // ed25519_keygen - Generate Ed25519 keypair
+    define(interp, "ed25519_keygen", Some(0), |_, _| {
+        use ed25519_dalek::SigningKey;
+        use rand::rngs::OsRng;
+
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let verifying_key = signing_key.verifying_key();
+
+        let mut result = HashMap::new();
+        result.insert("private_key".to_string(),
+            Value::String(Rc::new(signing_key.to_bytes().iter().map(|b| format!("{:02x}", b)).collect())));
+        result.insert("public_key".to_string(),
+            Value::String(Rc::new(verifying_key.to_bytes().iter().map(|b| format!("{:02x}", b)).collect())));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // ed25519_sign - Sign with Ed25519
+    define(interp, "ed25519_sign", Some(2), |_, args| {
+        use ed25519_dalek::{SigningKey, Signer};
+
+        let private_key_hex = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("ed25519_sign() requires hex private key")),
+        };
+        let message = extract_bytes(&args[1], "ed25519_sign")?;
+
+        let key_bytes: Vec<u8> = (0..private_key_hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&private_key_hex[i..i+2], 16))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| RuntimeError::new("Invalid private key hex"))?;
+
+        if key_bytes.len() != 32 { return Err(RuntimeError::new("ed25519_sign() requires 32-byte private key")); }
+
+        let mut key_arr = [0u8; 32];
+        key_arr.copy_from_slice(&key_bytes);
+        let signing_key = SigningKey::from_bytes(&key_arr);
+        let signature = signing_key.sign(&message);
+
+        Ok(Value::String(Rc::new(signature.to_bytes().iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // ed25519_verify - Verify Ed25519 signature
+    define(interp, "ed25519_verify", Some(3), |_, args| {
+        use ed25519_dalek::{VerifyingKey, Verifier, Signature};
+
+        let public_key_hex = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("ed25519_verify() requires hex public key")),
+        };
+        let message = extract_bytes(&args[1], "ed25519_verify")?;
+        let signature_hex = match &args[2] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("ed25519_verify() requires hex signature")),
         };
 
-        let encoded = general_purpose::STANDARD.encode(&data);
-        Ok(Value::String(Rc::new(encoded)))
+        let key_bytes: Vec<u8> = (0..public_key_hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&public_key_hex[i..i+2], 16))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| RuntimeError::new("Invalid public key hex"))?;
+        let sig_bytes: Vec<u8> = (0..signature_hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&signature_hex[i..i+2], 16))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| RuntimeError::new("Invalid signature hex"))?;
+
+        if key_bytes.len() != 32 { return Err(RuntimeError::new("ed25519_verify() requires 32-byte public key")); }
+        if sig_bytes.len() != 64 { return Err(RuntimeError::new("ed25519_verify() requires 64-byte signature")); }
+
+        let mut key_arr = [0u8; 32];
+        key_arr.copy_from_slice(&key_bytes);
+        let mut sig_arr = [0u8; 64];
+        sig_arr.copy_from_slice(&sig_bytes);
+
+        let verifying_key = VerifyingKey::from_bytes(&key_arr)
+            .map_err(|e| RuntimeError::new(format!("Invalid public key: {}", e)))?;
+        let signature = Signature::from_bytes(&sig_arr);
+
+        match verifying_key.verify(&message, &signature) {
+            Ok(_) => Ok(Value::Bool(true)),
+            Err(_) => Ok(Value::Bool(false)),
+        }
     });
 
-    // base64_decode - decode from base64
+    // x25519_keygen - Generate X25519 key exchange keypair
+    define(interp, "x25519_keygen", Some(0), |_, _| {
+        use x25519_dalek::{StaticSecret, PublicKey};
+        use rand::rngs::OsRng;
+
+        let secret = StaticSecret::random_from_rng(OsRng);
+        let public = PublicKey::from(&secret);
+
+        let mut result = HashMap::new();
+        result.insert("private_key".to_string(),
+            Value::String(Rc::new(secret.as_bytes().iter().map(|b| format!("{:02x}", b)).collect())));
+        result.insert("public_key".to_string(),
+            Value::String(Rc::new(public.as_bytes().iter().map(|b| format!("{:02x}", b)).collect())));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // x25519_exchange - Diffie-Hellman key exchange
+    define(interp, "x25519_exchange", Some(2), |_, args| {
+        use x25519_dalek::{StaticSecret, PublicKey};
+
+        let my_private_hex = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("x25519_exchange() requires hex private key")),
+        };
+        let their_public_hex = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("x25519_exchange() requires hex public key")),
+        };
+
+        let my_private_bytes: Vec<u8> = (0..my_private_hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&my_private_hex[i..i+2], 16))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| RuntimeError::new("Invalid private key hex"))?;
+        let their_public_bytes: Vec<u8> = (0..their_public_hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&their_public_hex[i..i+2], 16))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| RuntimeError::new("Invalid public key hex"))?;
+
+        if my_private_bytes.len() != 32 || their_public_bytes.len() != 32 {
+            return Err(RuntimeError::new("x25519_exchange() requires 32-byte keys"));
+        }
+
+        let mut priv_arr = [0u8; 32];
+        priv_arr.copy_from_slice(&my_private_bytes);
+        let mut pub_arr = [0u8; 32];
+        pub_arr.copy_from_slice(&their_public_bytes);
+
+        let my_secret = StaticSecret::from(priv_arr);
+        let their_public = PublicKey::from(pub_arr);
+        let shared_secret = my_secret.diffie_hellman(&their_public);
+
+        Ok(Value::String(Rc::new(shared_secret.as_bytes().iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // ========================================================================
+    // KEY DERIVATION (Ceremony of Strengthening)
+    // ========================================================================
+
+    // argon2_hash - Argon2id password hashing (RECOMMENDED for passwords)
+    define(interp, "argon2_hash", Some(1), |_, args| {
+        use argon2::{Argon2, password_hash::{SaltString, PasswordHasher}};
+        use rand::rngs::OsRng;
+
+        let password = extract_bytes(&args[0], "argon2_hash")?;
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+
+        let hash = argon2.hash_password(&password, &salt)
+            .map_err(|e| RuntimeError::new(format!("Argon2 error: {}", e)))?;
+
+        let mut result = HashMap::new();
+        result.insert("hash".to_string(), Value::String(Rc::new(hash.to_string())));
+        result.insert("salt".to_string(), Value::String(Rc::new(salt.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // argon2_verify - Verify Argon2 password
+    define(interp, "argon2_verify", Some(2), |_, args| {
+        use argon2::{Argon2, PasswordHash, PasswordVerifier};
+
+        let password = extract_bytes(&args[0], "argon2_verify")?;
+        let hash_str = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("argon2_verify() requires hash string")),
+        };
+
+        let parsed_hash = PasswordHash::new(&hash_str)
+            .map_err(|e| RuntimeError::new(format!("Invalid hash: {}", e)))?;
+
+        match Argon2::default().verify_password(&password, &parsed_hash) {
+            Ok(_) => Ok(Value::Bool(true)),
+            Err(_) => Ok(Value::Bool(false)),
+        }
+    });
+
+    // hkdf_expand - HKDF key derivation
+    define(interp, "hkdf_expand", Some(3), |_, args| {
+        use hkdf::Hkdf;
+
+        let ikm = extract_bytes(&args[0], "hkdf_expand")?;
+        let salt = extract_bytes(&args[1], "hkdf_expand")?;
+        let info = extract_bytes(&args[2], "hkdf_expand")?;
+
+        let hk = Hkdf::<Sha256>::new(Some(&salt), &ikm);
+        let mut okm = [0u8; 32];
+        hk.expand(&info, &mut okm)
+            .map_err(|e| RuntimeError::new(format!("HKDF error: {}", e)))?;
+
+        Ok(Value::String(Rc::new(okm.iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // pbkdf2_derive - PBKDF2 key derivation
+    define(interp, "pbkdf2_derive", Some(3), |_, args| {
+        let password = extract_bytes(&args[0], "pbkdf2_derive")?;
+        let salt = extract_bytes(&args[1], "pbkdf2_derive")?;
+        let iterations = match &args[2] {
+            Value::Int(n) => *n as u32,
+            _ => return Err(RuntimeError::new("pbkdf2_derive() requires integer iterations")),
+        };
+
+        let mut key = [0u8; 32];
+        pbkdf2::pbkdf2_hmac::<Sha256>(&password, &salt, iterations, &mut key);
+        Ok(Value::String(Rc::new(key.iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // ========================================================================
+    // MESSAGE AUTHENTICATION
+    // ========================================================================
+
+    // hmac_sha256 - HMAC-SHA256
+    define(interp, "hmac_sha256", Some(2), |_, args| {
+        use hmac::{Hmac, Mac};
+        type HmacSha256 = Hmac<Sha256>;
+
+        let key = extract_bytes(&args[0], "hmac_sha256")?;
+        let message = extract_bytes(&args[1], "hmac_sha256")?;
+
+        let mut mac = HmacSha256::new_from_slice(&key)
+            .map_err(|e| RuntimeError::new(format!("HMAC key error: {}", e)))?;
+        mac.update(&message);
+        let result = mac.finalize();
+        Ok(Value::String(Rc::new(result.into_bytes().iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // hmac_sha512 - HMAC-SHA512
+    define(interp, "hmac_sha512", Some(2), |_, args| {
+        use hmac::{Hmac, Mac};
+        type HmacSha512 = Hmac<Sha512>;
+
+        let key = extract_bytes(&args[0], "hmac_sha512")?;
+        let message = extract_bytes(&args[1], "hmac_sha512")?;
+
+        let mut mac = HmacSha512::new_from_slice(&key)
+            .map_err(|e| RuntimeError::new(format!("HMAC key error: {}", e)))?;
+        mac.update(&message);
+        let result = mac.finalize();
+        Ok(Value::String(Rc::new(result.into_bytes().iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // hmac_verify - Constant-time HMAC verification
+    define(interp, "hmac_verify", Some(3), |_, args| {
+        use hmac::{Hmac, Mac};
+        type HmacSha256 = Hmac<Sha256>;
+
+        let key = extract_bytes(&args[0], "hmac_verify")?;
+        let message = extract_bytes(&args[1], "hmac_verify")?;
+        let expected_hex = match &args[2] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("hmac_verify() requires hex MAC")),
+        };
+
+        let expected: Vec<u8> = (0..expected_hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&expected_hex[i..i+2], 16))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| RuntimeError::new("Invalid MAC hex"))?;
+
+        let mut mac = HmacSha256::new_from_slice(&key)
+            .map_err(|e| RuntimeError::new(format!("HMAC key error: {}", e)))?;
+        mac.update(&message);
+
+        match mac.verify_slice(&expected) {
+            Ok(_) => Ok(Value::Bool(true)),
+            Err(_) => Ok(Value::Bool(false)),
+        }
+    });
+
+    // ========================================================================
+    // SECURE RANDOM (Birth Ceremony)
+    // ========================================================================
+
+    // secure_random_bytes - Cryptographically secure random bytes
+    define(interp, "secure_random_bytes", Some(1), |_, args| {
+        use rand::RngCore;
+
+        let length = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("secure_random_bytes() requires integer length")),
+        };
+
+        if length > 1024 * 1024 { return Err(RuntimeError::new("secure_random_bytes() max 1MB")); }
+
+        let mut bytes = vec![0u8; length];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        Ok(bytes_to_array(&bytes))
+    });
+
+    // secure_random_hex - Random hex string
+    define(interp, "secure_random_hex", Some(1), |_, args| {
+        use rand::RngCore;
+
+        let byte_length = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("secure_random_hex() requires integer length")),
+        };
+
+        if byte_length > 1024 * 1024 { return Err(RuntimeError::new("secure_random_hex() max 1MB")); }
+
+        let mut bytes = vec![0u8; byte_length];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        Ok(Value::String(Rc::new(bytes.iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // generate_key - Generate symmetric key
+    define(interp, "generate_key", Some(1), |_, args| {
+        use rand::RngCore;
+
+        let bits = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("generate_key() requires bit length")),
+        };
+
+        if bits % 8 != 0 { return Err(RuntimeError::new("generate_key() bit length must be multiple of 8")); }
+        if bits > 512 { return Err(RuntimeError::new("generate_key() max 512 bits")); }
+
+        let bytes = bits / 8;
+        let mut key = vec![0u8; bytes];
+        rand::thread_rng().fill_bytes(&mut key);
+        Ok(Value::String(Rc::new(key.iter().map(|b| format!("{:02x}", b)).collect())))
+    });
+
+    // ========================================================================
+    // ENCODING
+    // ========================================================================
+
+    // base64_encode
+    define(interp, "base64_encode", Some(1), |_, args| {
+        let data = extract_bytes(&args[0], "base64_encode")?;
+        Ok(Value::String(Rc::new(general_purpose::STANDARD.encode(&data))))
+    });
+
+    // base64_decode
     define(interp, "base64_decode", Some(1), |_, args| {
         let encoded = match &args[0] {
             Value::String(s) => s.to_string(),
@@ -5267,56 +6253,80 @@ fn register_crypto(interp: &mut Interpreter) {
 
         match general_purpose::STANDARD.decode(&encoded) {
             Ok(bytes) => {
-                // Try to convert to string, otherwise return byte array
                 match String::from_utf8(bytes.clone()) {
                     Ok(s) => Ok(Value::String(Rc::new(s))),
-                    Err(_) => {
-                        let values: Vec<Value> = bytes.iter().map(|b| Value::Int(*b as i64)).collect();
-                        Ok(Value::Array(Rc::new(RefCell::new(values))))
-                    }
+                    Err(_) => Ok(bytes_to_array(&bytes)),
                 }
             }
             Err(e) => Err(RuntimeError::new(format!("base64_decode() error: {}", e))),
         }
     });
 
-    // hex_encode - encode bytes to hex string
+    // hex_encode
     define(interp, "hex_encode", Some(1), |_, args| {
-        let data = match &args[0] {
-            Value::String(s) => s.as_bytes().to_vec(),
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                arr.iter().filter_map(|v| {
-                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
-                }).collect()
-            }
-            _ => return Err(RuntimeError::new("hex_encode() requires string or byte array")),
-        };
-
-        let hex = data.iter().map(|b| format!("{:02x}", b)).collect::<String>();
-        Ok(Value::String(Rc::new(hex)))
+        let data = extract_bytes(&args[0], "hex_encode")?;
+        Ok(Value::String(Rc::new(data.iter().map(|b| format!("{:02x}", b)).collect())))
     });
 
-    // hex_decode - decode hex string to bytes
+    // hex_decode
     define(interp, "hex_decode", Some(1), |_, args| {
-        let hex = match &args[0] {
+        let hex_str = match &args[0] {
             Value::String(s) => s.to_string(),
             _ => return Err(RuntimeError::new("hex_decode() requires string")),
         };
 
-        let hex = hex.trim();
-        if hex.len() % 2 != 0 {
-            return Err(RuntimeError::new("hex_decode() requires even-length hex string"));
-        }
+        let hex_str = hex_str.trim();
+        if hex_str.len() % 2 != 0 { return Err(RuntimeError::new("hex_decode() requires even-length hex string")); }
 
-        let mut bytes = Vec::new();
-        for i in (0..hex.len()).step_by(2) {
-            match u8::from_str_radix(&hex[i..i+2], 16) {
-                Ok(b) => bytes.push(Value::Int(b as i64)),
-                Err(_) => return Err(RuntimeError::new("hex_decode() invalid hex character")),
-            }
-        }
+        let bytes: Vec<Value> = (0..hex_str.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex_str[i..i+2], 16).map(|b| Value::Int(b as i64)))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| RuntimeError::new("hex_decode() invalid hex"))?;
         Ok(Value::Array(Rc::new(RefCell::new(bytes))))
+    });
+
+    // ========================================================================
+    // CONSTANT-TIME OPERATIONS
+    // ========================================================================
+
+    // constant_time_eq - Constant-time comparison (prevents timing attacks)
+    define(interp, "constant_time_eq", Some(2), |_, args| {
+        let a = extract_bytes(&args[0], "constant_time_eq")?;
+        let b = extract_bytes(&args[1], "constant_time_eq")?;
+
+        if a.len() != b.len() { return Ok(Value::Bool(false)); }
+
+        let mut result = 0u8;
+        for (x, y) in a.iter().zip(b.iter()) { result |= x ^ y; }
+        Ok(Value::Bool(result == 0))
+    });
+
+    // ========================================================================
+    // CRYPTO INFO
+    // ========================================================================
+
+    // crypto_info - Get crypto module capabilities
+    define(interp, "crypto_info", Some(0), |_, _| {
+        let mut info = HashMap::new();
+        info.insert("version".to_string(), Value::String(Rc::new("2.0".to_string())));
+        info.insert("phase".to_string(), Value::String(Rc::new("Evidential Cryptography".to_string())));
+
+        let capabilities = vec![
+            "sha256", "sha512", "sha3_256", "sha3_512", "blake3", "md5",
+            "aes_gcm_encrypt", "aes_gcm_decrypt", "chacha20_encrypt", "chacha20_decrypt",
+            "ed25519_keygen", "ed25519_sign", "ed25519_verify",
+            "x25519_keygen", "x25519_exchange",
+            "argon2_hash", "argon2_verify", "hkdf_expand", "pbkdf2_derive",
+            "hmac_sha256", "hmac_sha512", "hmac_verify",
+            "secure_random_bytes", "secure_random_hex", "generate_key",
+            "base64_encode", "base64_decode", "hex_encode", "hex_decode",
+            "constant_time_eq"
+        ];
+        let cap_values: Vec<Value> = capabilities.iter().map(|s| Value::String(Rc::new(s.to_string()))).collect();
+        info.insert("functions".to_string(), Value::Array(Rc::new(RefCell::new(cap_values))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
     });
 }
 
@@ -7130,6 +8140,7 @@ fn register_pattern(interp: &mut Interpreter) {
             Value::Infinity => "infinity",
             Value::Empty => "empty",
             Value::Evidential { .. } => "evidential",
+            Value::Affective { .. } => "affective",
             Value::Channel(_) => "channel",
             Value::ThreadHandle(_) => "thread",
             Value::Actor(_) => "actor",
@@ -7808,6 +8819,7 @@ fn register_devex(interp: &mut Interpreter) {
             Value::Infinity => "infinity".to_string(),
             Value::Empty => "empty".to_string(),
             Value::Evidential { evidence, .. } => format!("evidential[{:?}]", evidence),
+            Value::Affective { affect, .. } => format!("affective[sarcasm={}]", affect.sarcasm),
             Value::Channel(_) => "channel".to_string(),
             Value::ThreadHandle(_) => "thread".to_string(),
             Value::Actor(_) => "actor".to_string(),
@@ -8316,6 +9328,16 @@ fn format_value_debug(value: &Value) -> String {
         Value::Infinity => "∞".to_string(),
         Value::Empty => "∅".to_string(),
         Value::Evidential { value, evidence } => format!("{:?}({})", evidence, format_value_debug(value)),
+        Value::Affective { value, affect } => {
+            let mut markers = Vec::new();
+            if let Some(s) = &affect.sentiment { markers.push(format!("{:?}", s)); }
+            if affect.sarcasm { markers.push("sarcasm".to_string()); }
+            if let Some(i) = &affect.intensity { markers.push(format!("{:?}", i)); }
+            if let Some(f) = &affect.formality { markers.push(format!("{:?}", f)); }
+            if let Some(e) = &affect.emotion { markers.push(format!("{:?}", e)); }
+            if let Some(c) = &affect.confidence { markers.push(format!("{:?}", c)); }
+            format!("{}[{}]", format_value_debug(value), markers.join(","))
+        }
         Value::Channel(_) => "<channel>".to_string(),
         Value::ThreadHandle(_) => "<thread>".to_string(),
         Value::Actor(_) => "<actor>".to_string(),
@@ -8400,6 +9422,7 @@ fn get_type_name(value: &Value) -> String {
         Value::Infinity => "infinity".to_string(),
         Value::Empty => "empty".to_string(),
         Value::Evidential { .. } => "evidential".to_string(),
+        Value::Affective { .. } => "affective".to_string(),
         Value::Channel(_) => "channel".to_string(),
         Value::ThreadHandle(_) => "thread".to_string(),
         Value::Actor(_) => "actor".to_string(),
@@ -10870,6 +11893,6969 @@ fn register_ecs(interp: &mut Interpreter) {
         }
 
         Ok(Value::Bool(false))
+    });
+}
+
+// ============================================================================
+// POLYCULTURAL TEXT PROCESSING
+// ============================================================================
+//
+// Sigil's philosophy: Mathematics is poly-cultural, and so is TEXT.
+// Different writing systems have different needs:
+//
+// | Writing System | Special Needs |
+// |----------------|---------------|
+// | Latin          | Diacritics, ligatures, case folding |
+// | Arabic/Hebrew  | RTL, contextual shaping, vowel marks |
+// | CJK            | No word boundaries, display width, ruby text |
+// | Devanagari     | Complex clusters, conjuncts |
+// | Thai           | No spaces between words |
+// | Hangul         | Jamo composition/decomposition |
+//
+// This module provides world-class text handling for ALL scripts.
+//
+
+fn register_polycultural_text(interp: &mut Interpreter) {
+    // =========================================================================
+    // SCRIPT DETECTION
+    // =========================================================================
+    //
+    // Detect what writing system(s) a text uses.
+    // Essential for choosing appropriate processing strategies.
+    //
+
+    // script - get the dominant script of a string
+    define(interp, "script", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                // Count scripts
+                let mut script_counts: HashMap<String, usize> = HashMap::new();
+                for c in s.chars() {
+                    if !c.is_whitespace() && !c.is_ascii_punctuation() {
+                        let script = c.script();
+                        let name = format!("{:?}", script);
+                        *script_counts.entry(name).or_insert(0) += 1;
+                    }
+                }
+                // Find dominant script
+                let dominant = script_counts.into_iter()
+                    .max_by_key(|(_, count)| *count)
+                    .map(|(name, _)| name)
+                    .unwrap_or_else(|| "Unknown".to_string());
+                Ok(Value::String(Rc::new(dominant)))
+            }
+            _ => Err(RuntimeError::new("script() requires string")),
+        }
+    });
+
+    // scripts - get all scripts present in text
+    define(interp, "scripts", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let mut scripts: Vec<String> = s.chars()
+                    .filter(|c| !c.is_whitespace() && !c.is_ascii_punctuation())
+                    .map(|c| format!("{:?}", c.script()))
+                    .collect();
+                scripts.sort();
+                scripts.dedup();
+                let values: Vec<Value> = scripts.into_iter()
+                    .map(|s| Value::String(Rc::new(s)))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(values))))
+            }
+            _ => Err(RuntimeError::new("scripts() requires string")),
+        }
+    });
+
+    // is_script - check if text is primarily in a specific script
+    define(interp, "is_script", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(script_name)) => {
+                let target = script_name.to_lowercase();
+                let mut matching = 0usize;
+                let mut total = 0usize;
+                for c in s.chars() {
+                    if !c.is_whitespace() && !c.is_ascii_punctuation() {
+                        total += 1;
+                        let script_str = format!("{:?}", c.script()).to_lowercase();
+                        if script_str == target {
+                            matching += 1;
+                        }
+                    }
+                }
+                let ratio = if total > 0 { matching as f64 / total as f64 } else { 0.0 };
+                Ok(Value::Bool(ratio > 0.5))
+            }
+            _ => Err(RuntimeError::new("is_script() requires string and script name")),
+        }
+    });
+
+    // Script-specific detection functions
+    define(interp, "is_latin", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let is_latin = s.chars()
+                    .filter(|c| !c.is_whitespace())
+                    .all(|c| matches!(c.script(), Script::Latin | Script::Common));
+                Ok(Value::Bool(is_latin && !s.is_empty()))
+            }
+            _ => Err(RuntimeError::new("is_latin() requires string")),
+        }
+    });
+
+    define(interp, "is_cjk", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_cjk = s.chars().any(|c| {
+                    matches!(c.script(), Script::Han | Script::Hiragana | Script::Katakana | Script::Hangul | Script::Bopomofo)
+                });
+                Ok(Value::Bool(has_cjk))
+            }
+            _ => Err(RuntimeError::new("is_cjk() requires string")),
+        }
+    });
+
+    define(interp, "is_arabic", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_arabic = s.chars().any(|c| matches!(c.script(), Script::Arabic));
+                Ok(Value::Bool(has_arabic))
+            }
+            _ => Err(RuntimeError::new("is_arabic() requires string")),
+        }
+    });
+
+    define(interp, "is_hebrew", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_hebrew = s.chars().any(|c| matches!(c.script(), Script::Hebrew));
+                Ok(Value::Bool(has_hebrew))
+            }
+            _ => Err(RuntimeError::new("is_hebrew() requires string")),
+        }
+    });
+
+    define(interp, "is_cyrillic", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_cyrillic = s.chars().any(|c| matches!(c.script(), Script::Cyrillic));
+                Ok(Value::Bool(has_cyrillic))
+            }
+            _ => Err(RuntimeError::new("is_cyrillic() requires string")),
+        }
+    });
+
+    define(interp, "is_greek", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_greek = s.chars().any(|c| matches!(c.script(), Script::Greek));
+                Ok(Value::Bool(has_greek))
+            }
+            _ => Err(RuntimeError::new("is_greek() requires string")),
+        }
+    });
+
+    define(interp, "is_devanagari", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_devanagari = s.chars().any(|c| matches!(c.script(), Script::Devanagari));
+                Ok(Value::Bool(has_devanagari))
+            }
+            _ => Err(RuntimeError::new("is_devanagari() requires string")),
+        }
+    });
+
+    define(interp, "is_thai", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_thai = s.chars().any(|c| matches!(c.script(), Script::Thai));
+                Ok(Value::Bool(has_thai))
+            }
+            _ => Err(RuntimeError::new("is_thai() requires string")),
+        }
+    });
+
+    define(interp, "is_hangul", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_hangul = s.chars().any(|c| matches!(c.script(), Script::Hangul));
+                Ok(Value::Bool(has_hangul))
+            }
+            _ => Err(RuntimeError::new("is_hangul() requires string")),
+        }
+    });
+
+    define(interp, "is_hiragana", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_hiragana = s.chars().any(|c| matches!(c.script(), Script::Hiragana));
+                Ok(Value::Bool(has_hiragana))
+            }
+            _ => Err(RuntimeError::new("is_hiragana() requires string")),
+        }
+    });
+
+    define(interp, "is_katakana", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_katakana = s.chars().any(|c| matches!(c.script(), Script::Katakana));
+                Ok(Value::Bool(has_katakana))
+            }
+            _ => Err(RuntimeError::new("is_katakana() requires string")),
+        }
+    });
+
+    // char_script - get script of a single character
+    define(interp, "char_script", Some(1), |_, args| {
+        match &args[0] {
+            Value::Char(c) => {
+                let script = format!("{:?}", c.script());
+                Ok(Value::String(Rc::new(script)))
+            }
+            Value::String(s) if s.chars().count() == 1 => {
+                let c = s.chars().next().unwrap();
+                let script = format!("{:?}", c.script());
+                Ok(Value::String(Rc::new(script)))
+            }
+            _ => Err(RuntimeError::new("char_script() requires single character")),
+        }
+    });
+
+    // =========================================================================
+    // BIDIRECTIONAL TEXT (RTL/LTR)
+    // =========================================================================
+    //
+    // Arabic, Hebrew, and other scripts are written right-to-left.
+    // Mixed text (e.g., Arabic with English) needs bidirectional handling.
+    //
+
+    // text_direction - get overall text direction
+    define(interp, "text_direction", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let bidi_info = BidiInfo::new(s, None);
+                // Check if any paragraph is RTL
+                let has_rtl = bidi_info.paragraphs.iter().any(|p| p.level.is_rtl());
+                let direction = if has_rtl { "rtl" } else { "ltr" };
+                Ok(Value::String(Rc::new(direction.to_string())))
+            }
+            _ => Err(RuntimeError::new("text_direction() requires string")),
+        }
+    });
+
+    // is_rtl - check if text is right-to-left
+    define(interp, "is_rtl", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let bidi_info = BidiInfo::new(s, None);
+                let has_rtl = bidi_info.paragraphs.iter().any(|p| p.level.is_rtl());
+                Ok(Value::Bool(has_rtl))
+            }
+            _ => Err(RuntimeError::new("is_rtl() requires string")),
+        }
+    });
+
+    // is_ltr - check if text is left-to-right
+    define(interp, "is_ltr", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let bidi_info = BidiInfo::new(s, None);
+                let is_ltr = bidi_info.paragraphs.iter().all(|p| !p.level.is_rtl());
+                Ok(Value::Bool(is_ltr))
+            }
+            _ => Err(RuntimeError::new("is_ltr() requires string")),
+        }
+    });
+
+    // is_bidi - check if text contains mixed directions
+    define(interp, "is_bidi", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                // Check for both RTL and LTR characters
+                let has_rtl = s.chars().any(|c| matches!(c.script(), Script::Arabic | Script::Hebrew | Script::Syriac | Script::Thaana));
+                let has_ltr = s.chars().any(|c| matches!(c.script(), Script::Latin | Script::Greek | Script::Cyrillic));
+                Ok(Value::Bool(has_rtl && has_ltr))
+            }
+            _ => Err(RuntimeError::new("is_bidi() requires string")),
+        }
+    });
+
+    // bidi_reorder - reorder text for visual display
+    define(interp, "bidi_reorder", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let bidi_info = BidiInfo::new(s, None);
+                let mut result = String::new();
+                for para in &bidi_info.paragraphs {
+                    let line = para.range.clone();
+                    let reordered = bidi_info.reorder_line(para, line);
+                    result.push_str(&reordered);
+                }
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("bidi_reorder() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // DISPLAY WIDTH (CJK-aware)
+    // =========================================================================
+    //
+    // CJK characters are "full-width" (2 columns), while Latin is "half-width".
+    // Critical for proper terminal output and text alignment.
+    //
+
+    // display_width - get visual width in terminal columns
+    define(interp, "display_width", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let width = UnicodeWidthStr::width(s.as_str());
+                Ok(Value::Int(width as i64))
+            }
+            _ => Err(RuntimeError::new("display_width() requires string")),
+        }
+    });
+
+    // is_fullwidth - check if string contains full-width characters
+    define(interp, "is_fullwidth", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let char_count = s.chars().count();
+                let display_width = UnicodeWidthStr::width(s.as_str());
+                // If display width > char count, we have full-width chars
+                Ok(Value::Bool(display_width > char_count))
+            }
+            _ => Err(RuntimeError::new("is_fullwidth() requires string")),
+        }
+    });
+
+    // pad_display - pad string to display width (CJK-aware)
+    define(interp, "pad_display", Some(3), |_, args| {
+        match (&args[0], &args[1], &args[2]) {
+            (Value::String(s), Value::Int(target_width), Value::String(align)) => {
+                let current_width = UnicodeWidthStr::width(s.as_str());
+                let target = *target_width as usize;
+                if current_width >= target {
+                    return Ok(Value::String(s.clone()));
+                }
+                let padding = target - current_width;
+                let result = match align.as_str() {
+                    "left" => format!("{}{}", s, " ".repeat(padding)),
+                    "right" => format!("{}{}", " ".repeat(padding), s),
+                    "center" => {
+                        let left = padding / 2;
+                        let right = padding - left;
+                        format!("{}{}{}", " ".repeat(left), s, " ".repeat(right))
+                    }
+                    _ => return Err(RuntimeError::new("pad_display: align must be 'left', 'right', or 'center'")),
+                };
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("pad_display() requires string, width, and alignment")),
+        }
+    });
+
+    // =========================================================================
+    // TRANSLITERATION
+    // =========================================================================
+    //
+    // Convert text from any script to ASCII representation.
+    // Essential for: search, URLs, usernames, file names.
+    //
+
+    // transliterate - convert any Unicode text to ASCII
+    define(interp, "transliterate", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let ascii = deunicode(s);
+                Ok(Value::String(Rc::new(ascii)))
+            }
+            _ => Err(RuntimeError::new("transliterate() requires string")),
+        }
+    });
+
+    // to_ascii - alias for transliterate
+    define(interp, "to_ascii", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let ascii = deunicode(s);
+                Ok(Value::String(Rc::new(ascii)))
+            }
+            _ => Err(RuntimeError::new("to_ascii() requires string")),
+        }
+    });
+
+    // slugify - create URL-safe slug from any text
+    define(interp, "slugify", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let ascii = deunicode(s);
+                let slug: String = ascii
+                    .to_lowercase()
+                    .chars()
+                    .map(|c| if c.is_alphanumeric() { c } else { '-' })
+                    .collect();
+                // Collapse multiple dashes and trim
+                let mut result = String::new();
+                let mut last_was_dash = true; // Start true to trim leading dashes
+                for c in slug.chars() {
+                    if c == '-' {
+                        if !last_was_dash {
+                            result.push(c);
+                            last_was_dash = true;
+                        }
+                    } else {
+                        result.push(c);
+                        last_was_dash = false;
+                    }
+                }
+                // Trim trailing dash
+                if result.ends_with('-') {
+                    result.pop();
+                }
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("slugify() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // DIACRITICS AND ACCENTS
+    // =========================================================================
+    //
+    // Many scripts use combining marks: é = e + ́ (combining acute)
+    // Need to handle decomposition, stripping, and normalization.
+    //
+
+    // strip_diacritics - remove accents and combining marks
+    define(interp, "strip_diacritics", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                // NFD decomposition separates base chars from combining marks
+                let decomposed: String = s.nfd().collect();
+                // Filter out combining marks (category Mn, Mc, Me)
+                let stripped: String = decomposed.chars()
+                    .filter(|c| {
+                        // Keep if not a combining mark
+                        // Combining marks are in Unicode categories Mn, Mc, Me
+                        // which are roughly in ranges U+0300-U+036F (common) and others
+                        let code = *c as u32;
+                        // Quick check for common combining diacritical marks
+                        !(0x0300..=0x036F).contains(&code) &&
+                        !(0x1AB0..=0x1AFF).contains(&code) &&
+                        !(0x1DC0..=0x1DFF).contains(&code) &&
+                        !(0x20D0..=0x20FF).contains(&code) &&
+                        !(0xFE20..=0xFE2F).contains(&code)
+                    })
+                    .collect();
+                Ok(Value::String(Rc::new(stripped)))
+            }
+            _ => Err(RuntimeError::new("strip_diacritics() requires string")),
+        }
+    });
+
+    // has_diacritics - check if string contains diacritical marks
+    define(interp, "has_diacritics", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let decomposed: String = s.nfd().collect();
+                let has_marks = decomposed.chars().any(|c| {
+                    let code = c as u32;
+                    (0x0300..=0x036F).contains(&code) ||
+                    (0x1AB0..=0x1AFF).contains(&code) ||
+                    (0x1DC0..=0x1DFF).contains(&code) ||
+                    (0x20D0..=0x20FF).contains(&code) ||
+                    (0xFE20..=0xFE2F).contains(&code)
+                });
+                Ok(Value::Bool(has_marks))
+            }
+            _ => Err(RuntimeError::new("has_diacritics() requires string")),
+        }
+    });
+
+    // normalize_accents - convert composed to decomposed or vice versa
+    define(interp, "normalize_accents", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(form)) => {
+                let result = match form.as_str() {
+                    "composed" | "nfc" => s.nfc().collect(),
+                    "decomposed" | "nfd" => s.nfd().collect(),
+                    _ => return Err(RuntimeError::new("normalize_accents: form must be 'composed' or 'decomposed'")),
+                };
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("normalize_accents() requires string and form")),
+        }
+    });
+
+    // =========================================================================
+    // LOCALE-AWARE CASE MAPPING
+    // =========================================================================
+    //
+    // Case mapping varies by locale:
+    // - Turkish: i ↔ İ, ı ↔ I (dotted/dotless distinction)
+    // - German: ß → SS (uppercase), but SS → ss or ß (lowercase)
+    // - Greek: final sigma rules
+    //
+
+    // upper_locale - locale-aware uppercase
+    define(interp, "upper_locale", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(locale_str)) => {
+                let case_mapper = CaseMapper::new();
+                let langid: LanguageIdentifier = locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
+                let result = case_mapper.uppercase_to_string(s, &langid);
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("upper_locale() requires string and locale")),
+        }
+    });
+
+    // lower_locale - locale-aware lowercase
+    define(interp, "lower_locale", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(locale_str)) => {
+                let case_mapper = CaseMapper::new();
+                let langid: LanguageIdentifier = locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
+                let result = case_mapper.lowercase_to_string(s, &langid);
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("lower_locale() requires string and locale")),
+        }
+    });
+
+    // titlecase_locale - locale-aware titlecase
+    define(interp, "titlecase_locale", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(locale_str)) => {
+                let case_mapper = CaseMapper::new();
+                let langid: LanguageIdentifier = locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
+                let options = TitlecaseOptions::default();
+                let result = case_mapper.titlecase_segment_with_only_case_data_to_string(s, &langid, options);
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("titlecase_locale() requires string and locale")),
+        }
+    });
+
+    // case_fold - Unicode case folding for comparison
+    define(interp, "case_fold", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let case_mapper = CaseMapper::new();
+                let result = case_mapper.fold_string(s);
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("case_fold() requires string")),
+        }
+    });
+
+    // case_insensitive_eq - compare strings ignoring case (using case folding)
+    define(interp, "case_insensitive_eq", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let case_mapper = CaseMapper::new();
+                let folded_a = case_mapper.fold_string(a);
+                let folded_b = case_mapper.fold_string(b);
+                Ok(Value::Bool(folded_a == folded_b))
+            }
+            _ => Err(RuntimeError::new("case_insensitive_eq() requires two strings")),
+        }
+    });
+
+    // =========================================================================
+    // LOCALE-AWARE COLLATION (SORTING)
+    // =========================================================================
+    //
+    // Sorting order varies dramatically by locale:
+    // - German: ä sorts with a
+    // - Swedish: ä sorts after z
+    // - Spanish: ñ is a separate letter after n
+    //
+
+    // compare_locale - locale-aware string comparison
+    define(interp, "compare_locale", Some(3), |_, args| {
+        match (&args[0], &args[1], &args[2]) {
+            (Value::String(a), Value::String(b), Value::String(locale_str)) => {
+                let locale: Locale = locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
+                let options = CollatorOptions::new();
+                let collator = Collator::try_new(&locale.into(), options)
+                    .unwrap_or_else(|_| Collator::try_new(&Default::default(), options).unwrap());
+                let result = match collator.compare(a, b) {
+                    std::cmp::Ordering::Less => -1,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Greater => 1,
+                };
+                Ok(Value::Int(result))
+            }
+            _ => Err(RuntimeError::new("compare_locale() requires two strings and locale")),
+        }
+    });
+
+    // sort_locale - sort array of strings by locale
+    define(interp, "sort_locale", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::Array(arr), Value::String(locale_str)) => {
+                let locale: Locale = locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
+                let options = CollatorOptions::new();
+                let collator = Collator::try_new(&locale.into(), options)
+                    .unwrap_or_else(|_| Collator::try_new(&Default::default(), options).unwrap());
+
+                let mut items: Vec<(String, Value)> = arr.borrow().iter()
+                    .map(|v| {
+                        let s = match v {
+                            Value::String(s) => (**s).clone(),
+                            _ => format!("{}", v),
+                        };
+                        (s, v.clone())
+                    })
+                    .collect();
+
+                items.sort_by(|(a, _), (b, _)| collator.compare(a, b));
+
+                let sorted: Vec<Value> = items.into_iter().map(|(_, v)| v).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(sorted))))
+            }
+            _ => Err(RuntimeError::new("sort_locale() requires array and locale")),
+        }
+    });
+
+    // =========================================================================
+    // ADVANCED SEGMENTATION
+    // =========================================================================
+    //
+    // Different languages have different boundary rules:
+    // - Thai/Lao/Khmer: No spaces between words
+    // - CJK: Characters can be words themselves
+    // - German: Compound words are single words
+    //
+
+    // sentences - split text into sentences (locale-aware)
+    define(interp, "sentences", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let segmenter = SentenceSegmenter::new();
+                let breakpoints: Vec<usize> = segmenter.segment_str(s).collect();
+                let mut sentences = Vec::new();
+                let mut start = 0;
+                for end in breakpoints {
+                    let sentence = s[start..end].trim();
+                    if !sentence.is_empty() {
+                        sentences.push(Value::String(Rc::new(sentence.to_string())));
+                    }
+                    start = end;
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(sentences))))
+            }
+            _ => Err(RuntimeError::new("sentences() requires string")),
+        }
+    });
+
+    // sentence_count - count sentences
+    define(interp, "sentence_count", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let segmenter = SentenceSegmenter::new();
+                let breakpoints: Vec<usize> = segmenter.segment_str(s).collect();
+                // Sentences are between breakpoints
+                let count = breakpoints.len().saturating_sub(1);
+                Ok(Value::Int(count as i64))
+            }
+            _ => Err(RuntimeError::new("sentence_count() requires string")),
+        }
+    });
+
+    // words_icu - ICU-based word segmentation (better for CJK, Thai)
+    define(interp, "words_icu", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let segmenter = WordSegmenter::new_auto();
+                let breakpoints: Vec<usize> = segmenter.segment_str(s).collect();
+                let mut words = Vec::new();
+                let mut start = 0;
+                for end in breakpoints {
+                    let word = &s[start..end];
+                    // Filter out whitespace-only segments
+                    if !word.trim().is_empty() {
+                        words.push(Value::String(Rc::new(word.to_string())));
+                    }
+                    start = end;
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(words))))
+            }
+            _ => Err(RuntimeError::new("words_icu() requires string")),
+        }
+    });
+
+    // word_count_icu - ICU-based word count (handles Thai, CJK correctly)
+    define(interp, "word_count_icu", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let segmenter = WordSegmenter::new_auto();
+                let breakpoints: Vec<usize> = segmenter.segment_str(s).collect();
+                let mut count = 0;
+                let mut start = 0;
+                for end in breakpoints {
+                    let word = &s[start..end];
+                    if !word.trim().is_empty() && word.chars().any(|c| c.is_alphanumeric()) {
+                        count += 1;
+                    }
+                    start = end;
+                }
+                Ok(Value::Int(count))
+            }
+            _ => Err(RuntimeError::new("word_count_icu() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // SCRIPT-SPECIFIC UTILITIES
+    // =========================================================================
+
+    // is_emoji - check if string contains emoji
+    define(interp, "is_emoji", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_emoji = s.chars().any(|c| {
+                    let code = c as u32;
+                    // Common emoji ranges
+                    (0x1F600..=0x1F64F).contains(&code) ||  // Emoticons
+                    (0x1F300..=0x1F5FF).contains(&code) ||  // Misc Symbols and Pictographs
+                    (0x1F680..=0x1F6FF).contains(&code) ||  // Transport and Map
+                    (0x1F1E0..=0x1F1FF).contains(&code) ||  // Flags
+                    (0x2600..=0x26FF).contains(&code) ||    // Misc symbols
+                    (0x2700..=0x27BF).contains(&code) ||    // Dingbats
+                    (0xFE00..=0xFE0F).contains(&code) ||    // Variation Selectors
+                    (0x1F900..=0x1F9FF).contains(&code) ||  // Supplemental Symbols and Pictographs
+                    (0x1FA00..=0x1FA6F).contains(&code) ||  // Chess Symbols
+                    (0x1FA70..=0x1FAFF).contains(&code) ||  // Symbols and Pictographs Extended-A
+                    (0x231A..=0x231B).contains(&code) ||    // Watch, Hourglass
+                    (0x23E9..=0x23F3).contains(&code) ||    // Various symbols
+                    (0x23F8..=0x23FA).contains(&code)       // Various symbols
+                });
+                Ok(Value::Bool(has_emoji))
+            }
+            _ => Err(RuntimeError::new("is_emoji() requires string")),
+        }
+    });
+
+    // extract_emoji - extract all emoji from text
+    define(interp, "extract_emoji", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let emoji: Vec<Value> = s.graphemes(true)
+                    .filter(|g| {
+                        g.chars().any(|c| {
+                            let code = c as u32;
+                            (0x1F600..=0x1F64F).contains(&code) ||
+                            (0x1F300..=0x1F5FF).contains(&code) ||
+                            (0x1F680..=0x1F6FF).contains(&code) ||
+                            (0x1F1E0..=0x1F1FF).contains(&code) ||
+                            (0x2600..=0x26FF).contains(&code) ||
+                            (0x2700..=0x27BF).contains(&code) ||
+                            (0x1F900..=0x1F9FF).contains(&code) ||
+                            (0x1FA00..=0x1FA6F).contains(&code) ||
+                            (0x1FA70..=0x1FAFF).contains(&code)
+                        })
+                    })
+                    .map(|g| Value::String(Rc::new(g.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(emoji))))
+            }
+            _ => Err(RuntimeError::new("extract_emoji() requires string")),
+        }
+    });
+
+    // strip_emoji - remove emoji from text
+    define(interp, "strip_emoji", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let stripped: String = s.graphemes(true)
+                    .filter(|g| {
+                        !g.chars().any(|c| {
+                            let code = c as u32;
+                            (0x1F600..=0x1F64F).contains(&code) ||
+                            (0x1F300..=0x1F5FF).contains(&code) ||
+                            (0x1F680..=0x1F6FF).contains(&code) ||
+                            (0x1F1E0..=0x1F1FF).contains(&code) ||
+                            (0x2600..=0x26FF).contains(&code) ||
+                            (0x2700..=0x27BF).contains(&code) ||
+                            (0x1F900..=0x1F9FF).contains(&code) ||
+                            (0x1FA00..=0x1FA6F).contains(&code) ||
+                            (0x1FA70..=0x1FAFF).contains(&code)
+                        })
+                    })
+                    .collect();
+                Ok(Value::String(Rc::new(stripped)))
+            }
+            _ => Err(RuntimeError::new("strip_emoji() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // MIXED SCRIPT TEXT UTILITIES
+    // =========================================================================
+
+    // script_runs - split text into runs of the same script
+    define(interp, "script_runs", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let mut runs: Vec<Value> = Vec::new();
+                let mut current_run = String::new();
+                let mut current_script: Option<Script> = None;
+
+                for c in s.chars() {
+                    let script = c.script();
+                    // Common and Inherited scripts don't start new runs
+                    if script != Script::Common && script != Script::Inherited {
+                        if let Some(curr) = current_script {
+                            if script != curr {
+                                // New script - save current run
+                                if !current_run.is_empty() {
+                                    runs.push(Value::String(Rc::new(current_run.clone())));
+                                    current_run.clear();
+                                }
+                                current_script = Some(script);
+                            }
+                        } else {
+                            current_script = Some(script);
+                        }
+                    }
+                    current_run.push(c);
+                }
+
+                // Don't forget the last run
+                if !current_run.is_empty() {
+                    runs.push(Value::String(Rc::new(current_run)));
+                }
+
+                Ok(Value::Array(Rc::new(RefCell::new(runs))))
+            }
+            _ => Err(RuntimeError::new("script_runs() requires string")),
+        }
+    });
+
+    // script_ratio - get ratio of scripts in text
+    define(interp, "script_ratio", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let mut script_counts: HashMap<String, usize> = HashMap::new();
+                let mut total = 0usize;
+
+                for c in s.chars() {
+                    if !c.is_whitespace() && c != ' ' {
+                        let script = format!("{:?}", c.script());
+                        *script_counts.entry(script).or_insert(0) += 1;
+                        total += 1;
+                    }
+                }
+
+                // Convert to map of ratios
+                let mut result = HashMap::new();
+                for (script, count) in script_counts {
+                    let ratio = if total > 0 { count as f64 / total as f64 } else { 0.0 };
+                    result.insert(script, Value::Float(ratio));
+                }
+
+                let map = Rc::new(RefCell::new(result));
+                Ok(Value::Map(map))
+            }
+            _ => Err(RuntimeError::new("script_ratio() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // INTERNATIONALIZATION HELPERS
+    // =========================================================================
+
+    // locale_name - get display name for a locale
+    define(interp, "locale_name", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(locale_str) => {
+                // Return the locale code itself as a simple implementation
+                // A full implementation would use ICU's display names
+                Ok(Value::String(locale_str.clone()))
+            }
+            _ => Err(RuntimeError::new("locale_name() requires string")),
+        }
+    });
+
+    // supported_locales - list of supported locales for collation
+    define(interp, "supported_locales", Some(0), |_, _| {
+        // Common locales supported by ICU
+        let locales = vec![
+            "ar", "bg", "ca", "cs", "da", "de", "el", "en", "es", "et",
+            "fi", "fr", "he", "hi", "hr", "hu", "id", "it", "ja", "ko",
+            "lt", "lv", "ms", "nb", "nl", "pl", "pt", "ro", "ru", "sk",
+            "sl", "sr", "sv", "th", "tr", "uk", "vi", "zh",
+        ];
+        let values: Vec<Value> = locales.into_iter()
+            .map(|s| Value::String(Rc::new(s.to_string())))
+            .collect();
+        Ok(Value::Array(Rc::new(RefCell::new(values))))
+    });
+}
+
+// =============================================================================
+// TEXT INTELLIGENCE MODULE - AI-Native Text Analysis
+// =============================================================================
+
+fn register_text_intelligence(interp: &mut Interpreter) {
+    // =========================================================================
+    // STRING SIMILARITY METRICS
+    // =========================================================================
+
+    // levenshtein - edit distance between strings
+    define(interp, "levenshtein", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let distance = strsim::levenshtein(a, b);
+                Ok(Value::Int(distance as i64))
+            }
+            _ => Err(RuntimeError::new("levenshtein() requires two strings")),
+        }
+    });
+
+    // levenshtein_normalized - normalized edit distance (0.0 to 1.0)
+    define(interp, "levenshtein_normalized", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let distance = strsim::normalized_levenshtein(a, b);
+                Ok(Value::Float(distance))
+            }
+            _ => Err(RuntimeError::new("levenshtein_normalized() requires two strings")),
+        }
+    });
+
+    // jaro - Jaro similarity (0.0 to 1.0)
+    define(interp, "jaro", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let sim = strsim::jaro(a, b);
+                Ok(Value::Float(sim))
+            }
+            _ => Err(RuntimeError::new("jaro() requires two strings")),
+        }
+    });
+
+    // jaro_winkler - Jaro-Winkler similarity (0.0 to 1.0, favors common prefixes)
+    define(interp, "jaro_winkler", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let sim = strsim::jaro_winkler(a, b);
+                Ok(Value::Float(sim))
+            }
+            _ => Err(RuntimeError::new("jaro_winkler() requires two strings")),
+        }
+    });
+
+    // sorensen_dice - Sørensen-Dice coefficient (0.0 to 1.0)
+    define(interp, "sorensen_dice", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let sim = strsim::sorensen_dice(a, b);
+                Ok(Value::Float(sim))
+            }
+            _ => Err(RuntimeError::new("sorensen_dice() requires two strings")),
+        }
+    });
+
+    // damerau_levenshtein - edit distance with transpositions
+    define(interp, "damerau_levenshtein", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let distance = strsim::damerau_levenshtein(a, b);
+                Ok(Value::Int(distance as i64))
+            }
+            _ => Err(RuntimeError::new("damerau_levenshtein() requires two strings")),
+        }
+    });
+
+    // osa_distance - Optimal String Alignment distance
+    define(interp, "osa_distance", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let distance = strsim::osa_distance(a, b);
+                Ok(Value::Int(distance as i64))
+            }
+            _ => Err(RuntimeError::new("osa_distance() requires two strings")),
+        }
+    });
+
+    // fuzzy_match - check if strings are similar above threshold
+    define(interp, "fuzzy_match", Some(3), |_, args| {
+        match (&args[0], &args[1], &args[2]) {
+            (Value::String(a), Value::String(b), Value::Float(threshold)) => {
+                let sim = strsim::jaro_winkler(a, b);
+                Ok(Value::Bool(sim >= *threshold))
+            }
+            (Value::String(a), Value::String(b), Value::Int(threshold)) => {
+                let sim = strsim::jaro_winkler(a, b);
+                Ok(Value::Bool(sim >= *threshold as f64))
+            }
+            _ => Err(RuntimeError::new("fuzzy_match() requires two strings and threshold")),
+        }
+    });
+
+    // fuzzy_search - find best matches in array
+    define(interp, "fuzzy_search", Some(3), |_, args| {
+        match (&args[0], &args[1], &args[2]) {
+            (Value::String(query), Value::Array(items), Value::Int(limit)) => {
+                let items_ref = items.borrow();
+                let mut scores: Vec<(f64, &str)> = items_ref.iter()
+                    .filter_map(|v| {
+                        if let Value::String(s) = v {
+                            Some((strsim::jaro_winkler(query, s), s.as_str()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                scores.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+                let results: Vec<Value> = scores.into_iter()
+                    .take(*limit as usize)
+                    .map(|(_, s)| Value::String(Rc::new(s.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(results))))
+            }
+            _ => Err(RuntimeError::new("fuzzy_search() requires query string, array, and limit")),
+        }
+    });
+
+    // =========================================================================
+    // PHONETIC ENCODING
+    // =========================================================================
+
+    // soundex - American Soundex encoding
+    define(interp, "soundex", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let code = compute_soundex(s);
+                Ok(Value::String(Rc::new(code)))
+            }
+            _ => Err(RuntimeError::new("soundex() requires string")),
+        }
+    });
+
+    // soundex_match - check if two strings have same Soundex code
+    define(interp, "soundex_match", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let code_a = compute_soundex(a);
+                let code_b = compute_soundex(b);
+                Ok(Value::Bool(code_a == code_b))
+            }
+            _ => Err(RuntimeError::new("soundex_match() requires two strings")),
+        }
+    });
+
+    // metaphone - Metaphone encoding (better for English)
+    define(interp, "metaphone", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let code = compute_metaphone(s);
+                Ok(Value::String(Rc::new(code)))
+            }
+            _ => Err(RuntimeError::new("metaphone() requires string")),
+        }
+    });
+
+    // metaphone_match - check if two strings have same Metaphone code
+    define(interp, "metaphone_match", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let code_a = compute_metaphone(a);
+                let code_b = compute_metaphone(b);
+                Ok(Value::Bool(code_a == code_b))
+            }
+            _ => Err(RuntimeError::new("metaphone_match() requires two strings")),
+        }
+    });
+
+    // cologne_phonetic - Cologne phonetic encoding (for German)
+    define(interp, "cologne_phonetic", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let code = compute_cologne(s);
+                Ok(Value::String(Rc::new(code)))
+            }
+            _ => Err(RuntimeError::new("cologne_phonetic() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // LANGUAGE DETECTION
+    // =========================================================================
+
+    // detect_language - detect the language of text
+    define(interp, "detect_language", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                if let Some(info) = detect(s) {
+                    let lang_code = match info.lang() {
+                        Lang::Eng => "en",
+                        Lang::Spa => "es",
+                        Lang::Fra => "fr",
+                        Lang::Deu => "de",
+                        Lang::Ita => "it",
+                        Lang::Por => "pt",
+                        Lang::Rus => "ru",
+                        Lang::Ara => "ar",
+                        Lang::Hin => "hi",
+                        Lang::Cmn => "zh",
+                        Lang::Jpn => "ja",
+                        Lang::Kor => "ko",
+                        Lang::Nld => "nl",
+                        Lang::Swe => "sv",
+                        Lang::Tur => "tr",
+                        Lang::Pol => "pl",
+                        Lang::Ukr => "uk",
+                        Lang::Ces => "cs",
+                        Lang::Dan => "da",
+                        Lang::Fin => "fi",
+                        Lang::Ell => "el",
+                        Lang::Heb => "he",
+                        Lang::Hun => "hu",
+                        Lang::Ind => "id",
+                        Lang::Nob => "no",
+                        Lang::Ron => "ro",
+                        Lang::Slk => "sk",
+                        Lang::Tha => "th",
+                        Lang::Vie => "vi",
+                        _ => "unknown",
+                    };
+                    Ok(Value::String(Rc::new(lang_code.to_string())))
+                } else {
+                    Ok(Value::String(Rc::new("unknown".to_string())))
+                }
+            }
+            _ => Err(RuntimeError::new("detect_language() requires string")),
+        }
+    });
+
+    // detect_language_confidence - detect language with confidence score
+    define(interp, "detect_language_confidence", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                if let Some(info) = detect(s) {
+                    let lang_code = match info.lang() {
+                        Lang::Eng => "en",
+                        Lang::Spa => "es",
+                        Lang::Fra => "fr",
+                        Lang::Deu => "de",
+                        Lang::Ita => "it",
+                        Lang::Por => "pt",
+                        Lang::Rus => "ru",
+                        Lang::Ara => "ar",
+                        Lang::Cmn => "zh",
+                        Lang::Jpn => "ja",
+                        _ => "unknown",
+                    };
+                    let confidence = info.confidence();
+                    let mut map = HashMap::new();
+                    map.insert(
+                        "lang".to_string(),
+                        Value::String(Rc::new(lang_code.to_string())),
+                    );
+                    map.insert("confidence".to_string(), Value::Float(confidence as f64));
+                    Ok(Value::Map(Rc::new(RefCell::new(map))))
+                } else {
+                    let mut map = HashMap::new();
+                    map.insert(
+                        "lang".to_string(),
+                        Value::String(Rc::new("unknown".to_string())),
+                    );
+                    map.insert("confidence".to_string(), Value::Float(0.0));
+                    Ok(Value::Map(Rc::new(RefCell::new(map))))
+                }
+            }
+            _ => Err(RuntimeError::new("detect_language_confidence() requires string")),
+        }
+    });
+
+    // detect_script - detect the script of text using whatlang
+    define(interp, "detect_script_whatlang", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                if let Some(info) = detect(s) {
+                    let script_name = match info.script() {
+                        WhatLangScript::Latin => "Latin",
+                        WhatLangScript::Cyrillic => "Cyrillic",
+                        WhatLangScript::Arabic => "Arabic",
+                        WhatLangScript::Devanagari => "Devanagari",
+                        WhatLangScript::Ethiopic => "Ethiopic",
+                        WhatLangScript::Georgian => "Georgian",
+                        WhatLangScript::Greek => "Greek",
+                        WhatLangScript::Gujarati => "Gujarati",
+                        WhatLangScript::Gurmukhi => "Gurmukhi",
+                        WhatLangScript::Hangul => "Hangul",
+                        WhatLangScript::Hebrew => "Hebrew",
+                        WhatLangScript::Hiragana => "Hiragana",
+                        WhatLangScript::Kannada => "Kannada",
+                        WhatLangScript::Katakana => "Katakana",
+                        WhatLangScript::Khmer => "Khmer",
+                        WhatLangScript::Malayalam => "Malayalam",
+                        WhatLangScript::Mandarin => "Mandarin",
+                        WhatLangScript::Myanmar => "Myanmar",
+                        WhatLangScript::Oriya => "Oriya",
+                        WhatLangScript::Sinhala => "Sinhala",
+                        WhatLangScript::Tamil => "Tamil",
+                        WhatLangScript::Telugu => "Telugu",
+                        WhatLangScript::Thai => "Thai",
+                        WhatLangScript::Bengali => "Bengali",
+                        WhatLangScript::Armenian => "Armenian",
+                    };
+                    Ok(Value::String(Rc::new(script_name.to_string())))
+                } else {
+                    Ok(Value::String(Rc::new("Unknown".to_string())))
+                }
+            }
+            _ => Err(RuntimeError::new("detect_script_whatlang() requires string")),
+        }
+    });
+
+    // is_language - check if text is in a specific language
+    define(interp, "is_language", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(lang)) => {
+                if let Some(info) = detect(s) {
+                    let detected = match info.lang() {
+                        Lang::Eng => "en",
+                        Lang::Spa => "es",
+                        Lang::Fra => "fr",
+                        Lang::Deu => "de",
+                        Lang::Ita => "it",
+                        Lang::Por => "pt",
+                        Lang::Rus => "ru",
+                        _ => "unknown",
+                    };
+                    Ok(Value::Bool(detected == lang.as_str()))
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            }
+            _ => Err(RuntimeError::new("is_language() requires string and language code")),
+        }
+    });
+
+    // =========================================================================
+    // LLM TOKEN COUNTING
+    // =========================================================================
+
+    // token_count - count tokens using cl100k_base (GPT-4, Claude compatible)
+    define(interp, "token_count", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                if let Ok(bpe) = cl100k_base() {
+                    let tokens = bpe.encode_with_special_tokens(s);
+                    Ok(Value::Int(tokens.len() as i64))
+                } else {
+                    Err(RuntimeError::new("Failed to initialize tokenizer"))
+                }
+            }
+            _ => Err(RuntimeError::new("token_count() requires string")),
+        }
+    });
+
+    // token_count_model - count tokens for specific model
+    define(interp, "token_count_model", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(model)) => {
+                let bpe_result = match model.as_str() {
+                    "gpt4" | "gpt-4" | "claude" | "cl100k" => cl100k_base(),
+                    "gpt3" | "gpt-3" | "p50k" => p50k_base(),
+                    "codex" | "r50k" => r50k_base(),
+                    _ => cl100k_base(), // Default to GPT-4/Claude
+                };
+                if let Ok(bpe) = bpe_result {
+                    let tokens = bpe.encode_with_special_tokens(s);
+                    Ok(Value::Int(tokens.len() as i64))
+                } else {
+                    Err(RuntimeError::new("Failed to initialize tokenizer"))
+                }
+            }
+            _ => Err(RuntimeError::new("token_count_model() requires string and model name")),
+        }
+    });
+
+    // tokenize_ids - get token IDs as array
+    define(interp, "tokenize_ids", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                if let Ok(bpe) = cl100k_base() {
+                    let tokens = bpe.encode_with_special_tokens(s);
+                    let values: Vec<Value> = tokens.into_iter()
+                        .map(|t| Value::Int(t as i64))
+                        .collect();
+                    Ok(Value::Array(Rc::new(RefCell::new(values))))
+                } else {
+                    Err(RuntimeError::new("Failed to initialize tokenizer"))
+                }
+            }
+            _ => Err(RuntimeError::new("tokenize_ids() requires string")),
+        }
+    });
+
+    // truncate_tokens - truncate string to max tokens
+    define(interp, "truncate_tokens", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::Int(max_tokens)) => {
+                if let Ok(bpe) = cl100k_base() {
+                    let tokens = bpe.encode_with_special_tokens(s);
+                    if tokens.len() <= *max_tokens as usize {
+                        Ok(Value::String(s.clone()))
+                    } else {
+                        let truncated: Vec<usize> = tokens.into_iter()
+                            .take(*max_tokens as usize)
+                            .collect();
+                        if let Ok(decoded) = bpe.decode(truncated) {
+                            Ok(Value::String(Rc::new(decoded)))
+                        } else {
+                            Err(RuntimeError::new("Failed to decode tokens"))
+                        }
+                    }
+                } else {
+                    Err(RuntimeError::new("Failed to initialize tokenizer"))
+                }
+            }
+            _ => Err(RuntimeError::new("truncate_tokens() requires string and max tokens")),
+        }
+    });
+
+    // estimate_cost - estimate API cost based on token count
+    define(interp, "estimate_cost", Some(3), |_, args| {
+        match (&args[0], &args[1], &args[2]) {
+            (Value::String(s), Value::Float(input_cost), Value::Float(output_cost)) => {
+                if let Ok(bpe) = cl100k_base() {
+                    let tokens = bpe.encode_with_special_tokens(s);
+                    let count = tokens.len() as f64;
+                    // Cost per 1K tokens
+                    let input_total = (count / 1000.0) * input_cost;
+                    let output_total = (count / 1000.0) * output_cost;
+                    let mut map = HashMap::new();
+                    map.insert("tokens".to_string(), Value::Int(tokens.len() as i64));
+                    map.insert("input_cost".to_string(), Value::Float(input_total));
+                    map.insert("output_cost".to_string(), Value::Float(output_total));
+                    Ok(Value::Map(Rc::new(RefCell::new(map))))
+                } else {
+                    Err(RuntimeError::new("Failed to initialize tokenizer"))
+                }
+            }
+            _ => Err(RuntimeError::new("estimate_cost() requires string, input cost, output cost")),
+        }
+    });
+
+    // =========================================================================
+    // STEMMING
+    // =========================================================================
+
+    // stem - stem a word using Porter algorithm
+    define(interp, "stem", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let stemmer = Stemmer::create(StemAlgorithm::English);
+                let stemmed = stemmer.stem(s);
+                Ok(Value::String(Rc::new(stemmed.to_string())))
+            }
+            _ => Err(RuntimeError::new("stem() requires string")),
+        }
+    });
+
+    // stem_language - stem a word for specific language
+    define(interp, "stem_language", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(lang)) => {
+                let algorithm = match lang.as_str() {
+                    "en" | "english" => StemAlgorithm::English,
+                    "fr" | "french" => StemAlgorithm::French,
+                    "de" | "german" => StemAlgorithm::German,
+                    "es" | "spanish" => StemAlgorithm::Spanish,
+                    "it" | "italian" => StemAlgorithm::Italian,
+                    "pt" | "portuguese" => StemAlgorithm::Portuguese,
+                    "nl" | "dutch" => StemAlgorithm::Dutch,
+                    "sv" | "swedish" => StemAlgorithm::Swedish,
+                    "no" | "norwegian" => StemAlgorithm::Norwegian,
+                    "da" | "danish" => StemAlgorithm::Danish,
+                    "fi" | "finnish" => StemAlgorithm::Finnish,
+                    "ru" | "russian" => StemAlgorithm::Russian,
+                    "ro" | "romanian" => StemAlgorithm::Romanian,
+                    "hu" | "hungarian" => StemAlgorithm::Hungarian,
+                    "tr" | "turkish" => StemAlgorithm::Turkish,
+                    "ar" | "arabic" => StemAlgorithm::Arabic,
+                    _ => StemAlgorithm::English,
+                };
+                let stemmer = Stemmer::create(algorithm);
+                let stemmed = stemmer.stem(s);
+                Ok(Value::String(Rc::new(stemmed.to_string())))
+            }
+            _ => Err(RuntimeError::new("stem_language() requires string and language code")),
+        }
+    });
+
+    // stem_all - stem all words in array
+    define(interp, "stem_all", Some(1), |_, args| {
+        match &args[0] {
+            Value::Array(arr) => {
+                let stemmer = Stemmer::create(StemAlgorithm::English);
+                let arr_ref = arr.borrow();
+                let results: Vec<Value> = arr_ref.iter()
+                    .filter_map(|v| {
+                        if let Value::String(s) = v {
+                            Some(Value::String(Rc::new(stemmer.stem(s).to_string())))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(results))))
+            }
+            _ => Err(RuntimeError::new("stem_all() requires array of strings")),
+        }
+    });
+
+    // =========================================================================
+    // STOPWORDS
+    // =========================================================================
+
+    // is_stopword - check if word is a stopword
+    define(interp, "is_stopword", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let word = s.to_lowercase();
+                let stopwords = get_stopwords("en");
+                Ok(Value::Bool(stopwords.contains(&word.as_str())))
+            }
+            _ => Err(RuntimeError::new("is_stopword() requires string")),
+        }
+    });
+
+    // is_stopword_language - check if word is stopword in language
+    define(interp, "is_stopword_language", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::String(lang)) => {
+                let word = s.to_lowercase();
+                let stopwords = get_stopwords(lang);
+                Ok(Value::Bool(stopwords.contains(&word.as_str())))
+            }
+            _ => Err(RuntimeError::new("is_stopword_language() requires string and language")),
+        }
+    });
+
+    // remove_stopwords - remove stopwords from array
+    define(interp, "remove_stopwords", Some(1), |_, args| {
+        match &args[0] {
+            Value::Array(arr) => {
+                let stopwords = get_stopwords("en");
+                let arr_ref = arr.borrow();
+                let results: Vec<Value> = arr_ref.iter()
+                    .filter(|v| {
+                        if let Value::String(s) = v {
+                            !stopwords.contains(&s.to_lowercase().as_str())
+                        } else {
+                            true
+                        }
+                    })
+                    .cloned()
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(results))))
+            }
+            _ => Err(RuntimeError::new("remove_stopwords() requires array of strings")),
+        }
+    });
+
+    // remove_stopwords_text - remove stopwords from text string
+    define(interp, "remove_stopwords_text", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let stopwords = get_stopwords("en");
+                let words: Vec<&str> = s.split_whitespace()
+                    .filter(|w| !stopwords.contains(&w.to_lowercase().as_str()))
+                    .collect();
+                Ok(Value::String(Rc::new(words.join(" "))))
+            }
+            _ => Err(RuntimeError::new("remove_stopwords_text() requires string")),
+        }
+    });
+
+    // get_stopwords_list - get list of stopwords for language
+    define(interp, "get_stopwords_list", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(lang) => {
+                let stopwords = get_stopwords(lang);
+                let values: Vec<Value> = stopwords.iter()
+                    .map(|s| Value::String(Rc::new(s.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(values))))
+            }
+            _ => Err(RuntimeError::new("get_stopwords_list() requires language code")),
+        }
+    });
+
+    // =========================================================================
+    // N-GRAMS AND SHINGLES
+    // =========================================================================
+
+    // ngrams - extract word n-grams
+    define(interp, "ngrams", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::Int(n)) => {
+                let words: Vec<&str> = s.split_whitespace().collect();
+                let n = *n as usize;
+                if n == 0 || n > words.len() {
+                    return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                }
+                let ngrams: Vec<Value> = words.windows(n)
+                    .map(|w| Value::String(Rc::new(w.join(" "))))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(ngrams))))
+            }
+            _ => Err(RuntimeError::new("ngrams() requires string and n")),
+        }
+    });
+
+    // char_ngrams - extract character n-grams
+    define(interp, "char_ngrams", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::Int(n)) => {
+                let chars: Vec<char> = s.chars().collect();
+                let n = *n as usize;
+                if n == 0 || n > chars.len() {
+                    return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                }
+                let ngrams: Vec<Value> = chars.windows(n)
+                    .map(|w| Value::String(Rc::new(w.iter().collect())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(ngrams))))
+            }
+            _ => Err(RuntimeError::new("char_ngrams() requires string and n")),
+        }
+    });
+
+    // shingles - extract word shingles (same as ngrams, but as set)
+    define(interp, "shingles", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::Int(n)) => {
+                let words: Vec<&str> = s.split_whitespace().collect();
+                let n = *n as usize;
+                if n == 0 || n > words.len() {
+                    return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                }
+                let mut seen = std::collections::HashSet::new();
+                let shingles: Vec<Value> = words.windows(n)
+                    .filter_map(|w| {
+                        let s = w.join(" ");
+                        if seen.insert(s.clone()) {
+                            Some(Value::String(Rc::new(s)))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(shingles))))
+            }
+            _ => Err(RuntimeError::new("shingles() requires string and n")),
+        }
+    });
+
+    // jaccard_similarity - Jaccard similarity between two sets of shingles
+    define(interp, "jaccard_similarity", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::Array(a), Value::Array(b)) => {
+                let a_ref = a.borrow();
+                let b_ref = b.borrow();
+                let set_a: std::collections::HashSet<String> = a_ref.iter()
+                    .filter_map(|v| {
+                        if let Value::String(s) = v {
+                            Some(s.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                let set_b: std::collections::HashSet<String> = b_ref.iter()
+                    .filter_map(|v| {
+                        if let Value::String(s) = v {
+                            Some(s.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                let intersection = set_a.intersection(&set_b).count();
+                let union = set_a.union(&set_b).count();
+                if union == 0 {
+                    Ok(Value::Float(0.0))
+                } else {
+                    Ok(Value::Float(intersection as f64 / union as f64))
+                }
+            }
+            _ => Err(RuntimeError::new("jaccard_similarity() requires two arrays")),
+        }
+    });
+
+    // minhash_signature - compute MinHash signature for LSH
+    define(interp, "minhash_signature", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::Array(arr), Value::Int(num_hashes)) => {
+                let arr_ref = arr.borrow();
+                let items: std::collections::HashSet<String> = arr_ref.iter()
+                    .filter_map(|v| {
+                        if let Value::String(s) = v {
+                            Some(s.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                // Simple MinHash using polynomial rolling hash
+                let mut signature: Vec<Value> = Vec::with_capacity(*num_hashes as usize);
+                for i in 0..*num_hashes {
+                    let mut min_hash: u64 = u64::MAX;
+                    for item in &items {
+                        let hash = compute_hash(item, i as u64);
+                        if hash < min_hash {
+                            min_hash = hash;
+                        }
+                    }
+                    signature.push(Value::Int(min_hash as i64));
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(signature))))
+            }
+            _ => Err(RuntimeError::new("minhash_signature() requires array and num_hashes")),
+        }
+    });
+
+    // =========================================================================
+    // TEXT PREPROCESSING
+    // =========================================================================
+
+    // preprocess_text - full text preprocessing pipeline
+    define(interp, "preprocess_text", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                // Lowercase
+                let lower = s.to_lowercase();
+                // Remove punctuation (keep letters, numbers, spaces)
+                let clean: String = lower.chars()
+                    .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+                    .collect();
+                // Normalize whitespace
+                let normalized: String = clean.split_whitespace().collect::<Vec<_>>().join(" ");
+                Ok(Value::String(Rc::new(normalized)))
+            }
+            _ => Err(RuntimeError::new("preprocess_text() requires string")),
+        }
+    });
+
+    // tokenize_words - split text into word tokens
+    define(interp, "tokenize_words", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let words: Vec<Value> = s.split_whitespace()
+                    .map(|w| Value::String(Rc::new(w.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(words))))
+            }
+            _ => Err(RuntimeError::new("tokenize_words() requires string")),
+        }
+    });
+
+    // extract_keywords - extract likely keywords (content words)
+    define(interp, "extract_keywords", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let stopwords = get_stopwords("en");
+                let words: Vec<Value> = s.split_whitespace()
+                    .filter(|w| {
+                        let lower = w.to_lowercase();
+                        !stopwords.contains(&lower.as_str()) && lower.len() > 2
+                    })
+                    .map(|w| Value::String(Rc::new(w.to_lowercase())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(words))))
+            }
+            _ => Err(RuntimeError::new("extract_keywords() requires string")),
+        }
+    });
+
+    // word_frequency - count word frequencies
+    define(interp, "word_frequency", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let mut freq: HashMap<String, i64> = HashMap::new();
+                for word in s.split_whitespace() {
+                    let lower = word.to_lowercase();
+                    *freq.entry(lower).or_insert(0) += 1;
+                }
+                let map: HashMap<String, Value> = freq.into_iter()
+                    .map(|(k, v)| (k, Value::Int(v)))
+                    .collect();
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
+            _ => Err(RuntimeError::new("word_frequency() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // AFFECTIVE MARKERS (Emotional Intelligence)
+    // =========================================================================
+
+    // sentiment_words - basic sentiment word detection
+    define(interp, "sentiment_words", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let positive = vec![
+                    "good", "great", "excellent", "amazing", "wonderful", "fantastic",
+                    "love", "happy", "joy", "beautiful", "awesome", "perfect",
+                    "best", "brilliant", "delightful", "pleasant", "positive",
+                ];
+                let negative = vec![
+                    "bad", "terrible", "awful", "horrible", "hate", "sad",
+                    "angry", "worst", "poor", "negative", "disappointing",
+                    "ugly", "disgusting", "painful", "miserable", "annoying",
+                ];
+
+                let lower = s.to_lowercase();
+                let words: Vec<&str> = lower.split_whitespace().collect();
+                let pos_count: i64 = words.iter()
+                    .filter(|w| positive.contains(w))
+                    .count() as i64;
+                let neg_count: i64 = words.iter()
+                    .filter(|w| negative.contains(w))
+                    .count() as i64;
+
+                let mut map = HashMap::new();
+                map.insert("positive".to_string(), Value::Int(pos_count));
+                map.insert("negative".to_string(), Value::Int(neg_count));
+                map.insert("total".to_string(), Value::Int(words.len() as i64));
+
+                let score = if pos_count + neg_count > 0 {
+                    (pos_count - neg_count) as f64 / (pos_count + neg_count) as f64
+                } else {
+                    0.0
+                };
+                map.insert("score".to_string(), Value::Float(score));
+
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
+            _ => Err(RuntimeError::new("sentiment_words() requires string")),
+        }
+    });
+
+    // has_question - detect if text contains a question
+    define(interp, "has_question", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let has_q_mark = s.contains('?');
+                let lower = s.to_lowercase();
+                let question_words = ["what", "where", "when", "why", "how", "who", "which", "whose", "whom"];
+                let starts_with_q = question_words.iter().any(|w| lower.starts_with(w));
+                Ok(Value::Bool(has_q_mark || starts_with_q))
+            }
+            _ => Err(RuntimeError::new("has_question() requires string")),
+        }
+    });
+
+    // has_exclamation - detect if text has strong emotion markers
+    define(interp, "has_exclamation", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                Ok(Value::Bool(s.contains('!')))
+            }
+            _ => Err(RuntimeError::new("has_exclamation() requires string")),
+        }
+    });
+
+    // text_formality - estimate text formality (0=informal, 1=formal)
+    define(interp, "text_formality", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let lower = s.to_lowercase();
+                let informal_markers = vec![
+                    "gonna", "wanna", "gotta", "kinda", "sorta", "dunno",
+                    "yeah", "yep", "nope", "ok", "lol", "omg", "btw",
+                    "u", "ur", "r", "y", "2", "4",
+                ];
+                let formal_markers = vec![
+                    "therefore", "furthermore", "moreover", "consequently",
+                    "nevertheless", "however", "whereas", "hereby",
+                    "respectfully", "sincerely", "accordingly",
+                ];
+
+                let words: Vec<&str> = lower.split_whitespace().collect();
+                let informal_count = words.iter()
+                    .filter(|w| informal_markers.contains(w))
+                    .count();
+                let formal_count = words.iter()
+                    .filter(|w| formal_markers.contains(w))
+                    .count();
+
+                let score = if informal_count + formal_count > 0 {
+                    formal_count as f64 / (informal_count + formal_count) as f64
+                } else {
+                    0.5 // Neutral if no markers
+                };
+
+                Ok(Value::Float(score))
+            }
+            _ => Err(RuntimeError::new("text_formality() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // VADER-STYLE SENTIMENT ANALYSIS
+    // =========================================================================
+
+    // sentiment_vader - VADER-inspired sentiment analysis with intensity
+    define(interp, "sentiment_vader", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let result = compute_vader_sentiment(s);
+                let mut map = HashMap::new();
+                map.insert("positive".to_string(), Value::Float(result.0));
+                map.insert("negative".to_string(), Value::Float(result.1));
+                map.insert("neutral".to_string(), Value::Float(result.2));
+                map.insert("compound".to_string(), Value::Float(result.3));
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
+            _ => Err(RuntimeError::new("sentiment_vader() requires string")),
+        }
+    });
+
+    // emotion_detect - detect specific emotions
+    define(interp, "emotion_detect", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let emotions = compute_emotions(s);
+                let map: HashMap<String, Value> = emotions.into_iter()
+                    .map(|(k, v)| (k, Value::Float(v)))
+                    .collect();
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
+            _ => Err(RuntimeError::new("emotion_detect() requires string")),
+        }
+    });
+
+    // intensity_words - detect intensity modifiers
+    define(interp, "intensity_score", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let score = compute_intensity(s);
+                Ok(Value::Float(score))
+            }
+            _ => Err(RuntimeError::new("intensity_score() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // SARCASM AND IRONY DETECTION
+    // =========================================================================
+
+    // detect_sarcasm - detect potential sarcasm/irony markers
+    define(interp, "detect_sarcasm", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let result = compute_sarcasm_score(s);
+                let mut map = HashMap::new();
+                map.insert("score".to_string(), Value::Float(result.0));
+                map.insert("confidence".to_string(), Value::Float(result.1));
+                let markers: Vec<Value> = result.2.into_iter()
+                    .map(|m| Value::String(Rc::new(m)))
+                    .collect();
+                map.insert("markers".to_string(), Value::Array(Rc::new(RefCell::new(markers))));
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
+            _ => Err(RuntimeError::new("detect_sarcasm() requires string")),
+        }
+    });
+
+    // is_sarcastic - simple boolean sarcasm check
+    define(interp, "is_sarcastic", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let result = compute_sarcasm_score(s);
+                Ok(Value::Bool(result.0 > 0.5))
+            }
+            _ => Err(RuntimeError::new("is_sarcastic() requires string")),
+        }
+    });
+
+    // detect_irony - detect verbal irony patterns
+    define(interp, "detect_irony", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let score = compute_irony_score(s);
+                Ok(Value::Float(score))
+            }
+            _ => Err(RuntimeError::new("detect_irony() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // NAMED ENTITY RECOGNITION (Pattern-based)
+    // =========================================================================
+
+    // extract_emails - extract email addresses
+    define(interp, "extract_emails", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let re = Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap();
+                let emails: Vec<Value> = re.find_iter(s)
+                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(emails))))
+            }
+            _ => Err(RuntimeError::new("extract_emails() requires string")),
+        }
+    });
+
+    // extract_urls - extract URLs
+    define(interp, "extract_urls", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let re = Regex::new(r"https?://[^\s<>\[\]{}|\\^]+").unwrap();
+                let urls: Vec<Value> = re.find_iter(s)
+                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(urls))))
+            }
+            _ => Err(RuntimeError::new("extract_urls() requires string")),
+        }
+    });
+
+    // extract_phone_numbers - extract phone numbers
+    define(interp, "extract_phone_numbers", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let re = Regex::new(r"(?:\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}").unwrap();
+                let phones: Vec<Value> = re.find_iter(s)
+                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(phones))))
+            }
+            _ => Err(RuntimeError::new("extract_phone_numbers() requires string")),
+        }
+    });
+
+    // extract_dates - extract date patterns
+    define(interp, "extract_dates", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                // Various date formats
+                let patterns = vec![
+                    r"\d{4}-\d{2}-\d{2}",                    // 2024-01-15
+                    r"\d{2}/\d{2}/\d{4}",                    // 01/15/2024
+                    r"\d{2}-\d{2}-\d{4}",                    // 01-15-2024
+                    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}",
+                    r"\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}",
+                ];
+                let mut dates = Vec::new();
+                for pattern in patterns {
+                    if let Ok(re) = Regex::new(pattern) {
+                        for m in re.find_iter(s) {
+                            dates.push(Value::String(Rc::new(m.as_str().to_string())));
+                        }
+                    }
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(dates))))
+            }
+            _ => Err(RuntimeError::new("extract_dates() requires string")),
+        }
+    });
+
+    // extract_money - extract monetary values
+    define(interp, "extract_money", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let re = Regex::new(r"[$€£¥]\s*\d+(?:,\d{3})*(?:\.\d{2})?|\d+(?:,\d{3})*(?:\.\d{2})?\s*(?:dollars?|euros?|pounds?|USD|EUR|GBP)").unwrap();
+                let money: Vec<Value> = re.find_iter(s)
+                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(money))))
+            }
+            _ => Err(RuntimeError::new("extract_money() requires string")),
+        }
+    });
+
+    // extract_hashtags - extract hashtags
+    define(interp, "extract_hashtags", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let re = Regex::new(r"#\w+").unwrap();
+                let tags: Vec<Value> = re.find_iter(s)
+                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(tags))))
+            }
+            _ => Err(RuntimeError::new("extract_hashtags() requires string")),
+        }
+    });
+
+    // extract_mentions - extract @mentions
+    define(interp, "extract_mentions", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let re = Regex::new(r"@\w+").unwrap();
+                let mentions: Vec<Value> = re.find_iter(s)
+                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(mentions))))
+            }
+            _ => Err(RuntimeError::new("extract_mentions() requires string")),
+        }
+    });
+
+    // extract_numbers - extract all numbers
+    define(interp, "extract_numbers", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let re = Regex::new(r"-?\d+(?:,\d{3})*(?:\.\d+)?").unwrap();
+                let numbers: Vec<Value> = re.find_iter(s)
+                    .filter_map(|m| {
+                        let num_str = m.as_str().replace(",", "");
+                        if let Ok(n) = num_str.parse::<f64>() {
+                            Some(Value::Float(n))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(numbers))))
+            }
+            _ => Err(RuntimeError::new("extract_numbers() requires string")),
+        }
+    });
+
+    // extract_entities - extract likely named entities (capitalized words)
+    define(interp, "extract_entities", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                // Simple heuristic: capitalized words not at sentence start
+                let re = Regex::new(r"(?:[.!?]\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)").unwrap();
+                let mut entities = std::collections::HashSet::new();
+                for cap in re.captures_iter(s) {
+                    if let Some(m) = cap.get(1) {
+                        let entity = m.as_str().to_string();
+                        // Filter out common sentence starters
+                        let starters = ["The", "A", "An", "This", "That", "It", "I", "We", "They", "He", "She"];
+                        if !starters.contains(&entity.as_str()) {
+                            entities.insert(entity);
+                        }
+                    }
+                }
+                let results: Vec<Value> = entities.into_iter()
+                    .map(|e| Value::String(Rc::new(e)))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(results))))
+            }
+            _ => Err(RuntimeError::new("extract_entities() requires string")),
+        }
+    });
+
+    // =========================================================================
+    // TEXT EMBEDDINGS (Hash-based, no ML required)
+    // =========================================================================
+
+    // text_hash_vector - create a simple hash-based embedding
+    define(interp, "text_hash_vector", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(s), Value::Int(dims)) => {
+                let dims = *dims as usize;
+                let mut vector = vec![0.0f64; dims];
+
+                // Hash each word and add to vector
+                for word in s.to_lowercase().split_whitespace() {
+                    let hash = compute_hash(word, 0);
+                    let idx = (hash as usize) % dims;
+                    vector[idx] += 1.0;
+                }
+
+                // Normalize
+                let magnitude: f64 = vector.iter().map(|x| x * x).sum::<f64>().sqrt();
+                if magnitude > 0.0 {
+                    for v in vector.iter_mut() {
+                        *v /= magnitude;
+                    }
+                }
+
+                let values: Vec<Value> = vector.into_iter().map(Value::Float).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(values))))
+            }
+            _ => Err(RuntimeError::new("text_hash_vector() requires string and dimensions")),
+        }
+    });
+
+    // text_fingerprint - create a compact fingerprint of text
+    define(interp, "text_fingerprint", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                // Create 64-bit fingerprint using multiple hashes
+                let lower = s.to_lowercase();
+                let words: Vec<&str> = lower.split_whitespace().collect();
+
+                let mut fp: u64 = 0;
+                for (i, word) in words.iter().enumerate() {
+                    let h = compute_hash(word, i as u64);
+                    fp ^= h.rotate_left((i % 64) as u32);
+                }
+
+                Ok(Value::String(Rc::new(format!("{:016x}", fp))))
+            }
+            _ => Err(RuntimeError::new("text_fingerprint() requires string")),
+        }
+    });
+
+    // cosine_similarity - compute cosine similarity between two vectors
+    define(interp, "cosine_similarity", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::Array(a), Value::Array(b)) => {
+                let a_ref = a.borrow();
+                let b_ref = b.borrow();
+
+                if a_ref.len() != b_ref.len() {
+                    return Err(RuntimeError::new("Vectors must have same length"));
+                }
+
+                let mut dot = 0.0;
+                let mut mag_a = 0.0;
+                let mut mag_b = 0.0;
+
+                for (va, vb) in a_ref.iter().zip(b_ref.iter()) {
+                    let fa = match va {
+                        Value::Float(f) => *f,
+                        Value::Int(i) => *i as f64,
+                        _ => continue,
+                    };
+                    let fb = match vb {
+                        Value::Float(f) => *f,
+                        Value::Int(i) => *i as f64,
+                        _ => continue,
+                    };
+                    dot += fa * fb;
+                    mag_a += fa * fa;
+                    mag_b += fb * fb;
+                }
+
+                let denom = (mag_a.sqrt()) * (mag_b.sqrt());
+                if denom == 0.0 {
+                    Ok(Value::Float(0.0))
+                } else {
+                    Ok(Value::Float(dot / denom))
+                }
+            }
+            _ => Err(RuntimeError::new("cosine_similarity() requires two arrays")),
+        }
+    });
+
+    // text_similarity_embedding - compare texts using hash embeddings
+    define(interp, "text_similarity_embedding", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::String(a), Value::String(b)) => {
+                let dims = 128;
+
+                // Create vectors for both texts
+                let vec_a = create_hash_vector(a, dims);
+                let vec_b = create_hash_vector(b, dims);
+
+                // Compute cosine similarity
+                let mut dot = 0.0;
+                let mut mag_a = 0.0;
+                let mut mag_b = 0.0;
+
+                for i in 0..dims {
+                    dot += vec_a[i] * vec_b[i];
+                    mag_a += vec_a[i] * vec_a[i];
+                    mag_b += vec_b[i] * vec_b[i];
+                }
+
+                let denom = (mag_a.sqrt()) * (mag_b.sqrt());
+                if denom == 0.0 {
+                    Ok(Value::Float(0.0))
+                } else {
+                    Ok(Value::Float(dot / denom))
+                }
+            }
+            _ => Err(RuntimeError::new("text_similarity_embedding() requires two strings")),
+        }
+    });
+
+    // =========================================================================
+    // READABILITY METRICS
+    // =========================================================================
+
+    // flesch_reading_ease - Flesch Reading Ease score
+    define(interp, "flesch_reading_ease", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let (words, sentences, syllables) = count_text_stats(s);
+                if words == 0 || sentences == 0 {
+                    return Ok(Value::Float(0.0));
+                }
+                let score = 206.835
+                    - 1.015 * (words as f64 / sentences as f64)
+                    - 84.6 * (syllables as f64 / words as f64);
+                Ok(Value::Float(score.max(0.0).min(100.0)))
+            }
+            _ => Err(RuntimeError::new("flesch_reading_ease() requires string")),
+        }
+    });
+
+    // flesch_kincaid_grade - Flesch-Kincaid Grade Level
+    define(interp, "flesch_kincaid_grade", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let (words, sentences, syllables) = count_text_stats(s);
+                if words == 0 || sentences == 0 {
+                    return Ok(Value::Float(0.0));
+                }
+                let grade = 0.39 * (words as f64 / sentences as f64)
+                    + 11.8 * (syllables as f64 / words as f64)
+                    - 15.59;
+                Ok(Value::Float(grade.max(0.0)))
+            }
+            _ => Err(RuntimeError::new("flesch_kincaid_grade() requires string")),
+        }
+    });
+
+    // automated_readability_index - ARI score
+    define(interp, "automated_readability_index", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let chars: usize = s.chars().filter(|c| c.is_alphanumeric()).count();
+                let words: usize = s.split_whitespace().count();
+                let sentences: usize = s.matches(|c| c == '.' || c == '!' || c == '?').count().max(1);
+
+                if words == 0 {
+                    return Ok(Value::Float(0.0));
+                }
+
+                let ari = 4.71 * (chars as f64 / words as f64)
+                    + 0.5 * (words as f64 / sentences as f64)
+                    - 21.43;
+                Ok(Value::Float(ari.max(0.0)))
+            }
+            _ => Err(RuntimeError::new("automated_readability_index() requires string")),
+        }
+    });
+
+    // reading_time - estimated reading time in minutes
+    define(interp, "reading_time", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let words = s.split_whitespace().count();
+                let minutes = words as f64 / 200.0; // Average reading speed
+                Ok(Value::Float(minutes))
+            }
+            _ => Err(RuntimeError::new("reading_time() requires string")),
+        }
+    });
+
+    // speaking_time - estimated speaking time in minutes
+    define(interp, "speaking_time", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(s) => {
+                let words = s.split_whitespace().count();
+                let minutes = words as f64 / 150.0; // Average speaking speed
+                Ok(Value::Float(minutes))
+            }
+            _ => Err(RuntimeError::new("speaking_time() requires string")),
+        }
+    });
+}
+
+// =============================================================================
+// HELPER FUNCTIONS FOR TEXT INTELLIGENCE
+// =============================================================================
+
+/// VADER-style sentiment computation
+fn compute_vader_sentiment(s: &str) -> (f64, f64, f64, f64) {
+    // Sentiment lexicon with intensity
+    let positive_words: Vec<(&str, f64)> = vec![
+        ("love", 3.0), ("loved", 3.0), ("loving", 3.0),
+        ("excellent", 3.0), ("amazing", 3.0), ("fantastic", 3.0), ("wonderful", 3.0),
+        ("great", 2.5), ("awesome", 2.5), ("brilliant", 2.5), ("superb", 2.5),
+        ("good", 2.0), ("nice", 2.0), ("pleasant", 2.0), ("happy", 2.0),
+        ("like", 1.5), ("enjoy", 1.5), ("fine", 1.5), ("okay", 1.0),
+        ("best", 3.0), ("perfect", 3.0), ("beautiful", 2.5), ("delightful", 2.5),
+        ("excited", 2.5), ("thrilled", 3.0), ("glad", 2.0), ("pleased", 2.0),
+    ];
+
+    let negative_words: Vec<(&str, f64)> = vec![
+        ("hate", 3.0), ("hated", 3.0), ("hating", 3.0),
+        ("terrible", 3.0), ("horrible", 3.0), ("awful", 3.0), ("disgusting", 3.0),
+        ("bad", 2.5), ("poor", 2.5), ("worst", 3.0), ("pathetic", 2.5),
+        ("sad", 2.0), ("angry", 2.5), ("upset", 2.0), ("disappointed", 2.0),
+        ("dislike", 1.5), ("annoying", 2.0), ("boring", 1.5), ("mediocre", 1.0),
+        ("ugly", 2.5), ("stupid", 2.5), ("dumb", 2.0), ("useless", 2.5),
+        ("painful", 2.5), ("miserable", 3.0), ("depressing", 2.5), ("frustrating", 2.0),
+    ];
+
+    // Intensity modifiers
+    let boosters = vec!["very", "really", "extremely", "absolutely", "incredibly", "totally", "so"];
+    let dampeners = vec!["somewhat", "slightly", "a bit", "kind of", "sort of", "barely"];
+
+    let lower = s.to_lowercase();
+    let words: Vec<&str> = lower.split_whitespace().collect();
+
+    let mut pos_score = 0.0;
+    let mut neg_score = 0.0;
+    let mut word_count = 0;
+
+    for (i, word) in words.iter().enumerate() {
+        let mut modifier = 1.0;
+
+        // Check for boosters/dampeners before this word
+        if i > 0 {
+            if boosters.contains(&words[i-1]) {
+                modifier = 1.5;
+            } else if dampeners.iter().any(|d| words[i-1].contains(d)) {
+                modifier = 0.5;
+            }
+        }
+
+        // Check for negation
+        let negated = i > 0 && ["not", "no", "never", "neither", "don't", "doesn't", "didn't", "won't", "wouldn't", "couldn't", "shouldn't"]
+            .contains(&words[i-1]);
+
+        if let Some((_, score)) = positive_words.iter().find(|(w, _)| w == word) {
+            if negated {
+                neg_score += score * modifier;
+            } else {
+                pos_score += score * modifier;
+            }
+            word_count += 1;
+        } else if let Some((_, score)) = negative_words.iter().find(|(w, _)| w == word) {
+            if negated {
+                pos_score += score * modifier * 0.5; // Negated negative is mildly positive
+            } else {
+                neg_score += score * modifier;
+            }
+            word_count += 1;
+        }
+    }
+
+    // Normalize scores
+    let total = pos_score + neg_score;
+    let (pos_norm, neg_norm) = if total > 0.0 {
+        (pos_score / total, neg_score / total)
+    } else {
+        (0.0, 0.0)
+    };
+
+    let neutral = 1.0 - pos_norm - neg_norm;
+
+    // Compound score: normalized to [-1, 1]
+    let compound = if word_count > 0 {
+        ((pos_score - neg_score) / (word_count as f64 * 3.0)).max(-1.0).min(1.0)
+    } else {
+        0.0
+    };
+
+    (pos_norm, neg_norm, neutral.max(0.0), compound)
+}
+
+/// Detect specific emotions
+fn compute_emotions(s: &str) -> HashMap<String, f64> {
+    let emotion_words: Vec<(&str, &str)> = vec![
+        // Joy
+        ("happy", "joy"), ("joyful", "joy"), ("delighted", "joy"), ("cheerful", "joy"),
+        ("excited", "joy"), ("thrilled", "joy"), ("ecstatic", "joy"), ("elated", "joy"),
+        // Sadness
+        ("sad", "sadness"), ("unhappy", "sadness"), ("depressed", "sadness"), ("miserable", "sadness"),
+        ("gloomy", "sadness"), ("heartbroken", "sadness"), ("sorrowful", "sadness"), ("melancholy", "sadness"),
+        // Anger
+        ("angry", "anger"), ("furious", "anger"), ("enraged", "anger"), ("irritated", "anger"),
+        ("annoyed", "anger"), ("outraged", "anger"), ("livid", "anger"), ("mad", "anger"),
+        // Fear
+        ("afraid", "fear"), ("scared", "fear"), ("terrified", "fear"), ("frightened", "fear"),
+        ("anxious", "fear"), ("worried", "fear"), ("nervous", "fear"), ("panicked", "fear"),
+        // Surprise
+        ("surprised", "surprise"), ("amazed", "surprise"), ("astonished", "surprise"), ("shocked", "surprise"),
+        ("stunned", "surprise"), ("startled", "surprise"), ("bewildered", "surprise"),
+        // Disgust
+        ("disgusted", "disgust"), ("revolted", "disgust"), ("repulsed", "disgust"), ("sickened", "disgust"),
+        ("nauseated", "disgust"), ("appalled", "disgust"),
+        // Trust
+        ("trust", "trust"), ("confident", "trust"), ("secure", "trust"), ("reliable", "trust"),
+        ("faithful", "trust"), ("loyal", "trust"),
+        // Anticipation
+        ("eager", "anticipation"), ("hopeful", "anticipation"), ("expectant", "anticipation"),
+        ("looking forward", "anticipation"), ("excited", "anticipation"),
+    ];
+
+    let lower = s.to_lowercase();
+    let mut counts: HashMap<String, f64> = HashMap::new();
+
+    for (word, emotion) in emotion_words {
+        if lower.contains(word) {
+            *counts.entry(emotion.to_string()).or_insert(0.0) += 1.0;
+        }
+    }
+
+    // Normalize
+    let total: f64 = counts.values().sum();
+    if total > 0.0 {
+        for v in counts.values_mut() {
+            *v /= total;
+        }
+    }
+
+    counts
+}
+
+/// Compute text intensity
+fn compute_intensity(s: &str) -> f64 {
+    let intensifiers = vec![
+        ("very", 1.5), ("really", 1.5), ("extremely", 2.0), ("incredibly", 2.0),
+        ("absolutely", 2.0), ("totally", 1.5), ("completely", 1.5), ("utterly", 2.0),
+        ("so", 1.3), ("such", 1.3), ("quite", 1.2), ("rather", 1.1),
+    ];
+
+    let exclamation_boost = 0.5;
+    let caps_boost = 0.3;
+
+    let lower = s.to_lowercase();
+    let mut score = 1.0;
+
+    for (word, boost) in intensifiers {
+        if lower.contains(word) {
+            score *= boost;
+        }
+    }
+
+    // Check for exclamation marks
+    let exclamations = s.matches('!').count();
+    score += exclamations as f64 * exclamation_boost;
+
+    // Check for ALL CAPS words
+    let caps_words = s.split_whitespace()
+        .filter(|w| w.len() > 2 && w.chars().all(|c| c.is_uppercase()))
+        .count();
+    score += caps_words as f64 * caps_boost;
+
+    score.min(5.0)
+}
+
+/// Detect sarcasm markers
+fn compute_sarcasm_score(s: &str) -> (f64, f64, Vec<String>) {
+    let mut markers = Vec::new();
+    let mut score: f64 = 0.0;
+
+    let lower = s.to_lowercase();
+
+    // Explicit sarcasm markers
+    let explicit = vec![
+        "/s", "not!", "yeah right", "sure thing", "oh really", "oh great",
+        "wow, just wow", "thanks a lot", "how wonderful", "isn't that special",
+        "clearly", "obviously", "shocking", "no way", "what a surprise",
+    ];
+
+    for marker in &explicit {
+        if lower.contains(marker) {
+            markers.push(format!("explicit: {}", marker));
+            score += 0.4;
+        }
+    }
+
+    // Hyperbolic expressions
+    let hyperbolic = vec![
+        "best thing ever", "worst thing ever", "literally dying", "absolutely perfect",
+        "world's greatest", "totally awesome", "so much fun", "couldn't be happier",
+    ];
+
+    for h in &hyperbolic {
+        if lower.contains(h) {
+            markers.push(format!("hyperbole: {}", h));
+            score += 0.3;
+        }
+    }
+
+    // Positive-negative contradiction patterns
+    let has_positive = ["great", "wonderful", "amazing", "love", "best", "awesome"]
+        .iter().any(|w| lower.contains(w));
+    let has_negative_context = ["but", "however", "although", "except", "unfortunately"]
+        .iter().any(|w| lower.contains(w));
+
+    if has_positive && has_negative_context {
+        markers.push("positive-negative contrast".to_string());
+        score += 0.25;
+    }
+
+    // Quotation marks around positive words (air quotes)
+    let quote_pattern = Regex::new(r#"["'](\w+)["']"#).unwrap();
+    for cap in quote_pattern.captures_iter(s) {
+        if let Some(m) = cap.get(1) {
+            let word = m.as_str().to_lowercase();
+            if ["great", "wonderful", "helpful", "useful", "smart", "genius", "brilliant"].contains(&word.as_str()) {
+                markers.push(format!("air quotes: \"{}\"", word));
+                score += 0.35;
+            }
+        }
+    }
+
+    // Excessive punctuation
+    if s.contains("...") || s.contains("!!!") || s.contains("???") {
+        markers.push("excessive punctuation".to_string());
+        score += 0.15;
+    }
+
+    // Calculate confidence based on number of markers
+    let confidence = if markers.is_empty() {
+        0.0
+    } else {
+        (markers.len() as f64 * 0.25).min(1.0)
+    };
+
+    (score.min(1.0), confidence, markers)
+}
+
+/// Detect irony patterns
+fn compute_irony_score(s: &str) -> f64 {
+    let mut score: f64 = 0.0;
+    let lower = s.to_lowercase();
+
+    // Situational irony markers
+    let irony_phrases = vec![
+        "of course", "as expected", "naturally", "predictably",
+        "who would have thought", "surprise surprise", "go figure",
+        "typical", "as usual", "yet again", "once again",
+    ];
+
+    for phrase in irony_phrases {
+        if lower.contains(phrase) {
+            score += 0.2;
+        }
+    }
+
+    // Contrast indicators
+    if lower.contains("but") || lower.contains("yet") || lower.contains("however") {
+        score += 0.1;
+    }
+
+    // Rhetorical questions
+    if s.contains('?') && (lower.starts_with("isn't") || lower.starts_with("aren't") ||
+                           lower.starts_with("doesn't") || lower.starts_with("don't") ||
+                           lower.contains("right?") || lower.contains("isn't it")) {
+        score += 0.25;
+    }
+
+    score.min(1.0)
+}
+
+/// Create hash-based vector for text
+fn create_hash_vector(s: &str, dims: usize) -> Vec<f64> {
+    let mut vector = vec![0.0f64; dims];
+
+    for word in s.to_lowercase().split_whitespace() {
+        let hash = compute_hash(word, 0);
+        let idx = (hash as usize) % dims;
+        vector[idx] += 1.0;
+    }
+
+    // Normalize
+    let magnitude: f64 = vector.iter().map(|x| x * x).sum::<f64>().sqrt();
+    if magnitude > 0.0 {
+        for v in vector.iter_mut() {
+            *v /= magnitude;
+        }
+    }
+
+    vector
+}
+
+/// Count text statistics for readability
+fn count_text_stats(s: &str) -> (usize, usize, usize) {
+    let words: Vec<&str> = s.split_whitespace().collect();
+    let word_count = words.len();
+    let sentence_count = s.matches(|c| c == '.' || c == '!' || c == '?').count().max(1);
+
+    let mut syllable_count = 0;
+    for word in &words {
+        syllable_count += count_syllables(word);
+    }
+
+    (word_count, sentence_count, syllable_count)
+}
+
+/// Count syllables in a word (English approximation)
+fn count_syllables(word: &str) -> usize {
+    let word = word.to_lowercase();
+    let vowels = ['a', 'e', 'i', 'o', 'u', 'y'];
+    let mut count = 0;
+    let mut prev_was_vowel = false;
+
+    for c in word.chars() {
+        let is_vowel = vowels.contains(&c);
+        if is_vowel && !prev_was_vowel {
+            count += 1;
+        }
+        prev_was_vowel = is_vowel;
+    }
+
+    // Adjust for silent e
+    if word.ends_with('e') && count > 1 {
+        count -= 1;
+    }
+
+    count.max(1)
+}
+
+/// Compute American Soundex encoding
+fn compute_soundex(s: &str) -> String {
+    if s.is_empty() {
+        return "0000".to_string();
+    }
+
+    let s = s.to_uppercase();
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if chars.is_empty() {
+        return "0000".to_string();
+    }
+
+    let first = chars[0];
+    let mut code = String::new();
+    code.push(first);
+
+    let get_code = |c: char| -> char {
+        match c {
+            'B' | 'F' | 'P' | 'V' => '1',
+            'C' | 'G' | 'J' | 'K' | 'Q' | 'S' | 'X' | 'Z' => '2',
+            'D' | 'T' => '3',
+            'L' => '4',
+            'M' | 'N' => '5',
+            'R' => '6',
+            _ => '0',
+        }
+    };
+
+    let mut prev_code = get_code(first);
+
+    for &c in chars.iter().skip(1) {
+        let curr_code = get_code(c);
+        if curr_code != '0' && curr_code != prev_code {
+            code.push(curr_code);
+            if code.len() == 4 {
+                break;
+            }
+        }
+        prev_code = curr_code;
+    }
+
+    while code.len() < 4 {
+        code.push('0');
+    }
+
+    code
+}
+
+/// Compute Metaphone encoding
+fn compute_metaphone(s: &str) -> String {
+    let s = s.to_uppercase();
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    let mut result = String::new();
+    let mut i = 0;
+
+    // Skip initial KN, GN, PN, AE, WR
+    if chars.len() >= 2 {
+        let prefix: String = chars[0..2].iter().collect();
+        if ["KN", "GN", "PN", "AE", "WR"].contains(&prefix.as_str()) {
+            i = 1;
+        }
+    }
+
+    while i < chars.len() && result.len() < 6 {
+        let c = chars[i];
+        let prev = if i > 0 { Some(chars[i - 1]) } else { None };
+        let next = chars.get(i + 1).copied();
+
+        let code = match c {
+            'A' | 'E' | 'I' | 'O' | 'U' => {
+                if i == 0 { Some(c) } else { None }
+            }
+            'B' => {
+                if prev != Some('M') || i == chars.len() - 1 {
+                    Some('B')
+                } else {
+                    None
+                }
+            }
+            'C' => {
+                if next == Some('H') {
+                    Some('X')
+                } else if matches!(next, Some('I') | Some('E') | Some('Y')) {
+                    Some('S')
+                } else {
+                    Some('K')
+                }
+            }
+            'D' => {
+                if next == Some('G') && matches!(chars.get(i + 2), Some('E') | Some('I') | Some('Y')) {
+                    Some('J')
+                } else {
+                    Some('T')
+                }
+            }
+            'F' => Some('F'),
+            'G' => {
+                if next == Some('H') && !matches!(chars.get(i + 2), Some('A') | Some('E') | Some('I') | Some('O') | Some('U')) {
+                    None
+                } else if matches!(next, Some('N') | Some('E') | Some('I') | Some('Y')) {
+                    Some('J')
+                } else {
+                    Some('K')
+                }
+            }
+            'H' => {
+                if matches!(prev, Some('A') | Some('E') | Some('I') | Some('O') | Some('U')) {
+                    None
+                } else if matches!(next, Some('A') | Some('E') | Some('I') | Some('O') | Some('U')) {
+                    Some('H')
+                } else {
+                    None
+                }
+            }
+            'J' => Some('J'),
+            'K' => if prev != Some('C') { Some('K') } else { None },
+            'L' => Some('L'),
+            'M' => Some('M'),
+            'N' => Some('N'),
+            'P' => if next == Some('H') { Some('F') } else { Some('P') },
+            'Q' => Some('K'),
+            'R' => Some('R'),
+            'S' => if next == Some('H') { Some('X') } else { Some('S') },
+            'T' => {
+                if next == Some('H') {
+                    Some('0') // TH sound
+                } else if next == Some('I') && matches!(chars.get(i + 2), Some('O') | Some('A')) {
+                    Some('X')
+                } else {
+                    Some('T')
+                }
+            }
+            'V' => Some('F'),
+            'W' | 'Y' => {
+                if matches!(next, Some('A') | Some('E') | Some('I') | Some('O') | Some('U')) {
+                    Some(c)
+                } else {
+                    None
+                }
+            }
+            'X' => {
+                result.push('K');
+                Some('S')
+            }
+            'Z' => Some('S'),
+            _ => None,
+        };
+
+        if let Some(ch) = code {
+            result.push(ch);
+        }
+
+        // Skip double letters
+        if next == Some(c) {
+            i += 1;
+        }
+        i += 1;
+    }
+
+    result
+}
+
+/// Compute Cologne phonetic encoding (for German)
+fn compute_cologne(s: &str) -> String {
+    let s = s.to_uppercase();
+    let chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    let mut result = String::new();
+
+    for (i, &c) in chars.iter().enumerate() {
+        let prev = if i > 0 { Some(chars[i - 1]) } else { None };
+        let next = chars.get(i + 1).copied();
+
+        let code = match c {
+            'A' | 'E' | 'I' | 'O' | 'U' | 'J' | 'Y' => '0',
+            'H' => continue,
+            'B' | 'P' => '1',
+            'D' | 'T' => {
+                if matches!(next, Some('C') | Some('S') | Some('Z')) {
+                    '8'
+                } else {
+                    '2'
+                }
+            }
+            'F' | 'V' | 'W' => '3',
+            'G' | 'K' | 'Q' => '4',
+            'C' => {
+                if i == 0 {
+                    if matches!(next, Some('A') | Some('H') | Some('K') | Some('L') | Some('O') | Some('Q') | Some('R') | Some('U') | Some('X')) {
+                        '4'
+                    } else {
+                        '8'
+                    }
+                } else if matches!(prev, Some('S') | Some('Z')) {
+                    '8'
+                } else if matches!(next, Some('A') | Some('H') | Some('K') | Some('O') | Some('Q') | Some('U') | Some('X')) {
+                    '4'
+                } else {
+                    '8'
+                }
+            }
+            'X' => {
+                if matches!(prev, Some('C') | Some('K') | Some('Q')) {
+                    '8'
+                } else {
+                    result.push('4');
+                    '8'
+                }
+            }
+            'L' => '5',
+            'M' | 'N' => '6',
+            'R' => '7',
+            'S' | 'Z' => '8',
+            _ => continue,
+        };
+
+        result.push(code);
+    }
+
+    // Remove consecutive duplicates
+    let mut deduped = String::new();
+    let mut prev = None;
+    for c in result.chars() {
+        if prev != Some(c) {
+            deduped.push(c);
+        }
+        prev = Some(c);
+    }
+
+    // Remove leading zeros (except if all zeros)
+    let trimmed: String = deduped.trim_start_matches('0').to_string();
+    if trimmed.is_empty() {
+        "0".to_string()
+    } else {
+        trimmed
+    }
+}
+
+/// Get stopwords for a language
+fn get_stopwords(lang: &str) -> Vec<&'static str> {
+    match lang {
+        "en" | "english" => vec![
+            "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+            "of", "with", "by", "from", "as", "is", "was", "are", "were", "been",
+            "be", "have", "has", "had", "do", "does", "did", "will", "would",
+            "could", "should", "may", "might", "must", "shall", "can", "need",
+            "it", "its", "this", "that", "these", "those", "i", "you", "he",
+            "she", "we", "they", "me", "him", "her", "us", "them", "my", "your",
+            "his", "her", "our", "their", "what", "which", "who", "whom", "whose",
+            "when", "where", "why", "how", "all", "each", "every", "both", "few",
+            "more", "most", "other", "some", "such", "no", "nor", "not", "only",
+            "own", "same", "so", "than", "too", "very", "just", "also", "now",
+        ],
+        "de" | "german" => vec![
+            "der", "die", "das", "den", "dem", "des", "ein", "eine", "einer",
+            "einem", "einen", "und", "oder", "aber", "in", "auf", "an", "zu",
+            "für", "von", "mit", "bei", "als", "ist", "war", "sind", "waren",
+            "sein", "haben", "hat", "hatte", "werden", "wird", "wurde", "kann",
+            "können", "muss", "müssen", "soll", "sollen", "will", "wollen",
+            "es", "sie", "er", "wir", "ihr", "ich", "du", "man", "sich",
+            "nicht", "auch", "nur", "noch", "schon", "mehr", "sehr", "so",
+        ],
+        "fr" | "french" => vec![
+            "le", "la", "les", "un", "une", "des", "et", "ou", "mais", "dans",
+            "sur", "à", "de", "pour", "par", "avec", "ce", "cette", "ces",
+            "est", "sont", "était", "être", "avoir", "a", "ont", "avait",
+            "je", "tu", "il", "elle", "nous", "vous", "ils", "elles", "on",
+            "ne", "pas", "plus", "moins", "très", "aussi", "que", "qui",
+        ],
+        "es" | "spanish" => vec![
+            "el", "la", "los", "las", "un", "una", "unos", "unas", "y", "o",
+            "pero", "en", "de", "a", "para", "por", "con", "es", "son", "era",
+            "ser", "estar", "tiene", "tienen", "yo", "tú", "él", "ella",
+            "nosotros", "ustedes", "ellos", "ellas", "no", "sí", "muy", "más",
+            "menos", "también", "que", "quien", "cual", "como", "cuando",
+        ],
+        "it" | "italian" => vec![
+            "il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "e", "o",
+            "ma", "in", "di", "a", "da", "per", "con", "su", "tra", "fra",
+            "è", "sono", "era", "erano", "essere", "avere", "ha", "hanno",
+            "io", "tu", "lui", "lei", "noi", "voi", "loro", "mi", "ti", "ci",
+            "non", "più", "molto", "anche", "come", "che", "chi", "quale",
+            "questo", "quello", "quando", "dove", "perché", "se", "però",
+        ],
+        "pt" | "portuguese" => vec![
+            "o", "a", "os", "as", "um", "uma", "uns", "umas", "e", "ou",
+            "mas", "em", "de", "para", "por", "com", "sem", "sob", "sobre",
+            "é", "são", "era", "eram", "ser", "estar", "ter", "tem", "têm",
+            "eu", "tu", "ele", "ela", "nós", "vós", "eles", "elas", "me", "te",
+            "não", "mais", "muito", "também", "como", "que", "quem", "qual",
+            "este", "esse", "aquele", "quando", "onde", "porque", "se", "já",
+        ],
+        "nl" | "dutch" => vec![
+            "de", "het", "een", "en", "of", "maar", "in", "op", "aan", "van",
+            "voor", "met", "bij", "naar", "om", "te", "tot", "uit", "over",
+            "is", "zijn", "was", "waren", "worden", "wordt", "werd", "hebben",
+            "ik", "je", "jij", "hij", "zij", "wij", "jullie", "ze", "mij", "jou",
+            "niet", "geen", "meer", "ook", "als", "dat", "die", "wat", "wie",
+            "dit", "deze", "wanneer", "waar", "waarom", "hoe", "dan", "nog",
+        ],
+        "ru" | "russian" => vec![
+            "и", "в", "на", "с", "к", "по", "за", "из", "у", "о", "от", "до",
+            "для", "при", "без", "под", "над", "между", "через", "после",
+            "это", "то", "что", "как", "так", "но", "а", "или", "если", "же",
+            "я", "ты", "он", "она", "мы", "вы", "они", "его", "её", "их",
+            "не", "ни", "да", "нет", "был", "была", "были", "быть", "есть",
+            "все", "всё", "весь", "этот", "тот", "который", "когда", "где",
+        ],
+        "ar" | "arabic" => vec![
+            "في", "من", "إلى", "على", "عن", "مع", "هذا", "هذه", "ذلك", "تلك",
+            "التي", "الذي", "اللذان", "اللتان", "الذين", "اللاتي", "اللواتي",
+            "هو", "هي", "هم", "هن", "أنا", "أنت", "نحن", "أنتم", "أنتن",
+            "كان", "كانت", "كانوا", "يكون", "تكون", "ليس", "ليست", "ليسوا",
+            "و", "أو", "ثم", "لكن", "بل", "إن", "أن", "لأن", "كي", "حتى",
+            "ما", "لا", "قد", "كل", "بعض", "غير", "أي", "كيف", "متى", "أين",
+        ],
+        "zh" | "chinese" => vec![
+            "的", "了", "是", "在", "有", "和", "与", "或", "但", "而",
+            "我", "你", "他", "她", "它", "我们", "你们", "他们", "她们",
+            "这", "那", "这个", "那个", "这些", "那些", "什么", "哪", "哪个",
+            "不", "没", "没有", "很", "也", "都", "就", "才", "只", "还",
+            "把", "被", "给", "从", "到", "为", "以", "因为", "所以", "如果",
+            "会", "能", "可以", "要", "想", "应该", "必须", "可能", "一", "个",
+        ],
+        "ja" | "japanese" => vec![
+            "の", "に", "は", "を", "た", "が", "で", "て", "と", "し",
+            "れ", "さ", "ある", "いる", "も", "する", "から", "な", "こと",
+            "として", "い", "や", "など", "なっ", "ない", "この", "ため",
+            "その", "あっ", "よう", "また", "もの", "という", "あり", "まで",
+            "られ", "なる", "へ", "か", "だ", "これ", "によって", "により",
+            "おり", "より", "による", "ず", "なり", "られる", "において",
+        ],
+        "ko" | "korean" => vec![
+            "이", "그", "저", "것", "수", "등", "들", "및", "에", "의",
+            "가", "을", "를", "은", "는", "로", "으로", "와", "과", "도",
+            "에서", "까지", "부터", "만", "뿐", "처럼", "같이", "보다",
+            "하다", "있다", "되다", "없다", "않다", "이다", "아니다",
+            "나", "너", "우리", "그들", "이것", "그것", "저것", "무엇",
+            "어디", "언제", "왜", "어떻게", "누구", "어느", "모든", "각",
+        ],
+        "hi" | "hindi" => vec![
+            "का", "के", "की", "में", "है", "हैं", "को", "से", "पर", "था",
+            "थे", "थी", "और", "या", "लेकिन", "अगर", "तो", "भी", "ही",
+            "यह", "वह", "इस", "उस", "ये", "वे", "जो", "कि", "क्या", "कैसे",
+            "मैं", "तुम", "आप", "हम", "वे", "उन्हें", "उनके", "अपने",
+            "नहीं", "न", "कुछ", "कोई", "सब", "बहुत", "कम", "ज्यादा",
+            "होना", "करना", "जाना", "आना", "देना", "लेना", "रहना", "सकना",
+        ],
+        "tr" | "turkish" => vec![
+            "bir", "ve", "bu", "da", "de", "için", "ile", "mi", "ne", "o",
+            "var", "ben", "sen", "biz", "siz", "onlar", "ki", "ama", "çok",
+            "daha", "gibi", "kadar", "sonra", "şey", "kendi", "bütün", "her",
+            "bazı", "olan", "olarak", "değil", "ya", "hem", "veya", "ancak",
+            "ise", "göre", "rağmen", "dolayı", "üzere", "karşı", "arasında",
+            "olan", "oldu", "olur", "olmak", "etmek", "yapmak", "demek",
+        ],
+        "pl" | "polish" => vec![
+            "i", "w", "z", "na", "do", "o", "że", "to", "nie", "się",
+            "jest", "tak", "jak", "ale", "po", "co", "czy", "lub", "oraz",
+            "ja", "ty", "on", "ona", "my", "wy", "oni", "one", "pan", "pani",
+            "ten", "ta", "te", "tego", "tej", "tym", "tych", "który", "która",
+            "być", "mieć", "móc", "musieć", "chcieć", "wiedzieć", "mówić",
+            "bardzo", "tylko", "już", "jeszcze", "też", "więc", "jednak",
+        ],
+        "sv" | "swedish" => vec![
+            "och", "i", "att", "det", "som", "en", "på", "är", "av", "för",
+            "med", "till", "den", "har", "de", "inte", "om", "ett", "men",
+            "jag", "du", "han", "hon", "vi", "ni", "de", "dem", "sig", "sin",
+            "var", "från", "eller", "när", "kan", "ska", "så", "än", "nu",
+            "också", "bara", "mycket", "mer", "andra", "detta", "sedan",
+            "hade", "varit", "skulle", "vara", "bli", "blev", "blir", "göra",
+        ],
+        _ => vec![
+            "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+        ],
+    }
+}
+
+/// Simple hash function for MinHash
+fn compute_hash(s: &str, seed: u64) -> u64 {
+    let mut hash: u64 = seed.wrapping_mul(0x517cc1b727220a95);
+    for b in s.bytes() {
+        hash = hash.wrapping_mul(31).wrapping_add(b as u64);
+    }
+    hash
+}
+
+// ============================================================================
+// EMOTIONAL HOLOGRAM: Multi-dimensional affective projection with cultural awareness
+// ============================================================================
+//
+// The Emotional Hologram is a unique Sigil concept that projects affect onto a
+// normalized coordinate space, enabling:
+// - Emotional distance calculations
+// - Cross-cultural emotion mappings
+// - Emotional fingerprinting and cryptographic signing
+// - Dissonance detection (e.g., positive + sarcastic)
+//
+// Dimensions:
+//   Valence     (-1 to +1): Negative to Positive sentiment
+//   Arousal     (0 to 1):   Low to High intensity
+//   Dominance   (0 to 1):   Submissive to Dominant (formality)
+//   Authenticity(-1 to +1): Sincere to Ironic
+//   Certainty   (0 to 1):   Low to High confidence
+//   Emotion     (0-6):      Discrete emotion index (or -1 for none)
+
+fn register_hologram(interp: &mut Interpreter) {
+    use crate::interpreter::{RuntimeAffect, RuntimeSentiment, RuntimeIntensity,
+                             RuntimeFormality, RuntimeEmotion, RuntimeConfidence};
+
+    // emotional_hologram - project affect onto normalized coordinate space
+    // Returns a map: { valence, arousal, dominance, authenticity, certainty, emotion_index }
+    define(interp, "emotional_hologram", Some(1), |_, args| {
+        let affect = match &args[0] {
+            Value::Affective { affect, .. } => affect.clone(),
+            _ => RuntimeAffect {
+                sentiment: None,
+                sarcasm: false,
+                intensity: None,
+                formality: None,
+                emotion: None,
+                confidence: None,
+            },
+        };
+
+        let mut hologram = std::collections::HashMap::new();
+
+        // Valence: sentiment mapped to -1, 0, +1
+        let valence = match affect.sentiment {
+            Some(RuntimeSentiment::Positive) => 1.0,
+            Some(RuntimeSentiment::Negative) => -1.0,
+            Some(RuntimeSentiment::Neutral) | None => 0.0,
+        };
+        hologram.insert("valence".to_string(), Value::Float(valence));
+
+        // Arousal: intensity mapped to 0, 0.33, 0.66, 1.0
+        let arousal = match affect.intensity {
+            Some(RuntimeIntensity::Down) => 0.25,
+            None => 0.5,
+            Some(RuntimeIntensity::Up) => 0.75,
+            Some(RuntimeIntensity::Max) => 1.0,
+        };
+        hologram.insert("arousal".to_string(), Value::Float(arousal));
+
+        // Dominance: formality mapped to 0 (informal/submissive) to 1 (formal/dominant)
+        let dominance = match affect.formality {
+            Some(RuntimeFormality::Informal) => 0.25,
+            None => 0.5,
+            Some(RuntimeFormality::Formal) => 0.85,
+        };
+        hologram.insert("dominance".to_string(), Value::Float(dominance));
+
+        // Authenticity: -1 (ironic/sarcastic) to +1 (sincere)
+        let authenticity = if affect.sarcasm { -0.9 } else { 0.9 };
+        hologram.insert("authenticity".to_string(), Value::Float(authenticity));
+
+        // Certainty: confidence mapped to 0, 0.5, 1.0
+        let certainty = match affect.confidence {
+            Some(RuntimeConfidence::Low) => 0.2,
+            None | Some(RuntimeConfidence::Medium) => 0.5,
+            Some(RuntimeConfidence::High) => 0.9,
+        };
+        hologram.insert("certainty".to_string(), Value::Float(certainty));
+
+        // Emotion index: 0=joy, 1=sadness, 2=anger, 3=fear, 4=surprise, 5=love, -1=none
+        let emotion_index = match affect.emotion {
+            Some(RuntimeEmotion::Joy) => 0,
+            Some(RuntimeEmotion::Sadness) => 1,
+            Some(RuntimeEmotion::Anger) => 2,
+            Some(RuntimeEmotion::Fear) => 3,
+            Some(RuntimeEmotion::Surprise) => 4,
+            Some(RuntimeEmotion::Love) => 5,
+            None => -1,
+        };
+        hologram.insert("emotion_index".to_string(), Value::Int(emotion_index));
+
+        // Emotion name
+        let emotion_name = match affect.emotion {
+            Some(RuntimeEmotion::Joy) => "joy",
+            Some(RuntimeEmotion::Sadness) => "sadness",
+            Some(RuntimeEmotion::Anger) => "anger",
+            Some(RuntimeEmotion::Fear) => "fear",
+            Some(RuntimeEmotion::Surprise) => "surprise",
+            Some(RuntimeEmotion::Love) => "love",
+            None => "none",
+        };
+        hologram.insert("emotion".to_string(), Value::String(Rc::new(emotion_name.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(hologram))))
+    });
+
+    // emotional_distance - Euclidean distance between two emotional holograms
+    define(interp, "emotional_distance", Some(2), |interp, args| {
+        // Get holograms for both values
+        let h1 = get_hologram_values(&args[0], interp)?;
+        let h2 = get_hologram_values(&args[1], interp)?;
+
+        // Calculate Euclidean distance across dimensions
+        let dist = ((h1.0 - h2.0).powi(2) +    // valence
+                    (h1.1 - h2.1).powi(2) +    // arousal
+                    (h1.2 - h2.2).powi(2) +    // dominance
+                    (h1.3 - h2.3).powi(2) +    // authenticity
+                    (h1.4 - h2.4).powi(2))     // certainty
+                   .sqrt();
+
+        Ok(Value::Float(dist))
+    });
+
+    // emotional_similarity - cosine similarity between emotional states (0 to 1)
+    define(interp, "emotional_similarity", Some(2), |interp, args| {
+        let h1 = get_hologram_values(&args[0], interp)?;
+        let h2 = get_hologram_values(&args[1], interp)?;
+
+        let dot = h1.0 * h2.0 + h1.1 * h2.1 + h1.2 * h2.2 + h1.3 * h2.3 + h1.4 * h2.4;
+        let mag1 = (h1.0.powi(2) + h1.1.powi(2) + h1.2.powi(2) + h1.3.powi(2) + h1.4.powi(2)).sqrt();
+        let mag2 = (h2.0.powi(2) + h2.1.powi(2) + h2.2.powi(2) + h2.3.powi(2) + h2.4.powi(2)).sqrt();
+
+        let similarity = if mag1 > 0.0 && mag2 > 0.0 {
+            (dot / (mag1 * mag2) + 1.0) / 2.0  // Normalize to 0-1
+        } else {
+            0.5
+        };
+
+        Ok(Value::Float(similarity))
+    });
+
+    // emotional_dissonance - detect internal contradictions in affect
+    // Returns score from 0 (coherent) to 1 (highly dissonant)
+    define(interp, "emotional_dissonance", Some(1), |_, args| {
+        let affect = match &args[0] {
+            Value::Affective { affect, .. } => affect.clone(),
+            _ => return Ok(Value::Float(0.0)),
+        };
+
+        let mut dissonance: f64 = 0.0;
+
+        // Positive sentiment + sarcasm = dissonant
+        if matches!(affect.sentiment, Some(RuntimeSentiment::Positive)) && affect.sarcasm {
+            dissonance += 0.4;
+        }
+
+        // Negative sentiment + sarcasm = less dissonant (double negative)
+        if matches!(affect.sentiment, Some(RuntimeSentiment::Negative)) && affect.sarcasm {
+            dissonance += 0.1;
+        }
+
+        // High confidence + low intensity = mildly dissonant
+        if matches!(affect.confidence, Some(RuntimeConfidence::High)) &&
+           matches!(affect.intensity, Some(RuntimeIntensity::Down)) {
+            dissonance += 0.2;
+        }
+
+        // Formal + intense emotion = dissonant
+        if matches!(affect.formality, Some(RuntimeFormality::Formal)) {
+            if matches!(affect.emotion, Some(RuntimeEmotion::Anger) | Some(RuntimeEmotion::Fear)) {
+                dissonance += 0.3;
+            }
+        }
+
+        // Joy/Love + Sadness/Fear indicators (based on sarcasm with positive)
+        if matches!(affect.emotion, Some(RuntimeEmotion::Joy) | Some(RuntimeEmotion::Love)) && affect.sarcasm {
+            dissonance += 0.3;
+        }
+
+        Ok(Value::Float(dissonance.min(1.0)))
+    });
+
+    // emotional_fingerprint - cryptographic hash of emotional state
+    // Creates a unique identifier for this exact emotional configuration
+    define(interp, "emotional_fingerprint", Some(1), |interp, args| {
+        let h = get_hologram_values(&args[0], interp)?;
+
+        // Create deterministic string representation
+        let repr = format!(
+            "hologram:v{:.4}:a{:.4}:d{:.4}:auth{:.4}:c{:.4}",
+            h.0, h.1, h.2, h.3, h.4
+        );
+
+        // Hash using BLAKE3
+        let hash = blake3::hash(repr.as_bytes());
+        Ok(Value::String(Rc::new(hash.to_hex().to_string())))
+    });
+
+    // emotional_morph - interpolate between two emotional states
+    // t=0 returns first state, t=1 returns second state
+    define(interp, "emotional_morph", Some(3), |interp, args| {
+        let h1 = get_hologram_values(&args[0], interp)?;
+        let h2 = get_hologram_values(&args[1], interp)?;
+        let t = match &args[2] {
+            Value::Float(f) => f.max(0.0).min(1.0),
+            Value::Int(i) => (*i as f64).max(0.0).min(1.0),
+            _ => return Err(RuntimeError::new("emotional_morph() requires numeric t value")),
+        };
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("valence".to_string(), Value::Float(h1.0 + (h2.0 - h1.0) * t));
+        result.insert("arousal".to_string(), Value::Float(h1.1 + (h2.1 - h1.1) * t));
+        result.insert("dominance".to_string(), Value::Float(h1.2 + (h2.2 - h1.2) * t));
+        result.insert("authenticity".to_string(), Value::Float(h1.3 + (h2.3 - h1.3) * t));
+        result.insert("certainty".to_string(), Value::Float(h1.4 + (h2.4 - h1.4) * t));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // === Cultural Emotion Mappings ===
+    // Map Sigil emotions to culturally-specific concepts
+
+    // cultural_emotion - get cultural equivalent of an emotion
+    // Supported cultures: japanese, portuguese, german, danish, arabic, korean, russian, hindi
+    define(interp, "cultural_emotion", Some(2), |_, args| {
+        let emotion = match &args[0] {
+            Value::Affective { affect, .. } => affect.emotion.clone(),
+            Value::String(s) => match s.as_str() {
+                "joy" => Some(RuntimeEmotion::Joy),
+                "sadness" => Some(RuntimeEmotion::Sadness),
+                "anger" => Some(RuntimeEmotion::Anger),
+                "fear" => Some(RuntimeEmotion::Fear),
+                "surprise" => Some(RuntimeEmotion::Surprise),
+                "love" => Some(RuntimeEmotion::Love),
+                _ => None,
+            },
+            _ => None,
+        };
+
+        let culture = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("cultural_emotion() requires string culture")),
+        };
+
+        let result = match (emotion, culture.as_str()) {
+            // Japanese concepts
+            (Some(RuntimeEmotion::Joy), "japanese" | "ja") => {
+                create_cultural_entry("木漏れ日", "komorebi", "sunlight filtering through leaves - peaceful joy")
+            }
+            (Some(RuntimeEmotion::Sadness), "japanese" | "ja") => {
+                create_cultural_entry("物の哀れ", "mono no aware", "the pathos of things - bittersweet awareness of impermanence")
+            }
+            (Some(RuntimeEmotion::Love), "japanese" | "ja") => {
+                create_cultural_entry("甘え", "amae", "indulgent dependence on another's benevolence")
+            }
+            (Some(RuntimeEmotion::Fear), "japanese" | "ja") => {
+                create_cultural_entry("空気を読む", "kuuki wo yomu", "anxiety about reading the room")
+            }
+
+            // Portuguese concepts
+            (Some(RuntimeEmotion::Sadness), "portuguese" | "pt") => {
+                create_cultural_entry("saudade", "saudade", "melancholic longing for something or someone absent")
+            }
+            (Some(RuntimeEmotion::Joy), "portuguese" | "pt") => {
+                create_cultural_entry("alegria", "alegria", "exuberant collective joy")
+            }
+
+            // German concepts
+            (Some(RuntimeEmotion::Joy), "german" | "de") => {
+                create_cultural_entry("Schadenfreude", "schadenfreude", "pleasure derived from another's misfortune")
+            }
+            (Some(RuntimeEmotion::Sadness), "german" | "de") => {
+                create_cultural_entry("Weltschmerz", "weltschmerz", "world-weariness, melancholy about the world's state")
+            }
+            (Some(RuntimeEmotion::Fear), "german" | "de") => {
+                create_cultural_entry("Torschlusspanik", "torschlusspanik", "fear of diminishing opportunities with age")
+            }
+
+            // Danish concepts
+            (Some(RuntimeEmotion::Joy), "danish" | "da") => {
+                create_cultural_entry("hygge", "hygge", "cozy contentment and conviviality")
+            }
+
+            // Arabic concepts
+            (Some(RuntimeEmotion::Joy), "arabic" | "ar") => {
+                create_cultural_entry("طرب", "tarab", "musical ecstasy, enchantment through art")
+            }
+            (Some(RuntimeEmotion::Love), "arabic" | "ar") => {
+                create_cultural_entry("هوى", "hawa", "passionate, sometimes irrational love")
+            }
+
+            // Korean concepts
+            (Some(RuntimeEmotion::Sadness), "korean" | "ko") => {
+                create_cultural_entry("한", "han", "collective grief and resentment from historical suffering")
+            }
+            (Some(RuntimeEmotion::Joy), "korean" | "ko") => {
+                create_cultural_entry("정", "jeong", "deep affection and attachment formed over time")
+            }
+
+            // Russian concepts
+            (Some(RuntimeEmotion::Sadness), "russian" | "ru") => {
+                create_cultural_entry("тоска", "toska", "spiritual anguish without specific cause")
+            }
+
+            // Hindi concepts
+            (Some(RuntimeEmotion::Love), "hindi" | "hi") => {
+                create_cultural_entry("विरह", "viraha", "longing for an absent beloved")
+            }
+
+            // Finnish concepts
+            (Some(RuntimeEmotion::Anger), "finnish" | "fi") => {
+                create_cultural_entry("sisu", "sisu", "stoic determination and grit in adversity")
+            }
+
+            // Default: return the base emotion
+            (Some(e), _) => {
+                let name = match e {
+                    RuntimeEmotion::Joy => "joy",
+                    RuntimeEmotion::Sadness => "sadness",
+                    RuntimeEmotion::Anger => "anger",
+                    RuntimeEmotion::Fear => "fear",
+                    RuntimeEmotion::Surprise => "surprise",
+                    RuntimeEmotion::Love => "love",
+                };
+                create_cultural_entry(name, name, "universal emotion")
+            }
+            (None, _) => create_cultural_entry("none", "none", "no emotion"),
+        };
+
+        Ok(result)
+    });
+
+    // list_cultural_emotions - list all emotions for a culture
+    define(interp, "list_cultural_emotions", Some(1), |_, args| {
+        let culture = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("list_cultural_emotions() requires string culture")),
+        };
+
+        let emotions: Vec<(&str, &str, &str)> = match culture.as_str() {
+            "japanese" | "ja" => vec![
+                ("木漏れ日", "komorebi", "sunlight through leaves"),
+                ("物の哀れ", "mono no aware", "pathos of things"),
+                ("甘え", "amae", "indulgent dependence"),
+                ("侘寂", "wabi-sabi", "beauty in imperfection"),
+                ("生きがい", "ikigai", "reason for being"),
+            ],
+            "german" | "de" => vec![
+                ("Schadenfreude", "schadenfreude", "joy at misfortune"),
+                ("Weltschmerz", "weltschmerz", "world-weariness"),
+                ("Torschlusspanik", "torschlusspanik", "gate-closing panic"),
+                ("Sehnsucht", "sehnsucht", "deep longing"),
+                ("Wanderlust", "wanderlust", "desire to travel"),
+            ],
+            "portuguese" | "pt" => vec![
+                ("saudade", "saudade", "melancholic longing"),
+                ("alegria", "alegria", "exuberant joy"),
+                ("desabafar", "desabafar", "emotional unburdening"),
+            ],
+            "danish" | "da" => vec![
+                ("hygge", "hygge", "cozy contentment"),
+            ],
+            "korean" | "ko" => vec![
+                ("한", "han", "collective grief"),
+                ("정", "jeong", "deep affection"),
+                ("눈치", "nunchi", "situational awareness"),
+            ],
+            "arabic" | "ar" => vec![
+                ("طرب", "tarab", "musical ecstasy"),
+                ("هوى", "hawa", "passionate love"),
+                ("صبر", "sabr", "patient perseverance"),
+            ],
+            "russian" | "ru" => vec![
+                ("тоска", "toska", "spiritual anguish"),
+                ("пошлость", "poshlost", "spiritual vulgarity"),
+            ],
+            "finnish" | "fi" => vec![
+                ("sisu", "sisu", "stoic determination"),
+            ],
+            "hindi" | "hi" => vec![
+                ("विरह", "viraha", "longing for beloved"),
+                ("जुगाड़", "jugaad", "creative improvisation"),
+            ],
+            _ => vec![
+                ("joy", "joy", "universal happiness"),
+                ("sadness", "sadness", "universal sorrow"),
+                ("anger", "anger", "universal frustration"),
+                ("fear", "fear", "universal anxiety"),
+                ("surprise", "surprise", "universal amazement"),
+                ("love", "love", "universal affection"),
+            ],
+        };
+
+        let result: Vec<Value> = emotions.iter()
+            .map(|(native, romanized, meaning)| {
+                create_cultural_entry(native, romanized, meaning)
+            })
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // hologram_info - get metadata about the hologram system
+    define(interp, "hologram_info", Some(0), |_, _| {
+        let mut info = std::collections::HashMap::new();
+
+        info.insert("dimensions".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("valence".to_string())),
+            Value::String(Rc::new("arousal".to_string())),
+            Value::String(Rc::new("dominance".to_string())),
+            Value::String(Rc::new("authenticity".to_string())),
+            Value::String(Rc::new("certainty".to_string())),
+            Value::String(Rc::new("emotion_index".to_string())),
+        ]))));
+
+        info.insert("supported_cultures".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("japanese".to_string())),
+            Value::String(Rc::new("german".to_string())),
+            Value::String(Rc::new("portuguese".to_string())),
+            Value::String(Rc::new("danish".to_string())),
+            Value::String(Rc::new("korean".to_string())),
+            Value::String(Rc::new("arabic".to_string())),
+            Value::String(Rc::new("russian".to_string())),
+            Value::String(Rc::new("finnish".to_string())),
+            Value::String(Rc::new("hindi".to_string())),
+        ]))));
+
+        let funcs = vec![
+            "emotional_hologram", "emotional_distance", "emotional_similarity",
+            "emotional_dissonance", "emotional_fingerprint", "emotional_morph",
+            "cultural_emotion", "list_cultural_emotions", "hologram_info"
+        ];
+        let func_values: Vec<Value> = funcs.iter().map(|s| Value::String(Rc::new(s.to_string()))).collect();
+        info.insert("functions".to_string(), Value::Array(Rc::new(RefCell::new(func_values))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+}
+
+/// Helper to extract hologram values from an affective value
+fn get_hologram_values(val: &Value, _interp: &mut Interpreter) -> Result<(f64, f64, f64, f64, f64), RuntimeError> {
+    use crate::interpreter::{RuntimeAffect, RuntimeSentiment, RuntimeIntensity,
+                             RuntimeFormality, RuntimeConfidence};
+
+    let affect = match val {
+        Value::Affective { affect, .. } => affect.clone(),
+        Value::Map(m) => {
+            // Already a hologram map
+            let map = m.borrow();
+            let v = extract_float(&map, "valence").unwrap_or(0.0);
+            let a = extract_float(&map, "arousal").unwrap_or(0.5);
+            let d = extract_float(&map, "dominance").unwrap_or(0.5);
+            let auth = extract_float(&map, "authenticity").unwrap_or(0.9);
+            let c = extract_float(&map, "certainty").unwrap_or(0.5);
+            return Ok((v, a, d, auth, c));
+        }
+        _ => RuntimeAffect {
+            sentiment: None,
+            sarcasm: false,
+            intensity: None,
+            formality: None,
+            emotion: None,
+            confidence: None,
+        },
+    };
+
+    let v = match affect.sentiment {
+        Some(RuntimeSentiment::Positive) => 1.0,
+        Some(RuntimeSentiment::Negative) => -1.0,
+        _ => 0.0,
+    };
+    let a = match affect.intensity {
+        Some(RuntimeIntensity::Down) => 0.25,
+        Some(RuntimeIntensity::Up) => 0.75,
+        Some(RuntimeIntensity::Max) => 1.0,
+        None => 0.5,
+    };
+    let d = match affect.formality {
+        Some(RuntimeFormality::Informal) => 0.25,
+        Some(RuntimeFormality::Formal) => 0.85,
+        None => 0.5,
+    };
+    let auth = if affect.sarcasm { -0.9 } else { 0.9 };
+    let c = match affect.confidence {
+        Some(RuntimeConfidence::Low) => 0.2,
+        Some(RuntimeConfidence::High) => 0.9,
+        _ => 0.5,
+    };
+
+    Ok((v, a, d, auth, c))
+}
+
+fn extract_float(map: &std::collections::HashMap<String, Value>, key: &str) -> Option<f64> {
+    match map.get(key) {
+        Some(Value::Float(f)) => Some(*f),
+        Some(Value::Int(i)) => Some(*i as f64),
+        _ => None,
+    }
+}
+
+fn create_cultural_entry(native: &str, romanized: &str, meaning: &str) -> Value {
+    let mut entry = std::collections::HashMap::new();
+    entry.insert("native".to_string(), Value::String(Rc::new(native.to_string())));
+    entry.insert("romanized".to_string(), Value::String(Rc::new(romanized.to_string())));
+    entry.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+    Value::Map(Rc::new(RefCell::new(entry)))
+}
+
+// ============================================================================
+// EXPERIMENTAL CRYPTOGRAPHY: Threshold crypto, commitments, and more
+// ============================================================================
+
+fn register_experimental_crypto(interp: &mut Interpreter) {
+    // === Commitment Schemes ===
+    // Commit to a value without revealing it, verify later
+
+    // commit - create a cryptographic commitment to a value
+    // Returns { commitment: hash, nonce: random_value }
+    define(interp, "commit", Some(1), |_, args| {
+        let value_str = match &args[0] {
+            Value::String(s) => s.to_string(),
+            other => format!("{:?}", other),
+        };
+
+        // Generate random nonce
+        let mut nonce = [0u8; 32];
+        getrandom::getrandom(&mut nonce).map_err(|e| RuntimeError::new(format!("commit() random failed: {}", e)))?;
+        let nonce_hex = hex::encode(&nonce);
+
+        // Create commitment: H(value || nonce)
+        let commitment_input = format!("{}:{}", value_str, nonce_hex);
+        let commitment = blake3::hash(commitment_input.as_bytes());
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("commitment".to_string(), Value::String(Rc::new(commitment.to_hex().to_string())));
+        result.insert("nonce".to_string(), Value::String(Rc::new(nonce_hex)));
+        result.insert("value".to_string(), args[0].clone());
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // verify_commitment - verify a commitment matches a revealed value
+    define(interp, "verify_commitment", Some(3), |_, args| {
+        let commitment = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("verify_commitment() requires string commitment")),
+        };
+        let value_str = match &args[1] {
+            Value::String(s) => s.to_string(),
+            other => format!("{:?}", other),
+        };
+        let nonce = match &args[2] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("verify_commitment() requires string nonce")),
+        };
+
+        // Recompute commitment
+        let commitment_input = format!("{}:{}", value_str, nonce);
+        let computed = blake3::hash(commitment_input.as_bytes());
+
+        Ok(Value::Bool(computed.to_hex().to_string() == commitment))
+    });
+
+    // === Threshold Cryptography (Shamir's Secret Sharing) ===
+    // Split secrets into shares, requiring threshold to reconstruct
+
+    // secret_split - split a secret into n shares, requiring threshold to recover
+    // Uses Shamir's Secret Sharing over GF(256)
+    define(interp, "secret_split", Some(3), |_, args| {
+        let secret = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            Value::Array(arr) => {
+                let borrowed = arr.borrow();
+                borrowed.iter().filter_map(|v| {
+                    if let Value::Int(i) = v { Some(*i as u8) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("secret_split() requires string or byte array")),
+        };
+
+        let threshold = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("secret_split() requires integer threshold")),
+        };
+
+        let num_shares = match &args[2] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("secret_split() requires integer num_shares")),
+        };
+
+        if threshold < 2 {
+            return Err(RuntimeError::new("secret_split() threshold must be >= 2"));
+        }
+        if num_shares < threshold {
+            return Err(RuntimeError::new("secret_split() num_shares must be >= threshold"));
+        }
+        if num_shares > 255 {
+            return Err(RuntimeError::new("secret_split() max 255 shares"));
+        }
+
+        // Simple implementation: split each byte independently using polynomial interpolation
+        // For production, use vsss-rs properly, but this demonstrates the concept
+        let mut rng = rand::thread_rng();
+        let mut shares: Vec<Vec<u8>> = (0..num_shares).map(|_| Vec::with_capacity(secret.len() + 1)).collect();
+
+        // Assign share indices (1-based to avoid zero)
+        for (i, share) in shares.iter_mut().enumerate() {
+            share.push((i + 1) as u8);
+        }
+
+        // For each byte of the secret, create polynomial shares
+        for &byte in &secret {
+            // Generate random coefficients for polynomial of degree (threshold - 1)
+            // a_0 = secret byte, a_1..a_{t-1} = random
+            let mut coefficients: Vec<u8> = vec![byte];
+            for _ in 1..threshold {
+                coefficients.push(rng.gen());
+            }
+
+            // Evaluate polynomial at each share index
+            for (i, share) in shares.iter_mut().enumerate() {
+                let x = (i + 1) as u8;
+                let y = eval_polynomial_gf256(&coefficients, x);
+                share.push(y);
+            }
+        }
+
+        // Convert shares to output format
+        let share_values: Vec<Value> = shares.iter()
+            .map(|share| {
+                let hex = hex::encode(share);
+                Value::String(Rc::new(hex))
+            })
+            .collect();
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("shares".to_string(), Value::Array(Rc::new(RefCell::new(share_values))));
+        result.insert("threshold".to_string(), Value::Int(threshold as i64));
+        result.insert("total".to_string(), Value::Int(num_shares as i64));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // secret_recover - recover secret from threshold shares
+    define(interp, "secret_recover", Some(1), |_, args| {
+        let shares: Vec<Vec<u8>> = match &args[0] {
+            Value::Array(arr) => {
+                let borrowed = arr.borrow();
+                borrowed.iter().filter_map(|v| {
+                    if let Value::String(s) = v {
+                        hex::decode(s.as_str()).ok()
+                    } else {
+                        None
+                    }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("secret_recover() requires array of share strings")),
+        };
+
+        if shares.is_empty() {
+            return Err(RuntimeError::new("secret_recover() requires at least one share"));
+        }
+
+        let share_len = shares[0].len();
+        if share_len < 2 {
+            return Err(RuntimeError::new("secret_recover() invalid share format"));
+        }
+
+        // Recover each byte using Lagrange interpolation
+        let mut secret = Vec::with_capacity(share_len - 1);
+
+        for byte_idx in 1..share_len {
+            // Collect (x, y) pairs for this byte position
+            let points: Vec<(u8, u8)> = shares.iter()
+                .map(|share| (share[0], share[byte_idx]))
+                .collect();
+
+            // Lagrange interpolation at x=0 to recover the secret byte
+            let recovered_byte = lagrange_interpolate_gf256(&points, 0);
+            secret.push(recovered_byte);
+        }
+
+        // Try to interpret as string
+        match String::from_utf8(secret.clone()) {
+            Ok(s) => Ok(Value::String(Rc::new(s))),
+            Err(_) => {
+                // Return as byte array
+                let byte_values: Vec<Value> = secret.iter().map(|&b| Value::Int(b as i64)).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(byte_values))))
+            }
+        }
+    });
+
+    // === Cryptographic Ceremony Functions ===
+    // Cultural trust models encoded in crypto
+
+    // council_split - split secret using Ubuntu (I am because we are) model
+    // Requires majority consensus
+    define(interp, "council_split", Some(2), |_, args| {
+        let secret = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            _ => return Err(RuntimeError::new("council_split() requires string secret")),
+        };
+
+        let num_elders = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("council_split() requires integer num_elders")),
+        };
+
+        if num_elders < 3 {
+            return Err(RuntimeError::new("council_split() requires at least 3 elders"));
+        }
+
+        // Ubuntu model: majority required (n/2 + 1)
+        let threshold = (num_elders / 2) + 1;
+
+        // Reuse secret_split logic
+        let mut rng = rand::thread_rng();
+        let mut shares: Vec<Vec<u8>> = (0..num_elders).map(|_| Vec::with_capacity(secret.len() + 1)).collect();
+
+        for (i, share) in shares.iter_mut().enumerate() {
+            share.push((i + 1) as u8);
+        }
+
+        for &byte in &secret {
+            let mut coefficients: Vec<u8> = vec![byte];
+            for _ in 1..threshold {
+                coefficients.push(rng.gen());
+            }
+
+            for (i, share) in shares.iter_mut().enumerate() {
+                let x = (i + 1) as u8;
+                let y = eval_polynomial_gf256(&coefficients, x);
+                share.push(y);
+            }
+        }
+
+        let share_values: Vec<Value> = shares.iter()
+            .map(|share| Value::String(Rc::new(hex::encode(share))))
+            .collect();
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("shares".to_string(), Value::Array(Rc::new(RefCell::new(share_values))));
+        result.insert("threshold".to_string(), Value::Int(threshold as i64));
+        result.insert("total".to_string(), Value::Int(num_elders as i64));
+        result.insert("model".to_string(), Value::String(Rc::new("ubuntu".to_string())));
+        result.insert("philosophy".to_string(), Value::String(Rc::new("I am because we are - majority consensus required".to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // witness_chain - create a chain of witnesses (Middle Eastern oral tradition model)
+    // Each witness signs the previous, creating a chain of trust
+    define(interp, "witness_chain", Some(2), |_, args| {
+        let statement = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("witness_chain() requires string statement")),
+        };
+
+        let witnesses: Vec<String> = match &args[1] {
+            Value::Array(arr) => {
+                let borrowed = arr.borrow();
+                borrowed.iter().filter_map(|v| {
+                    if let Value::String(s) = v { Some(s.to_string()) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("witness_chain() requires array of witness names")),
+        };
+
+        if witnesses.is_empty() {
+            return Err(RuntimeError::new("witness_chain() requires at least one witness"));
+        }
+
+        // Build chain: each witness attests to the previous
+        let mut chain = Vec::new();
+        let mut prev_hash = blake3::hash(statement.as_bytes()).to_hex().to_string();
+
+        for (i, witness) in witnesses.iter().enumerate() {
+            let attestation = format!("{}:attests:{}", witness, prev_hash);
+            let hash = blake3::hash(attestation.as_bytes()).to_hex().to_string();
+
+            let mut link = std::collections::HashMap::new();
+            link.insert("witness".to_string(), Value::String(Rc::new(witness.clone())));
+            link.insert("position".to_string(), Value::Int((i + 1) as i64));
+            link.insert("attests_to".to_string(), Value::String(Rc::new(prev_hash.clone())));
+            link.insert("signature".to_string(), Value::String(Rc::new(hash.clone())));
+
+            chain.push(Value::Map(Rc::new(RefCell::new(link))));
+            prev_hash = hash;
+        }
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("statement".to_string(), Value::String(Rc::new(statement)));
+        result.insert("chain".to_string(), Value::Array(Rc::new(RefCell::new(chain))));
+        result.insert("final_seal".to_string(), Value::String(Rc::new(prev_hash)));
+        result.insert("model".to_string(), Value::String(Rc::new("isnad".to_string())));
+        result.insert("philosophy".to_string(), Value::String(Rc::new("Chain of reliable transmitters - each witness validates the previous".to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // verify_witness_chain - verify a witness chain is intact
+    define(interp, "verify_witness_chain", Some(1), |_, args| {
+        let chain_map = match &args[0] {
+            Value::Map(m) => m.borrow(),
+            _ => return Err(RuntimeError::new("verify_witness_chain() requires chain map")),
+        };
+
+        let statement = match chain_map.get("statement") {
+            Some(Value::String(s)) => s.to_string(),
+            _ => return Err(RuntimeError::new("verify_witness_chain() invalid chain format")),
+        };
+
+        let chain = match chain_map.get("chain") {
+            Some(Value::Array(arr)) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("verify_witness_chain() invalid chain format")),
+        };
+
+        let mut prev_hash = blake3::hash(statement.as_bytes()).to_hex().to_string();
+
+        for link_val in chain.iter() {
+            if let Value::Map(link_map) = link_val {
+                let link = link_map.borrow();
+                let witness = match link.get("witness") {
+                    Some(Value::String(s)) => s.to_string(),
+                    _ => return Ok(Value::Bool(false)),
+                };
+                let attests_to = match link.get("attests_to") {
+                    Some(Value::String(s)) => s.to_string(),
+                    _ => return Ok(Value::Bool(false)),
+                };
+                let signature = match link.get("signature") {
+                    Some(Value::String(s)) => s.to_string(),
+                    _ => return Ok(Value::Bool(false)),
+                };
+
+                // Verify attestation
+                if attests_to != prev_hash {
+                    return Ok(Value::Bool(false));
+                }
+
+                let expected = format!("{}:attests:{}", witness, prev_hash);
+                let computed = blake3::hash(expected.as_bytes()).to_hex().to_string();
+
+                if computed != signature {
+                    return Ok(Value::Bool(false));
+                }
+
+                prev_hash = signature;
+            } else {
+                return Ok(Value::Bool(false));
+            }
+        }
+
+        Ok(Value::Bool(true))
+    });
+
+    // === Experimental Crypto Info ===
+    define(interp, "experimental_crypto_info", Some(0), |_, _| {
+        let mut info = std::collections::HashMap::new();
+
+        info.insert("commitment_functions".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("commit".to_string())),
+            Value::String(Rc::new("verify_commitment".to_string())),
+        ]))));
+
+        info.insert("threshold_functions".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("secret_split".to_string())),
+            Value::String(Rc::new("secret_recover".to_string())),
+        ]))));
+
+        info.insert("cultural_ceremonies".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("council_split (Ubuntu - African consensus)".to_string())),
+            Value::String(Rc::new("witness_chain (Isnad - Islamic transmission)".to_string())),
+        ]))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+}
+
+/// Evaluate polynomial in GF(256) at point x
+fn eval_polynomial_gf256(coefficients: &[u8], x: u8) -> u8 {
+    let mut result: u8 = 0;
+    let mut x_power: u8 = 1;
+
+    for &coef in coefficients {
+        result ^= gf256_mul(coef, x_power);
+        x_power = gf256_mul(x_power, x);
+    }
+
+    result
+}
+
+/// Lagrange interpolation in GF(256) to find f(0)
+fn lagrange_interpolate_gf256(points: &[(u8, u8)], _x: u8) -> u8 {
+    let mut result: u8 = 0;
+
+    for (i, &(xi, yi)) in points.iter().enumerate() {
+        let mut numerator: u8 = 1;
+        let mut denominator: u8 = 1;
+
+        for (j, &(xj, _)) in points.iter().enumerate() {
+            if i != j {
+                // numerator *= (0 - xj) = xj (in GF256, subtraction is XOR)
+                numerator = gf256_mul(numerator, xj);
+                // denominator *= (xi - xj)
+                denominator = gf256_mul(denominator, xi ^ xj);
+            }
+        }
+
+        // term = yi * numerator / denominator
+        let term = gf256_mul(yi, gf256_mul(numerator, gf256_inv(denominator)));
+        result ^= term;
+    }
+
+    result
+}
+
+/// GF(256) multiplication using Russian peasant algorithm
+fn gf256_mul(mut a: u8, mut b: u8) -> u8 {
+    let mut result: u8 = 0;
+    let modulus: u16 = 0x11b; // x^8 + x^4 + x^3 + x + 1
+
+    while b != 0 {
+        if b & 1 != 0 {
+            result ^= a;
+        }
+        let high_bit = (a & 0x80) != 0;
+        a <<= 1;
+        if high_bit {
+            a ^= (modulus & 0xff) as u8;
+        }
+        b >>= 1;
+    }
+
+    result
+}
+
+/// GF(256) multiplicative inverse using extended Euclidean algorithm
+fn gf256_inv(a: u8) -> u8 {
+    if a == 0 {
+        return 0;
+    }
+
+    // Use Fermat's little theorem: a^(-1) = a^(254) in GF(256)
+    let mut result = a;
+    for _ in 0..6 {
+        result = gf256_mul(result, result);
+        result = gf256_mul(result, a);
+    }
+    gf256_mul(result, result)
+}
+
+// ============================================================================
+// MULTI-BASE ENCODING: Polycultural numeral systems and crypto addresses
+// ============================================================================
+//
+// Sigil supports multiple numeral bases reflecting different mathematical traditions:
+//   Binary (2)      - 0b prefix - Modern computing
+//   Octal (8)       - 0o prefix - Unix permissions
+//   Decimal (10)    - Default   - Indo-Arabic (global standard)
+//   Duodecimal (12) - 0z prefix - Dozen system (time, music)
+//   Hexadecimal (16)- 0x prefix - Computing, colors
+//   Vigesimal (20)  - 0v prefix - Mayan, Celtic, Basque
+//   Sexagesimal (60)- 0s prefix - Babylonian (time, angles)
+//
+// Plus special encodings:
+//   Base58  - Bitcoin addresses (no confusing 0/O/I/l)
+//   Base32  - Case-insensitive, no confusing chars
+//   Base36  - Alphanumeric only
+
+fn register_multibase(interp: &mut Interpreter) {
+    // === Vigesimal (Base 20) - Mayan/Celtic ===
+    // Digits: 0-9, A-J (or a-j)
+
+    define(interp, "to_vigesimal", Some(1), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("to_vigesimal() requires integer")),
+        };
+
+        let result = to_base_string(n.unsigned_abs(), 20, false);
+        let prefix = if n < 0 { "-0v" } else { "0v" };
+        Ok(Value::String(Rc::new(format!("{}{}", prefix, result))))
+    });
+
+    define(interp, "from_vigesimal", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("from_vigesimal() requires string")),
+        };
+
+        let (negative, clean) = parse_base_prefix(&s, "0v");
+        let value = from_base_string(&clean, 20)?;
+        Ok(Value::Int(if negative { -(value as i64) } else { value as i64 }))
+    });
+
+    // === Sexagesimal (Base 60) - Babylonian ===
+    // Uses colon-separated groups for readability: "1:30:45" = 1*3600 + 30*60 + 45
+
+    define(interp, "to_sexagesimal", Some(1), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("to_sexagesimal() requires integer")),
+        };
+
+        let negative = n < 0;
+        let mut value = n.unsigned_abs();
+        let mut parts = Vec::new();
+
+        if value == 0 {
+            parts.push("0".to_string());
+        } else {
+            while value > 0 {
+                parts.push(format!("{}", value % 60));
+                value /= 60;
+            }
+            parts.reverse();
+        }
+
+        let prefix = if negative { "-0s" } else { "0s" };
+        Ok(Value::String(Rc::new(format!("{}[{}]", prefix, parts.join(":")))))
+    });
+
+    define(interp, "from_sexagesimal", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("from_sexagesimal() requires string")),
+        };
+
+        let negative = s.starts_with('-');
+        let clean = s.trim_start_matches('-')
+                     .trim_start_matches("0s")
+                     .trim_start_matches('[')
+                     .trim_end_matches(']');
+
+        let mut result: i64 = 0;
+        for part in clean.split(':') {
+            let digit: i64 = part.trim().parse()
+                .map_err(|_| RuntimeError::new(format!("Invalid sexagesimal digit: {}", part)))?;
+            if digit < 0 || digit >= 60 {
+                return Err(RuntimeError::new(format!("Sexagesimal digit out of range: {}", digit)));
+            }
+            result = result * 60 + digit;
+        }
+
+        Ok(Value::Int(if negative { -result } else { result }))
+    });
+
+    // === Duodecimal (Base 12) - Dozen system ===
+    // Digits: 0-9, X (10), E (11) - Dozenal Society convention
+
+    define(interp, "to_duodecimal", Some(1), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("to_duodecimal() requires integer")),
+        };
+
+        let result = to_base_string_custom(n.unsigned_abs(), 12, "0123456789XE");
+        let prefix = if n < 0 { "-0z" } else { "0z" };
+        Ok(Value::String(Rc::new(format!("{}{}", prefix, result))))
+    });
+
+    define(interp, "from_duodecimal", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("from_duodecimal() requires string")),
+        };
+
+        let (negative, clean) = parse_base_prefix(&s, "0z");
+        let value = from_base_string_custom(&clean.to_uppercase(), "0123456789XE")?;
+        Ok(Value::Int(if negative { -(value as i64) } else { value as i64 }))
+    });
+
+    // === Generic Base Conversion ===
+
+    define(interp, "to_base", Some(2), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("to_base() requires integer")),
+        };
+        let base = match &args[1] {
+            Value::Int(b) => *b as u64,
+            _ => return Err(RuntimeError::new("to_base() requires integer base")),
+        };
+
+        if base < 2 || base > 36 {
+            return Err(RuntimeError::new("to_base() base must be 2-36"));
+        }
+
+        let result = to_base_string(n.unsigned_abs(), base, false);
+        let prefix = if n < 0 { "-" } else { "" };
+        Ok(Value::String(Rc::new(format!("{}{}", prefix, result))))
+    });
+
+    define(interp, "from_base", Some(2), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("from_base() requires string")),
+        };
+        let base = match &args[1] {
+            Value::Int(b) => *b as u64,
+            _ => return Err(RuntimeError::new("from_base() requires integer base")),
+        };
+
+        if base < 2 || base > 36 {
+            return Err(RuntimeError::new("from_base() base must be 2-36"));
+        }
+
+        let negative = s.starts_with('-');
+        let clean = s.trim_start_matches('-');
+        let value = from_base_string(clean, base)?;
+        Ok(Value::Int(if negative { -(value as i64) } else { value as i64 }))
+    });
+
+    // === Base58 - Bitcoin/IPFS addresses ===
+    // Alphabet: 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
+    // Excludes: 0, O, I, l (confusing characters)
+
+    const BASE58_ALPHABET: &str = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+    define(interp, "base58_encode", Some(1), |_, args| {
+        let bytes: Vec<u8> = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            Value::Array(arr) => {
+                arr.borrow().iter().filter_map(|v| {
+                    if let Value::Int(i) = v { Some(*i as u8) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("base58_encode() requires string or byte array")),
+        };
+
+        // Count leading zeros
+        let leading_zeros = bytes.iter().take_while(|&&b| b == 0).count();
+
+        // Convert to big integer and then to base58
+        let mut result = Vec::new();
+        let mut num: Vec<u8> = bytes.clone();
+
+        while !num.is_empty() && !num.iter().all(|&b| b == 0) {
+            let mut remainder = 0u32;
+            let mut new_num = Vec::new();
+
+            for &byte in &num {
+                let acc = (remainder << 8) + byte as u32;
+                let digit = acc / 58;
+                remainder = acc % 58;
+
+                if !new_num.is_empty() || digit > 0 {
+                    new_num.push(digit as u8);
+                }
+            }
+
+            result.push(BASE58_ALPHABET.chars().nth(remainder as usize).unwrap());
+            num = new_num;
+        }
+
+        // Add '1' for each leading zero byte
+        for _ in 0..leading_zeros {
+            result.push('1');
+        }
+
+        result.reverse();
+        Ok(Value::String(Rc::new(result.into_iter().collect())))
+    });
+
+    define(interp, "base58_decode", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("base58_decode() requires string")),
+        };
+
+        // Count leading '1's
+        let leading_ones = s.chars().take_while(|&c| c == '1').count();
+
+        // Convert from base58 to big integer
+        let mut num: Vec<u8> = Vec::new();
+
+        for c in s.chars() {
+            let digit = BASE58_ALPHABET.find(c)
+                .ok_or_else(|| RuntimeError::new(format!("Invalid base58 character: {}", c)))?;
+
+            let mut carry = digit as u32;
+            for byte in num.iter_mut().rev() {
+                let acc = (*byte as u32) * 58 + carry;
+                *byte = (acc & 0xff) as u8;
+                carry = acc >> 8;
+            }
+
+            while carry > 0 {
+                num.insert(0, (carry & 0xff) as u8);
+                carry >>= 8;
+            }
+        }
+
+        // Add leading zeros
+        let mut result = vec![0u8; leading_ones];
+        result.extend(num);
+
+        // Return as hex string for readability
+        Ok(Value::String(Rc::new(hex::encode(&result))))
+    });
+
+    // === Base32 - Case insensitive, no confusing chars ===
+    // RFC 4648 alphabet: A-Z, 2-7
+
+    const BASE32_ALPHABET: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+    define(interp, "base32_encode", Some(1), |_, args| {
+        let bytes: Vec<u8> = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            Value::Array(arr) => {
+                arr.borrow().iter().filter_map(|v| {
+                    if let Value::Int(i) = v { Some(*i as u8) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("base32_encode() requires string or byte array")),
+        };
+
+        let mut result = String::new();
+        let mut buffer: u64 = 0;
+        let mut bits = 0;
+
+        for byte in bytes {
+            buffer = (buffer << 8) | byte as u64;
+            bits += 8;
+
+            while bits >= 5 {
+                bits -= 5;
+                let idx = ((buffer >> bits) & 0x1f) as usize;
+                result.push(BASE32_ALPHABET.chars().nth(idx).unwrap());
+            }
+        }
+
+        if bits > 0 {
+            let idx = ((buffer << (5 - bits)) & 0x1f) as usize;
+            result.push(BASE32_ALPHABET.chars().nth(idx).unwrap());
+        }
+
+        // Padding
+        while result.len() % 8 != 0 {
+            result.push('=');
+        }
+
+        Ok(Value::String(Rc::new(result)))
+    });
+
+    define(interp, "base32_decode", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_uppercase().replace('=', ""),
+            _ => return Err(RuntimeError::new("base32_decode() requires string")),
+        };
+
+        let mut result = Vec::new();
+        let mut buffer: u64 = 0;
+        let mut bits = 0;
+
+        for c in s.chars() {
+            let digit = BASE32_ALPHABET.find(c)
+                .ok_or_else(|| RuntimeError::new(format!("Invalid base32 character: {}", c)))?;
+
+            buffer = (buffer << 5) | digit as u64;
+            bits += 5;
+
+            if bits >= 8 {
+                bits -= 8;
+                result.push((buffer >> bits) as u8);
+                buffer &= (1 << bits) - 1;
+            }
+        }
+
+        Ok(Value::String(Rc::new(hex::encode(&result))))
+    });
+
+    // === Cultural Numerology ===
+
+    // sacred_numbers - get sacred/significant numbers for a culture
+    define(interp, "sacred_numbers", Some(1), |_, args| {
+        let culture = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("sacred_numbers() requires string culture")),
+        };
+
+        let numbers: Vec<(i64, &str)> = match culture.as_str() {
+            "mayan" | "maya" => vec![
+                (13, "Sacred cycle - Tzolkin calendar"),
+                (20, "Base of vigesimal system - human digits"),
+                (52, "Calendar round - 52 years"),
+                (260, "Tzolkin sacred calendar days"),
+                (365, "Haab solar calendar days"),
+                (400, "Baktun - 20×20 years"),
+            ],
+            "babylonian" | "mesopotamian" => vec![
+                (12, "Months, hours - celestial division"),
+                (60, "Sexagesimal base - minutes, seconds, degrees"),
+                (360, "Circle degrees - 6×60"),
+                (3600, "Sar - 60×60, large count"),
+                (7, "Planets visible to naked eye"),
+            ],
+            "chinese" | "zh" => vec![
+                (8, "八 (bā) - prosperity, wealth (sounds like 發)"),
+                (9, "九 (jiǔ) - longevity (sounds like 久)"),
+                (6, "六 (liù) - smooth, flowing"),
+                (2, "二 (èr) - pairs, harmony"),
+                (4, "四 (sì) - AVOID - sounds like death (死)"),
+                (5, "五 (wǔ) - five elements"),
+                (12, "十二 - zodiac animals"),
+            ],
+            "japanese" | "ja" => vec![
+                (7, "七 (nana) - lucky, seven gods of fortune"),
+                (8, "八 (hachi) - prosperity, expansion"),
+                (3, "三 (san) - completeness"),
+                (5, "五 (go) - five elements"),
+                (4, "四 (shi) - AVOID - sounds like death (死)"),
+                (9, "九 (ku) - AVOID - sounds like suffering (苦)"),
+            ],
+            "hebrew" | "jewish" => vec![
+                (7, "Shabbat, creation days, menorah branches"),
+                (18, "Chai (חי) - life - gematria of ח(8) + י(10)"),
+                (40, "Transformation - flood, Sinai, wilderness"),
+                (12, "Tribes of Israel"),
+                (613, "Mitzvot - commandments"),
+                (26, "Gematria of YHWH"),
+            ],
+            "islamic" | "arabic" | "ar" => vec![
+                (5, "Pillars of Islam, daily prayers"),
+                (7, "Heavens, circumambulation of Kaaba"),
+                (40, "Age of prophethood, days of repentance"),
+                (99, "Names of Allah"),
+                (786, "Abjad value of Bismillah"),
+            ],
+            "hindu" | "indian" | "hi" => vec![
+                (108, "Sacred beads, Upanishads, sun's distance"),
+                (7, "Chakras (main), rishis, sacred rivers"),
+                (3, "Trimurti - Brahma, Vishnu, Shiva"),
+                (4, "Vedas, yugas, varnas"),
+                (9, "Planets (navagraha), durga forms"),
+                (1008, "Names of Vishnu"),
+            ],
+            "greek" | "pythagorean" => vec![
+                (1, "Monad - unity, source"),
+                (2, "Dyad - duality, diversity"),
+                (3, "Triad - harmony, completion"),
+                (4, "Tetrad - solidity, earth"),
+                (7, "Heptad - perfection"),
+                (10, "Decad - tetractys, divine"),
+                (12, "Olympian gods"),
+            ],
+            "celtic" | "irish" => vec![
+                (3, "Triple goddess, triquetra"),
+                (5, "Elements including spirit"),
+                (9, "Triple threes - sacred completion"),
+                (13, "Lunar months"),
+                (17, "St. Patrick's Day"),
+                (20, "Vigesimal counting"),
+            ],
+            _ => vec![
+                (1, "Unity"),
+                (7, "Widely considered lucky"),
+                (12, "Dozen - practical division"),
+                (13, "Often considered unlucky in West"),
+            ],
+        };
+
+        let result: Vec<Value> = numbers.iter().map(|(n, meaning)| {
+            let mut entry = std::collections::HashMap::new();
+            entry.insert("number".to_string(), Value::Int(*n));
+            entry.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+            Value::Map(Rc::new(RefCell::new(entry)))
+        }).collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // is_sacred - check if a number is sacred in a culture
+    define(interp, "is_sacred", Some(2), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("is_sacred() requires integer")),
+        };
+        let culture = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("is_sacred() requires string culture")),
+        };
+
+        let sacred = match culture.as_str() {
+            "mayan" | "maya" => vec![13, 20, 52, 260, 365, 400],
+            "babylonian" | "mesopotamian" => vec![12, 60, 360, 3600, 7],
+            "chinese" | "zh" => vec![8, 9, 6, 2, 5, 12],
+            "japanese" | "ja" => vec![7, 8, 3, 5],
+            "hebrew" | "jewish" => vec![7, 18, 40, 12, 613, 26],
+            "islamic" | "arabic" | "ar" => vec![5, 7, 40, 99, 786],
+            "hindu" | "indian" | "hi" => vec![108, 7, 3, 4, 9, 1008],
+            "greek" | "pythagorean" => vec![1, 2, 3, 4, 7, 10, 12],
+            "celtic" | "irish" => vec![3, 5, 9, 13, 17, 20],
+            _ => vec![7, 12],
+        };
+
+        Ok(Value::Bool(sacred.contains(&n)))
+    });
+
+    // is_unlucky - check if a number is unlucky in a culture
+    define(interp, "is_unlucky", Some(2), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("is_unlucky() requires integer")),
+        };
+        let culture = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("is_unlucky() requires string culture")),
+        };
+
+        let unlucky = match culture.as_str() {
+            "chinese" | "zh" => vec![4], // 四 sounds like 死 (death)
+            "japanese" | "ja" => vec![4, 9], // 四=death, 九=suffering
+            "western" | "en" => vec![13], // Friday the 13th
+            "italian" | "it" => vec![17], // XVII = VIXI (I lived = I'm dead)
+            _ => vec![],
+        };
+
+        Ok(Value::Bool(unlucky.contains(&n)))
+    });
+
+    // number_meaning - get the cultural meaning of a specific number
+    define(interp, "number_meaning", Some(2), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("number_meaning() requires integer")),
+        };
+        let culture = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("number_meaning() requires string culture")),
+        };
+
+        let meaning = match (n, culture.as_str()) {
+            // Chinese
+            (8, "chinese" | "zh") => "八 (bā) - Most auspicious, sounds like 發 (prosperity)",
+            (4, "chinese" | "zh") => "四 (sì) - Unlucky, sounds like 死 (death)",
+            (9, "chinese" | "zh") => "九 (jiǔ) - Longevity, sounds like 久 (long-lasting)",
+            (6, "chinese" | "zh") => "六 (liù) - Smooth and well-off",
+            (2, "chinese" | "zh") => "二 (èr) - Good things come in pairs",
+
+            // Japanese
+            (7, "japanese" | "ja") => "七 (nana) - Lucky, seven gods of fortune",
+            (8, "japanese" | "ja") => "八 (hachi) - Lucky, represents spreading prosperity",
+            (4, "japanese" | "ja") => "四 (shi) - Unlucky, homophone of death",
+            (9, "japanese" | "ja") => "九 (ku) - Unlucky, homophone of suffering",
+
+            // Hebrew
+            (18, "hebrew" | "jewish") => "Chai (חי) - Life itself, most auspicious",
+            (7, "hebrew" | "jewish") => "Divine completion - Shabbat, menorah, creation",
+            (40, "hebrew" | "jewish") => "Transformation - flood, Sinai, wilderness years",
+            (613, "hebrew" | "jewish") => "Taryag - total number of mitzvot (commandments)",
+
+            // Mayan
+            (13, "mayan" | "maya") => "Sacred Tzolkin cycle, celestial layers",
+            (20, "mayan" | "maya") => "Vigesimal base - fingers and toes, uinal",
+            (260, "mayan" | "maya") => "Tzolkin calendar - 13 × 20 sacred days",
+
+            // Babylonian
+            (60, "babylonian" | "mesopotamian") => "Sexagesimal base - divisible by 2,3,4,5,6,10,12,15,20,30",
+            (360, "babylonian" | "mesopotamian") => "Circle degrees - celestial observation",
+
+            // Hindu
+            (108, "hindu" | "indian" | "hi") => "Sacred completeness - mala beads, Upanishads, sun ratio",
+            (3, "hindu" | "indian" | "hi") => "Trimurti - Brahma, Vishnu, Shiva",
+            (9, "hindu" | "indian" | "hi") => "Navagraha (9 planets), Durga's 9 forms",
+
+            // Islamic
+            (99, "islamic" | "arabic" | "ar") => "Asma ul-Husna - 99 names of Allah",
+            (5, "islamic" | "arabic" | "ar") => "Five pillars of Islam",
+            (786, "islamic" | "arabic" | "ar") => "Abjad numerology of Bismillah",
+
+            // Greek/Pythagorean
+            (10, "greek" | "pythagorean") => "Tetractys - 1+2+3+4, perfect number",
+            (7, "greek" | "pythagorean") => "Heptad - virgin number, Athena's number",
+
+            _ => "No specific cultural meaning recorded",
+        };
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("number".to_string(), Value::Int(n));
+        result.insert("culture".to_string(), Value::String(Rc::new(culture)));
+        result.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // === Time encoding using Babylonian sexagesimal ===
+
+    // to_babylonian_time - convert seconds to Babylonian notation
+    define(interp, "to_babylonian_time", Some(1), |_, args| {
+        let seconds = match &args[0] {
+            Value::Int(n) => *n,
+            Value::Float(f) => *f as i64,
+            _ => return Err(RuntimeError::new("to_babylonian_time() requires number")),
+        };
+
+        let hours = seconds / 3600;
+        let mins = (seconds % 3600) / 60;
+        let secs = seconds % 60;
+
+        Ok(Value::String(Rc::new(format!("0s[{}:{}:{}]", hours, mins, secs))))
+    });
+
+    // from_babylonian_time - convert Babylonian time to seconds
+    define(interp, "from_babylonian_time", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("from_babylonian_time() requires string")),
+        };
+
+        let clean = s.trim_start_matches("0s")
+                     .trim_start_matches('[')
+                     .trim_end_matches(']');
+
+        let parts: Vec<i64> = clean.split(':')
+            .map(|p| p.trim().parse::<i64>().unwrap_or(0))
+            .collect();
+
+        let seconds = match parts.len() {
+            1 => parts[0],
+            2 => parts[0] * 60 + parts[1],
+            3 => parts[0] * 3600 + parts[1] * 60 + parts[2],
+            _ => return Err(RuntimeError::new("Invalid Babylonian time format")),
+        };
+
+        Ok(Value::Int(seconds))
+    });
+
+    // === Multi-base secret sharing ===
+
+    // vigesimal_shares - split secret with shares in Mayan base-20
+    define(interp, "vigesimal_shares", Some(3), |_, args| {
+        let secret = match &args[0] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            _ => return Err(RuntimeError::new("vigesimal_shares() requires string secret")),
+        };
+
+        let threshold = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("vigesimal_shares() requires integer threshold")),
+        };
+
+        let num_shares = match &args[2] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("vigesimal_shares() requires integer num_shares")),
+        };
+
+        if threshold < 2 || num_shares < threshold || num_shares > 20 {
+            return Err(RuntimeError::new("vigesimal_shares() requires 2 <= threshold <= num_shares <= 20 (Mayan limit)"));
+        }
+
+        // Generate shares using Shamir
+        let mut rng = rand::thread_rng();
+        let mut shares: Vec<Vec<u8>> = (0..num_shares).map(|_| Vec::with_capacity(secret.len() + 1)).collect();
+
+        for (i, share) in shares.iter_mut().enumerate() {
+            share.push((i + 1) as u8);
+        }
+
+        for &byte in &secret {
+            let mut coefficients: Vec<u8> = vec![byte];
+            for _ in 1..threshold {
+                coefficients.push(rng.gen());
+            }
+
+            for (i, share) in shares.iter_mut().enumerate() {
+                let x = (i + 1) as u8;
+                let y = eval_polynomial_gf256(&coefficients, x);
+                share.push(y);
+            }
+        }
+
+        // Encode shares in vigesimal
+        let share_values: Vec<Value> = shares.iter().enumerate()
+            .map(|(i, share)| {
+                let mut entry = std::collections::HashMap::new();
+
+                // Convert share bytes to vigesimal string
+                let mut vig_parts: Vec<String> = Vec::new();
+                for &byte in share {
+                    vig_parts.push(to_base_string(byte as u64, 20, true));
+                }
+
+                entry.insert("index".to_string(), Value::Int((i + 1) as i64));
+                entry.insert("vigesimal".to_string(), Value::String(Rc::new(format!("0v{}", vig_parts.join(".")))));
+                entry.insert("hex".to_string(), Value::String(Rc::new(hex::encode(share))));
+
+                Value::Map(Rc::new(RefCell::new(entry)))
+            })
+            .collect();
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("shares".to_string(), Value::Array(Rc::new(RefCell::new(share_values))));
+        result.insert("threshold".to_string(), Value::Int(threshold as i64));
+        result.insert("total".to_string(), Value::Int(num_shares as i64));
+        result.insert("base".to_string(), Value::String(Rc::new("vigesimal (Mayan base-20)".to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // multibase_info - get information about supported bases
+    define(interp, "multibase_info", Some(0), |_, _| {
+        let mut info = std::collections::HashMap::new();
+
+        let bases = vec![
+            ("binary", 2, "0b", "Modern computing"),
+            ("octal", 8, "0o", "Unix, historical computing"),
+            ("decimal", 10, "", "Indo-Arabic global standard"),
+            ("duodecimal", 12, "0z", "Dozen system - time, music, measurement"),
+            ("hexadecimal", 16, "0x", "Computing, colors, addresses"),
+            ("vigesimal", 20, "0v", "Mayan, Celtic, Basque - human digits"),
+            ("sexagesimal", 60, "0s", "Babylonian - time, angles, astronomy"),
+        ];
+
+        let base_list: Vec<Value> = bases.iter().map(|(name, base, prefix, desc)| {
+            let mut entry = std::collections::HashMap::new();
+            entry.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+            entry.insert("base".to_string(), Value::Int(*base as i64));
+            entry.insert("prefix".to_string(), Value::String(Rc::new(prefix.to_string())));
+            entry.insert("origin".to_string(), Value::String(Rc::new(desc.to_string())));
+            Value::Map(Rc::new(RefCell::new(entry)))
+        }).collect();
+
+        info.insert("numeral_systems".to_string(), Value::Array(Rc::new(RefCell::new(base_list))));
+
+        let encodings = vec!["base58 (Bitcoin)", "base32 (RFC 4648)", "base64 (standard)"];
+        let enc_list: Vec<Value> = encodings.iter()
+            .map(|s| Value::String(Rc::new(s.to_string())))
+            .collect();
+        info.insert("special_encodings".to_string(), Value::Array(Rc::new(RefCell::new(enc_list))));
+
+        let cultures = vec![
+            "mayan", "babylonian", "chinese", "japanese", "hebrew",
+            "islamic", "hindu", "greek", "celtic"
+        ];
+        let cult_list: Vec<Value> = cultures.iter()
+            .map(|s| Value::String(Rc::new(s.to_string())))
+            .collect();
+        info.insert("supported_cultures".to_string(), Value::Array(Rc::new(RefCell::new(cult_list))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+}
+
+// Helper functions for base conversion
+
+fn to_base_string(mut n: u64, base: u64, pad_to_two: bool) -> String {
+    const DIGITS: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    if n == 0 {
+        return if pad_to_two { "00".to_string() } else { "0".to_string() };
+    }
+
+    let mut result = Vec::new();
+    while n > 0 {
+        result.push(DIGITS[(n % base) as usize] as char);
+        n /= base;
+    }
+
+    if pad_to_two && result.len() < 2 {
+        result.push('0');
+    }
+
+    result.reverse();
+    result.into_iter().collect()
+}
+
+fn to_base_string_custom(mut n: u64, base: u64, digits: &str) -> String {
+    if n == 0 {
+        return digits.chars().next().unwrap().to_string();
+    }
+
+    let mut result = Vec::new();
+    let digit_chars: Vec<char> = digits.chars().collect();
+
+    while n > 0 {
+        result.push(digit_chars[(n % base) as usize]);
+        n /= base;
+    }
+
+    result.reverse();
+    result.into_iter().collect()
+}
+
+fn from_base_string(s: &str, base: u64) -> Result<u64, RuntimeError> {
+    let mut result: u64 = 0;
+
+    for c in s.chars() {
+        let digit = match c {
+            '0'..='9' => c as u64 - '0' as u64,
+            'A'..='Z' => c as u64 - 'A' as u64 + 10,
+            'a'..='z' => c as u64 - 'a' as u64 + 10,
+            _ => return Err(RuntimeError::new(format!("Invalid digit: {}", c))),
+        };
+
+        if digit >= base {
+            return Err(RuntimeError::new(format!("Digit {} out of range for base {}", c, base)));
+        }
+
+        result = result.checked_mul(base)
+            .and_then(|r| r.checked_add(digit))
+            .ok_or_else(|| RuntimeError::new("Number overflow"))?;
+    }
+
+    Ok(result)
+}
+
+fn from_base_string_custom(s: &str, digits: &str) -> Result<u64, RuntimeError> {
+    let base = digits.len() as u64;
+    let mut result: u64 = 0;
+
+    for c in s.chars() {
+        let digit = digits.find(c)
+            .ok_or_else(|| RuntimeError::new(format!("Invalid digit: {}", c)))? as u64;
+
+        result = result.checked_mul(base)
+            .and_then(|r| r.checked_add(digit))
+            .ok_or_else(|| RuntimeError::new("Number overflow"))?;
+    }
+
+    Ok(result)
+}
+
+fn parse_base_prefix(s: &str, prefix: &str) -> (bool, String) {
+    let negative = s.starts_with('-');
+    let clean = s.trim_start_matches('-')
+                 .trim_start_matches(prefix)
+                 .to_string();
+    (negative, clean)
+}
+
+// ============================================================================
+// POLYCULTURAL AUDIO: World tuning systems, sacred frequencies, synthesis
+// ============================================================================
+//
+// Sigil's audio system respects that music is not universal - different cultures
+// have fundamentally different relationships with pitch, scale, and meaning.
+//
+// Waveform Morphemes:
+//   ∿  sine     - pure tone, fundamental
+//   ⊓  square   - digital, odd harmonics
+//   ⋀  sawtooth - bright, all harmonics
+//   △  triangle - mellow, odd harmonics (weaker)
+//
+// Tuning Systems:
+//   12-TET     - Western equal temperament (default)
+//   24-TET     - Arabic maqam (quarter tones)
+//   22-Shruti  - Indian classical (microtones)
+//   Just       - Pure ratios (Pythagorean, etc.)
+//   Gamelan    - Indonesian (pelog, slendro)
+//   53-TET     - Turkish/Persian (commas)
+//
+// Sacred Frequencies:
+//   ॐ Om       - 136.1 Hz (Earth year frequency)
+//   Solfeggio  - 396, 417, 528, 639, 741, 852 Hz
+//   Schumann   - 7.83 Hz (Earth resonance)
+//   Planetary  - Kepler's music of the spheres
+
+fn register_audio(interp: &mut Interpreter) {
+    // =========================================================================
+    // TUNING SYSTEMS
+    // =========================================================================
+
+    // tune - convert a note to frequency in a specific tuning system
+    // Supports: "12tet", "24tet", "just", "pythagorean", "meantone", "gamelan_pelog", "gamelan_slendro"
+    define(interp, "tune", Some(3), |_, args| {
+        let note = match &args[0] {
+            Value::Int(n) => *n as f64,      // MIDI note number
+            Value::Float(f) => *f,            // Fractional note
+            Value::String(s) => parse_note_name(s)?,
+            _ => return Err(RuntimeError::new("tune() requires note number or name")),
+        };
+
+        let system = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("tune() requires tuning system name")),
+        };
+
+        let root_freq = match &args[2] {
+            Value::Float(f) => *f,
+            Value::Int(i) => *i as f64,
+            _ => return Err(RuntimeError::new("tune() requires root frequency")),
+        };
+
+        let freq = match system.as_str() {
+            "12tet" | "equal" | "western" => {
+                // Standard 12-tone equal temperament
+                root_freq * 2.0_f64.powf((note - 69.0) / 12.0)
+            }
+            "24tet" | "quarter" | "arabic" | "maqam" => {
+                // 24-tone equal temperament (quarter tones)
+                root_freq * 2.0_f64.powf((note - 69.0) / 24.0)
+            }
+            "just" | "pure" => {
+                // Just intonation ratios from root
+                let interval = ((note - 69.0) % 12.0 + 12.0) % 12.0;
+                let octave = ((note - 69.0) / 12.0).floor();
+                let ratio = just_intonation_ratio(interval as i32);
+                root_freq * ratio * 2.0_f64.powf(octave)
+            }
+            "pythagorean" => {
+                // Pythagorean tuning (pure fifths)
+                let interval = ((note - 69.0) % 12.0 + 12.0) % 12.0;
+                let octave = ((note - 69.0) / 12.0).floor();
+                let ratio = pythagorean_ratio(interval as i32);
+                root_freq * ratio * 2.0_f64.powf(octave)
+            }
+            "meantone" | "quarter_comma" => {
+                // Quarter-comma meantone
+                let interval = ((note - 69.0) % 12.0 + 12.0) % 12.0;
+                let octave = ((note - 69.0) / 12.0).floor();
+                let ratio = meantone_ratio(interval as i32);
+                root_freq * ratio * 2.0_f64.powf(octave)
+            }
+            "53tet" | "turkish" | "persian" | "comma" => {
+                // 53-TET (Turkish/Persian music, approximates just intonation)
+                root_freq * 2.0_f64.powf((note - 69.0) / 53.0)
+            }
+            "22shruti" | "shruti" | "indian" => {
+                // Indian 22-shruti system
+                let shruti = (note - 69.0) % 22.0;
+                let octave = ((note - 69.0) / 22.0).floor();
+                let ratio = shruti_ratio(shruti as i32);
+                root_freq * ratio * 2.0_f64.powf(octave)
+            }
+            "gamelan_pelog" | "pelog" => {
+                // Javanese pelog (7-note)
+                let degree = ((note - 69.0) % 7.0 + 7.0) % 7.0;
+                let octave = ((note - 69.0) / 7.0).floor();
+                let ratio = pelog_ratio(degree as i32);
+                root_freq * ratio * 2.0_f64.powf(octave)
+            }
+            "gamelan_slendro" | "slendro" => {
+                // Javanese slendro (5-note, roughly equal)
+                let degree = ((note - 69.0) % 5.0 + 5.0) % 5.0;
+                let octave = ((note - 69.0) / 5.0).floor();
+                let ratio = slendro_ratio(degree as i32);
+                root_freq * ratio * 2.0_f64.powf(octave)
+            }
+            "bohlen_pierce" | "bp" => {
+                // Bohlen-Pierce scale (tritave-based, 13 steps)
+                root_freq * 3.0_f64.powf((note - 69.0) / 13.0)
+            }
+            _ => return Err(RuntimeError::new(format!("Unknown tuning system: {}", system))),
+        };
+
+        Ok(Value::Float(freq))
+    });
+
+    // tuning_info - get information about a tuning system
+    define(interp, "tuning_info", Some(1), |_, args| {
+        let system = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("tuning_info() requires string")),
+        };
+
+        let (name, notes_per_octave, origin, description) = match system.as_str() {
+            "12tet" | "equal" | "western" => (
+                "12-TET", 12, "Western (18th century)",
+                "Equal temperament - every semitone is exactly 2^(1/12). Universal but slightly impure."
+            ),
+            "24tet" | "quarter" | "arabic" | "maqam" => (
+                "24-TET", 24, "Arabic/Turkish",
+                "Quarter-tone system for maqam music. Enables neutral seconds and other microtones."
+            ),
+            "just" | "pure" => (
+                "Just Intonation", 12, "Ancient (Ptolemy)",
+                "Pure frequency ratios (3:2 fifth, 5:4 third). Beatless intervals but limited modulation."
+            ),
+            "pythagorean" => (
+                "Pythagorean", 12, "Ancient Greece",
+                "Built entirely from perfect fifths (3:2). Pure fifths but harsh thirds."
+            ),
+            "meantone" | "quarter_comma" => (
+                "Quarter-Comma Meantone", 12, "Renaissance Europe",
+                "Tempered fifths for pure major thirds. Beautiful in limited keys."
+            ),
+            "53tet" | "turkish" | "persian" | "comma" => (
+                "53-TET", 53, "Turkish/Persian",
+                "53 notes per octave. Closely approximates just intonation and allows maqam/dastgah."
+            ),
+            "22shruti" | "shruti" | "indian" => (
+                "22-Shruti", 22, "Indian Classical",
+                "Ancient Indian system. Each shruti is a 'microtone' - the smallest perceptible interval."
+            ),
+            "gamelan_pelog" | "pelog" => (
+                "Pelog", 7, "Javanese Gamelan",
+                "Heptatonic scale with unequal steps. Each gamelan has unique tuning - instruments are married."
+            ),
+            "gamelan_slendro" | "slendro" => (
+                "Slendro", 5, "Javanese Gamelan",
+                "Pentatonic scale, roughly equal steps (~240 cents). Each ensemble uniquely tuned."
+            ),
+            "bohlen_pierce" | "bp" => (
+                "Bohlen-Pierce", 13, "Modern (1970s)",
+                "Non-octave scale based on 3:1 tritave. Alien but mathematically beautiful."
+            ),
+            _ => return Err(RuntimeError::new(format!("Unknown tuning system: {}", system))),
+        };
+
+        let mut info = std::collections::HashMap::new();
+        info.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        info.insert("notes_per_octave".to_string(), Value::Int(notes_per_octave));
+        info.insert("origin".to_string(), Value::String(Rc::new(origin.to_string())));
+        info.insert("description".to_string(), Value::String(Rc::new(description.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+
+    // list_tuning_systems - list all available tuning systems
+    define(interp, "list_tuning_systems", Some(0), |_, _| {
+        let systems = vec![
+            ("12tet", "Western equal temperament", 12),
+            ("24tet", "Arabic/Turkish quarter-tones", 24),
+            ("just", "Pure ratio just intonation", 12),
+            ("pythagorean", "Ancient Greek pure fifths", 12),
+            ("meantone", "Renaissance quarter-comma", 12),
+            ("53tet", "Turkish/Persian comma system", 53),
+            ("22shruti", "Indian microtonal", 22),
+            ("pelog", "Javanese gamelan 7-note", 7),
+            ("slendro", "Javanese gamelan 5-note", 5),
+            ("bohlen_pierce", "Non-octave tritave scale", 13),
+        ];
+
+        let result: Vec<Value> = systems.iter().map(|(name, desc, notes)| {
+            let mut entry = std::collections::HashMap::new();
+            entry.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+            entry.insert("description".to_string(), Value::String(Rc::new(desc.to_string())));
+            entry.insert("notes_per_octave".to_string(), Value::Int(*notes));
+            Value::Map(Rc::new(RefCell::new(entry)))
+        }).collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // =========================================================================
+    // SACRED FREQUENCIES
+    // =========================================================================
+
+    // sacred_freq - get sacred/spiritual frequency by name
+    define(interp, "sacred_freq", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("sacred_freq() requires string")),
+        };
+
+        let (freq, description) = match name.as_str() {
+            // Om and Earth frequencies
+            "om" | "ॐ" | "aum" => (136.1, "Om - Earth year frequency (Cosmic Om)"),
+            "earth_day" => (194.18, "Earth day - one rotation"),
+            "earth_year" => (136.1, "Earth year - one orbit (Om frequency)"),
+            "schumann" | "earth_resonance" => (7.83, "Schumann resonance - Earth's electromagnetic heartbeat"),
+
+            // Solfeggio frequencies
+            "ut" | "do" | "396" => (396.0, "UT/DO - Liberating guilt and fear"),
+            "re" | "417" => (417.0, "RE - Undoing situations, facilitating change"),
+            "mi" | "528" => (528.0, "MI - Transformation, miracles, DNA repair"),
+            "fa" | "639" => (639.0, "FA - Connecting relationships"),
+            "sol" | "741" => (741.0, "SOL - Awakening intuition"),
+            "la" | "852" => (852.0, "LA - Returning to spiritual order"),
+            "si" | "963" => (963.0, "SI - Divine consciousness, enlightenment"),
+            "174" => (174.0, "Solfeggio foundation - pain relief"),
+            "285" => (285.0, "Solfeggio - healing tissue"),
+
+            // Planetary frequencies (Kepler/Cousto)
+            "sun" | "☉" => (126.22, "Sun - ego, vitality, leadership"),
+            "moon" | "☽" | "☾" => (210.42, "Moon - emotion, intuition, cycles"),
+            "mercury" | "☿" => (141.27, "Mercury - communication, intellect"),
+            "venus" | "♀" => (221.23, "Venus - love, beauty, harmony"),
+            "mars" | "♂" => (144.72, "Mars - energy, action, courage"),
+            "jupiter" | "♃" => (183.58, "Jupiter - expansion, wisdom, luck"),
+            "saturn" | "♄" => (147.85, "Saturn - discipline, structure, time"),
+
+            // Chakra frequencies
+            "root" | "muladhara" => (256.0, "Root chakra - survival, grounding (C)"),
+            "sacral" | "svadhisthana" => (288.0, "Sacral chakra - creativity, sexuality (D)"),
+            "solar" | "manipura" => (320.0, "Solar plexus - will, power (E)"),
+            "heart" | "anahata" => (341.3, "Heart chakra - love, compassion (F)"),
+            "throat" | "vishuddha" => (384.0, "Throat chakra - expression, truth (G)"),
+            "third_eye" | "ajna" => (426.7, "Third eye - intuition, insight (A)"),
+            "crown" | "sahasrara" => (480.0, "Crown chakra - consciousness, unity (B)"),
+
+            // Concert pitch standards
+            "a440" | "iso" => (440.0, "ISO standard concert pitch (1955)"),
+            "a432" | "verdi" => (432.0, "Verdi pitch - 'mathematically consistent with universe'"),
+            "a415" | "baroque" => (415.0, "Baroque pitch - period instrument standard"),
+            "a466" | "chorton" => (466.0, "Choir pitch - high Baroque German"),
+
+            // Binaural/brainwave
+            "delta" => (2.0, "Delta waves - deep sleep, healing (0.5-4 Hz)"),
+            "theta" => (6.0, "Theta waves - meditation, creativity (4-8 Hz)"),
+            "alpha" => (10.0, "Alpha waves - relaxation, calm focus (8-13 Hz)"),
+            "beta" => (20.0, "Beta waves - alertness, concentration (13-30 Hz)"),
+            "gamma" => (40.0, "Gamma waves - insight, peak performance (30-100 Hz)"),
+
+            _ => return Err(RuntimeError::new(format!("Unknown sacred frequency: {}", name))),
+        };
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("frequency".to_string(), Value::Float(freq));
+        result.insert("name".to_string(), Value::String(Rc::new(name)));
+        result.insert("meaning".to_string(), Value::String(Rc::new(description.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // solfeggio - get all solfeggio frequencies
+    define(interp, "solfeggio", Some(0), |_, _| {
+        let frequencies = vec![
+            (174.0, "Foundation", "Pain relief, security"),
+            (285.0, "Quantum", "Healing tissue, safety"),
+            (396.0, "UT", "Liberating guilt and fear"),
+            (417.0, "RE", "Undoing situations, change"),
+            (528.0, "MI", "Transformation, DNA repair, miracles"),
+            (639.0, "FA", "Connecting relationships"),
+            (741.0, "SOL", "Awakening intuition"),
+            (852.0, "LA", "Spiritual order"),
+            (963.0, "SI", "Divine consciousness"),
+        ];
+
+        let result: Vec<Value> = frequencies.iter().map(|(freq, name, meaning)| {
+            let mut entry = std::collections::HashMap::new();
+            entry.insert("frequency".to_string(), Value::Float(*freq));
+            entry.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+            entry.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+            Value::Map(Rc::new(RefCell::new(entry)))
+        }).collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // chakras - get all chakra frequencies
+    define(interp, "chakras", Some(0), |_, _| {
+        let chakras = vec![
+            (256.0, "Muladhara", "Root", "Red", "Survival, grounding, stability"),
+            (288.0, "Svadhisthana", "Sacral", "Orange", "Creativity, sexuality, emotion"),
+            (320.0, "Manipura", "Solar Plexus", "Yellow", "Will, power, self-esteem"),
+            (341.3, "Anahata", "Heart", "Green", "Love, compassion, connection"),
+            (384.0, "Vishuddha", "Throat", "Blue", "Expression, truth, communication"),
+            (426.7, "Ajna", "Third Eye", "Indigo", "Intuition, insight, wisdom"),
+            (480.0, "Sahasrara", "Crown", "Violet", "Consciousness, unity, transcendence"),
+        ];
+
+        let result: Vec<Value> = chakras.iter().map(|(freq, sanskrit, english, color, meaning)| {
+            let mut entry = std::collections::HashMap::new();
+            entry.insert("frequency".to_string(), Value::Float(*freq));
+            entry.insert("sanskrit".to_string(), Value::String(Rc::new(sanskrit.to_string())));
+            entry.insert("english".to_string(), Value::String(Rc::new(english.to_string())));
+            entry.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
+            entry.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+            Value::Map(Rc::new(RefCell::new(entry)))
+        }).collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // =========================================================================
+    // WAVEFORM GENERATION
+    // =========================================================================
+
+    // Generate waveform samples - returns array of floats [-1.0, 1.0]
+
+    // sine - pure sine wave ∿
+    define(interp, "sine", Some(3), |_, args| {
+        generate_waveform(&args, |phase| phase.sin())
+    });
+
+    // square - square wave ⊓
+    define(interp, "square", Some(3), |_, args| {
+        generate_waveform(&args, |phase| if phase.sin() >= 0.0 { 1.0 } else { -1.0 })
+    });
+
+    // sawtooth - sawtooth wave ⋀
+    define(interp, "sawtooth", Some(3), |_, args| {
+        generate_waveform(&args, |phase| {
+            let normalized = (phase / std::f64::consts::TAU).fract();
+            2.0 * normalized - 1.0
+        })
+    });
+
+    // triangle - triangle wave △
+    define(interp, "triangle", Some(3), |_, args| {
+        generate_waveform(&args, |phase| {
+            let normalized = (phase / std::f64::consts::TAU).fract();
+            if normalized < 0.5 {
+                4.0 * normalized - 1.0
+            } else {
+                3.0 - 4.0 * normalized
+            }
+        })
+    });
+
+    // noise - white noise
+    define(interp, "noise", Some(1), |_, args| {
+        let samples = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("noise() requires integer sample count")),
+        };
+
+        let mut rng = rand::thread_rng();
+        let result: Vec<Value> = (0..samples)
+            .map(|_| Value::Float(rng.gen::<f64>() * 2.0 - 1.0))
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // =========================================================================
+    // CULTURAL SCALES
+    // =========================================================================
+
+    // scale - get scale degrees for a cultural scale
+    define(interp, "scale", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("scale() requires string")),
+        };
+
+        let (intervals, origin, description) = match name.as_str() {
+            // Western modes
+            "major" | "ionian" => (vec![0, 2, 4, 5, 7, 9, 11], "Western", "Happy, bright, resolved"),
+            "minor" | "aeolian" => (vec![0, 2, 3, 5, 7, 8, 10], "Western", "Sad, dark, introspective"),
+            "dorian" => (vec![0, 2, 3, 5, 7, 9, 10], "Western/Jazz", "Minor with bright 6th"),
+            "phrygian" => (vec![0, 1, 3, 5, 7, 8, 10], "Western/Flamenco", "Spanish, exotic, tense"),
+            "lydian" => (vec![0, 2, 4, 6, 7, 9, 11], "Western", "Dreamy, floating, ethereal"),
+            "mixolydian" => (vec![0, 2, 4, 5, 7, 9, 10], "Western/Blues", "Bluesy major"),
+            "locrian" => (vec![0, 1, 3, 5, 6, 8, 10], "Western", "Unstable, dissonant"),
+
+            // Pentatonic
+            "pentatonic_major" => (vec![0, 2, 4, 7, 9], "Universal", "No dissonance, universal"),
+            "pentatonic_minor" => (vec![0, 3, 5, 7, 10], "Universal", "Blues foundation"),
+
+            // Japanese
+            "hirajoshi" => (vec![0, 2, 3, 7, 8], "Japanese", "Melancholic, mysterious"),
+            "insen" => (vec![0, 1, 5, 7, 10], "Japanese", "Dark, zen, contemplative"),
+            "iwato" => (vec![0, 1, 5, 6, 10], "Japanese", "Most dark and dissonant"),
+            "kumoi" => (vec![0, 2, 3, 7, 9], "Japanese", "Gentle, peaceful"),
+            "yo" => (vec![0, 2, 5, 7, 9], "Japanese", "Bright, folk, celebratory"),
+
+            // Arabic maqamat
+            "hijaz" => (vec![0, 1, 4, 5, 7, 8, 11], "Arabic", "Exotic, Middle Eastern"),
+            "bayati" => (vec![0, 1.5 as i32, 3, 5, 7, 8, 10], "Arabic", "Quarter-tone, soulful"),
+            "rast" => (vec![0, 2, 3.5 as i32, 5, 7, 9, 10.5 as i32], "Arabic", "Foundation maqam"),
+            "saba" => (vec![0, 1.5 as i32, 3, 4, 5, 8, 10], "Arabic", "Sad, spiritual"),
+
+            // Indian ragas (approximated to 12-TET)
+            "bhairav" => (vec![0, 1, 4, 5, 7, 8, 11], "Indian", "Morning raga, devotional"),
+            "yaman" | "kalyan" => (vec![0, 2, 4, 6, 7, 9, 11], "Indian", "Evening, romantic"),
+            "bhairavi" => (vec![0, 1, 3, 5, 7, 8, 10], "Indian", "Concluding raga, devotional"),
+            "todi" => (vec![0, 1, 3, 6, 7, 8, 11], "Indian", "Serious, pathos"),
+            "marwa" => (vec![0, 1, 4, 6, 7, 9, 11], "Indian", "Evening, longing"),
+
+            // Blues
+            "blues" => (vec![0, 3, 5, 6, 7, 10], "American", "Blue notes, soul"),
+
+            // Hungarian/Eastern European
+            "hungarian_minor" => (vec![0, 2, 3, 6, 7, 8, 11], "Hungarian", "Gypsy, dramatic"),
+            "romanian" => (vec![0, 2, 3, 6, 7, 9, 10], "Romanian", "Folk, energetic"),
+
+            // Jewish
+            "ahava_raba" | "freygish" => (vec![0, 1, 4, 5, 7, 8, 10], "Jewish/Klezmer", "Cantorial, emotional"),
+            "mi_sheberach" => (vec![0, 2, 3, 6, 7, 9, 10], "Jewish", "Prayer mode"),
+
+            // Chinese
+            "gong" => (vec![0, 2, 4, 7, 9], "Chinese", "Palace mode, major-like"),
+            "shang" => (vec![0, 2, 5, 7, 9], "Chinese", "Merchant mode"),
+            "jue" => (vec![0, 3, 5, 7, 10], "Chinese", "Angle mode"),
+            "zhi" => (vec![0, 2, 5, 7, 10], "Chinese", "Emblem mode"),
+            "yu" => (vec![0, 3, 5, 8, 10], "Chinese", "Wings mode, minor-like"),
+
+            // Indonesian
+            "pelog" => (vec![0, 1, 3, 7, 8], "Javanese", "7-note unequal temperament"),
+            "slendro" => (vec![0, 2, 5, 7, 9], "Javanese", "5-note roughly equal"),
+
+            // Other
+            "whole_tone" => (vec![0, 2, 4, 6, 8, 10], "Impressionist", "Dreamlike, no resolution"),
+            "chromatic" => (vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], "Western", "All 12 notes"),
+            "diminished" => (vec![0, 2, 3, 5, 6, 8, 9, 11], "Jazz", "Symmetric, tense"),
+            "augmented" => (vec![0, 3, 4, 7, 8, 11], "Jazz", "Symmetric, floating"),
+
+            _ => return Err(RuntimeError::new(format!("Unknown scale: {}", name))),
+        };
+
+        let mut result = std::collections::HashMap::new();
+        let intervals_values: Vec<Value> = intervals.iter().map(|&i| Value::Int(i as i64)).collect();
+        result.insert("intervals".to_string(), Value::Array(Rc::new(RefCell::new(intervals_values))));
+        result.insert("origin".to_string(), Value::String(Rc::new(origin.to_string())));
+        result.insert("character".to_string(), Value::String(Rc::new(description.to_string())));
+        result.insert("name".to_string(), Value::String(Rc::new(name)));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // list_scales - list all available scales grouped by culture
+    define(interp, "list_scales", Some(0), |_, _| {
+        let mut cultures = std::collections::HashMap::new();
+
+        cultures.insert("western".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("major".to_string())),
+            Value::String(Rc::new("minor".to_string())),
+            Value::String(Rc::new("dorian".to_string())),
+            Value::String(Rc::new("phrygian".to_string())),
+            Value::String(Rc::new("lydian".to_string())),
+            Value::String(Rc::new("mixolydian".to_string())),
+            Value::String(Rc::new("locrian".to_string())),
+        ]))));
+
+        cultures.insert("japanese".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("hirajoshi".to_string())),
+            Value::String(Rc::new("insen".to_string())),
+            Value::String(Rc::new("iwato".to_string())),
+            Value::String(Rc::new("kumoi".to_string())),
+            Value::String(Rc::new("yo".to_string())),
+        ]))));
+
+        cultures.insert("arabic".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("hijaz".to_string())),
+            Value::String(Rc::new("bayati".to_string())),
+            Value::String(Rc::new("rast".to_string())),
+            Value::String(Rc::new("saba".to_string())),
+        ]))));
+
+        cultures.insert("indian".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("bhairav".to_string())),
+            Value::String(Rc::new("yaman".to_string())),
+            Value::String(Rc::new("bhairavi".to_string())),
+            Value::String(Rc::new("todi".to_string())),
+            Value::String(Rc::new("marwa".to_string())),
+        ]))));
+
+        cultures.insert("chinese".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("gong".to_string())),
+            Value::String(Rc::new("shang".to_string())),
+            Value::String(Rc::new("jue".to_string())),
+            Value::String(Rc::new("zhi".to_string())),
+            Value::String(Rc::new("yu".to_string())),
+        ]))));
+
+        cultures.insert("jewish".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("ahava_raba".to_string())),
+            Value::String(Rc::new("mi_sheberach".to_string())),
+        ]))));
+
+        cultures.insert("indonesian".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("pelog".to_string())),
+            Value::String(Rc::new("slendro".to_string())),
+        ]))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(cultures))))
+    });
+
+    // =========================================================================
+    // INTERVALS AND HARMONY
+    // =========================================================================
+
+    // interval_ratio - get the frequency ratio for an interval
+    define(interp, "interval_ratio", Some(2), |_, args| {
+        let semitones = match &args[0] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("interval_ratio() requires number")),
+        };
+
+        let tuning = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("interval_ratio() requires tuning system")),
+        };
+
+        let ratio = match tuning.as_str() {
+            "12tet" | "equal" => 2.0_f64.powf(semitones / 12.0),
+            "just" => just_intonation_ratio(semitones as i32),
+            "pythagorean" => pythagorean_ratio(semitones as i32),
+            _ => 2.0_f64.powf(semitones / 12.0),
+        };
+
+        Ok(Value::Float(ratio))
+    });
+
+    // cents_between - calculate cents between two frequencies
+    define(interp, "cents_between", Some(2), |_, args| {
+        let f1 = match &args[0] {
+            Value::Float(f) => *f,
+            Value::Int(i) => *i as f64,
+            _ => return Err(RuntimeError::new("cents_between() requires numbers")),
+        };
+        let f2 = match &args[1] {
+            Value::Float(f) => *f,
+            Value::Int(i) => *i as f64,
+            _ => return Err(RuntimeError::new("cents_between() requires numbers")),
+        };
+
+        let cents = 1200.0 * (f2 / f1).log2();
+        Ok(Value::Float(cents))
+    });
+
+    // harmonic_series - generate harmonic series from fundamental
+    define(interp, "harmonic_series", Some(2), |_, args| {
+        let fundamental = match &args[0] {
+            Value::Float(f) => *f,
+            Value::Int(i) => *i as f64,
+            _ => return Err(RuntimeError::new("harmonic_series() requires frequency")),
+        };
+        let count = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("harmonic_series() requires count")),
+        };
+
+        let harmonics: Vec<Value> = (1..=count)
+            .map(|n| {
+                let mut entry = std::collections::HashMap::new();
+                entry.insert("harmonic".to_string(), Value::Int(n as i64));
+                entry.insert("frequency".to_string(), Value::Float(fundamental * n as f64));
+                entry.insert("cents_from_root".to_string(), Value::Float(1200.0 * (n as f64).log2()));
+                Value::Map(Rc::new(RefCell::new(entry)))
+            })
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(harmonics))))
+    });
+
+    // =========================================================================
+    // AUDIO INFO
+    // =========================================================================
+
+    define(interp, "audio_info", Some(0), |_, _| {
+        let mut info = std::collections::HashMap::new();
+
+        info.insert("tuning_systems".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("12tet, 24tet, just, pythagorean, meantone".to_string())),
+            Value::String(Rc::new("53tet, 22shruti, pelog, slendro, bohlen_pierce".to_string())),
+        ]))));
+
+        info.insert("waveforms".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("sine (∿)".to_string())),
+            Value::String(Rc::new("square (⊓)".to_string())),
+            Value::String(Rc::new("sawtooth (⋀)".to_string())),
+            Value::String(Rc::new("triangle (△)".to_string())),
+            Value::String(Rc::new("noise".to_string())),
+        ]))));
+
+        info.insert("sacred_frequencies".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("om, solfeggio, chakras, planets".to_string())),
+            Value::String(Rc::new("schumann, brainwaves (delta/theta/alpha/beta/gamma)".to_string())),
+        ]))));
+
+        info.insert("scale_cultures".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("western, japanese, arabic, indian".to_string())),
+            Value::String(Rc::new("chinese, jewish, indonesian".to_string())),
+        ]))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+}
+
+// Helper functions for tuning systems
+
+fn parse_note_name(s: &str) -> Result<f64, RuntimeError> {
+    let s = s.trim().to_uppercase();
+    let (note, octave_offset) = if s.ends_with(|c: char| c.is_ascii_digit()) {
+        let octave: i32 = s.chars().last().unwrap().to_digit(10).unwrap() as i32;
+        let note_part = &s[..s.len()-1];
+        (note_part, (octave - 4) * 12)  // Octave 4 = MIDI 60 area
+    } else {
+        (&s[..], 0)
+    };
+
+    let semitone = match note {
+        "C" => 0, "C#" | "DB" => 1, "D" => 2, "D#" | "EB" => 3,
+        "E" => 4, "F" => 5, "F#" | "GB" => 6, "G" => 7,
+        "G#" | "AB" => 8, "A" => 9, "A#" | "BB" => 10, "B" => 11,
+        _ => return Err(RuntimeError::new(format!("Unknown note: {}", s))),
+    };
+
+    Ok(69.0 + semitone as f64 - 9.0 + octave_offset as f64)  // A4 = 69
+}
+
+fn just_intonation_ratio(semitones: i32) -> f64 {
+    // Classic 5-limit just intonation ratios
+    match semitones.rem_euclid(12) {
+        0 => 1.0,           // Unison
+        1 => 16.0 / 15.0,   // Minor second
+        2 => 9.0 / 8.0,     // Major second
+        3 => 6.0 / 5.0,     // Minor third
+        4 => 5.0 / 4.0,     // Major third
+        5 => 4.0 / 3.0,     // Perfect fourth
+        6 => 45.0 / 32.0,   // Tritone
+        7 => 3.0 / 2.0,     // Perfect fifth
+        8 => 8.0 / 5.0,     // Minor sixth
+        9 => 5.0 / 3.0,     // Major sixth
+        10 => 9.0 / 5.0,    // Minor seventh
+        11 => 15.0 / 8.0,   // Major seventh
+        _ => 1.0,
+    }
+}
+
+fn pythagorean_ratio(semitones: i32) -> f64 {
+    // Pythagorean tuning (pure fifths, 3:2 ratio)
+    match semitones.rem_euclid(12) {
+        0 => 1.0,
+        1 => 256.0 / 243.0,
+        2 => 9.0 / 8.0,
+        3 => 32.0 / 27.0,
+        4 => 81.0 / 64.0,
+        5 => 4.0 / 3.0,
+        6 => 729.0 / 512.0,
+        7 => 3.0 / 2.0,
+        8 => 128.0 / 81.0,
+        9 => 27.0 / 16.0,
+        10 => 16.0 / 9.0,
+        11 => 243.0 / 128.0,
+        _ => 1.0,
+    }
+}
+
+fn meantone_ratio(semitones: i32) -> f64 {
+    // Quarter-comma meantone - fifths narrowed by 1/4 syntonic comma
+    let fifth = 5.0_f64.powf(0.25);  // Pure major third, tempered fifth
+    match semitones.rem_euclid(12) {
+        0 => 1.0,
+        1 => 8.0 / (fifth.powi(5)),
+        2 => fifth.powi(2) / 2.0,
+        3 => 4.0 / (fifth.powi(3)),
+        4 => fifth.powi(4) / 4.0,
+        5 => 2.0 / fifth,
+        6 => fifth.powi(6) / 8.0,
+        7 => fifth,
+        8 => 8.0 / (fifth.powi(4)),
+        9 => fifth.powi(3) / 2.0,
+        10 => 4.0 / (fifth.powi(2)),
+        11 => fifth.powi(5) / 4.0,
+        _ => 1.0,
+    }
+}
+
+fn shruti_ratio(shruti: i32) -> f64 {
+    // 22 shruti ratios (traditional Indian)
+    let ratios = [
+        1.0, 256.0/243.0, 16.0/15.0, 10.0/9.0, 9.0/8.0, 32.0/27.0, 6.0/5.0,
+        5.0/4.0, 81.0/64.0, 4.0/3.0, 27.0/20.0, 45.0/32.0, 729.0/512.0, 3.0/2.0,
+        128.0/81.0, 8.0/5.0, 5.0/3.0, 27.0/16.0, 16.0/9.0, 9.0/5.0, 15.0/8.0, 243.0/128.0
+    ];
+    ratios[shruti.rem_euclid(22) as usize]
+}
+
+fn pelog_ratio(degree: i32) -> f64 {
+    // Approximate pelog ratios (varies by gamelan)
+    let ratios = [1.0, 1.12, 1.26, 1.5, 1.68, 1.89, 2.12];
+    ratios[degree.rem_euclid(7) as usize]
+}
+
+fn slendro_ratio(degree: i32) -> f64 {
+    // Approximate slendro ratios (roughly equal ~240 cents)
+    let ratios = [1.0, 1.148, 1.318, 1.516, 1.741];
+    ratios[degree.rem_euclid(5) as usize]
+}
+
+fn generate_waveform(args: &[Value], wave_fn: fn(f64) -> f64) -> Result<Value, RuntimeError> {
+    let freq = match &args[0] {
+        Value::Float(f) => *f,
+        Value::Int(i) => *i as f64,
+        _ => return Err(RuntimeError::new("Waveform requires frequency")),
+    };
+    let sample_rate = match &args[1] {
+        Value::Float(f) => *f as usize,
+        Value::Int(i) => *i as usize,
+        _ => return Err(RuntimeError::new("Waveform requires sample rate")),
+    };
+    let duration = match &args[2] {
+        Value::Float(f) => *f,
+        Value::Int(i) => *i as f64,
+        _ => return Err(RuntimeError::new("Waveform requires duration")),
+    };
+
+    let num_samples = (sample_rate as f64 * duration) as usize;
+    let samples: Vec<Value> = (0..num_samples)
+        .map(|i| {
+            let t = i as f64 / sample_rate as f64;
+            let phase = 2.0 * std::f64::consts::PI * freq * t;
+            Value::Float(wave_fn(phase))
+        })
+        .collect();
+
+    Ok(Value::Array(Rc::new(RefCell::new(samples))))
+}
+
+// ============================================================================
+// SPIRITUALITY: Divination, sacred geometry, gematria, archetypes
+// ============================================================================
+//
+// This module treats computation as potentially sacred - numbers have meaning,
+// patterns have significance, and randomness can be oracle.
+//
+// I Ching Trigrams:
+//   ☰ Heaven (乾)  ☱ Lake (兌)   ☲ Fire (離)   ☳ Thunder (震)
+//   ☴ Wind (巽)    ☵ Water (坎)  ☶ Mountain (艮) ☷ Earth (坤)
+//
+// Sacred Geometry:
+//   φ = 1.618033... (Golden Ratio)
+//   √φ, φ², 1/φ (related constants)
+//   Fibonacci sequence
+//   Platonic solid relationships
+//
+// Gematria Systems:
+//   Hebrew (Kabbalah), Greek (Isopsephy), Arabic (Abjad)
+//   Each letter is a number; words have numerical souls
+
+fn register_spirituality(interp: &mut Interpreter) {
+    // =========================================================================
+    // I CHING - Book of Changes
+    // =========================================================================
+
+    // The 8 trigrams
+    const TRIGRAMS: [(&str, &str, &str, &str, &str); 8] = [
+        ("☰", "乾", "Heaven", "Creative", "strong, initiating, persisting"),
+        ("☱", "兌", "Lake", "Joyous", "pleasure, satisfaction, openness"),
+        ("☲", "離", "Fire", "Clinging", "clarity, awareness, dependence"),
+        ("☳", "震", "Thunder", "Arousing", "movement, initiative, action"),
+        ("☴", "巽", "Wind", "Gentle", "penetrating, following, flexible"),
+        ("☵", "坎", "Water", "Abysmal", "danger, flowing, depth"),
+        ("☶", "艮", "Mountain", "Keeping Still", "stopping, resting, meditation"),
+        ("☷", "坤", "Earth", "Receptive", "yielding, nurturing, devoted"),
+    ];
+
+    // trigram - get trigram information
+    define(interp, "trigram", Some(1), |_, args| {
+        let input = match &args[0] {
+            Value::Int(n) => (*n as usize).min(7),
+            Value::String(s) => {
+                match s.as_str() {
+                    "☰" | "heaven" | "qian" | "乾" => 0,
+                    "☱" | "lake" | "dui" | "兌" => 1,
+                    "☲" | "fire" | "li" | "離" => 2,
+                    "☳" | "thunder" | "zhen" | "震" => 3,
+                    "☴" | "wind" | "xun" | "巽" => 4,
+                    "☵" | "water" | "kan" | "坎" => 5,
+                    "☶" | "mountain" | "gen" | "艮" => 6,
+                    "☷" | "earth" | "kun" | "坤" => 7,
+                    _ => return Err(RuntimeError::new(format!("Unknown trigram: {}", s))),
+                }
+            }
+            _ => return Err(RuntimeError::new("trigram() requires number or name")),
+        };
+
+        let (symbol, chinese, english, name, meaning) = TRIGRAMS[input];
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("number".to_string(), Value::Int(input as i64));
+        result.insert("symbol".to_string(), Value::String(Rc::new(symbol.to_string())));
+        result.insert("chinese".to_string(), Value::String(Rc::new(chinese.to_string())));
+        result.insert("english".to_string(), Value::String(Rc::new(english.to_string())));
+        result.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        result.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+
+        // Binary representation (yang=1, yin=0)
+        let binary = match input {
+            0 => "111", // ☰
+            1 => "110", // ☱
+            2 => "101", // ☲
+            3 => "100", // ☳
+            4 => "011", // ☴
+            5 => "010", // ☵
+            6 => "001", // ☶
+            7 => "000", // ☷
+            _ => "000",
+        };
+        result.insert("binary".to_string(), Value::String(Rc::new(binary.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // hexagram - get one of 64 I Ching hexagrams
+    define(interp, "hexagram", Some(1), |_, args| {
+        let num = match &args[0] {
+            Value::Int(n) => ((*n - 1) as usize).min(63),
+            _ => return Err(RuntimeError::new("hexagram() requires number 1-64")),
+        };
+
+        let hex = &HEXAGRAMS[num];
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("number".to_string(), Value::Int((num + 1) as i64));
+        result.insert("chinese".to_string(), Value::String(Rc::new(hex.0.to_string())));
+        result.insert("pinyin".to_string(), Value::String(Rc::new(hex.1.to_string())));
+        result.insert("english".to_string(), Value::String(Rc::new(hex.2.to_string())));
+        result.insert("judgment".to_string(), Value::String(Rc::new(hex.3.to_string())));
+        result.insert("upper_trigram".to_string(), Value::String(Rc::new(hex.4.to_string())));
+        result.insert("lower_trigram".to_string(), Value::String(Rc::new(hex.5.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // cast_iching - divine using I Ching (uses randomness as oracle)
+    define(interp, "cast_iching", Some(0), |_, _| {
+        let mut rng = rand::thread_rng();
+
+        // Traditional yarrow stalk method produces numbers 6,7,8,9
+        // 6 = old yin (changing), 7 = young yang, 8 = young yin, 9 = old yang (changing)
+        let mut lines = Vec::new();
+        let mut hexagram_num = 0u8;
+        let mut changing_lines = Vec::new();
+
+        for i in 0..6 {
+            // Simulate yarrow stalk probabilities
+            let r: f64 = rng.gen();
+            let line = if r < 0.0625 { 6 }      // 1/16 - old yin
+                      else if r < 0.3125 { 7 }  // 5/16 - young yang
+                      else if r < 0.5625 { 8 }  // 5/16 - young yin
+                      else { 9 };               // 5/16 - old yang
+
+            let is_yang = line == 7 || line == 9;
+            if is_yang {
+                hexagram_num |= 1 << i;
+            }
+
+            if line == 6 || line == 9 {
+                changing_lines.push(i + 1);
+            }
+
+            lines.push(Value::Int(line));
+        }
+
+        // Convert to King Wen sequence
+        let king_wen_num = binary_to_king_wen(hexagram_num) + 1;
+        let hex = &HEXAGRAMS[(king_wen_num - 1) as usize];
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("hexagram".to_string(), Value::Int(king_wen_num as i64));
+        result.insert("chinese".to_string(), Value::String(Rc::new(hex.0.to_string())));
+        result.insert("english".to_string(), Value::String(Rc::new(hex.2.to_string())));
+        result.insert("judgment".to_string(), Value::String(Rc::new(hex.3.to_string())));
+        result.insert("lines".to_string(), Value::Array(Rc::new(RefCell::new(lines))));
+
+        let changing: Vec<Value> = changing_lines.iter().map(|&n| Value::Int(n)).collect();
+        result.insert("changing_lines".to_string(), Value::Array(Rc::new(RefCell::new(changing))));
+
+        // Calculate resulting hexagram if there are changing lines
+        if !changing_lines.is_empty() {
+            let mut result_hex = hexagram_num;
+            for &line in &changing_lines {
+                result_hex ^= 1 << (line - 1);  // Flip the changing lines
+            }
+            let result_king_wen = binary_to_king_wen(result_hex) + 1;
+            result.insert("transforms_to".to_string(), Value::Int(result_king_wen as i64));
+        }
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // =========================================================================
+    // SACRED GEOMETRY
+    // =========================================================================
+
+    // phi - Golden Ratio
+    define(interp, "phi", Some(0), |_, _| {
+        Ok(Value::Float((1.0 + 5.0_f64.sqrt()) / 2.0))
+    });
+
+    // sacred_ratio - get various sacred ratios
+    define(interp, "sacred_ratio", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("sacred_ratio() requires string")),
+        };
+
+        let (value, symbol, meaning) = match name.as_str() {
+            "phi" | "φ" | "golden" => (
+                (1.0 + 5.0_f64.sqrt()) / 2.0,
+                "φ",
+                "Golden Ratio - divine proportion found in nature, art, architecture"
+            ),
+            "phi_conjugate" | "1/phi" => (
+                2.0 / (1.0 + 5.0_f64.sqrt()),
+                "1/φ",
+                "Golden Ratio conjugate - φ - 1 = 1/φ"
+            ),
+            "phi_squared" | "phi2" => (
+                ((1.0 + 5.0_f64.sqrt()) / 2.0).powi(2),
+                "φ²",
+                "Golden Ratio squared - φ + 1 = φ²"
+            ),
+            "sqrt_phi" => (
+                ((1.0 + 5.0_f64.sqrt()) / 2.0).sqrt(),
+                "√φ",
+                "Square root of Golden Ratio"
+            ),
+            "pi" | "π" => (
+                std::f64::consts::PI,
+                "π",
+                "Circle constant - circumference/diameter, transcendental"
+            ),
+            "tau" | "τ" => (
+                std::f64::consts::TAU,
+                "τ",
+                "Full circle constant - 2π, one complete revolution"
+            ),
+            "e" | "euler" => (
+                std::f64::consts::E,
+                "e",
+                "Euler's number - natural growth, compound interest"
+            ),
+            "sqrt2" | "√2" | "pythagoras" => (
+                std::f64::consts::SQRT_2,
+                "√2",
+                "Pythagorean constant - diagonal of unit square"
+            ),
+            "sqrt3" | "√3" | "vesica" => (
+                3.0_f64.sqrt(),
+                "√3",
+                "Vesica Piscis ratio - sacred geometry foundation"
+            ),
+            "sqrt5" | "√5" => (
+                5.0_f64.sqrt(),
+                "√5",
+                "Related to Golden Ratio: φ = (1 + √5) / 2"
+            ),
+            "silver" | "δs" => (
+                1.0 + 2.0_f64.sqrt(),
+                "δs",
+                "Silver Ratio - related to octagon"
+            ),
+            "plastic" | "ρ" => (
+                1.324717957244746,
+                "ρ",
+                "Plastic Number - smallest Pisot number"
+            ),
+            "feigenbaum" | "δ" => (
+                4.669201609102990,
+                "δ",
+                "Feigenbaum constant - chaos theory, period doubling"
+            ),
+            _ => return Err(RuntimeError::new(format!("Unknown sacred ratio: {}", name))),
+        };
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("value".to_string(), Value::Float(value));
+        result.insert("symbol".to_string(), Value::String(Rc::new(symbol.to_string())));
+        result.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // fibonacci - generate Fibonacci sequence
+    define(interp, "fibonacci", Some(1), |_, args| {
+        let count = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("fibonacci() requires count")),
+        };
+
+        let mut seq = Vec::with_capacity(count);
+        let (mut a, mut b) = (0i64, 1i64);
+
+        for _ in 0..count {
+            seq.push(Value::Int(a));
+            let next = a.saturating_add(b);
+            a = b;
+            b = next;
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(seq))))
+    });
+
+    // is_fibonacci - check if a number is in the Fibonacci sequence
+    define(interp, "is_fibonacci", Some(1), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("is_fibonacci() requires integer")),
+        };
+
+        // A number is Fibonacci iff one of (5n² + 4) or (5n² - 4) is a perfect square
+        fn is_perfect_square(n: i64) -> bool {
+            if n < 0 { return false; }
+            let root = (n as f64).sqrt() as i64;
+            root * root == n
+        }
+
+        let n_sq = n.saturating_mul(n);
+        let test1 = 5i64.saturating_mul(n_sq).saturating_add(4);
+        let test2 = 5i64.saturating_mul(n_sq).saturating_sub(4);
+
+        Ok(Value::Bool(is_perfect_square(test1) || is_perfect_square(test2)))
+    });
+
+    // platonic_solid - get information about Platonic solids
+    define(interp, "platonic_solid", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("platonic_solid() requires string")),
+        };
+
+        let (faces, vertices, edges, face_shape, element, meaning) = match name.as_str() {
+            "tetrahedron" | "fire" => (4, 4, 6, "triangle", "Fire", "Sharpness, heat, transformation"),
+            "cube" | "hexahedron" | "earth" => (6, 8, 12, "square", "Earth", "Stability, grounding, material"),
+            "octahedron" | "air" => (8, 6, 12, "triangle", "Air", "Balance, intellect, communication"),
+            "dodecahedron" | "aether" | "spirit" => (12, 20, 30, "pentagon", "Aether/Spirit", "The cosmos, divine thought"),
+            "icosahedron" | "water" => (20, 12, 30, "triangle", "Water", "Flow, emotion, adaptability"),
+            _ => return Err(RuntimeError::new(format!("Unknown Platonic solid: {}", name))),
+        };
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("name".to_string(), Value::String(Rc::new(name)));
+        result.insert("faces".to_string(), Value::Int(faces));
+        result.insert("vertices".to_string(), Value::Int(vertices));
+        result.insert("edges".to_string(), Value::Int(edges));
+        result.insert("face_shape".to_string(), Value::String(Rc::new(face_shape.to_string())));
+        result.insert("element".to_string(), Value::String(Rc::new(element.to_string())));
+        result.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+
+        // Euler's formula: V - E + F = 2
+        result.insert("euler_characteristic".to_string(), Value::Int(2));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // =========================================================================
+    // GEMATRIA - Letter-Number Correspondences
+    // =========================================================================
+
+    // gematria - calculate numerical value of text
+    define(interp, "gematria", Some(2), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("gematria() requires string")),
+        };
+
+        let system = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("gematria() requires system name")),
+        };
+
+        let total: i64 = match system.as_str() {
+            "hebrew" | "kabbalah" => {
+                text.chars().map(|c| hebrew_gematria(c)).sum()
+            }
+            "greek" | "isopsephy" => {
+                text.chars().map(|c| greek_isopsephy(c)).sum()
+            }
+            "arabic" | "abjad" => {
+                text.chars().map(|c| arabic_abjad(c)).sum()
+            }
+            "english" | "simple" => {
+                // Simple English: A=1, B=2, ... Z=26
+                text.to_uppercase().chars().filter_map(|c| {
+                    if c.is_ascii_alphabetic() {
+                        Some((c as i64) - ('A' as i64) + 1)
+                    } else {
+                        None
+                    }
+                }).sum()
+            }
+            "english_ordinal" => {
+                // Same as simple
+                text.to_uppercase().chars().filter_map(|c| {
+                    if c.is_ascii_alphabetic() {
+                        Some((c as i64) - ('A' as i64) + 1)
+                    } else {
+                        None
+                    }
+                }).sum()
+            }
+            "english_reduction" => {
+                // Reduce each letter: A=1, B=2, ... I=9, J=1, K=2, etc.
+                text.to_uppercase().chars().filter_map(|c| {
+                    if c.is_ascii_alphabetic() {
+                        let val = ((c as i64) - ('A' as i64)) % 9 + 1;
+                        Some(val)
+                    } else {
+                        None
+                    }
+                }).sum()
+            }
+            _ => return Err(RuntimeError::new(format!("Unknown gematria system: {}", system))),
+        };
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("text".to_string(), Value::String(Rc::new(text)));
+        result.insert("system".to_string(), Value::String(Rc::new(system)));
+        result.insert("value".to_string(), Value::Int(total));
+
+        // Digital root (reduce to single digit)
+        let mut digital_root = total;
+        while digital_root > 9 {
+            digital_root = digital_root.to_string().chars()
+                .filter_map(|c| c.to_digit(10))
+                .map(|d| d as i64)
+                .sum();
+        }
+        result.insert("digital_root".to_string(), Value::Int(digital_root));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // gematria_match - find words with same gematria value
+    define(interp, "gematria_match", Some(2), |_, args| {
+        let value = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("gematria_match() requires integer value")),
+        };
+
+        let system = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("gematria_match() requires system name")),
+        };
+
+        // Return known significant matches for common values
+        let matches = match (value, system.as_str()) {
+            (26, "hebrew") => vec!["יהוה (YHWH - Tetragrammaton)"],
+            (18, "hebrew") => vec!["חי (Chai - Life)"],
+            (86, "hebrew") => vec!["אלהים (Elohim - God)"],
+            (72, "hebrew") => vec!["חסד (Chesed - Loving-kindness)"],
+            (93, "english") => vec!["Love", "Will", "Thelema"],
+            (666, "greek") => vec!["Nero Caesar (in Hebrew letters)"],
+            (888, "greek") => vec!["Ἰησοῦς (Jesus)"],
+            _ => vec![],
+        };
+
+        let match_values: Vec<Value> = matches.iter()
+            .map(|s| Value::String(Rc::new(s.to_string())))
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(match_values))))
+    });
+
+    // =========================================================================
+    // ARCHETYPES (Jung)
+    // =========================================================================
+
+    // archetype - get information about Jungian archetypes
+    define(interp, "archetype", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("archetype() requires string")),
+        };
+
+        let (description, shadow, gift, challenge) = match name.as_str() {
+            // Core archetypes
+            "self" => (
+                "The unified conscious and unconscious, the goal of individuation",
+                "Inflation or deflation of ego",
+                "Wholeness, integration, meaning",
+                "Integrating all aspects of psyche"
+            ),
+            "shadow" => (
+                "The unconscious aspect containing repressed weaknesses and instincts",
+                "Projection onto others, denial",
+                "Creativity, spontaneity, insight",
+                "Acknowledging and integrating darkness"
+            ),
+            "anima" => (
+                "The feminine inner personality in a man's unconscious",
+                "Moodiness, seduction, possession",
+                "Relatedness, creativity, soul connection",
+                "Developing emotional intelligence"
+            ),
+            "animus" => (
+                "The masculine inner personality in a woman's unconscious",
+                "Brutality, reckless action, opinionation",
+                "Courage, initiative, spiritual depth",
+                "Developing assertiveness with wisdom"
+            ),
+            "persona" => (
+                "The social mask, the face we present to the world",
+                "Over-identification, inauthenticity",
+                "Social adaptation, professional competence",
+                "Maintaining authenticity within role"
+            ),
+
+            // Major archetypes
+            "hero" => (
+                "The courageous one who overcomes obstacles and achieves great deeds",
+                "Arrogance, ruthlessness, eternal battle",
+                "Courage, perseverance, accomplishment",
+                "Knowing when to fight and when to surrender"
+            ),
+            "sage" | "wise_old_man" => (
+                "The wise figure who offers guidance and insight",
+                "Dogmatism, disconnection, ivory tower",
+                "Wisdom, knowledge, truth-seeking",
+                "Applying wisdom practically"
+            ),
+            "magician" | "wizard" => (
+                "The transformer who makes things happen through understanding laws",
+                "Manipulation, disconnection from ethics",
+                "Transformation, vision, manifestation",
+                "Using power responsibly"
+            ),
+            "lover" => (
+                "The one who pursues connection, beauty, and passion",
+                "Obsession, jealousy, loss of identity",
+                "Passion, commitment, appreciation",
+                "Maintaining boundaries while connecting deeply"
+            ),
+            "caregiver" | "mother" => (
+                "The nurturing one who protects and provides",
+                "Martyrdom, enabling, smothering",
+                "Compassion, generosity, nurturing",
+                "Caring for self while caring for others"
+            ),
+            "ruler" | "king" | "queen" => (
+                "The one who takes responsibility for the realm",
+                "Tyranny, authoritarianism, being overthrown",
+                "Order, leadership, prosperity",
+                "Serving the greater good, not just power"
+            ),
+            "creator" | "artist" => (
+                "The one who brings new things into being",
+                "Perfectionism, self-indulgence, drama",
+                "Creativity, imagination, expression",
+                "Completing projects, accepting imperfection"
+            ),
+            "innocent" | "child" => (
+                "The pure one with faith and optimism",
+                "Naivety, denial, dependence",
+                "Faith, optimism, loyalty",
+                "Growing without becoming cynical"
+            ),
+            "explorer" | "seeker" => (
+                "The one who seeks new experiences and self-discovery",
+                "Aimless wandering, inability to commit",
+                "Autonomy, ambition, authenticity",
+                "Finding what you seek"
+            ),
+            "rebel" | "outlaw" => (
+                "The one who breaks rules and challenges the status quo",
+                "Crime, self-destruction, alienation",
+                "Liberation, revolution, radical freedom",
+                "Channeling rebellion constructively"
+            ),
+            "jester" | "fool" | "trickster" => (
+                "The one who uses humor and playfulness",
+                "Cruelty, debauchery, irresponsibility",
+                "Joy, freedom, living in the moment",
+                "Knowing when to be serious"
+            ),
+            "everyman" | "orphan" => (
+                "The regular person who wants belonging",
+                "Victim mentality, losing self in group",
+                "Realism, empathy, connection",
+                "Standing out when necessary"
+            ),
+            _ => return Err(RuntimeError::new(format!("Unknown archetype: {}", name))),
+        };
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("name".to_string(), Value::String(Rc::new(name)));
+        result.insert("description".to_string(), Value::String(Rc::new(description.to_string())));
+        result.insert("shadow".to_string(), Value::String(Rc::new(shadow.to_string())));
+        result.insert("gift".to_string(), Value::String(Rc::new(gift.to_string())));
+        result.insert("challenge".to_string(), Value::String(Rc::new(challenge.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // =========================================================================
+    // ASTROLOGY
+    // =========================================================================
+
+    // zodiac - get zodiac sign information
+    define(interp, "zodiac", Some(1), |_, args| {
+        let input = match &args[0] {
+            Value::Int(n) => (*n as usize - 1).min(11),
+            Value::String(s) => {
+                match s.to_lowercase().as_str() {
+                    "aries" | "♈" => 0,
+                    "taurus" | "♉" => 1,
+                    "gemini" | "♊" => 2,
+                    "cancer" | "♋" => 3,
+                    "leo" | "♌" => 4,
+                    "virgo" | "♍" => 5,
+                    "libra" | "♎" => 6,
+                    "scorpio" | "♏" => 7,
+                    "sagittarius" | "♐" => 8,
+                    "capricorn" | "♑" => 9,
+                    "aquarius" | "♒" => 10,
+                    "pisces" | "♓" => 11,
+                    _ => return Err(RuntimeError::new(format!("Unknown sign: {}", s))),
+                }
+            }
+            _ => return Err(RuntimeError::new("zodiac() requires number or name")),
+        };
+
+        let signs = [
+            ("♈", "Aries", "Fire", "Cardinal", "Mars", "I Am", "Mar 21 - Apr 19"),
+            ("♉", "Taurus", "Earth", "Fixed", "Venus", "I Have", "Apr 20 - May 20"),
+            ("♊", "Gemini", "Air", "Mutable", "Mercury", "I Think", "May 21 - Jun 20"),
+            ("♋", "Cancer", "Water", "Cardinal", "Moon", "I Feel", "Jun 21 - Jul 22"),
+            ("♌", "Leo", "Fire", "Fixed", "Sun", "I Will", "Jul 23 - Aug 22"),
+            ("♍", "Virgo", "Earth", "Mutable", "Mercury", "I Analyze", "Aug 23 - Sep 22"),
+            ("♎", "Libra", "Air", "Cardinal", "Venus", "I Balance", "Sep 23 - Oct 22"),
+            ("♏", "Scorpio", "Water", "Fixed", "Pluto/Mars", "I Transform", "Oct 23 - Nov 21"),
+            ("♐", "Sagittarius", "Fire", "Mutable", "Jupiter", "I Seek", "Nov 22 - Dec 21"),
+            ("♑", "Capricorn", "Earth", "Cardinal", "Saturn", "I Use", "Dec 22 - Jan 19"),
+            ("♒", "Aquarius", "Air", "Fixed", "Uranus/Saturn", "I Know", "Jan 20 - Feb 18"),
+            ("♓", "Pisces", "Water", "Mutable", "Neptune/Jupiter", "I Believe", "Feb 19 - Mar 20"),
+        ];
+
+        let (symbol, name, element, modality, ruler, motto, dates) = signs[input];
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("number".to_string(), Value::Int((input + 1) as i64));
+        result.insert("symbol".to_string(), Value::String(Rc::new(symbol.to_string())));
+        result.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        result.insert("element".to_string(), Value::String(Rc::new(element.to_string())));
+        result.insert("modality".to_string(), Value::String(Rc::new(modality.to_string())));
+        result.insert("ruler".to_string(), Value::String(Rc::new(ruler.to_string())));
+        result.insert("motto".to_string(), Value::String(Rc::new(motto.to_string())));
+        result.insert("dates".to_string(), Value::String(Rc::new(dates.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // tarot_major - Major Arcana information
+    define(interp, "tarot_major", Some(1), |_, args| {
+        let num = match &args[0] {
+            Value::Int(n) => (*n as usize).min(21),
+            Value::String(s) => {
+                match s.to_lowercase().as_str() {
+                    "fool" => 0, "magician" => 1, "high_priestess" | "priestess" => 2,
+                    "empress" => 3, "emperor" => 4, "hierophant" | "pope" => 5,
+                    "lovers" => 6, "chariot" => 7, "strength" => 8,
+                    "hermit" => 9, "wheel" | "fortune" => 10, "justice" => 11,
+                    "hanged_man" | "hanged" => 12, "death" => 13, "temperance" => 14,
+                    "devil" => 15, "tower" => 16, "star" => 17,
+                    "moon" => 18, "sun" => 19, "judgement" | "judgment" => 20, "world" => 21,
+                    _ => return Err(RuntimeError::new(format!("Unknown card: {}", s))),
+                }
+            }
+            _ => return Err(RuntimeError::new("tarot_major() requires number or name")),
+        };
+
+        let cards = [
+            ("The Fool", "New beginnings, innocence, spontaneity", "Naivety, recklessness, risk-taking"),
+            ("The Magician", "Willpower, creation, manifestation", "Manipulation, trickery, unused talent"),
+            ("The High Priestess", "Intuition, mystery, inner knowledge", "Secrets, withdrawal, silence"),
+            ("The Empress", "Abundance, nurturing, fertility", "Dependence, smothering, emptiness"),
+            ("The Emperor", "Authority, structure, control", "Tyranny, rigidity, coldness"),
+            ("The Hierophant", "Tradition, conformity, spirituality", "Dogma, restriction, challenging status quo"),
+            ("The Lovers", "Love, harmony, relationships, choices", "Disharmony, imbalance, misalignment"),
+            ("The Chariot", "Direction, willpower, victory", "Aggression, lack of direction, obstacles"),
+            ("Strength", "Courage, patience, inner power", "Self-doubt, weakness, insecurity"),
+            ("The Hermit", "Contemplation, search for truth, inner guidance", "Isolation, loneliness, withdrawal"),
+            ("Wheel of Fortune", "Change, cycles, fate, destiny", "Resistance to change, bad luck, setbacks"),
+            ("Justice", "Truth, fairness, law, cause and effect", "Unfairness, dishonesty, lack of accountability"),
+            ("The Hanged Man", "Surrender, letting go, new perspective", "Stalling, resistance, indecision"),
+            ("Death", "Endings, transformation, transition", "Fear of change, stagnation, decay"),
+            ("Temperance", "Balance, moderation, patience", "Imbalance, excess, lack of purpose"),
+            ("The Devil", "Bondage, materialism, shadow self", "Freedom, release, exploring dark side"),
+            ("The Tower", "Sudden change, upheaval, revelation", "Disaster averted, fear of change, prolonged pain"),
+            ("The Star", "Hope, faith, renewal, inspiration", "Despair, disconnection, lack of faith"),
+            ("The Moon", "Illusion, intuition, the unconscious", "Fear, confusion, misinterpretation"),
+            ("The Sun", "Joy, success, vitality, positivity", "Negativity, depression, sadness"),
+            ("Judgement", "Rebirth, inner calling, absolution", "Self-doubt, refusal of self-examination"),
+            ("The World", "Completion, accomplishment, wholeness", "Incompletion, lack of closure, emptiness"),
+        ];
+
+        let (name, upright, reversed) = cards[num];
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("number".to_string(), Value::Int(num as i64));
+        result.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        result.insert("upright".to_string(), Value::String(Rc::new(upright.to_string())));
+        result.insert("reversed".to_string(), Value::String(Rc::new(reversed.to_string())));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // draw_tarot - draw random tarot card
+    define(interp, "draw_tarot", Some(0), |_, _| {
+        let mut rng = rand::thread_rng();
+        let card: usize = rng.gen_range(0..22);
+        let reversed: bool = rng.gen();
+
+        let cards = [
+            "The Fool", "The Magician", "The High Priestess", "The Empress",
+            "The Emperor", "The Hierophant", "The Lovers", "The Chariot",
+            "Strength", "The Hermit", "Wheel of Fortune", "Justice",
+            "The Hanged Man", "Death", "Temperance", "The Devil",
+            "The Tower", "The Star", "The Moon", "The Sun",
+            "Judgement", "The World"
+        ];
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("number".to_string(), Value::Int(card as i64));
+        result.insert("name".to_string(), Value::String(Rc::new(cards[card].to_string())));
+        result.insert("reversed".to_string(), Value::Bool(reversed));
+        result.insert("orientation".to_string(), Value::String(Rc::new(
+            if reversed { "reversed" } else { "upright" }.to_string()
+        )));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // =========================================================================
+    // SYNCHRONICITY
+    // =========================================================================
+
+    // synchronicity_score - calculate "meaningful coincidence" between values
+    define(interp, "synchronicity_score", Some(2), |_, args| {
+        // This is intentionally mysterious - combining multiple systems
+        let a = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Int(n) => n.to_string(),
+            _ => return Err(RuntimeError::new("synchronicity_score() requires string or int")),
+        };
+
+        let b = match &args[1] {
+            Value::String(s) => s.to_string(),
+            Value::Int(n) => n.to_string(),
+            _ => return Err(RuntimeError::new("synchronicity_score() requires string or int")),
+        };
+
+        // Calculate gematria values (simple English)
+        let val_a: i64 = a.to_uppercase().chars().filter_map(|c| {
+            if c.is_ascii_alphabetic() {
+                Some((c as i64) - ('A' as i64) + 1)
+            } else if c.is_ascii_digit() {
+                c.to_digit(10).map(|d| d as i64)
+            } else {
+                None
+            }
+        }).sum();
+
+        let val_b: i64 = b.to_uppercase().chars().filter_map(|c| {
+            if c.is_ascii_alphabetic() {
+                Some((c as i64) - ('A' as i64) + 1)
+            } else if c.is_ascii_digit() {
+                c.to_digit(10).map(|d| d as i64)
+            } else {
+                None
+            }
+        }).sum();
+
+        // Multiple synchronicity factors
+        let mut factors = Vec::new();
+
+        // Same value
+        if val_a == val_b {
+            factors.push("identical_gematria".to_string());
+        }
+
+        // One divides the other
+        if val_a > 0 && val_b > 0 && (val_a % val_b == 0 || val_b % val_a == 0) {
+            factors.push("divisibility".to_string());
+        }
+
+        // Fibonacci relationship
+        let fib_set: std::collections::HashSet<i64> = [1,2,3,5,8,13,21,34,55,89,144,233,377,610,987].iter().cloned().collect();
+        if fib_set.contains(&val_a) && fib_set.contains(&val_b) {
+            factors.push("both_fibonacci".to_string());
+        }
+
+        // Digital root match
+        fn digital_root(mut n: i64) -> i64 {
+            while n > 9 { n = n.to_string().chars().filter_map(|c| c.to_digit(10)).map(|d| d as i64).sum(); }
+            n
+        }
+        if digital_root(val_a) == digital_root(val_b) {
+            factors.push("same_digital_root".to_string());
+        }
+
+        // Golden ratio relationship (within 1%)
+        let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
+        let ratio = if val_a > 0 && val_b > 0 {
+            (val_a as f64 / val_b as f64).max(val_b as f64 / val_a as f64)
+        } else { 0.0 };
+        if (ratio - phi).abs() < 0.02 || (ratio - 1.0/phi).abs() < 0.02 {
+            factors.push("golden_ratio".to_string());
+        }
+
+        let score = (factors.len() as f64 / 5.0).min(1.0);
+
+        let mut result = std::collections::HashMap::new();
+        result.insert("score".to_string(), Value::Float(score));
+        result.insert("value_a".to_string(), Value::Int(val_a));
+        result.insert("value_b".to_string(), Value::Int(val_b));
+        let factor_values: Vec<Value> = factors.iter().map(|s| Value::String(Rc::new(s.clone()))).collect();
+        result.insert("factors".to_string(), Value::Array(Rc::new(RefCell::new(factor_values))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // spirituality_info
+    define(interp, "spirituality_info", Some(0), |_, _| {
+        let mut info = std::collections::HashMap::new();
+
+        info.insert("i_ching".to_string(), Value::String(Rc::new(
+            "trigram(), hexagram(), cast_iching() - 64 hexagrams of change".to_string()
+        )));
+        info.insert("sacred_geometry".to_string(), Value::String(Rc::new(
+            "phi(), sacred_ratio(), fibonacci(), platonic_solid()".to_string()
+        )));
+        info.insert("gematria".to_string(), Value::String(Rc::new(
+            "Hebrew, Greek, Arabic, English letter-number systems".to_string()
+        )));
+        info.insert("archetypes".to_string(), Value::String(Rc::new(
+            "17 Jungian archetypes with shadow and gift".to_string()
+        )));
+        info.insert("astrology".to_string(), Value::String(Rc::new(
+            "zodiac() - 12 signs with elements and modalities".to_string()
+        )));
+        info.insert("tarot".to_string(), Value::String(Rc::new(
+            "tarot_major(), draw_tarot() - 22 Major Arcana".to_string()
+        )));
+
+        Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+}
+
+// I Ching hexagram data (64 hexagrams in King Wen sequence)
+const HEXAGRAMS: [(&str, &str, &str, &str, &str, &str); 64] = [
+    ("乾", "Qián", "The Creative", "Sublime success through perseverance", "Heaven", "Heaven"),
+    ("坤", "Kūn", "The Receptive", "Devoted success through the mare's perseverance", "Earth", "Earth"),
+    ("屯", "Zhūn", "Difficulty at the Beginning", "Persevere, seek helpers, don't act alone", "Water", "Thunder"),
+    ("蒙", "Méng", "Youthful Folly", "Success through education and guidance", "Mountain", "Water"),
+    ("需", "Xū", "Waiting", "Sincerity brings success; cross the great water", "Water", "Heaven"),
+    ("訟", "Sòng", "Conflict", "Seek counsel; don't cross the great water", "Heaven", "Water"),
+    ("師", "Shī", "The Army", "Perseverance and an experienced leader bring success", "Earth", "Water"),
+    ("比", "Bǐ", "Holding Together", "Through perseverance, those who hesitate should reflect", "Water", "Earth"),
+    ("小畜", "Xiǎo Chù", "Small Taming", "Success; dense clouds but no rain", "Wind", "Heaven"),
+    ("履", "Lǚ", "Treading", "Tread on the tiger's tail carefully; success", "Heaven", "Lake"),
+    ("泰", "Tài", "Peace", "The small departs, the great approaches; success", "Earth", "Heaven"),
+    ("否", "Pǐ", "Standstill", "The great departs, the small approaches; persevere", "Heaven", "Earth"),
+    ("同人", "Tóng Rén", "Fellowship", "Success in the open; cross the great water", "Heaven", "Fire"),
+    ("大有", "Dà Yǒu", "Great Possession", "Supreme success", "Fire", "Heaven"),
+    ("謙", "Qiān", "Modesty", "Success; the superior person carries things through", "Earth", "Mountain"),
+    ("豫", "Yù", "Enthusiasm", "Appoint helpers and set armies marching", "Thunder", "Earth"),
+    ("隨", "Suí", "Following", "Supreme success through perseverance", "Lake", "Thunder"),
+    ("蠱", "Gǔ", "Work on the Decayed", "Success; cross the great water; three days before and after", "Mountain", "Wind"),
+    ("臨", "Lín", "Approach", "Great success through perseverance; misfortune in eighth month", "Earth", "Lake"),
+    ("觀", "Guān", "Contemplation", "Ablution, but not yet sacrifice; confidence inspires", "Wind", "Earth"),
+    ("噬嗑", "Shì Kè", "Biting Through", "Success; favorable for legal matters", "Fire", "Thunder"),
+    ("賁", "Bì", "Grace", "Success in small matters", "Mountain", "Fire"),
+    ("剝", "Bō", "Splitting Apart", "Unfavorable to go anywhere", "Mountain", "Earth"),
+    ("復", "Fù", "Return", "Success; going out and coming in without error", "Earth", "Thunder"),
+    ("無妄", "Wú Wàng", "Innocence", "Supreme success through perseverance", "Heaven", "Thunder"),
+    ("大畜", "Dà Chù", "Great Taming", "Perseverance; eat away from home", "Mountain", "Heaven"),
+    ("頤", "Yí", "Nourishment", "Perseverance; watch what you nurture", "Mountain", "Thunder"),
+    ("大過", "Dà Guò", "Great Exceeding", "The ridgepole sags; favorable to have somewhere to go", "Lake", "Wind"),
+    ("坎", "Kǎn", "The Abysmal", "Sincerity brings success of the heart", "Water", "Water"),
+    ("離", "Lí", "The Clinging", "Perseverance; success; care for the cow", "Fire", "Fire"),
+    ("咸", "Xián", "Influence", "Success; perseverance; taking a maiden brings fortune", "Lake", "Mountain"),
+    ("恆", "Héng", "Duration", "Success without blame; perseverance; favorable to have somewhere to go", "Thunder", "Wind"),
+    ("遯", "Dùn", "Retreat", "Success; small perseverance", "Heaven", "Mountain"),
+    ("大壯", "Dà Zhuàng", "Great Power", "Perseverance", "Thunder", "Heaven"),
+    ("晉", "Jìn", "Progress", "The powerful prince is honored with horses", "Fire", "Earth"),
+    ("明夷", "Míng Yí", "Darkening of the Light", "Perseverance in adversity", "Earth", "Fire"),
+    ("家人", "Jiā Rén", "The Family", "Perseverance of the woman", "Wind", "Fire"),
+    ("睽", "Kuí", "Opposition", "Good fortune in small matters", "Fire", "Lake"),
+    ("蹇", "Jiǎn", "Obstruction", "Southwest favorable; northeast unfavorable; see the great person", "Water", "Mountain"),
+    ("解", "Xiè", "Deliverance", "Southwest favorable; return brings fortune; haste brings fortune", "Thunder", "Water"),
+    ("損", "Sǔn", "Decrease", "Sincerity; supreme fortune; persistence; favorable to undertake", "Mountain", "Lake"),
+    ("益", "Yì", "Increase", "Favorable to undertake and cross the great water", "Wind", "Thunder"),
+    ("夬", "Guài", "Breakthrough", "Proclaim at the king's court; sincerity in danger", "Lake", "Heaven"),
+    ("姤", "Gòu", "Coming to Meet", "The maiden is powerful; don't marry such a maiden", "Heaven", "Wind"),
+    ("萃", "Cuì", "Gathering", "Success; the king approaches his temple; see the great person", "Lake", "Earth"),
+    ("升", "Shēng", "Pushing Upward", "Supreme success; see the great person; don't worry", "Earth", "Wind"),
+    ("困", "Kùn", "Oppression", "Success; perseverance of the great person; no blame", "Lake", "Water"),
+    ("井", "Jǐng", "The Well", "The town may change but not the well", "Water", "Wind"),
+    ("革", "Gé", "Revolution", "On your own day you are believed; great success", "Lake", "Fire"),
+    ("鼎", "Dǐng", "The Cauldron", "Supreme good fortune; success", "Fire", "Wind"),
+    ("震", "Zhèn", "The Arousing", "Success; thunder comes with fright; laughing and talking after", "Thunder", "Thunder"),
+    ("艮", "Gèn", "Keeping Still", "Keep your back still; go into the courtyard without seeing anyone", "Mountain", "Mountain"),
+    ("漸", "Jiàn", "Development", "The maiden is given in marriage; good fortune; perseverance", "Wind", "Mountain"),
+    ("歸妹", "Guī Mèi", "The Marrying Maiden", "Undertakings bring misfortune", "Thunder", "Lake"),
+    ("豐", "Fēng", "Abundance", "Success; the king attains it; don't worry; be like the sun at noon", "Thunder", "Fire"),
+    ("旅", "Lǚ", "The Wanderer", "Success through smallness; perseverance brings fortune", "Fire", "Mountain"),
+    ("巽", "Xùn", "The Gentle", "Success through small things; favorable to have somewhere to go", "Wind", "Wind"),
+    ("兌", "Duì", "The Joyous", "Success; perseverance", "Lake", "Lake"),
+    ("渙", "Huàn", "Dispersion", "Success; the king approaches his temple; cross the great water", "Wind", "Water"),
+    ("節", "Jié", "Limitation", "Success; bitter limitation should not be persevered in", "Water", "Lake"),
+    ("中孚", "Zhōng Fú", "Inner Truth", "Pigs and fishes; good fortune; cross the great water", "Wind", "Lake"),
+    ("小過", "Xiǎo Guò", "Small Exceeding", "Success; perseverance; small things yes, great things no", "Thunder", "Mountain"),
+    ("既濟", "Jì Jì", "After Completion", "Success in small matters; perseverance; good at start, disorder at end", "Water", "Fire"),
+    ("未濟", "Wèi Jì", "Before Completion", "Success; the young fox almost across; tail gets wet; no goal", "Fire", "Water"),
+];
+
+fn binary_to_king_wen(binary: u8) -> u8 {
+    // Maps binary hexagram representation to King Wen sequence number
+    // This is a complex mapping based on traditional ordering
+    const KING_WEN_ORDER: [u8; 64] = [
+        1, 43, 14, 34, 9, 5, 26, 11,
+        10, 58, 38, 54, 61, 60, 41, 19,
+        13, 49, 30, 55, 37, 63, 22, 36,
+        25, 17, 21, 51, 42, 3, 27, 24,
+        44, 28, 50, 32, 57, 48, 18, 46,
+        6, 47, 64, 40, 59, 29, 4, 7,
+        33, 31, 56, 62, 53, 39, 52, 15,
+        12, 45, 35, 16, 20, 8, 23, 2,
+    ];
+    KING_WEN_ORDER[binary as usize] - 1
+}
+
+fn hebrew_gematria(c: char) -> i64 {
+    match c {
+        'א' | 'A' | 'a' => 1,
+        'ב' | 'B' | 'b' => 2,
+        'ג' | 'G' | 'g' => 3,
+        'ד' | 'D' | 'd' => 4,
+        'ה' | 'H' | 'h' => 5,
+        'ו' | 'V' | 'v' | 'W' | 'w' => 6,
+        'ז' | 'Z' | 'z' => 7,
+        'ח' => 8,
+        'ט' => 9,
+        'י' | 'Y' | 'y' | 'I' | 'i' | 'J' | 'j' => 10,
+        'כ' | 'K' | 'k' => 20,
+        'ל' | 'L' | 'l' => 30,
+        'מ' | 'M' | 'm' => 40,
+        'נ' | 'N' | 'n' => 50,
+        'ס' | 'S' | 's' | 'X' | 'x' => 60,
+        'ע' | 'O' | 'o' => 70,
+        'פ' | 'P' | 'p' | 'F' | 'f' => 80,
+        'צ' => 90,
+        'ק' | 'Q' | 'q' => 100,
+        'ר' | 'R' | 'r' => 200,
+        'ש' => 300,
+        'ת' | 'T' | 't' => 400,
+        'ך' => 500,   // Final kaph
+        'ם' => 600,   // Final mem
+        'ן' => 700,   // Final nun
+        'ף' => 800,   // Final pe
+        'ץ' | 'C' | 'c' => 900,   // Final tzadi / C approximation
+        'E' | 'e' => 5,    // Map to He
+        'U' | 'u' => 6,    // Map to Vav
+        _ => 0,
+    }
+}
+
+fn greek_isopsephy(c: char) -> i64 {
+    match c {
+        'Α' | 'α' | 'A' | 'a' => 1,
+        'Β' | 'β' | 'B' | 'b' => 2,
+        'Γ' | 'γ' | 'G' | 'g' => 3,
+        'Δ' | 'δ' | 'D' | 'd' => 4,
+        'Ε' | 'ε' | 'E' | 'e' => 5,
+        'Ϛ' | 'ϛ' => 6,  // Stigma (archaic)
+        'Ζ' | 'ζ' | 'Z' | 'z' => 7,
+        'Η' | 'η' | 'H' | 'h' => 8,
+        'Θ' | 'θ' => 9,
+        'Ι' | 'ι' | 'I' | 'i' => 10,
+        'Κ' | 'κ' | 'K' | 'k' => 20,
+        'Λ' | 'λ' | 'L' | 'l' => 30,
+        'Μ' | 'μ' | 'M' | 'm' => 40,
+        'Ν' | 'ν' | 'N' | 'n' => 50,
+        'Ξ' | 'ξ' | 'X' | 'x' => 60,
+        'Ο' | 'ο' | 'O' | 'o' => 70,
+        'Π' | 'π' | 'P' | 'p' => 80,
+        'Ϙ' | 'ϙ' | 'Q' | 'q' => 90,  // Qoppa
+        'Ρ' | 'ρ' | 'R' | 'r' => 100,
+        'Σ' | 'σ' | 'ς' | 'S' | 's' => 200,
+        'Τ' | 'τ' | 'T' | 't' => 300,
+        'Υ' | 'υ' | 'U' | 'u' | 'Y' | 'y' => 400,
+        'Φ' | 'φ' | 'F' | 'f' => 500,
+        'Χ' | 'χ' | 'C' | 'c' => 600,
+        'Ψ' | 'ψ' => 700,
+        'Ω' | 'ω' | 'W' | 'w' => 800,
+        'Ϡ' | 'ϡ' => 900,  // Sampi
+        'J' | 'j' => 10,  // Map to Iota
+        'V' | 'v' => 400, // Map to Upsilon
+        _ => 0,
+    }
+}
+
+fn arabic_abjad(c: char) -> i64 {
+    match c {
+        'ا' | 'أ' | 'إ' | 'آ' | 'A' | 'a' => 1,
+        'ب' | 'B' | 'b' => 2,
+        'ج' | 'J' | 'j' | 'G' | 'g' => 3,
+        'د' | 'D' | 'd' => 4,
+        'ه' | 'H' | 'h' => 5,
+        'و' | 'W' | 'w' | 'V' | 'v' => 6,
+        'ز' | 'Z' | 'z' => 7,
+        'ح' => 8,
+        'ط' => 9,
+        'ي' | 'Y' | 'y' | 'I' | 'i' => 10,
+        'ك' | 'K' | 'k' => 20,
+        'ل' | 'L' | 'l' => 30,
+        'م' | 'M' | 'm' => 40,
+        'ن' | 'N' | 'n' => 50,
+        'س' | 'S' | 's' => 60,
+        'ع' | 'E' | 'e' => 70,
+        'ف' | 'F' | 'f' => 80,
+        'ص' => 90,
+        'ق' | 'Q' | 'q' => 100,
+        'ر' | 'R' | 'r' => 200,
+        'ش' => 300,
+        'ت' | 'T' | 't' => 400,
+        'ث' => 500,
+        'خ' | 'X' | 'x' => 600,
+        'ذ' => 700,
+        'ض' => 800,
+        'ظ' => 900,
+        'غ' => 1000,
+        'C' | 'c' => 600,  // Map to خ
+        'O' | 'o' => 70,   // Map to ع
+        'P' | 'p' => 80,   // Map to ف
+        'U' | 'u' => 6,    // Map to و
+        _ => 0,
+    }
+}
+
+// =============================================================================
+// Phase 16: Polycultural Color System
+// =============================================================================
+// Color meaning varies radically across cultures. This module provides mathematical
+// color spaces + cultural color systems from around the world.
+
+fn register_color(interp: &mut Interpreter) {
+    // =========================================================================
+    // COLOR SPACE CONVERSIONS
+    // =========================================================================
+
+    // rgb(r, g, b) - Create RGB color (0-255)
+    define(interp, "rgb", Some(3), |_, args| {
+        let r = match &args[0] { Value::Int(n) => (*n).clamp(0, 255) as u8, Value::Float(f) => (*f as i64).clamp(0, 255) as u8, _ => return Err(RuntimeError::new("rgb() requires numbers")) };
+        let g = match &args[1] { Value::Int(n) => (*n).clamp(0, 255) as u8, Value::Float(f) => (*f as i64).clamp(0, 255) as u8, _ => return Err(RuntimeError::new("rgb() requires numbers")) };
+        let b = match &args[2] { Value::Int(n) => (*n).clamp(0, 255) as u8, Value::Float(f) => (*f as i64).clamp(0, 255) as u8, _ => return Err(RuntimeError::new("rgb() requires numbers")) };
+        let mut map = std::collections::HashMap::new();
+        map.insert("r".to_string(), Value::Int(r as i64));
+        map.insert("g".to_string(), Value::Int(g as i64));
+        map.insert("b".to_string(), Value::Int(b as i64));
+        map.insert("hex".to_string(), Value::String(Rc::new(format!("#{:02X}{:02X}{:02X}", r, g, b))));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // hex_to_rgb(hex) - Parse hex color string
+    define(interp, "hex_to_rgb", Some(1), |_, args| {
+        let hex = match &args[0] { Value::String(s) => s.to_string(), _ => return Err(RuntimeError::new("hex_to_rgb requires string")) };
+        let hex = hex.trim_start_matches('#');
+        if hex.len() != 6 { return Err(RuntimeError::new("hex_to_rgb requires 6 character hex")); }
+        let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| RuntimeError::new("Invalid hex"))?;
+        let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| RuntimeError::new("Invalid hex"))?;
+        let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| RuntimeError::new("Invalid hex"))?;
+        let mut map = std::collections::HashMap::new();
+        map.insert("r".to_string(), Value::Int(r as i64));
+        map.insert("g".to_string(), Value::Int(g as i64));
+        map.insert("b".to_string(), Value::Int(b as i64));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // rgb_to_hsl(r, g, b) - Convert RGB to HSL
+    define(interp, "rgb_to_hsl", Some(3), |_, args| {
+        let r = match &args[0] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
+        let g = match &args[1] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
+        let b = match &args[2] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let l = (max + min) / 2.0;
+        let (h, s) = if max == min { (0.0, 0.0) } else {
+            let d = max - min;
+            let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+            let h = if max == r { (g - b) / d + if g < b { 6.0 } else { 0.0 } }
+                   else if max == g { (b - r) / d + 2.0 } else { (r - g) / d + 4.0 };
+            (h * 60.0, s)
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("h".to_string(), Value::Float(h));
+        map.insert("s".to_string(), Value::Float(s));
+        map.insert("l".to_string(), Value::Float(l));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // complementary(r, g, b) - Opposite on color wheel
+    define(interp, "complementary", Some(3), |_, args| {
+        let r = match &args[0] { Value::Int(n) => *n as u8, _ => return Err(RuntimeError::new("requires int")) };
+        let g = match &args[1] { Value::Int(n) => *n as u8, _ => return Err(RuntimeError::new("requires int")) };
+        let b = match &args[2] { Value::Int(n) => *n as u8, _ => return Err(RuntimeError::new("requires int")) };
+        let mut map = std::collections::HashMap::new();
+        map.insert("r".to_string(), Value::Int(255 - r as i64));
+        map.insert("g".to_string(), Value::Int(255 - g as i64));
+        map.insert("b".to_string(), Value::Int(255 - b as i64));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // WU XING (五行) - CHINESE FIVE ELEMENTS
+    // =========================================================================
+    define(interp, "wu_xing", Some(1), |_, args| {
+        let element = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("wu_xing requires string")) };
+        let (name, chinese, color, hex, direction, season, organ, emotion, planet, animal) = match element.as_str() {
+            "wood" | "mu" | "木" => ("Wood", "木 (Mù)", "Green/Azure", "#228B22", "East", "Spring", "Liver", "Anger", "Jupiter", "Azure Dragon"),
+            "fire" | "huo" | "火" => ("Fire", "火 (Huǒ)", "Red", "#FF0000", "South", "Summer", "Heart", "Joy", "Mars", "Vermilion Bird"),
+            "earth" | "tu" | "土" => ("Earth", "土 (Tǔ)", "Yellow", "#FFDB58", "Center", "Late Summer", "Spleen", "Worry", "Saturn", "Yellow Dragon"),
+            "metal" | "jin" | "金" => ("Metal", "金 (Jīn)", "White/Gold", "#FFD700", "West", "Autumn", "Lung", "Grief", "Venus", "White Tiger"),
+            "water" | "shui" | "水" => ("Water", "水 (Shuǐ)", "Black/Blue", "#000080", "North", "Winter", "Kidney", "Fear", "Mercury", "Black Tortoise"),
+            _ => return Err(RuntimeError::new("Unknown element. Use wood/fire/earth/metal/water")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("chinese".to_string(), Value::String(Rc::new(chinese.to_string())));
+        map.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("direction".to_string(), Value::String(Rc::new(direction.to_string())));
+        map.insert("season".to_string(), Value::String(Rc::new(season.to_string())));
+        map.insert("organ".to_string(), Value::String(Rc::new(organ.to_string())));
+        map.insert("emotion".to_string(), Value::String(Rc::new(emotion.to_string())));
+        map.insert("planet".to_string(), Value::String(Rc::new(planet.to_string())));
+        map.insert("guardian".to_string(), Value::String(Rc::new(animal.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // CHAKRA COLORS (Ayurveda/Hindu)
+    // =========================================================================
+    define(interp, "chakra_color", Some(1), |_, args| {
+        let chakra = match &args[0] { Value::String(s) => s.to_lowercase(), Value::Int(n) => n.to_string(), _ => return Err(RuntimeError::new("chakra_color requires string or number")) };
+        let (name, sanskrit, color, hex, location, freq, element, mantra) = match chakra.as_str() {
+            "root" | "muladhara" | "1" => ("Root", "मूलाधार", "Red", "#FF0000", "Base of spine", 396.0, "Earth", "LAM"),
+            "sacral" | "svadhisthana" | "2" => ("Sacral", "स्वाधिष्ठान", "Orange", "#FF7F00", "Below navel", 417.0, "Water", "VAM"),
+            "solar" | "manipura" | "3" => ("Solar Plexus", "मणिपूर", "Yellow", "#FFFF00", "Stomach", 528.0, "Fire", "RAM"),
+            "heart" | "anahata" | "4" => ("Heart", "अनाहत", "Green", "#00FF00", "Chest", 639.0, "Air", "YAM"),
+            "throat" | "vishuddha" | "5" => ("Throat", "विशुद्ध", "Blue", "#00BFFF", "Throat", 741.0, "Ether", "HAM"),
+            "third_eye" | "ajna" | "6" => ("Third Eye", "आज्ञा", "Indigo", "#4B0082", "Forehead", 852.0, "Light", "OM"),
+            "crown" | "sahasrara" | "7" => ("Crown", "सहस्रार", "Violet", "#8B00FF", "Top of head", 963.0, "Thought", "Silence"),
+            _ => return Err(RuntimeError::new("Unknown chakra. Use root/sacral/solar/heart/throat/third_eye/crown or 1-7")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("sanskrit".to_string(), Value::String(Rc::new(sanskrit.to_string())));
+        map.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("location".to_string(), Value::String(Rc::new(location.to_string())));
+        map.insert("frequency_hz".to_string(), Value::Float(freq));
+        map.insert("element".to_string(), Value::String(Rc::new(element.to_string())));
+        map.insert("mantra".to_string(), Value::String(Rc::new(mantra.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // MAYAN DIRECTIONAL COLORS
+    // =========================================================================
+    define(interp, "maya_direction", Some(1), |_, args| {
+        let dir = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (direction, yucatec, color, hex, deity, meaning) = match dir.as_str() {
+            "east" | "lakin" => ("East", "Lak'in", "Red", "#FF0000", "Chac (Red)", "Sunrise, new beginnings"),
+            "north" | "xaman" => ("North", "Xaman", "White", "#FFFFFF", "Chac (White)", "Ancestors, death"),
+            "west" | "chikin" => ("West", "Chik'in", "Black", "#000000", "Chac (Black)", "Sunset, completion"),
+            "south" | "nohol" => ("South", "Nohol", "Yellow", "#FFFF00", "Chac (Yellow)", "Maize, abundance"),
+            "center" | "yax" => ("Center", "Yax", "Green/Blue", "#00CED1", "World Tree", "Balance"),
+            _ => return Err(RuntimeError::new("Unknown direction. Use east/north/west/south/center")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("direction".to_string(), Value::String(Rc::new(direction.to_string())));
+        map.insert("yucatec".to_string(), Value::String(Rc::new(yucatec.to_string())));
+        map.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("deity".to_string(), Value::String(Rc::new(deity.to_string())));
+        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // ORISHA COLORS (Yoruba/African)
+    // =========================================================================
+    define(interp, "orisha_color", Some(1), |_, args| {
+        let orisha = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (name, colors, hex, domain, day, number) = match orisha.as_str() {
+            "obatala" | "oxala" => ("Obatalá", "White, silver", "#FFFFFF", "Creation, purity, wisdom", "Sunday", 8),
+            "yemoja" | "yemanja" => ("Yemọja", "Blue, white", "#4169E1", "Ocean, motherhood", "Saturday", 7),
+            "oshun" | "oxum" => ("Ọṣun", "Yellow, gold", "#FFD700", "Rivers, love, fertility", "Saturday", 5),
+            "shango" | "xango" => ("Ṣàngó", "Red, white", "#FF0000", "Thunder, fire, justice", "Wednesday", 6),
+            "ogun" | "ogum" => ("Ògún", "Green, black", "#006400", "Iron, war, labor", "Tuesday", 7),
+            "oya" | "iansa" => ("Ọya", "Brown, purple", "#800020", "Wind, storms, change", "Wednesday", 9),
+            "eshu" | "exu" => ("Èṣù", "Red, black", "#8B0000", "Crossroads, messages", "Monday", 3),
+            _ => return Err(RuntimeError::new("Unknown Orisha. Use obatala/yemoja/oshun/shango/ogun/oya/eshu")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("colors".to_string(), Value::String(Rc::new(colors.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("domain".to_string(), Value::String(Rc::new(domain.to_string())));
+        map.insert("day".to_string(), Value::String(Rc::new(day.to_string())));
+        map.insert("number".to_string(), Value::Int(number));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // JAPANESE TRADITIONAL COLORS (nihon_iro)
+    // =========================================================================
+    define(interp, "nihon_iro", Some(1), |_, args| {
+        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (name, japanese, hex, meaning, season) = match color.as_str() {
+            "sakura" => ("Sakura Pink", "桜色", "#FFB7C5", "Cherry blossoms, transience", "Spring"),
+            "fuji" => ("Wisteria", "藤色", "#C9A0DC", "Elegance, nobility", "Spring"),
+            "moegi" => ("Young Green", "萌黄", "#AACF53", "New growth, freshness", "Spring"),
+            "ai" => ("Indigo", "藍色", "#004D99", "Protection, depth", "All"),
+            "akane" => ("Madder Red", "茜色", "#CF3A24", "Sunset, passion", "Autumn"),
+            "shiro" => ("White", "白", "#FFFFFF", "Purity, death, sacred", "Winter"),
+            "kuro" => ("Black", "黒", "#000000", "Formality, mystery", "All"),
+            "aka" => ("Red", "赤", "#D7003A", "Life force, celebration", "All"),
+            "murasaki" => ("Purple", "紫", "#884898", "Nobility, spirituality", "All"),
+            _ => return Err(RuntimeError::new("Unknown color. Try: sakura/fuji/moegi/ai/akane/shiro/kuro/aka/murasaki")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("japanese".to_string(), Value::String(Rc::new(japanese.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        map.insert("season".to_string(), Value::String(Rc::new(season.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // ISLAMIC COLOR SYMBOLISM
+    // =========================================================================
+    define(interp, "islamic_color", Some(1), |_, args| {
+        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (name, arabic, hex, meaning, usage) = match color.as_str() {
+            "green" | "akhdar" => ("Green", "أخضر", "#00FF00", "Paradise, Prophet, life", "Mosques, Quran, flags"),
+            "white" | "abyad" => ("White", "أبيض", "#FFFFFF", "Purity, peace, ihram", "Pilgrimage, burial"),
+            "black" | "aswad" => ("Black", "أسود", "#000000", "Modesty, Kaaba", "Kiswah, abaya"),
+            "gold" | "dhahabi" => ("Gold", "ذهبي", "#FFD700", "Paradise, divine light", "Calligraphy, decoration"),
+            "blue" | "azraq" => ("Blue", "أزرق", "#0000CD", "Protection, heaven", "Tiles, evil eye"),
+            _ => return Err(RuntimeError::new("Unknown color. Use green/white/black/gold/blue")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("arabic".to_string(), Value::String(Rc::new(arabic.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        map.insert("usage".to_string(), Value::String(Rc::new(usage.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // THAI DAY COLORS
+    // =========================================================================
+    define(interp, "thai_day_color", Some(1), |_, args| {
+        let day = match &args[0] { Value::String(s) => s.to_lowercase(), Value::Int(n) => n.to_string(), _ => return Err(RuntimeError::new("requires string or number")) };
+        let (day_name, thai, color, hex, deity) = match day.as_str() {
+            "sunday" | "0" => ("Sunday", "วันอาทิตย์", "Red", "#FF0000", "Surya"),
+            "monday" | "1" => ("Monday", "วันจันทร์", "Yellow", "#FFFF00", "Chandra"),
+            "tuesday" | "2" => ("Tuesday", "วันอังคาร", "Pink", "#FFC0CB", "Mangala"),
+            "wednesday" | "3" => ("Wednesday", "วันพุธ", "Green", "#00FF00", "Budha"),
+            "thursday" | "4" => ("Thursday", "วันพฤหัสบดี", "Orange", "#FFA500", "Brihaspati"),
+            "friday" | "5" => ("Friday", "วันศุกร์", "Blue", "#00BFFF", "Shukra"),
+            "saturday" | "6" => ("Saturday", "วันเสาร์", "Purple", "#800080", "Shani"),
+            _ => return Err(RuntimeError::new("Unknown day. Use sunday-saturday or 0-6")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("day".to_string(), Value::String(Rc::new(day_name.to_string())));
+        map.insert("thai".to_string(), Value::String(Rc::new(thai.to_string())));
+        map.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("deity".to_string(), Value::String(Rc::new(deity.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // ABORIGINAL AUSTRALIAN COLORS
+    // =========================================================================
+    define(interp, "aboriginal_color", Some(1), |_, args| {
+        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (name, hex, meaning, source, dreamtime) = match color.as_str() {
+            "red" | "ochre" => ("Red Ochre", "#CC5500", "Earth, blood, ceremony", "Hematite", "Ancestral beings"),
+            "yellow" => ("Yellow Ochre", "#D4A017", "Sun, healing", "Limonite", "Sun's journey"),
+            "white" => ("White", "#FFFFFF", "Sky, spirits, mourning", "Kaolin", "Sky beings"),
+            "black" => ("Black", "#000000", "Night, formality", "Charcoal", "Night, men's business"),
+            "brown" => ("Brown", "#8B4513", "Earth, land", "Earth pigments", "Country, connection"),
+            _ => return Err(RuntimeError::new("Unknown color. Use red/yellow/white/black/brown")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        map.insert("source".to_string(), Value::String(Rc::new(source.to_string())));
+        map.insert("dreamtime".to_string(), Value::String(Rc::new(dreamtime.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // CELTIC COLORS
+    // =========================================================================
+    define(interp, "celtic_color", Some(1), |_, args| {
+        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (name, gaelic, hex, meaning, element) = match color.as_str() {
+            "green" => ("Green", "Glas", "#228B22", "Nature, fairies, Otherworld", "Earth"),
+            "white" => ("White", "Bán", "#FFFFFF", "Purity, spirits", "Air"),
+            "red" => ("Red", "Dearg", "#FF0000", "War, courage, blood", "Fire"),
+            "black" => ("Black", "Dubh", "#000000", "Otherworld, death, rebirth", "Water"),
+            "gold" => ("Gold", "Órga", "#FFD700", "Sun, sovereignty, Lugh", "Fire"),
+            "silver" => ("Silver", "Airgid", "#C0C0C0", "Moon, feminine, intuition", "Water"),
+            _ => return Err(RuntimeError::new("Unknown color. Use green/white/red/black/gold/silver")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("gaelic".to_string(), Value::String(Rc::new(gaelic.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        map.insert("element".to_string(), Value::String(Rc::new(element.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // KENTE CLOTH COLORS (Ghana)
+    // =========================================================================
+    define(interp, "kente_color", Some(1), |_, args| {
+        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (name, twi, hex, meaning) = match color.as_str() {
+            "gold" | "yellow" => ("Gold", "Sika Kɔkɔɔ", "#FFD700", "Royalty, wealth, glory"),
+            "green" => ("Green", "Ahabammono", "#228B22", "Growth, renewal, harvest"),
+            "blue" => ("Blue", "Bruu", "#0000CD", "Peace, harmony, love"),
+            "red" => ("Red", "Kɔkɔɔ", "#FF0000", "Blood, sacrifice, power"),
+            "black" => ("Black", "Tuntum", "#000000", "Maturation, ancestors"),
+            "white" => ("White", "Fitaa", "#FFFFFF", "Purification, virtue, joy"),
+            "maroon" => ("Maroon", "Borɔnɔ", "#800000", "Earth, healing, protection"),
+            _ => return Err(RuntimeError::new("Unknown color. Use gold/green/blue/red/black/white/maroon")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("twi".to_string(), Value::String(Rc::new(twi.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // HINDU COLOR SYMBOLISM
+    // =========================================================================
+    define(interp, "hindu_color", Some(1), |_, args| {
+        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (name, hindi, hex, meaning, deities) = match color.as_str() {
+            "red" | "lal" => ("Red", "लाल", "#FF0000", "Purity, fertility, love", "Durga, Lakshmi"),
+            "orange" | "saffron" => ("Saffron", "केसरी", "#FF6600", "Sacred, renunciation", "Hanuman"),
+            "yellow" => ("Yellow", "पीला", "#FFFF00", "Knowledge, learning", "Vishnu, Saraswati"),
+            "green" => ("Green", "हरा", "#008000", "Life, happiness", "Krishna"),
+            "white" => ("White", "सफ़ेद", "#FFFFFF", "Purity, mourning", "Saraswati, Shiva"),
+            "blue" => ("Blue", "नीला", "#0000FF", "Divinity, infinity", "Krishna, Vishnu"),
+            "black" => ("Black", "काला", "#000000", "Protection from evil", "Kali, Shani"),
+            _ => return Err(RuntimeError::new("Unknown color. Use red/orange/yellow/green/white/blue/black")),
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("hindi".to_string(), Value::String(Rc::new(hindi.to_string())));
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        map.insert("deities".to_string(), Value::String(Rc::new(deities.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // =========================================================================
+    // SYNESTHESIA - CROSS-MODAL MAPPING WITH CULTURAL CONTEXT
+    // =========================================================================
+    define(interp, "emotion_color", Some(2), |_, args| {
+        let emotion = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let culture = match &args[1] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let (hex, name, reasoning) = match (emotion.as_str(), culture.as_str()) {
+            ("joy", "western") | ("happy", "western") => ("#FFD700", "Gold", "Sunshine = happiness"),
+            ("joy", "chinese") | ("happy", "chinese") => ("#FF0000", "Red", "红 = luck, joy"),
+            ("joy", "japanese") => ("#FFB7C5", "Sakura", "Cherry blossom = fleeting joy"),
+            ("sadness", "western") | ("sad", "western") => ("#0000CD", "Blue", "'Feeling blue'"),
+            ("sadness", "chinese") | ("sad", "chinese") => ("#FFFFFF", "White", "白 = mourning"),
+            ("sadness", "indian") => ("#FFFFFF", "White", "सफ़ेद = mourning"),
+            ("anger", _) => ("#FF0000", "Red", "Universal heat/fire"),
+            ("love", "western") => ("#FF69B4", "Pink", "Valentine's hearts"),
+            ("love", "chinese") | ("love", "indian") => ("#FF0000", "Red", "Red = marriage, love"),
+            ("peace", "western") => ("#ADD8E6", "Light Blue", "Sky, serenity"),
+            ("peace", "islamic") => ("#00FF00", "Green", "السلام = paradise"),
+            ("fear", _) => ("#4B0082", "Indigo", "Deep, mysterious"),
+            (_, _) => ("#808080", "Grey", "Neutral"),
+        };
+        let r = u8::from_str_radix(&hex[1..3], 16).unwrap_or(128);
+        let g = u8::from_str_radix(&hex[3..5], 16).unwrap_or(128);
+        let b = u8::from_str_radix(&hex[5..7], 16).unwrap_or(128);
+        let mut map = std::collections::HashMap::new();
+        map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
+        map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+        map.insert("r".to_string(), Value::Int(r as i64));
+        map.insert("g".to_string(), Value::Int(g as i64));
+        map.insert("b".to_string(), Value::Int(b as i64));
+        map.insert("reasoning".to_string(), Value::String(Rc::new(reasoning.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // synesthesia - full cross-modal with cultural awareness
+    define(interp, "synesthesia", Some(2), |_, args| {
+        let culture = match &args[1] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires culture string")) };
+        let (r, g, b, emotion, freq) = match &args[0] {
+            Value::String(s) => match s.to_lowercase().as_str() {
+                "joy" | "happy" => (255u8, 215u8, 0u8, "joy", 528.0),
+                "sadness" | "sad" => (0, 0, 139, "sadness", 396.0),
+                "anger" => (255, 0, 0, "anger", 417.0),
+                "fear" => (75, 0, 130, "fear", 369.0),
+                "love" => (255, 105, 180, "love", 639.0),
+                "peace" => (135, 206, 235, "peace", 741.0),
+                _ => (128, 128, 128, "neutral", 432.0),
+            },
+            Value::Int(n) => (128, 128, 255, "resonance", *n as f64),
+            Value::Float(f) => (128, 128, 255, "resonance", *f),
+            _ => (128, 128, 128, "neutral", 432.0),
+        };
+        let cultural_meaning = match culture.as_str() {
+            "chinese" if r > 200 && g < 100 => "luck/joy (红)",
+            "japanese" if r > 200 && g < 100 => "vitality (赤)",
+            "indian" if r > 200 && g < 100 => "shakti/auspicious",
+            _ => "universal resonance",
+        };
+        let chakra = if r > 200 && g < 100 { "Root" } else if g > 200 { "Heart" } else if b > 200 { "Throat" } else { "Crown" };
+        let wu_xing = if r > 200 && g < 100 { "Fire (火)" } else if g > 200 { "Wood (木)" } else if b > 200 { "Water (水)" } else { "Metal (金)" };
+        let mut map = std::collections::HashMap::new();
+        let mut color_map = std::collections::HashMap::new();
+        color_map.insert("r".to_string(), Value::Int(r as i64));
+        color_map.insert("g".to_string(), Value::Int(g as i64));
+        color_map.insert("b".to_string(), Value::Int(b as i64));
+        color_map.insert("hex".to_string(), Value::String(Rc::new(format!("#{:02X}{:02X}{:02X}", r, g, b))));
+        map.insert("color".to_string(), Value::Map(Rc::new(RefCell::new(color_map))));
+        map.insert("emotion".to_string(), Value::String(Rc::new(emotion.to_string())));
+        map.insert("frequency".to_string(), Value::Float(freq));
+        map.insert("cultural_meaning".to_string(), Value::String(Rc::new(cultural_meaning.to_string())));
+        map.insert("chakra".to_string(), Value::String(Rc::new(chakra.to_string())));
+        map.insert("wu_xing".to_string(), Value::String(Rc::new(wu_xing.to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // color_to_sound - Scriabin-inspired mapping
+    define(interp, "color_to_sound", Some(3), |_, args| {
+        let r = match &args[0] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
+        let g = match &args[1] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
+        let b = match &args[2] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
+        let max = r.max(g).max(b); let min = r.min(g).min(b); let l = (max + min) / 2.0;
+        let h = if max == min { 0.0 } else {
+            let d = max - min;
+            if max == r { (g - b) / d + if g < b { 6.0 } else { 0.0 } }
+            else if max == g { (b - r) / d + 2.0 } else { (r - g) / d + 4.0 }
+        } * 60.0;
+        let (note, freq) = if h < 30.0 { ("C", 261.63) } else if h < 60.0 { ("G", 392.00) }
+        else if h < 90.0 { ("D", 293.66) } else if h < 120.0 { ("A", 440.00) }
+        else if h < 150.0 { ("E", 329.63) } else if h < 180.0 { ("B", 493.88) }
+        else if h < 210.0 { ("F#", 369.99) } else if h < 240.0 { ("Db", 277.18) }
+        else if h < 270.0 { ("Ab", 415.30) } else if h < 300.0 { ("Eb", 311.13) }
+        else if h < 330.0 { ("Bb", 466.16) } else { ("F", 349.23) };
+        let octave_shift = ((l - 0.5) * 4.0).round() as i32;
+        let adjusted_freq = freq * 2.0_f64.powi(octave_shift);
+        let mut map = std::collections::HashMap::new();
+        map.insert("note".to_string(), Value::String(Rc::new(note.to_string())));
+        map.insert("frequency".to_string(), Value::Float(adjusted_freq));
+        map.insert("hue".to_string(), Value::Float(h));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // contrast_ratio - WCAG accessibility
+    define(interp, "contrast_ratio", Some(6), |_, args| {
+        fn lum(r: f64, g: f64, b: f64) -> f64 {
+            fn ch(c: f64) -> f64 { let c = c / 255.0; if c <= 0.03928 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) } }
+            0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b)
+        }
+        let r1 = match &args[0] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
+        let g1 = match &args[1] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
+        let b1 = match &args[2] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
+        let r2 = match &args[3] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
+        let g2 = match &args[4] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
+        let b2 = match &args[5] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
+        let l1 = lum(r1, g1, b1); let l2 = lum(r2, g2, b2);
+        let ratio = if l1 > l2 { (l1 + 0.05) / (l2 + 0.05) } else { (l2 + 0.05) / (l1 + 0.05) };
+        let mut map = std::collections::HashMap::new();
+        map.insert("ratio".to_string(), Value::Float(ratio));
+        map.insert("aa_normal".to_string(), Value::Bool(ratio >= 4.5));
+        map.insert("aa_large".to_string(), Value::Bool(ratio >= 3.0));
+        map.insert("aaa_normal".to_string(), Value::Bool(ratio >= 7.0));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 }
 

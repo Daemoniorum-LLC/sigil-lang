@@ -1,0 +1,200 @@
+//! Affective Computing in Sigil
+//!
+//! Track sentiment, sarcasm, emotions, intensity, formality, and confidence
+//! at the value level. AI-native markers for the AI-native language.
+
+fn main() {
+    println("=== Sigil Affective Markers Demo ===")
+    println("")
+
+    // =========================================================================
+    // SENTIMENT MARKERS: ⊕ (positive), ⊖ (negative), ⊜ (neutral)
+    // =========================================================================
+    println("--- Sentiment Markers ---")
+
+    // Create affective values with sentiment
+    let good_news = positive("Revenue is up 40%!")
+    let bad_news = negative("Server crashed at 3am")
+    let neutral_info = neutral("The meeting is at 2pm")
+
+    println("Good news: " + to_string(good_news))
+    println("  is_positive: " + to_string(is_positive(good_news)))
+    println("Bad news: " + to_string(bad_news))
+    println("  is_negative: " + to_string(is_negative(bad_news)))
+    println("Neutral info: " + to_string(neutral_info))
+    println("")
+
+    // =========================================================================
+    // SARCASM MARKER: ⸮ (the historical percontation point from 1580!)
+    // =========================================================================
+    println("--- Sarcasm Marker (⸮) ---")
+
+    let sarcastic_comment = sarcastic("Oh great, another meeting")
+    let sincere_comment = "I genuinely enjoy these meetings"
+
+    println("Comment: " + to_string(sarcastic_comment))
+    println("  is_sarcastic: " + to_string(is_sarcastic(sarcastic_comment)))
+    println("Sincere: " + sincere_comment)
+    println("  is_sarcastic: " + to_string(is_sarcastic(sincere_comment)))
+    println("")
+
+    // =========================================================================
+    // INTENSITY MARKERS: ↑ (up), ↓ (down), ⇈ (max)
+    // =========================================================================
+    println("--- Intensity Markers ---")
+
+    let emphasized = intensify("This is important")
+    let understated = dampen("It's fine, I guess")
+    let extreme = maximize("CRITICAL EMERGENCY!")
+
+    println("Intensified: " + to_string(emphasized))
+    println("Dampened: " + to_string(understated))
+    println("Maximized: " + to_string(extreme))
+    println("  affect_of: " + affect_of(extreme))
+    println("")
+
+    // =========================================================================
+    // FORMALITY MARKERS: ♔ (formal), ♟ (informal)
+    // =========================================================================
+    println("--- Formality Markers ---")
+
+    let formal_msg = formal("Dear Sir or Madam, I write to inform you...")
+    let informal_msg = informal("hey whats up lol")
+
+    println("Formal: " + to_string(formal_msg))
+    println("  is_formal: " + to_string(is_formal(formal_msg)))
+    println("Informal: " + to_string(informal_msg))
+    println("  is_informal: " + to_string(is_informal(informal_msg)))
+    println("")
+
+    // =========================================================================
+    // EMOTION MARKERS (Plutchik's Wheel):
+    // ☺ (joy), ☹ (sadness), ⚡ (anger), ❄ (fear), ✦ (surprise), ♡ (love)
+    // =========================================================================
+    println("--- Emotion Markers ---")
+
+    let joy = joyful("We did it!")
+    let sadness = sad("I miss the old days")
+    let anger = angry("This is unacceptable!")
+    let fear = fearful("What if it fails?")
+    let surprise = surprised("I never expected this!")
+    let love = loving("You mean so much to me")
+
+    println("Joy: " + to_string(joy))
+    println("  emotion_of: " + emotion_of(joy))
+    println("Sadness: " + to_string(sadness))
+    println("  emotion_of: " + emotion_of(sadness))
+    println("Anger: " + to_string(anger))
+    println("  emotion_of: " + emotion_of(anger))
+    println("Fear: " + to_string(fear))
+    println("  emotion_of: " + emotion_of(fear))
+    println("Surprise: " + to_string(surprise))
+    println("  emotion_of: " + emotion_of(surprise))
+    println("Love: " + to_string(love))
+    println("  emotion_of: " + emotion_of(love))
+    println("")
+
+    // =========================================================================
+    // CONFIDENCE MARKERS: ◉ (high), ◎ (medium), ○ (low)
+    // =========================================================================
+    println("--- Confidence Markers ---")
+
+    let certain = high_confidence("The test will pass")
+    let unsure = medium_confidence("It might work")
+    let doubtful = low_confidence("I'm not sure about this")
+
+    println("High confidence: " + to_string(certain))
+    println("  confidence_of: " + confidence_of(certain))
+    println("Medium confidence: " + to_string(unsure))
+    println("  confidence_of: " + confidence_of(unsure))
+    println("Low confidence: " + to_string(doubtful))
+    println("  confidence_of: " + confidence_of(doubtful))
+    println("")
+
+    // =========================================================================
+    // COMBINING MARKERS WITH with_affect()
+    // =========================================================================
+    println("--- Combined Markers ---")
+
+    // Create complex affective values with multiple markers
+    let complex_msg = with_affect(
+        "This project is going GREAT",
+        "positive",
+        "sarcastic",   // Actually being sarcastic
+        "maximize",    // Intense sarcasm
+        "informal"     // Casual register
+    )
+
+    println("Complex message: " + to_string(complex_msg))
+    println("  affect_of: " + affect_of(complex_msg))
+    println("  is_sarcastic: " + to_string(is_sarcastic(complex_msg)))
+    println("  is_positive: " + to_string(is_positive(complex_msg)))
+    println("")
+
+    // Using Unicode symbols directly
+    let symbolic = with_affect("Perfect!", "⊕", "⸮", "⇈")  // Sarcastic "perfect"
+    println("Using symbols: " + to_string(symbolic))
+    println("  affect_of: " + affect_of(symbolic))
+    println("")
+
+    // =========================================================================
+    // STRIPPING AFFECT
+    // =========================================================================
+    println("--- Strip Affect ---")
+
+    let wrapped = sarcastic(positive("Everything is fine"))
+    println("Original: " + to_string(wrapped))
+    println("Stripped: " + to_string(strip_affect(wrapped)))
+    println("")
+
+    // =========================================================================
+    // PRACTICAL USE CASES
+    // =========================================================================
+    println("--- Practical Use Cases ---")
+
+    // Customer feedback analysis
+    let reviews = [
+        positive("Great product, love it!"),
+        negative("Terrible service, never again"),
+        sarcastic("Oh yeah, 'excellent' support"),
+        neutral("It works as expected"),
+    ]
+
+    println("Analyzing customer reviews:")
+    let positive_count = 0
+    let negative_count = 0
+    let sarcastic_count = 0
+
+    for review in reviews {
+        let sentiment = if is_positive(review) && !is_sarcastic(review) {
+            "positive"
+        } else if is_negative(review) || is_sarcastic(review) {
+            "concerning"
+        } else {
+            "neutral"
+        }
+        println("  " + to_string(strip_affect(review)) + " -> " + sentiment)
+    }
+    println("")
+
+    // Tone-aware messaging
+    let formal_request = formal(high_confidence("Please review the attached proposal"))
+    let casual_note = informal(joyful("just shipped the fix!"))
+
+    println("Tone-appropriate messages:")
+    println("  Formal: " + to_string(formal_request) + " [" + affect_of(formal_request) + "]")
+    println("  Casual: " + to_string(casual_note) + " [" + affect_of(casual_note) + "]")
+    println("")
+
+    println("=== Affective Markers Demo Complete ===")
+    println("")
+    println("Symbol Reference:")
+    println("  Sentiment: ⊕ positive, ⊖ negative, ⊜ neutral")
+    println("  Sarcasm:   ⸮ (percontation point)")
+    println("  Intensity: ↑ up, ↓ down, ⇈ max")
+    println("  Formality: ♔ formal, ♟ informal")
+    println("  Emotions:  ☺ joy, ☹ sadness, ⚡ anger, ❄ fear, ✦ surprise, ♡ love")
+    println("  Confidence: ◉ high, ◎ medium, ○ low")
+
+    return 0
+}

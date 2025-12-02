@@ -451,12 +451,92 @@ let users! = file.read("users.csv")~
     |sigma.last_login          // Sort by login
 ```
 
+## Polycultural Features
+
+Sigil is designed with cultural awareness built into the type system.
+
+### Multi-Base Number Systems
+
+```sigil
+// Vigesimal (Mayan base-20) - used for sacred calendars
+let tzolkin = vigesimal_encode(260)     // Tzolkin calendar days
+let decoded = vigesimal_decode("D0")    // 260
+
+// Sexagesimal (Babylonian base-60) - time and angles
+let degrees = sexagesimal_encode(90)    // "1:30" (90 seconds = 1.5 minutes)
+let radians = sexagesimal_to_decimal("1:30:0") // Convert to decimal
+
+// Cultural numerology
+let seven = sacred_number(7, "hebrew")  // Completeness
+let eight = sacred_number(8, "chinese") // Prosperity (八)
+```
+
+### World Music Systems
+
+```sigil
+// Indian classical (22 Shrutis)
+let sa = shruti_freq(0)                 // Tonic
+let komal_re = shruti_freq(2)           // Komal Re (flat 2nd)
+
+// Arabic maqam (24-TET quarter-tones)
+let hijaz = scale("hijaz")              // D E♭ F# G A B♭ C D
+
+// Sacred frequencies
+let healing = sacred_freq("528")        // 528 Hz - DNA repair
+let meditation = sacred_freq("om")      // 136.1 Hz - Om frequency
+let earth = sacred_freq("schumann")     // 7.83 Hz - Earth resonance
+```
+
+### Divination & Sacred Geometry
+
+```sigil
+// I Ching consultation
+let reading = cast_iching()
+println("Primary: " + hexagram(reading.primary).name)
+println("Future: " + hexagram(reading.future).name)
+
+// Sacred ratios in design
+let golden = phi()                      // 1.618...
+let logo_width = 100.0
+let logo_height = logo_width / golden   // Golden proportion
+
+// Fibonacci for natural patterns
+let spiral = fibonacci(12)              // [1,1,2,3,5,8,13,21,34,55,89,144]
+```
+
+### Polycultural Color
+
+```sigil
+// Same emotion, different cultures
+let western_joy = emotion_color("joy", "western")   // Gold
+let chinese_joy = emotion_color("joy", "chinese")   // Red (红)
+let japanese_joy = emotion_color("joy", "japanese") // Sakura pink
+
+// Traditional color systems
+let fire_element = wu_xing("fire")      // Chinese 5 elements
+let heart_chakra = chakra_color("heart") // Hindu chakra system
+let east_maya = maya_direction("east")   // Mayan cosmology
+
+// Synesthesia - cross-modal perception
+let experience = synesthesia("love", "indian")
+// Returns: color, sound frequency, chakra, wu_xing element
+```
+
+### Accessibility
+
+```sigil
+// WCAG contrast checking
+let contrast = contrast_ratio(255, 255, 255, 0, 0, 0)
+println("Black on white ratio: " + contrast.ratio)  // 21.0
+println("AA compliant: " + contrast.aa_normal)      // true
+```
+
 ## Next Steps
 
-- Read the [Language Specification](./SPEC.md)
+- Read the [Language Specification](./specs/00-OVERVIEW.md)
 - Explore [Example Programs](../examples/)
-- Join the community on Discord
-- Check the [API Reference](./API.md)
+- Check the [Symbol Reference](./SYMBOLS.md)
+- See [Standard Library](./specs/09-STDLIB.md)
 
 ## Quick Reference Card
 

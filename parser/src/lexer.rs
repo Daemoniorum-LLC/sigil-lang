@@ -444,6 +444,66 @@ pub enum Token {
     #[token("‽")]
     Interrobang,  // Paradox/trust boundary
 
+    // === Affective Markers (Sentiment & Emotion) ===
+    // Sentiment polarity
+    #[token("⊖")]
+    AffectNegative,  // Negative sentiment (U+2296 Circled Minus)
+
+    #[token("⊜")]
+    AffectNeutral,  // Neutral sentiment (U+229C Circled Equals)
+
+    // Note: ⊕ (U+2295) is already DirectSum - we'll use it dual-purpose for positive sentiment
+
+    // Sarcasm/Irony
+    #[token("⸮")]
+    IronyMark,  // Irony/sarcasm marker (U+2E2E - historical percontation point!)
+
+    // Intensity modifiers
+    #[token("↑")]
+    IntensityUp,  // Intensifier (U+2191)
+
+    #[token("↓")]
+    IntensityDown,  // Dampener (U+2193)
+
+    #[token("⇈")]
+    IntensityMax,  // Maximum intensity (U+21C8)
+
+    // Formality register
+    #[token("♔")]
+    FormalRegister,  // Formal (U+2654 White King)
+
+    #[token("♟")]
+    InformalRegister,  // Informal (U+265F Black Pawn)
+
+    // Emotion markers (Plutchik's wheel)
+    #[token("☺")]
+    EmotionJoy,  // Joy (U+263A)
+
+    #[token("☹")]
+    EmotionSadness,  // Sadness (U+2639)
+
+    #[token("⚡")]
+    EmotionAnger,  // Anger (U+26A1)
+
+    #[token("❄")]
+    EmotionFear,  // Fear (U+2744)
+
+    #[token("✦")]
+    EmotionSurprise,  // Surprise (U+2726)
+
+    #[token("♡")]
+    EmotionLove,  // Love/Trust (U+2661)
+
+    // Confidence markers
+    #[token("◉")]
+    ConfidenceHigh,  // High confidence (U+25C9)
+
+    #[token("◎")]
+    ConfidenceMedium,  // Medium confidence (U+25CE)
+
+    #[token("○")]
+    ConfidenceLow,  // Low confidence (U+25CB)
+
     // === Aspect Morphemes (verb aspects) ===
     #[token("·ing")]
     AspectProgressive,  // Ongoing/streaming aspect
@@ -753,6 +813,58 @@ impl Token {
         matches!(
             self,
             Token::Bang | Token::Question | Token::Tilde | Token::Interrobang
+        )
+    }
+
+    pub fn is_affective(&self) -> bool {
+        matches!(
+            self,
+            // Sentiment
+            Token::DirectSum |  // ⊕ positive (dual-purpose with DirectSum)
+            Token::AffectNegative |  // ⊖ negative
+            Token::AffectNeutral |  // ⊜ neutral
+            // Sarcasm
+            Token::IronyMark |  // ⸮ irony/sarcasm
+            // Intensity
+            Token::IntensityUp |  // ↑
+            Token::IntensityDown |  // ↓
+            Token::IntensityMax |  // ⇈
+            // Formality
+            Token::FormalRegister |  // ♔
+            Token::InformalRegister |  // ♟
+            // Emotions
+            Token::EmotionJoy |  // ☺
+            Token::EmotionSadness |  // ☹
+            Token::EmotionAnger |  // ⚡
+            Token::EmotionFear |  // ❄
+            Token::EmotionSurprise |  // ✦
+            Token::EmotionLove |  // ♡
+            // Confidence
+            Token::ConfidenceHigh |  // ◉
+            Token::ConfidenceMedium |  // ◎
+            Token::ConfidenceLow  // ○
+        )
+    }
+
+    pub fn is_sentiment(&self) -> bool {
+        matches!(
+            self,
+            Token::DirectSum | Token::AffectNegative | Token::AffectNeutral
+        )
+    }
+
+    pub fn is_emotion(&self) -> bool {
+        matches!(
+            self,
+            Token::EmotionJoy | Token::EmotionSadness | Token::EmotionAnger |
+            Token::EmotionFear | Token::EmotionSurprise | Token::EmotionLove
+        )
+    }
+
+    pub fn is_intensity(&self) -> bool {
+        matches!(
+            self,
+            Token::IntensityUp | Token::IntensityDown | Token::IntensityMax
         )
     }
 }

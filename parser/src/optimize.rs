@@ -252,9 +252,9 @@ impl Optimizer {
         //     if n <= 0 { return a; }
         //     return fib_tail(n - 1, b, a + b);
         // }
-        let n_ident = Ident { name: "n".to_string(), evidentiality: None, span: span.clone() };
-        let a_ident = Ident { name: "a".to_string(), evidentiality: None, span: span.clone() };
-        let b_ident = Ident { name: "b".to_string(), evidentiality: None, span: span.clone() };
+        let n_ident = Ident { name: "n".to_string(), evidentiality: None, affect: None, span: span.clone() };
+        let a_ident = Ident { name: "a".to_string(), evidentiality: None, affect: None, span: span.clone() };
+        let b_ident = Ident { name: "b".to_string(), evidentiality: None, affect: None, span: span.clone() };
 
         let params = vec![
             Param {
@@ -292,7 +292,7 @@ impl Optimizer {
         let recursive_call = Expr::Call {
             func: Box::new(Expr::Path(TypePath {
                 segments: vec![PathSegment {
-                    ident: Ident { name: name.to_string(), evidentiality: None, span: span.clone() },
+                    ident: Ident { name: name.to_string(), evidentiality: None, affect: None, span: span.clone() },
                     generics: None,
                 }],
             })),
@@ -336,7 +336,7 @@ impl Optimizer {
             visibility: Visibility::default(),
             is_async: false,
             attrs: FunctionAttrs::default(),
-            name: Ident { name: name.to_string(), evidentiality: None, span: span.clone() },
+            name: Ident { name: name.to_string(), evidentiality: None, affect: None, span: span.clone() },
             aspect: None,
             generics: None,
             params,
@@ -354,7 +354,7 @@ impl Optimizer {
         let call_helper = Expr::Call {
             func: Box::new(Expr::Path(TypePath {
                 segments: vec![PathSegment {
-                    ident: Ident { name: helper_name.to_string(), evidentiality: None, span: span.clone() },
+                    ident: Ident { name: helper_name.to_string(), evidentiality: None, affect: None, span: span.clone() },
                     generics: None,
                 }],
             })),
@@ -362,7 +362,7 @@ impl Optimizer {
                 // n
                 Expr::Path(TypePath {
                     segments: vec![PathSegment {
-                        ident: Ident { name: param_name.to_string(), evidentiality: None, span: span.clone() },
+                        ident: Ident { name: param_name.to_string(), evidentiality: None, affect: None, span: span.clone() },
                         generics: None,
                     }],
                 }),
@@ -382,7 +382,7 @@ impl Optimizer {
             visibility: original.visibility,
             is_async: original.is_async,
             attrs: original.attrs.clone(),
-            name: Ident { name: name.to_string(), evidentiality: None, span: span.clone() },
+            name: Ident { name: name.to_string(), evidentiality: None, affect: None, span: span.clone() },
             aspect: original.aspect,
             generics: original.generics.clone(),
             params: original.params.clone(),
@@ -429,7 +429,7 @@ impl Optimizer {
             visibility: Visibility::default(),
             is_async: func.is_async,
             attrs: func.attrs.clone(),
-            name: Ident { name: impl_name.clone(), evidentiality: None, span: span.clone() },
+            name: Ident { name: impl_name.clone(), evidentiality: None, affect: None, span: span.clone() },
             aspect: func.aspect,
             generics: func.generics.clone(),
             params: func.params.clone(),
@@ -445,7 +445,7 @@ impl Optimizer {
             expr: Some(Box::new(Expr::Call {
                 func: Box::new(Expr::Path(TypePath {
                     segments: vec![PathSegment {
-                        ident: Ident { name: "sigil_memo_new".to_string(), evidentiality: None, span: span.clone() },
+                        ident: Ident { name: "sigil_memo_new".to_string(), evidentiality: None, affect: None, span: span.clone() },
                         generics: None,
                     }],
                 })),
@@ -461,7 +461,7 @@ impl Optimizer {
             visibility: Visibility::default(),
             is_async: false,
             attrs: FunctionAttrs::default(),
-            name: Ident { name: init_name.clone(), evidentiality: None, span: span.clone() },
+            name: Ident { name: init_name.clone(), evidentiality: None, affect: None, span: span.clone() },
             aspect: None,
             generics: None,
             params: vec![],
@@ -483,9 +483,9 @@ impl Optimizer {
         let param_count = param_names.len();
 
         // Variable for cache - use a static-like pattern with lazy init
-        let cache_var = Ident { name: "__cache".to_string(), evidentiality: None, span: span.clone() };
-        let result_var = Ident { name: "__result".to_string(), evidentiality: None, span: span.clone() };
-        let cached_var = Ident { name: "__cached".to_string(), evidentiality: None, span: span.clone() };
+        let cache_var = Ident { name: "__cache".to_string(), evidentiality: None, affect: None, span: span.clone() };
+        let result_var = Ident { name: "__result".to_string(), evidentiality: None, affect: None, span: span.clone() };
+        let cached_var = Ident { name: "__cached".to_string(), evidentiality: None, affect: None, span: span.clone() };
 
         let mut stmts = vec![];
 
@@ -496,7 +496,7 @@ impl Optimizer {
             init: Some(Expr::Call {
                 func: Box::new(Expr::Path(TypePath {
                     segments: vec![PathSegment {
-                        ident: Ident { name: "sigil_memo_new".to_string(), evidentiality: None, span: span.clone() },
+                        ident: Ident { name: "sigil_memo_new".to_string(), evidentiality: None, affect: None, span: span.clone() },
                         generics: None,
                     }],
                 })),
@@ -516,7 +516,7 @@ impl Optimizer {
         for name in param_names {
             get_args.push(Expr::Path(TypePath {
                 segments: vec![PathSegment {
-                    ident: Ident { name: name.clone(), evidentiality: None, span: span.clone() },
+                    ident: Ident { name: name.clone(), evidentiality: None, affect: None, span: span.clone() },
                     generics: None,
                 }],
             }));
@@ -528,7 +528,7 @@ impl Optimizer {
             init: Some(Expr::Call {
                 func: Box::new(Expr::Path(TypePath {
                     segments: vec![PathSegment {
-                        ident: Ident { name: get_fn_name.to_string(), evidentiality: None, span: span.clone() },
+                        ident: Ident { name: get_fn_name.to_string(), evidentiality: None, affect: None, span: span.clone() },
                         generics: None,
                     }],
                 })),
@@ -568,7 +568,7 @@ impl Optimizer {
         for name in param_names {
             impl_args.push(Expr::Path(TypePath {
                 segments: vec![PathSegment {
-                    ident: Ident { name: name.clone(), evidentiality: None, span: span.clone() },
+                    ident: Ident { name: name.clone(), evidentiality: None, affect: None, span: span.clone() },
                     generics: None,
                 }],
             }));
@@ -580,7 +580,7 @@ impl Optimizer {
             init: Some(Expr::Call {
                 func: Box::new(Expr::Path(TypePath {
                     segments: vec![PathSegment {
-                        ident: Ident { name: impl_name.to_string(), evidentiality: None, span: span.clone() },
+                        ident: Ident { name: impl_name.to_string(), evidentiality: None, affect: None, span: span.clone() },
                         generics: None,
                     }],
                 })),
@@ -596,7 +596,7 @@ impl Optimizer {
         for name in param_names {
             set_args.push(Expr::Path(TypePath {
                 segments: vec![PathSegment {
-                    ident: Ident { name: name.clone(), evidentiality: None, span: span.clone() },
+                    ident: Ident { name: name.clone(), evidentiality: None, affect: None, span: span.clone() },
                     generics: None,
                 }],
             }));
@@ -608,7 +608,7 @@ impl Optimizer {
         stmts.push(Stmt::Semi(Expr::Call {
             func: Box::new(Expr::Path(TypePath {
                 segments: vec![PathSegment {
-                    ident: Ident { name: set_fn_name.to_string(), evidentiality: None, span: span.clone() },
+                    ident: Ident { name: set_fn_name.to_string(), evidentiality: None, affect: None, span: span.clone() },
                     generics: None,
                 }],
             })),
@@ -1996,6 +1996,7 @@ impl Optimizer {
                             ident: Ident {
                                 name: var_name.clone(),
                                 evidentiality: None,
+                                affect: None,
                                 span: Span { start: 0, end: 0 },
                             },
                             generics: None,
@@ -2392,6 +2393,7 @@ fn replace_in_expr(expr: &Expr, target: &Expr, var_name: &str) -> Expr {
                 ident: Ident {
                     name: var_name.to_string(),
                     evidentiality: None,
+                    affect: None,
                     span: Span { start: 0, end: 0 },
                 },
                 generics: None,
@@ -2468,6 +2470,7 @@ fn make_cse_let(var_name: &str, expr: Expr) -> Stmt {
             name: Ident {
                 name: var_name.to_string(),
                 evidentiality: None,
+                affect: None,
                 span: Span { start: 0, end: 0 },
             },
             evidentiality: None,
@@ -2512,6 +2515,7 @@ mod tests {
                 ident: Ident {
                     name: name.to_string(),
                     evidentiality: None,
+                    affect: None,
                     span: Span { start: 0, end: 0 },
                 },
                 generics: None,
@@ -2597,7 +2601,7 @@ mod tests {
                 Stmt::Let {
                     pattern: Pattern::Ident {
                         mutable: false,
-                        name: Ident { name: "x".to_string(), evidentiality: None, span: Span { start: 0, end: 0 } },
+                        name: Ident { name: "x".to_string(), evidentiality: None, affect: None, span: Span { start: 0, end: 0 } },
                         evidentiality: None,
                     },
                     ty: None,
@@ -2606,7 +2610,7 @@ mod tests {
                 Stmt::Let {
                     pattern: Pattern::Ident {
                         mutable: false,
-                        name: Ident { name: "y".to_string(), evidentiality: None, span: Span { start: 0, end: 0 } },
+                        name: Ident { name: "y".to_string(), evidentiality: None, affect: None, span: Span { start: 0, end: 0 } },
                         evidentiality: None,
                     },
                     ty: None,
@@ -2639,7 +2643,7 @@ mod tests {
                 Stmt::Let {
                     pattern: Pattern::Ident {
                         mutable: false,
-                        name: Ident { name: "x".to_string(), evidentiality: None, span: Span { start: 0, end: 0 } },
+                        name: Ident { name: "x".to_string(), evidentiality: None, affect: None, span: Span { start: 0, end: 0 } },
                         evidentiality: None,
                     },
                     ty: None,
@@ -2648,7 +2652,7 @@ mod tests {
                 Stmt::Let {
                     pattern: Pattern::Ident {
                         mutable: false,
-                        name: Ident { name: "y".to_string(), evidentiality: None, span: Span { start: 0, end: 0 } },
+                        name: Ident { name: "y".to_string(), evidentiality: None, affect: None, span: Span { start: 0, end: 0 } },
                         evidentiality: None,
                     },
                     ty: None,
