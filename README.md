@@ -26,22 +26,52 @@ Sigil offers flexible performance tiers from instant iteration to production-opt
 
 Sigil's LLVM backend can automatically transform recursive algorithms into tail-recursive form, producing code **faster than hand-written Rust** for certain patterns.
 
-## Quick Start
+## Installation
+
+### Via Cargo (Recommended)
 
 ```bash
-# Clone and build
+cargo install sigil-parser
+```
+
+### Via Homebrew (macOS/Linux)
+
+```bash
+brew tap daemoniorum/sigil https://github.com/Daemoniorum-LLC/sigil-lang
+brew install sigil
+```
+
+### Via npm (MCP Server for AI)
+
+```bash
+npm install -g @daemoniorum/sigil-mcp
+```
+
+### From Source
+
+```bash
 git clone https://github.com/Daemoniorum-LLC/sigil-lang.git
 cd sigil-lang/parser
 cargo build --release
+```
 
-# Run interpreted (for development)
-./target/release/sigil run hello.sigil
+## Quick Start
 
-# Run with Cranelift JIT (fast)
-./target/release/sigil jit program.sigil
+```bash
+# Run a program
+sigil run hello.sigil
 
-# Compile to native binary (fastest)
-./target/release/sigil compile program.sigil -o program
+# Type check
+sigil check hello.sigil
+
+# Interactive REPL
+sigil repl
+
+# JIT compile (faster)
+sigil jit program.sigil
+
+# Native compile (fastest)
+sigil compile program.sigil -o program
 ./program
 ```
 
