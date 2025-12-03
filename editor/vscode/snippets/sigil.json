@@ -1,0 +1,184 @@
+{
+  "Main Function": {
+    "prefix": "fn main",
+    "body": [
+      "fn main() {",
+      "    $0",
+      "    return 0;",
+      "}"
+    ],
+    "description": "Main entry point function"
+  },
+  "Function": {
+    "prefix": "fn",
+    "body": [
+      "fn ${1:name}(${2:params}) -> ${3:return_type} {",
+      "    $0",
+      "}"
+    ],
+    "description": "Function definition"
+  },
+  "Transform (τ)": {
+    "prefix": ["tau", "map", "|t"],
+    "body": "|τ{${1:_} $0}",
+    "description": "Transform/map each element"
+  },
+  "Filter (φ)": {
+    "prefix": ["phi", "filter", "|f"],
+    "body": "|φ{${1:_} $0}",
+    "description": "Filter elements"
+  },
+  "Sort (σ)": {
+    "prefix": ["sigma", "sort", "|s"],
+    "body": "|σ",
+    "description": "Sort elements"
+  },
+  "Reduce (ρ)": {
+    "prefix": ["rho", "reduce", "|r"],
+    "body": "|ρ{${1:0}, ${2:acc}, ${3:x} => ${4:acc + x}}",
+    "description": "Reduce/fold elements"
+  },
+  "First (α)": {
+    "prefix": ["alpha", "first", "|a"],
+    "body": "|α",
+    "description": "Get first element"
+  },
+  "Last (ω)": {
+    "prefix": ["omega", "last", "|w"],
+    "body": "|ω",
+    "description": "Get last element"
+  },
+  "Sum (Σ)": {
+    "prefix": ["sum", "|sum"],
+    "body": "|Σ",
+    "description": "Sum all elements"
+  },
+  "Product (Π)": {
+    "prefix": ["product", "|prod"],
+    "body": "|Π",
+    "description": "Product of all elements"
+  },
+  "Known Evidence (!)": {
+    "prefix": "known",
+    "body": "known(${1:value})",
+    "description": "Wrap value with known evidence"
+  },
+  "Uncertain Evidence (?)": {
+    "prefix": "uncertain",
+    "body": "uncertain(${1:value})",
+    "description": "Wrap value with uncertain evidence"
+  },
+  "Reported Evidence (~)": {
+    "prefix": "reported",
+    "body": "reported(${1:value})",
+    "description": "Wrap value with reported evidence"
+  },
+  "Validate (~ -> ?)": {
+    "prefix": "validate",
+    "body": "validate(${1:value})",
+    "description": "Validate reported data to uncertain"
+  },
+  "Verify (? -> !)": {
+    "prefix": "verify",
+    "body": "verify(${1:value})",
+    "description": "Verify uncertain data to known"
+  },
+  "Evidential Function": {
+    "prefix": "fn evidence",
+    "body": [
+      "fn ${1:name}(${2:input}~: ${3:type}) -> ${4:result}! {",
+      "    // Validate external input",
+      "    let validated = validate($2);",
+      "    ",
+      "    // Compute result",
+      "    let result = $0;",
+      "    ",
+      "    verify(result)",
+      "}"
+    ],
+    "description": "Function with evidence chain pattern"
+  },
+  "Pipeline": {
+    "prefix": "pipeline",
+    "body": [
+      "${1:data}",
+      "    |τ{${2:transform}}",
+      "    |φ{${3:filter}}",
+      "    |${0}"
+    ],
+    "description": "Data pipeline pattern"
+  },
+  "Struct": {
+    "prefix": "struct",
+    "body": [
+      "struct ${1:Name} {",
+      "    ${2:field}: ${3:type},$0",
+      "}"
+    ],
+    "description": "Struct definition"
+  },
+  "Enum": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:Name} {",
+      "    ${2:Variant1},",
+      "    ${3:Variant2},$0",
+      "}"
+    ],
+    "description": "Enum definition"
+  },
+  "Match": {
+    "prefix": "match",
+    "body": [
+      "match ${1:value} {",
+      "    ${2:Pattern} => ${3:result},",
+      "    _ => ${0:default}",
+      "}"
+    ],
+    "description": "Match expression"
+  },
+  "If Expression": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition} {",
+      "    $0",
+      "}"
+    ],
+    "description": "If expression"
+  },
+  "If-Else Expression": {
+    "prefix": "ife",
+    "body": [
+      "if ${1:condition} {",
+      "    $2",
+      "} else {",
+      "    $0",
+      "}"
+    ],
+    "description": "If-else expression"
+  },
+  "For Loop": {
+    "prefix": "for",
+    "body": [
+      "for ${1:item} in ${2:collection} {",
+      "    $0",
+      "}"
+    ],
+    "description": "For loop"
+  },
+  "Test Function": {
+    "prefix": "test",
+    "body": [
+      "#[test]",
+      "fn test_${1:name}() {",
+      "    $0",
+      "}"
+    ],
+    "description": "Test function"
+  },
+  "Print Debug": {
+    "prefix": "pdb",
+    "body": "print(\"DEBUG: ${1:message}: \" + str(${2:value}));",
+    "description": "Print debug message"
+  }
+}
