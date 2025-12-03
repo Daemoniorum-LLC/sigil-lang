@@ -1,0 +1,25 @@
+{
+  "name": "@sigil-lang/playground",
+  "version": "0.1.0",
+  "description": "Browser-based Sigil playground - write, run, and share Sigil code",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "build:wasm": "cd ../parser && wasm-pack build --target web --out-dir ../playground/src/wasm"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "@codemirror/lang-javascript": "^6.2.1",
+    "@codemirror/state": "^6.4.0",
+    "@codemirror/view": "^6.23.0",
+    "@codemirror/commands": "^6.3.2",
+    "@codemirror/language": "^6.10.0",
+    "@codemirror/legacy-modes": "^6.3.3",
+    "@lezer/highlight": "^1.2.0",
+    "codemirror": "^6.0.1"
+  }
+}
