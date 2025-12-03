@@ -15,6 +15,5 @@ fn main() {
     // This should fail - passing reported (~) where known (!) is required
     let result = requires_known(reported_value);
 
-    print(result);
     return 0;
 }

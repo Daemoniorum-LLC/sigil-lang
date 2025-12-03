@@ -2,6 +2,7 @@
 
 use sigil_parser::{Parser, Interpreter, register_stdlib, Lexer, Token, Diagnostics, Diagnostic};
 use sigil_parser::span::Span;
+use sigil_parser::typeck::TypeChecker;
 use sigil_parser::lower::lower_source_file;
 #[cfg(feature = "jit")]
 use sigil_parser::JitCompiler;
@@ -530,9 +531,19 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) 
     let mut parser = Parser::new(&source);
 
     match parser.parse_file() {
-        Ok(_ast) => {
-            // TODO: Add semantic analysis / type checking here
-            // For now, just report successful parse
+        Ok(ast) => {
+            // Run type checker with evidence enforcement
+            let mut type_checker = TypeChecker::new();
+            if let Err(type_errors) = type_checker.check_file(&ast) {
+                for err in type_errors {
+                    let mut diag = Diagnostic::error(&err.message, err.span.unwrap_or(Span::default()))
+                        .with_code("E0003");
+                    for note in &err.notes {
+                        diag = diag.with_note(note);
+                    }
+                    diagnostics.add(diag);
+                }
+            }
         }
         Err(e) => {
             // Convert parse error to diagnostic

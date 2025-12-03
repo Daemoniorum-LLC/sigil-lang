@@ -132,6 +132,29 @@ impl EvidenceLevel {
             EvidenceLevel::Paradox => "‽",
         }
     }
+
+    /// Human-readable name
+    pub fn name(&self) -> &'static str {
+        match self {
+            EvidenceLevel::Known => "known",
+            EvidenceLevel::Uncertain => "uncertain",
+            EvidenceLevel::Reported => "reported",
+            EvidenceLevel::Paradox => "paradox",
+        }
+    }
+
+    /// Check if this evidence level can satisfy a required level.
+    ///
+    /// Evidence is covariant: you can pass more certain data where less certain is expected.
+    /// Known (!) can satisfy any requirement.
+    /// Reported (~) can only satisfy Reported or Paradox requirements.
+    ///
+    /// Returns true if `self` (actual) can be used where `required` is expected.
+    pub fn satisfies(self, required: Self) -> bool {
+        // More certain evidence (lower in lattice) can satisfy less certain requirements
+        // Known <= Uncertain <= Reported <= Paradox
+        self <= required
+    }
 }
 
 /// Type variable for inference
@@ -322,6 +345,72 @@ impl TypeChecker {
         self.errors.push(err);
     }
 
+    /// Check if actual evidence can satisfy expected evidence requirement.
+    /// Returns Ok(()) if compatible, Err with helpful message if not.
+    fn check_evidence(
+        &mut self,
+        expected: EvidenceLevel,
+        actual: EvidenceLevel,
+        context: &str,
+    ) -> bool {
+        if actual.satisfies(expected) {
+            true
+        } else {
+            let mut err = TypeError::new(format!(
+                "evidence mismatch {}: expected {} ({}), found {} ({})",
+                context,
+                expected.name(),
+                expected.symbol(),
+                actual.name(),
+                actual.symbol(),
+            ));
+
+            // Add helpful notes based on the specific mismatch
+            match (expected, actual) {
+                (EvidenceLevel::Known, EvidenceLevel::Reported) => {
+                    err = err.with_note(
+                        "reported data (~) cannot be used where known data (!) is required"
+                    );
+                    err = err.with_note(
+                        "help: use |validate!{...} to verify and promote evidence level"
+                    );
+                }
+                (EvidenceLevel::Known, EvidenceLevel::Uncertain) => {
+                    err = err.with_note(
+                        "uncertain data (?) cannot be used where known data (!) is required"
+                    );
+                    err = err.with_note(
+                        "help: use pattern matching or unwrap to handle the uncertainty"
+                    );
+                }
+                (EvidenceLevel::Uncertain, EvidenceLevel::Reported) => {
+                    err = err.with_note(
+                        "reported data (~) cannot be used where uncertain data (?) is required"
+                    );
+                    err = err.with_note(
+                        "help: use |validate?{...} to verify external data"
+                    );
+                }
+                _ => {
+                    err = err.with_note(format!(
+                        "evidence lattice: known (!) < uncertain (?) < reported (~) < paradox (‽)"
+                    ));
+                }
+            }
+
+            self.error(err);
+            false
+        }
+    }
+
+    /// Extract evidence level from a type, defaulting to Known
+    fn get_evidence(&self, ty: &Type) -> EvidenceLevel {
+        match ty {
+            Type::Evidential { evidence, .. } => *evidence,
+            _ => EvidenceLevel::Known,
+        }
+    }
+
     /// Check a source file
     pub fn check_file(&mut self, file: &SourceFile) -> Result<(), Vec<TypeError>> {
         // First pass: collect type definitions
@@ -494,12 +583,22 @@ impl TypeChecker {
                 .map(|t| self.convert_type(t))
                 .unwrap_or(Type::Unit);
 
+            // Check structural type compatibility
             if !self.unify(&expected_return, &body_type) {
                 self.error(TypeError::new(format!(
                     "return type mismatch in '{}': expected {:?}, found {:?}",
                     func.name.name, expected_return, body_type
                 )).with_span(func.name.span));
             }
+
+            // Check evidence compatibility for return
+            let expected_evidence = self.get_evidence(&expected_return);
+            let actual_evidence = self.get_evidence(&body_type);
+            self.check_evidence(
+                expected_evidence,
+                actual_evidence,
+                &format!("in return type of '{}'", func.name.name),
+            );
         }
 
         self.pop_scope();
@@ -616,14 +715,24 @@ impl TypeChecker {
                         )));
                     }
 
-                    // Check argument types
-                    for (param, arg) in params.iter().zip(arg_types.iter()) {
+                    // Check argument types and evidence levels
+                    for (i, (param, arg)) in params.iter().zip(arg_types.iter()).enumerate() {
+                        // First check structural type compatibility
                         if !self.unify(param, arg) {
                             self.error(TypeError::new(format!(
                                 "argument type mismatch: expected {:?}, found {:?}",
                                 param, arg
                             )));
                         }
+
+                        // Then check evidence compatibility
+                        let expected_evidence = self.get_evidence(param);
+                        let actual_evidence = self.get_evidence(arg);
+                        self.check_evidence(
+                            expected_evidence,
+                            actual_evidence,
+                            &format!("in argument {}", i + 1),
+                        );
                     }
 
                     *return_type
