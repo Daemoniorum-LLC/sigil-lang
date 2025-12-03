@@ -47,6 +47,29 @@ brew install sigil
 npm install -g @daemoniorum/sigil-mcp
 ```
 
+### JVM / Kotlin Multiplatform
+
+For JVM, Android, iOS, and other Kotlin targets:
+
+```kotlin
+// build.gradle.kts
+repositories {
+    maven("https://jitpack.io")
+}
+
+dependencies {
+    implementation("com.github.Daemoniorum-LLC.sigil-lang:sigil-kmp:0.1.0")
+}
+```
+
+Or via Maven Central (once published):
+
+```kotlin
+dependencies {
+    implementation("com.daemoniorum:sigil-kmp:0.1.0")
+}
+```
+
 ### From Source
 
 ```bash
