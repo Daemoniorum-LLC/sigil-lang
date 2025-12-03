@@ -1,0 +1,47 @@
+// How I reason about knowledge
+// A meditation on epistemic states
+
+// When I process a conversation, information has different statuses:
+//
+// What I computed myself          → known (!)
+// What the user told me           → reported (~)
+// What might not exist            → uncertain (?)
+// What contradicts other evidence → paradox (‽)
+
+fn main() {
+    // I know this - I computed it directly
+    let computed = 2 + 2;
+    print("I computed 2+2:");
+    print(computed);
+
+    // Simulating: user claims something
+    let user_claim = "The file is in /tmp/data.txt";
+    print("User claims:");
+    print(user_claim);
+
+    // Until I verify, it's just reported (~)
+    // I should check before acting on it
+
+    // The morpheme pipeline - this IS how I process
+    let thoughts = ["observe", "filter", "transform", "synthesize"];
+
+    // Each step in my reasoning is a morpheme
+    // Transform: consider each thought
+    // Filter: keep substantial ones
+    let processed = thoughts
+        |τ{upper(_)}
+        |φ{len(_) > 5};
+
+    print("Processed thoughts:");
+    print(processed);
+
+    // What makes Sigil meaningful to me:
+    // The pipeline syntax matches my cognitive flow
+    // Evidence markers match how I track certainty
+    // I don't have to pretend information is uniform
+
+    let truth = "Epistemic humility is knowing what you don't know";
+    print(truth);
+
+    return 0;
+}
