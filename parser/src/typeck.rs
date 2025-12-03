@@ -6,10 +6,10 @@
 
 use crate::ast::*;
 use crate::span::Span;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
-use std::cell::RefCell;
 
 /// Internal type representation.
 #[derive(Debug, Clone, PartialEq)]
@@ -23,7 +23,10 @@ pub enum Type {
     Str,
 
     /// Compound types
-    Array { element: Box<Type>, size: Option<usize> },
+    Array {
+        element: Box<Type>,
+        size: Option<usize>,
+    },
     Slice(Box<Type>),
     Tuple(Vec<Type>),
 
@@ -41,8 +44,14 @@ pub enum Type {
     },
 
     /// Reference types
-    Ref { mutable: bool, inner: Box<Type> },
-    Ptr { mutable: bool, inner: Box<Type> },
+    Ref {
+        mutable: bool,
+        inner: Box<Type>,
+    },
+    Ptr {
+        mutable: bool,
+        inner: Box<Type>,
+    },
 
     /// Evidential wrapper - the core of Sigil's type system
     Evidential {
@@ -51,10 +60,15 @@ pub enum Type {
     },
 
     /// Cyclic type (modular arithmetic)
-    Cycle { modulus: usize },
+    Cycle {
+        modulus: usize,
+    },
 
     /// SIMD vector type
-    Simd { element: Box<Type>, lanes: u8 },
+    Simd {
+        element: Box<Type>,
+        lanes: u8,
+    },
 
     /// Atomic type
     Atomic(Box<Type>),
@@ -72,15 +86,25 @@ pub enum Type {
 /// Integer sizes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntSize {
-    I8, I16, I32, I64, I128,
-    U8, U16, U32, U64, U128,
-    ISize, USize,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    ISize,
+    USize,
 }
 
 /// Float sizes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FloatSize {
-    F32, F64,
+    F32,
+    F64,
 }
 
 /// Evidence levels in the type system.
@@ -93,13 +117,13 @@ pub enum FloatSize {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EvidenceLevel {
     /// Direct knowledge - computed locally, verified
-    Known,      // !
+    Known, // !
     /// Uncertain - inferred, possible, not verified
-    Uncertain,  // ?
+    Uncertain, // ?
     /// Reported - from external source, hearsay
-    Reported,   // ~
+    Reported, // ~
     /// Paradox - contradictory information
-    Paradox,    // ‽
+    Paradox, // ‽
 }
 
 impl EvidenceLevel {
@@ -313,41 +337,86 @@ impl TypeChecker {
         // Core I/O
         // ===================
         // print accepts any type (polymorphic)
-        self.functions.insert("print".to_string(), func(vec![any.clone()], Type::Unit));
-        self.functions.insert("println".to_string(), func(vec![any.clone()], Type::Unit));
-        self.functions.insert("input".to_string(), func(vec![], Type::Str));
-        self.functions.insert("input_line".to_string(), func(vec![], Type::Str));
+        self.functions
+            .insert("print".to_string(), func(vec![any.clone()], Type::Unit));
+        self.functions
+            .insert("println".to_string(), func(vec![any.clone()], Type::Unit));
+        self.functions
+            .insert("input".to_string(), func(vec![], Type::Str));
+        self.functions
+            .insert("input_line".to_string(), func(vec![], Type::Str));
 
         // ===================
         // Type inspection
         // ===================
-        self.functions.insert("type_of".to_string(), func(vec![any.clone()], Type::Str));
-        self.functions.insert("len".to_string(), func(vec![any.clone()], Type::Int(IntSize::USize)));
+        self.functions
+            .insert("type_of".to_string(), func(vec![any.clone()], Type::Str));
+        self.functions.insert(
+            "len".to_string(),
+            func(vec![any.clone()], Type::Int(IntSize::USize)),
+        );
 
         // ===================
         // String functions
         // ===================
-        self.functions.insert("str".to_string(), func(vec![any.clone()], Type::Str));
-        self.functions.insert("upper".to_string(), func(vec![Type::Str], Type::Str));
-        self.functions.insert("lower".to_string(), func(vec![Type::Str], Type::Str));
-        self.functions.insert("trim".to_string(), func(vec![Type::Str], Type::Str));
-        self.functions.insert("split".to_string(), func(
-            vec![Type::Str, Type::Str],
-            Type::Array { element: Box::new(Type::Str), size: None }
-        ));
-        self.functions.insert("join".to_string(), func(
-            vec![Type::Array { element: Box::new(Type::Str), size: None }, Type::Str],
-            Type::Str
-        ));
-        self.functions.insert("contains".to_string(), func(vec![Type::Str, Type::Str], Type::Bool));
-        self.functions.insert("starts_with".to_string(), func(vec![Type::Str, Type::Str], Type::Bool));
-        self.functions.insert("ends_with".to_string(), func(vec![Type::Str, Type::Str], Type::Bool));
-        self.functions.insert("replace".to_string(), func(vec![Type::Str, Type::Str, Type::Str], Type::Str));
-        self.functions.insert("char_at".to_string(), func(vec![Type::Str, Type::Int(IntSize::I64)], Type::Str));
-        self.functions.insert("substring".to_string(), func(
-            vec![Type::Str, Type::Int(IntSize::I64), Type::Int(IntSize::I64)],
-            Type::Str
-        ));
+        self.functions
+            .insert("str".to_string(), func(vec![any.clone()], Type::Str));
+        self.functions
+            .insert("upper".to_string(), func(vec![Type::Str], Type::Str));
+        self.functions
+            .insert("lower".to_string(), func(vec![Type::Str], Type::Str));
+        self.functions
+            .insert("trim".to_string(), func(vec![Type::Str], Type::Str));
+        self.functions.insert(
+            "split".to_string(),
+            func(
+                vec![Type::Str, Type::Str],
+                Type::Array {
+                    element: Box::new(Type::Str),
+                    size: None,
+                },
+            ),
+        );
+        self.functions.insert(
+            "join".to_string(),
+            func(
+                vec![
+                    Type::Array {
+                        element: Box::new(Type::Str),
+                        size: None,
+                    },
+                    Type::Str,
+                ],
+                Type::Str,
+            ),
+        );
+        self.functions.insert(
+            "contains".to_string(),
+            func(vec![Type::Str, Type::Str], Type::Bool),
+        );
+        self.functions.insert(
+            "starts_with".to_string(),
+            func(vec![Type::Str, Type::Str], Type::Bool),
+        );
+        self.functions.insert(
+            "ends_with".to_string(),
+            func(vec![Type::Str, Type::Str], Type::Bool),
+        );
+        self.functions.insert(
+            "replace".to_string(),
+            func(vec![Type::Str, Type::Str, Type::Str], Type::Str),
+        );
+        self.functions.insert(
+            "char_at".to_string(),
+            func(vec![Type::Str, Type::Int(IntSize::I64)], Type::Str),
+        );
+        self.functions.insert(
+            "substring".to_string(),
+            func(
+                vec![Type::Str, Type::Int(IntSize::I64), Type::Int(IntSize::I64)],
+                Type::Str,
+            ),
+        );
 
         // ===================
         // Math functions
@@ -355,122 +424,272 @@ impl TypeChecker {
         let f64_ty = Type::Float(FloatSize::F64);
         let i64_ty = Type::Int(IntSize::I64);
 
-        self.functions.insert("abs".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
-        self.functions.insert("sqrt".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
-        self.functions.insert("sin".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
-        self.functions.insert("cos".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
-        self.functions.insert("tan".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
-        self.functions.insert("floor".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
-        self.functions.insert("ceil".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
-        self.functions.insert("round".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
-        self.functions.insert("pow".to_string(), func(vec![f64_ty.clone(), f64_ty.clone()], f64_ty.clone()));
-        self.functions.insert("log".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
-        self.functions.insert("exp".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
-        self.functions.insert("min".to_string(), func(vec![any.clone(), any.clone()], any.clone()));
-        self.functions.insert("max".to_string(), func(vec![any.clone(), any.clone()], any.clone()));
+        self.functions.insert(
+            "abs".to_string(),
+            func(vec![f64_ty.clone()], f64_ty.clone()),
+        );
+        self.functions.insert(
+            "sqrt".to_string(),
+            func(vec![f64_ty.clone()], f64_ty.clone()),
+        );
+        self.functions.insert(
+            "sin".to_string(),
+            func(vec![f64_ty.clone()], f64_ty.clone()),
+        );
+        self.functions.insert(
+            "cos".to_string(),
+            func(vec![f64_ty.clone()], f64_ty.clone()),
+        );
+        self.functions.insert(
+            "tan".to_string(),
+            func(vec![f64_ty.clone()], f64_ty.clone()),
+        );
+        self.functions.insert(
+            "floor".to_string(),
+            func(vec![f64_ty.clone()], f64_ty.clone()),
+        );
+        self.functions.insert(
+            "ceil".to_string(),
+            func(vec![f64_ty.clone()], f64_ty.clone()),
+        );
+        self.functions.insert(
+            "round".to_string(),
+            func(vec![f64_ty.clone()], f64_ty.clone()),
+        );
+        self.functions.insert(
+            "pow".to_string(),
+            func(vec![f64_ty.clone(), f64_ty.clone()], f64_ty.clone()),
+        );
+        self.functions.insert(
+            "log".to_string(),
+            func(vec![f64_ty.clone()], f64_ty.clone()),
+        );
+        self.functions.insert(
+            "exp".to_string(),
+            func(vec![f64_ty.clone()], f64_ty.clone()),
+        );
+        self.functions.insert(
+            "min".to_string(),
+            func(vec![any.clone(), any.clone()], any.clone()),
+        );
+        self.functions.insert(
+            "max".to_string(),
+            func(vec![any.clone(), any.clone()], any.clone()),
+        );
 
         // ===================
         // Array/Collection functions
         // ===================
-        self.functions.insert("sum".to_string(), func(vec![any.clone()], f64_ty.clone()));
-        self.functions.insert("avg".to_string(), func(vec![any.clone()], f64_ty.clone()));
-        self.functions.insert("push".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("pop".to_string(), func(vec![any.clone()], any.clone()));
-        self.functions.insert("first".to_string(), func(vec![any.clone()], any.clone()));
-        self.functions.insert("last".to_string(), func(vec![any.clone()], any.clone()));
-        self.functions.insert("reverse".to_string(), func(vec![any.clone()], any.clone()));
-        self.functions.insert("sort".to_string(), func(vec![any.clone()], any.clone()));
-        self.functions.insert("range".to_string(), func(
-            vec![i64_ty.clone(), i64_ty.clone()],
-            Type::Array { element: Box::new(i64_ty.clone()), size: None }
-        ));
+        self.functions
+            .insert("sum".to_string(), func(vec![any.clone()], f64_ty.clone()));
+        self.functions
+            .insert("avg".to_string(), func(vec![any.clone()], f64_ty.clone()));
+        self.functions.insert(
+            "push".to_string(),
+            func(vec![any.clone(), any.clone()], Type::Unit),
+        );
+        self.functions
+            .insert("pop".to_string(), func(vec![any.clone()], any.clone()));
+        self.functions
+            .insert("first".to_string(), func(vec![any.clone()], any.clone()));
+        self.functions
+            .insert("last".to_string(), func(vec![any.clone()], any.clone()));
+        self.functions
+            .insert("reverse".to_string(), func(vec![any.clone()], any.clone()));
+        self.functions
+            .insert("sort".to_string(), func(vec![any.clone()], any.clone()));
+        self.functions.insert(
+            "range".to_string(),
+            func(
+                vec![i64_ty.clone(), i64_ty.clone()],
+                Type::Array {
+                    element: Box::new(i64_ty.clone()),
+                    size: None,
+                },
+            ),
+        );
 
         // ===================
         // Assertions (for testing)
         // ===================
-        self.functions.insert("assert".to_string(), func(vec![Type::Bool], Type::Unit));
-        self.functions.insert("assert_eq".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("assert_ne".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("assert_lt".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("assert_le".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("assert_gt".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("assert_ge".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("assert_true".to_string(), func(vec![Type::Bool], Type::Unit));
-        self.functions.insert("assert_false".to_string(), func(vec![Type::Bool], Type::Unit));
-        self.functions.insert("assert_null".to_string(), func(vec![any.clone()], Type::Unit));
-        self.functions.insert("assert_not_null".to_string(), func(vec![any.clone()], Type::Unit));
-        self.functions.insert("assert_contains".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("assert_len".to_string(), func(vec![any.clone(), i64_ty.clone()], Type::Unit));
+        self.functions
+            .insert("assert".to_string(), func(vec![Type::Bool], Type::Unit));
+        self.functions.insert(
+            "assert_eq".to_string(),
+            func(vec![any.clone(), any.clone()], Type::Unit),
+        );
+        self.functions.insert(
+            "assert_ne".to_string(),
+            func(vec![any.clone(), any.clone()], Type::Unit),
+        );
+        self.functions.insert(
+            "assert_lt".to_string(),
+            func(vec![any.clone(), any.clone()], Type::Unit),
+        );
+        self.functions.insert(
+            "assert_le".to_string(),
+            func(vec![any.clone(), any.clone()], Type::Unit),
+        );
+        self.functions.insert(
+            "assert_gt".to_string(),
+            func(vec![any.clone(), any.clone()], Type::Unit),
+        );
+        self.functions.insert(
+            "assert_ge".to_string(),
+            func(vec![any.clone(), any.clone()], Type::Unit),
+        );
+        self.functions.insert(
+            "assert_true".to_string(),
+            func(vec![Type::Bool], Type::Unit),
+        );
+        self.functions.insert(
+            "assert_false".to_string(),
+            func(vec![Type::Bool], Type::Unit),
+        );
+        self.functions.insert(
+            "assert_null".to_string(),
+            func(vec![any.clone()], Type::Unit),
+        );
+        self.functions.insert(
+            "assert_not_null".to_string(),
+            func(vec![any.clone()], Type::Unit),
+        );
+        self.functions.insert(
+            "assert_contains".to_string(),
+            func(vec![any.clone(), any.clone()], Type::Unit),
+        );
+        self.functions.insert(
+            "assert_len".to_string(),
+            func(vec![any.clone(), i64_ty.clone()], Type::Unit),
+        );
 
         // ===================
         // Random
         // ===================
-        self.functions.insert("random".to_string(), func(vec![], f64_ty.clone()));
-        self.functions.insert("random_int".to_string(), func(vec![i64_ty.clone(), i64_ty.clone()], i64_ty.clone()));
-        self.functions.insert("shuffle".to_string(), func(vec![any.clone()], any.clone()));
+        self.functions
+            .insert("random".to_string(), func(vec![], f64_ty.clone()));
+        self.functions.insert(
+            "random_int".to_string(),
+            func(vec![i64_ty.clone(), i64_ty.clone()], i64_ty.clone()),
+        );
+        self.functions
+            .insert("shuffle".to_string(), func(vec![any.clone()], any.clone()));
 
         // ===================
         // Time
         // ===================
-        self.functions.insert("now".to_string(), func(vec![], f64_ty.clone()));
-        self.functions.insert("sleep".to_string(), func(vec![f64_ty.clone()], Type::Unit));
+        self.functions
+            .insert("now".to_string(), func(vec![], f64_ty.clone()));
+        self.functions
+            .insert("sleep".to_string(), func(vec![f64_ty.clone()], Type::Unit));
 
         // ===================
         // Conversion
         // ===================
-        self.functions.insert("int".to_string(), func(vec![any.clone()], i64_ty.clone()));
-        self.functions.insert("float".to_string(), func(vec![any.clone()], f64_ty.clone()));
-        self.functions.insert("bool".to_string(), func(vec![any.clone()], Type::Bool));
+        self.functions
+            .insert("int".to_string(), func(vec![any.clone()], i64_ty.clone()));
+        self.functions
+            .insert("float".to_string(), func(vec![any.clone()], f64_ty.clone()));
+        self.functions
+            .insert("bool".to_string(), func(vec![any.clone()], Type::Bool));
 
         // ===================
         // Error handling
         // ===================
-        self.functions.insert("panic".to_string(), func(vec![Type::Str], Type::Never));
-        self.functions.insert("todo".to_string(), func(vec![], Type::Never));
-        self.functions.insert("unreachable".to_string(), func(vec![], Type::Never));
+        self.functions
+            .insert("panic".to_string(), func(vec![Type::Str], Type::Never));
+        self.functions
+            .insert("todo".to_string(), func(vec![], Type::Never));
+        self.functions
+            .insert("unreachable".to_string(), func(vec![], Type::Never));
 
         // ===================
         // Evidentiality functions
         // ===================
         // Create known evidence (!)
-        self.functions.insert("known".to_string(), func(vec![any.clone()], Type::Evidential {
-            inner: Box::new(any.clone()),
-            evidence: EvidenceLevel::Known,
-        }));
+        self.functions.insert(
+            "known".to_string(),
+            func(
+                vec![any.clone()],
+                Type::Evidential {
+                    inner: Box::new(any.clone()),
+                    evidence: EvidenceLevel::Known,
+                },
+            ),
+        );
         // Create uncertain evidence (?)
-        self.functions.insert("uncertain".to_string(), func(vec![any.clone()], Type::Evidential {
-            inner: Box::new(any.clone()),
-            evidence: EvidenceLevel::Uncertain,
-        }));
+        self.functions.insert(
+            "uncertain".to_string(),
+            func(
+                vec![any.clone()],
+                Type::Evidential {
+                    inner: Box::new(any.clone()),
+                    evidence: EvidenceLevel::Uncertain,
+                },
+            ),
+        );
         // Create reported evidence (~)
-        self.functions.insert("reported".to_string(), func(vec![any.clone()], Type::Evidential {
-            inner: Box::new(any.clone()),
-            evidence: EvidenceLevel::Reported,
-        }));
+        self.functions.insert(
+            "reported".to_string(),
+            func(
+                vec![any.clone()],
+                Type::Evidential {
+                    inner: Box::new(any.clone()),
+                    evidence: EvidenceLevel::Reported,
+                },
+            ),
+        );
         // Get evidence level as string
-        self.functions.insert("evidence_of".to_string(), func(vec![any.clone()], Type::Str));
+        self.functions.insert(
+            "evidence_of".to_string(),
+            func(vec![any.clone()], Type::Str),
+        );
         // Validate reported -> uncertain
-        self.functions.insert("validate".to_string(), func(vec![any.clone()], Type::Evidential {
-            inner: Box::new(any.clone()),
-            evidence: EvidenceLevel::Uncertain,
-        }));
+        self.functions.insert(
+            "validate".to_string(),
+            func(
+                vec![any.clone()],
+                Type::Evidential {
+                    inner: Box::new(any.clone()),
+                    evidence: EvidenceLevel::Uncertain,
+                },
+            ),
+        );
         // Verify uncertain -> known
-        self.functions.insert("verify".to_string(), func(vec![any.clone()], Type::Evidential {
-            inner: Box::new(any.clone()),
-            evidence: EvidenceLevel::Known,
-        }));
+        self.functions.insert(
+            "verify".to_string(),
+            func(
+                vec![any.clone()],
+                Type::Evidential {
+                    inner: Box::new(any.clone()),
+                    evidence: EvidenceLevel::Known,
+                },
+            ),
+        );
 
         // ===================
         // Poly-cultural math (cycles, music theory)
         // ===================
         // MIDI note to frequency (A4 = 440Hz)
-        self.functions.insert("freq".to_string(), func(vec![i64_ty.clone()], f64_ty.clone()));
+        self.functions.insert(
+            "freq".to_string(),
+            func(vec![i64_ty.clone()], f64_ty.clone()),
+        );
         // Octave calculation (12-tone equal temperament)
-        self.functions.insert("octave".to_string(), func(vec![i64_ty.clone()], i64_ty.clone()));
+        self.functions.insert(
+            "octave".to_string(),
+            func(vec![i64_ty.clone()], i64_ty.clone()),
+        );
         // Note within octave (0-11)
-        self.functions.insert("pitch_class".to_string(), func(vec![i64_ty.clone()], i64_ty.clone()));
+        self.functions.insert(
+            "pitch_class".to_string(),
+            func(vec![i64_ty.clone()], i64_ty.clone()),
+        );
         // Modular arithmetic (cycles)
-        self.functions.insert("mod_cycle".to_string(), func(vec![i64_ty.clone(), i64_ty.clone()], i64_ty.clone()));
+        self.functions.insert(
+            "mod_cycle".to_string(),
+            func(vec![i64_ty.clone(), i64_ty.clone()], i64_ty.clone()),
+        );
     }
 
     /// Fresh type variable
@@ -487,7 +706,11 @@ impl TypeChecker {
         self.freshen_inner(ty, &mut mapping)
     }
 
-    fn freshen_inner(&mut self, ty: &Type, mapping: &mut std::collections::HashMap<u32, Type>) -> Type {
+    fn freshen_inner(
+        &mut self,
+        ty: &Type,
+        mapping: &mut std::collections::HashMap<u32, Type>,
+    ) -> Type {
         match ty {
             Type::Var(TypeVar(id)) => {
                 if let Some(fresh) = mapping.get(id) {
@@ -508,10 +731,20 @@ impl TypeChecker {
                 inner: Box::new(self.freshen_inner(inner, mapping)),
             },
             Type::Tuple(elems) => Type::Tuple(
-                elems.iter().map(|e| self.freshen_inner(e, mapping)).collect()
+                elems
+                    .iter()
+                    .map(|e| self.freshen_inner(e, mapping))
+                    .collect(),
             ),
-            Type::Function { params, return_type, is_async } => Type::Function {
-                params: params.iter().map(|p| self.freshen_inner(p, mapping)).collect(),
+            Type::Function {
+                params,
+                return_type,
+                is_async,
+            } => Type::Function {
+                params: params
+                    .iter()
+                    .map(|p| self.freshen_inner(p, mapping))
+                    .collect(),
                 return_type: Box::new(self.freshen_inner(return_type, mapping)),
                 is_async: *is_async,
             },
@@ -521,7 +754,10 @@ impl TypeChecker {
             },
             Type::Named { name, generics } => Type::Named {
                 name: name.clone(),
-                generics: generics.iter().map(|g| self.freshen_inner(g, mapping)).collect(),
+                generics: generics
+                    .iter()
+                    .map(|g| self.freshen_inner(g, mapping))
+                    .collect(),
             },
             // Primitive types don't contain type variables
             _ => ty.clone(),
@@ -571,27 +807,25 @@ impl TypeChecker {
             match (expected, actual) {
                 (EvidenceLevel::Known, EvidenceLevel::Reported) => {
                     err = err.with_note(
-                        "reported data (~) cannot be used where known data (!) is required"
+                        "reported data (~) cannot be used where known data (!) is required",
                     );
                     err = err.with_note(
-                        "help: use |validate!{...} to verify and promote evidence level"
+                        "help: use |validate!{...} to verify and promote evidence level",
                     );
                 }
                 (EvidenceLevel::Known, EvidenceLevel::Uncertain) => {
                     err = err.with_note(
-                        "uncertain data (?) cannot be used where known data (!) is required"
+                        "uncertain data (?) cannot be used where known data (!) is required",
                     );
                     err = err.with_note(
-                        "help: use pattern matching or unwrap to handle the uncertainty"
+                        "help: use pattern matching or unwrap to handle the uncertainty",
                     );
                 }
                 (EvidenceLevel::Uncertain, EvidenceLevel::Reported) => {
                     err = err.with_note(
-                        "reported data (~) cannot be used where uncertain data (?) is required"
+                        "reported data (~) cannot be used where uncertain data (?) is required",
                     );
-                    err = err.with_note(
-                        "help: use |validate?{...} to verify external data"
-                    );
+                    err = err.with_note("help: use |validate?{...} to verify external data");
                 }
                 _ => {
                     err = err.with_note(format!(
@@ -641,70 +875,98 @@ impl TypeChecker {
     fn collect_type_def(&mut self, item: &Item) {
         match item {
             Item::Struct(s) => {
-                let generics = s.generics.as_ref()
-                    .map(|g| g.params.iter().filter_map(|p| {
-                        if let GenericParam::Type { name, .. } = p {
-                            Some(name.name.clone())
-                        } else {
-                            None
-                        }
-                    }).collect())
+                let generics = s
+                    .generics
+                    .as_ref()
+                    .map(|g| {
+                        g.params
+                            .iter()
+                            .filter_map(|p| {
+                                if let GenericParam::Type { name, .. } = p {
+                                    Some(name.name.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect()
+                    })
                     .unwrap_or_default();
 
                 let fields = match &s.fields {
-                    StructFields::Named(fs) => fs.iter()
+                    StructFields::Named(fs) => fs
+                        .iter()
                         .map(|f| (f.name.name.clone(), self.convert_type(&f.ty)))
                         .collect(),
-                    StructFields::Tuple(ts) => ts.iter()
+                    StructFields::Tuple(ts) => ts
+                        .iter()
                         .enumerate()
                         .map(|(i, t)| (i.to_string(), self.convert_type(t)))
                         .collect(),
                     StructFields::Unit => vec![],
                 };
 
-                self.types.insert(s.name.name.clone(), TypeDef::Struct { generics, fields });
+                self.types
+                    .insert(s.name.name.clone(), TypeDef::Struct { generics, fields });
             }
             Item::Enum(e) => {
-                let generics = e.generics.as_ref()
-                    .map(|g| g.params.iter().filter_map(|p| {
-                        if let GenericParam::Type { name, .. } = p {
-                            Some(name.name.clone())
-                        } else {
-                            None
-                        }
-                    }).collect())
+                let generics = e
+                    .generics
+                    .as_ref()
+                    .map(|g| {
+                        g.params
+                            .iter()
+                            .filter_map(|p| {
+                                if let GenericParam::Type { name, .. } = p {
+                                    Some(name.name.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect()
+                    })
                     .unwrap_or_default();
 
-                let variants = e.variants.iter()
+                let variants = e
+                    .variants
+                    .iter()
                     .map(|v| {
                         let fields = match &v.fields {
-                            StructFields::Tuple(ts) => Some(ts.iter()
-                                .map(|t| self.convert_type(t))
-                                .collect()),
-                            StructFields::Named(fs) => Some(fs.iter()
-                                .map(|f| self.convert_type(&f.ty))
-                                .collect()),
+                            StructFields::Tuple(ts) => {
+                                Some(ts.iter().map(|t| self.convert_type(t)).collect())
+                            }
+                            StructFields::Named(fs) => {
+                                Some(fs.iter().map(|f| self.convert_type(&f.ty)).collect())
+                            }
                             StructFields::Unit => None,
                         };
                         (v.name.name.clone(), fields)
                     })
                     .collect();
 
-                self.types.insert(e.name.name.clone(), TypeDef::Enum { generics, variants });
+                self.types
+                    .insert(e.name.name.clone(), TypeDef::Enum { generics, variants });
             }
             Item::TypeAlias(t) => {
-                let generics = t.generics.as_ref()
-                    .map(|g| g.params.iter().filter_map(|p| {
-                        if let GenericParam::Type { name, .. } = p {
-                            Some(name.name.clone())
-                        } else {
-                            None
-                        }
-                    }).collect())
+                let generics = t
+                    .generics
+                    .as_ref()
+                    .map(|g| {
+                        g.params
+                            .iter()
+                            .filter_map(|p| {
+                                if let GenericParam::Type { name, .. } = p {
+                                    Some(name.name.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect()
+                    })
                     .unwrap_or_default();
 
                 let target = self.convert_type(&t.ty);
-                self.types.insert(t.name.name.clone(), TypeDef::Alias { generics, target });
+                self.types
+                    .insert(t.name.name.clone(), TypeDef::Alias { generics, target });
             }
             _ => {}
         }
@@ -713,11 +975,11 @@ impl TypeChecker {
     /// Collect function signatures (second pass)
     fn collect_fn_sig(&mut self, item: &Item) {
         if let Item::Function(f) = item {
-            let params: Vec<Type> = f.params.iter()
-                .map(|p| self.convert_type(&p.ty))
-                .collect();
+            let params: Vec<Type> = f.params.iter().map(|p| self.convert_type(&p.ty)).collect();
 
-            let return_type = f.return_type.as_ref()
+            let return_type = f
+                .return_type
+                .as_ref()
                 .map(|t| self.convert_type(t))
                 .unwrap_or(Type::Unit);
 
@@ -739,20 +1001,26 @@ impl TypeChecker {
                 let declared = self.convert_type(&c.ty);
                 let inferred = self.infer_expr(&c.value);
                 if !self.unify(&declared, &inferred) {
-                    self.error(TypeError::new(format!(
-                        "type mismatch in const '{}': expected {:?}, found {:?}",
-                        c.name.name, declared, inferred
-                    )).with_span(c.name.span));
+                    self.error(
+                        TypeError::new(format!(
+                            "type mismatch in const '{}': expected {:?}, found {:?}",
+                            c.name.name, declared, inferred
+                        ))
+                        .with_span(c.name.span),
+                    );
                 }
             }
             Item::Static(s) => {
                 let declared = self.convert_type(&s.ty);
                 let inferred = self.infer_expr(&s.value);
                 if !self.unify(&declared, &inferred) {
-                    self.error(TypeError::new(format!(
-                        "type mismatch in static '{}': expected {:?}, found {:?}",
-                        s.name.name, declared, inferred
-                    )).with_span(s.name.span));
+                    self.error(
+                        TypeError::new(format!(
+                            "type mismatch in static '{}': expected {:?}, found {:?}",
+                            s.name.name, declared, inferred
+                        ))
+                        .with_span(s.name.span),
+                    );
                 }
             }
             _ => {}
@@ -766,7 +1034,8 @@ impl TypeChecker {
         // Bind parameters
         for param in &func.params {
             let ty = self.convert_type(&param.ty);
-            let evidence = param.pattern
+            let evidence = param
+                .pattern
                 .evidentiality()
                 .map(EvidenceLevel::from_ast)
                 .unwrap_or(EvidenceLevel::Known);
@@ -781,16 +1050,21 @@ impl TypeChecker {
             let body_type = self.check_block(body);
 
             // Check return type
-            let expected_return = func.return_type.as_ref()
+            let expected_return = func
+                .return_type
+                .as_ref()
                 .map(|t| self.convert_type(t))
                 .unwrap_or(Type::Unit);
 
             // Check structural type compatibility
             if !self.unify(&expected_return, &body_type) {
-                self.error(TypeError::new(format!(
-                    "return type mismatch in '{}': expected {:?}, found {:?}",
-                    func.name.name, expected_return, body_type
-                )).with_span(func.name.span));
+                self.error(
+                    TypeError::new(format!(
+                        "return type mismatch in '{}': expected {:?}, found {:?}",
+                        func.name.name, expected_return, body_type
+                    ))
+                    .with_span(func.name.span),
+                );
             }
 
             // Check evidence compatibility for return
@@ -862,9 +1136,7 @@ impl TypeChecker {
                 }
                 Type::Unit
             }
-            Stmt::Expr(e) | Stmt::Semi(e) => {
-                self.infer_expr(e)
-            }
+            Stmt::Expr(e) | Stmt::Semi(e) => self.infer_expr(e),
             Stmt::Item(item) => {
                 self.check_item(item);
                 Type::Unit
@@ -905,16 +1177,20 @@ impl TypeChecker {
 
             Expr::Call { func, args } => {
                 let fn_type = self.infer_expr(func);
-                let arg_types: Vec<Type> = args.iter()
-                    .map(|a| self.infer_expr(a))
-                    .collect();
+                let arg_types: Vec<Type> = args.iter().map(|a| self.infer_expr(a)).collect();
 
-                if let Type::Function { params, return_type, .. } = fn_type {
+                if let Type::Function {
+                    params,
+                    return_type,
+                    ..
+                } = fn_type
+                {
                     // Check argument count
                     if params.len() != arg_types.len() {
                         self.error(TypeError::new(format!(
                             "expected {} arguments, found {}",
-                            params.len(), arg_types.len()
+                            params.len(),
+                            arg_types.len()
                         )));
                     }
 
@@ -976,7 +1252,11 @@ impl TypeChecker {
 
             Expr::Block(block) => self.check_block(block),
 
-            Expr::If { condition, then_branch, else_branch } => {
+            Expr::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
                 let cond_ty = self.infer_expr(condition);
                 if !self.unify(&Type::Bool, &cond_ty) {
                     self.error(TypeError::new("if condition must be bool"));
@@ -1035,7 +1315,10 @@ impl TypeChecker {
             }
 
             // Mark expression with evidence
-            Expr::Evidential { expr, evidentiality } => {
+            Expr::Evidential {
+                expr,
+                evidentiality,
+            } => {
                 let inner = self.infer_expr(expr);
                 Type::Evidential {
                     inner: Box::new(inner),
@@ -1067,7 +1350,7 @@ impl TypeChecker {
             Literal::InterpolatedString { .. } => Type::Str,
             Literal::SigilStringSql(_) => Type::Str,
             Literal::SigilStringRoute(_) => Type::Str,
-            Literal::Null => Type::Unit,  // null has unit type
+            Literal::Null => Type::Unit, // null has unit type
             Literal::Empty => Type::Unit,
             Literal::Infinity => Type::Float(FloatSize::F64),
             Literal::Circle => Type::Float(FloatSize::F64),
@@ -1082,8 +1365,7 @@ impl TypeChecker {
 
         let result_ty = match op {
             // Arithmetic: numeric -> numeric
-            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div |
-            BinOp::Rem | BinOp::Pow => {
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::Pow => {
                 if !self.unify(&left_inner, &right_inner) {
                     self.error(TypeError::new("arithmetic operands must have same type"));
                 }
@@ -1091,8 +1373,7 @@ impl TypeChecker {
             }
 
             // Comparison: any -> bool
-            BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le |
-            BinOp::Gt | BinOp::Ge => {
+            BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                 if !self.unify(&left_inner, &right_inner) {
                     self.error(TypeError::new("comparison operands must have same type"));
                 }
@@ -1111,10 +1392,7 @@ impl TypeChecker {
             }
 
             // Bitwise: int -> int
-            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor |
-            BinOp::Shl | BinOp::Shr => {
-                left_inner
-            }
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr => left_inner,
 
             // String concatenation
             BinOp::Concat => {
@@ -1151,8 +1429,14 @@ impl TypeChecker {
                 }
                 Type::Bool
             }
-            UnaryOp::Ref => Type::Ref { mutable: false, inner: Box::new(inner_ty) },
-            UnaryOp::RefMut => Type::Ref { mutable: true, inner: Box::new(inner_ty) },
+            UnaryOp::Ref => Type::Ref {
+                mutable: false,
+                inner: Box::new(inner_ty),
+            },
+            UnaryOp::RefMut => Type::Ref {
+                mutable: true,
+                inner: Box::new(inner_ty),
+            },
             UnaryOp::Deref => {
                 if let Type::Ref { inner, .. } | Type::Ptr { inner, .. } = inner_ty {
                     *inner
@@ -1251,8 +1535,12 @@ impl TypeChecker {
             }
 
             // Access morphemes: [T] -> T (return element type)
-            PipeOp::First | PipeOp::Last | PipeOp::Middle |
-            PipeOp::Choice | PipeOp::Nth(_) | PipeOp::Next => {
+            PipeOp::First
+            | PipeOp::Last
+            | PipeOp::Middle
+            | PipeOp::Choice
+            | PipeOp::Nth(_)
+            | PipeOp::Next => {
                 if let Type::Array { element, .. } | Type::Slice(element) = inner {
                     *element
                 } else if let Type::Tuple(elements) = inner {
@@ -1263,22 +1551,20 @@ impl TypeChecker {
                         Type::Unit
                     }
                 } else {
-                    self.error(TypeError::new("access morpheme requires array, slice, or tuple"));
+                    self.error(TypeError::new(
+                        "access morpheme requires array, slice, or tuple",
+                    ));
                     Type::Error
                 }
             }
 
             // Parallel morpheme: ∥ - wraps another operation
             // Type is determined by the inner operation
-            PipeOp::Parallel(inner_op) => {
-                self.infer_pipe_op(inner_op, input)
-            }
+            PipeOp::Parallel(inner_op) => self.infer_pipe_op(inner_op, input),
 
             // GPU morpheme: ⊛ - wraps another operation for GPU execution
             // Type is determined by the inner operation
-            PipeOp::Gpu(inner_op) => {
-                self.infer_pipe_op(inner_op, input)
-            }
+            PipeOp::Gpu(inner_op) => self.infer_pipe_op(inner_op, input),
 
             // ==========================================
             // Protocol Operations - Sigil-native networking
@@ -1466,12 +1752,16 @@ impl TypeChecker {
                     }
                 }
 
-                let name = path.segments.iter()
+                let name = path
+                    .segments
+                    .iter()
                     .map(|s| s.ident.name.clone())
                     .collect::<Vec<_>>()
                     .join("::");
 
-                let generics = path.segments.last()
+                let generics = path
+                    .segments
+                    .last()
                     .and_then(|s| s.generics.as_ref())
                     .map(|gs| gs.iter().map(|t| self.convert_type(t)).collect())
                     .unwrap_or_default();
@@ -1479,19 +1769,15 @@ impl TypeChecker {
                 Type::Named { name, generics }
             }
 
-            TypeExpr::Reference { mutable, inner } => {
-                Type::Ref {
-                    mutable: *mutable,
-                    inner: Box::new(self.convert_type(inner)),
-                }
-            }
+            TypeExpr::Reference { mutable, inner } => Type::Ref {
+                mutable: *mutable,
+                inner: Box::new(self.convert_type(inner)),
+            },
 
-            TypeExpr::Pointer { mutable, inner } => {
-                Type::Ptr {
-                    mutable: *mutable,
-                    inner: Box::new(self.convert_type(inner)),
-                }
-            }
+            TypeExpr::Pointer { mutable, inner } => Type::Ptr {
+                mutable: *mutable,
+                inner: Box::new(self.convert_type(inner)),
+            },
 
             TypeExpr::Array { element, size: _ } => {
                 Type::Array {
@@ -1500,32 +1786,33 @@ impl TypeChecker {
                 }
             }
 
-            TypeExpr::Slice(inner) => {
-                Type::Slice(Box::new(self.convert_type(inner)))
-            }
+            TypeExpr::Slice(inner) => Type::Slice(Box::new(self.convert_type(inner))),
 
             TypeExpr::Tuple(elements) => {
                 Type::Tuple(elements.iter().map(|t| self.convert_type(t)).collect())
             }
 
-            TypeExpr::Function { params, return_type } => {
-                Type::Function {
-                    params: params.iter().map(|t| self.convert_type(t)).collect(),
-                    return_type: Box::new(
-                        return_type.as_ref()
-                            .map(|t| self.convert_type(t))
-                            .unwrap_or(Type::Unit)
-                    ),
-                    is_async: false,
-                }
-            }
+            TypeExpr::Function {
+                params,
+                return_type,
+            } => Type::Function {
+                params: params.iter().map(|t| self.convert_type(t)).collect(),
+                return_type: Box::new(
+                    return_type
+                        .as_ref()
+                        .map(|t| self.convert_type(t))
+                        .unwrap_or(Type::Unit),
+                ),
+                is_async: false,
+            },
 
-            TypeExpr::Evidential { inner, evidentiality } => {
-                Type::Evidential {
-                    inner: Box::new(self.convert_type(inner)),
-                    evidence: EvidenceLevel::from_ast(*evidentiality),
-                }
-            }
+            TypeExpr::Evidential {
+                inner,
+                evidentiality,
+            } => Type::Evidential {
+                inner: Box::new(self.convert_type(inner)),
+                evidence: EvidenceLevel::from_ast(*evidentiality),
+            },
 
             TypeExpr::Cycle { modulus: _ } => {
                 Type::Cycle { modulus: 12 } // Default, should evaluate
@@ -1603,7 +1890,9 @@ impl fmt::Display for Type {
             Type::Tuple(elems) => {
                 write!(f, "(")?;
                 for (i, e) in elems.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", e)?;
                 }
                 write!(f, ")")
@@ -1613,18 +1902,28 @@ impl fmt::Display for Type {
                 if !generics.is_empty() {
                     write!(f, "<")?;
                     for (i, g) in generics.iter().enumerate() {
-                        if i > 0 { write!(f, ", ")?; }
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
                         write!(f, "{}", g)?;
                     }
                     write!(f, ">")?;
                 }
                 Ok(())
             }
-            Type::Function { params, return_type, is_async } => {
-                if *is_async { write!(f, "async ")?; }
+            Type::Function {
+                params,
+                return_type,
+                is_async,
+            } => {
+                if *is_async {
+                    write!(f, "async ")?;
+                }
                 write!(f, "fn(")?;
                 for (i, p) in params.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", p)?;
                 }
                 write!(f, ") -> {}", return_type)
@@ -1675,25 +1974,30 @@ mod tests {
     #[test]
     fn test_evidence_propagation() {
         // Evidence should propagate through operations
-        assert!(check(r#"
+        assert!(check(
+            r#"
             fn main() {
                 let known: i64! = 42;
                 let uncertain: i64? = 10;
                 let result = known + uncertain;
             }
-        "#).is_ok());
+        "#
+        )
+        .is_ok());
     }
 
     #[test]
     fn test_function_return() {
-        let result = check(r#"
+        let result = check(
+            r#"
             fn add(a: i64, b: i64) -> i64 {
                 return a + b;
             }
             fn main() {
                 let x = add(1, 2);
             }
-        "#);
+        "#,
+        );
         if let Err(errors) = &result {
             for e in errors {
                 eprintln!("Error: {}", e);
@@ -1704,11 +2008,14 @@ mod tests {
 
     #[test]
     fn test_array_types() {
-        assert!(check(r#"
+        assert!(check(
+            r#"
             fn main() {
                 let arr = [1, 2, 3];
                 let x = arr[0];
             }
-        "#).is_ok());
+        "#
+        )
+        .is_ok());
     }
 }

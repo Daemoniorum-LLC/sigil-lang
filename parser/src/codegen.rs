@@ -10,8 +10,8 @@
 
 #[cfg(feature = "jit")]
 pub mod jit {
-    use cranelift_codegen::ir::{types, AbiParam, InstBuilder, UserFuncName};
     use cranelift_codegen::ir::condcodes::IntCC;
+    use cranelift_codegen::ir::{types, AbiParam, InstBuilder, UserFuncName};
     use cranelift_codegen::settings::{self, Configurable};
     use cranelift_codegen::Context;
     use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
@@ -21,10 +21,13 @@ pub mod jit {
     use std::collections::HashMap;
     use std::mem;
 
-    use crate::ast::{self, BinOp, Expr, Item, Literal, UnaryOp, ExternBlock, ExternItem, ExternFunction, TypeExpr, PipeOp};
-    use crate::parser::Parser;
-    use crate::optimize::{Optimizer, OptLevel};
+    use crate::ast::{
+        self, BinOp, Expr, ExternBlock, ExternFunction, ExternItem, Item, Literal, PipeOp,
+        TypeExpr, UnaryOp,
+    };
     use crate::ffi::ctypes::CType;
+    use crate::optimize::{OptLevel, Optimizer};
+    use crate::parser::Parser;
 
     /// Runtime value representation
     ///
@@ -256,7 +259,10 @@ pub mod jit {
 
             // FFI helper functions
             use crate::ffi::helpers::*;
-            builder.symbol("sigil_string_to_cstring", sigil_string_to_cstring as *const u8);
+            builder.symbol(
+                "sigil_string_to_cstring",
+                sigil_string_to_cstring as *const u8,
+            );
             builder.symbol("sigil_cstring_free", sigil_cstring_free as *const u8);
             builder.symbol("sigil_cstring_len", sigil_cstring_len as *const u8);
             builder.symbol("sigil_cstring_copy", sigil_cstring_copy as *const u8);
@@ -299,7 +305,11 @@ pub mod jit {
         }
 
         /// Compile with a specific optimization level
-        pub fn compile_with_opt(&mut self, source: &str, opt_level: OptLevel) -> Result<(), String> {
+        pub fn compile_with_opt(
+            &mut self,
+            source: &str,
+            opt_level: OptLevel,
+        ) -> Result<(), String> {
             let mut parser = Parser::new(source);
             let source_file = parser.parse_file().map_err(|e| format!("{:?}", e))?;
 
@@ -328,7 +338,9 @@ pub mod jit {
             }
 
             // Finalize the module
-            self.module.finalize_definitions().map_err(|e| e.to_string())?;
+            self.module
+                .finalize_definitions()
+                .map_err(|e| e.to_string())?;
 
             Ok(())
         }
@@ -361,7 +373,10 @@ pub mod jit {
         fn declare_extern_block(&mut self, extern_block: &ExternBlock) -> Result<(), String> {
             // Currently only "C" ABI is supported
             if extern_block.abi != "C" && extern_block.abi != "c" {
-                return Err(format!("Unsupported ABI: {}. Only \"C\" is supported.", extern_block.abi));
+                return Err(format!(
+                    "Unsupported ABI: {}. Only \"C\" is supported.",
+                    extern_block.abi
+                ));
             }
 
             for item in &extern_block.items {
@@ -371,7 +386,10 @@ pub mod jit {
                     }
                     ExternItem::Static(stat) => {
                         // TODO: Implement extern statics
-                        eprintln!("Warning: extern static '{}' not yet implemented", stat.name.name);
+                        eprintln!(
+                            "Warning: extern static '{}' not yet implemented",
+                            stat.name.name
+                        );
                     }
                 }
             }
@@ -411,13 +429,16 @@ pub mod jit {
                 .declare_function(name, Linkage::Import, &sig)
                 .map_err(|e| e.to_string())?;
 
-            self.extern_functions.insert(name.clone(), ExternFnSig {
-                name: name.clone(),
-                params: param_types,
-                returns: return_type,
-                variadic: func.variadic,
-                func_id,
-            });
+            self.extern_functions.insert(
+                name.clone(),
+                ExternFnSig {
+                    name: name.clone(),
+                    params: param_types,
+                    returns: return_type,
+                    variadic: func.variadic,
+                    func_id,
+                },
+            );
 
             Ok(())
         }
@@ -426,7 +447,9 @@ pub mod jit {
         fn type_expr_to_cranelift(&self, ty: &TypeExpr) -> Result<types::Type, String> {
             match ty {
                 TypeExpr::Path(path) => {
-                    let name = path.segments.last()
+                    let name = path
+                        .segments
+                        .last()
                         .map(|s| s.ident.name.as_str())
                         .unwrap_or("");
 
@@ -434,12 +457,24 @@ pub mod jit {
                     if let Some(ctype) = CType::from_name(name) {
                         return Ok(match ctype {
                             CType::Void => types::I64, // void returns are handled separately
-                            CType::Char | CType::SChar | CType::UChar | CType::Int8 | CType::UInt8 => types::I8,
-                            CType::Short | CType::UShort | CType::Int16 | CType::UInt16 => types::I16,
+                            CType::Char
+                            | CType::SChar
+                            | CType::UChar
+                            | CType::Int8
+                            | CType::UInt8 => types::I8,
+                            CType::Short | CType::UShort | CType::Int16 | CType::UInt16 => {
+                                types::I16
+                            }
                             CType::Int | CType::UInt | CType::Int32 | CType::UInt32 => types::I32,
-                            CType::Long | CType::ULong | CType::LongLong | CType::ULongLong |
-                            CType::Size | CType::SSize | CType::PtrDiff |
-                            CType::Int64 | CType::UInt64 => types::I64,
+                            CType::Long
+                            | CType::ULong
+                            | CType::LongLong
+                            | CType::ULongLong
+                            | CType::Size
+                            | CType::SSize
+                            | CType::PtrDiff
+                            | CType::Int64
+                            | CType::UInt64 => types::I64,
                             CType::Float => types::F32,
                             CType::Double => types::F64,
                         });
@@ -460,7 +495,7 @@ pub mod jit {
                         "bool" => Ok(types::I8),
                         "isize" | "usize" => Ok(types::I64),
                         "()" => Ok(types::I64), // unit type
-                        _ => Ok(types::I64), // Default to i64 for unknown types
+                        _ => Ok(types::I64),    // Default to i64 for unknown types
                     }
                 }
                 TypeExpr::Pointer { .. } | TypeExpr::Reference { .. } => {
@@ -478,9 +513,17 @@ pub mod jit {
 
             // Build signature to match declaration
             for _param in &func.params {
-                self.ctx.func.signature.params.push(AbiParam::new(types::I64));
+                self.ctx
+                    .func
+                    .signature
+                    .params
+                    .push(AbiParam::new(types::I64));
             }
-            self.ctx.func.signature.returns.push(AbiParam::new(types::I64));
+            self.ctx
+                .func
+                .signature
+                .returns
+                .push(AbiParam::new(types::I64));
             self.ctx.func.name = UserFuncName::user(0, func_id.as_u32());
 
             // Take ownership of what we need for building
@@ -488,8 +531,7 @@ pub mod jit {
             let extern_fns = self.extern_functions.clone();
 
             {
-                let mut builder =
-                    FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_ctx);
+                let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_ctx);
 
                 let entry_block = builder.create_block();
                 builder.append_block_params_for_function_params(entry_block);
@@ -511,18 +553,20 @@ pub mod jit {
                         // Infer parameter type from type annotation if present
                         let param_type = match &param.ty {
                             TypeExpr::Path(path) => {
-                                let type_name = path.segments.last()
+                                let type_name = path
+                                    .segments
+                                    .last()
                                     .map(|s| s.ident.name.as_str())
                                     .unwrap_or("");
                                 match type_name {
                                     "f32" | "f64" | "float" => ValueType::Float,
-                                    "i8" | "i16" | "i32" | "i64" | "int" | "isize" |
-                                    "u8" | "u16" | "u32" | "u64" | "usize" | "bool" => ValueType::Int,
+                                    "i8" | "i16" | "i32" | "i64" | "int" | "isize" | "u8"
+                                    | "u16" | "u32" | "u64" | "usize" | "bool" => ValueType::Int,
                                     _ => ValueType::Int, // Default to int for unknown types
                                 }
                             }
                             TypeExpr::Infer => ValueType::Int, // Inferred type defaults to int
-                            _ => ValueType::Int, // Default to int for other cases
+                            _ => ValueType::Int,               // Default to int for other cases
                         };
                         scope.define_typed(&name.name, var, param_type);
                     }
@@ -530,7 +574,14 @@ pub mod jit {
 
                 // Compile function body
                 if let Some(body) = &func.body {
-                    let (result, has_return) = compile_block_tracked(&mut self.module, &functions, &extern_fns, &mut builder, &mut scope, body)?;
+                    let (result, has_return) = compile_block_tracked(
+                        &mut self.module,
+                        &functions,
+                        &extern_fns,
+                        &mut builder,
+                        &mut scope,
+                        body,
+                    )?;
                     // Only add return if the block didn't end with an explicit return
                     if !has_return {
                         builder.ins().return_(&[result]);
@@ -569,7 +620,9 @@ pub mod jit {
 
         /// Get a compiled function by name
         pub fn get_function(&self, name: &str) -> Option<*const u8> {
-            self.functions.get(name).map(|id| self.module.get_finalized_function(*id))
+            self.functions
+                .get(name)
+                .map(|id| self.module.get_finalized_function(*id))
         }
     }
 
@@ -577,9 +630,9 @@ pub mod jit {
     /// This enables direct CPU instruction emission when types are known
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum ValueType {
-        Int,      // Known to be integer
-        Float,    // Known to be float
-        Unknown,  // Could be either (requires runtime dispatch)
+        Int,     // Known to be integer
+        Float,   // Known to be float
+        Unknown, // Could be either (requires runtime dispatch)
     }
 
     /// Compilation scope for tracking variables
@@ -634,7 +687,10 @@ pub mod jit {
         }
 
         fn get_type(&self, name: &str) -> ValueType {
-            self.var_types.get(name).copied().unwrap_or(ValueType::Unknown)
+            self.var_types
+                .get(name)
+                .copied()
+                .unwrap_or(ValueType::Unknown)
         }
 
         #[allow(dead_code)]
@@ -657,7 +713,9 @@ pub mod jit {
             Expr::Literal(Literal::Float { .. }) => ValueType::Float,
 
             Expr::Path(path) => {
-                let name = path.segments.last()
+                let name = path
+                    .segments
+                    .last()
                     .map(|s| s.ident.name.as_str())
                     .unwrap_or("");
                 scope.get_type(name)
@@ -668,7 +726,17 @@ pub mod jit {
                 let right_ty = infer_type(right, scope);
 
                 // Comparison operators always return int (0 or 1)
-                if matches!(op, BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge | BinOp::And | BinOp::Or) {
+                if matches!(
+                    op,
+                    BinOp::Eq
+                        | BinOp::Ne
+                        | BinOp::Lt
+                        | BinOp::Le
+                        | BinOp::Gt
+                        | BinOp::Ge
+                        | BinOp::And
+                        | BinOp::Or
+                ) {
                     return ValueType::Int;
                 }
 
@@ -697,12 +765,15 @@ pub mod jit {
             Expr::Call { func, args } => {
                 // Check if it's a known function
                 if let Expr::Path(path) = func.as_ref() {
-                    let name = path.segments.last()
+                    let name = path
+                        .segments
+                        .last()
                         .map(|s| s.ident.name.as_str())
                         .unwrap_or("");
                     match name {
                         // Math functions return floats
-                        "sqrt" | "sin" | "cos" | "pow" | "exp" | "ln" | "floor" | "ceil" | "abs" => ValueType::Float,
+                        "sqrt" | "sin" | "cos" | "pow" | "exp" | "ln" | "floor" | "ceil"
+                        | "abs" => ValueType::Float,
                         // Time returns int
                         "now" => ValueType::Int,
                         // Array operations return int
@@ -713,9 +784,9 @@ pub mod jit {
                             // OPTIMIZATION: For user-defined functions, if all arguments are Int,
                             // assume the return type is Int (common case for recursive functions)
                             // This enables type specialization for fib(n-1) + fib(n-2)
-                            let all_args_int = args.iter().all(|arg| {
-                                infer_type(arg, scope) == ValueType::Int
-                            });
+                            let all_args_int = args
+                                .iter()
+                                .all(|arg| infer_type(arg, scope) == ValueType::Int);
                             if all_args_int {
                                 ValueType::Int
                             } else {
@@ -728,7 +799,11 @@ pub mod jit {
                 }
             }
 
-            Expr::If { then_branch, else_branch, .. } => {
+            Expr::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
                 // Type of if is the type of its branches
                 let then_ty = if let Some(expr) = &then_branch.expr {
                     infer_type(expr, scope)
@@ -839,7 +914,11 @@ pub mod jit {
         }
 
         // Handle !expr - flip the comparison
-        if let Expr::Unary { op: UnaryOp::Not, expr } = condition {
+        if let Expr::Unary {
+            op: UnaryOp::Not,
+            expr,
+        } = condition
+        {
             let inner = compile_condition(module, functions, extern_fns, builder, scope, expr)?;
             // Flip the boolean
             let true_val = builder.ins().iconst(types::I8, 1);
@@ -867,7 +946,11 @@ pub mod jit {
         if let Expr::Return(Some(inner)) = expr {
             if let Expr::Call { func, args } = inner.as_ref() {
                 if let Expr::Path(path) = func.as_ref() {
-                    let name = path.segments.last().map(|s| s.ident.name.as_str()).unwrap_or("");
+                    let name = path
+                        .segments
+                        .last()
+                        .map(|s| s.ident.name.as_str())
+                        .unwrap_or("");
                     if name == func_name {
                         return Some(args);
                     }
@@ -895,7 +978,8 @@ pub mod jit {
         let mut has_return = false;
 
         for stmt in &block.stmts {
-            let (val, ret) = compile_stmt_tracked(module, functions, extern_fns, builder, scope, stmt)?;
+            let (val, ret) =
+                compile_stmt_tracked(module, functions, extern_fns, builder, scope, stmt)?;
             last_val = Some(val);
             if ret {
                 has_return = true;
@@ -903,7 +987,8 @@ pub mod jit {
         }
 
         if let Some(expr) = &block.expr {
-            let (val, ret) = compile_expr_tracked(module, functions, extern_fns, builder, scope, expr)?;
+            let (val, ret) =
+                compile_expr_tracked(module, functions, extern_fns, builder, scope, expr)?;
             last_val = Some(val);
             if ret {
                 has_return = true;
@@ -1009,15 +1094,35 @@ pub mod jit {
                     builder.ins().iconst(types::I64, 0)
                 };
                 builder.ins().return_(&[ret_val]);
-                Ok((ret_val, true))  // Signal that we have a return
+                Ok((ret_val, true)) // Signal that we have a return
             }
-            Expr::If { condition, then_branch, else_branch } => {
+            Expr::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
                 // If expressions can contain returns, so use tracked version
-                compile_if_tracked(module, functions, extern_fns, builder, scope, condition, then_branch, else_branch.as_deref())
+                compile_if_tracked(
+                    module,
+                    functions,
+                    extern_fns,
+                    builder,
+                    scope,
+                    condition,
+                    then_branch,
+                    else_branch.as_deref(),
+                )
             }
             Expr::Block(block) => {
                 let mut inner_scope = scope.child();
-                compile_block_tracked(module, functions, extern_fns, builder, &mut inner_scope, block)
+                compile_block_tracked(
+                    module,
+                    functions,
+                    extern_fns,
+                    builder,
+                    &mut inner_scope,
+                    block,
+                )
             }
             _ => {
                 // All other expressions don't have return
@@ -1045,7 +1150,9 @@ pub mod jit {
             Expr::Literal(lit) => compile_literal(builder, lit),
 
             Expr::Path(path) => {
-                let name = path.segments.last()
+                let name = path
+                    .segments
+                    .last()
                     .map(|s| s.ident.name.clone())
                     .unwrap_or_default();
                 if let Some(var) = scope.lookup(&name) {
@@ -1078,14 +1185,70 @@ pub mod jit {
                 // Mixed or unknown types - fall back to runtime dispatch
                 // This is slower but handles dynamic typing correctly
                 match op {
-                    BinOp::Add => compile_call(module, functions, extern_fns, builder, "sigil_add", &[lhs, rhs]),
-                    BinOp::Sub => compile_call(module, functions, extern_fns, builder, "sigil_sub", &[lhs, rhs]),
-                    BinOp::Mul => compile_call(module, functions, extern_fns, builder, "sigil_mul", &[lhs, rhs]),
-                    BinOp::Div => compile_call(module, functions, extern_fns, builder, "sigil_div", &[lhs, rhs]),
-                    BinOp::Lt => compile_call(module, functions, extern_fns, builder, "sigil_lt", &[lhs, rhs]),
-                    BinOp::Le => compile_call(module, functions, extern_fns, builder, "sigil_le", &[lhs, rhs]),
-                    BinOp::Gt => compile_call(module, functions, extern_fns, builder, "sigil_gt", &[lhs, rhs]),
-                    BinOp::Ge => compile_call(module, functions, extern_fns, builder, "sigil_ge", &[lhs, rhs]),
+                    BinOp::Add => compile_call(
+                        module,
+                        functions,
+                        extern_fns,
+                        builder,
+                        "sigil_add",
+                        &[lhs, rhs],
+                    ),
+                    BinOp::Sub => compile_call(
+                        module,
+                        functions,
+                        extern_fns,
+                        builder,
+                        "sigil_sub",
+                        &[lhs, rhs],
+                    ),
+                    BinOp::Mul => compile_call(
+                        module,
+                        functions,
+                        extern_fns,
+                        builder,
+                        "sigil_mul",
+                        &[lhs, rhs],
+                    ),
+                    BinOp::Div => compile_call(
+                        module,
+                        functions,
+                        extern_fns,
+                        builder,
+                        "sigil_div",
+                        &[lhs, rhs],
+                    ),
+                    BinOp::Lt => compile_call(
+                        module,
+                        functions,
+                        extern_fns,
+                        builder,
+                        "sigil_lt",
+                        &[lhs, rhs],
+                    ),
+                    BinOp::Le => compile_call(
+                        module,
+                        functions,
+                        extern_fns,
+                        builder,
+                        "sigil_le",
+                        &[lhs, rhs],
+                    ),
+                    BinOp::Gt => compile_call(
+                        module,
+                        functions,
+                        extern_fns,
+                        builder,
+                        "sigil_gt",
+                        &[lhs, rhs],
+                    ),
+                    BinOp::Ge => compile_call(
+                        module,
+                        functions,
+                        extern_fns,
+                        builder,
+                        "sigil_ge",
+                        &[lhs, rhs],
+                    ),
                     _ => compile_binary_op(builder, op.clone(), lhs, rhs),
                 }
             }
@@ -1097,31 +1260,55 @@ pub mod jit {
 
             Expr::Call { func, args } => {
                 let func_name = match func.as_ref() {
-                    Expr::Path(path) => {
-                        path.segments.last().map(|s| s.ident.name.clone()).unwrap_or_default()
-                    }
+                    Expr::Path(path) => path
+                        .segments
+                        .last()
+                        .map(|s| s.ident.name.clone())
+                        .unwrap_or_default(),
                     _ => return Err("Only direct function calls supported".into()),
                 };
 
                 let mut arg_vals = Vec::new();
                 for arg in args {
-                    arg_vals.push(compile_expr(module, functions, extern_fns, builder, scope, arg)?);
+                    arg_vals.push(compile_expr(
+                        module, functions, extern_fns, builder, scope, arg,
+                    )?);
                 }
 
-                compile_call(module, functions, extern_fns, builder, &func_name, &arg_vals)
+                compile_call(
+                    module, functions, extern_fns, builder, &func_name, &arg_vals,
+                )
             }
 
-            Expr::If { condition, then_branch, else_branch } => {
-                compile_if(module, functions, extern_fns, builder, scope, condition, then_branch, else_branch.as_deref())
-            }
+            Expr::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => compile_if(
+                module,
+                functions,
+                extern_fns,
+                builder,
+                scope,
+                condition,
+                then_branch,
+                else_branch.as_deref(),
+            ),
 
-            Expr::While { condition, body } => {
-                compile_while(module, functions, extern_fns, builder, scope, condition, body)
-            }
+            Expr::While { condition, body } => compile_while(
+                module, functions, extern_fns, builder, scope, condition, body,
+            ),
 
             Expr::Block(block) => {
                 let mut inner_scope = scope.child();
-                compile_block(module, functions, extern_fns, builder, &mut inner_scope, block)
+                compile_block(
+                    module,
+                    functions,
+                    extern_fns,
+                    builder,
+                    &mut inner_scope,
+                    block,
+                )
             }
 
             Expr::Return(value) => {
@@ -1140,7 +1327,11 @@ pub mod jit {
                 let val = compile_expr(module, functions, extern_fns, builder, scope, value)?;
                 match target.as_ref() {
                     Expr::Path(path) => {
-                        let name = path.segments.last().map(|s| s.ident.name.clone()).unwrap_or_default();
+                        let name = path
+                            .segments
+                            .last()
+                            .map(|s| s.ident.name.clone())
+                            .unwrap_or_default();
                         if let Some(var) = scope.lookup(&name) {
                             builder.def_var(var, val);
                             Ok(val)
@@ -1149,9 +1340,18 @@ pub mod jit {
                         }
                     }
                     Expr::Index { expr: arr, index } => {
-                        let arr_val = compile_expr(module, functions, extern_fns, builder, scope, arr)?;
-                        let idx_val = compile_expr(module, functions, extern_fns, builder, scope, index)?;
-                        compile_call(module, functions, extern_fns, builder, "sigil_array_set", &[arr_val, idx_val, val])
+                        let arr_val =
+                            compile_expr(module, functions, extern_fns, builder, scope, arr)?;
+                        let idx_val =
+                            compile_expr(module, functions, extern_fns, builder, scope, index)?;
+                        compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_array_set",
+                            &[arr_val, idx_val, val],
+                        )
                     }
                     _ => Err("Invalid assignment target".into()),
                 }
@@ -1160,17 +1360,38 @@ pub mod jit {
             Expr::Index { expr: arr, index } => {
                 let arr_val = compile_expr(module, functions, extern_fns, builder, scope, arr)?;
                 let idx_val = compile_expr(module, functions, extern_fns, builder, scope, index)?;
-                compile_call(module, functions, extern_fns, builder, "sigil_array_get", &[arr_val, idx_val])
+                compile_call(
+                    module,
+                    functions,
+                    extern_fns,
+                    builder,
+                    "sigil_array_get",
+                    &[arr_val, idx_val],
+                )
             }
 
             Expr::Array(elements) => {
                 let len = builder.ins().iconst(types::I64, elements.len() as i64);
-                let arr = compile_call(module, functions, extern_fns, builder, "sigil_array_new", &[len])?;
+                let arr = compile_call(
+                    module,
+                    functions,
+                    extern_fns,
+                    builder,
+                    "sigil_array_new",
+                    &[len],
+                )?;
 
                 for (i, elem) in elements.iter().enumerate() {
                     let val = compile_expr(module, functions, extern_fns, builder, scope, elem)?;
                     let idx = builder.ins().iconst(types::I64, i as i64);
-                    compile_call(module, functions, extern_fns, builder, "sigil_array_set", &[arr, idx, val])?;
+                    compile_call(
+                        module,
+                        functions,
+                        extern_fns,
+                        builder,
+                        "sigil_array_set",
+                        &[arr, idx, val],
+                    )?;
                 }
 
                 Ok(arr)
@@ -1184,34 +1405,80 @@ pub mod jit {
                 for op in operations {
                     result = match op {
                         // Simple array access morphemes - call stdlib functions directly
-                        PipeOp::First => {
-                            compile_call(module, functions, extern_fns, builder, "sigil_array_first", &[result])?
-                        }
-                        PipeOp::Last => {
-                            compile_call(module, functions, extern_fns, builder, "sigil_array_last", &[result])?
-                        }
-                        PipeOp::Middle => {
-                            compile_call(module, functions, extern_fns, builder, "sigil_array_middle", &[result])?
-                        }
-                        PipeOp::Choice => {
-                            compile_call(module, functions, extern_fns, builder, "sigil_array_choice", &[result])?
-                        }
-                        PipeOp::Next => {
-                            compile_call(module, functions, extern_fns, builder, "sigil_array_next", &[result])?
-                        }
+                        PipeOp::First => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_array_first",
+                            &[result],
+                        )?,
+                        PipeOp::Last => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_array_last",
+                            &[result],
+                        )?,
+                        PipeOp::Middle => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_array_middle",
+                            &[result],
+                        )?,
+                        PipeOp::Choice => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_array_choice",
+                            &[result],
+                        )?,
+                        PipeOp::Next => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_array_next",
+                            &[result],
+                        )?,
                         PipeOp::Nth(index_expr) => {
-                            let index = compile_expr(module, functions, extern_fns, builder, scope, index_expr)?;
-                            compile_call(module, functions, extern_fns, builder, "sigil_array_nth", &[result, index])?
+                            let index = compile_expr(
+                                module, functions, extern_fns, builder, scope, index_expr,
+                            )?;
+                            compile_call(
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
+                                "sigil_array_nth",
+                                &[result, index],
+                            )?
                         }
                         // Sum operation (Σ morpheme)
                         PipeOp::Reduce(_) => {
                             // For now, treat reduce as sum for numeric arrays
-                            compile_call(module, functions, extern_fns, builder, "sigil_array_sum", &[result])?
+                            compile_call(
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
+                                "sigil_array_sum",
+                                &[result],
+                            )?
                         }
                         // Sort operation (σ morpheme) - returns sorted array pointer
-                        PipeOp::Sort(_) => {
-                            compile_call(module, functions, extern_fns, builder, "sigil_array_sort", &[result])?
-                        }
+                        PipeOp::Sort(_) => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_array_sort",
+                            &[result],
+                        )?,
                         // Transform and Filter require closure compilation - complex
                         PipeOp::Transform(_) | PipeOp::Filter(_) => {
                             // TODO: Implement closure compilation for transform/filter
@@ -1223,9 +1490,13 @@ pub mod jit {
                             // Compile as a method call on the result
                             let mut call_args = vec![result];
                             for arg in args {
-                                call_args.push(compile_expr(module, functions, extern_fns, builder, scope, arg)?);
+                                call_args.push(compile_expr(
+                                    module, functions, extern_fns, builder, scope, arg,
+                                )?);
                             }
-                            compile_call(module, functions, extern_fns, builder, &name.name, &call_args)?
+                            compile_call(
+                                module, functions, extern_fns, builder, &name.name, &call_args,
+                            )?
                         }
                         PipeOp::Await => {
                             // Await is a no-op in JIT context (sync execution)
@@ -1236,10 +1507,26 @@ pub mod jit {
                             if !prefix.is_empty() {
                                 let fn_name = &prefix[0].name;
                                 if let Some(body_expr) = body {
-                                    let body_val = compile_expr(module, functions, extern_fns, builder, scope, body_expr)?;
-                                    compile_call(module, functions, extern_fns, builder, fn_name, &[result, body_val])?
+                                    let body_val = compile_expr(
+                                        module, functions, extern_fns, builder, scope, body_expr,
+                                    )?;
+                                    compile_call(
+                                        module,
+                                        functions,
+                                        extern_fns,
+                                        builder,
+                                        fn_name,
+                                        &[result, body_val],
+                                    )?
                                 } else {
-                                    compile_call(module, functions, extern_fns, builder, fn_name, &[result])?
+                                    compile_call(
+                                        module,
+                                        functions,
+                                        extern_fns,
+                                        builder,
+                                        fn_name,
+                                        &[result],
+                                    )?
                                 }
                             } else {
                                 result
@@ -1252,18 +1539,39 @@ pub mod jit {
                             match inner_op.as_ref() {
                                 PipeOp::Transform(_) => {
                                     // Call parallel transform (falls back to sequential for now)
-                                    compile_call(module, functions, extern_fns, builder, "sigil_parallel_map", &[result])?
+                                    compile_call(
+                                        module,
+                                        functions,
+                                        extern_fns,
+                                        builder,
+                                        "sigil_parallel_map",
+                                        &[result],
+                                    )?
                                 }
                                 PipeOp::Filter(_) => {
                                     // Call parallel filter
-                                    compile_call(module, functions, extern_fns, builder, "sigil_parallel_filter", &[result])?
+                                    compile_call(
+                                        module,
+                                        functions,
+                                        extern_fns,
+                                        builder,
+                                        "sigil_parallel_filter",
+                                        &[result],
+                                    )?
                                 }
                                 PipeOp::Reduce(_) => {
                                     // Parallel reduce (tree reduction)
-                                    compile_call(module, functions, extern_fns, builder, "sigil_parallel_reduce", &[result])?
+                                    compile_call(
+                                        module,
+                                        functions,
+                                        extern_fns,
+                                        builder,
+                                        "sigil_parallel_reduce",
+                                        &[result],
+                                    )?
                                 }
                                 // For other ops, recursively process but mark as parallel hint
-                                _ => result
+                                _ => result,
                             }
                         }
                         // GPU compute morpheme: ⊛ - execute on GPU
@@ -1273,17 +1581,38 @@ pub mod jit {
                             match inner_op.as_ref() {
                                 PipeOp::Transform(_) => {
                                     // GPU transform - dispatches as compute shader
-                                    compile_call(module, functions, extern_fns, builder, "sigil_gpu_map", &[result])?
+                                    compile_call(
+                                        module,
+                                        functions,
+                                        extern_fns,
+                                        builder,
+                                        "sigil_gpu_map",
+                                        &[result],
+                                    )?
                                 }
                                 PipeOp::Filter(_) => {
                                     // GPU filter with stream compaction
-                                    compile_call(module, functions, extern_fns, builder, "sigil_gpu_filter", &[result])?
+                                    compile_call(
+                                        module,
+                                        functions,
+                                        extern_fns,
+                                        builder,
+                                        "sigil_gpu_filter",
+                                        &[result],
+                                    )?
                                 }
                                 PipeOp::Reduce(_) => {
                                     // GPU parallel reduction
-                                    compile_call(module, functions, extern_fns, builder, "sigil_gpu_reduce", &[result])?
+                                    compile_call(
+                                        module,
+                                        functions,
+                                        extern_fns,
+                                        builder,
+                                        "sigil_gpu_reduce",
+                                        &[result],
+                                    )?
                                 }
-                                _ => result
+                                _ => result,
                             }
                         }
 
@@ -1294,63 +1623,156 @@ pub mod jit {
 
                         // Send: |send{data} - send data over connection
                         PipeOp::Send(data_expr) => {
-                            let data = compile_expr(module, functions, extern_fns, builder, scope, data_expr)?;
-                            compile_call(module, functions, extern_fns, builder, "sigil_protocol_send", &[result, data])?
+                            let data = compile_expr(
+                                module, functions, extern_fns, builder, scope, data_expr,
+                            )?;
+                            compile_call(
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
+                                "sigil_protocol_send",
+                                &[result, data],
+                            )?
                         }
 
                         // Recv: |recv - receive data from connection
-                        PipeOp::Recv => {
-                            compile_call(module, functions, extern_fns, builder, "sigil_protocol_recv", &[result])?
-                        }
+                        PipeOp::Recv => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_protocol_recv",
+                            &[result],
+                        )?,
 
                         // Stream: |stream{handler} - create streaming iterator
                         PipeOp::Stream(handler_expr) => {
-                            let handler = compile_expr(module, functions, extern_fns, builder, scope, handler_expr)?;
-                            compile_call(module, functions, extern_fns, builder, "sigil_protocol_stream", &[result, handler])?
+                            let handler = compile_expr(
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
+                                scope,
+                                handler_expr,
+                            )?;
+                            compile_call(
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
+                                "sigil_protocol_stream",
+                                &[result, handler],
+                            )?
                         }
 
                         // Connect: |connect{config} - establish connection
                         PipeOp::Connect(config_expr) => {
                             if let Some(config) = config_expr {
-                                let config_val = compile_expr(module, functions, extern_fns, builder, scope, config)?;
-                                compile_call(module, functions, extern_fns, builder, "sigil_protocol_connect", &[result, config_val])?
+                                let config_val = compile_expr(
+                                    module, functions, extern_fns, builder, scope, config,
+                                )?;
+                                compile_call(
+                                    module,
+                                    functions,
+                                    extern_fns,
+                                    builder,
+                                    "sigil_protocol_connect",
+                                    &[result, config_val],
+                                )?
                             } else {
-                                compile_call(module, functions, extern_fns, builder, "sigil_protocol_connect_default", &[result])?
+                                compile_call(
+                                    module,
+                                    functions,
+                                    extern_fns,
+                                    builder,
+                                    "sigil_protocol_connect_default",
+                                    &[result],
+                                )?
                             }
                         }
 
                         // Close: |close - close connection
-                        PipeOp::Close => {
-                            compile_call(module, functions, extern_fns, builder, "sigil_protocol_close", &[result])?
-                        }
+                        PipeOp::Close => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_protocol_close",
+                            &[result],
+                        )?,
 
                         // Header: |header{name, value} - add header
                         PipeOp::Header { name, value } => {
-                            let name_val = compile_expr(module, functions, extern_fns, builder, scope, name)?;
-                            let value_val = compile_expr(module, functions, extern_fns, builder, scope, value)?;
-                            compile_call(module, functions, extern_fns, builder, "sigil_protocol_header", &[result, name_val, value_val])?
+                            let name_val =
+                                compile_expr(module, functions, extern_fns, builder, scope, name)?;
+                            let value_val =
+                                compile_expr(module, functions, extern_fns, builder, scope, value)?;
+                            compile_call(
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
+                                "sigil_protocol_header",
+                                &[result, name_val, value_val],
+                            )?
                         }
 
                         // Body: |body{data} - set body
                         PipeOp::Body(data_expr) => {
-                            let data = compile_expr(module, functions, extern_fns, builder, scope, data_expr)?;
-                            compile_call(module, functions, extern_fns, builder, "sigil_protocol_body", &[result, data])?
+                            let data = compile_expr(
+                                module, functions, extern_fns, builder, scope, data_expr,
+                            )?;
+                            compile_call(
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
+                                "sigil_protocol_body",
+                                &[result, data],
+                            )?
                         }
 
                         // Timeout: |timeout{ms} - set timeout
                         PipeOp::Timeout(ms_expr) => {
-                            let ms = compile_expr(module, functions, extern_fns, builder, scope, ms_expr)?;
-                            compile_call(module, functions, extern_fns, builder, "sigil_protocol_timeout", &[result, ms])?
+                            let ms = compile_expr(
+                                module, functions, extern_fns, builder, scope, ms_expr,
+                            )?;
+                            compile_call(
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
+                                "sigil_protocol_timeout",
+                                &[result, ms],
+                            )?
                         }
 
                         // Retry: |retry{count, strategy} - set retry policy
                         PipeOp::Retry { count, strategy } => {
-                            let count_val = compile_expr(module, functions, extern_fns, builder, scope, count)?;
+                            let count_val =
+                                compile_expr(module, functions, extern_fns, builder, scope, count)?;
                             if let Some(strat) = strategy {
-                                let strat_val = compile_expr(module, functions, extern_fns, builder, scope, strat)?;
-                                compile_call(module, functions, extern_fns, builder, "sigil_protocol_retry", &[result, count_val, strat_val])?
+                                let strat_val = compile_expr(
+                                    module, functions, extern_fns, builder, scope, strat,
+                                )?;
+                                compile_call(
+                                    module,
+                                    functions,
+                                    extern_fns,
+                                    builder,
+                                    "sigil_protocol_retry",
+                                    &[result, count_val, strat_val],
+                                )?
                             } else {
-                                compile_call(module, functions, extern_fns, builder, "sigil_protocol_retry_default", &[result, count_val])?
+                                compile_call(
+                                    module,
+                                    functions,
+                                    extern_fns,
+                                    builder,
+                                    "sigil_protocol_retry_default",
+                                    &[result, count_val],
+                                )?
                             }
                         }
                     };
@@ -1362,14 +1784,23 @@ pub mod jit {
             // Unsafe blocks - just compile the inner block
             Expr::Unsafe(block) => {
                 let mut inner_scope = scope.child();
-                compile_block(module, functions, extern_fns, builder, &mut inner_scope, block)
+                compile_block(
+                    module,
+                    functions,
+                    extern_fns,
+                    builder,
+                    &mut inner_scope,
+                    block,
+                )
             }
 
             // Pointer dereference - load from address
             Expr::Deref(inner) => {
                 let ptr = compile_expr(module, functions, extern_fns, builder, scope, inner)?;
                 // Load 64-bit value from pointer
-                Ok(builder.ins().load(types::I64, cranelift_codegen::ir::MemFlags::new(), ptr, 0))
+                Ok(builder
+                    .ins()
+                    .load(types::I64, cranelift_codegen::ir::MemFlags::new(), ptr, 0))
             }
 
             // Address-of - just return the value (it's already a pointer in our model)
@@ -1451,7 +1882,9 @@ pub mod jit {
                 builder.ins().uextend(types::I64, cmp)
             }
             BinOp::Ge => {
-                let cmp = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs);
+                let cmp = builder
+                    .ins()
+                    .icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs);
                 builder.ins().uextend(types::I64, cmp)
             }
             BinOp::And => builder.ins().band(lhs, rhs),
@@ -1471,8 +1904,12 @@ pub mod jit {
         use cranelift_codegen::ir::condcodes::FloatCC;
 
         // Values are stored as i64 bit patterns, need to bitcast to f64
-        let lhs_f = builder.ins().bitcast(types::F64, cranelift_codegen::ir::MemFlags::new(), lhs);
-        let rhs_f = builder.ins().bitcast(types::F64, cranelift_codegen::ir::MemFlags::new(), rhs);
+        let lhs_f = builder
+            .ins()
+            .bitcast(types::F64, cranelift_codegen::ir::MemFlags::new(), lhs);
+        let rhs_f = builder
+            .ins()
+            .bitcast(types::F64, cranelift_codegen::ir::MemFlags::new(), rhs);
 
         let result_f = match op {
             BinOp::Add => builder.ins().fadd(lhs_f, rhs_f),
@@ -1492,7 +1929,9 @@ pub mod jit {
                 return Ok(builder.ins().uextend(types::I64, cmp));
             }
             BinOp::Ge => {
-                let cmp = builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs_f, rhs_f);
+                let cmp = builder
+                    .ins()
+                    .fcmp(FloatCC::GreaterThanOrEqual, lhs_f, rhs_f);
                 return Ok(builder.ins().uextend(types::I64, cmp));
             }
             BinOp::Eq => {
@@ -1507,7 +1946,9 @@ pub mod jit {
         };
 
         // Bitcast result back to i64 for uniform value representation
-        Ok(builder.ins().bitcast(types::I64, cranelift_codegen::ir::MemFlags::new(), result_f))
+        Ok(builder
+            .ins()
+            .bitcast(types::I64, cranelift_codegen::ir::MemFlags::new(), result_f))
     }
 
     /// Compile unary operation
@@ -1594,9 +2035,13 @@ pub mod jit {
                     sig.returns.push(AbiParam::new(types::I64));
                 }
                 // PipeOp array access functions (single array arg -> element)
-                "sigil_array_first" | "sigil_array_last" | "sigil_array_middle" |
-                "sigil_array_choice" | "sigil_array_next" | "sigil_array_sum" |
-                "sigil_array_product" => {
+                "sigil_array_first"
+                | "sigil_array_last"
+                | "sigil_array_middle"
+                | "sigil_array_choice"
+                | "sigil_array_next"
+                | "sigil_array_sum"
+                | "sigil_array_product" => {
                     sig.params.push(AbiParam::new(types::I64));
                     sig.returns.push(AbiParam::new(types::I64));
                 }
@@ -1643,15 +2088,27 @@ pub mod jit {
 
             let local_callee = module.declare_func_in_func(callee, builder.func);
 
-            let call_args: Vec<_> = if matches!(builtin, "sigil_sqrt" | "sigil_sin" | "sigil_cos"
-                | "sigil_exp" | "sigil_ln" | "sigil_floor" | "sigil_ceil" | "sigil_abs" | "sigil_pow") {
-                args.iter().map(|&v| {
-                    if builder.func.dfg.value_type(v) == types::F64 {
-                        v
-                    } else {
-                        builder.ins().fcvt_from_sint(types::F64, v)
-                    }
-                }).collect()
+            let call_args: Vec<_> = if matches!(
+                builtin,
+                "sigil_sqrt"
+                    | "sigil_sin"
+                    | "sigil_cos"
+                    | "sigil_exp"
+                    | "sigil_ln"
+                    | "sigil_floor"
+                    | "sigil_ceil"
+                    | "sigil_abs"
+                    | "sigil_pow"
+            ) {
+                args.iter()
+                    .map(|&v| {
+                        if builder.func.dfg.value_type(v) == types::F64 {
+                            v
+                        } else {
+                            builder.ins().fcvt_from_sint(types::F64, v)
+                        }
+                    })
+                    .collect()
             } else {
                 args.to_vec()
             };
@@ -1696,7 +2153,10 @@ pub mod jit {
                 let result = builder.inst_results(call)[0];
                 let result_type = builder.func.dfg.value_type(result);
                 // Extend smaller types to i64 for our internal representation
-                if result_type == types::I32 || result_type == types::I16 || result_type == types::I8 {
+                if result_type == types::I32
+                    || result_type == types::I16
+                    || result_type == types::I8
+                {
                     Ok(builder.ins().sextend(types::I64, result))
                 } else {
                     Ok(result)
@@ -1722,7 +2182,8 @@ pub mod jit {
         else_branch: Option<&Expr>,
     ) -> Result<(cranelift_codegen::ir::Value, bool), String> {
         // OPTIMIZATION: Use direct condition compilation
-        let cond_bool = compile_condition(module, functions, extern_fns, builder, scope, condition)?;
+        let cond_bool =
+            compile_condition(module, functions, extern_fns, builder, scope, condition)?;
 
         let then_block = builder.create_block();
         let else_block = builder.create_block();
@@ -1731,13 +2192,22 @@ pub mod jit {
         builder.append_block_param(merge_block, types::I64);
 
         // Branch directly on the boolean - no extra comparison needed
-        builder.ins().brif(cond_bool, then_block, &[], else_block, &[]);
+        builder
+            .ins()
+            .brif(cond_bool, then_block, &[], else_block, &[]);
 
         // Compile then branch
         builder.switch_to_block(then_block);
         builder.seal_block(then_block);
         let mut then_scope = scope.child();
-        let (then_val, then_returns) = compile_block_tracked(module, functions, extern_fns, builder, &mut then_scope, then_branch)?;
+        let (then_val, then_returns) = compile_block_tracked(
+            module,
+            functions,
+            extern_fns,
+            builder,
+            &mut then_scope,
+            then_branch,
+        )?;
         // Only jump to merge if we didn't return
         if !then_returns {
             builder.ins().jump(merge_block, &[then_val]);
@@ -1750,13 +2220,32 @@ pub mod jit {
             match else_expr {
                 Expr::Block(block) => {
                     let mut else_scope = scope.child();
-                    compile_block_tracked(module, functions, extern_fns, builder, &mut else_scope, block)?
+                    compile_block_tracked(
+                        module,
+                        functions,
+                        extern_fns,
+                        builder,
+                        &mut else_scope,
+                        block,
+                    )?
                 }
-                Expr::If { condition, then_branch, else_branch } => {
-                    compile_if_tracked(module, functions, extern_fns, builder, scope, condition, then_branch, else_branch.as_deref())?
-                }
+                Expr::If {
+                    condition,
+                    then_branch,
+                    else_branch,
+                } => compile_if_tracked(
+                    module,
+                    functions,
+                    extern_fns,
+                    builder,
+                    scope,
+                    condition,
+                    then_branch,
+                    else_branch.as_deref(),
+                )?,
                 _ => {
-                    let val = compile_expr(module, functions, extern_fns, builder, scope, else_expr)?;
+                    let val =
+                        compile_expr(module, functions, extern_fns, builder, scope, else_expr)?;
                     (val, false)
                 }
             }
@@ -1796,7 +2285,17 @@ pub mod jit {
         then_branch: &ast::Block,
         else_branch: Option<&Expr>,
     ) -> Result<cranelift_codegen::ir::Value, String> {
-        compile_if_tracked(module, functions, extern_fns, builder, scope, condition, then_branch, else_branch).map(|(v, _)| v)
+        compile_if_tracked(
+            module,
+            functions,
+            extern_fns,
+            builder,
+            scope,
+            condition,
+            then_branch,
+            else_branch,
+        )
+        .map(|(v, _)| v)
     }
 
     /// Compile while loop
@@ -1817,14 +2316,24 @@ pub mod jit {
 
         builder.switch_to_block(header_block);
         // OPTIMIZATION: Use direct condition compilation
-        let cond_bool = compile_condition(module, functions, extern_fns, builder, scope, condition)?;
+        let cond_bool =
+            compile_condition(module, functions, extern_fns, builder, scope, condition)?;
         // Branch directly - no extra comparison needed
-        builder.ins().brif(cond_bool, body_block, &[], exit_block, &[]);
+        builder
+            .ins()
+            .brif(cond_bool, body_block, &[], exit_block, &[]);
 
         builder.switch_to_block(body_block);
         builder.seal_block(body_block);
         let mut body_scope = scope.child();
-        compile_block(module, functions, extern_fns, builder, &mut body_scope, body)?;
+        compile_block(
+            module,
+            functions,
+            extern_fns,
+            builder,
+            &mut body_scope,
+            body,
+        )?;
         builder.ins().jump(header_block, &[]);
 
         builder.seal_block(header_block);
@@ -1901,9 +2410,17 @@ pub mod jit {
         if is_float_pattern(a) || is_float_pattern(b) {
             let fa = f64::from_bits(a as u64);
             let fb = f64::from_bits(b as u64);
-            if fa < fb { 1 } else { 0 }
+            if fa < fb {
+                1
+            } else {
+                0
+            }
         } else {
-            if a < b { 1 } else { 0 }
+            if a < b {
+                1
+            } else {
+                0
+            }
         }
     }
 
@@ -1912,9 +2429,17 @@ pub mod jit {
         if is_float_pattern(a) || is_float_pattern(b) {
             let fa = f64::from_bits(a as u64);
             let fb = f64::from_bits(b as u64);
-            if fa <= fb { 1 } else { 0 }
+            if fa <= fb {
+                1
+            } else {
+                0
+            }
         } else {
-            if a <= b { 1 } else { 0 }
+            if a <= b {
+                1
+            } else {
+                0
+            }
         }
     }
 
@@ -1923,9 +2448,17 @@ pub mod jit {
         if is_float_pattern(a) || is_float_pattern(b) {
             let fa = f64::from_bits(a as u64);
             let fb = f64::from_bits(b as u64);
-            if fa > fb { 1 } else { 0 }
+            if fa > fb {
+                1
+            } else {
+                0
+            }
         } else {
-            if a > b { 1 } else { 0 }
+            if a > b {
+                1
+            } else {
+                0
+            }
         }
     }
 
@@ -1934,9 +2467,17 @@ pub mod jit {
         if is_float_pattern(a) || is_float_pattern(b) {
             let fa = f64::from_bits(a as u64);
             let fb = f64::from_bits(b as u64);
-            if fa >= fb { 1 } else { 0 }
+            if fa >= fb {
+                1
+            } else {
+                0
+            }
         } else {
-            if a >= b { 1 } else { 0 }
+            if a >= b {
+                1
+            } else {
+                0
+            }
         }
     }
 
@@ -2075,10 +2616,13 @@ pub mod jit {
             let a = &*(a as *const SimdVec4);
             let b = &*(b as *const SimdVec4);
             // FMA-friendly pattern for dot product
-            let r = a.data[0].mul_add(b.data[0],
-                    a.data[1].mul_add(b.data[1],
-                    a.data[2].mul_add(b.data[2],
-                    a.data[3] * b.data[3])));
+            let r = a.data[0].mul_add(
+                b.data[0],
+                a.data[1].mul_add(
+                    b.data[1],
+                    a.data[2].mul_add(b.data[2], a.data[3] * b.data[3]),
+                ),
+            );
             r.to_bits() as i64
         }
     }
@@ -2103,10 +2647,13 @@ pub mod jit {
     pub extern "C" fn sigil_simd_length_sq(a: i64) -> i64 {
         unsafe {
             let a = &*(a as *const SimdVec4);
-            let r = a.data[0].mul_add(a.data[0],
-                    a.data[1].mul_add(a.data[1],
-                    a.data[2].mul_add(a.data[2],
-                    a.data[3] * a.data[3])));
+            let r = a.data[0].mul_add(
+                a.data[0],
+                a.data[1].mul_add(
+                    a.data[1],
+                    a.data[2].mul_add(a.data[2], a.data[3] * a.data[3]),
+                ),
+            );
             r.to_bits() as i64
         }
     }
@@ -2117,10 +2664,13 @@ pub mod jit {
     pub extern "C" fn sigil_simd_length(a: i64) -> i64 {
         unsafe {
             let a = &*(a as *const SimdVec4);
-            let len_sq = a.data[0].mul_add(a.data[0],
-                         a.data[1].mul_add(a.data[1],
-                         a.data[2].mul_add(a.data[2],
-                         a.data[3] * a.data[3])));
+            let len_sq = a.data[0].mul_add(
+                a.data[0],
+                a.data[1].mul_add(
+                    a.data[1],
+                    a.data[2].mul_add(a.data[2], a.data[3] * a.data[3]),
+                ),
+            );
             let r = len_sq.sqrt();
             r.to_bits() as i64
         }
@@ -2132,11 +2682,18 @@ pub mod jit {
     pub extern "C" fn sigil_simd_normalize(a: i64) -> i64 {
         unsafe {
             let a = &*(a as *const SimdVec4);
-            let len_sq = a.data[0].mul_add(a.data[0],
-                         a.data[1].mul_add(a.data[1],
-                         a.data[2].mul_add(a.data[2],
-                         a.data[3] * a.data[3])));
-            let inv = if len_sq > 1e-20 { 1.0 / len_sq.sqrt() } else { 0.0 };
+            let len_sq = a.data[0].mul_add(
+                a.data[0],
+                a.data[1].mul_add(
+                    a.data[1],
+                    a.data[2].mul_add(a.data[2], a.data[3] * a.data[3]),
+                ),
+            );
+            let inv = if len_sq > 1e-20 {
+                1.0 / len_sq.sqrt()
+            } else {
+                0.0
+            };
             let mut r = SimdVec4::new(0.0, 0.0, 0.0, 0.0);
             r.data[0] = a.data[0] * inv;
             r.data[1] = a.data[1] * inv;
@@ -2306,11 +2863,7 @@ pub mod jit {
         let layout = std::alloc::Layout::array::<i64>(cap).unwrap();
         let data = unsafe { std::alloc::alloc(layout) as *mut i64 };
 
-        let arr = Box::new(SigilArray {
-            data,
-            len: 0,
-            cap,
-        });
+        let arr = Box::new(SigilArray { data, len: 0, cap });
         Box::into_raw(arr) as i64
     }
 
@@ -2323,7 +2876,8 @@ pub mod jit {
                 let new_cap = arr.cap * 2;
                 let old_layout = std::alloc::Layout::array::<i64>(arr.cap).unwrap();
                 let new_layout = std::alloc::Layout::array::<i64>(new_cap).unwrap();
-                arr.data = std::alloc::realloc(arr.data as *mut u8, old_layout, new_layout.size()) as *mut i64;
+                arr.data = std::alloc::realloc(arr.data as *mut u8, old_layout, new_layout.size())
+                    as *mut i64;
                 arr.cap = new_cap;
             }
             *arr.data.add(arr.len) = value;
@@ -2397,7 +2951,10 @@ pub mod jit {
             }
 
             // Add remainder
-            let mut sum = sum0.wrapping_add(sum1).wrapping_add(sum2).wrapping_add(sum3);
+            let mut sum = sum0
+                .wrapping_add(sum1)
+                .wrapping_add(sum2)
+                .wrapping_add(sum3);
             for &v in remainder {
                 sum = sum.wrapping_add(v);
             }
@@ -2482,7 +3039,10 @@ pub mod jit {
             }
 
             // Add remainder
-            let mut sum = sum0.wrapping_add(sum1).wrapping_add(sum2).wrapping_add(sum3);
+            let mut sum = sum0
+                .wrapping_add(sum1)
+                .wrapping_add(sum2)
+                .wrapping_add(sum3);
             for i in (chunks * 4)..len {
                 sum = sum.wrapping_add(a_data[i].wrapping_mul(b_data[i]));
             }
@@ -2721,7 +3281,8 @@ pub mod jit {
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_nanos() as u64)
                 .unwrap_or(12345);
-            let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % arr.len;
+            let idx =
+                ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % arr.len;
             *arr.data.add(idx)
         }
     }
@@ -2899,7 +3460,7 @@ pub mod jit {
     struct MemoCache {
         entries: *mut MemoEntry,
         capacity: usize,
-        mask: usize,    // capacity - 1, for fast modulo
+        mask: usize, // capacity - 1, for fast modulo
     }
 
     /// Create a new memoization cache
@@ -2977,9 +3538,9 @@ pub mod jit {
         #[derive(Clone, Copy)]
         enum TakCont {
             Eval { x: i64, y: i64, z: i64 },
-            Cont1 { y: i64, z: i64, x: i64 },       // waiting for tak(x-1,y,z), need y,z,x for later
+            Cont1 { y: i64, z: i64, x: i64 }, // waiting for tak(x-1,y,z), need y,z,x for later
             Cont2 { z: i64, x: i64, y: i64, r1: i64 }, // waiting for tak(y-1,z,x), have r1
-            Cont3 { r1: i64, r2: i64 },             // waiting for tak(z-1,x,y), have r1,r2
+            Cont3 { r1: i64, r2: i64 },       // waiting for tak(z-1,x,y), have r1,r2
         }
 
         let mut stack: Vec<TakCont> = Vec::with_capacity(256);
@@ -3000,17 +3561,29 @@ pub mod jit {
                 TakCont::Cont1 { y, z, x } => {
                     let r1 = result;
                     stack.push(TakCont::Cont2 { z, x, y, r1 });
-                    stack.push(TakCont::Eval { x: y - 1, y: z, z: x });
+                    stack.push(TakCont::Eval {
+                        x: y - 1,
+                        y: z,
+                        z: x,
+                    });
                 }
                 TakCont::Cont2 { z, x, y, r1 } => {
                     let r2 = result;
                     stack.push(TakCont::Cont3 { r1, r2 });
-                    stack.push(TakCont::Eval { x: z - 1, y: x, z: y });
+                    stack.push(TakCont::Eval {
+                        x: z - 1,
+                        y: x,
+                        z: y,
+                    });
                 }
                 TakCont::Cont3 { r1, r2 } => {
                     let r3 = result;
                     // Now compute tak(r1, r2, r3)
-                    stack.push(TakCont::Eval { x: r1, y: r2, z: r3 });
+                    stack.push(TakCont::Eval {
+                        x: r1,
+                        y: r2,
+                        z: r3,
+                    });
                 }
             }
         }
@@ -3153,11 +3726,21 @@ pub mod jit {
 
             let mut compiler = JitCompiler::new().unwrap();
             let result = compiler.compile(source);
-            assert!(result.is_ok(), "Failed to compile FFI declarations: {:?}", result);
+            assert!(
+                result.is_ok(),
+                "Failed to compile FFI declarations: {:?}",
+                result
+            );
 
             // Check that extern functions were registered
-            assert!(compiler.extern_functions.contains_key("abs"), "abs not declared");
-            assert!(compiler.extern_functions.contains_key("strlen"), "strlen not declared");
+            assert!(
+                compiler.extern_functions.contains_key("abs"),
+                "abs not declared"
+            );
+            assert!(
+                compiler.extern_functions.contains_key("strlen"),
+                "strlen not declared"
+            );
 
             // Check abs signature
             let abs_sig = compiler.extern_functions.get("abs").unwrap();
@@ -3186,7 +3769,11 @@ pub mod jit {
 
             let mut compiler = JitCompiler::new().unwrap();
             let result = compiler.compile(source);
-            assert!(result.is_ok(), "Failed to compile variadic FFI: {:?}", result);
+            assert!(
+                result.is_ok(),
+                "Failed to compile variadic FFI: {:?}",
+                result
+            );
 
             let printf_sig = compiler.extern_functions.get("printf").unwrap();
             assert!(printf_sig.variadic, "printf should be variadic");
@@ -3225,21 +3812,38 @@ pub mod jit {
             ];
 
             for (type_name, expected_cl_type) in test_cases {
-                let source = format!(r#"
+                let source = format!(
+                    r#"
                     extern "C" {{
                         fn test_func(x: {}) -> {};
                     }}
 
                     fn main() -> i64 {{ 0 }}
-                "#, type_name, type_name);
+                "#,
+                    type_name, type_name
+                );
 
                 let mut compiler = JitCompiler::new().unwrap();
                 let result = compiler.compile(&source);
-                assert!(result.is_ok(), "Failed for type {}: {:?}", type_name, result);
+                assert!(
+                    result.is_ok(),
+                    "Failed for type {}: {:?}",
+                    type_name,
+                    result
+                );
 
                 let sig = compiler.extern_functions.get("test_func").unwrap();
-                assert_eq!(sig.params[0], expected_cl_type, "Wrong param type for {}", type_name);
-                assert_eq!(sig.returns, Some(expected_cl_type), "Wrong return type for {}", type_name);
+                assert_eq!(
+                    sig.params[0], expected_cl_type,
+                    "Wrong param type for {}",
+                    type_name
+                );
+                assert_eq!(
+                    sig.returns,
+                    Some(expected_cl_type),
+                    "Wrong return type for {}",
+                    type_name
+                );
             }
         }
     }

@@ -37,7 +37,11 @@ impl<'a> Parser<'a> {
     pub fn new(source: &'a str) -> Self {
         let mut lexer = Lexer::new(source);
         let current = lexer.next_token();
-        Self { lexer, current, in_condition: false }
+        Self {
+            lexer,
+            current,
+            in_condition: false,
+        }
     }
 
     /// Parse a complete source file.
@@ -54,7 +58,10 @@ impl<'a> Parser<'a> {
         let mut items = Vec::new();
         while !self.is_eof() {
             // Skip comments
-            while matches!(self.current_token(), Some(Token::LineComment(_) | Token::DocComment(_))) {
+            while matches!(
+                self.current_token(),
+                Some(Token::LineComment(_) | Token::DocComment(_))
+            ) {
                 self.advance();
             }
             if self.is_eof() {
@@ -62,7 +69,11 @@ impl<'a> Parser<'a> {
             }
             items.push(self.parse_item()?);
         }
-        Ok(SourceFile { attrs, config, items })
+        Ok(SourceFile {
+            attrs,
+            config,
+            items,
+        })
     }
 
     /// Parse an inner attribute: `#![name]` or `#![name(args)]`
@@ -105,36 +116,76 @@ impl<'a> Parser<'a> {
         match self.current_token().cloned() {
             Some(Token::Ident(name)) => {
                 self.advance();
-                Ok(Ident { name, evidentiality: None, affect: None, span })
+                Ok(Ident {
+                    name,
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
             }
             // Handle keywords that can be used as attribute names
             Some(Token::Naked) => {
                 self.advance();
-                Ok(Ident { name: "naked".to_string(), evidentiality: None, affect: None, span })
+                Ok(Ident {
+                    name: "naked".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
             }
             Some(Token::Unsafe) => {
                 self.advance();
-                Ok(Ident { name: "unsafe".to_string(), evidentiality: None, affect: None, span })
+                Ok(Ident {
+                    name: "unsafe".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
             }
             Some(Token::Asm) => {
                 self.advance();
-                Ok(Ident { name: "asm".to_string(), evidentiality: None, affect: None, span })
+                Ok(Ident {
+                    name: "asm".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
             }
             Some(Token::Volatile) => {
                 self.advance();
-                Ok(Ident { name: "volatile".to_string(), evidentiality: None, affect: None, span })
+                Ok(Ident {
+                    name: "volatile".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
             }
             Some(Token::Derive) => {
                 self.advance();
-                Ok(Ident { name: "derive".to_string(), evidentiality: None, affect: None, span })
+                Ok(Ident {
+                    name: "derive".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
             }
             Some(Token::Simd) => {
                 self.advance();
-                Ok(Ident { name: "simd".to_string(), evidentiality: None, affect: None, span })
+                Ok(Ident {
+                    name: "simd".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
             }
             Some(Token::Atomic) => {
                 self.advance();
-                Ok(Ident { name: "atomic".to_string(), evidentiality: None, affect: None, span })
+                Ok(Ident {
+                    name: "atomic".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
             }
             Some(t) => Err(ParseError::UnexpectedToken {
                 expected: "attribute name".to_string(),
@@ -214,31 +265,56 @@ impl<'a> Parser<'a> {
             Some(Token::Asm) => {
                 let span = self.current_span();
                 self.advance();
-                let ident = Ident { name: "asm".to_string(), evidentiality: None, affect: None, span };
+                let ident = Ident {
+                    name: "asm".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                };
                 self.parse_attr_arg_after_ident(ident)
             }
             Some(Token::Volatile) => {
                 let span = self.current_span();
                 self.advance();
-                let ident = Ident { name: "volatile".to_string(), evidentiality: None, affect: None, span };
+                let ident = Ident {
+                    name: "volatile".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                };
                 self.parse_attr_arg_after_ident(ident)
             }
             Some(Token::Naked) => {
                 let span = self.current_span();
                 self.advance();
-                let ident = Ident { name: "naked".to_string(), evidentiality: None, affect: None, span };
+                let ident = Ident {
+                    name: "naked".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                };
                 self.parse_attr_arg_after_ident(ident)
             }
             Some(Token::Packed) => {
                 let span = self.current_span();
                 self.advance();
-                let ident = Ident { name: "packed".to_string(), evidentiality: None, affect: None, span };
+                let ident = Ident {
+                    name: "packed".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                };
                 self.parse_attr_arg_after_ident(ident)
             }
             Some(Token::Unsafe) => {
                 let span = self.current_span();
                 self.advance();
-                let ident = Ident { name: "unsafe".to_string(), evidentiality: None, affect: None, span };
+                let ident = Ident {
+                    name: "unsafe".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                };
                 self.parse_attr_arg_after_ident(ident)
             }
             Some(t) => Err(ParseError::UnexpectedToken {
@@ -306,7 +382,10 @@ impl<'a> Parser<'a> {
                                 }
                                 Err(_) => {
                                     // If parsing fails, treat as text
-                                    parts.push(InterpolationPart::Text(format!("{{{}}}", expr_content)));
+                                    parts.push(InterpolationPart::Text(format!(
+                                        "{{{}}}",
+                                        expr_content
+                                    )));
                                 }
                             }
                         }
@@ -456,13 +535,31 @@ impl<'a> Parser<'a> {
     fn parse_int_value(s: &str, base: NumBase) -> u64 {
         // Strip prefix based on base
         let (stripped, radix) = match base {
-            NumBase::Binary => (s.strip_prefix("0b").or(s.strip_prefix("0B")).unwrap_or(s), 2),
-            NumBase::Octal => (s.strip_prefix("0o").or(s.strip_prefix("0O")).unwrap_or(s), 8),
+            NumBase::Binary => (
+                s.strip_prefix("0b").or(s.strip_prefix("0B")).unwrap_or(s),
+                2,
+            ),
+            NumBase::Octal => (
+                s.strip_prefix("0o").or(s.strip_prefix("0O")).unwrap_or(s),
+                8,
+            ),
             NumBase::Decimal => (s, 10),
-            NumBase::Hex => (s.strip_prefix("0x").or(s.strip_prefix("0X")).unwrap_or(s), 16),
-            NumBase::Vigesimal => (s.strip_prefix("0v").or(s.strip_prefix("0V")).unwrap_or(s), 20),
-            NumBase::Duodecimal => (s.strip_prefix("0d").or(s.strip_prefix("0D")).unwrap_or(s), 12),
-            NumBase::Sexagesimal => (s.strip_prefix("0s").or(s.strip_prefix("0S")).unwrap_or(s), 60),
+            NumBase::Hex => (
+                s.strip_prefix("0x").or(s.strip_prefix("0X")).unwrap_or(s),
+                16,
+            ),
+            NumBase::Vigesimal => (
+                s.strip_prefix("0v").or(s.strip_prefix("0V")).unwrap_or(s),
+                20,
+            ),
+            NumBase::Duodecimal => (
+                s.strip_prefix("0d").or(s.strip_prefix("0D")).unwrap_or(s),
+                12,
+            ),
+            NumBase::Sexagesimal => (
+                s.strip_prefix("0s").or(s.strip_prefix("0S")).unwrap_or(s),
+                60,
+            ),
             NumBase::Explicit(r) => (s, r as u32),
         };
         // Remove underscores (numeric separators) and parse
@@ -492,7 +589,9 @@ impl<'a> Parser<'a> {
 
     fn expect(&mut self, expected: Token) -> ParseResult<Span> {
         match &self.current {
-            Some((token, span)) if std::mem::discriminant(token) == std::mem::discriminant(&expected) => {
+            Some((token, span))
+                if std::mem::discriminant(token) == std::mem::discriminant(&expected) =>
+            {
                 let span = *span;
                 self.advance();
                 Ok(span)
@@ -526,7 +625,10 @@ impl<'a> Parser<'a> {
 
     /// Skip any comments
     fn skip_comments(&mut self) {
-        while matches!(self.current_token(), Some(Token::LineComment(_)) | Some(Token::DocComment(_))) {
+        while matches!(
+            self.current_token(),
+            Some(Token::LineComment(_)) | Some(Token::DocComment(_))
+        ) {
             self.advance();
         }
     }
@@ -551,36 +653,16 @@ impl<'a> Parser<'a> {
             Some(Token::Struct) => {
                 Item::Struct(self.parse_struct_with_attrs(visibility, outer_attrs)?)
             }
-            Some(Token::Enum) => {
-                Item::Enum(self.parse_enum(visibility)?)
-            }
-            Some(Token::Trait) => {
-                Item::Trait(self.parse_trait(visibility)?)
-            }
-            Some(Token::Impl) => {
-                Item::Impl(self.parse_impl()?)
-            }
-            Some(Token::Type) => {
-                Item::TypeAlias(self.parse_type_alias(visibility)?)
-            }
-            Some(Token::Mod) => {
-                Item::Module(self.parse_module(visibility)?)
-            }
-            Some(Token::Use) => {
-                Item::Use(self.parse_use(visibility)?)
-            }
-            Some(Token::Const) => {
-                Item::Const(self.parse_const(visibility)?)
-            }
-            Some(Token::Static) => {
-                Item::Static(self.parse_static(visibility)?)
-            }
-            Some(Token::Actor) => {
-                Item::Actor(self.parse_actor(visibility)?)
-            }
-            Some(Token::Extern) => {
-                Item::ExternBlock(self.parse_extern_block()?)
-            }
+            Some(Token::Enum) => Item::Enum(self.parse_enum(visibility)?),
+            Some(Token::Trait) => Item::Trait(self.parse_trait(visibility)?),
+            Some(Token::Impl) => Item::Impl(self.parse_impl()?),
+            Some(Token::Type) => Item::TypeAlias(self.parse_type_alias(visibility)?),
+            Some(Token::Mod) => Item::Module(self.parse_module(visibility)?),
+            Some(Token::Use) => Item::Use(self.parse_use(visibility)?),
+            Some(Token::Const) => Item::Const(self.parse_const(visibility)?),
+            Some(Token::Static) => Item::Static(self.parse_static(visibility)?),
+            Some(Token::Actor) => Item::Actor(self.parse_actor(visibility)?),
+            Some(Token::Extern) => Item::ExternBlock(self.parse_extern_block()?),
             Some(Token::Naked) => {
                 // naked fn -> function with naked attribute
                 Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
@@ -615,7 +697,11 @@ impl<'a> Parser<'a> {
         self.parse_function_with_attrs(visibility, Vec::new())
     }
 
-    fn parse_function_with_attrs(&mut self, visibility: Visibility, outer_attrs: Vec<Attribute>) -> ParseResult<Function> {
+    fn parse_function_with_attrs(
+        &mut self,
+        visibility: Visibility,
+        outer_attrs: Vec<Attribute>,
+    ) -> ParseResult<Function> {
         // Parse function attributes from outer attributes
         let mut attrs = self.process_function_attrs(&outer_attrs);
 
@@ -724,7 +810,9 @@ impl<'a> Parser<'a> {
                 }
                 "interrupt" => {
                     if let Some(AttrArgs::Paren(args)) = &attr.args {
-                        if let Some(AttrArg::Literal(Literal::Int { value, base, .. })) = args.first() {
+                        if let Some(AttrArg::Literal(Literal::Int { value, base, .. })) =
+                            args.first()
+                        {
                             let num = Self::parse_int_value(value, *base) as u32;
                             func_attrs.interrupt = Some(num);
                         }
@@ -732,7 +820,9 @@ impl<'a> Parser<'a> {
                 }
                 "align" => {
                     if let Some(AttrArgs::Paren(args)) = &attr.args {
-                        if let Some(AttrArg::Literal(Literal::Int { value, base, .. })) = args.first() {
+                        if let Some(AttrArg::Literal(Literal::Int { value, base, .. })) =
+                            args.first()
+                        {
                             let align = Self::parse_int_value(value, *base) as usize;
                             func_attrs.align = Some(align);
                         }
@@ -748,7 +838,11 @@ impl<'a> Parser<'a> {
         func_attrs
     }
 
-    fn parse_struct_with_attrs(&mut self, visibility: Visibility, outer_attrs: Vec<Attribute>) -> ParseResult<StructDef> {
+    fn parse_struct_with_attrs(
+        &mut self,
+        visibility: Visibility,
+        outer_attrs: Vec<Attribute>,
+    ) -> ParseResult<StructDef> {
         // Parse struct attributes
         let mut attrs = StructAttrs::default();
         attrs.outer_attrs = outer_attrs.clone();
@@ -782,7 +876,9 @@ impl<'a> Parser<'a> {
                         } else if let AttrArg::Nested(nested) = arg {
                             if nested.name.name == "align" {
                                 if let Some(AttrArgs::Paren(align_args)) = &nested.args {
-                                    if let Some(AttrArg::Literal(Literal::Int { value, .. })) = align_args.first() {
+                                    if let Some(AttrArg::Literal(Literal::Int { value, .. })) =
+                                        align_args.first()
+                                    {
                                         if let Ok(n) = value.parse::<usize>() {
                                             attrs.align = Some(n);
                                         }
@@ -1007,12 +1103,8 @@ impl<'a> Parser<'a> {
             Some(Token::Fn) | Some(Token::Async) => {
                 Ok(ImplItem::Function(self.parse_function(visibility)?))
             }
-            Some(Token::Type) => {
-                Ok(ImplItem::Type(self.parse_type_alias(visibility)?))
-            }
-            Some(Token::Const) => {
-                Ok(ImplItem::Const(self.parse_const(visibility)?))
-            }
+            Some(Token::Type) => Ok(ImplItem::Type(self.parse_type_alias(visibility)?)),
+            Some(Token::Const) => Ok(ImplItem::Const(self.parse_const(visibility)?)),
             Some(token) => Err(ParseError::UnexpectedToken {
                 expected: "impl item".to_string(),
                 found: token.clone(),
@@ -1213,7 +1305,9 @@ impl<'a> Parser<'a> {
 
             match self.current_token() {
                 Some(Token::Fn) => {
-                    items.push(ExternItem::Function(self.parse_extern_function(visibility)?));
+                    items.push(ExternItem::Function(
+                        self.parse_extern_function(visibility)?,
+                    ));
                 }
                 Some(Token::Static) => {
                     items.push(ExternItem::Static(self.parse_extern_static(visibility)?));
@@ -1423,7 +1517,9 @@ impl<'a> Parser<'a> {
                 self.expect(Token::Comma)?;
                 let lanes = match self.current_token() {
                     Some(Token::IntLit(s)) => {
-                        let n = s.parse::<u8>().map_err(|_| ParseError::Custom("invalid lane count".to_string()))?;
+                        let n = s
+                            .parse::<u8>()
+                            .map_err(|_| ParseError::Custom("invalid lane count".to_string()))?;
                         self.advance();
                         n
                     }
@@ -1480,7 +1576,10 @@ impl<'a> Parser<'a> {
         if !self.check(&Token::RParen) && !self.check(&Token::RBracket) && !self.check(&Token::Gt) {
             types.push(self.parse_type()?);
             while self.consume_if(&Token::Comma) {
-                if self.check(&Token::RParen) || self.check(&Token::RBracket) || self.check(&Token::Gt) {
+                if self.check(&Token::RParen)
+                    || self.check(&Token::RBracket)
+                    || self.check(&Token::Gt)
+                {
                     break;
                 }
                 types.push(self.parse_type()?);
@@ -1547,8 +1646,8 @@ impl<'a> Parser<'a> {
                 Some(Token::Shr) => BinOp::Shr,
                 Some(Token::PlusPlus) => BinOp::Concat,
                 // Unicode bitwise operators
-                Some(Token::BitwiseAndSymbol) => BinOp::BitAnd,  // ⋏
-                Some(Token::BitwiseOrSymbol) => BinOp::BitOr,    // ⋎
+                Some(Token::BitwiseAndSymbol) => BinOp::BitAnd, // ⋏
+                Some(Token::BitwiseOrSymbol) => BinOp::BitOr,   // ⋎
                 _ => break,
             };
 
@@ -1886,8 +1985,8 @@ impl<'a> Parser<'a> {
                 Ok(Expr::Continue)
             }
             // Morphemes as standalone expressions
-            Some(Token::Tau) | Some(Token::Phi) | Some(Token::Sigma) |
-            Some(Token::Rho) | Some(Token::Lambda) | Some(Token::Pi) => {
+            Some(Token::Tau) | Some(Token::Phi) | Some(Token::Sigma) | Some(Token::Rho)
+            | Some(Token::Lambda) | Some(Token::Pi) => {
                 let kind = self.parse_morpheme_kind()?;
                 if self.check(&Token::LBrace) {
                     self.advance();
@@ -2234,14 +2333,23 @@ impl<'a> Parser<'a> {
                                 self.expect(Token::Comma)?;
                                 let lanes = match self.current_token() {
                                     Some(Token::IntLit(s)) => {
-                                        let n = s.parse::<u8>().map_err(|_| ParseError::Custom("invalid lane count".to_string()))?;
+                                        let n = s.parse::<u8>().map_err(|_| {
+                                            ParseError::Custom("invalid lane count".to_string())
+                                        })?;
                                         self.advance();
                                         n
                                     }
-                                    _ => return Err(ParseError::Custom("expected lane count".to_string())),
+                                    _ => {
+                                        return Err(ParseError::Custom(
+                                            "expected lane count".to_string(),
+                                        ))
+                                    }
                                 };
                                 self.expect(Token::RParen)?;
-                                Ok(Expr::SimdSplat { value: Box::new(value), lanes })
+                                Ok(Expr::SimdSplat {
+                                    value: Box::new(value),
+                                    lanes,
+                                })
                             }
                             "shuffle" => {
                                 let a = self.parse_expr()?;
@@ -2253,11 +2361,17 @@ impl<'a> Parser<'a> {
                                 loop {
                                     match self.current_token() {
                                         Some(Token::IntLit(s)) => {
-                                            let n = s.parse::<u8>().map_err(|_| ParseError::Custom("invalid index".to_string()))?;
+                                            let n = s.parse::<u8>().map_err(|_| {
+                                                ParseError::Custom("invalid index".to_string())
+                                            })?;
                                             indices.push(n);
                                             self.advance();
                                         }
-                                        _ => return Err(ParseError::Custom("expected index".to_string())),
+                                        _ => {
+                                            return Err(ParseError::Custom(
+                                                "expected index".to_string(),
+                                            ))
+                                        }
                                     }
                                     if !self.consume_if(&Token::Comma) {
                                         break;
@@ -2265,37 +2379,60 @@ impl<'a> Parser<'a> {
                                 }
                                 self.expect(Token::RBracket)?;
                                 self.expect(Token::RParen)?;
-                                Ok(Expr::SimdShuffle { a: Box::new(a), b: Box::new(b), indices })
+                                Ok(Expr::SimdShuffle {
+                                    a: Box::new(a),
+                                    b: Box::new(b),
+                                    indices,
+                                })
                             }
                             "extract" => {
                                 let vector = self.parse_expr()?;
                                 self.expect(Token::Comma)?;
                                 let index = match self.current_token() {
                                     Some(Token::IntLit(s)) => {
-                                        let n = s.parse::<u8>().map_err(|_| ParseError::Custom("invalid index".to_string()))?;
+                                        let n = s.parse::<u8>().map_err(|_| {
+                                            ParseError::Custom("invalid index".to_string())
+                                        })?;
                                         self.advance();
                                         n
                                     }
-                                    _ => return Err(ParseError::Custom("expected index".to_string())),
+                                    _ => {
+                                        return Err(ParseError::Custom(
+                                            "expected index".to_string(),
+                                        ))
+                                    }
                                 };
                                 self.expect(Token::RParen)?;
-                                Ok(Expr::SimdExtract { vector: Box::new(vector), index })
+                                Ok(Expr::SimdExtract {
+                                    vector: Box::new(vector),
+                                    index,
+                                })
                             }
                             "insert" => {
                                 let vector = self.parse_expr()?;
                                 self.expect(Token::Comma)?;
                                 let index = match self.current_token() {
                                     Some(Token::IntLit(s)) => {
-                                        let n = s.parse::<u8>().map_err(|_| ParseError::Custom("invalid index".to_string()))?;
+                                        let n = s.parse::<u8>().map_err(|_| {
+                                            ParseError::Custom("invalid index".to_string())
+                                        })?;
                                         self.advance();
                                         n
                                     }
-                                    _ => return Err(ParseError::Custom("expected index".to_string())),
+                                    _ => {
+                                        return Err(ParseError::Custom(
+                                            "expected index".to_string(),
+                                        ))
+                                    }
                                 };
                                 self.expect(Token::Comma)?;
                                 let value = self.parse_expr()?;
                                 self.expect(Token::RParen)?;
-                                Ok(Expr::SimdInsert { vector: Box::new(vector), index, value: Box::new(value) })
+                                Ok(Expr::SimdInsert {
+                                    vector: Box::new(vector),
+                                    index,
+                                    value: Box::new(value),
+                                })
                             }
                             _ => {
                                 // Parse as generic SIMD intrinsic
@@ -2361,7 +2498,10 @@ impl<'a> Parser<'a> {
             "not" => Ok(SimdOp::Not),
             "shl" => Ok(SimdOp::Shl),
             "shr" => Ok(SimdOp::Shr),
-            _ => Err(ParseError::Custom(format!("unknown SIMD operation: {}", name))),
+            _ => Err(ParseError::Custom(format!(
+                "unknown SIMD operation: {}",
+                name
+            ))),
         }
     }
 
@@ -2465,21 +2605,28 @@ impl<'a> Parser<'a> {
             "fetch_xor" => Ok(AtomicOp::FetchXor),
             "fetch_min" => Ok(AtomicOp::FetchMin),
             "fetch_max" => Ok(AtomicOp::FetchMax),
-            _ => Err(ParseError::Custom(format!("unknown atomic operation: {}", name))),
+            _ => Err(ParseError::Custom(format!(
+                "unknown atomic operation: {}",
+                name
+            ))),
         }
     }
 
     fn parse_memory_ordering(&mut self) -> ParseResult<MemoryOrdering> {
         match self.current_token() {
             Some(Token::Ident(name)) => {
-                let ordering = match name.as_str() {
-                    "Relaxed" => MemoryOrdering::Relaxed,
-                    "Acquire" => MemoryOrdering::Acquire,
-                    "Release" => MemoryOrdering::Release,
-                    "AcqRel" => MemoryOrdering::AcqRel,
-                    "SeqCst" => MemoryOrdering::SeqCst,
-                    _ => return Err(ParseError::Custom("expected memory ordering (Relaxed, Acquire, Release, AcqRel, SeqCst)".to_string())),
-                };
+                let ordering =
+                    match name.as_str() {
+                        "Relaxed" => MemoryOrdering::Relaxed,
+                        "Acquire" => MemoryOrdering::Acquire,
+                        "Release" => MemoryOrdering::Release,
+                        "AcqRel" => MemoryOrdering::AcqRel,
+                        "SeqCst" => MemoryOrdering::SeqCst,
+                        _ => return Err(ParseError::Custom(
+                            "expected memory ordering (Relaxed, Acquire, Release, AcqRel, SeqCst)"
+                                .to_string(),
+                        )),
+                    };
                 self.advance();
                 Ok(ordering)
             }
@@ -2698,7 +2845,10 @@ impl<'a> Parser<'a> {
                     None
                 };
                 self.expect(Token::RBrace)?;
-                Ok(PipeOp::Retry { count: Box::new(count), strategy })
+                Ok(PipeOp::Retry {
+                    count: Box::new(count),
+                    strategy,
+                })
             }
 
             // Header: |header{name, value}
@@ -2709,7 +2859,10 @@ impl<'a> Parser<'a> {
                 self.expect(Token::Comma)?;
                 let value = self.parse_expr()?;
                 self.expect(Token::RBrace)?;
-                Ok(PipeOp::Header { name: Box::new(name), value: Box::new(value) })
+                Ok(PipeOp::Header {
+                    name: Box::new(name),
+                    value: Box::new(value),
+                })
             }
 
             // Body: |body{data}
@@ -2950,9 +3103,12 @@ impl<'a> Parser<'a> {
                 self.expect(Token::RBracket)?;
                 Ok(Pattern::Slice(patterns))
             }
-            Some(Token::IntLit(_)) | Some(Token::StringLit(_)) |
-            Some(Token::CharLit(_)) | Some(Token::True) | Some(Token::False) |
-            Some(Token::Null) => {
+            Some(Token::IntLit(_))
+            | Some(Token::StringLit(_))
+            | Some(Token::CharLit(_))
+            | Some(Token::True)
+            | Some(Token::False)
+            | Some(Token::Null) => {
                 let lit = self.parse_literal()?;
                 Ok(Pattern::Literal(lit))
             }
@@ -3322,11 +3478,19 @@ impl<'a> Parser<'a> {
     fn is_item_start(&self) -> bool {
         matches!(
             self.current_token(),
-            Some(Token::Fn) | Some(Token::Async) | Some(Token::Struct) |
-            Some(Token::Enum) | Some(Token::Trait) | Some(Token::Impl) |
-            Some(Token::Type) | Some(Token::Mod) | Some(Token::Use) |
-            Some(Token::Const) | Some(Token::Static) | Some(Token::Actor) |
-            Some(Token::Pub)
+            Some(Token::Fn)
+                | Some(Token::Async)
+                | Some(Token::Struct)
+                | Some(Token::Enum)
+                | Some(Token::Trait)
+                | Some(Token::Impl)
+                | Some(Token::Type)
+                | Some(Token::Mod)
+                | Some(Token::Use)
+                | Some(Token::Const)
+                | Some(Token::Static)
+                | Some(Token::Actor)
+                | Some(Token::Pub)
         )
     }
 
@@ -3559,7 +3723,10 @@ mod tests {
 
         assert_eq!(file.config.features.len(), 2);
         assert!(file.config.features.contains(&"asm".to_string()));
-        assert!(file.config.features.contains(&"naked_functions".to_string()));
+        assert!(file
+            .config
+            .features
+            .contains(&"naked_functions".to_string()));
     }
 
     #[test]
@@ -3574,7 +3741,11 @@ mod tests {
         let file = parser.parse_file().unwrap();
 
         assert!(file.config.no_std);
-        let target = file.config.target.as_ref().expect("Should have target config");
+        let target = file
+            .config
+            .target
+            .as_ref()
+            .expect("Should have target config");
         assert_eq!(target.arch, Some("x86_64".to_string()));
         assert_eq!(target.os, Some("none".to_string()));
     }
@@ -3594,7 +3765,10 @@ mod tests {
 
         assert_eq!(file.items.len(), 1);
         if let Item::Function(func) = &file.items[0].node {
-            assert!(func.attrs.panic_handler, "Should have panic_handler attribute");
+            assert!(
+                func.attrs.panic_handler,
+                "Should have panic_handler attribute"
+            );
         } else {
             panic!("Expected function");
         }
@@ -3655,7 +3829,11 @@ mod tests {
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
-        let linker = file.config.linker.as_ref().expect("Should have linker config");
+        let linker = file
+            .config
+            .linker
+            .as_ref()
+            .expect("Should have linker config");
         assert_eq!(linker.script, Some("kernel.ld".to_string()));
         assert_eq!(linker.entry_point, Some("_start".to_string()));
         assert_eq!(linker.base_address, Some(0x100000));

@@ -2,8 +2,8 @@
 //!
 //! Handles polysynthetic morphemes, evidentiality markers, and multi-base numerals.
 
-use logos::Logos;
 use crate::span::Span;
+use logos::Logos;
 
 /// Process escape sequences in a string literal.
 /// Converts \n, \t, \r, \\, \", \', \0, \xNN, \u{NNNN} to their actual characters.
@@ -109,34 +109,34 @@ fn multiline_string_callback(lex: &mut logos::Lexer<'_, Token>) -> Option<String
 fn process_char_escape(s: &str) -> char {
     let mut chars = s.chars();
     match chars.next() {
-        Some('\\') => {
-            match chars.next() {
-                Some('n') => '\n',
-                Some('t') => '\t',
-                Some('r') => '\r',
-                Some('\\') => '\\',
-                Some('"') => '"',
-                Some('\'') => '\'',
-                Some('0') => '\0',
-                Some('x') => {
-                    let hex: String = chars.take(2).collect();
-                    u8::from_str_radix(&hex, 16).map(|v| v as char).unwrap_or('?')
-                }
-                Some('u') => {
-                    if chars.next() == Some('{') {
-                        let hex: String = chars.take_while(|&c| c != '}').collect();
-                        u32::from_str_radix(&hex, 16)
-                            .ok()
-                            .and_then(char::from_u32)
-                            .unwrap_or('?')
-                    } else {
-                        '?'
-                    }
-                }
-                Some(c) => c,
-                None => '?',
+        Some('\\') => match chars.next() {
+            Some('n') => '\n',
+            Some('t') => '\t',
+            Some('r') => '\r',
+            Some('\\') => '\\',
+            Some('"') => '"',
+            Some('\'') => '\'',
+            Some('0') => '\0',
+            Some('x') => {
+                let hex: String = chars.take(2).collect();
+                u8::from_str_radix(&hex, 16)
+                    .map(|v| v as char)
+                    .unwrap_or('?')
             }
-        }
+            Some('u') => {
+                if chars.next() == Some('{') {
+                    let hex: String = chars.take_while(|&c| c != '}').collect();
+                    u32::from_str_radix(&hex, 16)
+                        .ok()
+                        .and_then(char::from_u32)
+                        .unwrap_or('?')
+                } else {
+                    '?'
+                }
+            }
+            Some(c) => c,
+            None => '?',
+        },
         Some(c) => c,
         None => '?',
     }
@@ -270,258 +270,258 @@ pub enum Token {
     // === Morphemes (Greek letters) ===
     #[token("τ")]
     #[token("Τ")]
-    Tau,  // Transform/map
+    Tau, // Transform/map
 
     #[token("φ")]
     #[token("Φ")]
-    Phi,  // Filter
+    Phi, // Filter
 
     #[token("σ")]
     #[token("Σ")]
-    Sigma,  // Sort (lowercase) / Sum (uppercase)
+    Sigma, // Sort (lowercase) / Sum (uppercase)
 
     #[token("ρ")]
     #[token("Ρ")]
-    Rho,  // Reduce
+    Rho, // Reduce
 
     #[token("λ")]
     #[token("Λ")]
-    Lambda,  // Lambda
+    Lambda, // Lambda
 
     #[token("Π")]
-    Pi,  // Product
+    Pi, // Product
 
     #[token("⌛")]
-    Hourglass,  // Await symbol
+    Hourglass, // Await symbol
 
     // Additional morphemes
     #[token("δ")]
     #[token("Δ")]
-    Delta,  // Difference/change
+    Delta, // Difference/change
 
     #[token("ε")]
-    Epsilon,  // Empty/null
+    Epsilon, // Empty/null
 
     #[token("ω")]
     #[token("Ω")]
-    Omega,  // End/terminal
+    Omega, // End/terminal
 
     #[token("α")]
-    Alpha,  // First element
+    Alpha, // First element
 
     #[token("ζ")]
-    Zeta,  // Zip/combine
+    Zeta, // Zip/combine
 
     // === Additional Access Morphemes ===
     #[token("μ")]
     #[token("Μ")]
-    Mu,  // Middle/median element
+    Mu, // Middle/median element
 
     #[token("χ")]
     #[token("Χ")]
-    Chi,  // Random/choice (from chaos)
+    Chi, // Random/choice (from chaos)
 
     #[token("ν")]
     #[token("Ν")]
-    Nu,  // Nth element (ordinal)
+    Nu, // Nth element (ordinal)
 
     #[token("ξ")]
     #[token("Ξ")]
-    Xi,  // Next in sequence
+    Xi, // Next in sequence
 
     // === Parallel/Concurrency Morphemes ===
     #[token("∥")]
     #[token("parallel")]
-    Parallel,  // Parallel execution (U+2225)
+    Parallel, // Parallel execution (U+2225)
 
     #[token("⊛")]
     #[token("gpu")]
-    Gpu,  // GPU compute shader (U+229B - circled asterisk)
+    Gpu, // GPU compute shader (U+229B - circled asterisk)
 
     // === Quantifiers (for AI-native set operations) ===
     #[token("∀")]
-    ForAll,  // Universal quantification
+    ForAll, // Universal quantification
 
     #[token("∃")]
-    Exists,  // Existential quantification
+    Exists, // Existential quantification
 
     #[token("∈")]
-    ElementOf,  // Membership test
+    ElementOf, // Membership test
 
     #[token("∉")]
-    NotElementOf,  // Non-membership
+    NotElementOf, // Non-membership
 
     // === Set Operations ===
     #[token("∪")]
-    Union,  // Set union
+    Union, // Set union
 
     #[token("∩")]
-    Intersection,  // Set intersection
+    Intersection, // Set intersection
 
     #[token("∖")]
-    SetMinus,  // Set difference
+    SetMinus, // Set difference
 
     #[token("⊂")]
-    Subset,  // Proper subset
+    Subset, // Proper subset
 
     #[token("⊆")]
-    SubsetEq,  // Subset or equal
+    SubsetEq, // Subset or equal
 
     #[token("⊃")]
-    Superset,  // Proper superset
+    Superset, // Proper superset
 
     #[token("⊇")]
-    SupersetEq,  // Superset or equal
+    SupersetEq, // Superset or equal
 
     // === Logic Operators ===
     #[token("∧")]
-    LogicAnd,  // Logical conjunction
+    LogicAnd, // Logical conjunction
 
     #[token("∨")]
-    LogicOr,  // Logical disjunction
+    LogicOr, // Logical disjunction
 
     #[token("¬")]
-    LogicNot,  // Logical negation
+    LogicNot, // Logical negation
 
     #[token("⊻")]
-    LogicXor,  // Exclusive or
+    LogicXor, // Exclusive or
 
     #[token("⊤")]
-    Top,  // True/any type
+    Top, // True/any type
 
     #[token("⊥")]
-    Bottom,  // False/never type
+    Bottom, // False/never type
 
     // === Bitwise Operators (Unicode) ===
     #[token("⋏")]
-    BitwiseAndSymbol,  // Bitwise AND (U+22CF)
+    BitwiseAndSymbol, // Bitwise AND (U+22CF)
 
     #[token("⋎")]
-    BitwiseOrSymbol,  // Bitwise OR (U+22CE)
+    BitwiseOrSymbol, // Bitwise OR (U+22CE)
 
     // === Type Theory ===
     #[token("∷")]
-    TypeAnnotation,  // Type annotation (alternative to :)
+    TypeAnnotation, // Type annotation (alternative to :)
 
     // === Analysis/Calculus ===
     #[token("∫")]
-    Integral,  // Cumulative sum
+    Integral, // Cumulative sum
 
     #[token("∂")]
-    Partial,  // Discrete derivative
+    Partial, // Discrete derivative
 
     #[token("√")]
-    Sqrt,  // Square root
+    Sqrt, // Square root
 
     #[token("∛")]
-    Cbrt,  // Cube root
+    Cbrt, // Cube root
 
     // === Category Theory ===
     #[token("∘")]
-    Compose,  // Function composition
+    Compose, // Function composition
 
     #[token("⊗")]
-    Tensor,  // Tensor product
+    Tensor, // Tensor product
 
     #[token("⊕")]
-    DirectSum,  // Direct sum / XOR
+    DirectSum, // Direct sum / XOR
 
     // === Data Operations ===
     #[token("⋈")]
-    Bowtie,  // Join/zip combining (U+22C8)
+    Bowtie, // Join/zip combining (U+22C8)
 
     #[token("⋳")]
-    ElementSmallVerticalBar,  // Flatten (U+22F3)
+    ElementSmallVerticalBar, // Flatten (U+22F3)
 
     #[token("⊔")]
-    SquareCup,  // Lattice join / supremum (U+2294)
+    SquareCup, // Lattice join / supremum (U+2294)
 
     #[token("⊓")]
-    SquareCap,  // Lattice meet / infimum (U+2293)
+    SquareCap, // Lattice meet / infimum (U+2293)
 
     // === Evidentiality Markers ===
     // Note: These are handled contextually since ! and ? have other uses
     #[token("‽")]
-    Interrobang,  // Paradox/trust boundary
+    Interrobang, // Paradox/trust boundary
 
     // === Affective Markers (Sentiment & Emotion) ===
     // Sentiment polarity
     #[token("⊖")]
-    AffectNegative,  // Negative sentiment (U+2296 Circled Minus)
+    AffectNegative, // Negative sentiment (U+2296 Circled Minus)
 
     #[token("⊜")]
-    AffectNeutral,  // Neutral sentiment (U+229C Circled Equals)
+    AffectNeutral, // Neutral sentiment (U+229C Circled Equals)
 
     // Note: ⊕ (U+2295) is already DirectSum - we'll use it dual-purpose for positive sentiment
 
     // Sarcasm/Irony
     #[token("⸮")]
-    IronyMark,  // Irony/sarcasm marker (U+2E2E - historical percontation point!)
+    IronyMark, // Irony/sarcasm marker (U+2E2E - historical percontation point!)
 
     // Intensity modifiers
     #[token("↑")]
-    IntensityUp,  // Intensifier (U+2191)
+    IntensityUp, // Intensifier (U+2191)
 
     #[token("↓")]
-    IntensityDown,  // Dampener (U+2193)
+    IntensityDown, // Dampener (U+2193)
 
     #[token("⇈")]
-    IntensityMax,  // Maximum intensity (U+21C8)
+    IntensityMax, // Maximum intensity (U+21C8)
 
     // Formality register
     #[token("♔")]
-    FormalRegister,  // Formal (U+2654 White King)
+    FormalRegister, // Formal (U+2654 White King)
 
     #[token("♟")]
-    InformalRegister,  // Informal (U+265F Black Pawn)
+    InformalRegister, // Informal (U+265F Black Pawn)
 
     // Emotion markers (Plutchik's wheel)
     #[token("☺")]
-    EmotionJoy,  // Joy (U+263A)
+    EmotionJoy, // Joy (U+263A)
 
     #[token("☹")]
-    EmotionSadness,  // Sadness (U+2639)
+    EmotionSadness, // Sadness (U+2639)
 
     #[token("⚡")]
-    EmotionAnger,  // Anger (U+26A1)
+    EmotionAnger, // Anger (U+26A1)
 
     #[token("❄")]
-    EmotionFear,  // Fear (U+2744)
+    EmotionFear, // Fear (U+2744)
 
     #[token("✦")]
-    EmotionSurprise,  // Surprise (U+2726)
+    EmotionSurprise, // Surprise (U+2726)
 
     #[token("♡")]
-    EmotionLove,  // Love/Trust (U+2661)
+    EmotionLove, // Love/Trust (U+2661)
 
     // Confidence markers
     #[token("◉")]
-    ConfidenceHigh,  // High confidence (U+25C9)
+    ConfidenceHigh, // High confidence (U+25C9)
 
     #[token("◎")]
-    ConfidenceMedium,  // Medium confidence (U+25CE)
+    ConfidenceMedium, // Medium confidence (U+25CE)
 
     #[token("○")]
-    ConfidenceLow,  // Low confidence (U+25CB)
+    ConfidenceLow, // Low confidence (U+25CB)
 
     // === Aspect Morphemes (verb aspects) ===
     #[token("·ing")]
-    AspectProgressive,  // Ongoing/streaming aspect
+    AspectProgressive, // Ongoing/streaming aspect
 
     #[token("·ed")]
-    AspectPerfective,  // Completed aspect
+    AspectPerfective, // Completed aspect
 
     #[token("·able")]
-    AspectPotential,  // Capability aspect
+    AspectPotential, // Capability aspect
 
     #[token("·ive")]
-    AspectResultative,  // Result-producing aspect
+    AspectResultative, // Result-producing aspect
 
     // === Operators ===
     #[token("|")]
     Pipe,
     #[token("·")]
-    MiddleDot,  // Incorporation
+    MiddleDot, // Incorporation
     #[token("->")]
     Arrow,
     #[token("=>")]
@@ -551,17 +551,17 @@ pub enum Token {
     #[token("%")]
     Percent,
     #[token("**")]
-    StarStar,  // Exponentiation
+    StarStar, // Exponentiation
     #[token("&&")]
     AndAnd,
     #[token("||")]
     OrOr,
     #[token("!")]
-    Bang,  // Evidentiality: known / logical not
+    Bang, // Evidentiality: known / logical not
     #[token("?")]
-    Question,  // Evidentiality: uncertain / try
+    Question, // Evidentiality: uncertain / try
     #[token("~")]
-    Tilde,  // Evidentiality: reported
+    Tilde, // Evidentiality: reported
     #[token("&")]
     Amp,
     #[token("^")]
@@ -585,7 +585,7 @@ pub enum Token {
     #[token("..=")]
     DotDotEq,
     #[token("++")]
-    PlusPlus,  // Concatenation
+    PlusPlus, // Concatenation
     #[token("::")]
     ColonColon,
     #[token(":")]
@@ -599,7 +599,7 @@ pub enum Token {
     #[token("@")]
     At,
     #[token("#!")]
-    HashBang,  // Inner attribute prefix #![...]
+    HashBang, // Inner attribute prefix #![...]
     #[token("#")]
     Hash,
     #[token("_", priority = 3)]
@@ -621,27 +621,27 @@ pub enum Token {
 
     // === Special symbols ===
     #[token("∅")]
-    Empty,  // Void/emptiness (śūnya)
+    Empty, // Void/emptiness (śūnya)
     #[token("◯")]
-    Circle,  // Geometric zero
+    Circle, // Geometric zero
     #[token("∞")]
-    Infinity,  // Ananta
+    Infinity, // Ananta
 
     // === Protocol Operations (Sigil-native networking) ===
     #[token("⇒")]
-    ProtoSend,  // Send data (U+21D2 - rightwards double arrow)
+    ProtoSend, // Send data (U+21D2 - rightwards double arrow)
 
     #[token("⇐")]
-    ProtoRecv,  // Receive data (U+21D0 - leftwards double arrow)
+    ProtoRecv, // Receive data (U+21D0 - leftwards double arrow)
 
     #[token("≋")]
-    ProtoStream,  // Stream data (U+224B - triple tilde)
+    ProtoStream, // Stream data (U+224B - triple tilde)
 
     #[token("⊸")]
-    ProtoConnect,  // Connect/lollipop (U+22B8 - multimap)
+    ProtoConnect, // Connect/lollipop (U+22B8 - multimap)
 
     #[token("⏱")]
-    ProtoTimeout,  // Timeout (U+23F1 - stopwatch)
+    ProtoTimeout, // Timeout (U+23F1 - stopwatch)
 
     // Note: ⊗ (Tensor) is used for close in protocol contexts
 
@@ -797,12 +797,35 @@ impl Token {
     pub fn is_keyword(&self) -> bool {
         matches!(
             self,
-            Token::Fn | Token::Async | Token::Let | Token::Mut | Token::Const |
-            Token::Type | Token::Struct | Token::Enum | Token::Trait | Token::Impl |
-            Token::Mod | Token::Use | Token::Pub | Token::Actor | Token::Saga |
-            Token::Scope | Token::Rune | Token::If | Token::Else | Token::Match |
-            Token::Loop | Token::While | Token::For | Token::In | Token::Break |
-            Token::Continue | Token::Return | Token::Yield | Token::Await
+            Token::Fn
+                | Token::Async
+                | Token::Let
+                | Token::Mut
+                | Token::Const
+                | Token::Type
+                | Token::Struct
+                | Token::Enum
+                | Token::Trait
+                | Token::Impl
+                | Token::Mod
+                | Token::Use
+                | Token::Pub
+                | Token::Actor
+                | Token::Saga
+                | Token::Scope
+                | Token::Rune
+                | Token::If
+                | Token::Else
+                | Token::Match
+                | Token::Loop
+                | Token::While
+                | Token::For
+                | Token::In
+                | Token::Break
+                | Token::Continue
+                | Token::Return
+                | Token::Yield
+                | Token::Await
         )
     }
 
@@ -822,24 +845,22 @@ impl Token {
     pub fn is_aspect(&self) -> bool {
         matches!(
             self,
-            Token::AspectProgressive | Token::AspectPerfective |
-            Token::AspectPotential | Token::AspectResultative
+            Token::AspectProgressive
+                | Token::AspectPerfective
+                | Token::AspectPotential
+                | Token::AspectResultative
         )
     }
 
     pub fn is_data_op(&self) -> bool {
         matches!(
             self,
-            Token::Bowtie | Token::ElementSmallVerticalBar |
-            Token::SquareCup | Token::SquareCap
+            Token::Bowtie | Token::ElementSmallVerticalBar | Token::SquareCup | Token::SquareCap
         )
     }
 
     pub fn is_bitwise_symbol(&self) -> bool {
-        matches!(
-            self,
-            Token::BitwiseAndSymbol | Token::BitwiseOrSymbol
-        )
+        matches!(self, Token::BitwiseAndSymbol | Token::BitwiseOrSymbol)
     }
 
     pub fn is_quantifier(&self) -> bool {
@@ -852,16 +873,25 @@ impl Token {
     pub fn is_set_op(&self) -> bool {
         matches!(
             self,
-            Token::Union | Token::Intersection | Token::SetMinus |
-            Token::Subset | Token::SubsetEq | Token::Superset | Token::SupersetEq
+            Token::Union
+                | Token::Intersection
+                | Token::SetMinus
+                | Token::Subset
+                | Token::SubsetEq
+                | Token::Superset
+                | Token::SupersetEq
         )
     }
 
     pub fn is_logic_op(&self) -> bool {
         matches!(
             self,
-            Token::LogicAnd | Token::LogicOr | Token::LogicNot | Token::LogicXor |
-            Token::Top | Token::Bottom
+            Token::LogicAnd
+                | Token::LogicOr
+                | Token::LogicNot
+                | Token::LogicXor
+                | Token::Top
+                | Token::Bottom
         )
     }
 
@@ -898,7 +928,7 @@ impl Token {
             // Confidence
             Token::ConfidenceHigh |  // ◉
             Token::ConfidenceMedium |  // ◎
-            Token::ConfidenceLow  // ○
+            Token::ConfidenceLow // ○
         )
     }
 
@@ -912,8 +942,12 @@ impl Token {
     pub fn is_emotion(&self) -> bool {
         matches!(
             self,
-            Token::EmotionJoy | Token::EmotionSadness | Token::EmotionAnger |
-            Token::EmotionFear | Token::EmotionSurprise | Token::EmotionLove
+            Token::EmotionJoy
+                | Token::EmotionSadness
+                | Token::EmotionAnger
+                | Token::EmotionFear
+                | Token::EmotionSurprise
+                | Token::EmotionLove
         )
     }
 
@@ -1288,6 +1322,9 @@ mod tests {
         assert_eq!(process_escape_sequences(r"hello\\world"), "hello\\world");
         assert_eq!(process_escape_sequences(r#"hello\"world"#), "hello\"world");
         assert_eq!(process_escape_sequences(r"hello\x41world"), "helloAworld");
-        assert_eq!(process_escape_sequences(r"hello\u{1F600}world"), "hello😀world");
+        assert_eq!(
+            process_escape_sequences(r"hello\u{1F600}world"),
+            "hello😀world"
+        );
     }
 }

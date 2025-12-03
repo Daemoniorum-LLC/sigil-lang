@@ -338,14 +338,16 @@ impl RecordHeaders {
 
     /// Get a header value
     pub fn get(&self, key: &str) -> Option<&[u8]> {
-        self.inner.iter()
+        self.inner
+            .iter()
             .find(|(k, _)| k == key)
             .map(|(_, v)| v.as_slice())
     }
 
     /// Get all values for a header key
     pub fn get_all(&self, key: &str) -> Vec<&[u8]> {
-        self.inner.iter()
+        self.inner
+            .iter()
             .filter(|(k, _)| k == key)
             .map(|(_, v)| v.as_slice())
             .collect()
@@ -392,7 +394,10 @@ impl ConsumedRecord {
 
     /// Get the key as a string
     pub fn key_str(&self) -> Option<&str> {
-        self.record.key.as_ref().and_then(|k| std::str::from_utf8(k).ok())
+        self.record
+            .key
+            .as_ref()
+            .and_then(|k| std::str::from_utf8(k).ok())
     }
 
     /// Get the value
@@ -469,11 +474,20 @@ impl Producer {
                 .set("acks", config.acks.as_i32().to_string())
                 .set("compression.type", config.compression.as_str())
                 .set("retries", config.retries.to_string())
-                .set("max.in.flight.requests.per.connection", config.max_in_flight.to_string())
+                .set(
+                    "max.in.flight.requests.per.connection",
+                    config.max_in_flight.to_string(),
+                )
                 .set("batch.size", config.batch_size.to_string())
                 .set("linger.ms", config.linger_ms.to_string())
-                .set("request.timeout.ms", config.request_timeout.as_millis().to_string())
-                .set("delivery.timeout.ms", config.delivery_timeout.as_millis().to_string())
+                .set(
+                    "request.timeout.ms",
+                    config.request_timeout.as_millis().to_string(),
+                )
+                .set(
+                    "delivery.timeout.ms",
+                    config.delivery_timeout.as_millis().to_string(),
+                )
                 .set("enable.idempotence", config.enable_idempotence.to_string())
                 .set("security.protocol", config.security_protocol.as_str());
 
@@ -491,7 +505,8 @@ impl Producer {
                 client_config.set("sasl.password", password);
             }
 
-            let producer: FutureProducer = client_config.create()
+            let producer: FutureProducer = client_config
+                .create()
                 .map_err(|e| ProtocolError::Protocol(e.to_string()))?;
 
             Ok(Producer {
@@ -514,12 +529,11 @@ impl Producer {
     /// Send a record
     #[cfg(feature = "rdkafka")]
     pub async fn send(&self, record: Record) -> ProtocolResult<(i32, i64)> {
-        use rdkafka::producer::FutureRecord;
         use rdkafka::message::OwnedHeaders;
+        use rdkafka::producer::FutureRecord;
 
         if let Some(ref producer) = self.inner {
-            let mut future_record = FutureRecord::to(&record.topic)
-                .payload(&record.value);
+            let mut future_record = FutureRecord::to(&record.topic).payload(&record.value);
 
             if let Some(ref key) = record.key {
                 future_record = future_record.key(key);
@@ -545,12 +559,16 @@ impl Producer {
                 future_record = future_record.headers(headers);
             }
 
-            let result = producer.send(future_record, Duration::from_secs(0)).await
+            let result = producer
+                .send(future_record, Duration::from_secs(0))
+                .await
                 .map_err(|(e, _)| ProtocolError::Protocol(e.to_string()))?;
 
             Ok(result)
         } else {
-            Err(ProtocolError::Protocol("Producer not initialized".to_string()))
+            Err(ProtocolError::Protocol(
+                "Producer not initialized".to_string(),
+            ))
         }
     }
 
@@ -558,7 +576,9 @@ impl Producer {
     #[cfg(not(feature = "rdkafka"))]
     pub async fn send(&self, record: Record) -> ProtocolResult<(i32, i64)> {
         let _ = record;
-        Err(ProtocolError::Protocol("Kafka requires 'kafka' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "Kafka requires 'kafka' feature".to_string(),
+        ))
     }
 
     /// Send multiple records
@@ -574,7 +594,8 @@ impl Producer {
     #[cfg(feature = "rdkafka")]
     pub fn flush(&self, timeout: Duration) -> ProtocolResult<()> {
         if let Some(ref producer) = self.inner {
-            producer.flush(timeout)
+            producer
+                .flush(timeout)
                 .map_err(|e| ProtocolError::Protocol(e.to_string()))
         } else {
             Ok(())
@@ -583,7 +604,9 @@ impl Producer {
 
     #[cfg(not(feature = "rdkafka"))]
     pub fn flush(&self, _timeout: Duration) -> ProtocolResult<()> {
-        Err(ProtocolError::Protocol("Kafka requires 'kafka' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "Kafka requires 'kafka' feature".to_string(),
+        ))
     }
 }
 
@@ -609,14 +632,29 @@ impl Consumer {
                 .set("group.id", &config.group_id)
                 .set("auto.offset.reset", config.auto_offset_reset.as_str())
                 .set("enable.auto.commit", config.enable_auto_commit.to_string())
-                .set("auto.commit.interval.ms", config.auto_commit_interval.as_millis().to_string())
+                .set(
+                    "auto.commit.interval.ms",
+                    config.auto_commit_interval.as_millis().to_string(),
+                )
                 .set("max.poll.records", config.max_poll_records.to_string())
-                .set("max.poll.interval.ms", config.max_poll_interval.as_millis().to_string())
-                .set("session.timeout.ms", config.session_timeout.as_millis().to_string())
-                .set("heartbeat.interval.ms", config.heartbeat_interval.as_millis().to_string())
+                .set(
+                    "max.poll.interval.ms",
+                    config.max_poll_interval.as_millis().to_string(),
+                )
+                .set(
+                    "session.timeout.ms",
+                    config.session_timeout.as_millis().to_string(),
+                )
+                .set(
+                    "heartbeat.interval.ms",
+                    config.heartbeat_interval.as_millis().to_string(),
+                )
                 .set("fetch.min.bytes", config.fetch_min_bytes.to_string())
                 .set("fetch.max.bytes", config.fetch_max_bytes.to_string())
-                .set("fetch.wait.max.ms", config.fetch_max_wait.as_millis().to_string())
+                .set(
+                    "fetch.wait.max.ms",
+                    config.fetch_max_wait.as_millis().to_string(),
+                )
                 .set("security.protocol", config.security_protocol.as_str());
 
             if let Some(mechanism) = &config.sasl_mechanism {
@@ -629,7 +667,8 @@ impl Consumer {
                 client_config.set("sasl.password", password);
             }
 
-            let consumer: StreamConsumer = client_config.create()
+            let consumer: StreamConsumer = client_config
+                .create()
                 .map_err(|e| ProtocolError::Protocol(e.to_string()))?;
 
             Ok(Consumer {
@@ -650,16 +689,21 @@ impl Consumer {
         use rdkafka::consumer::Consumer as _;
 
         if let Some(ref consumer) = self.inner {
-            consumer.subscribe(topics)
+            consumer
+                .subscribe(topics)
                 .map_err(|e| ProtocolError::Protocol(e.to_string()))
         } else {
-            Err(ProtocolError::Protocol("Consumer not initialized".to_string()))
+            Err(ProtocolError::Protocol(
+                "Consumer not initialized".to_string(),
+            ))
         }
     }
 
     #[cfg(not(feature = "rdkafka"))]
     pub fn subscribe(&self, _topics: &[&str]) -> ProtocolResult<()> {
-        Err(ProtocolError::Protocol("Kafka requires 'kafka' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "Kafka requires 'kafka' feature".to_string(),
+        ))
     }
 
     /// Unsubscribe from all topics
@@ -678,20 +722,25 @@ impl Consumer {
     /// Commit offsets synchronously
     #[cfg(feature = "rdkafka")]
     pub fn commit(&self) -> ProtocolResult<()> {
-        use rdkafka::consumer::Consumer as _;
         use rdkafka::consumer::CommitMode;
+        use rdkafka::consumer::Consumer as _;
 
         if let Some(ref consumer) = self.inner {
-            consumer.commit_consumer_state(CommitMode::Sync)
+            consumer
+                .commit_consumer_state(CommitMode::Sync)
                 .map_err(|e| ProtocolError::Protocol(e.to_string()))
         } else {
-            Err(ProtocolError::Protocol("Consumer not initialized".to_string()))
+            Err(ProtocolError::Protocol(
+                "Consumer not initialized".to_string(),
+            ))
         }
     }
 
     #[cfg(not(feature = "rdkafka"))]
     pub fn commit(&self) -> ProtocolResult<()> {
-        Err(ProtocolError::Protocol("Kafka requires 'kafka' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "Kafka requires 'kafka' feature".to_string(),
+        ))
     }
 }
 

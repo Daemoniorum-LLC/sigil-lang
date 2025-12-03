@@ -211,8 +211,15 @@ impl Client {
             if url_str.starts_with("http://") || url_str.starts_with("https://") {
                 url_str
             } else {
-                format!("{}{}", base.trim_end_matches('/'),
-                    if url_str.starts_with('/') { url_str } else { format!("/{}", url_str) })
+                format!(
+                    "{}{}",
+                    base.trim_end_matches('/'),
+                    if url_str.starts_with('/') {
+                        url_str
+                    } else {
+                        format!("/{}", url_str)
+                    }
+                )
             }
         } else {
             url_str
@@ -235,8 +242,15 @@ impl Client {
             if url.starts_with("http://") || url.starts_with("https://") {
                 url.to_string()
             } else {
-                format!("{}{}", base.trim_end_matches('/'),
-                    if url.starts_with('/') { url.to_string() } else { format!("/{}", url) })
+                format!(
+                    "{}{}",
+                    base.trim_end_matches('/'),
+                    if url.starts_with('/') {
+                        url.to_string()
+                    } else {
+                        format!("/{}", url)
+                    }
+                )
             }
         } else {
             url.to_string()
@@ -311,7 +325,8 @@ impl RequestBuilder {
             .map(|(k, v)| format!("{}={}", urlencoded(k), urlencoded(v)))
             .collect::<Vec<_>>()
             .join("&");
-        self.headers.set("Content-Type", "application/x-www-form-urlencoded");
+        self.headers
+            .set("Content-Type", "application/x-www-form-urlencoded");
         self.body = Some(Body::Text(encoded));
         self
     }
@@ -326,7 +341,8 @@ impl RequestBuilder {
     pub fn build(self) -> Request {
         let mut url = self.url;
         if !self.query.is_empty() {
-            let query_string: String = self.query
+            let query_string: String = self
+                .query
                 .iter()
                 .map(|(k, v)| format!("{}={}", urlencoded(k), urlencoded(v)))
                 .collect::<Vec<_>>()
@@ -361,7 +377,12 @@ impl RequestBuilder {
                 Method::DELETE => inner.delete(&request.url),
                 Method::PATCH => inner.patch(&request.url),
                 Method::HEAD => inner.head(&request.url),
-                _ => return Err(ProtocolError::Protocol(format!("Unsupported method: {:?}", request.method))),
+                _ => {
+                    return Err(ProtocolError::Protocol(format!(
+                        "Unsupported method: {:?}",
+                        request.method
+                    )))
+                }
             };
 
             // Add headers
@@ -385,16 +406,15 @@ impl RequestBuilder {
             }
 
             // Send request
-            let resp = req_builder.send().await
-                .map_err(|e| {
-                    if e.is_timeout() {
-                        ProtocolError::RequestTimeout
-                    } else if e.is_connect() {
-                        ProtocolError::ConnectionFailed(e.to_string())
-                    } else {
-                        ProtocolError::Protocol(e.to_string())
-                    }
-                })?;
+            let resp = req_builder.send().await.map_err(|e| {
+                if e.is_timeout() {
+                    ProtocolError::RequestTimeout
+                } else if e.is_connect() {
+                    ProtocolError::ConnectionFailed(e.to_string())
+                } else {
+                    ProtocolError::Protocol(e.to_string())
+                }
+            })?;
 
             // Convert response
             let status = StatusCode::from_u16(resp.status().as_u16());
@@ -405,7 +425,9 @@ impl RequestBuilder {
                 }
             }
 
-            let bytes = resp.bytes().await
+            let bytes = resp
+                .bytes()
+                .await
                 .map_err(|e| ProtocolError::Io(e.to_string()))?;
 
             Ok(Response {
@@ -414,14 +436,18 @@ impl RequestBuilder {
                 body: bytes.to_vec(),
             })
         } else {
-            Err(ProtocolError::Protocol("HTTP client not initialized".to_string()))
+            Err(ProtocolError::Protocol(
+                "HTTP client not initialized".to_string(),
+            ))
         }
     }
 
     /// Synchronous send (blocks current thread)
     #[cfg(not(feature = "reqwest"))]
     pub fn send_sync(self) -> ProtocolResult<Response> {
-        Err(ProtocolError::Protocol("HTTP client requires 'http-client' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "HTTP client requires 'http-client' feature".to_string(),
+        ))
     }
 }
 
@@ -560,12 +586,17 @@ pub async fn get(url: impl Into<String>) -> ProtocolResult<Response> {
     #[cfg(not(feature = "reqwest"))]
     {
         let _ = url;
-        Err(ProtocolError::Protocol("HTTP client requires 'http-client' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "HTTP client requires 'http-client' feature".to_string(),
+        ))
     }
 }
 
 /// Convenience function to make a POST request with JSON body
-pub async fn post_json<T: serde::Serialize>(url: impl Into<String>, body: &T) -> ProtocolResult<Response> {
+pub async fn post_json<T: serde::Serialize>(
+    url: impl Into<String>,
+    body: &T,
+) -> ProtocolResult<Response> {
     #[cfg(feature = "reqwest")]
     {
         Client::new().post(url).json(body)?.send().await
@@ -573,7 +604,9 @@ pub async fn post_json<T: serde::Serialize>(url: impl Into<String>, body: &T) ->
     #[cfg(not(feature = "reqwest"))]
     {
         let _ = (url, body);
-        Err(ProtocolError::Protocol("HTTP client requires 'http-client' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "HTTP client requires 'http-client' feature".to_string(),
+        ))
     }
 }
 
@@ -588,7 +621,10 @@ mod tests {
             .bearer_auth("token123")
             .timeout(Duration::from_secs(30));
 
-        assert_eq!(client.config.base_url, Some("https://api.example.com".to_string()));
+        assert_eq!(
+            client.config.base_url,
+            Some("https://api.example.com".to_string())
+        );
     }
 
     #[test]

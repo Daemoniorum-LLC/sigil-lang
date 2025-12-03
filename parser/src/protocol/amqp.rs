@@ -130,10 +130,8 @@ impl QueueOptions {
 
     /// Set queue max length
     pub fn max_length(mut self, max: u32) -> Self {
-        self.arguments.insert(
-            "x-max-length".to_string(),
-            FieldValue::LongInt(max as i32),
-        );
+        self.arguments
+            .insert("x-max-length".to_string(), FieldValue::LongInt(max as i32));
         self
     }
 
@@ -317,8 +315,8 @@ impl Message {
 
     /// Create a JSON message
     pub fn json<T: serde::Serialize>(value: &T) -> ProtocolResult<Self> {
-        let body = serde_json::to_vec(value)
-            .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+        let body =
+            serde_json::to_vec(value).map_err(|e| ProtocolError::Serialization(e.to_string()))?;
         Ok(Message {
             body,
             properties: MessageProperties::new().json(),
@@ -433,12 +431,13 @@ impl Connection {
             ..Default::default()
         };
 
-        let options = lapin::ConnectionProperties::default()
-            .with_connection_name(
-                config.connection_name.clone()
-                    .unwrap_or_else(|| "sigil-amqp".to_string())
-                    .into()
-            );
+        let options = lapin::ConnectionProperties::default().with_connection_name(
+            config
+                .connection_name
+                .clone()
+                .unwrap_or_else(|| "sigil-amqp".to_string())
+                .into(),
+        );
 
         let connection = lapin::Connection::connect(&config.uri, options)
             .await
@@ -454,14 +453,17 @@ impl Connection {
     #[cfg(not(feature = "lapin"))]
     pub async fn connect(uri: impl Into<String>) -> ProtocolResult<Self> {
         let _ = uri;
-        Err(ProtocolError::Protocol("AMQP requires 'amqp' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "AMQP requires 'amqp' feature".to_string(),
+        ))
     }
 
     /// Create a new channel
     #[cfg(feature = "lapin")]
     pub async fn create_channel(&self) -> ProtocolResult<Channel> {
         if let Some(ref conn) = self.inner {
-            let channel = conn.create_channel()
+            let channel = conn
+                .create_channel()
                 .await
                 .map_err(|e| ProtocolError::Protocol(e.to_string()))?;
 
@@ -469,20 +471,27 @@ impl Connection {
                 inner: Some(channel),
             })
         } else {
-            Err(ProtocolError::Protocol("Connection not initialized".to_string()))
+            Err(ProtocolError::Protocol(
+                "Connection not initialized".to_string(),
+            ))
         }
     }
 
     /// Create a new channel (stub for non-lapin builds)
     #[cfg(not(feature = "lapin"))]
     pub async fn create_channel(&self) -> ProtocolResult<Channel> {
-        Err(ProtocolError::Protocol("AMQP requires 'amqp' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "AMQP requires 'amqp' feature".to_string(),
+        ))
     }
 
     /// Check if connection is connected
     #[cfg(feature = "lapin")]
     pub fn is_connected(&self) -> bool {
-        self.inner.as_ref().map(|c| c.status().connected()).unwrap_or(false)
+        self.inner
+            .as_ref()
+            .map(|c| c.status().connected())
+            .unwrap_or(false)
     }
 
     #[cfg(not(feature = "lapin"))]
@@ -534,14 +543,15 @@ impl Channel {
                 ..Default::default()
             };
 
-            channel.exchange_declare(
-                name,
-                lapin::ExchangeKind::Custom(kind.as_str().to_string()),
-                declare_options,
-                FieldTable::default(),
-            )
-            .await
-            .map_err(|e| ProtocolError::Protocol(e.to_string()))?;
+            channel
+                .exchange_declare(
+                    name,
+                    lapin::ExchangeKind::Custom(kind.as_str().to_string()),
+                    declare_options,
+                    FieldTable::default(),
+                )
+                .await
+                .map_err(|e| ProtocolError::Protocol(e.to_string()))?;
         }
         Ok(())
     }
@@ -553,16 +563,14 @@ impl Channel {
         _kind: ExchangeType,
         _options: ExchangeOptions,
     ) -> ProtocolResult<()> {
-        Err(ProtocolError::Protocol("AMQP requires 'amqp' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "AMQP requires 'amqp' feature".to_string(),
+        ))
     }
 
     /// Declare a queue
     #[cfg(feature = "lapin")]
-    pub async fn declare_queue(
-        &self,
-        name: &str,
-        options: QueueOptions,
-    ) -> ProtocolResult<Queue> {
+    pub async fn declare_queue(&self, name: &str, options: QueueOptions) -> ProtocolResult<Queue> {
         use lapin::options::QueueDeclareOptions;
         use lapin::types::FieldTable;
 
@@ -574,13 +582,10 @@ impl Channel {
                 ..Default::default()
             };
 
-            let queue = channel.queue_declare(
-                name,
-                declare_options,
-                FieldTable::default(),
-            )
-            .await
-            .map_err(|e| ProtocolError::Protocol(e.to_string()))?;
+            let queue = channel
+                .queue_declare(name, declare_options, FieldTable::default())
+                .await
+                .map_err(|e| ProtocolError::Protocol(e.to_string()))?;
 
             Ok(Queue {
                 name: queue.name().to_string(),
@@ -588,7 +593,9 @@ impl Channel {
                 consumer_count: queue.consumer_count(),
             })
         } else {
-            Err(ProtocolError::Protocol("Channel not initialized".to_string()))
+            Err(ProtocolError::Protocol(
+                "Channel not initialized".to_string(),
+            ))
         }
     }
 
@@ -598,7 +605,9 @@ impl Channel {
         _name: &str,
         _options: QueueOptions,
     ) -> ProtocolResult<Queue> {
-        Err(ProtocolError::Protocol("AMQP requires 'amqp' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "AMQP requires 'amqp' feature".to_string(),
+        ))
     }
 
     /// Bind a queue to an exchange
@@ -613,15 +622,16 @@ impl Channel {
         use lapin::types::FieldTable;
 
         if let Some(ref channel) = self.inner {
-            channel.queue_bind(
-                queue,
-                exchange,
-                routing_key,
-                QueueBindOptions::default(),
-                FieldTable::default(),
-            )
-            .await
-            .map_err(|e| ProtocolError::Protocol(e.to_string()))?;
+            channel
+                .queue_bind(
+                    queue,
+                    exchange,
+                    routing_key,
+                    QueueBindOptions::default(),
+                    FieldTable::default(),
+                )
+                .await
+                .map_err(|e| ProtocolError::Protocol(e.to_string()))?;
         }
         Ok(())
     }
@@ -633,7 +643,9 @@ impl Channel {
         _exchange: &str,
         _routing_key: &str,
     ) -> ProtocolResult<()> {
-        Err(ProtocolError::Protocol("AMQP requires 'amqp' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "AMQP requires 'amqp' feature".to_string(),
+        ))
     }
 
     /// Publish a message
@@ -669,15 +681,16 @@ impl Channel {
                 properties = properties.with_priority(priority);
             }
 
-            channel.basic_publish(
-                exchange,
-                routing_key,
-                BasicPublishOptions::default(),
-                &message.body,
-                properties,
-            )
-            .await
-            .map_err(|e| ProtocolError::Protocol(e.to_string()))?;
+            channel
+                .basic_publish(
+                    exchange,
+                    routing_key,
+                    BasicPublishOptions::default(),
+                    &message.body,
+                    properties,
+                )
+                .await
+                .map_err(|e| ProtocolError::Protocol(e.to_string()))?;
         }
         Ok(())
     }
@@ -689,7 +702,9 @@ impl Channel {
         _routing_key: &str,
         _message: Message,
     ) -> ProtocolResult<()> {
-        Err(ProtocolError::Protocol("AMQP requires 'amqp' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "AMQP requires 'amqp' feature".to_string(),
+        ))
     }
 
     /// Enable publisher confirms
@@ -698,7 +713,8 @@ impl Channel {
         use lapin::options::ConfirmSelectOptions;
 
         if let Some(ref channel) = self.inner {
-            channel.confirm_select(ConfirmSelectOptions::default())
+            channel
+                .confirm_select(ConfirmSelectOptions::default())
                 .await
                 .map_err(|e| ProtocolError::Protocol(e.to_string()))?;
         }
@@ -707,7 +723,9 @@ impl Channel {
 
     #[cfg(not(feature = "lapin"))]
     pub async fn confirm_select(&self) -> ProtocolResult<()> {
-        Err(ProtocolError::Protocol("AMQP requires 'amqp' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "AMQP requires 'amqp' feature".to_string(),
+        ))
     }
 
     /// Set QoS (prefetch count)
@@ -716,7 +734,8 @@ impl Channel {
         use lapin::options::BasicQosOptions;
 
         if let Some(ref channel) = self.inner {
-            channel.basic_qos(prefetch_count, BasicQosOptions::default())
+            channel
+                .basic_qos(prefetch_count, BasicQosOptions::default())
                 .await
                 .map_err(|e| ProtocolError::Protocol(e.to_string()))?;
         }
@@ -725,7 +744,9 @@ impl Channel {
 
     #[cfg(not(feature = "lapin"))]
     pub async fn qos(&self, _prefetch_count: u16) -> ProtocolResult<()> {
-        Err(ProtocolError::Protocol("AMQP requires 'amqp' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "AMQP requires 'amqp' feature".to_string(),
+        ))
     }
 }
 

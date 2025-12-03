@@ -112,11 +112,7 @@ pub extern "C" fn sigil_cstring_len(ptr: *const c_char) -> usize {
 /// Copy a C string into a Sigil-managed buffer.
 /// Returns the number of bytes copied.
 #[no_mangle]
-pub extern "C" fn sigil_cstring_copy(
-    src: *const c_char,
-    dst: *mut u8,
-    dst_len: usize,
-) -> usize {
+pub extern "C" fn sigil_cstring_copy(src: *const c_char, dst: *mut u8, dst_len: usize) -> usize {
     if src.is_null() || dst.is_null() || dst_len == 0 {
         return 0;
     }
@@ -234,7 +230,11 @@ pub extern "C" fn sigil_ptr_add(ptr: *const u8, offset: i64) -> *const u8 {
 /// Check if a pointer is null.
 #[no_mangle]
 pub extern "C" fn sigil_ptr_is_null(ptr: *const u8) -> i64 {
-    if ptr.is_null() { 1 } else { 0 }
+    if ptr.is_null() {
+        1
+    } else {
+        0
+    }
 }
 
 // ============================================

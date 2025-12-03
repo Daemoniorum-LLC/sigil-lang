@@ -15,7 +15,7 @@ use crate::span::{Span, Spanned};
 pub struct Attribute {
     pub name: Ident,
     pub args: Option<AttrArgs>,
-    pub is_inner: bool,  // true for #![...], false for #[...]
+    pub is_inner: bool, // true for #![...], false for #[...]
 }
 
 /// Arguments to an attribute.
@@ -58,10 +58,10 @@ pub struct CrateConfig {
 /// Target-specific configuration.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct TargetConfig {
-    pub arch: Option<String>,      // "x86_64", "aarch64", "riscv64"
-    pub os: Option<String>,        // "none", "linux", "windows"
-    pub abi: Option<String>,       // "gnu", "musl", "msvc"
-    pub features: Vec<String>,     // CPU features
+    pub arch: Option<String>,  // "x86_64", "aarch64", "riscv64"
+    pub os: Option<String>,    // "none", "linux", "windows"
+    pub abi: Option<String>,   // "gnu", "musl", "msvc"
+    pub features: Vec<String>, // CPU features
 }
 
 /// Linker configuration for bare-metal/OS development.
@@ -144,8 +144,8 @@ pub enum SimdOp {
     Ge,
 
     // Horizontal operations
-    HAdd,      // Horizontal add (sum all lanes)
-    Dot,       // Dot product
+    HAdd, // Horizontal add (sum all lanes)
+    Dot,  // Dot product
 
     // Shuffle/permute
     Shuffle,
@@ -164,8 +164,8 @@ pub enum SimdOp {
 
     // Math functions
     Sqrt,
-    Rsqrt,     // Reciprocal square root
-    Rcp,       // Reciprocal
+    Rsqrt, // Reciprocal square root
+    Rcp,   // Reciprocal
     Floor,
     Ceil,
     Round,
@@ -235,9 +235,9 @@ pub enum DeriveTrait {
     Hash,
 
     // Game engine specific
-    Component,     // ECS component marker
-    Resource,      // ECS resource marker
-    Bundle,        // ECS component bundle
+    Component, // ECS component marker
+    Resource,  // ECS resource marker
+    Bundle,    // ECS component bundle
 
     // Serialization
     Serialize,
@@ -323,7 +323,7 @@ pub enum Item {
 /// `extern "C" { fn foo(x: c_int) -> c_int; }`
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExternBlock {
-    pub abi: String,  // "C", "Rust", "system", etc.
+    pub abi: String, // "C", "Rust", "system", etc.
     pub items: Vec<ExternItem>,
 }
 
@@ -341,7 +341,7 @@ pub struct ExternFunction {
     pub name: Ident,
     pub params: Vec<Param>,
     pub return_type: Option<TypeExpr>,
-    pub variadic: bool,  // For C varargs: fn printf(fmt: *const c_char, ...)
+    pub variadic: bool, // For C varargs: fn printf(fmt: *const c_char, ...)
 }
 
 /// Foreign static variable.
@@ -417,7 +417,7 @@ pub struct Function {
     pub is_async: bool,
     pub attrs: FunctionAttrs,
     pub name: Ident,
-    pub aspect: Option<Aspect>,  // Verb aspect: ·ing, ·ed, ·able, ·ive
+    pub aspect: Option<Aspect>, // Verb aspect: ·ing, ·ed, ·able, ·ive
     pub generics: Option<Generics>,
     pub params: Vec<Param>,
     pub return_type: Option<TypeExpr>,
@@ -447,17 +447,17 @@ pub struct Ident {
 /// Evidentiality markers from the type system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Evidentiality {
-    Known,      // !
-    Uncertain,  // ?
-    Reported,   // ~
-    Paradox,    // ‽
+    Known,     // !
+    Uncertain, // ?
+    Reported,  // ~
+    Paradox,   // ‽
 }
 
 /// Affective markers for sentiment and emotion tracking.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Affect {
     pub sentiment: Option<Sentiment>,
-    pub sarcasm: bool,           // ⸮
+    pub sarcasm: bool, // ⸮
     pub intensity: Option<Intensity>,
     pub formality: Option<Formality>,
     pub emotion: Option<Emotion>,
@@ -491,43 +491,43 @@ impl Affect {
 /// Sentiment polarity markers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sentiment {
-    Positive,   // ⊕
-    Negative,   // ⊖
-    Neutral,    // ⊜
+    Positive, // ⊕
+    Negative, // ⊖
+    Neutral,  // ⊜
 }
 
 /// Intensity modifiers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Intensity {
-    Up,         // ↑ (intensifier)
-    Down,       // ↓ (dampener)
-    Max,        // ⇈ (maximum)
+    Up,   // ↑ (intensifier)
+    Down, // ↓ (dampener)
+    Max,  // ⇈ (maximum)
 }
 
 /// Formality register.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Formality {
-    Formal,     // ♔
-    Informal,   // ♟
+    Formal,   // ♔
+    Informal, // ♟
 }
 
 /// Emotion categories (Plutchik's wheel).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Emotion {
-    Joy,        // ☺
-    Sadness,    // ☹
-    Anger,      // ⚡
-    Fear,       // ❄
-    Surprise,   // ✦
-    Love,       // ♡
+    Joy,      // ☺
+    Sadness,  // ☹
+    Anger,    // ⚡
+    Fear,     // ❄
+    Surprise, // ✦
+    Love,     // ♡
 }
 
 /// Confidence level markers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confidence {
-    High,       // ◉
-    Medium,     // ◎
-    Low,        // ○
+    High,   // ◉
+    Medium, // ◎
+    Low,    // ○
 }
 
 /// Function parameter.
@@ -575,15 +575,9 @@ pub enum TypeExpr {
     /// Simple named type: `i32`, `String`
     Path(TypePath),
     /// Reference: `&T`, `&mut T`
-    Reference {
-        mutable: bool,
-        inner: Box<TypeExpr>,
-    },
+    Reference { mutable: bool, inner: Box<TypeExpr> },
     /// Pointer: `*const T`, `*mut T`
-    Pointer {
-        mutable: bool,
-        inner: Box<TypeExpr>,
-    },
+    Pointer { mutable: bool, inner: Box<TypeExpr> },
     /// Array: `[T; N]`
     Array {
         element: Box<TypeExpr>,
@@ -604,14 +598,9 @@ pub enum TypeExpr {
         evidentiality: Evidentiality,
     },
     /// Cycle type: `Cycle<N>`
-    Cycle {
-        modulus: Box<Expr>,
-    },
+    Cycle { modulus: Box<Expr> },
     /// SIMD vector type: `simd<f32, 4>`, `Vec4f`
-    Simd {
-        element: Box<TypeExpr>,
-        lanes: u8,
-    },
+    Simd { element: Box<TypeExpr>, lanes: u8 },
     /// Atomic type: `atomic<T>`
     Atomic(Box<TypeExpr>),
     /// Never type: `!` or `never`
@@ -696,14 +685,8 @@ pub struct TraitDef {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TraitItem {
     Function(Function),
-    Type {
-        name: Ident,
-        bounds: Vec<TypeExpr>,
-    },
-    Const {
-        name: Ident,
-        ty: TypeExpr,
-    },
+    Type { name: Ident, bounds: Vec<TypeExpr> },
+    Const { name: Ident, ty: TypeExpr },
 }
 
 /// Impl block.
@@ -748,15 +731,9 @@ pub struct UseDecl {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UseTree {
-    Path {
-        prefix: Ident,
-        suffix: Box<UseTree>,
-    },
+    Path { prefix: Ident, suffix: Box<UseTree> },
     Name(Ident),
-    Rename {
-        name: Ident,
-        alias: Ident,
-    },
+    Rename { name: Ident, alias: Ident },
     Glob,
     Group(Vec<UseTree>),
 }
@@ -868,29 +845,18 @@ pub enum Expr {
         right: Box<Expr>,
     },
     /// Unary operation
-    Unary {
-        op: UnaryOp,
-        expr: Box<Expr>,
-    },
+    Unary { op: UnaryOp, expr: Box<Expr> },
     /// Pipe expression: `x|f|g`
     Pipe {
         expr: Box<Expr>,
         operations: Vec<PipeOp>,
     },
     /// Incorporation: `file·open·read`
-    Incorporation {
-        segments: Vec<IncorporationSegment>,
-    },
+    Incorporation { segments: Vec<IncorporationSegment> },
     /// Morpheme application: `τ{f}`
-    Morpheme {
-        kind: MorphemeKind,
-        body: Box<Expr>,
-    },
+    Morpheme { kind: MorphemeKind, body: Box<Expr> },
     /// Function call
-    Call {
-        func: Box<Expr>,
-        args: Vec<Expr>,
-    },
+    Call { func: Box<Expr>, args: Vec<Expr> },
     /// Method call
     MethodCall {
         receiver: Box<Expr>,
@@ -898,15 +864,9 @@ pub enum Expr {
         args: Vec<Expr>,
     },
     /// Field access
-    Field {
-        expr: Box<Expr>,
-        field: Ident,
-    },
+    Field { expr: Box<Expr>, field: Ident },
     /// Index: `arr[i]`
-    Index {
-        expr: Box<Expr>,
-        index: Box<Expr>,
-    },
+    Index { expr: Box<Expr>, index: Box<Expr> },
     /// Array literal
     Array(Vec<Expr>),
     /// Tuple literal
@@ -933,10 +893,7 @@ pub enum Expr {
     /// Loop
     Loop(Block),
     /// While loop
-    While {
-        condition: Box<Expr>,
-        body: Block,
-    },
+    While { condition: Box<Expr>, body: Block },
     /// For loop
     For {
         pattern: Pattern,
@@ -965,34 +922,22 @@ pub enum Expr {
         inclusive: bool,
     },
     /// Macro invocation
-    Macro {
-        path: TypePath,
-        tokens: String,
-    },
+    Macro { path: TypePath, tokens: String },
     /// With evidentiality marker
     Evidential {
         expr: Box<Expr>,
         evidentiality: Evidentiality,
     },
     /// Assignment: `x = value`
-    Assign {
-        target: Box<Expr>,
-        value: Box<Expr>,
-    },
+    Assign { target: Box<Expr>, value: Box<Expr> },
     /// Unsafe block: `unsafe { ... }`
     Unsafe(Block),
     /// Raw pointer dereference: `*ptr`
     Deref(Box<Expr>),
     /// Address-of: `&expr` or `&mut expr`
-    AddrOf {
-        mutable: bool,
-        expr: Box<Expr>,
-    },
+    AddrOf { mutable: bool, expr: Box<Expr> },
     /// Cast: `expr as Type`
-    Cast {
-        expr: Box<Expr>,
-        ty: TypeExpr,
-    },
+    Cast { expr: Box<Expr>, ty: TypeExpr },
 
     /// Inline assembly: `asm!("instruction", ...)`
     InlineAsm(InlineAsm),
@@ -1013,7 +958,6 @@ pub enum Expr {
     // ========================================
     // SIMD Operations
     // ========================================
-
     /// SIMD vector literal: `simd[1.0, 2.0, 3.0, 4.0]`
     SimdLiteral {
         elements: Vec<Expr>,
@@ -1021,10 +965,7 @@ pub enum Expr {
     },
 
     /// SIMD intrinsic operation: `simd::add(a, b)`
-    SimdIntrinsic {
-        op: SimdOp,
-        args: Vec<Expr>,
-    },
+    SimdIntrinsic { op: SimdOp, args: Vec<Expr> },
 
     /// SIMD shuffle: `simd::shuffle(a, b, [0, 4, 1, 5])`
     SimdShuffle {
@@ -1034,16 +975,10 @@ pub enum Expr {
     },
 
     /// SIMD splat (broadcast scalar to all lanes): `simd::splat(x)`
-    SimdSplat {
-        value: Box<Expr>,
-        lanes: u8,
-    },
+    SimdSplat { value: Box<Expr>, lanes: u8 },
 
     /// SIMD extract single lane: `simd::extract(v, 0)`
-    SimdExtract {
-        vector: Box<Expr>,
-        index: u8,
-    },
+    SimdExtract { vector: Box<Expr>, index: u8 },
 
     /// SIMD insert into lane: `simd::insert(v, 0, value)`
     SimdInsert {
@@ -1055,27 +990,23 @@ pub enum Expr {
     // ========================================
     // Atomic Operations
     // ========================================
-
     /// Atomic operation: `atomic::load(&x, Ordering::SeqCst)`
     AtomicOp {
         op: AtomicOp,
         ptr: Box<Expr>,
-        value: Option<Box<Expr>>,        // For store, swap, fetch_add, etc.
-        expected: Option<Box<Expr>>,     // For compare_exchange
+        value: Option<Box<Expr>>,    // For store, swap, fetch_add, etc.
+        expected: Option<Box<Expr>>, // For compare_exchange
         ordering: MemoryOrdering,
-        failure_ordering: Option<MemoryOrdering>,  // For compare_exchange
+        failure_ordering: Option<MemoryOrdering>, // For compare_exchange
     },
 
     /// Atomic fence: `atomic::fence(Ordering::SeqCst)`
-    AtomicFence {
-        ordering: MemoryOrdering,
-    },
+    AtomicFence { ordering: MemoryOrdering },
 
     // ==========================================
     // Protocol Expressions - Sigil-native networking
     // All protocol expressions yield values with Reported evidentiality
     // ==========================================
-
     /// HTTP request: `http·get(url)`, `http·post(url)`, etc.
     /// Incorporation pattern for building HTTP requests
     HttpRequest {
@@ -1224,10 +1155,7 @@ pub enum PipeOp {
     /// Wraps another operation to run it as a compute shader
     Gpu(Box<PipeOp>),
     /// Method call
-    Method {
-        name: Ident,
-        args: Vec<Expr>,
-    },
+    Method { name: Ident, args: Vec<Expr> },
     /// Await
     Await,
     /// Named morpheme: `·map{f}`, `·flow{f}`
@@ -1239,7 +1167,6 @@ pub enum PipeOp {
     // ==========================================
     // Protocol Operations - Sigil-native networking
     // ==========================================
-
     /// Send operation: `|send{data}` or `|⇒{data}` - send data over connection
     /// Results are automatically marked with Reported evidentiality
     Send(Box<Expr>),
@@ -1259,10 +1186,7 @@ pub enum PipeOp {
     Close,
 
     /// Protocol header: `|header{name, value}` - add/set header
-    Header {
-        name: Box<Expr>,
-        value: Box<Expr>,
-    },
+    Header { name: Box<Expr>, value: Box<Expr> },
 
     /// Protocol body: `|body{data}` - set request body
     Body(Box<Expr>),
@@ -1287,19 +1211,19 @@ pub struct IncorporationSegment {
 /// Morpheme kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MorphemeKind {
-    Transform,  // τ
-    Filter,     // φ
-    Sort,       // σ
-    Reduce,     // ρ
-    Lambda,     // λ
-    Sum,        // Σ
-    Product,    // Π
-    Middle,     // μ
-    Choice,     // χ
-    Nth,        // ν
-    Next,       // ξ
-    First,      // α
-    Last,       // ω
+    Transform, // τ
+    Filter,    // φ
+    Sort,      // σ
+    Reduce,    // ρ
+    Lambda,    // λ
+    Sum,       // Σ
+    Product,   // Π
+    Middle,    // μ
+    Choice,    // χ
+    Nth,       // ν
+    Next,      // ξ
+    First,     // α
+    Last,      // ω
 }
 
 // ==========================================
@@ -1453,11 +1377,11 @@ pub enum Literal {
     SigilStringRoute(String),
     Char(char),
     Bool(bool),
-    Null,      // null
+    Null, // null
     /// Special mathematical constants
-    Empty,     // ∅
-    Infinity,  // ∞
-    Circle,    // ◯
+    Empty, // ∅
+    Infinity, // ∞
+    Circle, // ◯
 }
 
 /// Part of an interpolated string
@@ -1472,14 +1396,14 @@ pub enum InterpolationPart {
 /// Number bases.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NumBase {
-    Binary,      // 0b
-    Octal,       // 0o
-    Decimal,     // default
-    Hex,         // 0x
-    Vigesimal,   // 0v (base 20)
-    Sexagesimal, // 0s (base 60)
-    Duodecimal,  // 0z (base 12)
-    Explicit(u8),// N:₆₀ etc.
+    Binary,       // 0b
+    Octal,        // 0o
+    Decimal,      // default
+    Hex,          // 0x
+    Vigesimal,    // 0v (base 20)
+    Sexagesimal,  // 0s (base 60)
+    Duodecimal,   // 0z (base 12)
+    Explicit(u8), // N:₆₀ etc.
 }
 
 #[derive(Debug, Clone, PartialEq)]

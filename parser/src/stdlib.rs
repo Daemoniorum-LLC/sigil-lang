@@ -42,39 +42,41 @@
 //!   - N-grams and shingles for similarity
 //!   - Fuzzy matching utilities
 
-use crate::interpreter::{Interpreter, Value, Evidence, RuntimeError, BuiltInFn, ChannelInner, ActorInner, Function};
-use std::rc::Rc;
+use crate::interpreter::{
+    ActorInner, BuiltInFn, ChannelInner, Evidence, Function, Interpreter, RuntimeError, Value,
+};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::time::{Instant, Duration, SystemTime, UNIX_EPOCH};
 use std::io::Write;
-use std::sync::{Arc, Mutex, mpsc};
+use std::rc::Rc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // External crates for extended stdlib
-use sha2::{Sha256, Sha512, Digest};
+use base64::{engine::general_purpose, Engine as _};
 use md5::Md5;
-use base64::{Engine as _, engine::general_purpose};
 use regex::Regex;
-use uuid::Uuid;
+use sha2::{Digest, Sha256, Sha512};
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
+use uuid::Uuid;
 
 // Polycultural text processing
-use unicode_script::{Script, UnicodeScript};
-use unicode_bidi::BidiInfo;
-use unicode_width::UnicodeWidthStr;
 use deunicode::deunicode;
-use icu_collator::{Collator, CollatorOptions};
-use icu_locid::{Locale, LanguageIdentifier};
-use icu_casemap::CaseMapper;
 use icu_casemap::titlecase::TitlecaseOptions;
+use icu_casemap::CaseMapper;
+use icu_collator::{Collator, CollatorOptions};
+use icu_locid::{LanguageIdentifier, Locale};
 use icu_segmenter::{SentenceSegmenter, WordSegmenter};
+use unicode_bidi::BidiInfo;
+use unicode_script::{Script, UnicodeScript};
+use unicode_width::UnicodeWidthStr;
 
 // Text intelligence
-use whatlang::{detect, Lang, Script as WhatLangScript};
 use rust_stemmers::{Algorithm as StemAlgorithm, Stemmer};
 use tiktoken_rs::{cl100k_base, p50k_base, r50k_base};
+use whatlang::{detect, Lang, Script as WhatLangScript};
 
 // Cryptographic primitives for experimental crypto
 use rand::Rng;
@@ -166,7 +168,10 @@ fn define(
         arity,
         func,
     }));
-    interp.globals.borrow_mut().define(name.to_string(), builtin);
+    interp
+        .globals
+        .borrow_mut()
+        .define(name.to_string(), builtin);
 }
 
 // Helper function for value equality comparison
@@ -174,7 +179,9 @@ fn values_equal_simple(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Int(x), Value::Int(y)) => x == y,
         (Value::Float(x), Value::Float(y)) => (x - y).abs() < f64::EPSILON,
-        (Value::Int(x), Value::Float(y)) | (Value::Float(y), Value::Int(x)) => (*x as f64 - y).abs() < f64::EPSILON,
+        (Value::Int(x), Value::Float(y)) | (Value::Float(y), Value::Int(x)) => {
+            (*x as f64 - y).abs() < f64::EPSILON
+        }
         (Value::Bool(x), Value::Bool(y)) => x == y,
         (Value::String(x), Value::String(y)) => x == y,
         (Value::Char(x), Value::Char(y)) => x == y,
@@ -277,7 +284,10 @@ fn register_core(interp: &mut Interpreter) {
         let msg = if args.is_empty() {
             "explicit panic".to_string()
         } else {
-            args.iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join(" ")
+            args.iter()
+                .map(|v| format!("{}", v))
+                .collect::<Vec<_>>()
+                .join(" ")
         };
         Err(RuntimeError::new(format!("PANIC: {}", msg)))
     });
@@ -303,14 +313,10 @@ fn register_core(interp: &mut Interpreter) {
     });
 
     // clone - deep clone a value
-    define(interp, "clone", Some(1), |_, args| {
-        Ok(deep_clone(&args[0]))
-    });
+    define(interp, "clone", Some(1), |_, args| Ok(deep_clone(&args[0])));
 
     // identity - return value unchanged (useful in pipes)
-    define(interp, "id", Some(1), |_, args| {
-        Ok(args[0].clone())
-    });
+    define(interp, "id", Some(1), |_, args| Ok(args[0].clone()));
 
     // default - return default value for a type
     define(interp, "default", Some(1), |_, args| {
@@ -324,7 +330,10 @@ fn register_core(interp: &mut Interpreter) {
             "f64" | "float" => Ok(Value::Float(0.0)),
             "str" | "string" => Ok(Value::String(Rc::new(String::new()))),
             "array" => Ok(Value::Array(Rc::new(RefCell::new(Vec::new())))),
-            _ => Err(RuntimeError::new(format!("no default for type: {}", type_name))),
+            _ => Err(RuntimeError::new(format!(
+                "no default for type: {}",
+                type_name
+            ))),
         }
     });
 }
@@ -337,7 +346,8 @@ fn deep_clone(value: &Value) -> Value {
             Value::Array(Rc::new(RefCell::new(cloned)))
         }
         Value::Struct { name, fields } => {
-            let cloned: HashMap<String, Value> = fields.borrow()
+            let cloned: HashMap<String, Value> = fields
+                .borrow()
                 .iter()
                 .map(|(k, v)| (k.clone(), deep_clone(v)))
                 .collect();
@@ -360,36 +370,28 @@ fn deep_clone(value: &Value) -> Value {
 
 fn register_math(interp: &mut Interpreter) {
     // Basic math
-    define(interp, "abs", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Int(n.abs())),
-            Value::Float(n) => Ok(Value::Float(n.abs())),
-            _ => Err(RuntimeError::new("abs() requires number")),
-        }
+    define(interp, "abs", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Int(n.abs())),
+        Value::Float(n) => Ok(Value::Float(n.abs())),
+        _ => Err(RuntimeError::new("abs() requires number")),
     });
 
-    define(interp, "neg", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Int(-n)),
-            Value::Float(n) => Ok(Value::Float(-n)),
-            _ => Err(RuntimeError::new("neg() requires number")),
-        }
+    define(interp, "neg", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Int(-n)),
+        Value::Float(n) => Ok(Value::Float(-n)),
+        _ => Err(RuntimeError::new("neg() requires number")),
     });
 
-    define(interp, "sqrt", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).sqrt())),
-            Value::Float(n) => Ok(Value::Float(n.sqrt())),
-            _ => Err(RuntimeError::new("sqrt() requires number")),
-        }
+    define(interp, "sqrt", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).sqrt())),
+        Value::Float(n) => Ok(Value::Float(n.sqrt())),
+        _ => Err(RuntimeError::new("sqrt() requires number")),
     });
 
-    define(interp, "cbrt", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).cbrt())),
-            Value::Float(n) => Ok(Value::Float(n.cbrt())),
-            _ => Err(RuntimeError::new("cbrt() requires number")),
-        }
+    define(interp, "cbrt", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).cbrt())),
+        Value::Float(n) => Ok(Value::Float(n.cbrt())),
+        _ => Err(RuntimeError::new("cbrt() requires number")),
     });
 
     define(interp, "pow", Some(2), |_, args| {
@@ -408,20 +410,16 @@ fn register_math(interp: &mut Interpreter) {
         }
     });
 
-    define(interp, "exp", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).exp())),
-            Value::Float(n) => Ok(Value::Float(n.exp())),
-            _ => Err(RuntimeError::new("exp() requires number")),
-        }
+    define(interp, "exp", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).exp())),
+        Value::Float(n) => Ok(Value::Float(n.exp())),
+        _ => Err(RuntimeError::new("exp() requires number")),
     });
 
-    define(interp, "ln", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).ln())),
-            Value::Float(n) => Ok(Value::Float(n.ln())),
-            _ => Err(RuntimeError::new("ln() requires number")),
-        }
+    define(interp, "ln", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).ln())),
+        Value::Float(n) => Ok(Value::Float(n.ln())),
+        _ => Err(RuntimeError::new("ln() requires number")),
     });
 
     define(interp, "log", Some(2), |_, args| {
@@ -435,69 +433,53 @@ fn register_math(interp: &mut Interpreter) {
         Ok(Value::Float(value.log(base)))
     });
 
-    define(interp, "log10", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).log10())),
-            Value::Float(n) => Ok(Value::Float(n.log10())),
-            _ => Err(RuntimeError::new("log10() requires number")),
-        }
+    define(interp, "log10", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).log10())),
+        Value::Float(n) => Ok(Value::Float(n.log10())),
+        _ => Err(RuntimeError::new("log10() requires number")),
     });
 
-    define(interp, "log2", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).log2())),
-            Value::Float(n) => Ok(Value::Float(n.log2())),
-            _ => Err(RuntimeError::new("log2() requires number")),
-        }
+    define(interp, "log2", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).log2())),
+        Value::Float(n) => Ok(Value::Float(n.log2())),
+        _ => Err(RuntimeError::new("log2() requires number")),
     });
 
     // Trigonometry
-    define(interp, "sin", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).sin())),
-            Value::Float(n) => Ok(Value::Float(n.sin())),
-            _ => Err(RuntimeError::new("sin() requires number")),
-        }
+    define(interp, "sin", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).sin())),
+        Value::Float(n) => Ok(Value::Float(n.sin())),
+        _ => Err(RuntimeError::new("sin() requires number")),
     });
 
-    define(interp, "cos", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).cos())),
-            Value::Float(n) => Ok(Value::Float(n.cos())),
-            _ => Err(RuntimeError::new("cos() requires number")),
-        }
+    define(interp, "cos", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).cos())),
+        Value::Float(n) => Ok(Value::Float(n.cos())),
+        _ => Err(RuntimeError::new("cos() requires number")),
     });
 
-    define(interp, "tan", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).tan())),
-            Value::Float(n) => Ok(Value::Float(n.tan())),
-            _ => Err(RuntimeError::new("tan() requires number")),
-        }
+    define(interp, "tan", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).tan())),
+        Value::Float(n) => Ok(Value::Float(n.tan())),
+        _ => Err(RuntimeError::new("tan() requires number")),
     });
 
-    define(interp, "asin", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).asin())),
-            Value::Float(n) => Ok(Value::Float(n.asin())),
-            _ => Err(RuntimeError::new("asin() requires number")),
-        }
+    define(interp, "asin", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).asin())),
+        Value::Float(n) => Ok(Value::Float(n.asin())),
+        _ => Err(RuntimeError::new("asin() requires number")),
     });
 
-    define(interp, "acos", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).acos())),
-            Value::Float(n) => Ok(Value::Float(n.acos())),
-            _ => Err(RuntimeError::new("acos() requires number")),
-        }
+    define(interp, "acos", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).acos())),
+        Value::Float(n) => Ok(Value::Float(n.acos())),
+        _ => Err(RuntimeError::new("acos() requires number")),
     });
 
-    define(interp, "atan", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).atan())),
-            Value::Float(n) => Ok(Value::Float(n.atan())),
-            _ => Err(RuntimeError::new("atan() requires number")),
-        }
+    define(interp, "atan", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).atan())),
+        Value::Float(n) => Ok(Value::Float(n.atan())),
+        _ => Err(RuntimeError::new("atan() requires number")),
     });
 
     define(interp, "atan2", Some(2), |_, args| {
@@ -512,69 +494,53 @@ fn register_math(interp: &mut Interpreter) {
     });
 
     // Hyperbolic
-    define(interp, "sinh", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).sinh())),
-            Value::Float(n) => Ok(Value::Float(n.sinh())),
-            _ => Err(RuntimeError::new("sinh() requires number")),
-        }
+    define(interp, "sinh", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).sinh())),
+        Value::Float(n) => Ok(Value::Float(n.sinh())),
+        _ => Err(RuntimeError::new("sinh() requires number")),
     });
 
-    define(interp, "cosh", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).cosh())),
-            Value::Float(n) => Ok(Value::Float(n.cosh())),
-            _ => Err(RuntimeError::new("cosh() requires number")),
-        }
+    define(interp, "cosh", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).cosh())),
+        Value::Float(n) => Ok(Value::Float(n.cosh())),
+        _ => Err(RuntimeError::new("cosh() requires number")),
     });
 
-    define(interp, "tanh", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float((*n as f64).tanh())),
-            Value::Float(n) => Ok(Value::Float(n.tanh())),
-            _ => Err(RuntimeError::new("tanh() requires number")),
-        }
+    define(interp, "tanh", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).tanh())),
+        Value::Float(n) => Ok(Value::Float(n.tanh())),
+        _ => Err(RuntimeError::new("tanh() requires number")),
     });
 
     // Rounding
-    define(interp, "floor", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Int(*n)),
-            Value::Float(n) => Ok(Value::Int(n.floor() as i64)),
-            _ => Err(RuntimeError::new("floor() requires number")),
-        }
+    define(interp, "floor", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Int(*n)),
+        Value::Float(n) => Ok(Value::Int(n.floor() as i64)),
+        _ => Err(RuntimeError::new("floor() requires number")),
     });
 
-    define(interp, "ceil", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Int(*n)),
-            Value::Float(n) => Ok(Value::Int(n.ceil() as i64)),
-            _ => Err(RuntimeError::new("ceil() requires number")),
-        }
+    define(interp, "ceil", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Int(*n)),
+        Value::Float(n) => Ok(Value::Int(n.ceil() as i64)),
+        _ => Err(RuntimeError::new("ceil() requires number")),
     });
 
-    define(interp, "round", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Int(*n)),
-            Value::Float(n) => Ok(Value::Int(n.round() as i64)),
-            _ => Err(RuntimeError::new("round() requires number")),
-        }
+    define(interp, "round", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Int(*n)),
+        Value::Float(n) => Ok(Value::Int(n.round() as i64)),
+        _ => Err(RuntimeError::new("round() requires number")),
     });
 
-    define(interp, "trunc", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Int(*n)),
-            Value::Float(n) => Ok(Value::Int(n.trunc() as i64)),
-            _ => Err(RuntimeError::new("trunc() requires number")),
-        }
+    define(interp, "trunc", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Int(*n)),
+        Value::Float(n) => Ok(Value::Int(n.trunc() as i64)),
+        _ => Err(RuntimeError::new("trunc() requires number")),
     });
 
-    define(interp, "fract", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(_) => Ok(Value::Float(0.0)),
-            Value::Float(n) => Ok(Value::Float(n.fract())),
-            _ => Err(RuntimeError::new("fract() requires number")),
-        }
+    define(interp, "fract", Some(1), |_, args| match &args[0] {
+        Value::Int(_) => Ok(Value::Float(0.0)),
+        Value::Float(n) => Ok(Value::Float(n.fract())),
+        _ => Err(RuntimeError::new("fract() requires number")),
     });
 
     // Min/Max/Clamp
@@ -611,19 +577,31 @@ fn register_math(interp: &mut Interpreter) {
     });
 
     // Sign
-    define(interp, "sign", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Int(n.signum())),
-            Value::Float(n) => Ok(Value::Float(if *n > 0.0 { 1.0 } else if *n < 0.0 { -1.0 } else { 0.0 })),
-            _ => Err(RuntimeError::new("sign() requires number")),
-        }
+    define(interp, "sign", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Int(n.signum())),
+        Value::Float(n) => Ok(Value::Float(if *n > 0.0 {
+            1.0
+        } else if *n < 0.0 {
+            -1.0
+        } else {
+            0.0
+        })),
+        _ => Err(RuntimeError::new("sign() requires number")),
     });
 
     // Constants
-    define(interp, "PI", Some(0), |_, _| Ok(Value::Float(std::f64::consts::PI)));
-    define(interp, "E", Some(0), |_, _| Ok(Value::Float(std::f64::consts::E)));
-    define(interp, "TAU", Some(0), |_, _| Ok(Value::Float(std::f64::consts::TAU)));
-    define(interp, "PHI", Some(0), |_, _| Ok(Value::Float(1.618033988749895))); // Golden ratio
+    define(interp, "PI", Some(0), |_, _| {
+        Ok(Value::Float(std::f64::consts::PI))
+    });
+    define(interp, "E", Some(0), |_, _| {
+        Ok(Value::Float(std::f64::consts::E))
+    });
+    define(interp, "TAU", Some(0), |_, _| {
+        Ok(Value::Float(std::f64::consts::TAU))
+    });
+    define(interp, "PHI", Some(0), |_, _| {
+        Ok(Value::Float(1.618033988749895))
+    }); // Golden ratio
 
     // GCD/LCM
     define(interp, "gcd", Some(2), |_, args| {
@@ -644,66 +622,54 @@ fn register_math(interp: &mut Interpreter) {
     });
 
     // Factorial
-    define(interp, "factorial", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) if *n >= 0 => {
-                let mut result: i64 = 1;
-                for i in 2..=(*n as u64) {
-                    result = result.saturating_mul(i as i64);
-                }
-                Ok(Value::Int(result))
+    define(interp, "factorial", Some(1), |_, args| match &args[0] {
+        Value::Int(n) if *n >= 0 => {
+            let mut result: i64 = 1;
+            for i in 2..=(*n as u64) {
+                result = result.saturating_mul(i as i64);
             }
-            Value::Int(_) => Err(RuntimeError::new("factorial() requires non-negative integer")),
-            _ => Err(RuntimeError::new("factorial() requires integer")),
+            Ok(Value::Int(result))
         }
+        Value::Int(_) => Err(RuntimeError::new(
+            "factorial() requires non-negative integer",
+        )),
+        _ => Err(RuntimeError::new("factorial() requires integer")),
     });
 
     // Is checks
-    define(interp, "is_nan", Some(1), |_, args| {
-        match &args[0] {
-            Value::Float(n) => Ok(Value::Bool(n.is_nan())),
-            Value::Int(_) => Ok(Value::Bool(false)),
-            _ => Err(RuntimeError::new("is_nan() requires number")),
-        }
+    define(interp, "is_nan", Some(1), |_, args| match &args[0] {
+        Value::Float(n) => Ok(Value::Bool(n.is_nan())),
+        Value::Int(_) => Ok(Value::Bool(false)),
+        _ => Err(RuntimeError::new("is_nan() requires number")),
     });
 
-    define(interp, "is_infinite", Some(1), |_, args| {
-        match &args[0] {
-            Value::Float(n) => Ok(Value::Bool(n.is_infinite())),
-            Value::Int(_) => Ok(Value::Bool(false)),
-            Value::Infinity => Ok(Value::Bool(true)),
-            _ => Err(RuntimeError::new("is_infinite() requires number")),
-        }
+    define(interp, "is_infinite", Some(1), |_, args| match &args[0] {
+        Value::Float(n) => Ok(Value::Bool(n.is_infinite())),
+        Value::Int(_) => Ok(Value::Bool(false)),
+        Value::Infinity => Ok(Value::Bool(true)),
+        _ => Err(RuntimeError::new("is_infinite() requires number")),
     });
 
-    define(interp, "is_finite", Some(1), |_, args| {
-        match &args[0] {
-            Value::Float(n) => Ok(Value::Bool(n.is_finite())),
-            Value::Int(_) => Ok(Value::Bool(true)),
-            Value::Infinity => Ok(Value::Bool(false)),
-            _ => Err(RuntimeError::new("is_finite() requires number")),
-        }
+    define(interp, "is_finite", Some(1), |_, args| match &args[0] {
+        Value::Float(n) => Ok(Value::Bool(n.is_finite())),
+        Value::Int(_) => Ok(Value::Bool(true)),
+        Value::Infinity => Ok(Value::Bool(false)),
+        _ => Err(RuntimeError::new("is_finite() requires number")),
     });
 
-    define(interp, "is_even", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Bool(n % 2 == 0)),
-            _ => Err(RuntimeError::new("is_even() requires integer")),
-        }
+    define(interp, "is_even", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Bool(n % 2 == 0)),
+        _ => Err(RuntimeError::new("is_even() requires integer")),
     });
 
-    define(interp, "is_odd", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Bool(n % 2 != 0)),
-            _ => Err(RuntimeError::new("is_odd() requires integer")),
-        }
+    define(interp, "is_odd", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Bool(n % 2 != 0)),
+        _ => Err(RuntimeError::new("is_odd() requires integer")),
     });
 
-    define(interp, "is_prime", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Bool(is_prime(*n))),
-            _ => Err(RuntimeError::new("is_prime() requires integer")),
-        }
+    define(interp, "is_prime", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Bool(is_prime(*n))),
+        _ => Err(RuntimeError::new("is_prime() requires integer")),
     });
 }
 
@@ -719,12 +685,20 @@ fn gcd(mut a: i64, mut b: i64) -> i64 {
 }
 
 fn is_prime(n: i64) -> bool {
-    if n < 2 { return false; }
-    if n == 2 { return true; }
-    if n % 2 == 0 { return false; }
+    if n < 2 {
+        return false;
+    }
+    if n == 2 {
+        return true;
+    }
+    if n % 2 == 0 {
+        return false;
+    }
     let sqrt = (n as f64).sqrt() as i64;
     for i in (3..=sqrt).step_by(2) {
-        if n % i == 0 { return false; }
+        if n % i == 0 {
+            return false;
+        }
     }
     true
 }
@@ -735,97 +709,87 @@ fn is_prime(n: i64) -> bool {
 
 fn register_collections(interp: &mut Interpreter) {
     // Basic operations
-    define(interp, "len", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
-            Value::String(s) => Ok(Value::Int(s.chars().count() as i64)),
-            Value::Tuple(t) => Ok(Value::Int(t.len() as i64)),
-            Value::Map(m) => Ok(Value::Int(m.borrow().len() as i64)),
-            Value::Set(s) => Ok(Value::Int(s.borrow().len() as i64)),
-            _ => Err(RuntimeError::new("len() requires array, string, tuple, map, or set")),
-        }
+    define(interp, "len", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
+        Value::String(s) => Ok(Value::Int(s.chars().count() as i64)),
+        Value::Tuple(t) => Ok(Value::Int(t.len() as i64)),
+        Value::Map(m) => Ok(Value::Int(m.borrow().len() as i64)),
+        Value::Set(s) => Ok(Value::Int(s.borrow().len() as i64)),
+        _ => Err(RuntimeError::new(
+            "len() requires array, string, tuple, map, or set",
+        )),
     });
 
-    define(interp, "is_empty", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => Ok(Value::Bool(arr.borrow().is_empty())),
-            Value::String(s) => Ok(Value::Bool(s.is_empty())),
-            Value::Tuple(t) => Ok(Value::Bool(t.is_empty())),
-            Value::Map(m) => Ok(Value::Bool(m.borrow().is_empty())),
-            Value::Set(s) => Ok(Value::Bool(s.borrow().is_empty())),
-            _ => Err(RuntimeError::new("is_empty() requires collection")),
-        }
+    define(interp, "is_empty", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => Ok(Value::Bool(arr.borrow().is_empty())),
+        Value::String(s) => Ok(Value::Bool(s.is_empty())),
+        Value::Tuple(t) => Ok(Value::Bool(t.is_empty())),
+        Value::Map(m) => Ok(Value::Bool(m.borrow().is_empty())),
+        Value::Set(s) => Ok(Value::Bool(s.borrow().is_empty())),
+        _ => Err(RuntimeError::new("is_empty() requires collection")),
     });
 
     // Array operations
-    define(interp, "push", Some(2), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                arr.borrow_mut().push(args[1].clone());
-                Ok(Value::Null)
-            }
-            _ => Err(RuntimeError::new("push() requires array")),
+    define(interp, "push", Some(2), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            arr.borrow_mut().push(args[1].clone());
+            Ok(Value::Null)
         }
+        _ => Err(RuntimeError::new("push() requires array")),
     });
 
-    define(interp, "pop", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                arr.borrow_mut().pop()
-                    .ok_or_else(|| RuntimeError::new("pop() on empty array"))
-            }
-            _ => Err(RuntimeError::new("pop() requires array")),
-        }
+    define(interp, "pop", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => arr
+            .borrow_mut()
+            .pop()
+            .ok_or_else(|| RuntimeError::new("pop() on empty array")),
+        _ => Err(RuntimeError::new("pop() requires array")),
     });
 
-    define(interp, "first", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                arr.borrow().first().cloned()
-                    .ok_or_else(|| RuntimeError::new("first() on empty array"))
-            }
-            Value::Tuple(t) => {
-                t.first().cloned()
-                    .ok_or_else(|| RuntimeError::new("first() on empty tuple"))
-            }
-            _ => Err(RuntimeError::new("first() requires array or tuple")),
-        }
+    define(interp, "first", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => arr
+            .borrow()
+            .first()
+            .cloned()
+            .ok_or_else(|| RuntimeError::new("first() on empty array")),
+        Value::Tuple(t) => t
+            .first()
+            .cloned()
+            .ok_or_else(|| RuntimeError::new("first() on empty tuple")),
+        _ => Err(RuntimeError::new("first() requires array or tuple")),
     });
 
-    define(interp, "last", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                arr.borrow().last().cloned()
-                    .ok_or_else(|| RuntimeError::new("last() on empty array"))
-            }
-            Value::Tuple(t) => {
-                t.last().cloned()
-                    .ok_or_else(|| RuntimeError::new("last() on empty tuple"))
-            }
-            _ => Err(RuntimeError::new("last() requires array or tuple")),
-        }
+    define(interp, "last", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => arr
+            .borrow()
+            .last()
+            .cloned()
+            .ok_or_else(|| RuntimeError::new("last() on empty array")),
+        Value::Tuple(t) => t
+            .last()
+            .cloned()
+            .ok_or_else(|| RuntimeError::new("last() on empty tuple")),
+        _ => Err(RuntimeError::new("last() requires array or tuple")),
     });
 
     // μ (mu) - middle/median element
-    define(interp, "middle", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                if arr.is_empty() {
-                    return Err(RuntimeError::new("middle() on empty array"));
-                }
-                let mid = arr.len() / 2;
-                Ok(arr[mid].clone())
+    define(interp, "middle", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            if arr.is_empty() {
+                return Err(RuntimeError::new("middle() on empty array"));
             }
-            Value::Tuple(t) => {
-                if t.is_empty() {
-                    return Err(RuntimeError::new("middle() on empty tuple"));
-                }
-                let mid = t.len() / 2;
-                Ok(t[mid].clone())
-            }
-            _ => Err(RuntimeError::new("middle() requires array or tuple")),
+            let mid = arr.len() / 2;
+            Ok(arr[mid].clone())
         }
+        Value::Tuple(t) => {
+            if t.is_empty() {
+                return Err(RuntimeError::new("middle() on empty tuple"));
+            }
+            let mid = t.len() / 2;
+            Ok(t[mid].clone())
+        }
+        _ => Err(RuntimeError::new("middle() requires array or tuple")),
     });
 
     // χ (chi) - random choice from collection
@@ -841,7 +805,8 @@ fn register_collections(interp: &mut Interpreter) {
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or(std::time::Duration::ZERO)
                     .as_nanos() as u64;
-                let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % arr.len();
+                let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize
+                    % arr.len();
                 Ok(arr[idx].clone())
             }
             Value::Tuple(t) => {
@@ -852,7 +817,8 @@ fn register_collections(interp: &mut Interpreter) {
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or(std::time::Duration::ZERO)
                     .as_nanos() as u64;
-                let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % t.len();
+                let idx =
+                    ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % t.len();
                 Ok(t[idx].clone())
             }
             _ => Err(RuntimeError::new("choice() requires array or tuple")),
@@ -884,28 +850,25 @@ fn register_collections(interp: &mut Interpreter) {
     });
 
     // ξ (xi) - next: pop and return first element (advances iterator)
-    define(interp, "next", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let mut arr = arr.borrow_mut();
-                if arr.is_empty() {
-                    return Err(RuntimeError::new("next() on empty array"));
-                }
-                Ok(arr.remove(0))
+    define(interp, "next", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let mut arr = arr.borrow_mut();
+            if arr.is_empty() {
+                return Err(RuntimeError::new("next() on empty array"));
             }
-            _ => Err(RuntimeError::new("next() requires array")),
+            Ok(arr.remove(0))
         }
+        _ => Err(RuntimeError::new("next() requires array")),
     });
 
     // peek - look at first element without consuming (for iterators)
-    define(interp, "peek", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                arr.borrow().first().cloned()
-                    .ok_or_else(|| RuntimeError::new("peek() on empty array"))
-            }
-            _ => Err(RuntimeError::new("peek() requires array")),
-        }
+    define(interp, "peek", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => arr
+            .borrow()
+            .first()
+            .cloned()
+            .ok_or_else(|| RuntimeError::new("peek() on empty array")),
+        _ => Err(RuntimeError::new("peek() requires array")),
     });
 
     define(interp, "get", Some(2), |_, args| {
@@ -916,13 +879,23 @@ fn register_collections(interp: &mut Interpreter) {
         match &args[0] {
             Value::Array(arr) => {
                 let arr = arr.borrow();
-                let idx = if index < 0 { arr.len() as i64 + index } else { index } as usize;
-                arr.get(idx).cloned()
+                let idx = if index < 0 {
+                    arr.len() as i64 + index
+                } else {
+                    index
+                } as usize;
+                arr.get(idx)
+                    .cloned()
                     .ok_or_else(|| RuntimeError::new("index out of bounds"))
             }
             Value::Tuple(t) => {
-                let idx = if index < 0 { t.len() as i64 + index } else { index } as usize;
-                t.get(idx).cloned()
+                let idx = if index < 0 {
+                    t.len() as i64 + index
+                } else {
+                    index
+                } as usize;
+                t.get(idx)
+                    .cloned()
                     .ok_or_else(|| RuntimeError::new("index out of bounds"))
             }
             _ => Err(RuntimeError::new("get() requires array or tuple")),
@@ -982,137 +955,118 @@ fn register_collections(interp: &mut Interpreter) {
         }
     });
 
-    define(interp, "clear", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                arr.borrow_mut().clear();
-                Ok(Value::Null)
-            }
-            _ => Err(RuntimeError::new("clear() requires array")),
+    define(interp, "clear", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            arr.borrow_mut().clear();
+            Ok(Value::Null)
         }
+        _ => Err(RuntimeError::new("clear() requires array")),
     });
 
     // Searching
-    define(interp, "contains", Some(2), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                Ok(Value::Bool(arr.borrow().iter().any(|v| values_equal(v, &args[1]))))
-            }
-            Value::String(s) => {
-                match &args[1] {
-                    Value::String(sub) => Ok(Value::Bool(s.contains(sub.as_str()))),
-                    Value::Char(c) => Ok(Value::Bool(s.contains(*c))),
-                    _ => Err(RuntimeError::new("string contains() requires string or char")),
-                }
-            }
-            _ => Err(RuntimeError::new("contains() requires array or string")),
-        }
+    define(interp, "contains", Some(2), |_, args| match &args[0] {
+        Value::Array(arr) => Ok(Value::Bool(
+            arr.borrow().iter().any(|v| values_equal(v, &args[1])),
+        )),
+        Value::String(s) => match &args[1] {
+            Value::String(sub) => Ok(Value::Bool(s.contains(sub.as_str()))),
+            Value::Char(c) => Ok(Value::Bool(s.contains(*c))),
+            _ => Err(RuntimeError::new(
+                "string contains() requires string or char",
+            )),
+        },
+        _ => Err(RuntimeError::new("contains() requires array or string")),
     });
 
-    define(interp, "index_of", Some(2), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let idx = arr.borrow().iter().position(|v| values_equal(v, &args[1]));
-                match idx {
-                    Some(i) => Ok(Value::Int(i as i64)),
-                    None => Ok(Value::Int(-1)),
-                }
+    define(interp, "index_of", Some(2), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let idx = arr.borrow().iter().position(|v| values_equal(v, &args[1]));
+            match idx {
+                Some(i) => Ok(Value::Int(i as i64)),
+                None => Ok(Value::Int(-1)),
             }
-            Value::String(s) => {
-                match &args[1] {
-                    Value::String(sub) => {
-                        match s.find(sub.as_str()) {
-                            Some(i) => Ok(Value::Int(i as i64)),
-                            None => Ok(Value::Int(-1)),
-                        }
-                    }
-                    Value::Char(c) => {
-                        match s.find(*c) {
-                            Some(i) => Ok(Value::Int(i as i64)),
-                            None => Ok(Value::Int(-1)),
-                        }
-                    }
-                    _ => Err(RuntimeError::new("string index_of() requires string or char")),
-                }
-            }
-            _ => Err(RuntimeError::new("index_of() requires array or string")),
         }
+        Value::String(s) => match &args[1] {
+            Value::String(sub) => match s.find(sub.as_str()) {
+                Some(i) => Ok(Value::Int(i as i64)),
+                None => Ok(Value::Int(-1)),
+            },
+            Value::Char(c) => match s.find(*c) {
+                Some(i) => Ok(Value::Int(i as i64)),
+                None => Ok(Value::Int(-1)),
+            },
+            _ => Err(RuntimeError::new(
+                "string index_of() requires string or char",
+            )),
+        },
+        _ => Err(RuntimeError::new("index_of() requires array or string")),
     });
 
     // Transformations
-    define(interp, "reverse", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let mut reversed: Vec<Value> = arr.borrow().clone();
-                reversed.reverse();
-                Ok(Value::Array(Rc::new(RefCell::new(reversed))))
-            }
-            Value::String(s) => {
-                let reversed: String = s.chars().rev().collect();
-                Ok(Value::String(Rc::new(reversed)))
-            }
-            _ => Err(RuntimeError::new("reverse() requires array or string")),
+    define(interp, "reverse", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let mut reversed: Vec<Value> = arr.borrow().clone();
+            reversed.reverse();
+            Ok(Value::Array(Rc::new(RefCell::new(reversed))))
         }
+        Value::String(s) => {
+            let reversed: String = s.chars().rev().collect();
+            Ok(Value::String(Rc::new(reversed)))
+        }
+        _ => Err(RuntimeError::new("reverse() requires array or string")),
     });
 
-    define(interp, "sort", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let mut sorted: Vec<Value> = arr.borrow().clone();
-                sorted.sort_by(compare_values);
-                Ok(Value::Array(Rc::new(RefCell::new(sorted))))
-            }
-            _ => Err(RuntimeError::new("sort() requires array")),
+    define(interp, "sort", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let mut sorted: Vec<Value> = arr.borrow().clone();
+            sorted.sort_by(compare_values);
+            Ok(Value::Array(Rc::new(RefCell::new(sorted))))
         }
+        _ => Err(RuntimeError::new("sort() requires array")),
     });
 
-    define(interp, "sort_desc", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let mut sorted: Vec<Value> = arr.borrow().clone();
-                sorted.sort_by(|a, b| compare_values(b, a));
-                Ok(Value::Array(Rc::new(RefCell::new(sorted))))
-            }
-            _ => Err(RuntimeError::new("sort_desc() requires array")),
+    define(interp, "sort_desc", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let mut sorted: Vec<Value> = arr.borrow().clone();
+            sorted.sort_by(|a, b| compare_values(b, a));
+            Ok(Value::Array(Rc::new(RefCell::new(sorted))))
         }
+        _ => Err(RuntimeError::new("sort_desc() requires array")),
     });
 
-    define(interp, "unique", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                let mut seen = Vec::new();
-                let unique: Vec<Value> = arr.iter()
-                    .filter(|v| {
-                        if seen.iter().any(|s| values_equal(s, v)) {
-                            false
-                        } else {
-                            seen.push((*v).clone());
-                            true
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                Ok(Value::Array(Rc::new(RefCell::new(unique))))
-            }
-            _ => Err(RuntimeError::new("unique() requires array")),
-        }
-    });
-
-    define(interp, "flatten", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let mut flattened = Vec::new();
-                for item in arr.borrow().iter() {
-                    match item {
-                        Value::Array(inner) => flattened.extend(inner.borrow().clone()),
-                        other => flattened.push(other.clone()),
+    define(interp, "unique", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            let mut seen = Vec::new();
+            let unique: Vec<Value> = arr
+                .iter()
+                .filter(|v| {
+                    if seen.iter().any(|s| values_equal(s, v)) {
+                        false
+                    } else {
+                        seen.push((*v).clone());
+                        true
                     }
-                }
-                Ok(Value::Array(Rc::new(RefCell::new(flattened))))
-            }
-            _ => Err(RuntimeError::new("flatten() requires array")),
+                })
+                .cloned()
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(unique))))
         }
+        _ => Err(RuntimeError::new("unique() requires array")),
+    });
+
+    define(interp, "flatten", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let mut flattened = Vec::new();
+            for item in arr.borrow().iter() {
+                match item {
+                    Value::Array(inner) => flattened.extend(inner.borrow().clone()),
+                    other => flattened.push(other.clone()),
+                }
+            }
+            Ok(Value::Array(Rc::new(RefCell::new(flattened))))
+        }
+        _ => Err(RuntimeError::new("flatten() requires array")),
     });
 
     // Combining
@@ -1126,7 +1080,9 @@ fn register_collections(interp: &mut Interpreter) {
             (Value::String(a), Value::String(b)) => {
                 Ok(Value::String(Rc::new(format!("{}{}", a, b))))
             }
-            _ => Err(RuntimeError::new("concat() requires two arrays or two strings")),
+            _ => Err(RuntimeError::new(
+                "concat() requires two arrays or two strings",
+            )),
         }
     });
 
@@ -1135,7 +1091,9 @@ fn register_collections(interp: &mut Interpreter) {
             (Value::Array(a), Value::Array(b)) => {
                 let a = a.borrow();
                 let b = b.borrow();
-                let zipped: Vec<Value> = a.iter().zip(b.iter())
+                let zipped: Vec<Value> = a
+                    .iter()
+                    .zip(b.iter())
                     .map(|(x, y)| Value::Tuple(Rc::new(vec![x.clone(), y.clone()])))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(zipped))))
@@ -1144,17 +1102,17 @@ fn register_collections(interp: &mut Interpreter) {
         }
     });
 
-    define(interp, "enumerate", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let enumerated: Vec<Value> = arr.borrow().iter()
-                    .enumerate()
-                    .map(|(i, v)| Value::Tuple(Rc::new(vec![Value::Int(i as i64), v.clone()])))
-                    .collect();
-                Ok(Value::Array(Rc::new(RefCell::new(enumerated))))
-            }
-            _ => Err(RuntimeError::new("enumerate() requires array")),
+    define(interp, "enumerate", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let enumerated: Vec<Value> = arr
+                .borrow()
+                .iter()
+                .enumerate()
+                .map(|(i, v)| Value::Tuple(Rc::new(vec![Value::Int(i as i64), v.clone()])))
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(enumerated))))
         }
+        _ => Err(RuntimeError::new("enumerate() requires array")),
     });
 
     // ⋈ (bowtie) - zip_with: combine two arrays with a function
@@ -1168,18 +1126,18 @@ fn register_collections(interp: &mut Interpreter) {
             (Value::Array(a), Value::Array(b)) => {
                 let a = a.borrow();
                 let b = b.borrow();
-                let result: Result<Vec<Value>, RuntimeError> = a.iter().zip(b.iter())
-                    .map(|(x, y)| {
-                        match (x, y, mode) {
-                            (Value::Int(a), Value::Int(b), "add") => Ok(Value::Int(a + b)),
-                            (Value::Int(a), Value::Int(b), "sub") => Ok(Value::Int(a - b)),
-                            (Value::Int(a), Value::Int(b), "mul") => Ok(Value::Int(a * b)),
-                            (Value::Float(a), Value::Float(b), "add") => Ok(Value::Float(a + b)),
-                            (Value::Float(a), Value::Float(b), "sub") => Ok(Value::Float(a - b)),
-                            (Value::Float(a), Value::Float(b), "mul") => Ok(Value::Float(a * b)),
-                            (_, _, "pair") => Ok(Value::Tuple(Rc::new(vec![x.clone(), y.clone()]))),
-                            _ => Err(RuntimeError::new("zip_with() incompatible types or mode")),
-                        }
+                let result: Result<Vec<Value>, RuntimeError> = a
+                    .iter()
+                    .zip(b.iter())
+                    .map(|(x, y)| match (x, y, mode) {
+                        (Value::Int(a), Value::Int(b), "add") => Ok(Value::Int(a + b)),
+                        (Value::Int(a), Value::Int(b), "sub") => Ok(Value::Int(a - b)),
+                        (Value::Int(a), Value::Int(b), "mul") => Ok(Value::Int(a * b)),
+                        (Value::Float(a), Value::Float(b), "add") => Ok(Value::Float(a + b)),
+                        (Value::Float(a), Value::Float(b), "sub") => Ok(Value::Float(a - b)),
+                        (Value::Float(a), Value::Float(b), "mul") => Ok(Value::Float(a * b)),
+                        (_, _, "pair") => Ok(Value::Tuple(Rc::new(vec![x.clone(), y.clone()]))),
+                        _ => Err(RuntimeError::new("zip_with() incompatible types or mode")),
                     })
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(result?))))
@@ -1197,7 +1155,9 @@ fn register_collections(interp: &mut Interpreter) {
                 // Element-wise max
                 let a = a.borrow();
                 let b = b.borrow();
-                let result: Result<Vec<Value>, RuntimeError> = a.iter().zip(b.iter())
+                let result: Result<Vec<Value>, RuntimeError> = a
+                    .iter()
+                    .zip(b.iter())
                     .map(|(x, y)| match (x, y) {
                         (Value::Int(a), Value::Int(b)) => Ok(Value::Int(*a.max(b))),
                         (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a.max(*b))),
@@ -1206,7 +1166,9 @@ fn register_collections(interp: &mut Interpreter) {
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(result?))))
             }
-            _ => Err(RuntimeError::new("supremum() requires numeric values or arrays")),
+            _ => Err(RuntimeError::new(
+                "supremum() requires numeric values or arrays",
+            )),
         }
     });
 
@@ -1219,7 +1181,9 @@ fn register_collections(interp: &mut Interpreter) {
                 // Element-wise min
                 let a = a.borrow();
                 let b = b.borrow();
-                let result: Result<Vec<Value>, RuntimeError> = a.iter().zip(b.iter())
+                let result: Result<Vec<Value>, RuntimeError> = a
+                    .iter()
+                    .zip(b.iter())
                     .map(|(x, y)| match (x, y) {
                         (Value::Int(a), Value::Int(b)) => Ok(Value::Int(*a.min(b))),
                         (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a.min(*b))),
@@ -1228,7 +1192,9 @@ fn register_collections(interp: &mut Interpreter) {
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(result?))))
             }
-            _ => Err(RuntimeError::new("infimum() requires numeric values or arrays")),
+            _ => Err(RuntimeError::new(
+                "infimum() requires numeric values or arrays",
+            )),
         }
     });
 
@@ -1294,7 +1260,8 @@ fn register_collections(interp: &mut Interpreter) {
         };
         match &args[0] {
             Value::Array(arr) => {
-                let chunks: Vec<Value> = arr.borrow()
+                let chunks: Vec<Value> = arr
+                    .borrow()
                     .chunks(size)
                     .map(|c| Value::Array(Rc::new(RefCell::new(c.to_vec()))))
                     .collect();
@@ -1334,7 +1301,11 @@ fn register_collections(interp: &mut Interpreter) {
     define(interp, "repeat", Some(2), |_, args| {
         let n = match &args[1] {
             Value::Int(i) if *i >= 0 => *i as usize,
-            _ => return Err(RuntimeError::new("repeat() count must be non-negative integer")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "repeat() count must be non-negative integer",
+                ))
+            }
         };
         let repeated: Vec<Value> = std::iter::repeat(args[0].clone()).take(n).collect();
         Ok(Value::Array(Rc::new(RefCell::new(repeated))))
@@ -1356,9 +1327,7 @@ fn register_collections(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("map_get() key must be string")),
         };
         match &args[0] {
-            Value::Map(map) => {
-                Ok(map.borrow().get(&key).cloned().unwrap_or(Value::Null))
-            }
+            Value::Map(map) => Ok(map.borrow().get(&key).cloned().unwrap_or(Value::Null)),
             _ => Err(RuntimeError::new("map_get() requires map")),
         }
     });
@@ -1385,9 +1354,7 @@ fn register_collections(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("map_has() key must be string")),
         };
         match &args[0] {
-            Value::Map(map) => {
-                Ok(Value::Bool(map.borrow().contains_key(&key)))
-            }
+            Value::Map(map) => Ok(Value::Bool(map.borrow().contains_key(&key))),
             _ => Err(RuntimeError::new("map_has() requires map")),
         }
     });
@@ -1399,54 +1366,46 @@ fn register_collections(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("map_remove() key must be string")),
         };
         match &args[0] {
-            Value::Map(map) => {
-                Ok(map.borrow_mut().remove(&key).unwrap_or(Value::Null))
-            }
+            Value::Map(map) => Ok(map.borrow_mut().remove(&key).unwrap_or(Value::Null)),
             _ => Err(RuntimeError::new("map_remove() requires map")),
         }
     });
 
     // map_keys - get all keys as array
-    define(interp, "map_keys", Some(1), |_, args| {
-        match &args[0] {
-            Value::Map(map) => {
-                let keys: Vec<Value> = map.borrow().keys()
-                    .map(|k| Value::String(Rc::new(k.clone())))
-                    .collect();
-                Ok(Value::Array(Rc::new(RefCell::new(keys))))
-            }
-            _ => Err(RuntimeError::new("map_keys() requires map")),
+    define(interp, "map_keys", Some(1), |_, args| match &args[0] {
+        Value::Map(map) => {
+            let keys: Vec<Value> = map
+                .borrow()
+                .keys()
+                .map(|k| Value::String(Rc::new(k.clone())))
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(keys))))
         }
+        _ => Err(RuntimeError::new("map_keys() requires map")),
     });
 
     // map_values - get all values as array
-    define(interp, "map_values", Some(1), |_, args| {
-        match &args[0] {
-            Value::Map(map) => {
-                let values: Vec<Value> = map.borrow().values().cloned().collect();
-                Ok(Value::Array(Rc::new(RefCell::new(values))))
-            }
-            _ => Err(RuntimeError::new("map_values() requires map")),
+    define(interp, "map_values", Some(1), |_, args| match &args[0] {
+        Value::Map(map) => {
+            let values: Vec<Value> = map.borrow().values().cloned().collect();
+            Ok(Value::Array(Rc::new(RefCell::new(values))))
         }
+        _ => Err(RuntimeError::new("map_values() requires map")),
     });
 
     // map_len - get number of entries
-    define(interp, "map_len", Some(1), |_, args| {
-        match &args[0] {
-            Value::Map(map) => Ok(Value::Int(map.borrow().len() as i64)),
-            _ => Err(RuntimeError::new("map_len() requires map")),
-        }
+    define(interp, "map_len", Some(1), |_, args| match &args[0] {
+        Value::Map(map) => Ok(Value::Int(map.borrow().len() as i64)),
+        _ => Err(RuntimeError::new("map_len() requires map")),
     });
 
     // map_clear - remove all entries
-    define(interp, "map_clear", Some(1), |_, args| {
-        match &args[0] {
-            Value::Map(map) => {
-                map.borrow_mut().clear();
-                Ok(Value::Null)
-            }
-            _ => Err(RuntimeError::new("map_clear() requires map")),
+    define(interp, "map_clear", Some(1), |_, args| match &args[0] {
+        Value::Map(map) => {
+            map.borrow_mut().clear();
+            Ok(Value::Null)
         }
+        _ => Err(RuntimeError::new("map_clear() requires map")),
     });
 
     // ========================================
@@ -1455,7 +1414,9 @@ fn register_collections(interp: &mut Interpreter) {
 
     // set_new - create empty HashSet
     define(interp, "set_new", Some(0), |_, _| {
-        Ok(Value::Set(Rc::new(RefCell::new(std::collections::HashSet::new()))))
+        Ok(Value::Set(Rc::new(RefCell::new(
+            std::collections::HashSet::new(),
+        ))))
     });
 
     // set_add - add item to set
@@ -1480,9 +1441,7 @@ fn register_collections(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("set_has() item must be string")),
         };
         match &args[0] {
-            Value::Set(set) => {
-                Ok(Value::Bool(set.borrow().contains(&item)))
-            }
+            Value::Set(set) => Ok(Value::Bool(set.borrow().contains(&item))),
             _ => Err(RuntimeError::new("set_has() requires set")),
         }
     });
@@ -1494,43 +1453,37 @@ fn register_collections(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("set_remove() item must be string")),
         };
         match &args[0] {
-            Value::Set(set) => {
-                Ok(Value::Bool(set.borrow_mut().remove(&item)))
-            }
+            Value::Set(set) => Ok(Value::Bool(set.borrow_mut().remove(&item))),
             _ => Err(RuntimeError::new("set_remove() requires set")),
         }
     });
 
     // set_to_array - convert set to array
-    define(interp, "set_to_array", Some(1), |_, args| {
-        match &args[0] {
-            Value::Set(set) => {
-                let items: Vec<Value> = set.borrow().iter()
-                    .map(|s| Value::String(Rc::new(s.clone())))
-                    .collect();
-                Ok(Value::Array(Rc::new(RefCell::new(items))))
-            }
-            _ => Err(RuntimeError::new("set_to_array() requires set")),
+    define(interp, "set_to_array", Some(1), |_, args| match &args[0] {
+        Value::Set(set) => {
+            let items: Vec<Value> = set
+                .borrow()
+                .iter()
+                .map(|s| Value::String(Rc::new(s.clone())))
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(items))))
         }
+        _ => Err(RuntimeError::new("set_to_array() requires set")),
     });
 
     // set_len - get number of items
-    define(interp, "set_len", Some(1), |_, args| {
-        match &args[0] {
-            Value::Set(set) => Ok(Value::Int(set.borrow().len() as i64)),
-            _ => Err(RuntimeError::new("set_len() requires set")),
-        }
+    define(interp, "set_len", Some(1), |_, args| match &args[0] {
+        Value::Set(set) => Ok(Value::Int(set.borrow().len() as i64)),
+        _ => Err(RuntimeError::new("set_len() requires set")),
     });
 
     // set_clear - remove all items
-    define(interp, "set_clear", Some(1), |_, args| {
-        match &args[0] {
-            Value::Set(set) => {
-                set.borrow_mut().clear();
-                Ok(Value::Null)
-            }
-            _ => Err(RuntimeError::new("set_clear() requires set")),
+    define(interp, "set_clear", Some(1), |_, args| match &args[0] {
+        Value::Set(set) => {
+            set.borrow_mut().clear();
+            Ok(Value::Null)
         }
+        _ => Err(RuntimeError::new("set_clear() requires set")),
     });
 }
 
@@ -1569,36 +1522,34 @@ fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
 // ============================================================================
 
 fn register_string(interp: &mut Interpreter) {
-    define(interp, "chars", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let chars: Vec<Value> = s.chars().map(Value::Char).collect();
-                Ok(Value::Array(Rc::new(RefCell::new(chars))))
-            }
-            _ => Err(RuntimeError::new("chars() requires string")),
+    define(interp, "chars", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let chars: Vec<Value> = s.chars().map(Value::Char).collect();
+            Ok(Value::Array(Rc::new(RefCell::new(chars))))
         }
+        _ => Err(RuntimeError::new("chars() requires string")),
     });
 
-    define(interp, "bytes", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let bytes: Vec<Value> = s.bytes().map(|b| Value::Int(b as i64)).collect();
-                Ok(Value::Array(Rc::new(RefCell::new(bytes))))
-            }
-            _ => Err(RuntimeError::new("bytes() requires string")),
+    define(interp, "bytes", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let bytes: Vec<Value> = s.bytes().map(|b| Value::Int(b as i64)).collect();
+            Ok(Value::Array(Rc::new(RefCell::new(bytes))))
         }
+        _ => Err(RuntimeError::new("bytes() requires string")),
     });
 
     define(interp, "split", Some(2), |_, args| {
         match (&args[0], &args[1]) {
             (Value::String(s), Value::String(sep)) => {
-                let parts: Vec<Value> = s.split(sep.as_str())
+                let parts: Vec<Value> = s
+                    .split(sep.as_str())
                     .map(|p| Value::String(Rc::new(p.to_string())))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(parts))))
             }
             (Value::String(s), Value::Char(sep)) => {
-                let parts: Vec<Value> = s.split(*sep)
+                let parts: Vec<Value> = s
+                    .split(*sep)
                     .map(|p| Value::String(Rc::new(p.to_string())))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(parts))))
@@ -1610,71 +1561,59 @@ fn register_string(interp: &mut Interpreter) {
     define(interp, "join", Some(2), |_, args| {
         match (&args[0], &args[1]) {
             (Value::Array(arr), Value::String(sep)) => {
-                let parts: Vec<String> = arr.borrow().iter()
-                    .map(|v| format!("{}", v))
-                    .collect();
+                let parts: Vec<String> = arr.borrow().iter().map(|v| format!("{}", v)).collect();
                 Ok(Value::String(Rc::new(parts.join(sep.as_str()))))
             }
-            _ => Err(RuntimeError::new("join() requires array and separator string")),
+            _ => Err(RuntimeError::new(
+                "join() requires array and separator string",
+            )),
         }
     });
 
-    define(interp, "trim", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::String(Rc::new(s.trim().to_string()))),
-            _ => Err(RuntimeError::new("trim() requires string")),
-        }
+    define(interp, "trim", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::String(Rc::new(s.trim().to_string()))),
+        _ => Err(RuntimeError::new("trim() requires string")),
     });
 
-    define(interp, "trim_start", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::String(Rc::new(s.trim_start().to_string()))),
-            _ => Err(RuntimeError::new("trim_start() requires string")),
-        }
+    define(interp, "trim_start", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::String(Rc::new(s.trim_start().to_string()))),
+        _ => Err(RuntimeError::new("trim_start() requires string")),
     });
 
-    define(interp, "trim_end", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::String(Rc::new(s.trim_end().to_string()))),
-            _ => Err(RuntimeError::new("trim_end() requires string")),
-        }
+    define(interp, "trim_end", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::String(Rc::new(s.trim_end().to_string()))),
+        _ => Err(RuntimeError::new("trim_end() requires string")),
     });
 
-    define(interp, "upper", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::String(Rc::new(s.to_uppercase()))),
-            Value::Char(c) => Ok(Value::Char(c.to_uppercase().next().unwrap_or(*c))),
-            _ => Err(RuntimeError::new("upper() requires string or char")),
-        }
+    define(interp, "upper", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::String(Rc::new(s.to_uppercase()))),
+        Value::Char(c) => Ok(Value::Char(c.to_uppercase().next().unwrap_or(*c))),
+        _ => Err(RuntimeError::new("upper() requires string or char")),
     });
 
-    define(interp, "lower", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::String(Rc::new(s.to_lowercase()))),
-            Value::Char(c) => Ok(Value::Char(c.to_lowercase().next().unwrap_or(*c))),
-            _ => Err(RuntimeError::new("lower() requires string or char")),
-        }
+    define(interp, "lower", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::String(Rc::new(s.to_lowercase()))),
+        Value::Char(c) => Ok(Value::Char(c.to_lowercase().next().unwrap_or(*c))),
+        _ => Err(RuntimeError::new("lower() requires string or char")),
     });
 
-    define(interp, "capitalize", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let mut chars = s.chars();
-                let capitalized = match chars.next() {
-                    None => String::new(),
-                    Some(c) => c.to_uppercase().chain(chars).collect(),
-                };
-                Ok(Value::String(Rc::new(capitalized)))
-            }
-            _ => Err(RuntimeError::new("capitalize() requires string")),
+    define(interp, "capitalize", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let mut chars = s.chars();
+            let capitalized = match chars.next() {
+                None => String::new(),
+                Some(c) => c.to_uppercase().chain(chars).collect(),
+            };
+            Ok(Value::String(Rc::new(capitalized)))
         }
+        _ => Err(RuntimeError::new("capitalize() requires string")),
     });
 
     define(interp, "replace", Some(3), |_, args| {
         match (&args[0], &args[1], &args[2]) {
-            (Value::String(s), Value::String(from), Value::String(to)) => {
-                Ok(Value::String(Rc::new(s.replace(from.as_str(), to.as_str()))))
-            }
+            (Value::String(s), Value::String(from), Value::String(to)) => Ok(Value::String(
+                Rc::new(s.replace(from.as_str(), to.as_str())),
+            )),
             _ => Err(RuntimeError::new("replace() requires three strings")),
         }
     });
@@ -1702,7 +1641,9 @@ fn register_string(interp: &mut Interpreter) {
             (Value::String(s), Value::Int(n)) if *n >= 0 => {
                 Ok(Value::String(Rc::new(s.repeat(*n as usize))))
             }
-            _ => Err(RuntimeError::new("repeat_str() requires string and non-negative integer")),
+            _ => Err(RuntimeError::new(
+                "repeat_str() requires string and non-negative integer",
+            )),
         }
     });
 
@@ -1717,7 +1658,9 @@ fn register_string(interp: &mut Interpreter) {
                     Ok(Value::String(Rc::new(format!("{}{}", padding, s))))
                 }
             }
-            _ => Err(RuntimeError::new("pad_left() requires string, width, and char")),
+            _ => Err(RuntimeError::new(
+                "pad_left() requires string, width, and char",
+            )),
         }
     });
 
@@ -1732,64 +1675,64 @@ fn register_string(interp: &mut Interpreter) {
                     Ok(Value::String(Rc::new(format!("{}{}", s, padding))))
                 }
             }
-            _ => Err(RuntimeError::new("pad_right() requires string, width, and char")),
+            _ => Err(RuntimeError::new(
+                "pad_right() requires string, width, and char",
+            )),
         }
     });
 
-    define(interp, "lines", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let lines: Vec<Value> = s.lines()
-                    .map(|l| Value::String(Rc::new(l.to_string())))
-                    .collect();
-                Ok(Value::Array(Rc::new(RefCell::new(lines))))
-            }
-            _ => Err(RuntimeError::new("lines() requires string")),
+    define(interp, "lines", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let lines: Vec<Value> = s
+                .lines()
+                .map(|l| Value::String(Rc::new(l.to_string())))
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(lines))))
         }
+        _ => Err(RuntimeError::new("lines() requires string")),
     });
 
-    define(interp, "words", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let words: Vec<Value> = s.split_whitespace()
-                    .map(|w| Value::String(Rc::new(w.to_string())))
-                    .collect();
-                Ok(Value::Array(Rc::new(RefCell::new(words))))
-            }
-            _ => Err(RuntimeError::new("words() requires string")),
+    define(interp, "words", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let words: Vec<Value> = s
+                .split_whitespace()
+                .map(|w| Value::String(Rc::new(w.to_string())))
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(words))))
         }
+        _ => Err(RuntimeError::new("words() requires string")),
     });
 
-    define(interp, "is_alpha", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::Bool(!s.is_empty() && s.chars().all(|c| c.is_alphabetic()))),
-            Value::Char(c) => Ok(Value::Bool(c.is_alphabetic())),
-            _ => Err(RuntimeError::new("is_alpha() requires string or char")),
-        }
+    define(interp, "is_alpha", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::Bool(
+            !s.is_empty() && s.chars().all(|c| c.is_alphabetic()),
+        )),
+        Value::Char(c) => Ok(Value::Bool(c.is_alphabetic())),
+        _ => Err(RuntimeError::new("is_alpha() requires string or char")),
     });
 
-    define(interp, "is_digit", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::Bool(!s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))),
-            Value::Char(c) => Ok(Value::Bool(c.is_ascii_digit())),
-            _ => Err(RuntimeError::new("is_digit() requires string or char")),
-        }
+    define(interp, "is_digit", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::Bool(
+            !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()),
+        )),
+        Value::Char(c) => Ok(Value::Bool(c.is_ascii_digit())),
+        _ => Err(RuntimeError::new("is_digit() requires string or char")),
     });
 
-    define(interp, "is_alnum", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::Bool(!s.is_empty() && s.chars().all(|c| c.is_alphanumeric()))),
-            Value::Char(c) => Ok(Value::Bool(c.is_alphanumeric())),
-            _ => Err(RuntimeError::new("is_alnum() requires string or char")),
-        }
+    define(interp, "is_alnum", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::Bool(
+            !s.is_empty() && s.chars().all(|c| c.is_alphanumeric()),
+        )),
+        Value::Char(c) => Ok(Value::Bool(c.is_alphanumeric())),
+        _ => Err(RuntimeError::new("is_alnum() requires string or char")),
     });
 
-    define(interp, "is_space", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::Bool(!s.is_empty() && s.chars().all(|c| c.is_whitespace()))),
-            Value::Char(c) => Ok(Value::Bool(c.is_whitespace())),
-            _ => Err(RuntimeError::new("is_space() requires string or char")),
-        }
+    define(interp, "is_space", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::Bool(
+            !s.is_empty() && s.chars().all(|c| c.is_whitespace()),
+        )),
+        Value::Char(c) => Ok(Value::Bool(c.is_whitespace())),
+        _ => Err(RuntimeError::new("is_space() requires string or char")),
     });
 
     // =========================================================================
@@ -1809,40 +1752,36 @@ fn register_string(interp: &mut Interpreter) {
                     None => Ok(Value::Int(-1)),
                 }
             }
-            (Value::String(s), Value::Char(c)) => {
-                match s.find(*c) {
-                    Some(byte_idx) => {
-                        let char_idx = s[..byte_idx].chars().count() as i64;
-                        Ok(Value::Int(char_idx))
-                    }
-                    None => Ok(Value::Int(-1)),
+            (Value::String(s), Value::Char(c)) => match s.find(*c) {
+                Some(byte_idx) => {
+                    let char_idx = s[..byte_idx].chars().count() as i64;
+                    Ok(Value::Int(char_idx))
                 }
-            }
-            _ => Err(RuntimeError::new("find() requires string and substring/char")),
+                None => Ok(Value::Int(-1)),
+            },
+            _ => Err(RuntimeError::new(
+                "find() requires string and substring/char",
+            )),
         }
     });
 
     // index_of - find index of element in array or substring in string
     define(interp, "index_of", Some(2), |_, args| {
         match (&args[0], &args[1]) {
-            (Value::String(s), Value::String(sub)) => {
-                match s.find(sub.as_str()) {
-                    Some(byte_idx) => {
-                        let char_idx = s[..byte_idx].chars().count() as i64;
-                        Ok(Value::Int(char_idx))
-                    }
-                    None => Ok(Value::Int(-1)),
+            (Value::String(s), Value::String(sub)) => match s.find(sub.as_str()) {
+                Some(byte_idx) => {
+                    let char_idx = s[..byte_idx].chars().count() as i64;
+                    Ok(Value::Int(char_idx))
                 }
-            }
-            (Value::String(s), Value::Char(c)) => {
-                match s.find(*c) {
-                    Some(byte_idx) => {
-                        let char_idx = s[..byte_idx].chars().count() as i64;
-                        Ok(Value::Int(char_idx))
-                    }
-                    None => Ok(Value::Int(-1)),
+                None => Ok(Value::Int(-1)),
+            },
+            (Value::String(s), Value::Char(c)) => match s.find(*c) {
+                Some(byte_idx) => {
+                    let char_idx = s[..byte_idx].chars().count() as i64;
+                    Ok(Value::Int(char_idx))
                 }
-            }
+                None => Ok(Value::Int(-1)),
+            },
             (Value::Array(arr), search) => {
                 // Array index_of - use Value comparison
                 for (i, v) in arr.borrow().iter().enumerate() {
@@ -1852,40 +1791,61 @@ fn register_string(interp: &mut Interpreter) {
                 }
                 Ok(Value::Int(-1))
             }
-            _ => Err(RuntimeError::new("index_of() requires array/string and element/substring")),
+            _ => Err(RuntimeError::new(
+                "index_of() requires array/string and element/substring",
+            )),
         }
     });
 
     // last_index_of - find last occurrence of substring
     define(interp, "last_index_of", Some(2), |_, args| {
         match (&args[0], &args[1]) {
-            (Value::String(s), Value::String(sub)) => {
-                match s.rfind(sub.as_str()) {
-                    Some(byte_idx) => {
-                        let char_idx = s[..byte_idx].chars().count() as i64;
-                        Ok(Value::Int(char_idx))
-                    }
-                    None => Ok(Value::Int(-1)),
+            (Value::String(s), Value::String(sub)) => match s.rfind(sub.as_str()) {
+                Some(byte_idx) => {
+                    let char_idx = s[..byte_idx].chars().count() as i64;
+                    Ok(Value::Int(char_idx))
                 }
-            }
-            (Value::String(s), Value::Char(c)) => {
-                match s.rfind(*c) {
-                    Some(byte_idx) => {
-                        let char_idx = s[..byte_idx].chars().count() as i64;
-                        Ok(Value::Int(char_idx))
-                    }
-                    None => Ok(Value::Int(-1)),
+                None => Ok(Value::Int(-1)),
+            },
+            (Value::String(s), Value::Char(c)) => match s.rfind(*c) {
+                Some(byte_idx) => {
+                    let char_idx = s[..byte_idx].chars().count() as i64;
+                    Ok(Value::Int(char_idx))
                 }
-            }
-            _ => Err(RuntimeError::new("last_index_of() requires string and substring/char")),
+                None => Ok(Value::Int(-1)),
+            },
+            _ => Err(RuntimeError::new(
+                "last_index_of() requires string and substring/char",
+            )),
         }
     });
 
     // substring - extract substring by character indices
     define(interp, "substring", Some(3), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("substring: first argument must be a string")) };
-        let start = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("substring: start must be a non-negative integer")) };
-        let end = match &args[2] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("substring: end must be a non-negative integer")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "substring: first argument must be a string",
+                ))
+            }
+        };
+        let start = match &args[1] {
+            Value::Int(n) if *n >= 0 => *n as usize,
+            _ => {
+                return Err(RuntimeError::new(
+                    "substring: start must be a non-negative integer",
+                ))
+            }
+        };
+        let end = match &args[2] {
+            Value::Int(n) if *n >= 0 => *n as usize,
+            _ => {
+                return Err(RuntimeError::new(
+                    "substring: end must be a non-negative integer",
+                ))
+            }
+        };
         let chars: Vec<char> = s.chars().collect();
         let len = chars.len();
         let actual_start = start.min(len);
@@ -1911,14 +1871,30 @@ fn register_string(interp: &mut Interpreter) {
                 let count = s.chars().filter(|&ch| ch == *c).count() as i64;
                 Ok(Value::Int(count))
             }
-            _ => Err(RuntimeError::new("count() requires string and substring/char")),
+            _ => Err(RuntimeError::new(
+                "count() requires string and substring/char",
+            )),
         }
     });
 
     // char_at - get character at index (safer than indexing)
     define(interp, "char_at", Some(2), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("char_at: first argument must be a string")) };
-        let idx = match &args[1] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("char_at: second argument must be an integer")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "char_at: first argument must be a string",
+                ))
+            }
+        };
+        let idx = match &args[1] {
+            Value::Int(n) => *n,
+            _ => {
+                return Err(RuntimeError::new(
+                    "char_at: second argument must be an integer",
+                ))
+            }
+        };
         let chars: Vec<char> = s.chars().collect();
         let actual_idx = if idx < 0 {
             (chars.len() as i64 + idx) as usize
@@ -1933,8 +1909,22 @@ fn register_string(interp: &mut Interpreter) {
 
     // char_code_at - get Unicode code point at index
     define(interp, "char_code_at", Some(2), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("char_code_at: first argument must be a string")) };
-        let idx = match &args[1] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("char_code_at: second argument must be an integer")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "char_code_at: first argument must be a string",
+                ))
+            }
+        };
+        let idx = match &args[1] {
+            Value::Int(n) => *n,
+            _ => {
+                return Err(RuntimeError::new(
+                    "char_code_at: second argument must be an integer",
+                ))
+            }
+        };
         let chars: Vec<char> = s.chars().collect();
         let actual_idx = if idx < 0 {
             (chars.len() as i64 + idx) as usize
@@ -1949,18 +1939,40 @@ fn register_string(interp: &mut Interpreter) {
 
     // from_char_code - create string from Unicode code point
     define(interp, "from_char_code", Some(1), |_, args| {
-        let code = match &args[0] { Value::Int(n) => *n as u32, _ => return Err(RuntimeError::new("from_char_code: argument must be an integer")) };
+        let code = match &args[0] {
+            Value::Int(n) => *n as u32,
+            _ => {
+                return Err(RuntimeError::new(
+                    "from_char_code: argument must be an integer",
+                ))
+            }
+        };
         match char::from_u32(code) {
             Some(c) => Ok(Value::String(Rc::new(c.to_string()))),
-            None => Err(RuntimeError::new("from_char_code: invalid Unicode code point")),
+            None => Err(RuntimeError::new(
+                "from_char_code: invalid Unicode code point",
+            )),
         }
     });
 
     // insert - insert string at index
     define(interp, "insert", Some(3), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("insert: first argument must be a string")) };
-        let idx = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("insert: index must be a non-negative integer")) };
-        let insertion = match &args[2] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("insert: third argument must be a string")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("insert: first argument must be a string")),
+        };
+        let idx = match &args[1] {
+            Value::Int(n) if *n >= 0 => *n as usize,
+            _ => {
+                return Err(RuntimeError::new(
+                    "insert: index must be a non-negative integer",
+                ))
+            }
+        };
+        let insertion = match &args[2] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("insert: third argument must be a string")),
+        };
         let chars: Vec<char> = s.chars().collect();
         let actual_idx = idx.min(chars.len());
         let mut result: String = chars[..actual_idx].iter().collect();
@@ -1971,9 +1983,26 @@ fn register_string(interp: &mut Interpreter) {
 
     // remove - remove range from string
     define(interp, "remove", Some(3), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("remove: first argument must be a string")) };
-        let start = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("remove: start must be a non-negative integer")) };
-        let len = match &args[2] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("remove: length must be a non-negative integer")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("remove: first argument must be a string")),
+        };
+        let start = match &args[1] {
+            Value::Int(n) if *n >= 0 => *n as usize,
+            _ => {
+                return Err(RuntimeError::new(
+                    "remove: start must be a non-negative integer",
+                ))
+            }
+        };
+        let len = match &args[2] {
+            Value::Int(n) if *n >= 0 => *n as usize,
+            _ => {
+                return Err(RuntimeError::new(
+                    "remove: length must be a non-negative integer",
+                ))
+            }
+        };
         let chars: Vec<char> = s.chars().collect();
         let str_len = chars.len();
         let actual_start = start.min(str_len);
@@ -2009,41 +2038,35 @@ fn register_string(interp: &mut Interpreter) {
                 };
                 Ok(Value::Int(result))
             }
-            _ => Err(RuntimeError::new("compare_ignore_case() requires two strings")),
+            _ => Err(RuntimeError::new(
+                "compare_ignore_case() requires two strings",
+            )),
         }
     });
 
     // char_count - get character count (not byte length)
-    define(interp, "char_count", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::Int(s.chars().count() as i64)),
-            _ => Err(RuntimeError::new("char_count() requires string")),
-        }
+    define(interp, "char_count", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::Int(s.chars().count() as i64)),
+        _ => Err(RuntimeError::new("char_count() requires string")),
     });
 
     // byte_count - get byte length (for UTF-8 awareness)
-    define(interp, "byte_count", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::Int(s.len() as i64)),
-            _ => Err(RuntimeError::new("byte_count() requires string")),
-        }
+    define(interp, "byte_count", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::Int(s.len() as i64)),
+        _ => Err(RuntimeError::new("byte_count() requires string")),
     });
 
     // is_empty - check if string is empty
-    define(interp, "is_empty", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::Bool(s.is_empty())),
-            Value::Array(arr) => Ok(Value::Bool(arr.borrow().is_empty())),
-            _ => Err(RuntimeError::new("is_empty() requires string or array")),
-        }
+    define(interp, "is_empty", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::Bool(s.is_empty())),
+        Value::Array(arr) => Ok(Value::Bool(arr.borrow().is_empty())),
+        _ => Err(RuntimeError::new("is_empty() requires string or array")),
     });
 
     // is_blank - check if string is empty or only whitespace
-    define(interp, "is_blank", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::Bool(s.trim().is_empty())),
-            _ => Err(RuntimeError::new("is_blank() requires string")),
-        }
+    define(interp, "is_blank", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::Bool(s.trim().is_empty())),
+        _ => Err(RuntimeError::new("is_blank() requires string")),
     });
 
     // =========================================================================
@@ -2051,57 +2074,45 @@ fn register_string(interp: &mut Interpreter) {
     // =========================================================================
 
     // nfc - Unicode Normalization Form C (Canonical Decomposition, followed by Canonical Composition)
-    define(interp, "nfc", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::String(Rc::new(s.nfc().collect()))),
-            _ => Err(RuntimeError::new("nfc() requires string")),
-        }
+    define(interp, "nfc", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::String(Rc::new(s.nfc().collect()))),
+        _ => Err(RuntimeError::new("nfc() requires string")),
     });
 
     // nfd - Unicode Normalization Form D (Canonical Decomposition)
-    define(interp, "nfd", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::String(Rc::new(s.nfd().collect()))),
-            _ => Err(RuntimeError::new("nfd() requires string")),
-        }
+    define(interp, "nfd", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::String(Rc::new(s.nfd().collect()))),
+        _ => Err(RuntimeError::new("nfd() requires string")),
     });
 
     // nfkc - Unicode Normalization Form KC (Compatibility Decomposition, followed by Canonical Composition)
-    define(interp, "nfkc", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::String(Rc::new(s.nfkc().collect()))),
-            _ => Err(RuntimeError::new("nfkc() requires string")),
-        }
+    define(interp, "nfkc", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::String(Rc::new(s.nfkc().collect()))),
+        _ => Err(RuntimeError::new("nfkc() requires string")),
     });
 
     // nfkd - Unicode Normalization Form KD (Compatibility Decomposition)
-    define(interp, "nfkd", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => Ok(Value::String(Rc::new(s.nfkd().collect()))),
-            _ => Err(RuntimeError::new("nfkd() requires string")),
-        }
+    define(interp, "nfkd", Some(1), |_, args| match &args[0] {
+        Value::String(s) => Ok(Value::String(Rc::new(s.nfkd().collect()))),
+        _ => Err(RuntimeError::new("nfkd() requires string")),
     });
 
     // is_nfc - check if string is in NFC form
-    define(interp, "is_nfc", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let normalized: String = s.nfc().collect();
-                Ok(Value::Bool(*s.as_ref() == normalized))
-            }
-            _ => Err(RuntimeError::new("is_nfc() requires string")),
+    define(interp, "is_nfc", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let normalized: String = s.nfc().collect();
+            Ok(Value::Bool(*s.as_ref() == normalized))
         }
+        _ => Err(RuntimeError::new("is_nfc() requires string")),
     });
 
     // is_nfd - check if string is in NFD form
-    define(interp, "is_nfd", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let normalized: String = s.nfd().collect();
-                Ok(Value::Bool(*s.as_ref() == normalized))
-            }
-            _ => Err(RuntimeError::new("is_nfd() requires string")),
+    define(interp, "is_nfd", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let normalized: String = s.nfd().collect();
+            Ok(Value::Bool(*s.as_ref() == normalized))
         }
+        _ => Err(RuntimeError::new("is_nfd() requires string")),
     });
 
     // =========================================================================
@@ -2109,16 +2120,15 @@ fn register_string(interp: &mut Interpreter) {
     // =========================================================================
 
     // graphemes - split string into grapheme clusters (user-perceived characters)
-    define(interp, "graphemes", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let graphemes: Vec<Value> = s.graphemes(true)
-                    .map(|g| Value::String(Rc::new(g.to_string())))
-                    .collect();
-                Ok(Value::Array(Rc::new(RefCell::new(graphemes))))
-            }
-            _ => Err(RuntimeError::new("graphemes() requires string")),
+    define(interp, "graphemes", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let graphemes: Vec<Value> = s
+                .graphemes(true)
+                .map(|g| Value::String(Rc::new(g.to_string())))
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(graphemes))))
         }
+        _ => Err(RuntimeError::new("graphemes() requires string")),
     });
 
     // grapheme_count - count grapheme clusters (correct for emoji, combining chars, etc.)
@@ -2131,8 +2141,22 @@ fn register_string(interp: &mut Interpreter) {
 
     // grapheme_at - get grapheme cluster at index
     define(interp, "grapheme_at", Some(2), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("grapheme_at: first argument must be a string")) };
-        let idx = match &args[1] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("grapheme_at: second argument must be an integer")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "grapheme_at: first argument must be a string",
+                ))
+            }
+        };
+        let idx = match &args[1] {
+            Value::Int(n) => *n,
+            _ => {
+                return Err(RuntimeError::new(
+                    "grapheme_at: second argument must be an integer",
+                ))
+            }
+        };
         let graphemes: Vec<&str> = s.graphemes(true).collect();
         let actual_idx = if idx < 0 {
             (graphemes.len() as i64 + idx) as usize
@@ -2147,9 +2171,30 @@ fn register_string(interp: &mut Interpreter) {
 
     // grapheme_slice - slice string by grapheme indices (proper Unicode slicing)
     define(interp, "grapheme_slice", Some(3), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("grapheme_slice: first argument must be a string")) };
-        let start = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("grapheme_slice: start must be a non-negative integer")) };
-        let end = match &args[2] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("grapheme_slice: end must be a non-negative integer")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "grapheme_slice: first argument must be a string",
+                ))
+            }
+        };
+        let start = match &args[1] {
+            Value::Int(n) if *n >= 0 => *n as usize,
+            _ => {
+                return Err(RuntimeError::new(
+                    "grapheme_slice: start must be a non-negative integer",
+                ))
+            }
+        };
+        let end = match &args[2] {
+            Value::Int(n) if *n >= 0 => *n as usize,
+            _ => {
+                return Err(RuntimeError::new(
+                    "grapheme_slice: end must be a non-negative integer",
+                ))
+            }
+        };
         let graphemes: Vec<&str> = s.graphemes(true).collect();
         let len = graphemes.len();
         let actual_start = start.min(len);
@@ -2176,7 +2221,8 @@ fn register_string(interp: &mut Interpreter) {
     define(interp, "word_boundaries", Some(1), |_, args| {
         match &args[0] {
             Value::String(s) => {
-                let words: Vec<Value> = s.unicode_words()
+                let words: Vec<Value> = s
+                    .unicode_words()
                     .map(|w| Value::String(Rc::new(w.to_string())))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(words))))
@@ -2196,26 +2242,43 @@ fn register_string(interp: &mut Interpreter) {
     });
 
     // concat_all - concatenate array of strings efficiently
-    define(interp, "concat_all", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let parts: Vec<String> = arr.borrow().iter()
-                    .map(|v| match v {
-                        Value::String(s) => (**s).clone(),
-                        other => format!("{}", other),
-                    })
-                    .collect();
-                Ok(Value::String(Rc::new(parts.join(""))))
-            }
-            _ => Err(RuntimeError::new("concat_all() requires array")),
+    define(interp, "concat_all", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let parts: Vec<String> = arr
+                .borrow()
+                .iter()
+                .map(|v| match v {
+                    Value::String(s) => (**s).clone(),
+                    other => format!("{}", other),
+                })
+                .collect();
+            Ok(Value::String(Rc::new(parts.join(""))))
         }
+        _ => Err(RuntimeError::new("concat_all() requires array")),
     });
 
     // repeat_join - repeat a string n times with a separator
     define(interp, "repeat_join", Some(3), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("repeat_join: first argument must be a string")) };
-        let n = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("repeat_join: count must be a non-negative integer")) };
-        let sep = match &args[2] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("repeat_join: separator must be a string")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "repeat_join: first argument must be a string",
+                ))
+            }
+        };
+        let n = match &args[1] {
+            Value::Int(n) if *n >= 0 => *n as usize,
+            _ => {
+                return Err(RuntimeError::new(
+                    "repeat_join: count must be a non-negative integer",
+                ))
+            }
+        };
+        let sep = match &args[2] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("repeat_join: separator must be a string")),
+        };
         if n == 0 {
             return Ok(Value::String(Rc::new(String::new())));
         }
@@ -2276,31 +2339,37 @@ fn register_evidence(interp: &mut Interpreter) {
 
     define(interp, "is_known", Some(1), |_, args| {
         match &args[0] {
-            Value::Evidential { evidence: Evidence::Known, .. } => Ok(Value::Bool(true)),
+            Value::Evidential {
+                evidence: Evidence::Known,
+                ..
+            } => Ok(Value::Bool(true)),
             Value::Evidential { .. } => Ok(Value::Bool(false)),
             _ => Ok(Value::Bool(true)), // Non-evidential values are known
         }
     });
 
-    define(interp, "is_uncertain", Some(1), |_, args| {
-        match &args[0] {
-            Value::Evidential { evidence: Evidence::Uncertain, .. } => Ok(Value::Bool(true)),
-            _ => Ok(Value::Bool(false)),
-        }
+    define(interp, "is_uncertain", Some(1), |_, args| match &args[0] {
+        Value::Evidential {
+            evidence: Evidence::Uncertain,
+            ..
+        } => Ok(Value::Bool(true)),
+        _ => Ok(Value::Bool(false)),
     });
 
-    define(interp, "is_reported", Some(1), |_, args| {
-        match &args[0] {
-            Value::Evidential { evidence: Evidence::Reported, .. } => Ok(Value::Bool(true)),
-            _ => Ok(Value::Bool(false)),
-        }
+    define(interp, "is_reported", Some(1), |_, args| match &args[0] {
+        Value::Evidential {
+            evidence: Evidence::Reported,
+            ..
+        } => Ok(Value::Bool(true)),
+        _ => Ok(Value::Bool(false)),
     });
 
-    define(interp, "is_paradox", Some(1), |_, args| {
-        match &args[0] {
-            Value::Evidential { evidence: Evidence::Paradox, .. } => Ok(Value::Bool(true)),
-            _ => Ok(Value::Bool(false)),
-        }
+    define(interp, "is_paradox", Some(1), |_, args| match &args[0] {
+        Value::Evidential {
+            evidence: Evidence::Paradox,
+            ..
+        } => Ok(Value::Bool(true)),
+        _ => Ok(Value::Bool(false)),
     });
 
     // Extract inner value
@@ -2315,12 +2384,10 @@ fn register_evidence(interp: &mut Interpreter) {
     define(interp, "trust", Some(1), |_, args| {
         // Upgrade reported/uncertain to known (with assertion)
         match &args[0] {
-            Value::Evidential { value, .. } => {
-                Ok(Value::Evidential {
-                    value: value.clone(),
-                    evidence: Evidence::Known,
-                })
-            }
+            Value::Evidential { value, .. } => Ok(Value::Evidential {
+                value: value.clone(),
+                evidence: Evidence::Known,
+            }),
             other => Ok(other.clone()),
         }
     });
@@ -2334,12 +2401,10 @@ fn register_evidence(interp: &mut Interpreter) {
 
         if pred_result {
             match &args[0] {
-                Value::Evidential { value, .. } => {
-                    Ok(Value::Evidential {
-                        value: value.clone(),
-                        evidence: Evidence::Known,
-                    })
-                }
+                Value::Evidential { value, .. } => Ok(Value::Evidential {
+                    value: value.clone(),
+                    evidence: Evidence::Known,
+                }),
                 other => Ok(other.clone()),
             }
         } else {
@@ -2366,12 +2431,15 @@ fn register_evidence(interp: &mut Interpreter) {
             _ => Evidence::Known,
         };
 
-        Ok(Value::String(Rc::new(match combined {
-            Evidence::Known => "known",
-            Evidence::Uncertain => "uncertain",
-            Evidence::Reported => "reported",
-            Evidence::Paradox => "paradox",
-        }.to_string())))
+        Ok(Value::String(Rc::new(
+            match combined {
+                Evidence::Known => "known",
+                Evidence::Uncertain => "uncertain",
+                Evidence::Reported => "reported",
+                Evidence::Paradox => "paradox",
+            }
+            .to_string(),
+        )))
     });
 }
 
@@ -2380,8 +2448,10 @@ fn register_evidence(interp: &mut Interpreter) {
 // ============================================================================
 
 fn register_affect(interp: &mut Interpreter) {
-    use crate::interpreter::{RuntimeAffect, RuntimeSentiment, RuntimeIntensity,
-                             RuntimeFormality, RuntimeEmotion, RuntimeConfidence};
+    use crate::interpreter::{
+        RuntimeAffect, RuntimeConfidence, RuntimeEmotion, RuntimeFormality, RuntimeIntensity,
+        RuntimeSentiment,
+    };
 
     // === Create affective values ===
 
@@ -2645,144 +2715,132 @@ fn register_affect(interp: &mut Interpreter) {
 
     // === Query affect ===
 
-    define(interp, "affect_of", Some(1), |_, args| {
-        match &args[0] {
-            Value::Affective { affect, .. } => {
-                let mut parts = Vec::new();
-                if let Some(s) = &affect.sentiment {
-                    parts.push(match s {
-                        RuntimeSentiment::Positive => "positive",
-                        RuntimeSentiment::Negative => "negative",
-                        RuntimeSentiment::Neutral => "neutral",
-                    });
-                }
-                if affect.sarcasm {
-                    parts.push("sarcastic");
-                }
-                if let Some(i) = &affect.intensity {
-                    parts.push(match i {
-                        RuntimeIntensity::Up => "intensified",
-                        RuntimeIntensity::Down => "dampened",
-                        RuntimeIntensity::Max => "maximized",
-                    });
-                }
-                if let Some(f) = &affect.formality {
-                    parts.push(match f {
-                        RuntimeFormality::Formal => "formal",
-                        RuntimeFormality::Informal => "informal",
-                    });
-                }
-                if let Some(e) = &affect.emotion {
-                    parts.push(match e {
-                        RuntimeEmotion::Joy => "joyful",
-                        RuntimeEmotion::Sadness => "sad",
-                        RuntimeEmotion::Anger => "angry",
-                        RuntimeEmotion::Fear => "fearful",
-                        RuntimeEmotion::Surprise => "surprised",
-                        RuntimeEmotion::Love => "loving",
-                    });
-                }
-                if let Some(c) = &affect.confidence {
-                    parts.push(match c {
-                        RuntimeConfidence::High => "high_confidence",
-                        RuntimeConfidence::Medium => "medium_confidence",
-                        RuntimeConfidence::Low => "low_confidence",
-                    });
-                }
-                Ok(Value::String(Rc::new(parts.join(", "))))
+    define(interp, "affect_of", Some(1), |_, args| match &args[0] {
+        Value::Affective { affect, .. } => {
+            let mut parts = Vec::new();
+            if let Some(s) = &affect.sentiment {
+                parts.push(match s {
+                    RuntimeSentiment::Positive => "positive",
+                    RuntimeSentiment::Negative => "negative",
+                    RuntimeSentiment::Neutral => "neutral",
+                });
             }
-            _ => Ok(Value::String(Rc::new("none".to_string()))),
+            if affect.sarcasm {
+                parts.push("sarcastic");
+            }
+            if let Some(i) = &affect.intensity {
+                parts.push(match i {
+                    RuntimeIntensity::Up => "intensified",
+                    RuntimeIntensity::Down => "dampened",
+                    RuntimeIntensity::Max => "maximized",
+                });
+            }
+            if let Some(f) = &affect.formality {
+                parts.push(match f {
+                    RuntimeFormality::Formal => "formal",
+                    RuntimeFormality::Informal => "informal",
+                });
+            }
+            if let Some(e) = &affect.emotion {
+                parts.push(match e {
+                    RuntimeEmotion::Joy => "joyful",
+                    RuntimeEmotion::Sadness => "sad",
+                    RuntimeEmotion::Anger => "angry",
+                    RuntimeEmotion::Fear => "fearful",
+                    RuntimeEmotion::Surprise => "surprised",
+                    RuntimeEmotion::Love => "loving",
+                });
+            }
+            if let Some(c) = &affect.confidence {
+                parts.push(match c {
+                    RuntimeConfidence::High => "high_confidence",
+                    RuntimeConfidence::Medium => "medium_confidence",
+                    RuntimeConfidence::Low => "low_confidence",
+                });
+            }
+            Ok(Value::String(Rc::new(parts.join(", "))))
         }
+        _ => Ok(Value::String(Rc::new("none".to_string()))),
     });
 
-    define(interp, "is_sarcastic", Some(1), |_, args| {
-        match &args[0] {
-            Value::Affective { affect, .. } => Ok(Value::Bool(affect.sarcasm)),
-            _ => Ok(Value::Bool(false)),
-        }
+    define(interp, "is_sarcastic", Some(1), |_, args| match &args[0] {
+        Value::Affective { affect, .. } => Ok(Value::Bool(affect.sarcasm)),
+        _ => Ok(Value::Bool(false)),
     });
 
-    define(interp, "is_positive", Some(1), |_, args| {
-        match &args[0] {
-            Value::Affective { affect, .. } => {
-                Ok(Value::Bool(matches!(affect.sentiment, Some(RuntimeSentiment::Positive))))
-            }
-            _ => Ok(Value::Bool(false)),
-        }
+    define(interp, "is_positive", Some(1), |_, args| match &args[0] {
+        Value::Affective { affect, .. } => Ok(Value::Bool(matches!(
+            affect.sentiment,
+            Some(RuntimeSentiment::Positive)
+        ))),
+        _ => Ok(Value::Bool(false)),
     });
 
-    define(interp, "is_negative", Some(1), |_, args| {
-        match &args[0] {
-            Value::Affective { affect, .. } => {
-                Ok(Value::Bool(matches!(affect.sentiment, Some(RuntimeSentiment::Negative))))
-            }
-            _ => Ok(Value::Bool(false)),
-        }
+    define(interp, "is_negative", Some(1), |_, args| match &args[0] {
+        Value::Affective { affect, .. } => Ok(Value::Bool(matches!(
+            affect.sentiment,
+            Some(RuntimeSentiment::Negative)
+        ))),
+        _ => Ok(Value::Bool(false)),
     });
 
-    define(interp, "is_formal", Some(1), |_, args| {
-        match &args[0] {
-            Value::Affective { affect, .. } => {
-                Ok(Value::Bool(matches!(affect.formality, Some(RuntimeFormality::Formal))))
-            }
-            _ => Ok(Value::Bool(false)),
-        }
+    define(interp, "is_formal", Some(1), |_, args| match &args[0] {
+        Value::Affective { affect, .. } => Ok(Value::Bool(matches!(
+            affect.formality,
+            Some(RuntimeFormality::Formal)
+        ))),
+        _ => Ok(Value::Bool(false)),
     });
 
-    define(interp, "is_informal", Some(1), |_, args| {
-        match &args[0] {
-            Value::Affective { affect, .. } => {
-                Ok(Value::Bool(matches!(affect.formality, Some(RuntimeFormality::Informal))))
-            }
-            _ => Ok(Value::Bool(false)),
-        }
+    define(interp, "is_informal", Some(1), |_, args| match &args[0] {
+        Value::Affective { affect, .. } => Ok(Value::Bool(matches!(
+            affect.formality,
+            Some(RuntimeFormality::Informal)
+        ))),
+        _ => Ok(Value::Bool(false)),
     });
 
-    define(interp, "emotion_of", Some(1), |_, args| {
-        match &args[0] {
-            Value::Affective { affect, .. } => {
-                let emotion_str = match &affect.emotion {
-                    Some(RuntimeEmotion::Joy) => "joy",
-                    Some(RuntimeEmotion::Sadness) => "sadness",
-                    Some(RuntimeEmotion::Anger) => "anger",
-                    Some(RuntimeEmotion::Fear) => "fear",
-                    Some(RuntimeEmotion::Surprise) => "surprise",
-                    Some(RuntimeEmotion::Love) => "love",
-                    None => "none",
-                };
-                Ok(Value::String(Rc::new(emotion_str.to_string())))
-            }
-            _ => Ok(Value::String(Rc::new("none".to_string()))),
+    define(interp, "emotion_of", Some(1), |_, args| match &args[0] {
+        Value::Affective { affect, .. } => {
+            let emotion_str = match &affect.emotion {
+                Some(RuntimeEmotion::Joy) => "joy",
+                Some(RuntimeEmotion::Sadness) => "sadness",
+                Some(RuntimeEmotion::Anger) => "anger",
+                Some(RuntimeEmotion::Fear) => "fear",
+                Some(RuntimeEmotion::Surprise) => "surprise",
+                Some(RuntimeEmotion::Love) => "love",
+                None => "none",
+            };
+            Ok(Value::String(Rc::new(emotion_str.to_string())))
         }
+        _ => Ok(Value::String(Rc::new("none".to_string()))),
     });
 
-    define(interp, "confidence_of", Some(1), |_, args| {
-        match &args[0] {
-            Value::Affective { affect, .. } => {
-                let conf_str = match &affect.confidence {
-                    Some(RuntimeConfidence::High) => "high",
-                    Some(RuntimeConfidence::Medium) => "medium",
-                    Some(RuntimeConfidence::Low) => "low",
-                    None => "none",
-                };
-                Ok(Value::String(Rc::new(conf_str.to_string())))
-            }
-            _ => Ok(Value::String(Rc::new("none".to_string()))),
+    define(interp, "confidence_of", Some(1), |_, args| match &args[0] {
+        Value::Affective { affect, .. } => {
+            let conf_str = match &affect.confidence {
+                Some(RuntimeConfidence::High) => "high",
+                Some(RuntimeConfidence::Medium) => "medium",
+                Some(RuntimeConfidence::Low) => "low",
+                None => "none",
+            };
+            Ok(Value::String(Rc::new(conf_str.to_string())))
         }
+        _ => Ok(Value::String(Rc::new("none".to_string()))),
     });
 
     // Extract inner value
-    define(interp, "strip_affect", Some(1), |_, args| {
-        match &args[0] {
-            Value::Affective { value, .. } => Ok(*value.clone()),
-            other => Ok(other.clone()),
-        }
+    define(interp, "strip_affect", Some(1), |_, args| match &args[0] {
+        Value::Affective { value, .. } => Ok(*value.clone()),
+        other => Ok(other.clone()),
     });
 
     // Create full affect with multiple markers
     define(interp, "with_affect", None, |_, args| {
         if args.is_empty() {
-            return Err(RuntimeError::new("with_affect requires at least one argument"));
+            return Err(RuntimeError::new(
+                "with_affect requires at least one argument",
+            ));
         }
 
         let base_value = args[0].clone();
@@ -2835,230 +2893,210 @@ fn register_affect(interp: &mut Interpreter) {
 
 fn register_iter(interp: &mut Interpreter) {
     // sum - sum all elements
-    define(interp, "sum", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let mut sum_int: i64 = 0;
-                let mut sum_float: f64 = 0.0;
-                let mut is_float = false;
+    define(interp, "sum", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let mut sum_int: i64 = 0;
+            let mut sum_float: f64 = 0.0;
+            let mut is_float = false;
 
-                for val in arr.borrow().iter() {
-                    match val {
-                        Value::Int(n) => {
-                            if is_float {
-                                sum_float += *n as f64;
-                            } else {
-                                sum_int += n;
-                            }
+            for val in arr.borrow().iter() {
+                match val {
+                    Value::Int(n) => {
+                        if is_float {
+                            sum_float += *n as f64;
+                        } else {
+                            sum_int += n;
                         }
-                        Value::Float(n) => {
-                            if !is_float {
-                                sum_float = sum_int as f64;
-                                is_float = true;
-                            }
-                            sum_float += n;
-                        }
-                        _ => return Err(RuntimeError::new("sum() requires array of numbers")),
                     }
-                }
-
-                if is_float {
-                    Ok(Value::Float(sum_float))
-                } else {
-                    Ok(Value::Int(sum_int))
+                    Value::Float(n) => {
+                        if !is_float {
+                            sum_float = sum_int as f64;
+                            is_float = true;
+                        }
+                        sum_float += n;
+                    }
+                    _ => return Err(RuntimeError::new("sum() requires array of numbers")),
                 }
             }
-            _ => Err(RuntimeError::new("sum() requires array")),
+
+            if is_float {
+                Ok(Value::Float(sum_float))
+            } else {
+                Ok(Value::Int(sum_int))
+            }
         }
+        _ => Err(RuntimeError::new("sum() requires array")),
     });
 
     // product - multiply all elements
-    define(interp, "product", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let mut prod_int: i64 = 1;
-                let mut prod_float: f64 = 1.0;
-                let mut is_float = false;
+    define(interp, "product", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let mut prod_int: i64 = 1;
+            let mut prod_float: f64 = 1.0;
+            let mut is_float = false;
 
-                for val in arr.borrow().iter() {
-                    match val {
-                        Value::Int(n) => {
-                            if is_float {
-                                prod_float *= *n as f64;
-                            } else {
-                                prod_int *= n;
-                            }
+            for val in arr.borrow().iter() {
+                match val {
+                    Value::Int(n) => {
+                        if is_float {
+                            prod_float *= *n as f64;
+                        } else {
+                            prod_int *= n;
                         }
-                        Value::Float(n) => {
-                            if !is_float {
-                                prod_float = prod_int as f64;
-                                is_float = true;
-                            }
-                            prod_float *= n;
-                        }
-                        _ => return Err(RuntimeError::new("product() requires array of numbers")),
                     }
-                }
-
-                if is_float {
-                    Ok(Value::Float(prod_float))
-                } else {
-                    Ok(Value::Int(prod_int))
+                    Value::Float(n) => {
+                        if !is_float {
+                            prod_float = prod_int as f64;
+                            is_float = true;
+                        }
+                        prod_float *= n;
+                    }
+                    _ => return Err(RuntimeError::new("product() requires array of numbers")),
                 }
             }
-            _ => Err(RuntimeError::new("product() requires array")),
+
+            if is_float {
+                Ok(Value::Float(prod_float))
+            } else {
+                Ok(Value::Int(prod_int))
+            }
         }
+        _ => Err(RuntimeError::new("product() requires array")),
     });
 
     // mean - average of elements
-    define(interp, "mean", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                if arr.is_empty() {
-                    return Err(RuntimeError::new("mean() on empty array"));
-                }
-
-                let mut sum: f64 = 0.0;
-                for val in arr.iter() {
-                    match val {
-                        Value::Int(n) => sum += *n as f64,
-                        Value::Float(n) => sum += n,
-                        _ => return Err(RuntimeError::new("mean() requires array of numbers")),
-                    }
-                }
-
-                Ok(Value::Float(sum / arr.len() as f64))
+    define(interp, "mean", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            if arr.is_empty() {
+                return Err(RuntimeError::new("mean() on empty array"));
             }
-            _ => Err(RuntimeError::new("mean() requires array")),
+
+            let mut sum: f64 = 0.0;
+            for val in arr.iter() {
+                match val {
+                    Value::Int(n) => sum += *n as f64,
+                    Value::Float(n) => sum += n,
+                    _ => return Err(RuntimeError::new("mean() requires array of numbers")),
+                }
+            }
+
+            Ok(Value::Float(sum / arr.len() as f64))
         }
+        _ => Err(RuntimeError::new("mean() requires array")),
     });
 
     // median - middle value
-    define(interp, "median", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                if arr.is_empty() {
-                    return Err(RuntimeError::new("median() on empty array"));
-                }
+    define(interp, "median", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            if arr.is_empty() {
+                return Err(RuntimeError::new("median() on empty array"));
+            }
 
-                let mut nums: Vec<f64> = Vec::new();
-                for val in arr.iter() {
-                    match val {
-                        Value::Int(n) => nums.push(*n as f64),
-                        Value::Float(n) => nums.push(*n),
-                        _ => return Err(RuntimeError::new("median() requires array of numbers")),
-                    }
-                }
-
-                nums.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                let mid = nums.len() / 2;
-
-                if nums.len() % 2 == 0 {
-                    Ok(Value::Float((nums[mid - 1] + nums[mid]) / 2.0))
-                } else {
-                    Ok(Value::Float(nums[mid]))
+            let mut nums: Vec<f64> = Vec::new();
+            for val in arr.iter() {
+                match val {
+                    Value::Int(n) => nums.push(*n as f64),
+                    Value::Float(n) => nums.push(*n),
+                    _ => return Err(RuntimeError::new("median() requires array of numbers")),
                 }
             }
-            _ => Err(RuntimeError::new("median() requires array")),
+
+            nums.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let mid = nums.len() / 2;
+
+            if nums.len() % 2 == 0 {
+                Ok(Value::Float((nums[mid - 1] + nums[mid]) / 2.0))
+            } else {
+                Ok(Value::Float(nums[mid]))
+            }
         }
+        _ => Err(RuntimeError::new("median() requires array")),
     });
 
     // min_of - minimum of array
-    define(interp, "min_of", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                if arr.is_empty() {
-                    return Err(RuntimeError::new("min_of() on empty array"));
-                }
-
-                let mut min = &arr[0];
-                for val in arr.iter().skip(1) {
-                    if matches!(compare_values(val, min), std::cmp::Ordering::Less) {
-                        min = val;
-                    }
-                }
-                Ok(min.clone())
+    define(interp, "min_of", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            if arr.is_empty() {
+                return Err(RuntimeError::new("min_of() on empty array"));
             }
-            _ => Err(RuntimeError::new("min_of() requires array")),
+
+            let mut min = &arr[0];
+            for val in arr.iter().skip(1) {
+                if matches!(compare_values(val, min), std::cmp::Ordering::Less) {
+                    min = val;
+                }
+            }
+            Ok(min.clone())
         }
+        _ => Err(RuntimeError::new("min_of() requires array")),
     });
 
     // max_of - maximum of array
-    define(interp, "max_of", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                if arr.is_empty() {
-                    return Err(RuntimeError::new("max_of() on empty array"));
-                }
-
-                let mut max = &arr[0];
-                for val in arr.iter().skip(1) {
-                    if matches!(compare_values(val, max), std::cmp::Ordering::Greater) {
-                        max = val;
-                    }
-                }
-                Ok(max.clone())
+    define(interp, "max_of", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            if arr.is_empty() {
+                return Err(RuntimeError::new("max_of() on empty array"));
             }
-            _ => Err(RuntimeError::new("max_of() requires array")),
+
+            let mut max = &arr[0];
+            for val in arr.iter().skip(1) {
+                if matches!(compare_values(val, max), std::cmp::Ordering::Greater) {
+                    max = val;
+                }
+            }
+            Ok(max.clone())
         }
+        _ => Err(RuntimeError::new("max_of() requires array")),
     });
 
     // count - count elements (optionally matching predicate)
-    define(interp, "count", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
-            Value::String(s) => Ok(Value::Int(s.chars().count() as i64)),
-            _ => Err(RuntimeError::new("count() requires array or string")),
-        }
+    define(interp, "count", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
+        Value::String(s) => Ok(Value::Int(s.chars().count() as i64)),
+        _ => Err(RuntimeError::new("count() requires array or string")),
     });
 
     // any - check if any element is truthy
-    define(interp, "any", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                for val in arr.borrow().iter() {
-                    if is_truthy(val) {
-                        return Ok(Value::Bool(true));
-                    }
+    define(interp, "any", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            for val in arr.borrow().iter() {
+                if is_truthy(val) {
+                    return Ok(Value::Bool(true));
                 }
-                Ok(Value::Bool(false))
             }
-            _ => Err(RuntimeError::new("any() requires array")),
+            Ok(Value::Bool(false))
         }
+        _ => Err(RuntimeError::new("any() requires array")),
     });
 
     // all - check if all elements are truthy
-    define(interp, "all", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                for val in arr.borrow().iter() {
-                    if !is_truthy(val) {
-                        return Ok(Value::Bool(false));
-                    }
+    define(interp, "all", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            for val in arr.borrow().iter() {
+                if !is_truthy(val) {
+                    return Ok(Value::Bool(false));
                 }
-                Ok(Value::Bool(true))
             }
-            _ => Err(RuntimeError::new("all() requires array")),
+            Ok(Value::Bool(true))
         }
+        _ => Err(RuntimeError::new("all() requires array")),
     });
 
     // none - check if no elements are truthy
-    define(interp, "none", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                for val in arr.borrow().iter() {
-                    if is_truthy(val) {
-                        return Ok(Value::Bool(false));
-                    }
+    define(interp, "none", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            for val in arr.borrow().iter() {
+                if is_truthy(val) {
+                    return Ok(Value::Bool(false));
                 }
-                Ok(Value::Bool(true))
             }
-            _ => Err(RuntimeError::new("none() requires array")),
+            Ok(Value::Bool(true))
         }
+        _ => Err(RuntimeError::new("none() requires array")),
     });
 }
 
@@ -3105,7 +3143,9 @@ fn register_io(interp: &mut Interpreter) {
                     Err(e) => Err(RuntimeError::new(format!("write_file failed: {}", e))),
                 }
             }
-            _ => Err(RuntimeError::new("write_file() requires path and content strings")),
+            _ => Err(RuntimeError::new(
+                "write_file() requires path and content strings",
+            )),
         }
     });
 
@@ -3124,37 +3164,34 @@ fn register_io(interp: &mut Interpreter) {
                     Err(e) => Err(RuntimeError::new(format!("append_file failed: {}", e))),
                 }
             }
-            _ => Err(RuntimeError::new("append_file() requires path and content strings")),
+            _ => Err(RuntimeError::new(
+                "append_file() requires path and content strings",
+            )),
         }
     });
 
     // file_exists - check if file exists
-    define(interp, "file_exists", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(path) => Ok(Value::Bool(std::path::Path::new(path.as_str()).exists())),
-            _ => Err(RuntimeError::new("file_exists() requires path string")),
-        }
+    define(interp, "file_exists", Some(1), |_, args| match &args[0] {
+        Value::String(path) => Ok(Value::Bool(std::path::Path::new(path.as_str()).exists())),
+        _ => Err(RuntimeError::new("file_exists() requires path string")),
     });
 
     // read_lines - read file as array of lines
-    define(interp, "read_lines", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(path) => {
-                match std::fs::read_to_string(path.as_str()) {
-                    Ok(content) => {
-                        let lines: Vec<Value> = content.lines()
-                            .map(|l| Value::String(Rc::new(l.to_string())))
-                            .collect();
-                        Ok(Value::Evidential {
-                            value: Box::new(Value::Array(Rc::new(RefCell::new(lines)))),
-                            evidence: Evidence::Reported,
-                        })
-                    }
-                    Err(e) => Err(RuntimeError::new(format!("read_lines failed: {}", e))),
-                }
+    define(interp, "read_lines", Some(1), |_, args| match &args[0] {
+        Value::String(path) => match std::fs::read_to_string(path.as_str()) {
+            Ok(content) => {
+                let lines: Vec<Value> = content
+                    .lines()
+                    .map(|l| Value::String(Rc::new(l.to_string())))
+                    .collect();
+                Ok(Value::Evidential {
+                    value: Box::new(Value::Array(Rc::new(RefCell::new(lines)))),
+                    evidence: Evidence::Reported,
+                })
             }
-            _ => Err(RuntimeError::new("read_lines() requires path string")),
-        }
+            Err(e) => Err(RuntimeError::new(format!("read_lines failed: {}", e))),
+        },
+        _ => Err(RuntimeError::new("read_lines() requires path string")),
     });
 
     // env - get environment variable
@@ -3176,15 +3213,13 @@ fn register_io(interp: &mut Interpreter) {
     // env_or - get environment variable with default
     define(interp, "env_or", Some(2), |_, args| {
         match (&args[0], &args[1]) {
-            (Value::String(name), default) => {
-                match std::env::var(name.as_str()) {
-                    Ok(value) => Ok(Value::Evidential {
-                        value: Box::new(Value::String(Rc::new(value))),
-                        evidence: Evidence::Reported,
-                    }),
-                    Err(_) => Ok(default.clone()),
-                }
-            }
+            (Value::String(name), default) => match std::env::var(name.as_str()) {
+                Ok(value) => Ok(Value::Evidential {
+                    value: Box::new(Value::String(Rc::new(value))),
+                    evidence: Evidence::Reported,
+                }),
+                Err(_) => Ok(default.clone()),
+            },
             _ => Err(RuntimeError::new("env_or() requires variable name string")),
         }
     });
@@ -3236,14 +3271,14 @@ fn register_time(interp: &mut Interpreter) {
     });
 
     // sleep - sleep for milliseconds
-    define(interp, "sleep", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(ms) if *ms >= 0 => {
-                std::thread::sleep(Duration::from_millis(*ms as u64));
-                Ok(Value::Null)
-            }
-            _ => Err(RuntimeError::new("sleep() requires non-negative integer milliseconds")),
+    define(interp, "sleep", Some(1), |_, args| match &args[0] {
+        Value::Int(ms) if *ms >= 0 => {
+            std::thread::sleep(Duration::from_millis(*ms as u64));
+            Ok(Value::Null)
         }
+        _ => Err(RuntimeError::new(
+            "sleep() requires non-negative integer milliseconds",
+        )),
     });
 
     // measure - measure execution time of a thunk (returns ms)
@@ -3288,51 +3323,50 @@ fn register_random(interp: &mut Interpreter) {
                 let rand = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) % range;
                 Ok(Value::Int(*min + rand as i64))
             }
-            _ => Err(RuntimeError::new("random_int() requires min < max integers")),
+            _ => Err(RuntimeError::new(
+                "random_int() requires min < max integers",
+            )),
         }
     });
 
     // shuffle - shuffle array in place (Fisher-Yates)
-    define(interp, "shuffle", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let mut arr = arr.borrow_mut();
-                use std::time::SystemTime;
-                let mut seed = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or(Duration::ZERO)
-                    .as_nanos() as u64;
+    define(interp, "shuffle", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let mut arr = arr.borrow_mut();
+            use std::time::SystemTime;
+            let mut seed = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or(Duration::ZERO)
+                .as_nanos() as u64;
 
-                for i in (1..arr.len()).rev() {
-                    seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
-                    let j = ((seed >> 16) as usize) % (i + 1);
-                    arr.swap(i, j);
-                }
-                Ok(Value::Null)
+            for i in (1..arr.len()).rev() {
+                seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+                let j = ((seed >> 16) as usize) % (i + 1);
+                arr.swap(i, j);
             }
-            _ => Err(RuntimeError::new("shuffle() requires array")),
+            Ok(Value::Null)
         }
+        _ => Err(RuntimeError::new("shuffle() requires array")),
     });
 
     // sample - random sample from array
-    define(interp, "sample", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                if arr.is_empty() {
-                    return Err(RuntimeError::new("sample() on empty array"));
-                }
-
-                use std::time::SystemTime;
-                let seed = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or(Duration::ZERO)
-                    .as_nanos() as u64;
-                let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % arr.len();
-                Ok(arr[idx].clone())
+    define(interp, "sample", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            if arr.is_empty() {
+                return Err(RuntimeError::new("sample() on empty array"));
             }
-            _ => Err(RuntimeError::new("sample() requires array")),
+
+            use std::time::SystemTime;
+            let seed = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or(Duration::ZERO)
+                .as_nanos() as u64;
+            let idx =
+                ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % arr.len();
+            Ok(arr[idx].clone())
         }
+        _ => Err(RuntimeError::new("sample() requires array")),
     });
 }
 
@@ -3347,34 +3381,28 @@ fn register_convert(interp: &mut Interpreter) {
     });
 
     // to_int - convert to integer
-    define(interp, "to_int", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Int(*n)),
-            Value::Float(n) => Ok(Value::Int(*n as i64)),
-            Value::Bool(b) => Ok(Value::Int(if *b { 1 } else { 0 })),
-            Value::Char(c) => Ok(Value::Int(*c as i64)),
-            Value::String(s) => {
-                s.parse::<i64>()
-                    .map(Value::Int)
-                    .map_err(|_| RuntimeError::new(format!("cannot parse '{}' as integer", s)))
-            }
-            _ => Err(RuntimeError::new("to_int() cannot convert this type")),
-        }
+    define(interp, "to_int", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Int(*n)),
+        Value::Float(n) => Ok(Value::Int(*n as i64)),
+        Value::Bool(b) => Ok(Value::Int(if *b { 1 } else { 0 })),
+        Value::Char(c) => Ok(Value::Int(*c as i64)),
+        Value::String(s) => s
+            .parse::<i64>()
+            .map(Value::Int)
+            .map_err(|_| RuntimeError::new(format!("cannot parse '{}' as integer", s))),
+        _ => Err(RuntimeError::new("to_int() cannot convert this type")),
     });
 
     // to_float - convert to float
-    define(interp, "to_float", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Float(*n as f64)),
-            Value::Float(n) => Ok(Value::Float(*n)),
-            Value::Bool(b) => Ok(Value::Float(if *b { 1.0 } else { 0.0 })),
-            Value::String(s) => {
-                s.parse::<f64>()
-                    .map(Value::Float)
-                    .map_err(|_| RuntimeError::new(format!("cannot parse '{}' as float", s)))
-            }
-            _ => Err(RuntimeError::new("to_float() cannot convert this type")),
-        }
+    define(interp, "to_float", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float(*n as f64)),
+        Value::Float(n) => Ok(Value::Float(*n)),
+        Value::Bool(b) => Ok(Value::Float(if *b { 1.0 } else { 0.0 })),
+        Value::String(s) => s
+            .parse::<f64>()
+            .map(Value::Float)
+            .map_err(|_| RuntimeError::new(format!("cannot parse '{}' as float", s))),
+        _ => Err(RuntimeError::new("to_float() cannot convert this type")),
     });
 
     // to_bool - convert to boolean
@@ -3383,87 +3411,69 @@ fn register_convert(interp: &mut Interpreter) {
     });
 
     // to_char - convert to character
-    define(interp, "to_char", Some(1), |_, args| {
-        match &args[0] {
-            Value::Char(c) => Ok(Value::Char(*c)),
-            Value::Int(n) => {
-                char::from_u32(*n as u32)
-                    .map(Value::Char)
-                    .ok_or_else(|| RuntimeError::new(format!("invalid char code: {}", n)))
-            }
-            Value::String(s) => {
-                s.chars().next()
-                    .map(Value::Char)
-                    .ok_or_else(|| RuntimeError::new("to_char() on empty string"))
-            }
-            _ => Err(RuntimeError::new("to_char() cannot convert this type")),
-        }
+    define(interp, "to_char", Some(1), |_, args| match &args[0] {
+        Value::Char(c) => Ok(Value::Char(*c)),
+        Value::Int(n) => char::from_u32(*n as u32)
+            .map(Value::Char)
+            .ok_or_else(|| RuntimeError::new(format!("invalid char code: {}", n))),
+        Value::String(s) => s
+            .chars()
+            .next()
+            .map(Value::Char)
+            .ok_or_else(|| RuntimeError::new("to_char() on empty string")),
+        _ => Err(RuntimeError::new("to_char() cannot convert this type")),
     });
 
     // to_array - convert to array
-    define(interp, "to_array", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => Ok(Value::Array(arr.clone())),
-            Value::Tuple(t) => Ok(Value::Array(Rc::new(RefCell::new(t.as_ref().clone())))),
-            Value::String(s) => {
-                let chars: Vec<Value> = s.chars().map(Value::Char).collect();
-                Ok(Value::Array(Rc::new(RefCell::new(chars))))
-            }
-            _ => Ok(Value::Array(Rc::new(RefCell::new(vec![args[0].clone()])))),
+    define(interp, "to_array", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => Ok(Value::Array(arr.clone())),
+        Value::Tuple(t) => Ok(Value::Array(Rc::new(RefCell::new(t.as_ref().clone())))),
+        Value::String(s) => {
+            let chars: Vec<Value> = s.chars().map(Value::Char).collect();
+            Ok(Value::Array(Rc::new(RefCell::new(chars))))
         }
+        _ => Ok(Value::Array(Rc::new(RefCell::new(vec![args[0].clone()])))),
     });
 
     // to_tuple - convert to tuple
-    define(interp, "to_tuple", Some(1), |_, args| {
-        match &args[0] {
-            Value::Tuple(t) => Ok(Value::Tuple(t.clone())),
-            Value::Array(arr) => Ok(Value::Tuple(Rc::new(arr.borrow().clone()))),
-            _ => Ok(Value::Tuple(Rc::new(vec![args[0].clone()]))),
-        }
+    define(interp, "to_tuple", Some(1), |_, args| match &args[0] {
+        Value::Tuple(t) => Ok(Value::Tuple(t.clone())),
+        Value::Array(arr) => Ok(Value::Tuple(Rc::new(arr.borrow().clone()))),
+        _ => Ok(Value::Tuple(Rc::new(vec![args[0].clone()]))),
     });
 
     // char_code - get unicode code point
-    define(interp, "char_code", Some(1), |_, args| {
-        match &args[0] {
-            Value::Char(c) => Ok(Value::Int(*c as i64)),
-            _ => Err(RuntimeError::new("char_code() requires char")),
-        }
+    define(interp, "char_code", Some(1), |_, args| match &args[0] {
+        Value::Char(c) => Ok(Value::Int(*c as i64)),
+        _ => Err(RuntimeError::new("char_code() requires char")),
     });
 
     // from_char_code - create char from code point
     define(interp, "from_char_code", Some(1), |_, args| {
         match &args[0] {
-            Value::Int(n) => {
-                char::from_u32(*n as u32)
-                    .map(Value::Char)
-                    .ok_or_else(|| RuntimeError::new(format!("invalid char code: {}", n)))
-            }
+            Value::Int(n) => char::from_u32(*n as u32)
+                .map(Value::Char)
+                .ok_or_else(|| RuntimeError::new(format!("invalid char code: {}", n))),
             _ => Err(RuntimeError::new("from_char_code() requires integer")),
         }
     });
 
     // hex - convert to hex string
-    define(interp, "hex", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::String(Rc::new(format!("{:x}", n)))),
-            _ => Err(RuntimeError::new("hex() requires integer")),
-        }
+    define(interp, "hex", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::String(Rc::new(format!("{:x}", n)))),
+        _ => Err(RuntimeError::new("hex() requires integer")),
     });
 
     // oct - convert to octal string
-    define(interp, "oct", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::String(Rc::new(format!("{:o}", n)))),
-            _ => Err(RuntimeError::new("oct() requires integer")),
-        }
+    define(interp, "oct", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::String(Rc::new(format!("{:o}", n)))),
+        _ => Err(RuntimeError::new("oct() requires integer")),
     });
 
     // bin - convert to binary string
-    define(interp, "bin", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::String(Rc::new(format!("{:b}", n)))),
-            _ => Err(RuntimeError::new("bin() requires integer")),
-        }
+    define(interp, "bin", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::String(Rc::new(format!("{:b}", n)))),
+        _ => Err(RuntimeError::new("bin() requires integer")),
     });
 
     // parse_int - parse string as integer with optional base
@@ -3472,9 +3482,13 @@ fn register_convert(interp: &mut Interpreter) {
             (Value::String(s), Value::Int(base)) if *base >= 2 && *base <= 36 => {
                 i64::from_str_radix(s.trim(), *base as u32)
                     .map(Value::Int)
-                    .map_err(|_| RuntimeError::new(format!("cannot parse '{}' as base-{} integer", s, base)))
+                    .map_err(|_| {
+                        RuntimeError::new(format!("cannot parse '{}' as base-{} integer", s, base))
+                    })
             }
-            _ => Err(RuntimeError::new("parse_int() requires string and base 2-36")),
+            _ => Err(RuntimeError::new(
+                "parse_int() requires string and base 2-36",
+            )),
         }
     });
 }
@@ -3495,7 +3509,9 @@ fn register_cycle(interp: &mut Interpreter) {
                     Value::Int(*modulus),
                 ])))
             }
-            _ => Err(RuntimeError::new("cycle() requires value and positive modulus")),
+            _ => Err(RuntimeError::new(
+                "cycle() requires value and positive modulus",
+            )),
         }
     });
 
@@ -3505,7 +3521,9 @@ fn register_cycle(interp: &mut Interpreter) {
             (Value::Int(a), Value::Int(b), Value::Int(m)) if *m > 0 => {
                 Ok(Value::Int((a + b).rem_euclid(*m)))
             }
-            _ => Err(RuntimeError::new("mod_add() requires two integers and positive modulus")),
+            _ => Err(RuntimeError::new(
+                "mod_add() requires two integers and positive modulus",
+            )),
         }
     });
 
@@ -3515,7 +3533,9 @@ fn register_cycle(interp: &mut Interpreter) {
             (Value::Int(a), Value::Int(b), Value::Int(m)) if *m > 0 => {
                 Ok(Value::Int((a - b).rem_euclid(*m)))
             }
-            _ => Err(RuntimeError::new("mod_sub() requires two integers and positive modulus")),
+            _ => Err(RuntimeError::new(
+                "mod_sub() requires two integers and positive modulus",
+            )),
         }
     });
 
@@ -3525,7 +3545,9 @@ fn register_cycle(interp: &mut Interpreter) {
             (Value::Int(a), Value::Int(b), Value::Int(m)) if *m > 0 => {
                 Ok(Value::Int((a * b).rem_euclid(*m)))
             }
-            _ => Err(RuntimeError::new("mod_mul() requires two integers and positive modulus")),
+            _ => Err(RuntimeError::new(
+                "mod_mul() requires two integers and positive modulus",
+            )),
         }
     });
 
@@ -3535,20 +3557,25 @@ fn register_cycle(interp: &mut Interpreter) {
             (Value::Int(base), Value::Int(exp), Value::Int(m)) if *m > 0 && *exp >= 0 => {
                 Ok(Value::Int(mod_pow(*base, *exp as u64, *m)))
             }
-            _ => Err(RuntimeError::new("mod_pow() requires base, non-negative exp, and positive modulus")),
+            _ => Err(RuntimeError::new(
+                "mod_pow() requires base, non-negative exp, and positive modulus",
+            )),
         }
     });
 
     // mod_inv - modular multiplicative inverse (if exists)
     define(interp, "mod_inv", Some(2), |_, args| {
         match (&args[0], &args[1]) {
-            (Value::Int(a), Value::Int(m)) if *m > 0 => {
-                match mod_inverse(*a, *m) {
-                    Some(inv) => Ok(Value::Int(inv)),
-                    None => Err(RuntimeError::new(format!("no modular inverse of {} mod {}", a, m))),
-                }
-            }
-            _ => Err(RuntimeError::new("mod_inv() requires integer and positive modulus")),
+            (Value::Int(a), Value::Int(m)) if *m > 0 => match mod_inverse(*a, *m) {
+                Some(inv) => Ok(Value::Int(inv)),
+                None => Err(RuntimeError::new(format!(
+                    "no modular inverse of {} mod {}",
+                    a, m
+                ))),
+            },
+            _ => Err(RuntimeError::new(
+                "mod_inv() requires integer and positive modulus",
+            )),
         }
     });
 
@@ -3569,52 +3596,46 @@ fn register_cycle(interp: &mut Interpreter) {
     // interval - musical interval (semitones)
     define(interp, "interval", Some(2), |_, args| {
         match (&args[0], &args[1]) {
-            (Value::Int(a), Value::Int(b)) => {
-                Ok(Value::Int((b - a).rem_euclid(12)))
-            }
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Int((b - a).rem_euclid(12))),
             _ => Err(RuntimeError::new("interval() requires two integers")),
         }
     });
 
     // cents - convert semitones to cents or vice versa
-    define(interp, "cents", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(semitones) => Ok(Value::Int(*semitones * 100)),
-            Value::Float(semitones) => Ok(Value::Float(*semitones * 100.0)),
-            _ => Err(RuntimeError::new("cents() requires number")),
-        }
+    define(interp, "cents", Some(1), |_, args| match &args[0] {
+        Value::Int(semitones) => Ok(Value::Int(*semitones * 100)),
+        Value::Float(semitones) => Ok(Value::Float(*semitones * 100.0)),
+        _ => Err(RuntimeError::new("cents() requires number")),
     });
 
     // freq - convert MIDI note number to frequency
-    define(interp, "freq", Some(1), |_, args| {
-        match &args[0] {
-            Value::Int(midi) => {
-                let freq = 440.0 * 2.0_f64.powf((*midi as f64 - 69.0) / 12.0);
-                Ok(Value::Float(freq))
-            }
-            _ => Err(RuntimeError::new("freq() requires integer MIDI note")),
+    define(interp, "freq", Some(1), |_, args| match &args[0] {
+        Value::Int(midi) => {
+            let freq = 440.0 * 2.0_f64.powf((*midi as f64 - 69.0) / 12.0);
+            Ok(Value::Float(freq))
         }
+        _ => Err(RuntimeError::new("freq() requires integer MIDI note")),
     });
 
     // midi - convert frequency to MIDI note number
-    define(interp, "midi", Some(1), |_, args| {
-        match &args[0] {
-            Value::Float(freq) if *freq > 0.0 => {
-                let midi = 69.0 + 12.0 * (freq / 440.0).log2();
-                Ok(Value::Int(midi.round() as i64))
-            }
-            Value::Int(freq) if *freq > 0 => {
-                let midi = 69.0 + 12.0 * (*freq as f64 / 440.0).log2();
-                Ok(Value::Int(midi.round() as i64))
-            }
-            _ => Err(RuntimeError::new("midi() requires positive frequency")),
+    define(interp, "midi", Some(1), |_, args| match &args[0] {
+        Value::Float(freq) if *freq > 0.0 => {
+            let midi = 69.0 + 12.0 * (freq / 440.0).log2();
+            Ok(Value::Int(midi.round() as i64))
         }
+        Value::Int(freq) if *freq > 0 => {
+            let midi = 69.0 + 12.0 * (*freq as f64 / 440.0).log2();
+            Ok(Value::Int(midi.round() as i64))
+        }
+        _ => Err(RuntimeError::new("midi() requires positive frequency")),
     });
 }
 
 // Fast modular exponentiation
 fn mod_pow(mut base: i64, mut exp: u64, modulus: i64) -> i64 {
-    if modulus == 1 { return 0; }
+    if modulus == 1 {
+        return 0;
+    }
     let mut result: i64 = 1;
     base = base.rem_euclid(modulus);
     while exp > 0 {
@@ -3635,11 +3656,14 @@ fn mod_pow(mut base: i64, mut exp: u64, modulus: i64) -> i64 {
 fn register_simd(interp: &mut Interpreter) {
     // simd_new - create a SIMD 4-component vector
     define(interp, "simd_new", Some(4), |_, args| {
-        let values: Result<Vec<f64>, _> = args.iter().map(|v| match v {
-            Value::Float(f) => Ok(*f),
-            Value::Int(i) => Ok(*i as f64),
-            _ => Err(RuntimeError::new("simd_new() requires numbers")),
-        }).collect();
+        let values: Result<Vec<f64>, _> = args
+            .iter()
+            .map(|v| match v {
+                Value::Float(f) => Ok(*f),
+                Value::Int(i) => Ok(*i as f64),
+                _ => Err(RuntimeError::new("simd_new() requires numbers")),
+            })
+            .collect();
         let values = values?;
         Ok(Value::Array(Rc::new(RefCell::new(vec![
             Value::Float(values[0]),
@@ -3657,7 +3681,10 @@ fn register_simd(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("simd_splat() requires number")),
         };
         Ok(Value::Array(Rc::new(RefCell::new(vec![
-            Value::Float(v), Value::Float(v), Value::Float(v), Value::Float(v),
+            Value::Float(v),
+            Value::Float(v),
+            Value::Float(v),
+            Value::Float(v),
         ]))))
     });
 
@@ -3715,7 +3742,10 @@ fn register_simd(interp: &mut Interpreter) {
         let len = len_sq.sqrt();
         if len < 1e-10 {
             return Ok(Value::Array(Rc::new(RefCell::new(vec![
-                Value::Float(0.0), Value::Float(0.0), Value::Float(0.0), Value::Float(0.0),
+                Value::Float(0.0),
+                Value::Float(0.0),
+                Value::Float(0.0),
+                Value::Float(0.0),
             ]))));
         }
         let inv_len = 1.0 / len;
@@ -3757,9 +3787,7 @@ fn register_simd(interp: &mut Interpreter) {
     });
 
     // simd_free - no-op in interpreter (for JIT compatibility)
-    define(interp, "simd_free", Some(1), |_, _| {
-        Ok(Value::Null)
-    });
+    define(interp, "simd_free", Some(1), |_, _| Ok(Value::Null));
 
     // simd_lerp - linear interpolation between vectors
     define(interp, "simd_lerp", Some(3), |_, args| {
@@ -3786,19 +3814,30 @@ fn extract_simd(val: &Value, fn_name: &str) -> Result<[f64; 4], RuntimeError> {
         Value::Array(arr) => {
             let arr = arr.borrow();
             if arr.len() < 4 {
-                return Err(RuntimeError::new(format!("{}() requires 4-element array", fn_name)));
+                return Err(RuntimeError::new(format!(
+                    "{}() requires 4-element array",
+                    fn_name
+                )));
             }
             let mut result = [0.0; 4];
             for (i, v) in arr.iter().take(4).enumerate() {
                 result[i] = match v {
                     Value::Float(f) => *f,
                     Value::Int(n) => *n as f64,
-                    _ => return Err(RuntimeError::new(format!("{}() requires numeric array", fn_name))),
+                    _ => {
+                        return Err(RuntimeError::new(format!(
+                            "{}() requires numeric array",
+                            fn_name
+                        )))
+                    }
                 };
             }
             Ok(result)
         }
-        _ => Err(RuntimeError::new(format!("{}() requires array argument", fn_name))),
+        _ => Err(RuntimeError::new(format!(
+            "{}() requires array argument",
+            fn_name
+        ))),
     }
 }
 
@@ -3854,7 +3893,7 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let angle = extract_number(&args[1], "quat_from_axis_angle")?;
 
         // Normalize axis
-        let len = (axis[0]*axis[0] + axis[1]*axis[1] + axis[2]*axis[2]).sqrt();
+        let len = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
         if len < 1e-10 {
             return Ok(make_vec4(1.0, 0.0, 0.0, 0.0)); // Identity for zero axis
         }
@@ -3873,8 +3912,8 @@ fn register_graphics_math(interp: &mut Interpreter) {
     // Uses XYZ order (pitch around X, yaw around Y, roll around Z)
     define(interp, "quat_from_euler", Some(3), |_, args| {
         let pitch = extract_number(&args[0], "quat_from_euler")?; // X
-        let yaw = extract_number(&args[1], "quat_from_euler")?;   // Y
-        let roll = extract_number(&args[2], "quat_from_euler")?;  // Z
+        let yaw = extract_number(&args[1], "quat_from_euler")?; // Y
+        let roll = extract_number(&args[2], "quat_from_euler")?; // Z
 
         let (sp, cp) = (pitch / 2.0).sin_cos();
         let (sy, cy) = (yaw / 2.0).sin_cos();
@@ -3895,10 +3934,10 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let q2 = extract_vec4(&args[1], "quat_mul")?;
 
         // Hamilton product
-        let w = q1[0]*q2[0] - q1[1]*q2[1] - q1[2]*q2[2] - q1[3]*q2[3];
-        let x = q1[0]*q2[1] + q1[1]*q2[0] + q1[2]*q2[3] - q1[3]*q2[2];
-        let y = q1[0]*q2[2] - q1[1]*q2[3] + q1[2]*q2[0] + q1[3]*q2[1];
-        let z = q1[0]*q2[3] + q1[1]*q2[2] - q1[2]*q2[1] + q1[3]*q2[0];
+        let w = q1[0] * q2[0] - q1[1] * q2[1] - q1[2] * q2[2] - q1[3] * q2[3];
+        let x = q1[0] * q2[1] + q1[1] * q2[0] + q1[2] * q2[3] - q1[3] * q2[2];
+        let y = q1[0] * q2[2] - q1[1] * q2[3] + q1[2] * q2[0] + q1[3] * q2[1];
+        let z = q1[0] * q2[3] + q1[1] * q2[2] - q1[2] * q2[1] + q1[3] * q2[0];
 
         Ok(make_vec4(w, x, y, z))
     });
@@ -3912,21 +3951,28 @@ fn register_graphics_math(interp: &mut Interpreter) {
     // quat_inverse(q) - quaternion inverse (handles non-unit quaternions)
     define(interp, "quat_inverse", Some(1), |_, args| {
         let q = extract_vec4(&args[0], "quat_inverse")?;
-        let norm_sq = q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3];
+        let norm_sq = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
         if norm_sq < 1e-10 {
-            return Err(RuntimeError::new("quat_inverse: cannot invert zero quaternion"));
+            return Err(RuntimeError::new(
+                "quat_inverse: cannot invert zero quaternion",
+            ));
         }
-        Ok(make_vec4(q[0]/norm_sq, -q[1]/norm_sq, -q[2]/norm_sq, -q[3]/norm_sq))
+        Ok(make_vec4(
+            q[0] / norm_sq,
+            -q[1] / norm_sq,
+            -q[2] / norm_sq,
+            -q[3] / norm_sq,
+        ))
     });
 
     // quat_normalize(q) - normalize to unit quaternion
     define(interp, "quat_normalize", Some(1), |_, args| {
         let q = extract_vec4(&args[0], "quat_normalize")?;
-        let len = (q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]).sqrt();
+        let len = (q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]).sqrt();
         if len < 1e-10 {
             return Ok(make_vec4(1.0, 0.0, 0.0, 0.0));
         }
-        Ok(make_vec4(q[0]/len, q[1]/len, q[2]/len, q[3]/len))
+        Ok(make_vec4(q[0] / len, q[1] / len, q[2] / len, q[3] / len))
     });
 
     // quat_rotate(q, vec3) - rotate a 3D vector by quaternion
@@ -3935,8 +3981,13 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let v = extract_vec3(&args[1], "quat_rotate")?;
 
         // q * v * q^-1 optimized formula
-        let qw = q[0]; let qx = q[1]; let qy = q[2]; let qz = q[3];
-        let vx = v[0]; let vy = v[1]; let vz = v[2];
+        let qw = q[0];
+        let qx = q[1];
+        let qy = q[2];
+        let qz = q[3];
+        let vx = v[0];
+        let vy = v[1];
+        let vz = v[2];
 
         // t = 2 * cross(q.xyz, v)
         let tx = 2.0 * (qy * vz - qz * vy);
@@ -3958,7 +4009,7 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let t = extract_number(&args[2], "quat_slerp")?;
 
         // Compute dot product
-        let mut dot = q1[0]*q2[0] + q1[1]*q2[1] + q1[2]*q2[2] + q1[3]*q2[3];
+        let mut dot = q1[0] * q2[0] + q1[1] * q2[1] + q1[2] * q2[2] + q1[3] * q2[3];
 
         // If dot < 0, negate q2 to take shorter path
         if dot < 0.0 {
@@ -3972,8 +4023,8 @@ fn register_graphics_math(interp: &mut Interpreter) {
             let x = q1[1] + t * (q2[1] - q1[1]);
             let y = q1[2] + t * (q2[2] - q1[2]);
             let z = q1[3] + t * (q2[3] - q1[3]);
-            let len = (w*w + x*x + y*y + z*z).sqrt();
-            return Ok(make_vec4(w/len, x/len, y/len, z/len));
+            let len = (w * w + x * x + y * y + z * z).sqrt();
+            return Ok(make_vec4(w / len, x / len, y / len, z / len));
         }
 
         // Spherical interpolation
@@ -4024,16 +4075,34 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let q = extract_vec4(&args[0], "quat_to_mat4")?;
         let (w, x, y, z) = (q[0], q[1], q[2], q[3]);
 
-        let xx = x * x; let yy = y * y; let zz = z * z;
-        let xy = x * y; let xz = x * z; let yz = y * z;
-        let wx = w * x; let wy = w * y; let wz = w * z;
+        let xx = x * x;
+        let yy = y * y;
+        let zz = z * z;
+        let xy = x * y;
+        let xz = x * z;
+        let yz = y * z;
+        let wx = w * x;
+        let wy = w * y;
+        let wz = w * z;
 
         // Column-major 4x4 rotation matrix
         Ok(make_mat4([
-            1.0 - 2.0*(yy + zz), 2.0*(xy + wz),       2.0*(xz - wy),       0.0,
-            2.0*(xy - wz),       1.0 - 2.0*(xx + zz), 2.0*(yz + wx),       0.0,
-            2.0*(xz + wy),       2.0*(yz - wx),       1.0 - 2.0*(xx + yy), 0.0,
-            0.0,                 0.0,                 0.0,                 1.0,
+            1.0 - 2.0 * (yy + zz),
+            2.0 * (xy + wz),
+            2.0 * (xz - wy),
+            0.0,
+            2.0 * (xy - wz),
+            1.0 - 2.0 * (xx + zz),
+            2.0 * (yz + wx),
+            0.0,
+            2.0 * (xz + wy),
+            2.0 * (yz - wx),
+            1.0 - 2.0 * (xx + yy),
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
         ]))
     });
 
@@ -4069,28 +4138,28 @@ fn register_graphics_math(interp: &mut Interpreter) {
     define(interp, "vec3_add", Some(2), |_, args| {
         let a = extract_vec3(&args[0], "vec3_add")?;
         let b = extract_vec3(&args[1], "vec3_add")?;
-        Ok(make_vec3(a[0]+b[0], a[1]+b[1], a[2]+b[2]))
+        Ok(make_vec3(a[0] + b[0], a[1] + b[1], a[2] + b[2]))
     });
 
     // vec3_sub(a, b)
     define(interp, "vec3_sub", Some(2), |_, args| {
         let a = extract_vec3(&args[0], "vec3_sub")?;
         let b = extract_vec3(&args[1], "vec3_sub")?;
-        Ok(make_vec3(a[0]-b[0], a[1]-b[1], a[2]-b[2]))
+        Ok(make_vec3(a[0] - b[0], a[1] - b[1], a[2] - b[2]))
     });
 
     // vec3_scale(v, scalar)
     define(interp, "vec3_scale", Some(2), |_, args| {
         let v = extract_vec3(&args[0], "vec3_scale")?;
         let s = extract_number(&args[1], "vec3_scale")?;
-        Ok(make_vec3(v[0]*s, v[1]*s, v[2]*s))
+        Ok(make_vec3(v[0] * s, v[1] * s, v[2] * s))
     });
 
     // vec3_dot(a, b)
     define(interp, "vec3_dot", Some(2), |_, args| {
         let a = extract_vec3(&args[0], "vec3_dot")?;
         let b = extract_vec3(&args[1], "vec3_dot")?;
-        Ok(Value::Float(a[0]*b[0] + a[1]*b[1] + a[2]*b[2]))
+        Ok(Value::Float(a[0] * b[0] + a[1] * b[1] + a[2] * b[2]))
     });
 
     // vec3_cross(a, b)
@@ -4098,26 +4167,28 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let a = extract_vec3(&args[0], "vec3_cross")?;
         let b = extract_vec3(&args[1], "vec3_cross")?;
         Ok(make_vec3(
-            a[1]*b[2] - a[2]*b[1],
-            a[2]*b[0] - a[0]*b[2],
-            a[0]*b[1] - a[1]*b[0],
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
         ))
     });
 
     // vec3_length(v)
     define(interp, "vec3_length", Some(1), |_, args| {
         let v = extract_vec3(&args[0], "vec3_length")?;
-        Ok(Value::Float((v[0]*v[0] + v[1]*v[1] + v[2]*v[2]).sqrt()))
+        Ok(Value::Float(
+            (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt(),
+        ))
     });
 
     // vec3_normalize(v)
     define(interp, "vec3_normalize", Some(1), |_, args| {
         let v = extract_vec3(&args[0], "vec3_normalize")?;
-        let len = (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]).sqrt();
+        let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
         if len < 1e-10 {
             return Ok(make_vec3(0.0, 0.0, 0.0));
         }
-        Ok(make_vec3(v[0]/len, v[1]/len, v[2]/len))
+        Ok(make_vec3(v[0] / len, v[1] / len, v[2] / len))
     });
 
     // vec3_lerp(a, b, t) - linear interpolation
@@ -4136,7 +4207,7 @@ fn register_graphics_math(interp: &mut Interpreter) {
     define(interp, "vec3_reflect", Some(2), |_, args| {
         let i = extract_vec3(&args[0], "vec3_reflect")?;
         let n = extract_vec3(&args[1], "vec3_reflect")?;
-        let dot = i[0]*n[0] + i[1]*n[1] + i[2]*n[2];
+        let dot = i[0] * n[0] + i[1] * n[1] + i[2] * n[2];
         Ok(make_vec3(
             i[0] - 2.0 * dot * n[0],
             i[1] - 2.0 * dot * n[1],
@@ -4150,7 +4221,7 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let n = extract_vec3(&args[1], "vec3_refract")?;
         let eta = extract_number(&args[2], "vec3_refract")?;
 
-        let dot = i[0]*n[0] + i[1]*n[1] + i[2]*n[2];
+        let dot = i[0] * n[0] + i[1] * n[1] + i[2] * n[2];
         let k = 1.0 - eta * eta * (1.0 - dot * dot);
 
         if k < 0.0 {
@@ -4170,7 +4241,9 @@ fn register_graphics_math(interp: &mut Interpreter) {
     define(interp, "vec4_dot", Some(2), |_, args| {
         let a = extract_vec4(&args[0], "vec4_dot")?;
         let b = extract_vec4(&args[1], "vec4_dot")?;
-        Ok(Value::Float(a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3]))
+        Ok(Value::Float(
+            a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3],
+        ))
     });
 
     // -------------------------------------------------------------------------
@@ -4180,10 +4253,7 @@ fn register_graphics_math(interp: &mut Interpreter) {
     // mat4_identity() - 4x4 identity matrix
     define(interp, "mat4_identity", Some(0), |_, _| {
         Ok(make_mat4([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ]))
     });
 
@@ -4211,10 +4281,10 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let v = extract_vec4(&args[1], "mat4_transform")?;
 
         Ok(make_vec4(
-            m[0]*v[0] + m[4]*v[1] + m[8]*v[2]  + m[12]*v[3],
-            m[1]*v[0] + m[5]*v[1] + m[9]*v[2]  + m[13]*v[3],
-            m[2]*v[0] + m[6]*v[1] + m[10]*v[2] + m[14]*v[3],
-            m[3]*v[0] + m[7]*v[1] + m[11]*v[2] + m[15]*v[3],
+            m[0] * v[0] + m[4] * v[1] + m[8] * v[2] + m[12] * v[3],
+            m[1] * v[0] + m[5] * v[1] + m[9] * v[2] + m[13] * v[3],
+            m[2] * v[0] + m[6] * v[1] + m[10] * v[2] + m[14] * v[3],
+            m[3] * v[0] + m[7] * v[1] + m[11] * v[2] + m[15] * v[3],
         ))
     });
 
@@ -4224,10 +4294,7 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let ty = extract_number(&args[1], "mat4_translate")?;
         let tz = extract_number(&args[2], "mat4_translate")?;
         Ok(make_mat4([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            tx,  ty,  tz,  1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, tx, ty, tz, 1.0,
         ]))
     });
 
@@ -4237,10 +4304,7 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let sy = extract_number(&args[1], "mat4_scale")?;
         let sz = extract_number(&args[2], "mat4_scale")?;
         Ok(make_mat4([
-            sx,  0.0, 0.0, 0.0,
-            0.0, sy,  0.0, 0.0,
-            0.0, 0.0, sz,  0.0,
-            0.0, 0.0, 0.0, 1.0,
+            sx, 0.0, 0.0, 0.0, 0.0, sy, 0.0, 0.0, 0.0, 0.0, sz, 0.0, 0.0, 0.0, 0.0, 1.0,
         ]))
     });
 
@@ -4249,10 +4313,7 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let angle = extract_number(&args[0], "mat4_rotate_x")?;
         let (s, c) = angle.sin_cos();
         Ok(make_mat4([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, c,   s,   0.0,
-            0.0, -s,  c,   0.0,
-            0.0, 0.0, 0.0, 1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, c, s, 0.0, 0.0, -s, c, 0.0, 0.0, 0.0, 0.0, 1.0,
         ]))
     });
 
@@ -4261,10 +4322,7 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let angle = extract_number(&args[0], "mat4_rotate_y")?;
         let (s, c) = angle.sin_cos();
         Ok(make_mat4([
-            c,   0.0, -s,  0.0,
-            0.0, 1.0, 0.0, 0.0,
-            s,   0.0, c,   0.0,
-            0.0, 0.0, 0.0, 1.0,
+            c, 0.0, -s, 0.0, 0.0, 1.0, 0.0, 0.0, s, 0.0, c, 0.0, 0.0, 0.0, 0.0, 1.0,
         ]))
     });
 
@@ -4273,10 +4331,7 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let angle = extract_number(&args[0], "mat4_rotate_z")?;
         let (s, c) = angle.sin_cos();
         Ok(make_mat4([
-            c,   s,   0.0, 0.0,
-            -s,  c,   0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
+            c, s, 0.0, 0.0, -s, c, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ]))
     });
 
@@ -4291,10 +4346,22 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let nf = 1.0 / (near - far);
 
         Ok(make_mat4([
-            f / aspect, 0.0, 0.0,                   0.0,
-            0.0,        f,   0.0,                   0.0,
-            0.0,        0.0, (far + near) * nf,    -1.0,
-            0.0,        0.0, 2.0 * far * near * nf, 0.0,
+            f / aspect,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            f,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            (far + near) * nf,
+            -1.0,
+            0.0,
+            0.0,
+            2.0 * far * near * nf,
+            0.0,
         ]))
     });
 
@@ -4312,10 +4379,22 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let nf = 1.0 / (near - far);
 
         Ok(make_mat4([
-            -2.0 * lr,           0.0,                 0.0,                0.0,
-            0.0,                 -2.0 * bt,           0.0,                0.0,
-            0.0,                 0.0,                 2.0 * nf,           0.0,
-            (left + right) * lr, (top + bottom) * bt, (far + near) * nf,  1.0,
+            -2.0 * lr,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            -2.0 * bt,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            2.0 * nf,
+            0.0,
+            (left + right) * lr,
+            (top + bottom) * bt,
+            (far + near) * nf,
+            1.0,
         ]))
     });
 
@@ -4329,15 +4408,15 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let fx = center[0] - eye[0];
         let fy = center[1] - eye[1];
         let fz = center[2] - eye[2];
-        let flen = (fx*fx + fy*fy + fz*fz).sqrt();
-        let (fx, fy, fz) = (fx/flen, fy/flen, fz/flen);
+        let flen = (fx * fx + fy * fy + fz * fz).sqrt();
+        let (fx, fy, fz) = (fx / flen, fy / flen, fz / flen);
 
         // Right vector (x) = forward × up
         let rx = fy * up[2] - fz * up[1];
         let ry = fz * up[0] - fx * up[2];
         let rz = fx * up[1] - fy * up[0];
-        let rlen = (rx*rx + ry*ry + rz*rz).sqrt();
-        let (rx, ry, rz) = (rx/rlen, ry/rlen, rz/rlen);
+        let rlen = (rx * rx + ry * ry + rz * rz).sqrt();
+        let (rx, ry, rz) = (rx / rlen, ry / rlen, rz / rlen);
 
         // True up vector (y) = right × forward
         let ux = ry * fz - rz * fy;
@@ -4345,12 +4424,21 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let uz = rx * fy - ry * fx;
 
         Ok(make_mat4([
-            rx, ux, -fx, 0.0,
-            ry, uy, -fy, 0.0,
-            rz, uz, -fz, 0.0,
-            -(rx*eye[0] + ry*eye[1] + rz*eye[2]),
-            -(ux*eye[0] + uy*eye[1] + uz*eye[2]),
-            -(-fx*eye[0] - fy*eye[1] - fz*eye[2]),
+            rx,
+            ux,
+            -fx,
+            0.0,
+            ry,
+            uy,
+            -fy,
+            0.0,
+            rz,
+            uz,
+            -fz,
+            0.0,
+            -(rx * eye[0] + ry * eye[1] + rz * eye[2]),
+            -(ux * eye[0] + uy * eye[1] + uz * eye[2]),
+            -(-fx * eye[0] - fy * eye[1] - fz * eye[2]),
             1.0,
         ]))
     });
@@ -4360,10 +4448,22 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let m = extract_mat4(&args[0], "mat4_inverse")?;
 
         // Optimized 4x4 matrix inverse using cofactors
-        let a00 = m[0]; let a01 = m[1]; let a02 = m[2]; let a03 = m[3];
-        let a10 = m[4]; let a11 = m[5]; let a12 = m[6]; let a13 = m[7];
-        let a20 = m[8]; let a21 = m[9]; let a22 = m[10]; let a23 = m[11];
-        let a30 = m[12]; let a31 = m[13]; let a32 = m[14]; let a33 = m[15];
+        let a00 = m[0];
+        let a01 = m[1];
+        let a02 = m[2];
+        let a03 = m[3];
+        let a10 = m[4];
+        let a11 = m[5];
+        let a12 = m[6];
+        let a13 = m[7];
+        let a20 = m[8];
+        let a21 = m[9];
+        let a22 = m[10];
+        let a23 = m[11];
+        let a30 = m[12];
+        let a31 = m[13];
+        let a32 = m[14];
+        let a33 = m[15];
 
         let b00 = a00 * a11 - a01 * a10;
         let b01 = a00 * a12 - a02 * a10;
@@ -4410,10 +4510,8 @@ fn register_graphics_math(interp: &mut Interpreter) {
     define(interp, "mat4_transpose", Some(1), |_, args| {
         let m = extract_mat4(&args[0], "mat4_transpose")?;
         Ok(make_mat4([
-            m[0], m[4], m[8],  m[12],
-            m[1], m[5], m[9],  m[13],
-            m[2], m[6], m[10], m[14],
-            m[3], m[7], m[11], m[15],
+            m[0], m[4], m[8], m[12], m[1], m[5], m[9], m[13], m[2], m[6], m[10], m[14], m[3], m[7],
+            m[11], m[15],
         ]))
     });
 
@@ -4423,20 +4521,14 @@ fn register_graphics_math(interp: &mut Interpreter) {
 
     // mat3_identity() - 3x3 identity matrix
     define(interp, "mat3_identity", Some(0), |_, _| {
-        Ok(make_mat3([
-            1.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-            0.0, 0.0, 1.0,
-        ]))
+        Ok(make_mat3([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]))
     });
 
     // mat3_from_mat4(m) - extract upper-left 3x3 from 4x4 (for normal matrix)
     define(interp, "mat3_from_mat4", Some(1), |_, args| {
         let m = extract_mat4(&args[0], "mat3_from_mat4")?;
         Ok(make_mat3([
-            m[0], m[1], m[2],
-            m[4], m[5], m[6],
-            m[8], m[9], m[10],
+            m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10],
         ]))
     });
 
@@ -4464,9 +4556,9 @@ fn register_graphics_math(interp: &mut Interpreter) {
         let v = extract_vec3(&args[1], "mat3_transform")?;
 
         Ok(make_vec3(
-            m[0]*v[0] + m[3]*v[1] + m[6]*v[2],
-            m[1]*v[0] + m[4]*v[1] + m[7]*v[2],
-            m[2]*v[0] + m[5]*v[1] + m[8]*v[2],
+            m[0] * v[0] + m[3] * v[1] + m[6] * v[2],
+            m[1] * v[0] + m[4] * v[1] + m[7] * v[2],
+            m[2] * v[0] + m[5] * v[1] + m[8] * v[2],
         ))
     });
 
@@ -4474,9 +4566,8 @@ fn register_graphics_math(interp: &mut Interpreter) {
     define(interp, "mat3_inverse", Some(1), |_, args| {
         let m = extract_mat3(&args[0], "mat3_inverse")?;
 
-        let det = m[0] * (m[4] * m[8] - m[5] * m[7])
-                - m[3] * (m[1] * m[8] - m[2] * m[7])
-                + m[6] * (m[1] * m[5] - m[2] * m[4]);
+        let det = m[0] * (m[4] * m[8] - m[5] * m[7]) - m[3] * (m[1] * m[8] - m[2] * m[7])
+            + m[6] * (m[1] * m[5] - m[2] * m[4]);
 
         if det.abs() < 1e-10 {
             return Err(RuntimeError::new("mat3_inverse: singular matrix"));
@@ -4501,9 +4592,7 @@ fn register_graphics_math(interp: &mut Interpreter) {
     define(interp, "mat3_transpose", Some(1), |_, args| {
         let m = extract_mat3(&args[0], "mat3_transpose")?;
         Ok(make_mat3([
-            m[0], m[3], m[6],
-            m[1], m[4], m[7],
-            m[2], m[5], m[8],
+            m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8],
         ]))
     });
 }
@@ -4513,7 +4602,10 @@ fn extract_number(v: &Value, fn_name: &str) -> Result<f64, RuntimeError> {
     match v {
         Value::Float(f) => Ok(*f),
         Value::Int(i) => Ok(*i as f64),
-        _ => Err(RuntimeError::new(format!("{}() requires number argument", fn_name))),
+        _ => Err(RuntimeError::new(format!(
+            "{}() requires number argument",
+            fn_name
+        ))),
     }
 }
 
@@ -4522,14 +4614,20 @@ fn extract_vec2(v: &Value, fn_name: &str) -> Result<[f64; 2], RuntimeError> {
         Value::Array(arr) => {
             let arr = arr.borrow();
             if arr.len() < 2 {
-                return Err(RuntimeError::new(format!("{}() requires vec2 (2 elements)", fn_name)));
+                return Err(RuntimeError::new(format!(
+                    "{}() requires vec2 (2 elements)",
+                    fn_name
+                )));
             }
             Ok([
                 extract_number(&arr[0], fn_name)?,
                 extract_number(&arr[1], fn_name)?,
             ])
         }
-        _ => Err(RuntimeError::new(format!("{}() requires vec2 array", fn_name))),
+        _ => Err(RuntimeError::new(format!(
+            "{}() requires vec2 array",
+            fn_name
+        ))),
     }
 }
 
@@ -4538,7 +4636,10 @@ fn extract_vec3(v: &Value, fn_name: &str) -> Result<[f64; 3], RuntimeError> {
         Value::Array(arr) => {
             let arr = arr.borrow();
             if arr.len() < 3 {
-                return Err(RuntimeError::new(format!("{}() requires vec3 (3 elements)", fn_name)));
+                return Err(RuntimeError::new(format!(
+                    "{}() requires vec3 (3 elements)",
+                    fn_name
+                )));
             }
             Ok([
                 extract_number(&arr[0], fn_name)?,
@@ -4546,7 +4647,10 @@ fn extract_vec3(v: &Value, fn_name: &str) -> Result<[f64; 3], RuntimeError> {
                 extract_number(&arr[2], fn_name)?,
             ])
         }
-        _ => Err(RuntimeError::new(format!("{}() requires vec3 array", fn_name))),
+        _ => Err(RuntimeError::new(format!(
+            "{}() requires vec3 array",
+            fn_name
+        ))),
     }
 }
 
@@ -4555,7 +4659,10 @@ fn extract_vec4(v: &Value, fn_name: &str) -> Result<[f64; 4], RuntimeError> {
         Value::Array(arr) => {
             let arr = arr.borrow();
             if arr.len() < 4 {
-                return Err(RuntimeError::new(format!("{}() requires vec4 (4 elements)", fn_name)));
+                return Err(RuntimeError::new(format!(
+                    "{}() requires vec4 (4 elements)",
+                    fn_name
+                )));
             }
             Ok([
                 extract_number(&arr[0], fn_name)?,
@@ -4564,7 +4671,10 @@ fn extract_vec4(v: &Value, fn_name: &str) -> Result<[f64; 4], RuntimeError> {
                 extract_number(&arr[3], fn_name)?,
             ])
         }
-        _ => Err(RuntimeError::new(format!("{}() requires vec4 array", fn_name))),
+        _ => Err(RuntimeError::new(format!(
+            "{}() requires vec4 array",
+            fn_name
+        ))),
     }
 }
 
@@ -4573,7 +4683,10 @@ fn extract_mat3(v: &Value, fn_name: &str) -> Result<[f64; 9], RuntimeError> {
         Value::Array(arr) => {
             let arr = arr.borrow();
             if arr.len() < 9 {
-                return Err(RuntimeError::new(format!("{}() requires mat3 (9 elements)", fn_name)));
+                return Err(RuntimeError::new(format!(
+                    "{}() requires mat3 (9 elements)",
+                    fn_name
+                )));
             }
             let mut result = [0.0f64; 9];
             for i in 0..9 {
@@ -4581,7 +4694,10 @@ fn extract_mat3(v: &Value, fn_name: &str) -> Result<[f64; 9], RuntimeError> {
             }
             Ok(result)
         }
-        _ => Err(RuntimeError::new(format!("{}() requires mat3 array", fn_name))),
+        _ => Err(RuntimeError::new(format!(
+            "{}() requires mat3 array",
+            fn_name
+        ))),
     }
 }
 
@@ -4590,7 +4706,10 @@ fn extract_mat4(v: &Value, fn_name: &str) -> Result<[f64; 16], RuntimeError> {
         Value::Array(arr) => {
             let arr = arr.borrow();
             if arr.len() < 16 {
-                return Err(RuntimeError::new(format!("{}() requires mat4 (16 elements)", fn_name)));
+                return Err(RuntimeError::new(format!(
+                    "{}() requires mat4 (16 elements)",
+                    fn_name
+                )));
             }
             let mut result = [0.0f64; 16];
             for i in 0..16 {
@@ -4598,19 +4717,25 @@ fn extract_mat4(v: &Value, fn_name: &str) -> Result<[f64; 16], RuntimeError> {
             }
             Ok(result)
         }
-        _ => Err(RuntimeError::new(format!("{}() requires mat4 array", fn_name))),
+        _ => Err(RuntimeError::new(format!(
+            "{}() requires mat4 array",
+            fn_name
+        ))),
     }
 }
 
 fn make_vec2(x: f64, y: f64) -> Value {
     Value::Array(Rc::new(RefCell::new(vec![
-        Value::Float(x), Value::Float(y),
+        Value::Float(x),
+        Value::Float(y),
     ])))
 }
 
 fn make_vec3(x: f64, y: f64, z: f64) -> Value {
     Value::Array(Rc::new(RefCell::new(vec![
-        Value::Float(x), Value::Float(y), Value::Float(z),
+        Value::Float(x),
+        Value::Float(y),
+        Value::Float(z),
     ])))
 }
 
@@ -4621,19 +4746,22 @@ fn make_vec3_arr(v: [f64; 3]) -> Value {
 
 fn make_vec4(x: f64, y: f64, z: f64, w: f64) -> Value {
     Value::Array(Rc::new(RefCell::new(vec![
-        Value::Float(x), Value::Float(y), Value::Float(z), Value::Float(w),
+        Value::Float(x),
+        Value::Float(y),
+        Value::Float(z),
+        Value::Float(w),
     ])))
 }
 
 fn make_mat3(m: [f64; 9]) -> Value {
     Value::Array(Rc::new(RefCell::new(
-        m.iter().map(|&v| Value::Float(v)).collect()
+        m.iter().map(|&v| Value::Float(v)).collect(),
     )))
 }
 
 fn make_mat4(m: [f64; 16]) -> Value {
     Value::Array(Rc::new(RefCell::new(
-        m.iter().map(|&v| Value::Float(v)).collect()
+        m.iter().map(|&v| Value::Float(v)).collect(),
     )))
 }
 
@@ -4670,12 +4798,21 @@ fn register_concurrency(interp: &mut Interpreter) {
     define(interp, "channel_send", Some(2), |_, args| {
         let channel = match &args[0] {
             Value::Channel(ch) => ch.clone(),
-            _ => return Err(RuntimeError::new("channel_send() requires channel as first argument")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "channel_send() requires channel as first argument",
+                ))
+            }
         };
         let value = args[1].clone();
 
-        let sender = channel.sender.lock().map_err(|_| RuntimeError::new("channel mutex poisoned"))?;
-        sender.send(value).map_err(|_| RuntimeError::new("channel_send() failed: receiver dropped"))?;
+        let sender = channel
+            .sender
+            .lock()
+            .map_err(|_| RuntimeError::new("channel mutex poisoned"))?;
+        sender
+            .send(value)
+            .map_err(|_| RuntimeError::new("channel_send() failed: receiver dropped"))?;
 
         Ok(Value::Null)
     });
@@ -4684,10 +4821,17 @@ fn register_concurrency(interp: &mut Interpreter) {
     define(interp, "channel_recv", Some(1), |_, args| {
         let channel = match &args[0] {
             Value::Channel(ch) => ch.clone(),
-            _ => return Err(RuntimeError::new("channel_recv() requires channel argument")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "channel_recv() requires channel argument",
+                ))
+            }
         };
 
-        let receiver = channel.receiver.lock().map_err(|_| RuntimeError::new("channel mutex poisoned"))?;
+        let receiver = channel
+            .receiver
+            .lock()
+            .map_err(|_| RuntimeError::new("channel mutex poisoned"))?;
         match receiver.recv() {
             Ok(value) => Ok(value),
             Err(_) => Err(RuntimeError::new("channel_recv() failed: sender dropped")),
@@ -4698,10 +4842,17 @@ fn register_concurrency(interp: &mut Interpreter) {
     define(interp, "channel_try_recv", Some(1), |_, args| {
         let channel = match &args[0] {
             Value::Channel(ch) => ch.clone(),
-            _ => return Err(RuntimeError::new("channel_try_recv() requires channel argument")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "channel_try_recv() requires channel argument",
+                ))
+            }
         };
 
-        let receiver = channel.receiver.lock().map_err(|_| RuntimeError::new("channel mutex poisoned"))?;
+        let receiver = channel
+            .receiver
+            .lock()
+            .map_err(|_| RuntimeError::new("channel mutex poisoned"))?;
         match receiver.try_recv() {
             Ok(value) => {
                 // Return Some(value) as a variant
@@ -4719,9 +4870,9 @@ fn register_concurrency(interp: &mut Interpreter) {
                     fields: None,
                 })
             }
-            Err(mpsc::TryRecvError::Disconnected) => {
-                Err(RuntimeError::new("channel_try_recv() failed: sender dropped"))
-            }
+            Err(mpsc::TryRecvError::Disconnected) => Err(RuntimeError::new(
+                "channel_try_recv() failed: sender dropped",
+            )),
         }
     });
 
@@ -4729,23 +4880,30 @@ fn register_concurrency(interp: &mut Interpreter) {
     define(interp, "channel_recv_timeout", Some(2), |_, args| {
         let channel = match &args[0] {
             Value::Channel(ch) => ch.clone(),
-            _ => return Err(RuntimeError::new(
-                "channel_recv_timeout() requires a channel as first argument.\n\
+            _ => {
+                return Err(RuntimeError::new(
+                    "channel_recv_timeout() requires a channel as first argument.\n\
                  Create a channel with channel_new():\n\
                    let ch = channel_new();\n\
                    channel_send(ch, value);\n\
-                   let result = channel_recv_timeout(ch, 1000);  // 1 second timeout"
-            )),
+                   let result = channel_recv_timeout(ch, 1000);  // 1 second timeout",
+                ))
+            }
         };
         let timeout_ms = match &args[1] {
             Value::Int(ms) => *ms as u64,
-            _ => return Err(RuntimeError::new(
-                "channel_recv_timeout() requires timeout in milliseconds (integer).\n\
-                 Example: channel_recv_timeout(ch, 1000)  // Wait up to 1 second"
-            )),
+            _ => {
+                return Err(RuntimeError::new(
+                    "channel_recv_timeout() requires timeout in milliseconds (integer).\n\
+                 Example: channel_recv_timeout(ch, 1000)  // Wait up to 1 second",
+                ))
+            }
         };
 
-        let receiver = channel.receiver.lock().map_err(|_| RuntimeError::new("channel mutex poisoned"))?;
+        let receiver = channel
+            .receiver
+            .lock()
+            .map_err(|_| RuntimeError::new("channel mutex poisoned"))?;
         match receiver.recv_timeout(std::time::Duration::from_millis(timeout_ms)) {
             Ok(value) => Ok(Value::Variant {
                 enum_name: "Option".to_string(),
@@ -4757,9 +4915,9 @@ fn register_concurrency(interp: &mut Interpreter) {
                 variant_name: "None".to_string(),
                 fields: None,
             }),
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                Err(RuntimeError::new("channel_recv_timeout() failed: sender dropped"))
-            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(RuntimeError::new(
+                "channel_recv_timeout() failed: sender dropped",
+            )),
         }
     });
 
@@ -4784,7 +4942,9 @@ fn register_concurrency(interp: &mut Interpreter) {
     define(interp, "thread_join", Some(1), |_, args| {
         match &args[0] {
             Value::ThreadHandle(h) => {
-                let mut guard = h.lock().map_err(|_| RuntimeError::new("thread handle mutex poisoned"))?;
+                let mut guard = h
+                    .lock()
+                    .map_err(|_| RuntimeError::new("thread handle mutex poisoned"))?;
                 if let Some(handle) = guard.take() {
                     match handle.join() {
                         Ok(v) => Ok(v),
@@ -4804,7 +4964,11 @@ fn register_concurrency(interp: &mut Interpreter) {
         let ms = match &args[0] {
             Value::Int(ms) => *ms as u64,
             Value::Float(ms) => *ms as u64,
-            _ => return Err(RuntimeError::new("thread_sleep() requires integer milliseconds")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "thread_sleep() requires integer milliseconds",
+                ))
+            }
         };
 
         thread::sleep(std::time::Duration::from_millis(ms));
@@ -4849,17 +5013,30 @@ fn register_concurrency(interp: &mut Interpreter) {
     define(interp, "send_to_actor", Some(3), |_, args| {
         let actor = match &args[0] {
             Value::Actor(a) => a.clone(),
-            _ => return Err(RuntimeError::new("actor_send() requires actor as first argument")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "actor_send() requires actor as first argument",
+                ))
+            }
         };
         let msg_type = match &args[1] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("actor_send() requires string message type")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "actor_send() requires string message type",
+                ))
+            }
         };
         let msg_data = format!("{}", args[2]);
 
-        let mut queue = actor.message_queue.lock().map_err(|_| RuntimeError::new("actor queue poisoned"))?;
+        let mut queue = actor
+            .message_queue
+            .lock()
+            .map_err(|_| RuntimeError::new("actor queue poisoned"))?;
         queue.push((msg_type, msg_data));
-        actor.message_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        actor
+            .message_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         Ok(Value::Null)
     });
@@ -4868,17 +5045,30 @@ fn register_concurrency(interp: &mut Interpreter) {
     define(interp, "tell_actor", Some(3), |_, args| {
         let actor = match &args[0] {
             Value::Actor(a) => a.clone(),
-            _ => return Err(RuntimeError::new("actor_tell() requires actor as first argument")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "actor_tell() requires actor as first argument",
+                ))
+            }
         };
         let msg_type = match &args[1] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("actor_tell() requires string message type")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "actor_tell() requires string message type",
+                ))
+            }
         };
         let msg_data = format!("{}", args[2]);
 
-        let mut queue = actor.message_queue.lock().map_err(|_| RuntimeError::new("actor queue poisoned"))?;
+        let mut queue = actor
+            .message_queue
+            .lock()
+            .map_err(|_| RuntimeError::new("actor queue poisoned"))?;
         queue.push((msg_type, msg_data));
-        actor.message_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        actor
+            .message_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         Ok(Value::Null)
     });
@@ -4891,19 +5081,20 @@ fn register_concurrency(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("actor_recv() requires actor argument")),
         };
 
-        let mut queue = actor.message_queue.lock().map_err(|_| RuntimeError::new("actor queue poisoned"))?;
+        let mut queue = actor
+            .message_queue
+            .lock()
+            .map_err(|_| RuntimeError::new("actor queue poisoned"))?;
         match queue.pop() {
             Some((msg_type, msg_data)) => {
                 // Return Some((type, data))
                 Ok(Value::Variant {
                     enum_name: "Option".to_string(),
                     variant_name: "Some".to_string(),
-                    fields: Some(Rc::new(vec![
-                        Value::Tuple(Rc::new(vec![
-                            Value::String(Rc::new(msg_type)),
-                            Value::String(Rc::new(msg_data)),
-                        ]))
-                    ])),
+                    fields: Some(Rc::new(vec![Value::Tuple(Rc::new(vec![
+                        Value::String(Rc::new(msg_type)),
+                        Value::String(Rc::new(msg_data)),
+                    ]))])),
                 })
             }
             None => Ok(Value::Variant {
@@ -4918,7 +5109,11 @@ fn register_concurrency(interp: &mut Interpreter) {
     define(interp, "get_actor_msg_count", Some(1), |_, args| {
         let a = match &args[0] {
             Value::Actor(a) => a.clone(),
-            _ => return Err(RuntimeError::new("get_actor_msg_count() requires actor argument")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "get_actor_msg_count() requires actor argument",
+                ))
+            }
         };
 
         let count = a.message_count.load(std::sync::atomic::Ordering::SeqCst);
@@ -4929,7 +5124,11 @@ fn register_concurrency(interp: &mut Interpreter) {
     define(interp, "get_actor_name", Some(1), |_, args| {
         let a = match &args[0] {
             Value::Actor(a) => a.clone(),
-            _ => return Err(RuntimeError::new("get_actor_name() requires actor argument")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "get_actor_name() requires actor argument",
+                ))
+            }
         };
 
         Ok(Value::String(Rc::new(a.name.clone())))
@@ -4939,10 +5138,17 @@ fn register_concurrency(interp: &mut Interpreter) {
     define(interp, "get_actor_pending", Some(1), |_, args| {
         let a = match &args[0] {
             Value::Actor(a) => a.clone(),
-            _ => return Err(RuntimeError::new("get_actor_pending() requires actor argument")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "get_actor_pending() requires actor argument",
+                ))
+            }
         };
 
-        let queue = a.message_queue.lock().map_err(|_| RuntimeError::new("actor queue poisoned"))?;
+        let queue = a
+            .message_queue
+            .lock()
+            .map_err(|_| RuntimeError::new("actor queue poisoned"))?;
         Ok(Value::Int(queue.len() as i64))
     });
 
@@ -5136,7 +5342,11 @@ fn register_concurrency(interp: &mut Interpreter) {
         let ms = match &args[0] {
             Value::Int(ms) => *ms as u64,
             Value::Float(ms) => *ms as u64,
-            _ => return Err(RuntimeError::new("async_sleep() requires integer milliseconds")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "async_sleep() requires integer milliseconds",
+                ))
+            }
         };
 
         Ok(interp.make_future_timer(std::time::Duration::from_millis(ms)))
@@ -5149,11 +5359,13 @@ fn register_concurrency(interp: &mut Interpreter) {
 
     // future_pending - create a pending future (never resolves)
     define(interp, "future_pending", Some(0), |_, _| {
-        Ok(Value::Future(Rc::new(RefCell::new(crate::interpreter::FutureInner {
-            state: crate::interpreter::FutureState::Pending,
-            computation: None,
-            complete_at: None,
-        }))))
+        Ok(Value::Future(Rc::new(RefCell::new(
+            crate::interpreter::FutureInner {
+                state: crate::interpreter::FutureState::Pending,
+                computation: None,
+                complete_at: None,
+            },
+        ))))
     });
 
     // is_future - check if a value is a future
@@ -5166,7 +5378,10 @@ fn register_concurrency(interp: &mut Interpreter) {
         match &args[0] {
             Value::Future(fut) => {
                 let f = fut.borrow();
-                Ok(Value::Bool(matches!(f.state, crate::interpreter::FutureState::Ready(_))))
+                Ok(Value::Bool(matches!(
+                    f.state,
+                    crate::interpreter::FutureState::Ready(_)
+                )))
             }
             _ => Ok(Value::Bool(true)), // Non-futures are always "ready"
         }
@@ -5181,19 +5396,29 @@ fn register_concurrency(interp: &mut Interpreter) {
                 for v in arr.iter() {
                     match v {
                         Value::Future(f) => futs.push(f.clone()),
-                        _ => return Err(RuntimeError::new("join_futures() requires array of futures")),
+                        _ => {
+                            return Err(RuntimeError::new(
+                                "join_futures() requires array of futures",
+                            ))
+                        }
                     }
                 }
                 futs
             }
-            _ => return Err(RuntimeError::new("join_futures() requires array of futures")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "join_futures() requires array of futures",
+                ))
+            }
         };
 
-        Ok(Value::Future(Rc::new(RefCell::new(crate::interpreter::FutureInner {
-            state: crate::interpreter::FutureState::Pending,
-            computation: Some(crate::interpreter::FutureComputation::Join(futures)),
-            complete_at: None,
-        }))))
+        Ok(Value::Future(Rc::new(RefCell::new(
+            crate::interpreter::FutureInner {
+                state: crate::interpreter::FutureState::Pending,
+                computation: Some(crate::interpreter::FutureComputation::Join(futures)),
+                complete_at: None,
+            },
+        ))))
     });
 
     // race_futures - return first future to complete
@@ -5205,19 +5430,29 @@ fn register_concurrency(interp: &mut Interpreter) {
                 for v in arr.iter() {
                     match v {
                         Value::Future(f) => futs.push(f.clone()),
-                        _ => return Err(RuntimeError::new("race_futures() requires array of futures")),
+                        _ => {
+                            return Err(RuntimeError::new(
+                                "race_futures() requires array of futures",
+                            ))
+                        }
                     }
                 }
                 futs
             }
-            _ => return Err(RuntimeError::new("race_futures() requires array of futures")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "race_futures() requires array of futures",
+                ))
+            }
         };
 
-        Ok(Value::Future(Rc::new(RefCell::new(crate::interpreter::FutureInner {
-            state: crate::interpreter::FutureState::Pending,
-            computation: Some(crate::interpreter::FutureComputation::Race(futures)),
-            complete_at: None,
-        }))))
+        Ok(Value::Future(Rc::new(RefCell::new(
+            crate::interpreter::FutureInner {
+                state: crate::interpreter::FutureState::Pending,
+                computation: Some(crate::interpreter::FutureComputation::Race(futures)),
+                complete_at: None,
+            },
+        ))))
     });
 
     // poll_future - try to resolve a future without blocking (returns Option)
@@ -5226,20 +5461,16 @@ fn register_concurrency(interp: &mut Interpreter) {
             Value::Future(fut) => {
                 let f = fut.borrow();
                 match &f.state {
-                    crate::interpreter::FutureState::Ready(v) => {
-                        Ok(Value::Variant {
-                            enum_name: "Option".to_string(),
-                            variant_name: "Some".to_string(),
-                            fields: Some(Rc::new(vec![(**v).clone()])),
-                        })
-                    }
-                    _ => {
-                        Ok(Value::Variant {
-                            enum_name: "Option".to_string(),
-                            variant_name: "None".to_string(),
-                            fields: None,
-                        })
-                    }
+                    crate::interpreter::FutureState::Ready(v) => Ok(Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "Some".to_string(),
+                        fields: Some(Rc::new(vec![(**v).clone()])),
+                    }),
+                    _ => Ok(Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    }),
                 }
             }
             // Non-futures return Some(value)
@@ -5305,19 +5536,15 @@ fn register_json(interp: &mut Interpreter) {
                 Value::Null => serde_json::Value::Null,
                 Value::Bool(b) => serde_json::Value::Bool(*b),
                 Value::Int(n) => serde_json::Value::Number(serde_json::Number::from(*n)),
-                Value::Float(f) => {
-                    serde_json::Number::from_f64(*f)
-                        .map(serde_json::Value::Number)
-                        .unwrap_or(serde_json::Value::Null)
-                }
+                Value::Float(f) => serde_json::Number::from_f64(*f)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null),
                 Value::String(s) => serde_json::Value::String(s.to_string()),
                 Value::Array(arr) => {
                     let arr = arr.borrow();
                     serde_json::Value::Array(arr.iter().map(value_to_json).collect())
                 }
-                Value::Tuple(t) => {
-                    serde_json::Value::Array(t.iter().map(value_to_json).collect())
-                }
+                Value::Tuple(t) => serde_json::Value::Array(t.iter().map(value_to_json).collect()),
                 Value::Map(map) => {
                     let map = map.borrow();
                     let obj: serde_json::Map<String, serde_json::Value> = map
@@ -5349,11 +5576,9 @@ fn register_json(interp: &mut Interpreter) {
                 Value::Null => serde_json::Value::Null,
                 Value::Bool(b) => serde_json::Value::Bool(*b),
                 Value::Int(n) => serde_json::Value::Number(serde_json::Number::from(*n)),
-                Value::Float(f) => {
-                    serde_json::Number::from_f64(*f)
-                        .map(serde_json::Value::Number)
-                        .unwrap_or(serde_json::Value::Null)
-                }
+                Value::Float(f) => serde_json::Number::from_f64(*f)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null),
                 Value::String(s) => serde_json::Value::String(s.to_string()),
                 Value::Array(arr) => {
                     let arr = arr.borrow();
@@ -5584,7 +5809,11 @@ fn register_fs(interp: &mut Interpreter) {
         };
         let dst = match &args[1] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("fs_copy() requires string destination path")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "fs_copy() requires string destination path",
+                ))
+            }
         };
 
         match std::fs::copy(&src, &dst) {
@@ -5601,7 +5830,11 @@ fn register_fs(interp: &mut Interpreter) {
         };
         let dst = match &args[1] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("fs_rename() requires string destination path")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "fs_rename() requires string destination path",
+                ))
+            }
         };
 
         match std::fs::rename(&src, &dst) {
@@ -5723,11 +5956,21 @@ fn register_crypto(interp: &mut Interpreter) {
             Value::String(s) => Ok(s.as_bytes().to_vec()),
             Value::Array(arr) => {
                 let arr = arr.borrow();
-                Ok(arr.iter().filter_map(|v| {
-                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
-                }).collect())
+                Ok(arr
+                    .iter()
+                    .filter_map(|v| {
+                        if let Value::Int(n) = v {
+                            Some(*n as u8)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect())
             }
-            _ => Err(RuntimeError::new(format!("{}() requires string or byte array", fn_name))),
+            _ => Err(RuntimeError::new(format!(
+                "{}() requires string or byte array",
+                fn_name
+            ))),
         }
     }
 
@@ -5746,7 +5989,9 @@ fn register_crypto(interp: &mut Interpreter) {
         let mut hasher = Sha256::new();
         hasher.update(&data);
         let result = hasher.finalize();
-        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
+        Ok(Value::String(Rc::new(
+            result.iter().map(|b| format!("{:02x}", b)).collect(),
+        )))
     });
 
     // sha512 - SHA-512 hash
@@ -5755,27 +6000,33 @@ fn register_crypto(interp: &mut Interpreter) {
         let mut hasher = Sha512::new();
         hasher.update(&data);
         let result = hasher.finalize();
-        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
+        Ok(Value::String(Rc::new(
+            result.iter().map(|b| format!("{:02x}", b)).collect(),
+        )))
     });
 
     // sha3_256 - SHA-3 (Keccak) 256-bit
     define(interp, "sha3_256", Some(1), |_, args| {
-        use sha3::{Sha3_256, Digest as Sha3Digest};
+        use sha3::{Digest as Sha3Digest, Sha3_256};
         let data = extract_bytes(&args[0], "sha3_256")?;
         let mut hasher = Sha3_256::new();
         hasher.update(&data);
         let result = hasher.finalize();
-        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
+        Ok(Value::String(Rc::new(
+            result.iter().map(|b| format!("{:02x}", b)).collect(),
+        )))
     });
 
     // sha3_512 - SHA-3 (Keccak) 512-bit
     define(interp, "sha3_512", Some(1), |_, args| {
-        use sha3::{Sha3_512, Digest as Sha3Digest};
+        use sha3::{Digest as Sha3Digest, Sha3_512};
         let data = extract_bytes(&args[0], "sha3_512")?;
         let mut hasher = Sha3_512::new();
         hasher.update(&data);
         let result = hasher.finalize();
-        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
+        Ok(Value::String(Rc::new(
+            result.iter().map(|b| format!("{:02x}", b)).collect(),
+        )))
     });
 
     // blake3 - BLAKE3 hash (fastest secure hash)
@@ -5804,7 +6055,9 @@ fn register_crypto(interp: &mut Interpreter) {
         let mut hasher = Md5::new();
         hasher.update(&data);
         let result = hasher.finalize();
-        Ok(Value::String(Rc::new(result.iter().map(|b| format!("{:02x}", b)).collect())))
+        Ok(Value::String(Rc::new(
+            result.iter().map(|b| format!("{:02x}", b)).collect(),
+        )))
     });
 
     // ========================================================================
@@ -5813,7 +6066,7 @@ fn register_crypto(interp: &mut Interpreter) {
 
     // aes_gcm_encrypt - AES-256-GCM authenticated encryption
     define(interp, "aes_gcm_encrypt", Some(2), |_, args| {
-        use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead, Nonce};
+        use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
         use rand::RngCore;
 
         let key = extract_bytes(&args[0], "aes_gcm_encrypt")?;
@@ -5830,7 +6083,8 @@ fn register_crypto(interp: &mut Interpreter) {
         rand::thread_rng().fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        let ciphertext = cipher.encrypt(nonce, plaintext.as_ref())
+        let ciphertext = cipher
+            .encrypt(nonce, plaintext.as_ref())
             .map_err(|e| RuntimeError::new(format!("AES encryption error: {}", e)))?;
 
         let mut result = HashMap::new();
@@ -5841,20 +6095,27 @@ fn register_crypto(interp: &mut Interpreter) {
 
     // aes_gcm_decrypt - AES-256-GCM decryption
     define(interp, "aes_gcm_decrypt", Some(3), |_, args| {
-        use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead, Nonce};
+        use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
 
         let key = extract_bytes(&args[0], "aes_gcm_decrypt")?;
         let ciphertext = extract_bytes(&args[1], "aes_gcm_decrypt")?;
         let nonce_bytes = extract_bytes(&args[2], "aes_gcm_decrypt")?;
 
-        if key.len() != 32 { return Err(RuntimeError::new("aes_gcm_decrypt() requires 32-byte key")); }
-        if nonce_bytes.len() != 12 { return Err(RuntimeError::new("aes_gcm_decrypt() requires 12-byte nonce")); }
+        if key.len() != 32 {
+            return Err(RuntimeError::new("aes_gcm_decrypt() requires 32-byte key"));
+        }
+        if nonce_bytes.len() != 12 {
+            return Err(RuntimeError::new(
+                "aes_gcm_decrypt() requires 12-byte nonce",
+            ));
+        }
 
         let cipher = Aes256Gcm::new_from_slice(&key)
             .map_err(|e| RuntimeError::new(format!("AES key error: {}", e)))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        let plaintext = cipher.decrypt(nonce, ciphertext.as_ref())
+        let plaintext = cipher
+            .decrypt(nonce, ciphertext.as_ref())
             .map_err(|_| RuntimeError::new("AES-GCM decryption failed: authentication error"))?;
 
         match String::from_utf8(plaintext.clone()) {
@@ -5865,13 +6126,15 @@ fn register_crypto(interp: &mut Interpreter) {
 
     // chacha20_encrypt - ChaCha20-Poly1305 encryption
     define(interp, "chacha20_encrypt", Some(2), |_, args| {
-        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead, Nonce};
+        use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
         use rand::RngCore;
 
         let key = extract_bytes(&args[0], "chacha20_encrypt")?;
         let plaintext = extract_bytes(&args[1], "chacha20_encrypt")?;
 
-        if key.len() != 32 { return Err(RuntimeError::new("chacha20_encrypt() requires 32-byte key")); }
+        if key.len() != 32 {
+            return Err(RuntimeError::new("chacha20_encrypt() requires 32-byte key"));
+        }
 
         let cipher = ChaCha20Poly1305::new_from_slice(&key)
             .map_err(|e| RuntimeError::new(format!("ChaCha20 key error: {}", e)))?;
@@ -5880,7 +6143,8 @@ fn register_crypto(interp: &mut Interpreter) {
         rand::thread_rng().fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        let ciphertext = cipher.encrypt(nonce, plaintext.as_ref())
+        let ciphertext = cipher
+            .encrypt(nonce, plaintext.as_ref())
             .map_err(|e| RuntimeError::new(format!("ChaCha20 encryption error: {}", e)))?;
 
         let mut result = HashMap::new();
@@ -5891,20 +6155,27 @@ fn register_crypto(interp: &mut Interpreter) {
 
     // chacha20_decrypt - ChaCha20-Poly1305 decryption
     define(interp, "chacha20_decrypt", Some(3), |_, args| {
-        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead, Nonce};
+        use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
 
         let key = extract_bytes(&args[0], "chacha20_decrypt")?;
         let ciphertext = extract_bytes(&args[1], "chacha20_decrypt")?;
         let nonce_bytes = extract_bytes(&args[2], "chacha20_decrypt")?;
 
-        if key.len() != 32 { return Err(RuntimeError::new("chacha20_decrypt() requires 32-byte key")); }
-        if nonce_bytes.len() != 12 { return Err(RuntimeError::new("chacha20_decrypt() requires 12-byte nonce")); }
+        if key.len() != 32 {
+            return Err(RuntimeError::new("chacha20_decrypt() requires 32-byte key"));
+        }
+        if nonce_bytes.len() != 12 {
+            return Err(RuntimeError::new(
+                "chacha20_decrypt() requires 12-byte nonce",
+            ));
+        }
 
         let cipher = ChaCha20Poly1305::new_from_slice(&key)
             .map_err(|e| RuntimeError::new(format!("ChaCha20 key error: {}", e)))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        let plaintext = cipher.decrypt(nonce, ciphertext.as_ref())
+        let plaintext = cipher
+            .decrypt(nonce, ciphertext.as_ref())
             .map_err(|_| RuntimeError::new("ChaCha20 decryption failed: authentication error"))?;
 
         match String::from_utf8(plaintext.clone()) {
@@ -5926,16 +6197,32 @@ fn register_crypto(interp: &mut Interpreter) {
         let verifying_key = signing_key.verifying_key();
 
         let mut result = HashMap::new();
-        result.insert("private_key".to_string(),
-            Value::String(Rc::new(signing_key.to_bytes().iter().map(|b| format!("{:02x}", b)).collect())));
-        result.insert("public_key".to_string(),
-            Value::String(Rc::new(verifying_key.to_bytes().iter().map(|b| format!("{:02x}", b)).collect())));
+        result.insert(
+            "private_key".to_string(),
+            Value::String(Rc::new(
+                signing_key
+                    .to_bytes()
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect(),
+            )),
+        );
+        result.insert(
+            "public_key".to_string(),
+            Value::String(Rc::new(
+                verifying_key
+                    .to_bytes()
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect(),
+            )),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
 
     // ed25519_sign - Sign with Ed25519
     define(interp, "ed25519_sign", Some(2), |_, args| {
-        use ed25519_dalek::{SigningKey, Signer};
+        use ed25519_dalek::{Signer, SigningKey};
 
         let private_key_hex = match &args[0] {
             Value::String(s) => s.to_string(),
@@ -5945,27 +6232,41 @@ fn register_crypto(interp: &mut Interpreter) {
 
         let key_bytes: Vec<u8> = (0..private_key_hex.len())
             .step_by(2)
-            .map(|i| u8::from_str_radix(&private_key_hex[i..i+2], 16))
+            .map(|i| u8::from_str_radix(&private_key_hex[i..i + 2], 16))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| RuntimeError::new("Invalid private key hex"))?;
 
-        if key_bytes.len() != 32 { return Err(RuntimeError::new("ed25519_sign() requires 32-byte private key")); }
+        if key_bytes.len() != 32 {
+            return Err(RuntimeError::new(
+                "ed25519_sign() requires 32-byte private key",
+            ));
+        }
 
         let mut key_arr = [0u8; 32];
         key_arr.copy_from_slice(&key_bytes);
         let signing_key = SigningKey::from_bytes(&key_arr);
         let signature = signing_key.sign(&message);
 
-        Ok(Value::String(Rc::new(signature.to_bytes().iter().map(|b| format!("{:02x}", b)).collect())))
+        Ok(Value::String(Rc::new(
+            signature
+                .to_bytes()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect(),
+        )))
     });
 
     // ed25519_verify - Verify Ed25519 signature
     define(interp, "ed25519_verify", Some(3), |_, args| {
-        use ed25519_dalek::{VerifyingKey, Verifier, Signature};
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
         let public_key_hex = match &args[0] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("ed25519_verify() requires hex public key")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "ed25519_verify() requires hex public key",
+                ))
+            }
         };
         let message = extract_bytes(&args[1], "ed25519_verify")?;
         let signature_hex = match &args[2] {
@@ -5975,17 +6276,25 @@ fn register_crypto(interp: &mut Interpreter) {
 
         let key_bytes: Vec<u8> = (0..public_key_hex.len())
             .step_by(2)
-            .map(|i| u8::from_str_radix(&public_key_hex[i..i+2], 16))
+            .map(|i| u8::from_str_radix(&public_key_hex[i..i + 2], 16))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| RuntimeError::new("Invalid public key hex"))?;
         let sig_bytes: Vec<u8> = (0..signature_hex.len())
             .step_by(2)
-            .map(|i| u8::from_str_radix(&signature_hex[i..i+2], 16))
+            .map(|i| u8::from_str_radix(&signature_hex[i..i + 2], 16))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| RuntimeError::new("Invalid signature hex"))?;
 
-        if key_bytes.len() != 32 { return Err(RuntimeError::new("ed25519_verify() requires 32-byte public key")); }
-        if sig_bytes.len() != 64 { return Err(RuntimeError::new("ed25519_verify() requires 64-byte signature")); }
+        if key_bytes.len() != 32 {
+            return Err(RuntimeError::new(
+                "ed25519_verify() requires 32-byte public key",
+            ));
+        }
+        if sig_bytes.len() != 64 {
+            return Err(RuntimeError::new(
+                "ed25519_verify() requires 64-byte signature",
+            ));
+        }
 
         let mut key_arr = [0u8; 32];
         key_arr.copy_from_slice(&key_bytes);
@@ -6004,41 +6313,65 @@ fn register_crypto(interp: &mut Interpreter) {
 
     // x25519_keygen - Generate X25519 key exchange keypair
     define(interp, "x25519_keygen", Some(0), |_, _| {
-        use x25519_dalek::{StaticSecret, PublicKey};
         use rand::rngs::OsRng;
+        use x25519_dalek::{PublicKey, StaticSecret};
 
         let secret = StaticSecret::random_from_rng(OsRng);
         let public = PublicKey::from(&secret);
 
         let mut result = HashMap::new();
-        result.insert("private_key".to_string(),
-            Value::String(Rc::new(secret.as_bytes().iter().map(|b| format!("{:02x}", b)).collect())));
-        result.insert("public_key".to_string(),
-            Value::String(Rc::new(public.as_bytes().iter().map(|b| format!("{:02x}", b)).collect())));
+        result.insert(
+            "private_key".to_string(),
+            Value::String(Rc::new(
+                secret
+                    .as_bytes()
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect(),
+            )),
+        );
+        result.insert(
+            "public_key".to_string(),
+            Value::String(Rc::new(
+                public
+                    .as_bytes()
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect(),
+            )),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
 
     // x25519_exchange - Diffie-Hellman key exchange
     define(interp, "x25519_exchange", Some(2), |_, args| {
-        use x25519_dalek::{StaticSecret, PublicKey};
+        use x25519_dalek::{PublicKey, StaticSecret};
 
         let my_private_hex = match &args[0] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("x25519_exchange() requires hex private key")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "x25519_exchange() requires hex private key",
+                ))
+            }
         };
         let their_public_hex = match &args[1] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("x25519_exchange() requires hex public key")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "x25519_exchange() requires hex public key",
+                ))
+            }
         };
 
         let my_private_bytes: Vec<u8> = (0..my_private_hex.len())
             .step_by(2)
-            .map(|i| u8::from_str_radix(&my_private_hex[i..i+2], 16))
+            .map(|i| u8::from_str_radix(&my_private_hex[i..i + 2], 16))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| RuntimeError::new("Invalid private key hex"))?;
         let their_public_bytes: Vec<u8> = (0..their_public_hex.len())
             .step_by(2)
-            .map(|i| u8::from_str_radix(&their_public_hex[i..i+2], 16))
+            .map(|i| u8::from_str_radix(&their_public_hex[i..i + 2], 16))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| RuntimeError::new("Invalid public key hex"))?;
 
@@ -6055,7 +6388,13 @@ fn register_crypto(interp: &mut Interpreter) {
         let their_public = PublicKey::from(pub_arr);
         let shared_secret = my_secret.diffie_hellman(&their_public);
 
-        Ok(Value::String(Rc::new(shared_secret.as_bytes().iter().map(|b| format!("{:02x}", b)).collect())))
+        Ok(Value::String(Rc::new(
+            shared_secret
+                .as_bytes()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect(),
+        )))
     });
 
     // ========================================================================
@@ -6064,14 +6403,18 @@ fn register_crypto(interp: &mut Interpreter) {
 
     // argon2_hash - Argon2id password hashing (RECOMMENDED for passwords)
     define(interp, "argon2_hash", Some(1), |_, args| {
-        use argon2::{Argon2, password_hash::{SaltString, PasswordHasher}};
+        use argon2::{
+            password_hash::{PasswordHasher, SaltString},
+            Argon2,
+        };
         use rand::rngs::OsRng;
 
         let password = extract_bytes(&args[0], "argon2_hash")?;
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
 
-        let hash = argon2.hash_password(&password, &salt)
+        let hash = argon2
+            .hash_password(&password, &salt)
             .map_err(|e| RuntimeError::new(format!("Argon2 error: {}", e)))?;
 
         let mut result = HashMap::new();
@@ -6112,7 +6455,9 @@ fn register_crypto(interp: &mut Interpreter) {
         hk.expand(&info, &mut okm)
             .map_err(|e| RuntimeError::new(format!("HKDF error: {}", e)))?;
 
-        Ok(Value::String(Rc::new(okm.iter().map(|b| format!("{:02x}", b)).collect())))
+        Ok(Value::String(Rc::new(
+            okm.iter().map(|b| format!("{:02x}", b)).collect(),
+        )))
     });
 
     // pbkdf2_derive - PBKDF2 key derivation
@@ -6121,12 +6466,18 @@ fn register_crypto(interp: &mut Interpreter) {
         let salt = extract_bytes(&args[1], "pbkdf2_derive")?;
         let iterations = match &args[2] {
             Value::Int(n) => *n as u32,
-            _ => return Err(RuntimeError::new("pbkdf2_derive() requires integer iterations")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "pbkdf2_derive() requires integer iterations",
+                ))
+            }
         };
 
         let mut key = [0u8; 32];
         pbkdf2::pbkdf2_hmac::<Sha256>(&password, &salt, iterations, &mut key);
-        Ok(Value::String(Rc::new(key.iter().map(|b| format!("{:02x}", b)).collect())))
+        Ok(Value::String(Rc::new(
+            key.iter().map(|b| format!("{:02x}", b)).collect(),
+        )))
     });
 
     // ========================================================================
@@ -6145,7 +6496,13 @@ fn register_crypto(interp: &mut Interpreter) {
             .map_err(|e| RuntimeError::new(format!("HMAC key error: {}", e)))?;
         mac.update(&message);
         let result = mac.finalize();
-        Ok(Value::String(Rc::new(result.into_bytes().iter().map(|b| format!("{:02x}", b)).collect())))
+        Ok(Value::String(Rc::new(
+            result
+                .into_bytes()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect(),
+        )))
     });
 
     // hmac_sha512 - HMAC-SHA512
@@ -6160,7 +6517,13 @@ fn register_crypto(interp: &mut Interpreter) {
             .map_err(|e| RuntimeError::new(format!("HMAC key error: {}", e)))?;
         mac.update(&message);
         let result = mac.finalize();
-        Ok(Value::String(Rc::new(result.into_bytes().iter().map(|b| format!("{:02x}", b)).collect())))
+        Ok(Value::String(Rc::new(
+            result
+                .into_bytes()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect(),
+        )))
     });
 
     // hmac_verify - Constant-time HMAC verification
@@ -6177,7 +6540,7 @@ fn register_crypto(interp: &mut Interpreter) {
 
         let expected: Vec<u8> = (0..expected_hex.len())
             .step_by(2)
-            .map(|i| u8::from_str_radix(&expected_hex[i..i+2], 16))
+            .map(|i| u8::from_str_radix(&expected_hex[i..i + 2], 16))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| RuntimeError::new("Invalid MAC hex"))?;
 
@@ -6201,10 +6564,16 @@ fn register_crypto(interp: &mut Interpreter) {
 
         let length = match &args[0] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("secure_random_bytes() requires integer length")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "secure_random_bytes() requires integer length",
+                ))
+            }
         };
 
-        if length > 1024 * 1024 { return Err(RuntimeError::new("secure_random_bytes() max 1MB")); }
+        if length > 1024 * 1024 {
+            return Err(RuntimeError::new("secure_random_bytes() max 1MB"));
+        }
 
         let mut bytes = vec![0u8; length];
         rand::thread_rng().fill_bytes(&mut bytes);
@@ -6217,14 +6586,22 @@ fn register_crypto(interp: &mut Interpreter) {
 
         let byte_length = match &args[0] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("secure_random_hex() requires integer length")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "secure_random_hex() requires integer length",
+                ))
+            }
         };
 
-        if byte_length > 1024 * 1024 { return Err(RuntimeError::new("secure_random_hex() max 1MB")); }
+        if byte_length > 1024 * 1024 {
+            return Err(RuntimeError::new("secure_random_hex() max 1MB"));
+        }
 
         let mut bytes = vec![0u8; byte_length];
         rand::thread_rng().fill_bytes(&mut bytes);
-        Ok(Value::String(Rc::new(bytes.iter().map(|b| format!("{:02x}", b)).collect())))
+        Ok(Value::String(Rc::new(
+            bytes.iter().map(|b| format!("{:02x}", b)).collect(),
+        )))
     });
 
     // generate_key - Generate symmetric key
@@ -6236,13 +6613,21 @@ fn register_crypto(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("generate_key() requires bit length")),
         };
 
-        if bits % 8 != 0 { return Err(RuntimeError::new("generate_key() bit length must be multiple of 8")); }
-        if bits > 512 { return Err(RuntimeError::new("generate_key() max 512 bits")); }
+        if bits % 8 != 0 {
+            return Err(RuntimeError::new(
+                "generate_key() bit length must be multiple of 8",
+            ));
+        }
+        if bits > 512 {
+            return Err(RuntimeError::new("generate_key() max 512 bits"));
+        }
 
         let bytes = bits / 8;
         let mut key = vec![0u8; bytes];
         rand::thread_rng().fill_bytes(&mut key);
-        Ok(Value::String(Rc::new(key.iter().map(|b| format!("{:02x}", b)).collect())))
+        Ok(Value::String(Rc::new(
+            key.iter().map(|b| format!("{:02x}", b)).collect(),
+        )))
     });
 
     // ========================================================================
@@ -6252,7 +6637,9 @@ fn register_crypto(interp: &mut Interpreter) {
     // base64_encode
     define(interp, "base64_encode", Some(1), |_, args| {
         let data = extract_bytes(&args[0], "base64_encode")?;
-        Ok(Value::String(Rc::new(general_purpose::STANDARD.encode(&data))))
+        Ok(Value::String(Rc::new(
+            general_purpose::STANDARD.encode(&data),
+        )))
     });
 
     // base64_decode
@@ -6263,12 +6650,10 @@ fn register_crypto(interp: &mut Interpreter) {
         };
 
         match general_purpose::STANDARD.decode(&encoded) {
-            Ok(bytes) => {
-                match String::from_utf8(bytes.clone()) {
-                    Ok(s) => Ok(Value::String(Rc::new(s))),
-                    Err(_) => Ok(bytes_to_array(&bytes)),
-                }
-            }
+            Ok(bytes) => match String::from_utf8(bytes.clone()) {
+                Ok(s) => Ok(Value::String(Rc::new(s))),
+                Err(_) => Ok(bytes_to_array(&bytes)),
+            },
             Err(e) => Err(RuntimeError::new(format!("base64_decode() error: {}", e))),
         }
     });
@@ -6276,7 +6661,9 @@ fn register_crypto(interp: &mut Interpreter) {
     // hex_encode
     define(interp, "hex_encode", Some(1), |_, args| {
         let data = extract_bytes(&args[0], "hex_encode")?;
-        Ok(Value::String(Rc::new(data.iter().map(|b| format!("{:02x}", b)).collect())))
+        Ok(Value::String(Rc::new(
+            data.iter().map(|b| format!("{:02x}", b)).collect(),
+        )))
     });
 
     // hex_decode
@@ -6287,11 +6674,15 @@ fn register_crypto(interp: &mut Interpreter) {
         };
 
         let hex_str = hex_str.trim();
-        if hex_str.len() % 2 != 0 { return Err(RuntimeError::new("hex_decode() requires even-length hex string")); }
+        if hex_str.len() % 2 != 0 {
+            return Err(RuntimeError::new(
+                "hex_decode() requires even-length hex string",
+            ));
+        }
 
         let bytes: Vec<Value> = (0..hex_str.len())
             .step_by(2)
-            .map(|i| u8::from_str_radix(&hex_str[i..i+2], 16).map(|b| Value::Int(b as i64)))
+            .map(|i| u8::from_str_radix(&hex_str[i..i + 2], 16).map(|b| Value::Int(b as i64)))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| RuntimeError::new("hex_decode() invalid hex"))?;
         Ok(Value::Array(Rc::new(RefCell::new(bytes))))
@@ -6306,10 +6697,14 @@ fn register_crypto(interp: &mut Interpreter) {
         let a = extract_bytes(&args[0], "constant_time_eq")?;
         let b = extract_bytes(&args[1], "constant_time_eq")?;
 
-        if a.len() != b.len() { return Ok(Value::Bool(false)); }
+        if a.len() != b.len() {
+            return Ok(Value::Bool(false));
+        }
 
         let mut result = 0u8;
-        for (x, y) in a.iter().zip(b.iter()) { result |= x ^ y; }
+        for (x, y) in a.iter().zip(b.iter()) {
+            result |= x ^ y;
+        }
         Ok(Value::Bool(result == 0))
     });
 
@@ -6320,22 +6715,55 @@ fn register_crypto(interp: &mut Interpreter) {
     // crypto_info - Get crypto module capabilities
     define(interp, "crypto_info", Some(0), |_, _| {
         let mut info = HashMap::new();
-        info.insert("version".to_string(), Value::String(Rc::new("2.0".to_string())));
-        info.insert("phase".to_string(), Value::String(Rc::new("Evidential Cryptography".to_string())));
+        info.insert(
+            "version".to_string(),
+            Value::String(Rc::new("2.0".to_string())),
+        );
+        info.insert(
+            "phase".to_string(),
+            Value::String(Rc::new("Evidential Cryptography".to_string())),
+        );
 
         let capabilities = vec![
-            "sha256", "sha512", "sha3_256", "sha3_512", "blake3", "md5",
-            "aes_gcm_encrypt", "aes_gcm_decrypt", "chacha20_encrypt", "chacha20_decrypt",
-            "ed25519_keygen", "ed25519_sign", "ed25519_verify",
-            "x25519_keygen", "x25519_exchange",
-            "argon2_hash", "argon2_verify", "hkdf_expand", "pbkdf2_derive",
-            "hmac_sha256", "hmac_sha512", "hmac_verify",
-            "secure_random_bytes", "secure_random_hex", "generate_key",
-            "base64_encode", "base64_decode", "hex_encode", "hex_decode",
-            "constant_time_eq"
+            "sha256",
+            "sha512",
+            "sha3_256",
+            "sha3_512",
+            "blake3",
+            "md5",
+            "aes_gcm_encrypt",
+            "aes_gcm_decrypt",
+            "chacha20_encrypt",
+            "chacha20_decrypt",
+            "ed25519_keygen",
+            "ed25519_sign",
+            "ed25519_verify",
+            "x25519_keygen",
+            "x25519_exchange",
+            "argon2_hash",
+            "argon2_verify",
+            "hkdf_expand",
+            "pbkdf2_derive",
+            "hmac_sha256",
+            "hmac_sha512",
+            "hmac_verify",
+            "secure_random_bytes",
+            "secure_random_hex",
+            "generate_key",
+            "base64_encode",
+            "base64_decode",
+            "hex_encode",
+            "hex_decode",
+            "constant_time_eq",
         ];
-        let cap_values: Vec<Value> = capabilities.iter().map(|s| Value::String(Rc::new(s.to_string()))).collect();
-        info.insert("functions".to_string(), Value::Array(Rc::new(RefCell::new(cap_values))));
+        let cap_values: Vec<Value> = capabilities
+            .iter()
+            .map(|s| Value::String(Rc::new(s.to_string())))
+            .collect();
+        info.insert(
+            "functions".to_string(),
+            Value::Array(Rc::new(RefCell::new(cap_values))),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(info))))
     });
@@ -6359,7 +6787,10 @@ fn register_regex(interp: &mut Interpreter) {
 
         match Regex::new(&pattern) {
             Ok(re) => Ok(Value::Bool(re.is_match(&text))),
-            Err(e) => Err(RuntimeError::new(format!("regex_match() invalid pattern: {}", e))),
+            Err(e) => Err(RuntimeError::new(format!(
+                "regex_match() invalid pattern: {}",
+                e
+            ))),
         }
     });
 
@@ -6375,13 +6806,14 @@ fn register_regex(interp: &mut Interpreter) {
         };
 
         match Regex::new(&pattern) {
-            Ok(re) => {
-                match re.find(&text) {
-                    Some(m) => Ok(Value::String(Rc::new(m.as_str().to_string()))),
-                    None => Ok(Value::Null),
-                }
-            }
-            Err(e) => Err(RuntimeError::new(format!("regex_find() invalid pattern: {}", e))),
+            Ok(re) => match re.find(&text) {
+                Some(m) => Ok(Value::String(Rc::new(m.as_str().to_string()))),
+                None => Ok(Value::Null),
+            },
+            Err(e) => Err(RuntimeError::new(format!(
+                "regex_find() invalid pattern: {}",
+                e
+            ))),
         }
     });
 
@@ -6389,7 +6821,11 @@ fn register_regex(interp: &mut Interpreter) {
     define(interp, "regex_find_all", Some(2), |_, args| {
         let pattern = match &args[0] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("regex_find_all() requires string pattern")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "regex_find_all() requires string pattern",
+                ))
+            }
         };
         let text = match &args[1] {
             Value::String(s) => s.to_string(),
@@ -6398,12 +6834,16 @@ fn register_regex(interp: &mut Interpreter) {
 
         match Regex::new(&pattern) {
             Ok(re) => {
-                let matches: Vec<Value> = re.find_iter(&text)
+                let matches: Vec<Value> = re
+                    .find_iter(&text)
                     .map(|m| Value::String(Rc::new(m.as_str().to_string())))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(matches))))
             }
-            Err(e) => Err(RuntimeError::new(format!("regex_find_all() invalid pattern: {}", e))),
+            Err(e) => Err(RuntimeError::new(format!(
+                "regex_find_all() invalid pattern: {}",
+                e
+            ))),
         }
     });
 
@@ -6419,7 +6859,11 @@ fn register_regex(interp: &mut Interpreter) {
         };
         let replacement = match &args[2] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("regex_replace() requires string replacement")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "regex_replace() requires string replacement",
+                ))
+            }
         };
 
         match Regex::new(&pattern) {
@@ -6427,7 +6871,10 @@ fn register_regex(interp: &mut Interpreter) {
                 let result = re.replace(&text, replacement.as_str());
                 Ok(Value::String(Rc::new(result.to_string())))
             }
-            Err(e) => Err(RuntimeError::new(format!("regex_replace() invalid pattern: {}", e))),
+            Err(e) => Err(RuntimeError::new(format!(
+                "regex_replace() invalid pattern: {}",
+                e
+            ))),
         }
     });
 
@@ -6435,15 +6882,27 @@ fn register_regex(interp: &mut Interpreter) {
     define(interp, "regex_replace_all", Some(3), |_, args| {
         let pattern = match &args[0] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("regex_replace_all() requires string pattern")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "regex_replace_all() requires string pattern",
+                ))
+            }
         };
         let text = match &args[1] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("regex_replace_all() requires string text")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "regex_replace_all() requires string text",
+                ))
+            }
         };
         let replacement = match &args[2] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("regex_replace_all() requires string replacement")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "regex_replace_all() requires string replacement",
+                ))
+            }
         };
 
         match Regex::new(&pattern) {
@@ -6451,7 +6910,10 @@ fn register_regex(interp: &mut Interpreter) {
                 let result = re.replace_all(&text, replacement.as_str());
                 Ok(Value::String(Rc::new(result.to_string())))
             }
-            Err(e) => Err(RuntimeError::new(format!("regex_replace_all() invalid pattern: {}", e))),
+            Err(e) => Err(RuntimeError::new(format!(
+                "regex_replace_all() invalid pattern: {}",
+                e
+            ))),
         }
     });
 
@@ -6468,12 +6930,16 @@ fn register_regex(interp: &mut Interpreter) {
 
         match Regex::new(&pattern) {
             Ok(re) => {
-                let parts: Vec<Value> = re.split(&text)
+                let parts: Vec<Value> = re
+                    .split(&text)
                     .map(|s| Value::String(Rc::new(s.to_string())))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(parts))))
             }
-            Err(e) => Err(RuntimeError::new(format!("regex_split() invalid pattern: {}", e))),
+            Err(e) => Err(RuntimeError::new(format!(
+                "regex_split() invalid pattern: {}",
+                e
+            ))),
         }
     });
 
@@ -6481,7 +6947,11 @@ fn register_regex(interp: &mut Interpreter) {
     define(interp, "regex_captures", Some(2), |_, args| {
         let pattern = match &args[0] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("regex_captures() requires string pattern")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "regex_captures() requires string pattern",
+                ))
+            }
         };
         let text = match &args[1] {
             Value::String(s) => s.to_string(),
@@ -6489,21 +6959,23 @@ fn register_regex(interp: &mut Interpreter) {
         };
 
         match Regex::new(&pattern) {
-            Ok(re) => {
-                match re.captures(&text) {
-                    Some(caps) => {
-                        let captures: Vec<Value> = caps.iter()
-                            .map(|m| {
-                                m.map(|m| Value::String(Rc::new(m.as_str().to_string())))
-                                    .unwrap_or(Value::Null)
-                            })
-                            .collect();
-                        Ok(Value::Array(Rc::new(RefCell::new(captures))))
-                    }
-                    None => Ok(Value::Null),
+            Ok(re) => match re.captures(&text) {
+                Some(caps) => {
+                    let captures: Vec<Value> = caps
+                        .iter()
+                        .map(|m| {
+                            m.map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                                .unwrap_or(Value::Null)
+                        })
+                        .collect();
+                    Ok(Value::Array(Rc::new(RefCell::new(captures))))
                 }
-            }
-            Err(e) => Err(RuntimeError::new(format!("regex_captures() invalid pattern: {}", e))),
+                None => Ok(Value::Null),
+            },
+            Err(e) => Err(RuntimeError::new(format!(
+                "regex_captures() invalid pattern: {}",
+                e
+            ))),
         }
     });
 }
@@ -6707,7 +7179,9 @@ fn register_stats(interp: &mut Interpreter) {
                     match v {
                         Value::Int(n) => nums.push(*n as f64),
                         Value::Float(f) => nums.push(*f),
-                        _ => return Err(RuntimeError::new("stats functions require numeric array")),
+                        _ => {
+                            return Err(RuntimeError::new("stats functions require numeric array"))
+                        }
                     }
                 }
                 Ok(nums)
@@ -6735,9 +7209,9 @@ fn register_stats(interp: &mut Interpreter) {
         nums.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let len = nums.len();
         if len % 2 == 0 {
-            Ok(Value::Float((nums[len/2 - 1] + nums[len/2]) / 2.0))
+            Ok(Value::Float((nums[len / 2 - 1] + nums[len / 2]) / 2.0))
         } else {
-            Ok(Value::Float(nums[len/2]))
+            Ok(Value::Float(nums[len / 2]))
         }
     });
 
@@ -6771,7 +7245,8 @@ fn register_stats(interp: &mut Interpreter) {
             return Ok(Value::Float(0.0));
         }
         let mean: f64 = nums.iter().sum::<f64>() / nums.len() as f64;
-        let variance: f64 = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
+        let variance: f64 =
+            nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
         Ok(Value::Float(variance))
     });
 
@@ -6782,7 +7257,8 @@ fn register_stats(interp: &mut Interpreter) {
             return Ok(Value::Float(0.0));
         }
         let mean: f64 = nums.iter().sum::<f64>() / nums.len() as f64;
-        let variance: f64 = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
+        let variance: f64 =
+            nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
         Ok(Value::Float(variance.sqrt()))
     });
 
@@ -6792,7 +7268,11 @@ fn register_stats(interp: &mut Interpreter) {
         let p = match &args[1] {
             Value::Int(n) => *n as f64,
             Value::Float(f) => *f,
-            _ => return Err(RuntimeError::new("percentile() requires numeric percentile")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "percentile() requires numeric percentile",
+                ))
+            }
         };
 
         if nums.is_empty() {
@@ -6810,7 +7290,9 @@ fn register_stats(interp: &mut Interpreter) {
         let y = extract_numbers(&args[1])?;
 
         if x.len() != y.len() || x.is_empty() {
-            return Err(RuntimeError::new("correlation() requires equal-length non-empty arrays"));
+            return Err(RuntimeError::new(
+                "correlation() requires equal-length non-empty arrays",
+            ));
         }
 
         let n = x.len() as f64;
@@ -6855,7 +7337,8 @@ fn register_stats(interp: &mut Interpreter) {
         }
 
         let mean: f64 = nums.iter().sum::<f64>() / nums.len() as f64;
-        let variance: f64 = nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
+        let variance: f64 =
+            nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / nums.len() as f64;
         let stddev = variance.sqrt();
 
         if stddev == 0.0 {
@@ -6863,7 +7346,8 @@ fn register_stats(interp: &mut Interpreter) {
             return Ok(Value::Array(Rc::new(RefCell::new(zeros))));
         }
 
-        let zscores: Vec<Value> = nums.iter()
+        let zscores: Vec<Value> = nums
+            .iter()
             .map(|x| Value::Float((x - mean) / stddev))
             .collect();
         Ok(Value::Array(Rc::new(RefCell::new(zscores))))
@@ -6890,7 +7374,11 @@ fn register_matrix(interp: &mut Interpreter) {
                                 match v {
                                     Value::Int(n) => row_vec.push(*n as f64),
                                     Value::Float(f) => row_vec.push(*f),
-                                    _ => return Err(RuntimeError::new("matrix requires numeric values")),
+                                    _ => {
+                                        return Err(RuntimeError::new(
+                                            "matrix requires numeric values",
+                                        ))
+                                    }
                                 }
                             }
                             matrix.push(row_vec);
@@ -6905,7 +7393,8 @@ fn register_matrix(interp: &mut Interpreter) {
     }
 
     fn matrix_to_value(m: Vec<Vec<f64>>) -> Value {
-        let rows: Vec<Value> = m.into_iter()
+        let rows: Vec<Value> = m
+            .into_iter()
             .map(|row| {
                 let cols: Vec<Value> = row.into_iter().map(Value::Float).collect();
                 Value::Array(Rc::new(RefCell::new(cols)))
@@ -6954,13 +7443,15 @@ fn register_matrix(interp: &mut Interpreter) {
         let b = extract_matrix(&args[1])?;
 
         if a.len() != b.len() || a.is_empty() || a[0].len() != b[0].len() {
-            return Err(RuntimeError::new("matrix_add() requires same-size matrices"));
+            return Err(RuntimeError::new(
+                "matrix_add() requires same-size matrices",
+            ));
         }
 
-        let result: Vec<Vec<f64>> = a.iter().zip(b.iter())
-            .map(|(row_a, row_b)| {
-                row_a.iter().zip(row_b.iter()).map(|(x, y)| x + y).collect()
-            })
+        let result: Vec<Vec<f64>> = a
+            .iter()
+            .zip(b.iter())
+            .map(|(row_a, row_b)| row_a.iter().zip(row_b.iter()).map(|(x, y)| x + y).collect())
             .collect();
 
         Ok(matrix_to_value(result))
@@ -6972,13 +7463,15 @@ fn register_matrix(interp: &mut Interpreter) {
         let b = extract_matrix(&args[1])?;
 
         if a.len() != b.len() || a.is_empty() || a[0].len() != b[0].len() {
-            return Err(RuntimeError::new("matrix_sub() requires same-size matrices"));
+            return Err(RuntimeError::new(
+                "matrix_sub() requires same-size matrices",
+            ));
         }
 
-        let result: Vec<Vec<f64>> = a.iter().zip(b.iter())
-            .map(|(row_a, row_b)| {
-                row_a.iter().zip(row_b.iter()).map(|(x, y)| x - y).collect()
-            })
+        let result: Vec<Vec<f64>> = a
+            .iter()
+            .zip(b.iter())
+            .map(|(row_a, row_b)| row_a.iter().zip(row_b.iter()).map(|(x, y)| x - y).collect())
             .collect();
 
         Ok(matrix_to_value(result))
@@ -6990,7 +7483,9 @@ fn register_matrix(interp: &mut Interpreter) {
         let b = extract_matrix(&args[1])?;
 
         if a.is_empty() || b.is_empty() || a[0].len() != b.len() {
-            return Err(RuntimeError::new("matrix_mul() requires compatible matrices (a.cols == b.rows)"));
+            return Err(RuntimeError::new(
+                "matrix_mul() requires compatible matrices (a.cols == b.rows)",
+            ));
         }
 
         let rows = a.len();
@@ -7018,7 +7513,8 @@ fn register_matrix(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("matrix_scale() requires numeric scalar")),
         };
 
-        let result: Vec<Vec<f64>> = m.iter()
+        let result: Vec<Vec<f64>> = m
+            .iter()
             .map(|row| row.iter().map(|x| x * scale).collect())
             .collect();
 
@@ -7059,11 +7555,13 @@ fn register_matrix(interp: &mut Interpreter) {
             2 => Ok(Value::Float(m[0][0] * m[1][1] - m[0][1] * m[1][0])),
             3 => {
                 let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-                        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-                        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+                    - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+                    + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
                 Ok(Value::Float(det))
             }
-            _ => Err(RuntimeError::new("matrix_det() only supports up to 3x3 matrices")),
+            _ => Err(RuntimeError::new(
+                "matrix_det() only supports up to 3x3 matrices",
+            )),
         }
     });
 
@@ -7088,7 +7586,11 @@ fn register_matrix(interp: &mut Interpreter) {
                         match v {
                             Value::Int(n) => vec.push(*n as f64),
                             Value::Float(f) => vec.push(*f),
-                            _ => return Err(RuntimeError::new("dot product requires numeric vectors")),
+                            _ => {
+                                return Err(RuntimeError::new(
+                                    "dot product requires numeric vectors",
+                                ))
+                            }
                         }
                     }
                     Ok(vec)
@@ -7101,7 +7603,9 @@ fn register_matrix(interp: &mut Interpreter) {
         let b = extract_vector(&args[1])?;
 
         if a.len() != b.len() {
-            return Err(RuntimeError::new("matrix_dot() requires same-length vectors"));
+            return Err(RuntimeError::new(
+                "matrix_dot() requires same-length vectors",
+            ));
         }
 
         let dot: f64 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
@@ -7134,20 +7638,20 @@ fn mod_inverse(a: i64, m: i64) -> Option<i64> {
 /// Functional programming utilities
 fn register_functional(interp: &mut Interpreter) {
     // identity - returns its argument unchanged
-    define(interp, "identity", Some(1), |_, args| {
-        Ok(args[0].clone())
-    });
+    define(interp, "identity", Some(1), |_, args| Ok(args[0].clone()));
 
     // const_fn - returns a function that always returns the given value
-    define(interp, "const_fn", Some(1), |_, args| {
-        Ok(args[0].clone())
-    });
+    define(interp, "const_fn", Some(1), |_, args| Ok(args[0].clone()));
 
     // apply - apply a function to an array of arguments
     define(interp, "apply", Some(2), |interp, args| {
         let func = match &args[0] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("apply: first argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "apply: first argument must be a function",
+                ))
+            }
         };
         let fn_args = match &args[1] {
             Value::Array(arr) => arr.borrow().clone(),
@@ -7183,26 +7687,28 @@ fn register_functional(interp: &mut Interpreter) {
     });
 
     // force - force evaluation of a thunk
-    define(interp, "force", Some(1), |interp, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let arr = arr.borrow();
-                if arr.len() == 1 {
-                    if let Value::Function(f) = &arr[0] {
-                        return interp.call_function(f, vec![]);
-                    }
+    define(interp, "force", Some(1), |interp, args| match &args[0] {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            if arr.len() == 1 {
+                if let Value::Function(f) = &arr[0] {
+                    return interp.call_function(f, vec![]);
                 }
-                Ok(arr.get(0).cloned().unwrap_or(Value::Null))
             }
-            v => Ok(v.clone()),
+            Ok(arr.get(0).cloned().unwrap_or(Value::Null))
         }
+        v => Ok(v.clone()),
     });
 
     // negate - negate a predicate function result
     define(interp, "negate", Some(2), |interp, args| {
         let func = match &args[0] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("negate: first argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "negate: first argument must be a function",
+                ))
+            }
         };
         let result = interp.call_function(&func, vec![args[1].clone()])?;
         Ok(Value::Bool(!is_truthy(&result)))
@@ -7212,7 +7718,11 @@ fn register_functional(interp: &mut Interpreter) {
     define(interp, "complement", Some(2), |interp, args| {
         let func = match &args[0] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("complement: first argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "complement: first argument must be a function",
+                ))
+            }
         };
         let result = interp.call_function(&func, vec![args[1].clone()])?;
         Ok(Value::Bool(!is_truthy(&result)))
@@ -7221,11 +7731,17 @@ fn register_functional(interp: &mut Interpreter) {
     // partial - partially apply a function with some arguments
     define(interp, "partial", None, |interp, args| {
         if args.len() < 2 {
-            return Err(RuntimeError::new("partial: requires at least function and one argument"));
+            return Err(RuntimeError::new(
+                "partial: requires at least function and one argument",
+            ));
         }
         let func = match &args[0] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("partial: first argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "partial: first argument must be a function",
+                ))
+            }
         };
         let partial_args: Vec<Value> = args[1..].to_vec();
         interp.call_function(&func, partial_args)
@@ -7237,12 +7753,15 @@ fn register_functional(interp: &mut Interpreter) {
             return Err(RuntimeError::new("juxt: requires functions and a value"));
         }
         let val = args.last().unwrap().clone();
-        let results: Result<Vec<Value>, _> = args[..args.len()-1].iter().map(|f| {
-            match f {
+        let results: Result<Vec<Value>, _> = args[..args.len() - 1]
+            .iter()
+            .map(|f| match f {
                 Value::Function(func) => interp.call_function(func, vec![val.clone()]),
-                _ => Err(RuntimeError::new("juxt: all but last argument must be functions")),
-            }
-        }).collect();
+                _ => Err(RuntimeError::new(
+                    "juxt: all but last argument must be functions",
+                )),
+            })
+            .collect();
         Ok(Value::Array(Rc::new(RefCell::new(results?))))
     });
 }
@@ -7253,11 +7772,19 @@ fn register_benchmark(interp: &mut Interpreter) {
     define(interp, "bench", Some(2), |interp, args| {
         let func = match &args[0] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("bench: first argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "bench: first argument must be a function",
+                ))
+            }
         };
         let iterations = match &args[1] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("bench: second argument must be an integer")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "bench: second argument must be an integer",
+                ))
+            }
         };
 
         let start = std::time::Instant::now();
@@ -7280,7 +7807,10 @@ fn register_benchmark(interp: &mut Interpreter) {
         let result = interp.call_function(&func, vec![])?;
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
-        Ok(Value::Tuple(Rc::new(vec![result, Value::Float(elapsed_ms)])))
+        Ok(Value::Tuple(Rc::new(vec![
+            result,
+            Value::Float(elapsed_ms),
+        ])))
     });
 
     // stopwatch_start - return current time in ms
@@ -7296,7 +7826,11 @@ fn register_benchmark(interp: &mut Interpreter) {
         let start_ms = match &args[0] {
             Value::Float(f) => *f,
             Value::Int(n) => *n as f64,
-            _ => return Err(RuntimeError::new("stopwatch_elapsed: argument must be a number")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "stopwatch_elapsed: argument must be a number",
+                ))
+            }
         };
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -7309,15 +7843,27 @@ fn register_benchmark(interp: &mut Interpreter) {
     define(interp, "compare_bench", Some(3), |interp, args| {
         let func1 = match &args[0] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("compare_bench: first argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "compare_bench: first argument must be a function",
+                ))
+            }
         };
         let func2 = match &args[1] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("compare_bench: second argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "compare_bench: second argument must be a function",
+                ))
+            }
         };
         let iterations = match &args[2] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("compare_bench: third argument must be an integer")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "compare_bench: third argument must be an integer",
+                ))
+            }
         };
 
         let start1 = std::time::Instant::now();
@@ -7338,13 +7884,14 @@ fn register_benchmark(interp: &mut Interpreter) {
         results.insert("speedup".to_string(), Value::Float(time1 / time2));
         results.insert("iterations".to_string(), Value::Int(iterations as i64));
 
-        Ok(Value::Struct { name: "BenchResult".to_string(), fields: Rc::new(RefCell::new(results)) })
+        Ok(Value::Struct {
+            name: "BenchResult".to_string(),
+            fields: Rc::new(RefCell::new(results)),
+        })
     });
 
     // memory_usage - placeholder
-    define(interp, "memory_usage", Some(0), |_, _| {
-        Ok(Value::Int(0))
-    });
+    define(interp, "memory_usage", Some(0), |_, _| Ok(Value::Int(0)));
 }
 
 /// Extended iterator utilities (itertools-inspired)
@@ -7357,7 +7904,11 @@ fn register_itertools(interp: &mut Interpreter) {
         };
         let n = match &args[1] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("cycle: second argument must be an integer")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "cycle: second argument must be an integer",
+                ))
+            }
         };
 
         if arr.is_empty() {
@@ -7373,7 +7924,11 @@ fn register_itertools(interp: &mut Interpreter) {
         let val = args[0].clone();
         let n = match &args[1] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("repeat_val: second argument must be an integer")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "repeat_val: second argument must be an integer",
+                ))
+            }
         };
 
         let result: Vec<Value> = std::iter::repeat(val).take(n).collect();
@@ -7384,11 +7939,19 @@ fn register_itertools(interp: &mut Interpreter) {
     define(interp, "take_while", Some(2), |interp, args| {
         let arr = match &args[0] {
             Value::Array(a) => a.borrow().clone(),
-            _ => return Err(RuntimeError::new("take_while: first argument must be an array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "take_while: first argument must be an array",
+                ))
+            }
         };
         let pred = match &args[1] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("take_while: second argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "take_while: second argument must be a function",
+                ))
+            }
         };
 
         let mut result = Vec::new();
@@ -7407,11 +7970,19 @@ fn register_itertools(interp: &mut Interpreter) {
     define(interp, "drop_while", Some(2), |interp, args| {
         let arr = match &args[0] {
             Value::Array(a) => a.borrow().clone(),
-            _ => return Err(RuntimeError::new("drop_while: first argument must be an array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "drop_while: first argument must be an array",
+                ))
+            }
         };
         let pred = match &args[1] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("drop_while: second argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "drop_while: second argument must be a function",
+                ))
+            }
         };
 
         let mut dropping = true;
@@ -7434,11 +8005,19 @@ fn register_itertools(interp: &mut Interpreter) {
     define(interp, "group_by", Some(2), |interp, args| {
         let arr = match &args[0] {
             Value::Array(a) => a.borrow().clone(),
-            _ => return Err(RuntimeError::new("group_by: first argument must be an array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "group_by: first argument must be an array",
+                ))
+            }
         };
         let key_fn = match &args[1] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("group_by: second argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "group_by: second argument must be a function",
+                ))
+            }
         };
 
         let mut groups: Vec<Value> = Vec::new();
@@ -7471,11 +8050,19 @@ fn register_itertools(interp: &mut Interpreter) {
     define(interp, "partition", Some(2), |interp, args| {
         let arr = match &args[0] {
             Value::Array(a) => a.borrow().clone(),
-            _ => return Err(RuntimeError::new("partition: first argument must be an array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "partition: first argument must be an array",
+                ))
+            }
         };
         let pred = match &args[1] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("partition: second argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "partition: second argument must be a function",
+                ))
+            }
         };
 
         let mut true_items = Vec::new();
@@ -7500,11 +8087,19 @@ fn register_itertools(interp: &mut Interpreter) {
     define(interp, "interleave", Some(2), |_, args| {
         let arr1 = match &args[0] {
             Value::Array(a) => a.borrow().clone(),
-            _ => return Err(RuntimeError::new("interleave: first argument must be an array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "interleave: first argument must be an array",
+                ))
+            }
         };
         let arr2 = match &args[1] {
             Value::Array(a) => a.borrow().clone(),
-            _ => return Err(RuntimeError::new("interleave: second argument must be an array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "interleave: second argument must be an array",
+                ))
+            }
         };
 
         let mut result = Vec::new();
@@ -7542,10 +8137,15 @@ fn register_itertools(interp: &mut Interpreter) {
         };
         let size = match &args[1] {
             Value::Int(n) if *n > 0 => *n as usize,
-            _ => return Err(RuntimeError::new("chunks: second argument must be a positive integer")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "chunks: second argument must be a positive integer",
+                ))
+            }
         };
 
-        let chunks: Vec<Value> = arr.chunks(size)
+        let chunks: Vec<Value> = arr
+            .chunks(size)
             .map(|chunk| Value::Array(Rc::new(RefCell::new(chunk.to_vec()))))
             .collect();
 
@@ -7556,18 +8156,27 @@ fn register_itertools(interp: &mut Interpreter) {
     define(interp, "windows", Some(2), |_, args| {
         let arr = match &args[0] {
             Value::Array(a) => a.borrow().clone(),
-            _ => return Err(RuntimeError::new("windows: first argument must be an array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "windows: first argument must be an array",
+                ))
+            }
         };
         let size = match &args[1] {
             Value::Int(n) if *n > 0 => *n as usize,
-            _ => return Err(RuntimeError::new("windows: second argument must be a positive integer")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "windows: second argument must be a positive integer",
+                ))
+            }
         };
 
         if arr.len() < size {
             return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
         }
 
-        let windows: Vec<Value> = arr.windows(size)
+        let windows: Vec<Value> = arr
+            .windows(size)
             .map(|window| Value::Array(Rc::new(RefCell::new(window.to_vec()))))
             .collect();
 
@@ -7610,7 +8219,8 @@ fn register_itertools(interp: &mut Interpreter) {
             *counts.entry(key).or_insert(0) += 1;
         }
 
-        let result: std::collections::HashMap<String, Value> = counts.into_iter()
+        let result: std::collections::HashMap<String, Value> = counts
+            .into_iter()
             .map(|(k, v)| (k, Value::Int(v)))
             .collect();
 
@@ -7678,7 +8288,11 @@ fn register_ranges(interp: &mut Interpreter) {
         let step = match &args[2] {
             Value::Int(n) if *n != 0 => *n,
             Value::Float(f) if *f != 0.0 => *f as i64,
-            _ => return Err(RuntimeError::new("range_step: step must be a non-zero number")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "range_step: step must be a non-zero number",
+                ))
+            }
         };
 
         let mut result = Vec::new();
@@ -7713,11 +8327,17 @@ fn register_ranges(interp: &mut Interpreter) {
         };
         let n = match &args[2] {
             Value::Int(n) if *n > 0 => *n as usize,
-            _ => return Err(RuntimeError::new("linspace: count must be a positive integer")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "linspace: count must be a positive integer",
+                ))
+            }
         };
 
         if n == 1 {
-            return Ok(Value::Array(Rc::new(RefCell::new(vec![Value::Float(start)]))));
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![Value::Float(
+                start,
+            )]))));
         }
 
         let step = (end - start) / (n - 1) as f64;
@@ -7733,7 +8353,11 @@ fn register_ranges(interp: &mut Interpreter) {
         let start_exp = match &args[0] {
             Value::Int(n) => *n as f64,
             Value::Float(f) => *f,
-            _ => return Err(RuntimeError::new("logspace: start exponent must be a number")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "logspace: start exponent must be a number",
+                ))
+            }
         };
         let end_exp = match &args[1] {
             Value::Int(n) => *n as f64,
@@ -7742,11 +8366,17 @@ fn register_ranges(interp: &mut Interpreter) {
         };
         let n = match &args[2] {
             Value::Int(n) if *n > 0 => *n as usize,
-            _ => return Err(RuntimeError::new("logspace: count must be a positive integer")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "logspace: count must be a positive integer",
+                ))
+            }
         };
 
         if n == 1 {
-            return Ok(Value::Array(Rc::new(RefCell::new(vec![Value::Float(10f64.powf(start_exp))]))));
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![Value::Float(
+                10f64.powf(start_exp),
+            )]))));
         }
 
         let step = (end_exp - start_exp) / (n - 1) as f64;
@@ -7798,20 +8428,34 @@ fn register_ranges(interp: &mut Interpreter) {
         let start = match &args[0] {
             Value::Int(n) if *n > 0 => *n as f64,
             Value::Float(f) if *f > 0.0 => *f,
-            _ => return Err(RuntimeError::new("geomspace: start must be a positive number")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "geomspace: start must be a positive number",
+                ))
+            }
         };
         let end = match &args[1] {
             Value::Int(n) if *n > 0 => *n as f64,
             Value::Float(f) if *f > 0.0 => *f,
-            _ => return Err(RuntimeError::new("geomspace: end must be a positive number")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "geomspace: end must be a positive number",
+                ))
+            }
         };
         let n = match &args[2] {
             Value::Int(n) if *n > 0 => *n as usize,
-            _ => return Err(RuntimeError::new("geomspace: count must be a positive integer")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "geomspace: count must be a positive integer",
+                ))
+            }
         };
 
         if n == 1 {
-            return Ok(Value::Array(Rc::new(RefCell::new(vec![Value::Float(start)]))));
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![Value::Float(
+                start,
+            )]))));
         }
 
         let ratio = (end / start).powf(1.0 / (n - 1) as f64);
@@ -7826,30 +8470,58 @@ fn register_ranges(interp: &mut Interpreter) {
 /// Bitwise operations
 fn register_bitwise(interp: &mut Interpreter) {
     define(interp, "bit_and", Some(2), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_and: arguments must be integers")) };
-        let b = match &args[1] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_and: arguments must be integers")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("bit_and: arguments must be integers")),
+        };
+        let b = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("bit_and: arguments must be integers")),
+        };
         Ok(Value::Int(a & b))
     });
 
     define(interp, "bit_or", Some(2), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_or: arguments must be integers")) };
-        let b = match &args[1] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_or: arguments must be integers")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("bit_or: arguments must be integers")),
+        };
+        let b = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("bit_or: arguments must be integers")),
+        };
         Ok(Value::Int(a | b))
     });
 
     define(interp, "bit_xor", Some(2), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_xor: arguments must be integers")) };
-        let b = match &args[1] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_xor: arguments must be integers")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("bit_xor: arguments must be integers")),
+        };
+        let b = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("bit_xor: arguments must be integers")),
+        };
         Ok(Value::Int(a ^ b))
     });
 
     define(interp, "bit_not", Some(1), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_not: argument must be an integer")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("bit_not: argument must be an integer")),
+        };
         Ok(Value::Int(!a))
     });
 
     define(interp, "bit_shl", Some(2), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_shl: first argument must be an integer")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => {
+                return Err(RuntimeError::new(
+                    "bit_shl: first argument must be an integer",
+                ))
+            }
+        };
         let b = match &args[1] {
             Value::Int(n) if *n >= 0 && *n < 64 => *n as u32,
             _ => return Err(RuntimeError::new("bit_shl: shift amount must be 0-63")),
@@ -7858,7 +8530,14 @@ fn register_bitwise(interp: &mut Interpreter) {
     });
 
     define(interp, "bit_shr", Some(2), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_shr: first argument must be an integer")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => {
+                return Err(RuntimeError::new(
+                    "bit_shr: first argument must be an integer",
+                ))
+            }
+        };
         let b = match &args[1] {
             Value::Int(n) if *n >= 0 && *n < 64 => *n as u32,
             _ => return Err(RuntimeError::new("bit_shr: shift amount must be 0-63")),
@@ -7867,22 +8546,46 @@ fn register_bitwise(interp: &mut Interpreter) {
     });
 
     define(interp, "popcount", Some(1), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("popcount: argument must be an integer")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("popcount: argument must be an integer")),
+        };
         Ok(Value::Int(a.count_ones() as i64))
     });
 
     define(interp, "leading_zeros", Some(1), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("leading_zeros: argument must be an integer")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => {
+                return Err(RuntimeError::new(
+                    "leading_zeros: argument must be an integer",
+                ))
+            }
+        };
         Ok(Value::Int(a.leading_zeros() as i64))
     });
 
     define(interp, "trailing_zeros", Some(1), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("trailing_zeros: argument must be an integer")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => {
+                return Err(RuntimeError::new(
+                    "trailing_zeros: argument must be an integer",
+                ))
+            }
+        };
         Ok(Value::Int(a.trailing_zeros() as i64))
     });
 
     define(interp, "bit_test", Some(2), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_test: first argument must be an integer")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => {
+                return Err(RuntimeError::new(
+                    "bit_test: first argument must be an integer",
+                ))
+            }
+        };
         let pos = match &args[1] {
             Value::Int(n) if *n >= 0 && *n < 64 => *n as u32,
             _ => return Err(RuntimeError::new("bit_test: position must be 0-63")),
@@ -7891,7 +8594,14 @@ fn register_bitwise(interp: &mut Interpreter) {
     });
 
     define(interp, "bit_set", Some(2), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_set: first argument must be an integer")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => {
+                return Err(RuntimeError::new(
+                    "bit_set: first argument must be an integer",
+                ))
+            }
+        };
         let pos = match &args[1] {
             Value::Int(n) if *n >= 0 && *n < 64 => *n as u32,
             _ => return Err(RuntimeError::new("bit_set: position must be 0-63")),
@@ -7900,7 +8610,14 @@ fn register_bitwise(interp: &mut Interpreter) {
     });
 
     define(interp, "bit_clear", Some(2), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_clear: first argument must be an integer")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => {
+                return Err(RuntimeError::new(
+                    "bit_clear: first argument must be an integer",
+                ))
+            }
+        };
         let pos = match &args[1] {
             Value::Int(n) if *n >= 0 && *n < 64 => *n as u32,
             _ => return Err(RuntimeError::new("bit_clear: position must be 0-63")),
@@ -7909,7 +8626,14 @@ fn register_bitwise(interp: &mut Interpreter) {
     });
 
     define(interp, "bit_toggle", Some(2), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("bit_toggle: first argument must be an integer")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => {
+                return Err(RuntimeError::new(
+                    "bit_toggle: first argument must be an integer",
+                ))
+            }
+        };
         let pos = match &args[1] {
             Value::Int(n) if *n >= 0 && *n < 64 => *n as u32,
             _ => return Err(RuntimeError::new("bit_toggle: position must be 0-63")),
@@ -7918,12 +8642,18 @@ fn register_bitwise(interp: &mut Interpreter) {
     });
 
     define(interp, "to_binary", Some(1), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("to_binary: argument must be an integer")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("to_binary: argument must be an integer")),
+        };
         Ok(Value::String(Rc::new(format!("{:b}", a))))
     });
 
     define(interp, "from_binary", Some(1), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("from_binary: argument must be a string")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("from_binary: argument must be a string")),
+        };
         match i64::from_str_radix(&s, 2) {
             Ok(n) => Ok(Value::Int(n)),
             Err(_) => Err(RuntimeError::new("from_binary: invalid binary string")),
@@ -7931,12 +8661,18 @@ fn register_bitwise(interp: &mut Interpreter) {
     });
 
     define(interp, "to_hex", Some(1), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("to_hex: argument must be an integer")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("to_hex: argument must be an integer")),
+        };
         Ok(Value::String(Rc::new(format!("{:x}", a))))
     });
 
     define(interp, "from_hex", Some(1), |_, args| {
-        let s = match &args[0] { Value::String(s) => s.trim_start_matches("0x").to_string(), _ => return Err(RuntimeError::new("from_hex: argument must be a string")) };
+        let s = match &args[0] {
+            Value::String(s) => s.trim_start_matches("0x").to_string(),
+            _ => return Err(RuntimeError::new("from_hex: argument must be a string")),
+        };
         match i64::from_str_radix(&s, 16) {
             Ok(n) => Ok(Value::Int(n)),
             Err(_) => Err(RuntimeError::new("from_hex: invalid hex string")),
@@ -7944,12 +8680,18 @@ fn register_bitwise(interp: &mut Interpreter) {
     });
 
     define(interp, "to_octal", Some(1), |_, args| {
-        let a = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("to_octal: argument must be an integer")) };
+        let a = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("to_octal: argument must be an integer")),
+        };
         Ok(Value::String(Rc::new(format!("{:o}", a))))
     });
 
     define(interp, "from_octal", Some(1), |_, args| {
-        let s = match &args[0] { Value::String(s) => s.trim_start_matches("0o").to_string(), _ => return Err(RuntimeError::new("from_octal: argument must be a string")) };
+        let s = match &args[0] {
+            Value::String(s) => s.trim_start_matches("0o").to_string(),
+            _ => return Err(RuntimeError::new("from_octal: argument must be a string")),
+        };
         match i64::from_str_radix(&s, 8) {
             Ok(n) => Ok(Value::Int(n)),
             Err(_) => Err(RuntimeError::new("from_octal: invalid octal string")),
@@ -7962,7 +8704,9 @@ fn register_format(interp: &mut Interpreter) {
     // format - basic string formatting with {} placeholders
     define(interp, "format", None, |_, args| {
         if args.is_empty() {
-            return Err(RuntimeError::new("format: requires at least a format string"));
+            return Err(RuntimeError::new(
+                "format: requires at least a format string",
+            ));
         }
         let template = match &args[0] {
             Value::String(s) => (**s).clone(),
@@ -7971,7 +8715,7 @@ fn register_format(interp: &mut Interpreter) {
         let mut result = template;
         for arg in &args[1..] {
             if let Some(pos) = result.find("{}") {
-                result = format!("{}{}{}", &result[..pos], arg, &result[pos+2..]);
+                result = format!("{}{}{}", &result[..pos], arg, &result[pos + 2..]);
             }
         }
         Ok(Value::String(Rc::new(result)))
@@ -7979,33 +8723,105 @@ fn register_format(interp: &mut Interpreter) {
 
     // pad_left - left-pad string to length with char (uses character count, not bytes)
     define(interp, "pad_left", Some(3), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("pad_left: first argument must be a string")) };
-        let width = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("pad_left: width must be a non-negative integer")) };
-        let pad_char = match &args[2] { Value::String(s) if !s.is_empty() => s.chars().next().unwrap(), Value::Char(c) => *c, _ => return Err(RuntimeError::new("pad_left: pad character must be a non-empty string or char")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "pad_left: first argument must be a string",
+                ))
+            }
+        };
+        let width = match &args[1] {
+            Value::Int(n) if *n >= 0 => *n as usize,
+            _ => {
+                return Err(RuntimeError::new(
+                    "pad_left: width must be a non-negative integer",
+                ))
+            }
+        };
+        let pad_char = match &args[2] {
+            Value::String(s) if !s.is_empty() => s.chars().next().unwrap(),
+            Value::Char(c) => *c,
+            _ => {
+                return Err(RuntimeError::new(
+                    "pad_left: pad character must be a non-empty string or char",
+                ))
+            }
+        };
         let char_count = s.chars().count();
-        if char_count >= width { return Ok(Value::String(Rc::new(s))); }
-        let padding: String = std::iter::repeat(pad_char).take(width - char_count).collect();
+        if char_count >= width {
+            return Ok(Value::String(Rc::new(s)));
+        }
+        let padding: String = std::iter::repeat(pad_char)
+            .take(width - char_count)
+            .collect();
         Ok(Value::String(Rc::new(format!("{}{}", padding, s))))
     });
 
     // pad_right - right-pad string to length with char (uses character count, not bytes)
     define(interp, "pad_right", Some(3), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("pad_right: first argument must be a string")) };
-        let width = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("pad_right: width must be a non-negative integer")) };
-        let pad_char = match &args[2] { Value::String(s) if !s.is_empty() => s.chars().next().unwrap(), Value::Char(c) => *c, _ => return Err(RuntimeError::new("pad_right: pad character must be a non-empty string or char")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "pad_right: first argument must be a string",
+                ))
+            }
+        };
+        let width = match &args[1] {
+            Value::Int(n) if *n >= 0 => *n as usize,
+            _ => {
+                return Err(RuntimeError::new(
+                    "pad_right: width must be a non-negative integer",
+                ))
+            }
+        };
+        let pad_char = match &args[2] {
+            Value::String(s) if !s.is_empty() => s.chars().next().unwrap(),
+            Value::Char(c) => *c,
+            _ => {
+                return Err(RuntimeError::new(
+                    "pad_right: pad character must be a non-empty string or char",
+                ))
+            }
+        };
         let char_count = s.chars().count();
-        if char_count >= width { return Ok(Value::String(Rc::new(s))); }
-        let padding: String = std::iter::repeat(pad_char).take(width - char_count).collect();
+        if char_count >= width {
+            return Ok(Value::String(Rc::new(s)));
+        }
+        let padding: String = std::iter::repeat(pad_char)
+            .take(width - char_count)
+            .collect();
         Ok(Value::String(Rc::new(format!("{}{}", s, padding))))
     });
 
     // center - center string with padding (uses character count, not bytes)
     define(interp, "center", Some(3), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("center: first argument must be a string")) };
-        let width = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("center: width must be a non-negative integer")) };
-        let pad_char = match &args[2] { Value::String(s) if !s.is_empty() => s.chars().next().unwrap(), Value::Char(c) => *c, _ => return Err(RuntimeError::new("center: pad character must be a non-empty string or char")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("center: first argument must be a string")),
+        };
+        let width = match &args[1] {
+            Value::Int(n) if *n >= 0 => *n as usize,
+            _ => {
+                return Err(RuntimeError::new(
+                    "center: width must be a non-negative integer",
+                ))
+            }
+        };
+        let pad_char = match &args[2] {
+            Value::String(s) if !s.is_empty() => s.chars().next().unwrap(),
+            Value::Char(c) => *c,
+            _ => {
+                return Err(RuntimeError::new(
+                    "center: pad character must be a non-empty string or char",
+                ))
+            }
+        };
         let char_count = s.chars().count();
-        if char_count >= width { return Ok(Value::String(Rc::new(s))); }
+        if char_count >= width {
+            return Ok(Value::String(Rc::new(s)));
+        }
         let total_padding = width - char_count;
         let left_padding = total_padding / 2;
         let right_padding = total_padding - left_padding;
@@ -8016,52 +8832,139 @@ fn register_format(interp: &mut Interpreter) {
 
     // number_format - format number with thousand separators
     define(interp, "number_format", Some(1), |_, args| {
-        let n = match &args[0] { Value::Int(n) => *n, Value::Float(f) => *f as i64, _ => return Err(RuntimeError::new("number_format: argument must be a number")) };
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            Value::Float(f) => *f as i64,
+            _ => {
+                return Err(RuntimeError::new(
+                    "number_format: argument must be a number",
+                ))
+            }
+        };
         let s = n.abs().to_string();
         let mut result = String::new();
         for (i, c) in s.chars().rev().enumerate() {
-            if i > 0 && i % 3 == 0 { result.push(','); }
+            if i > 0 && i % 3 == 0 {
+                result.push(',');
+            }
             result.push(c);
         }
         let formatted: String = result.chars().rev().collect();
-        if n < 0 { Ok(Value::String(Rc::new(format!("-{}", formatted)))) } else { Ok(Value::String(Rc::new(formatted))) }
+        if n < 0 {
+            Ok(Value::String(Rc::new(format!("-{}", formatted))))
+        } else {
+            Ok(Value::String(Rc::new(formatted)))
+        }
     });
 
     // ordinal - convert number to ordinal string (1st, 2nd, 3rd, etc)
     define(interp, "ordinal", Some(1), |_, args| {
-        let n = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("ordinal: argument must be an integer")) };
-        let suffix = match (n % 10, n % 100) { (1, 11) => "th", (2, 12) => "th", (3, 13) => "th", (1, _) => "st", (2, _) => "nd", (3, _) => "rd", _ => "th" };
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("ordinal: argument must be an integer")),
+        };
+        let suffix = match (n % 10, n % 100) {
+            (1, 11) => "th",
+            (2, 12) => "th",
+            (3, 13) => "th",
+            (1, _) => "st",
+            (2, _) => "nd",
+            (3, _) => "rd",
+            _ => "th",
+        };
         Ok(Value::String(Rc::new(format!("{}{}", n, suffix))))
     });
 
     // pluralize - simple pluralization
     define(interp, "pluralize", Some(3), |_, args| {
-        let count = match &args[0] { Value::Int(n) => *n, _ => return Err(RuntimeError::new("pluralize: first argument must be an integer")) };
-        let singular = match &args[1] { Value::String(s) => s.clone(), _ => return Err(RuntimeError::new("pluralize: second argument must be a string")) };
-        let plural = match &args[2] { Value::String(s) => s.clone(), _ => return Err(RuntimeError::new("pluralize: third argument must be a string")) };
-        if count == 1 || count == -1 { Ok(Value::String(singular)) } else { Ok(Value::String(plural)) }
+        let count = match &args[0] {
+            Value::Int(n) => *n,
+            _ => {
+                return Err(RuntimeError::new(
+                    "pluralize: first argument must be an integer",
+                ))
+            }
+        };
+        let singular = match &args[1] {
+            Value::String(s) => s.clone(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "pluralize: second argument must be a string",
+                ))
+            }
+        };
+        let plural = match &args[2] {
+            Value::String(s) => s.clone(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "pluralize: third argument must be a string",
+                ))
+            }
+        };
+        if count == 1 || count == -1 {
+            Ok(Value::String(singular))
+        } else {
+            Ok(Value::String(plural))
+        }
     });
 
     // truncate - truncate string with ellipsis (uses character count, not bytes)
     define(interp, "truncate", Some(2), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("truncate: first argument must be a string")) };
-        let max_len = match &args[1] { Value::Int(n) if *n >= 0 => *n as usize, _ => return Err(RuntimeError::new("truncate: max length must be a non-negative integer")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "truncate: first argument must be a string",
+                ))
+            }
+        };
+        let max_len = match &args[1] {
+            Value::Int(n) if *n >= 0 => *n as usize,
+            _ => {
+                return Err(RuntimeError::new(
+                    "truncate: max length must be a non-negative integer",
+                ))
+            }
+        };
         let char_count = s.chars().count();
-        if char_count <= max_len { return Ok(Value::String(Rc::new(s))); }
-        if max_len <= 3 { return Ok(Value::String(Rc::new(s.chars().take(max_len).collect()))); }
+        if char_count <= max_len {
+            return Ok(Value::String(Rc::new(s)));
+        }
+        if max_len <= 3 {
+            return Ok(Value::String(Rc::new(s.chars().take(max_len).collect())));
+        }
         let truncated: String = s.chars().take(max_len - 3).collect();
         Ok(Value::String(Rc::new(format!("{}...", truncated))))
     });
 
     // word_wrap - wrap text at specified width
     define(interp, "word_wrap", Some(2), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("word_wrap: first argument must be a string")) };
-        let width = match &args[1] { Value::Int(n) if *n > 0 => *n as usize, _ => return Err(RuntimeError::new("word_wrap: width must be a positive integer")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "word_wrap: first argument must be a string",
+                ))
+            }
+        };
+        let width = match &args[1] {
+            Value::Int(n) if *n > 0 => *n as usize,
+            _ => {
+                return Err(RuntimeError::new(
+                    "word_wrap: width must be a positive integer",
+                ))
+            }
+        };
         let mut result = String::new();
         let mut line_len = 0;
         for word in s.split_whitespace() {
-            if line_len > 0 && line_len + 1 + word.len() > width { result.push('\n'); line_len = 0; }
-            else if line_len > 0 { result.push(' '); line_len += 1; }
+            if line_len > 0 && line_len + 1 + word.len() > width {
+                result.push('\n');
+                line_len = 0;
+            } else if line_len > 0 {
+                result.push(' ');
+                line_len += 1;
+            }
             result.push_str(word);
             line_len += word.len();
         }
@@ -8070,49 +8973,87 @@ fn register_format(interp: &mut Interpreter) {
 
     // snake_case - convert string to snake_case
     define(interp, "snake_case", Some(1), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("snake_case: argument must be a string")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("snake_case: argument must be a string")),
+        };
         let mut result = String::new();
         for (i, c) in s.chars().enumerate() {
-            if c.is_uppercase() { if i > 0 { result.push('_'); } result.push(c.to_lowercase().next().unwrap()); }
-            else if c == ' ' || c == '-' { result.push('_'); }
-            else { result.push(c); }
+            if c.is_uppercase() {
+                if i > 0 {
+                    result.push('_');
+                }
+                result.push(c.to_lowercase().next().unwrap());
+            } else if c == ' ' || c == '-' {
+                result.push('_');
+            } else {
+                result.push(c);
+            }
         }
         Ok(Value::String(Rc::new(result)))
     });
 
     // camel_case - convert string to camelCase
     define(interp, "camel_case", Some(1), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("camel_case: argument must be a string")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("camel_case: argument must be a string")),
+        };
         let mut result = String::new();
         let mut capitalize_next = false;
         for (i, c) in s.chars().enumerate() {
-            if c == '_' || c == '-' || c == ' ' { capitalize_next = true; }
-            else if capitalize_next { result.push(c.to_uppercase().next().unwrap()); capitalize_next = false; }
-            else if i == 0 { result.push(c.to_lowercase().next().unwrap()); }
-            else { result.push(c); }
+            if c == '_' || c == '-' || c == ' ' {
+                capitalize_next = true;
+            } else if capitalize_next {
+                result.push(c.to_uppercase().next().unwrap());
+                capitalize_next = false;
+            } else if i == 0 {
+                result.push(c.to_lowercase().next().unwrap());
+            } else {
+                result.push(c);
+            }
         }
         Ok(Value::String(Rc::new(result)))
     });
 
     // kebab_case - convert string to kebab-case
     define(interp, "kebab_case", Some(1), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("kebab_case: argument must be a string")) };
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("kebab_case: argument must be a string")),
+        };
         let mut result = String::new();
         for (i, c) in s.chars().enumerate() {
-            if c.is_uppercase() { if i > 0 { result.push('-'); } result.push(c.to_lowercase().next().unwrap()); }
-            else if c == '_' || c == ' ' { result.push('-'); }
-            else { result.push(c); }
+            if c.is_uppercase() {
+                if i > 0 {
+                    result.push('-');
+                }
+                result.push(c.to_lowercase().next().unwrap());
+            } else if c == '_' || c == ' ' {
+                result.push('-');
+            } else {
+                result.push(c);
+            }
         }
         Ok(Value::String(Rc::new(result)))
     });
 
     // title_case - convert string to Title Case
     define(interp, "title_case", Some(1), |_, args| {
-        let s = match &args[0] { Value::String(s) => (**s).clone(), _ => return Err(RuntimeError::new("title_case: argument must be a string")) };
-        let result: String = s.split_whitespace()
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("title_case: argument must be a string")),
+        };
+        let result: String = s
+            .split_whitespace()
             .map(|word| {
                 let mut chars = word.chars();
-                match chars.next() { None => String::new(), Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase() }
+                match chars.next() {
+                    None => String::new(),
+                    Some(first) => {
+                        first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+                    }
+                }
             })
             .collect::<Vec<_>>()
             .join(" ");
@@ -8143,8 +9084,19 @@ fn register_pattern(interp: &mut Interpreter) {
             Value::Tuple(_) => "tuple",
             Value::Map(_) => "map",
             Value::Set(_) => "set",
-            Value::Struct { name, .. } => return Ok(Value::String(Rc::new(format!("struct:{}", name)))),
-            Value::Variant { enum_name, variant_name, .. } => return Ok(Value::String(Rc::new(format!("{}::{}", enum_name, variant_name)))),
+            Value::Struct { name, .. } => {
+                return Ok(Value::String(Rc::new(format!("struct:{}", name))))
+            }
+            Value::Variant {
+                enum_name,
+                variant_name,
+                ..
+            } => {
+                return Ok(Value::String(Rc::new(format!(
+                    "{}::{}",
+                    enum_name, variant_name
+                ))))
+            }
             Value::Function(_) => "function",
             Value::BuiltIn(_) => "builtin",
             Value::Ref(_) => "ref",
@@ -8164,7 +9116,11 @@ fn register_pattern(interp: &mut Interpreter) {
     define(interp, "is_type", Some(2), |_, args| {
         let type_name = match &args[1] {
             Value::String(s) => s.to_lowercase(),
-            _ => return Err(RuntimeError::new("is_type: second argument must be type name string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "is_type: second argument must be type name string",
+                ))
+            }
         };
         let matches = match (&args[0], type_name.as_str()) {
             (Value::Null, "null") => true,
@@ -8180,7 +9136,9 @@ fn register_pattern(interp: &mut Interpreter) {
             (Value::Function(_), "function") | (Value::Function(_), "fn") => true,
             (Value::BuiltIn(_), "function") | (Value::BuiltIn(_), "builtin") => true,
             (Value::Struct { name, .. }, t) => t == "struct" || t == &name.to_lowercase(),
-            (Value::Variant { enum_name, .. }, t) => t == "variant" || t == "enum" || t == &enum_name.to_lowercase(),
+            (Value::Variant { enum_name, .. }, t) => {
+                t == "variant" || t == "enum" || t == &enum_name.to_lowercase()
+            }
             (Value::Channel(_), "channel") => true,
             (Value::ThreadHandle(_), "thread") => true,
             (Value::Actor(_), "actor") => true,
@@ -8191,21 +9149,57 @@ fn register_pattern(interp: &mut Interpreter) {
     });
 
     // is_null, is_bool, is_int, is_float, is_string, is_array, is_map - type predicates
-    define(interp, "is_null", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Null))));
-    define(interp, "is_bool", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Bool(_)))));
-    define(interp, "is_int", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Int(_)))));
-    define(interp, "is_float", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Float(_)))));
-    define(interp, "is_number", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Int(_) | Value::Float(_)))));
-    define(interp, "is_string", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::String(_)))));
-    define(interp, "is_array", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Array(_)))));
-    define(interp, "is_tuple", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Tuple(_)))));
-    define(interp, "is_map", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Map(_)))));
-    define(interp, "is_set", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Set(_)))));
-    define(interp, "is_function", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Function(_) | Value::BuiltIn(_)))));
-    define(interp, "is_struct", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Struct { .. }))));
-    define(interp, "is_variant", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Variant { .. }))));
-    define(interp, "is_future", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Future(_)))));
-    define(interp, "is_channel", Some(1), |_, args| Ok(Value::Bool(matches!(&args[0], Value::Channel(_)))));
+    define(interp, "is_null", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(&args[0], Value::Null)))
+    });
+    define(interp, "is_bool", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(&args[0], Value::Bool(_))))
+    });
+    define(interp, "is_int", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(&args[0], Value::Int(_))))
+    });
+    define(interp, "is_float", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(&args[0], Value::Float(_))))
+    });
+    define(interp, "is_number", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(
+            &args[0],
+            Value::Int(_) | Value::Float(_)
+        )))
+    });
+    define(interp, "is_string", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(&args[0], Value::String(_))))
+    });
+    define(interp, "is_array", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(&args[0], Value::Array(_))))
+    });
+    define(interp, "is_tuple", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(&args[0], Value::Tuple(_))))
+    });
+    define(interp, "is_map", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(&args[0], Value::Map(_))))
+    });
+    define(interp, "is_set", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(&args[0], Value::Set(_))))
+    });
+    define(interp, "is_function", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(
+            &args[0],
+            Value::Function(_) | Value::BuiltIn(_)
+        )))
+    });
+    define(interp, "is_struct", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(&args[0], Value::Struct { .. })))
+    });
+    define(interp, "is_variant", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(&args[0], Value::Variant { .. })))
+    });
+    define(interp, "is_future", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(&args[0], Value::Future(_))))
+    });
+    define(interp, "is_channel", Some(1), |_, args| {
+        Ok(Value::Bool(matches!(&args[0], Value::Channel(_))))
+    });
 
     // is_empty - check if collection is empty
     define(interp, "is_empty", Some(1), |_, args| {
@@ -8227,16 +9221,29 @@ fn register_pattern(interp: &mut Interpreter) {
     define(interp, "match_regex", Some(2), |_, args| {
         let text = match &args[0] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("match_regex: first argument must be a string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "match_regex: first argument must be a string",
+                ))
+            }
         };
         let pattern = match &args[1] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("match_regex: second argument must be a regex pattern string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "match_regex: second argument must be a regex pattern string",
+                ))
+            }
         };
 
         let re = match Regex::new(&pattern) {
             Ok(r) => r,
-            Err(e) => return Err(RuntimeError::new(format!("match_regex: invalid regex: {}", e))),
+            Err(e) => {
+                return Err(RuntimeError::new(format!(
+                    "match_regex: invalid regex: {}",
+                    e
+                )))
+            }
         };
 
         match re.captures(&text) {
@@ -8259,19 +9266,33 @@ fn register_pattern(interp: &mut Interpreter) {
     define(interp, "match_all_regex", Some(2), |_, args| {
         let text = match &args[0] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("match_all_regex: first argument must be a string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "match_all_regex: first argument must be a string",
+                ))
+            }
         };
         let pattern = match &args[1] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("match_all_regex: second argument must be a regex pattern string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "match_all_regex: second argument must be a regex pattern string",
+                ))
+            }
         };
 
         let re = match Regex::new(&pattern) {
             Ok(r) => r,
-            Err(e) => return Err(RuntimeError::new(format!("match_all_regex: invalid regex: {}", e))),
+            Err(e) => {
+                return Err(RuntimeError::new(format!(
+                    "match_all_regex: invalid regex: {}",
+                    e
+                )))
+            }
         };
 
-        let matches: Vec<Value> = re.find_iter(&text)
+        let matches: Vec<Value> = re
+            .find_iter(&text)
             .map(|m| Value::String(Rc::new(m.as_str().to_string())))
             .collect();
         Ok(Value::Array(Rc::new(RefCell::new(matches))))
@@ -8281,16 +9302,29 @@ fn register_pattern(interp: &mut Interpreter) {
     define(interp, "capture_named", Some(2), |_, args| {
         let text = match &args[0] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("capture_named: first argument must be a string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "capture_named: first argument must be a string",
+                ))
+            }
         };
         let pattern = match &args[1] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("capture_named: second argument must be a regex pattern string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "capture_named: second argument must be a regex pattern string",
+                ))
+            }
         };
 
         let re = match Regex::new(&pattern) {
             Ok(r) => r,
-            Err(e) => return Err(RuntimeError::new(format!("capture_named: invalid regex: {}", e))),
+            Err(e) => {
+                return Err(RuntimeError::new(format!(
+                    "capture_named: invalid regex: {}",
+                    e
+                )))
+            }
         };
 
         match re.captures(&text) {
@@ -8298,7 +9332,10 @@ fn register_pattern(interp: &mut Interpreter) {
                 let mut result: HashMap<String, Value> = HashMap::new();
                 for name in re.capture_names().flatten() {
                     if let Some(m) = caps.name(name) {
-                        result.insert(name.to_string(), Value::String(Rc::new(m.as_str().to_string())));
+                        result.insert(
+                            name.to_string(),
+                            Value::String(Rc::new(m.as_str().to_string())),
+                        );
                     }
                 }
                 Ok(Value::Map(Rc::new(RefCell::new(result))))
@@ -8313,7 +9350,11 @@ fn register_pattern(interp: &mut Interpreter) {
     define(interp, "match_struct", Some(2), |_, args| {
         let expected_name = match &args[1] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("match_struct: second argument must be struct name string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "match_struct: second argument must be struct name string",
+                ))
+            }
         };
         match &args[0] {
             Value::Struct { name, .. } => Ok(Value::Bool(name == &expected_name)),
@@ -8325,16 +9366,28 @@ fn register_pattern(interp: &mut Interpreter) {
     define(interp, "match_variant", Some(3), |_, args| {
         let expected_enum = match &args[1] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("match_variant: second argument must be enum name string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "match_variant: second argument must be enum name string",
+                ))
+            }
         };
         let expected_variant = match &args[2] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("match_variant: third argument must be variant name string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "match_variant: third argument must be variant name string",
+                ))
+            }
         };
         match &args[0] {
-            Value::Variant { enum_name, variant_name, .. } => {
-                Ok(Value::Bool(enum_name == &expected_enum && variant_name == &expected_variant))
-            }
+            Value::Variant {
+                enum_name,
+                variant_name,
+                ..
+            } => Ok(Value::Bool(
+                enum_name == &expected_enum && variant_name == &expected_variant,
+            )),
             _ => Ok(Value::Bool(false)),
         }
     });
@@ -8343,15 +9396,19 @@ fn register_pattern(interp: &mut Interpreter) {
     define(interp, "get_field", Some(2), |_, args| {
         let field_name = match &args[1] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("get_field: second argument must be field name string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "get_field: second argument must be field name string",
+                ))
+            }
         };
         match &args[0] {
-            Value::Struct { fields, .. } => {
-                Ok(fields.borrow().get(&field_name).cloned().unwrap_or(Value::Null))
-            }
-            Value::Map(m) => {
-                Ok(m.borrow().get(&field_name).cloned().unwrap_or(Value::Null))
-            }
+            Value::Struct { fields, .. } => Ok(fields
+                .borrow()
+                .get(&field_name)
+                .cloned()
+                .unwrap_or(Value::Null)),
+            Value::Map(m) => Ok(m.borrow().get(&field_name).cloned().unwrap_or(Value::Null)),
             _ => Ok(Value::Null),
         }
     });
@@ -8360,10 +9417,16 @@ fn register_pattern(interp: &mut Interpreter) {
     define(interp, "has_field", Some(2), |_, args| {
         let field_name = match &args[1] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("has_field: second argument must be field name string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "has_field: second argument must be field name string",
+                ))
+            }
         };
         match &args[0] {
-            Value::Struct { fields, .. } => Ok(Value::Bool(fields.borrow().contains_key(&field_name))),
+            Value::Struct { fields, .. } => {
+                Ok(Value::Bool(fields.borrow().contains_key(&field_name)))
+            }
             Value::Map(m) => Ok(Value::Bool(m.borrow().contains_key(&field_name))),
             _ => Ok(Value::Bool(false)),
         }
@@ -8372,44 +9435,44 @@ fn register_pattern(interp: &mut Interpreter) {
     // get_fields - get all field names from struct/map
     define(interp, "get_fields", Some(1), |_, args| {
         let fields: Vec<Value> = match &args[0] {
-            Value::Struct { fields, .. } => {
-                fields.borrow().keys().map(|k| Value::String(Rc::new(k.clone()))).collect()
+            Value::Struct { fields, .. } => fields
+                .borrow()
+                .keys()
+                .map(|k| Value::String(Rc::new(k.clone())))
+                .collect(),
+            Value::Map(m) => m
+                .borrow()
+                .keys()
+                .map(|k| Value::String(Rc::new(k.clone())))
+                .collect(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "get_fields: argument must be struct or map",
+                ))
             }
-            Value::Map(m) => {
-                m.borrow().keys().map(|k| Value::String(Rc::new(k.clone()))).collect()
-            }
-            _ => return Err(RuntimeError::new("get_fields: argument must be struct or map")),
         };
         Ok(Value::Array(Rc::new(RefCell::new(fields))))
     });
 
     // struct_name - get the name of a struct
-    define(interp, "struct_name", Some(1), |_, args| {
-        match &args[0] {
-            Value::Struct { name, .. } => Ok(Value::String(Rc::new(name.clone()))),
-            _ => Ok(Value::Null),
-        }
+    define(interp, "struct_name", Some(1), |_, args| match &args[0] {
+        Value::Struct { name, .. } => Ok(Value::String(Rc::new(name.clone()))),
+        _ => Ok(Value::Null),
     });
 
     // variant_name - get the variant name of an enum value
-    define(interp, "variant_name", Some(1), |_, args| {
-        match &args[0] {
-            Value::Variant { variant_name, .. } => Ok(Value::String(Rc::new(variant_name.clone()))),
-            _ => Ok(Value::Null),
-        }
+    define(interp, "variant_name", Some(1), |_, args| match &args[0] {
+        Value::Variant { variant_name, .. } => Ok(Value::String(Rc::new(variant_name.clone()))),
+        _ => Ok(Value::Null),
     });
 
     // variant_data - get the data payload of a variant
-    define(interp, "variant_data", Some(1), |_, args| {
-        match &args[0] {
-            Value::Variant { fields, .. } => {
-                match fields {
-                    Some(f) => Ok(Value::Array(Rc::new(RefCell::new((**f).clone())))),
-                    None => Ok(Value::Null),
-                }
-            }
-            _ => Ok(Value::Null),
-        }
+    define(interp, "variant_data", Some(1), |_, args| match &args[0] {
+        Value::Variant { fields, .. } => match fields {
+            Some(f) => Ok(Value::Array(Rc::new(RefCell::new((**f).clone())))),
+            None => Ok(Value::Null),
+        },
+        _ => Ok(Value::Null),
     });
 
     // --- GUARDS AND CONDITIONALS ---
@@ -8452,17 +9515,27 @@ fn register_pattern(interp: &mut Interpreter) {
     define(interp, "cond", Some(1), |interp, args| {
         let clauses = match &args[0] {
             Value::Array(a) => a.borrow().clone(),
-            _ => return Err(RuntimeError::new("cond: argument must be array of [condition, value] pairs")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "cond: argument must be array of [condition, value] pairs",
+                ))
+            }
         };
 
         for clause in clauses {
             let pair = match &clause {
                 Value::Array(a) => a.borrow().clone(),
                 Value::Tuple(t) => (**t).clone(),
-                _ => return Err(RuntimeError::new("cond: each clause must be [condition, value] pair")),
+                _ => {
+                    return Err(RuntimeError::new(
+                        "cond: each clause must be [condition, value] pair",
+                    ))
+                }
             };
             if pair.len() != 2 {
-                return Err(RuntimeError::new("cond: each clause must have exactly 2 elements"));
+                return Err(RuntimeError::new(
+                    "cond: each clause must have exactly 2 elements",
+                ));
             }
 
             if is_truthy(&pair[0]) {
@@ -8481,17 +9554,27 @@ fn register_pattern(interp: &mut Interpreter) {
         let value = &args[0];
         let clauses = match &args[1] {
             Value::Array(a) => a.borrow().clone(),
-            _ => return Err(RuntimeError::new("case: second argument must be array of [pattern, result] pairs")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "case: second argument must be array of [pattern, result] pairs",
+                ))
+            }
         };
 
         for clause in clauses {
             let pair = match &clause {
                 Value::Array(a) => a.borrow().clone(),
                 Value::Tuple(t) => (**t).clone(),
-                _ => return Err(RuntimeError::new("case: each clause must be [pattern, result] pair")),
+                _ => {
+                    return Err(RuntimeError::new(
+                        "case: each clause must be [pattern, result] pair",
+                    ))
+                }
             };
             if pair.len() != 2 {
-                return Err(RuntimeError::new("case: each clause must have exactly 2 elements"));
+                return Err(RuntimeError::new(
+                    "case: each clause must have exactly 2 elements",
+                ));
             }
 
             if value_eq(value, &pair[0]) {
@@ -8511,11 +9594,19 @@ fn register_pattern(interp: &mut Interpreter) {
         let arr = match &args[0] {
             Value::Array(a) => a.borrow().clone(),
             Value::Tuple(t) => (**t).clone(),
-            _ => return Err(RuntimeError::new("destructure_array: first argument must be array or tuple")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "destructure_array: first argument must be array or tuple",
+                ))
+            }
         };
         let indices = match &args[1] {
             Value::Array(a) => a.borrow().clone(),
-            _ => return Err(RuntimeError::new("destructure_array: second argument must be array of indices")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "destructure_array: second argument must be array of indices",
+                ))
+            }
         };
 
         let mut result = Vec::new();
@@ -8536,11 +9627,19 @@ fn register_pattern(interp: &mut Interpreter) {
         let map = match &args[0] {
             Value::Map(m) => m.borrow().clone(),
             Value::Struct { fields, .. } => fields.borrow().clone(),
-            _ => return Err(RuntimeError::new("destructure_map: first argument must be map or struct")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "destructure_map: first argument must be map or struct",
+                ))
+            }
         };
         let keys = match &args[1] {
             Value::Array(a) => a.borrow().clone(),
-            _ => return Err(RuntimeError::new("destructure_map: second argument must be array of keys")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "destructure_map: second argument must be array of keys",
+                ))
+            }
         };
 
         let mut result = Vec::new();
@@ -8563,11 +9662,17 @@ fn register_pattern(interp: &mut Interpreter) {
         };
 
         if arr.is_empty() {
-            Ok(Value::Tuple(Rc::new(vec![Value::Null, Value::Array(Rc::new(RefCell::new(vec![])))])))
+            Ok(Value::Tuple(Rc::new(vec![
+                Value::Null,
+                Value::Array(Rc::new(RefCell::new(vec![]))),
+            ])))
         } else {
             let head = arr[0].clone();
             let tail = arr[1..].to_vec();
-            Ok(Value::Tuple(Rc::new(vec![head, Value::Array(Rc::new(RefCell::new(tail)))])))
+            Ok(Value::Tuple(Rc::new(vec![
+                head,
+                Value::Array(Rc::new(RefCell::new(tail))),
+            ])))
         }
     });
 
@@ -8579,11 +9684,17 @@ fn register_pattern(interp: &mut Interpreter) {
         };
 
         if arr.is_empty() {
-            Ok(Value::Tuple(Rc::new(vec![Value::Array(Rc::new(RefCell::new(vec![]))), Value::Null])))
+            Ok(Value::Tuple(Rc::new(vec![
+                Value::Array(Rc::new(RefCell::new(vec![]))),
+                Value::Null,
+            ])))
         } else {
             let last = arr[arr.len() - 1].clone();
             let init = arr[..arr.len() - 1].to_vec();
-            Ok(Value::Tuple(Rc::new(vec![Value::Array(Rc::new(RefCell::new(init))), last])))
+            Ok(Value::Tuple(Rc::new(vec![
+                Value::Array(Rc::new(RefCell::new(init))),
+                last,
+            ])))
         }
     });
 
@@ -8595,7 +9706,11 @@ fn register_pattern(interp: &mut Interpreter) {
         };
         let idx = match &args[1] {
             Value::Int(i) => *i as usize,
-            _ => return Err(RuntimeError::new("split_at: second argument must be integer")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "split_at: second argument must be integer",
+                ))
+            }
         };
 
         let idx = idx.min(arr.len());
@@ -8637,7 +9752,9 @@ fn register_pattern(interp: &mut Interpreter) {
         } else {
             match &args[2] {
                 Value::Function(f) => interp.call_function(f, vec![args[0].clone()]),
-                _ => Err(RuntimeError::new("map_or: third argument must be a function")),
+                _ => Err(RuntimeError::new(
+                    "map_or: third argument must be a function",
+                )),
             }
         }
     });
@@ -8679,7 +9796,9 @@ fn register_pattern(interp: &mut Interpreter) {
             (Value::Function(_), Value::Function(_)) => true,
             (Value::BuiltIn(_), Value::BuiltIn(_)) => true,
             (Value::Struct { name: n1, .. }, Value::Struct { name: n2, .. }) => n1 == n2,
-            (Value::Variant { enum_name: e1, .. }, Value::Variant { enum_name: e2, .. }) => e1 == e2,
+            (Value::Variant { enum_name: e1, .. }, Value::Variant { enum_name: e2, .. }) => {
+                e1 == e2
+            }
             _ => false,
         };
         Ok(Value::Bool(same))
@@ -8689,11 +9808,21 @@ fn register_pattern(interp: &mut Interpreter) {
     define(interp, "compare", Some(2), |_, args| {
         let cmp = match (&args[0], &args[1]) {
             (Value::Int(a), Value::Int(b)) => a.cmp(b),
-            (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-            (Value::Int(a), Value::Float(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-            (Value::Float(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal),
+            (Value::Float(a), Value::Float(b)) => {
+                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+            }
+            (Value::Int(a), Value::Float(b)) => (*a as f64)
+                .partial_cmp(b)
+                .unwrap_or(std::cmp::Ordering::Equal),
+            (Value::Float(a), Value::Int(b)) => a
+                .partial_cmp(&(*b as f64))
+                .unwrap_or(std::cmp::Ordering::Equal),
             (Value::String(a), Value::String(b)) => a.cmp(b),
-            _ => return Err(RuntimeError::new("compare: can only compare numbers or strings")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "compare: can only compare numbers or strings",
+                ))
+            }
         };
         Ok(Value::Int(match cmp {
             std::cmp::Ordering::Less => -1,
@@ -8707,11 +9836,21 @@ fn register_pattern(interp: &mut Interpreter) {
         let in_range = match (&args[0], &args[1], &args[2]) {
             (Value::Int(v), Value::Int(min), Value::Int(max)) => v >= min && v <= max,
             (Value::Float(v), Value::Float(min), Value::Float(max)) => v >= min && v <= max,
-            (Value::Int(v), Value::Int(min), Value::Float(max)) => (*v as f64) >= (*min as f64) && (*v as f64) <= *max,
-            (Value::Int(v), Value::Float(min), Value::Int(max)) => (*v as f64) >= *min && (*v as f64) <= (*max as f64),
-            (Value::Float(v), Value::Int(min), Value::Int(max)) => *v >= (*min as f64) && *v <= (*max as f64),
+            (Value::Int(v), Value::Int(min), Value::Float(max)) => {
+                (*v as f64) >= (*min as f64) && (*v as f64) <= *max
+            }
+            (Value::Int(v), Value::Float(min), Value::Int(max)) => {
+                (*v as f64) >= *min && (*v as f64) <= (*max as f64)
+            }
+            (Value::Float(v), Value::Int(min), Value::Int(max)) => {
+                *v >= (*min as f64) && *v <= (*max as f64)
+            }
             (Value::String(v), Value::String(min), Value::String(max)) => v >= min && v <= max,
-            _ => return Err(RuntimeError::new("between: arguments must be comparable (numbers or strings)")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "between: arguments must be comparable (numbers or strings)",
+                ))
+            }
         };
         Ok(Value::Bool(in_range))
     });
@@ -8755,27 +9894,53 @@ fn deep_value_eq(a: &Value, b: &Value) -> bool {
         (Value::Map(a), Value::Map(b)) => {
             let a = a.borrow();
             let b = b.borrow();
-            a.len() == b.len() && a.iter().all(|(k, v)| {
-                b.get(k).map_or(false, |bv| deep_value_eq(v, bv))
-            })
+            a.len() == b.len()
+                && a.iter()
+                    .all(|(k, v)| b.get(k).map_or(false, |bv| deep_value_eq(v, bv)))
         }
         (Value::Set(a), Value::Set(b)) => {
             let a = a.borrow();
             let b = b.borrow();
             a.len() == b.len() && a.iter().all(|k| b.contains(k))
         }
-        (Value::Struct { name: n1, fields: f1 }, Value::Struct { name: n2, fields: f2 }) => {
+        (
+            Value::Struct {
+                name: n1,
+                fields: f1,
+            },
+            Value::Struct {
+                name: n2,
+                fields: f2,
+            },
+        ) => {
             let f1 = f1.borrow();
             let f2 = f2.borrow();
-            n1 == n2 && f1.len() == f2.len() && f1.iter().all(|(k, v)| {
-                f2.get(k).map_or(false, |v2| deep_value_eq(v, v2))
-            })
+            n1 == n2
+                && f1.len() == f2.len()
+                && f1
+                    .iter()
+                    .all(|(k, v)| f2.get(k).map_or(false, |v2| deep_value_eq(v, v2)))
         }
-        (Value::Variant { enum_name: e1, variant_name: v1, fields: d1 },
-         Value::Variant { enum_name: e2, variant_name: v2, fields: d2 }) => {
-            if e1 != e2 || v1 != v2 { return false; }
+        (
+            Value::Variant {
+                enum_name: e1,
+                variant_name: v1,
+                fields: d1,
+            },
+            Value::Variant {
+                enum_name: e2,
+                variant_name: v2,
+                fields: d2,
+            },
+        ) => {
+            if e1 != e2 || v1 != v2 {
+                return false;
+            }
             match (d1, d2) {
-                (Some(f1), Some(f2)) => f1.len() == f2.len() && f1.iter().zip(f2.iter()).all(|(x, y)| deep_value_eq(x, y)),
+                (Some(f1), Some(f2)) => {
+                    f1.len() == f2.len()
+                        && f1.iter().zip(f2.iter()).all(|(x, y)| deep_value_eq(x, y))
+                }
                 (None, None) => true,
                 _ => false,
             }
@@ -8823,7 +9988,11 @@ fn register_devex(interp: &mut Interpreter) {
             Value::Map(m) => format!("map[{}]", m.borrow().len()),
             Value::Set(s) => format!("set[{}]", s.borrow().len()),
             Value::Struct { name, fields } => format!("struct {}[{}]", name, fields.borrow().len()),
-            Value::Variant { enum_name, variant_name, .. } => format!("{}::{}", enum_name, variant_name),
+            Value::Variant {
+                enum_name,
+                variant_name,
+                ..
+            } => format!("{}::{}", enum_name, variant_name),
             Value::Function(_) => "function".to_string(),
             Value::BuiltIn(_) => "builtin".to_string(),
             Value::Ref(_) => "ref".to_string(),
@@ -8993,7 +10162,9 @@ fn register_devex(interp: &mut Interpreter) {
         if !matches!(&args[0], Value::Null) {
             Ok(Value::Bool(true))
         } else {
-            Err(RuntimeError::new("Assertion failed: expected non-null value, got null"))
+            Err(RuntimeError::new(
+                "Assertion failed: expected non-null value, got null",
+            ))
         }
     });
 
@@ -9001,7 +10172,11 @@ fn register_devex(interp: &mut Interpreter) {
     define(interp, "assert_type", Some(2), |_, args| {
         let expected = match &args[1] {
             Value::String(s) => s.to_lowercase(),
-            _ => return Err(RuntimeError::new("assert_type: second argument must be type name string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "assert_type: second argument must be type name string",
+                ))
+            }
         };
         let actual = get_type_name(&args[0]).to_lowercase();
         if actual == expected || matches_type_alias(&args[0], &expected) {
@@ -9056,7 +10231,11 @@ fn register_devex(interp: &mut Interpreter) {
     define(interp, "assert_len", Some(2), |_, args| {
         let expected = match &args[1] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("assert_len: second argument must be integer")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "assert_len: second argument must be integer",
+                ))
+            }
         };
         let actual = match &args[0] {
             Value::String(s) => s.len(),
@@ -9064,7 +10243,11 @@ fn register_devex(interp: &mut Interpreter) {
             Value::Tuple(t) => t.len(),
             Value::Map(m) => m.borrow().len(),
             Value::Set(s) => s.borrow().len(),
-            _ => return Err(RuntimeError::new("assert_len: first argument must be a collection")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "assert_len: first argument must be a collection",
+                ))
+            }
         };
         if actual == expected {
             Ok(Value::Bool(true))
@@ -9080,13 +10263,22 @@ fn register_devex(interp: &mut Interpreter) {
     define(interp, "assert_match", Some(2), |_, args| {
         let text = match &args[0] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("assert_match: first argument must be string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "assert_match: first argument must be string",
+                ))
+            }
         };
         let pattern = match &args[1] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("assert_match: second argument must be regex pattern")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "assert_match: second argument must be regex pattern",
+                ))
+            }
         };
-        let re = Regex::new(&pattern).map_err(|e| RuntimeError::new(format!("Invalid regex: {}", e)))?;
+        let re =
+            Regex::new(&pattern).map_err(|e| RuntimeError::new(format!("Invalid regex: {}", e)))?;
         if re.is_match(&text) {
             Ok(Value::Bool(true))
         } else {
@@ -9103,11 +10295,19 @@ fn register_devex(interp: &mut Interpreter) {
     define(interp, "test", Some(2), |interp, args| {
         let name = match &args[0] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("test: first argument must be test name string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "test: first argument must be test name string",
+                ))
+            }
         };
         let func = match &args[1] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("test: second argument must be test function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "test: second argument must be test function",
+                ))
+            }
         };
 
         let start = Instant::now();
@@ -9120,7 +10320,12 @@ fn register_devex(interp: &mut Interpreter) {
                 Ok(Value::Bool(true))
             }
             Err(e) => {
-                println!("✗ {} ({:.2}ms): {}", name, elapsed.as_secs_f64() * 1000.0, e);
+                println!(
+                    "✗ {} ({:.2}ms): {}",
+                    name,
+                    elapsed.as_secs_f64() * 1000.0,
+                    e
+                );
                 Ok(Value::Bool(false))
             }
         }
@@ -9150,7 +10355,10 @@ fn register_devex(interp: &mut Interpreter) {
         let elapsed = start.elapsed();
 
         let mut timing = HashMap::new();
-        timing.insert("ms".to_string(), Value::Float(elapsed.as_secs_f64() * 1000.0));
+        timing.insert(
+            "ms".to_string(),
+            Value::Float(elapsed.as_secs_f64() * 1000.0),
+        );
         timing.insert("us".to_string(), Value::Float(elapsed.as_micros() as f64));
         timing.insert("ns".to_string(), Value::Int(elapsed.as_nanos() as i64));
 
@@ -9164,11 +10372,19 @@ fn register_devex(interp: &mut Interpreter) {
     define(interp, "measure", Some(2), |interp, args| {
         let func = match &args[0] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("measure: first argument must be function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "measure: first argument must be function",
+                ))
+            }
         };
         let iterations = match &args[1] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("measure: second argument must be iteration count")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "measure: second argument must be iteration count",
+                ))
+            }
         };
 
         let mut times: Vec<f64> = Vec::new();
@@ -9185,7 +10401,8 @@ fn register_devex(interp: &mut Interpreter) {
         let min = times.iter().cloned().fold(f64::INFINITY, f64::min);
         let max = times.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
-        let variance: f64 = times.iter().map(|t| (t - avg).powi(2)).sum::<f64>() / iterations as f64;
+        let variance: f64 =
+            times.iter().map(|t| (t - avg).powi(2)).sum::<f64>() / iterations as f64;
         let stddev = variance.sqrt();
 
         let mut stats = HashMap::new();
@@ -9209,7 +10426,11 @@ fn register_devex(interp: &mut Interpreter) {
         let name = match &args[0] {
             Value::String(s) => (**s).clone(),
             Value::BuiltIn(f) => f.name.clone(),
-            _ => return Err(RuntimeError::new("help: argument must be function name or builtin")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "help: argument must be function name or builtin",
+                ))
+            }
         };
 
         // Return documentation for known functions
@@ -9232,7 +10453,8 @@ fn register_devex(interp: &mut Interpreter) {
             "Pattern: type_of, is_type, match_regex, match_struct, guard, when",
             "DevEx: debug, inspect, trace, assert_eq, assert_ne, test, profile",
         ];
-        let values: Vec<Value> = categories.iter()
+        let values: Vec<Value> = categories
+            .iter()
             .map(|s| Value::String(Rc::new(s.to_string())))
             .collect();
         Ok(Value::Array(Rc::new(RefCell::new(values))))
@@ -9272,9 +10494,18 @@ fn register_devex(interp: &mut Interpreter) {
     // version - return Sigil version info
     define(interp, "version", Some(0), |_, _| {
         let mut info = HashMap::new();
-        info.insert("sigil".to_string(), Value::String(Rc::new("0.1.0".to_string())));
-        info.insert("stdlib".to_string(), Value::String(Rc::new("7.0".to_string())));
-        info.insert("phase".to_string(), Value::String(Rc::new("Phase 7 - DevEx".to_string())));
+        info.insert(
+            "sigil".to_string(),
+            Value::String(Rc::new("0.1.0".to_string())),
+        );
+        info.insert(
+            "stdlib".to_string(),
+            Value::String(Rc::new("7.0".to_string())),
+        );
+        info.insert(
+            "phase".to_string(),
+            Value::String(Rc::new("Phase 7 - DevEx".to_string())),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(info))))
     });
 }
@@ -9291,7 +10522,11 @@ fn format_value_debug(value: &Value) -> String {
         Value::Array(a) => {
             let items: Vec<String> = a.borrow().iter().take(10).map(format_value_debug).collect();
             if a.borrow().len() > 10 {
-                format!("[{}, ... ({} more)]", items.join(", "), a.borrow().len() - 10)
+                format!(
+                    "[{}, ... ({} more)]",
+                    items.join(", "),
+                    a.borrow().len() - 10
+                )
             } else {
                 format!("[{}]", items.join(", "))
             }
@@ -9301,11 +10536,18 @@ fn format_value_debug(value: &Value) -> String {
             format!("({})", items.join(", "))
         }
         Value::Map(m) => {
-            let items: Vec<String> = m.borrow().iter().take(5)
+            let items: Vec<String> = m
+                .borrow()
+                .iter()
+                .take(5)
                 .map(|(k, v)| format!("{}: {}", k, format_value_debug(v)))
                 .collect();
             if m.borrow().len() > 5 {
-                format!("{{{}, ... ({} more)}}", items.join(", "), m.borrow().len() - 5)
+                format!(
+                    "{{{}, ... ({} more)}}",
+                    items.join(", "),
+                    m.borrow().len() - 5
+                )
             } else {
                 format!("{{{}}}", items.join(", "))
             }
@@ -9313,40 +10555,62 @@ fn format_value_debug(value: &Value) -> String {
         Value::Set(s) => {
             let items: Vec<String> = s.borrow().iter().take(5).cloned().collect();
             if s.borrow().len() > 5 {
-                format!("#{{{}, ... ({} more)}}", items.join(", "), s.borrow().len() - 5)
+                format!(
+                    "#{{{}, ... ({} more)}}",
+                    items.join(", "),
+                    s.borrow().len() - 5
+                )
             } else {
                 format!("#{{{}}}", items.join(", "))
             }
         }
         Value::Struct { name, fields } => {
-            let items: Vec<String> = fields.borrow().iter()
+            let items: Vec<String> = fields
+                .borrow()
+                .iter()
                 .map(|(k, v)| format!("{}: {}", k, format_value_debug(v)))
                 .collect();
             format!("{} {{{}}}", name, items.join(", "))
         }
-        Value::Variant { enum_name, variant_name, fields } => {
-            match fields {
-                Some(f) => {
-                    let items: Vec<String> = f.iter().map(format_value_debug).collect();
-                    format!("{}::{}({})", enum_name, variant_name, items.join(", "))
-                }
-                None => format!("{}::{}", enum_name, variant_name),
+        Value::Variant {
+            enum_name,
+            variant_name,
+            fields,
+        } => match fields {
+            Some(f) => {
+                let items: Vec<String> = f.iter().map(format_value_debug).collect();
+                format!("{}::{}({})", enum_name, variant_name, items.join(", "))
             }
-        }
+            None => format!("{}::{}", enum_name, variant_name),
+        },
         Value::Function(_) => "<function>".to_string(),
         Value::BuiltIn(f) => format!("<builtin:{}>", f.name),
         Value::Ref(r) => format!("&{}", format_value_debug(&r.borrow())),
         Value::Infinity => "∞".to_string(),
         Value::Empty => "∅".to_string(),
-        Value::Evidential { value, evidence } => format!("{:?}({})", evidence, format_value_debug(value)),
+        Value::Evidential { value, evidence } => {
+            format!("{:?}({})", evidence, format_value_debug(value))
+        }
         Value::Affective { value, affect } => {
             let mut markers = Vec::new();
-            if let Some(s) = &affect.sentiment { markers.push(format!("{:?}", s)); }
-            if affect.sarcasm { markers.push("sarcasm".to_string()); }
-            if let Some(i) = &affect.intensity { markers.push(format!("{:?}", i)); }
-            if let Some(f) = &affect.formality { markers.push(format!("{:?}", f)); }
-            if let Some(e) = &affect.emotion { markers.push(format!("{:?}", e)); }
-            if let Some(c) = &affect.confidence { markers.push(format!("{:?}", c)); }
+            if let Some(s) = &affect.sentiment {
+                markers.push(format!("{:?}", s));
+            }
+            if affect.sarcasm {
+                markers.push("sarcasm".to_string());
+            }
+            if let Some(i) = &affect.intensity {
+                markers.push(format!("{:?}", i));
+            }
+            if let Some(f) = &affect.formality {
+                markers.push(format!("{:?}", f));
+            }
+            if let Some(e) = &affect.emotion {
+                markers.push(format!("{:?}", e));
+            }
+            if let Some(c) = &affect.confidence {
+                markers.push(format!("{:?}", c));
+            }
             format!("{}[{}]", format_value_debug(value), markers.join(","))
         }
         Value::Channel(_) => "<channel>".to_string(),
@@ -9364,8 +10628,16 @@ fn pretty_print_value(value: &Value, indent: usize) -> String {
             if a.borrow().is_empty() {
                 "[]".to_string()
             } else {
-                let items: Vec<String> = a.borrow().iter()
-                    .map(|v| format!("{}{}", "  ".repeat(indent + 1), pretty_print_value(v, indent + 1)))
+                let items: Vec<String> = a
+                    .borrow()
+                    .iter()
+                    .map(|v| {
+                        format!(
+                            "{}{}",
+                            "  ".repeat(indent + 1),
+                            pretty_print_value(v, indent + 1)
+                        )
+                    })
                     .collect();
                 format!("[\n{}\n{}]", items.join(",\n"), prefix)
             }
@@ -9374,8 +10646,17 @@ fn pretty_print_value(value: &Value, indent: usize) -> String {
             if m.borrow().is_empty() {
                 "{}".to_string()
             } else {
-                let items: Vec<String> = m.borrow().iter()
-                    .map(|(k, v)| format!("{}\"{}\": {}", "  ".repeat(indent + 1), k, pretty_print_value(v, indent + 1)))
+                let items: Vec<String> = m
+                    .borrow()
+                    .iter()
+                    .map(|(k, v)| {
+                        format!(
+                            "{}\"{}\": {}",
+                            "  ".repeat(indent + 1),
+                            k,
+                            pretty_print_value(v, indent + 1)
+                        )
+                    })
                     .collect();
                 format!("{{\n{}\n{}}}", items.join(",\n"), prefix)
             }
@@ -9384,8 +10665,17 @@ fn pretty_print_value(value: &Value, indent: usize) -> String {
             if fields.borrow().is_empty() {
                 format!("{} {{}}", name)
             } else {
-                let items: Vec<String> = fields.borrow().iter()
-                    .map(|(k, v)| format!("{}{}: {}", "  ".repeat(indent + 1), k, pretty_print_value(v, indent + 1)))
+                let items: Vec<String> = fields
+                    .borrow()
+                    .iter()
+                    .map(|(k, v)| {
+                        format!(
+                            "{}{}: {}",
+                            "  ".repeat(indent + 1),
+                            k,
+                            pretty_print_value(v, indent + 1)
+                        )
+                    })
                     .collect();
                 format!("{} {{\n{}\n{}}}", name, items.join(",\n"), prefix)
             }
@@ -9397,17 +10687,47 @@ fn pretty_print_value(value: &Value, indent: usize) -> String {
 // Helper to compare values for ordering (DevEx assertions)
 fn devex_compare(a: &Value, b: &Value) -> Result<i64, RuntimeError> {
     match (a, b) {
-        (Value::Int(a), Value::Int(b)) => Ok(if a < b { -1 } else if a > b { 1 } else { 0 }),
-        (Value::Float(a), Value::Float(b)) => Ok(if a < b { -1 } else if a > b { 1 } else { 0 }),
+        (Value::Int(a), Value::Int(b)) => Ok(if a < b {
+            -1
+        } else if a > b {
+            1
+        } else {
+            0
+        }),
+        (Value::Float(a), Value::Float(b)) => Ok(if a < b {
+            -1
+        } else if a > b {
+            1
+        } else {
+            0
+        }),
         (Value::Int(a), Value::Float(b)) => {
             let a = *a as f64;
-            Ok(if a < *b { -1 } else if a > *b { 1 } else { 0 })
+            Ok(if a < *b {
+                -1
+            } else if a > *b {
+                1
+            } else {
+                0
+            })
         }
         (Value::Float(a), Value::Int(b)) => {
             let b = *b as f64;
-            Ok(if *a < b { -1 } else if *a > b { 1 } else { 0 })
+            Ok(if *a < b {
+                -1
+            } else if *a > b {
+                1
+            } else {
+                0
+            })
         }
-        (Value::String(a), Value::String(b)) => Ok(if a < b { -1 } else if a > b { 1 } else { 0 }),
+        (Value::String(a), Value::String(b)) => Ok(if a < b {
+            -1
+        } else if a > b {
+            1
+        } else {
+            0
+        }),
         _ => Err(RuntimeError::new("cannot compare these types")),
     }
 }
@@ -9498,11 +10818,19 @@ fn register_soa(interp: &mut Interpreter) {
     define(interp, "aos_to_soa", Some(2), |_, args| {
         let arr = match &args[0] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("aos_to_soa: first argument must be array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "aos_to_soa: first argument must be array",
+                ))
+            }
         };
         let keys = match &args[1] {
             Value::Array(keys) => keys.borrow().clone(),
-            _ => return Err(RuntimeError::new("aos_to_soa: second argument must be array of keys")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "aos_to_soa: second argument must be array of keys",
+                ))
+            }
         };
 
         if arr.is_empty() {
@@ -9517,9 +10845,14 @@ fn register_soa(interp: &mut Interpreter) {
         }
 
         // Extract key names
-        let key_names: Vec<String> = keys.iter()
+        let key_names: Vec<String> = keys
+            .iter()
             .filter_map(|k| {
-                if let Value::String(s) = k { Some((**s).clone()) } else { None }
+                if let Value::String(s) = k {
+                    Some((**s).clone())
+                } else {
+                    None
+                }
             })
             .collect();
 
@@ -9546,12 +10879,17 @@ fn register_soa(interp: &mut Interpreter) {
                         soa.get_mut(key).unwrap().push(val);
                     }
                 }
-                _ => return Err(RuntimeError::new("aos_to_soa: array must contain structs or maps")),
+                _ => {
+                    return Err(RuntimeError::new(
+                        "aos_to_soa: array must contain structs or maps",
+                    ))
+                }
             }
         }
 
         // Convert to Value::Map
-        let result: HashMap<String, Value> = soa.into_iter()
+        let result: HashMap<String, Value> = soa
+            .into_iter()
             .map(|(k, v)| (k, Value::Array(Rc::new(RefCell::new(v)))))
             .collect();
 
@@ -9571,8 +10909,16 @@ fn register_soa(interp: &mut Interpreter) {
         }
 
         // Get the length from first array
-        let len = soa.values().next()
-            .and_then(|v| if let Value::Array(arr) = v { Some(arr.borrow().len()) } else { None })
+        let len = soa
+            .values()
+            .next()
+            .and_then(|v| {
+                if let Value::Array(arr) = v {
+                    Some(arr.borrow().len())
+                } else {
+                    None
+                }
+            })
             .unwrap_or(0);
 
         // Build array of structs
@@ -9602,15 +10948,24 @@ fn register_soa(interp: &mut Interpreter) {
         };
         let key = match &args[1] {
             Value::String(s) => (**s).clone(),
-            _ => return Err(RuntimeError::new("soa_map: second argument must be key string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "soa_map: second argument must be key string",
+                ))
+            }
         };
         let func = match &args[2] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("soa_map: third argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "soa_map: third argument must be a function",
+                ))
+            }
         };
 
         // Get the array for this key
-        let arr = soa.get(&key)
+        let arr = soa
+            .get(&key)
             .ok_or_else(|| RuntimeError::new(format!("soa_map: key '{}' not found", key)))?;
 
         let arr_vals = match arr {
@@ -9619,7 +10974,8 @@ fn register_soa(interp: &mut Interpreter) {
         };
 
         // Apply function to each element
-        let results: Vec<Value> = arr_vals.iter()
+        let results: Vec<Value> = arr_vals
+            .iter()
             .map(|val| interp.call_function(&func, vec![val.clone()]))
             .collect::<Result<_, _>>()?;
 
@@ -9638,15 +10994,24 @@ fn register_soa(interp: &mut Interpreter) {
         };
         let keys = match &args[1] {
             Value::Array(keys) => keys.borrow().clone(),
-            _ => return Err(RuntimeError::new("soa_zip: second argument must be array of keys")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "soa_zip: second argument must be array of keys",
+                ))
+            }
         };
         let func = match &args[2] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("soa_zip: third argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "soa_zip: third argument must be a function",
+                ))
+            }
         };
 
         // Extract arrays for each key
-        let arrays: Vec<Vec<Value>> = keys.iter()
+        let arrays: Vec<Vec<Value>> = keys
+            .iter()
             .filter_map(|k| {
                 if let Value::String(s) = k {
                     if let Some(Value::Array(arr)) = soa.get(&**s) {
@@ -9666,7 +11031,8 @@ fn register_soa(interp: &mut Interpreter) {
         // Apply function with zipped values
         let results: Vec<Value> = (0..len)
             .map(|i| {
-                let fn_args: Vec<Value> = arrays.iter()
+                let fn_args: Vec<Value> = arrays
+                    .iter()
                     .filter_map(|arr| arr.get(i).cloned())
                     .collect();
                 interp.call_function(&func, fn_args)
@@ -9683,7 +11049,8 @@ fn register_soa(interp: &mut Interpreter) {
             return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
         }
 
-        let arrays: Vec<Vec<Value>> = args.iter()
+        let arrays: Vec<Vec<Value>> = args
+            .iter()
             .filter_map(|arg| {
                 if let Value::Array(arr) = arg {
                     Some(arr.borrow().clone())
@@ -9717,11 +11084,19 @@ fn register_soa(interp: &mut Interpreter) {
     define(interp, "deinterleave", Some(2), |_, args| {
         let arr = match &args[0] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("deinterleave: first argument must be array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "deinterleave: first argument must be array",
+                ))
+            }
         };
         let stride = match &args[1] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("deinterleave: second argument must be integer stride")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "deinterleave: second argument must be integer stride",
+                ))
+            }
         };
 
         if stride == 0 {
@@ -9735,9 +11110,10 @@ fn register_soa(interp: &mut Interpreter) {
         }
 
         Ok(Value::Array(Rc::new(RefCell::new(
-            result.into_iter()
+            result
+                .into_iter()
                 .map(|v| Value::Array(Rc::new(RefCell::new(v))))
-                .collect()
+                .collect(),
         ))))
     });
 }
@@ -9783,11 +11159,19 @@ fn register_tensor(interp: &mut Interpreter) {
     define(interp, "tensor_contract", Some(4), |_, args| {
         let a = match &args[0] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("tensor_contract: first argument must be array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "tensor_contract: first argument must be array",
+                ))
+            }
         };
         let b = match &args[1] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("tensor_contract: second argument must be array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "tensor_contract: second argument must be array",
+                ))
+            }
         };
         let _axis_a = match &args[2] {
             Value::Int(n) => *n as usize,
@@ -9800,7 +11184,9 @@ fn register_tensor(interp: &mut Interpreter) {
 
         // Simple dot product for 1D tensors (vectors)
         if a.len() != b.len() {
-            return Err(RuntimeError::new("tensor_contract: vectors must have same length for contraction"));
+            return Err(RuntimeError::new(
+                "tensor_contract: vectors must have same length for contraction",
+            ));
         }
 
         let mut sum = 0.0f64;
@@ -9810,7 +11196,11 @@ fn register_tensor(interp: &mut Interpreter) {
                 (Value::Int(x), Value::Int(y)) => (*x as f64) * (*y as f64),
                 (Value::Float(x), Value::Int(y)) => x * (*y as f64),
                 (Value::Int(x), Value::Float(y)) => (*x as f64) * y,
-                _ => return Err(RuntimeError::new("tensor_contract: elements must be numeric")),
+                _ => {
+                    return Err(RuntimeError::new(
+                        "tensor_contract: elements must be numeric",
+                    ))
+                }
             };
             sum += product;
         }
@@ -9823,11 +11213,19 @@ fn register_tensor(interp: &mut Interpreter) {
     define(interp, "kronecker_product", Some(2), |_, args| {
         let a = match &args[0] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("kronecker_product: arguments must be arrays")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "kronecker_product: arguments must be arrays",
+                ))
+            }
         };
         let b = match &args[1] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("kronecker_product: arguments must be arrays")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "kronecker_product: arguments must be arrays",
+                ))
+            }
         };
 
         // For 1D vectors: same as outer product
@@ -9839,7 +11237,11 @@ fn register_tensor(interp: &mut Interpreter) {
                     (Value::Int(x), Value::Int(y)) => Value::Int(x * y),
                     (Value::Float(x), Value::Int(y)) => Value::Float(x * (*y as f64)),
                     (Value::Int(x), Value::Float(y)) => Value::Float((*x as f64) * y),
-                    _ => return Err(RuntimeError::new("kronecker_product: elements must be numeric")),
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "kronecker_product: elements must be numeric",
+                        ))
+                    }
                 };
                 result.push(product);
             }
@@ -9852,26 +11254,38 @@ fn register_tensor(interp: &mut Interpreter) {
     define(interp, "hadamard_product", Some(2), |_, args| {
         let a = match &args[0] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("hadamard_product: arguments must be arrays")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "hadamard_product: arguments must be arrays",
+                ))
+            }
         };
         let b = match &args[1] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("hadamard_product: arguments must be arrays")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "hadamard_product: arguments must be arrays",
+                ))
+            }
         };
 
         if a.len() != b.len() {
-            return Err(RuntimeError::new("hadamard_product: arrays must have same length"));
+            return Err(RuntimeError::new(
+                "hadamard_product: arrays must have same length",
+            ));
         }
 
-        let result: Vec<Value> = a.iter().zip(b.iter())
-            .map(|(ai, bi)| {
-                match (ai, bi) {
-                    (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x * y)),
-                    (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x * y)),
-                    (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x * (*y as f64))),
-                    (Value::Int(x), Value::Float(y)) => Ok(Value::Float((*x as f64) * y)),
-                    _ => Err(RuntimeError::new("hadamard_product: elements must be numeric")),
-                }
+        let result: Vec<Value> = a
+            .iter()
+            .zip(b.iter())
+            .map(|(ai, bi)| match (ai, bi) {
+                (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x * y)),
+                (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x * y)),
+                (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x * (*y as f64))),
+                (Value::Int(x), Value::Float(y)) => Ok(Value::Float((*x as f64) * y)),
+                _ => Err(RuntimeError::new(
+                    "hadamard_product: elements must be numeric",
+                )),
             })
             .collect::<Result<_, _>>()?;
 
@@ -9886,7 +11300,11 @@ fn register_tensor(interp: &mut Interpreter) {
         };
         let size = match &args[1] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("trace: second argument must be matrix size")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "trace: second argument must be matrix size",
+                ))
+            }
         };
 
         let mut sum = 0.0f64;
@@ -9960,18 +11378,20 @@ fn register_autodiff(interp: &mut Interpreter) {
                  Usage: grad(f, x) or grad(f, x, step_size)\n\
                  Example:\n\
                    fn f(x) { return x * x; }\n\
-                   let derivative = grad(f, 3.0);  // Returns 6.0"
+                   let derivative = grad(f, 3.0);  // Returns 6.0",
             ));
         }
 
         let func = match &args[0] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new(
-                "grad() first argument must be a function.\n\
+            _ => {
+                return Err(RuntimeError::new(
+                    "grad() first argument must be a function.\n\
                  Got non-function value. Define a function first:\n\
                    fn my_func(x) { return x * x; }\n\
-                   grad(my_func, 2.0)"
-            )),
+                   grad(my_func, 2.0)",
+                ))
+            }
         };
         let x = match &args[1] {
             Value::Float(f) => *f,
@@ -10003,8 +11423,10 @@ fn register_autodiff(interp: &mut Interpreter) {
                     x_plus[i] = Value::Float(xi_val + h);
                     x_minus[i] = Value::Float(xi_val - h);
 
-                    let f_plus = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_plus)))])?;
-                    let f_minus = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_minus)))])?;
+                    let f_plus = interp
+                        .call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_plus)))])?;
+                    let f_minus = interp
+                        .call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_minus)))])?;
 
                     let grad_i = match (f_plus, f_minus) {
                         (Value::Float(fp), Value::Float(fm)) => (fp - fm) / (2.0 * h),
@@ -10047,7 +11469,11 @@ fn register_autodiff(interp: &mut Interpreter) {
     define(interp, "jacobian", Some(2), |interp, args| {
         let func = match &args[0] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("jacobian: first argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "jacobian: first argument must be a function",
+                ))
+            }
         };
         let x = match &args[1] {
             Value::Array(arr) => arr.borrow().clone(),
@@ -10058,7 +11484,8 @@ fn register_autodiff(interp: &mut Interpreter) {
         let n = x.len();
 
         // Evaluate f at x to get output dimension
-        let f_x = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x.clone())))])?;
+        let f_x =
+            interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x.clone())))])?;
         let m = match &f_x {
             Value::Array(arr) => arr.borrow().len(),
             _ => 1,
@@ -10079,8 +11506,10 @@ fn register_autodiff(interp: &mut Interpreter) {
             x_plus[j] = Value::Float(xj + h);
             x_minus[j] = Value::Float(xj - h);
 
-            let f_plus = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_plus)))])?;
-            let f_minus = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_minus)))])?;
+            let f_plus =
+                interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_plus)))])?;
+            let f_minus =
+                interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_minus)))])?;
 
             // Extract derivatives for each output component
             match (&f_plus, &f_minus) {
@@ -10099,7 +11528,11 @@ fn register_autodiff(interp: &mut Interpreter) {
                 (Value::Float(fp), Value::Float(fm)) => {
                     jacobian.push(Value::Float((fp - fm) / (2.0 * h)));
                 }
-                _ => return Err(RuntimeError::new("jacobian: function must return array or numeric")),
+                _ => {
+                    return Err(RuntimeError::new(
+                        "jacobian: function must return array or numeric",
+                    ))
+                }
             }
         }
 
@@ -10110,7 +11543,11 @@ fn register_autodiff(interp: &mut Interpreter) {
     define(interp, "hessian", Some(2), |interp, args| {
         let func = match &args[0] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("hessian: first argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "hessian: first argument must be a function",
+                ))
+            }
         };
         let x = match &args[1] {
             Value::Array(arr) => arr.borrow().clone(),
@@ -10142,23 +11579,30 @@ fn register_autodiff(interp: &mut Interpreter) {
                 let mut x_mm = x.clone();
 
                 x_pp[i] = Value::Float(xi + h);
-                x_pp[j] = Value::Float(if i == j { xi + 2.0*h } else { xj + h });
+                x_pp[j] = Value::Float(if i == j { xi + 2.0 * h } else { xj + h });
                 x_pm[i] = Value::Float(xi + h);
                 x_pm[j] = Value::Float(if i == j { xi } else { xj - h });
                 x_mp[i] = Value::Float(xi - h);
                 x_mp[j] = Value::Float(if i == j { xi } else { xj + h });
                 x_mm[i] = Value::Float(xi - h);
-                x_mm[j] = Value::Float(if i == j { xi - 2.0*h } else { xj - h });
+                x_mm[j] = Value::Float(if i == j { xi - 2.0 * h } else { xj - h });
 
-                let f_pp = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_pp)))])?;
-                let f_pm = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_pm)))])?;
-                let f_mp = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_mp)))])?;
-                let f_mm = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_mm)))])?;
+                let f_pp =
+                    interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_pp)))])?;
+                let f_pm =
+                    interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_pm)))])?;
+                let f_mp =
+                    interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_mp)))])?;
+                let f_mm =
+                    interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_mm)))])?;
 
                 let d2f = match (f_pp, f_pm, f_mp, f_mm) {
-                    (Value::Float(fpp), Value::Float(fpm), Value::Float(fmp), Value::Float(fmm)) => {
-                        (fpp - fpm - fmp + fmm) / (4.0 * h * h)
-                    }
+                    (
+                        Value::Float(fpp),
+                        Value::Float(fpm),
+                        Value::Float(fmp),
+                        Value::Float(fmm),
+                    ) => (fpp - fpm - fmp + fmm) / (4.0 * h * h),
                     _ => 0.0,
                 };
 
@@ -10173,11 +11617,19 @@ fn register_autodiff(interp: &mut Interpreter) {
     define(interp, "divergence", Some(2), |interp, args| {
         let func = match &args[0] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("divergence: first argument must be a function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "divergence: first argument must be a function",
+                ))
+            }
         };
         let x = match &args[1] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("divergence: second argument must be array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "divergence: second argument must be array",
+                ))
+            }
         };
 
         let h = 1e-7;
@@ -10195,8 +11647,10 @@ fn register_autodiff(interp: &mut Interpreter) {
             x_plus[i] = Value::Float(xi_val + h);
             x_minus[i] = Value::Float(xi_val - h);
 
-            let f_plus = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_plus)))])?;
-            let f_minus = interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_minus)))])?;
+            let f_plus =
+                interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_plus)))])?;
+            let f_minus =
+                interp.call_function(&func, vec![Value::Array(Rc::new(RefCell::new(x_minus)))])?;
 
             // Extract i-th component
             let df_i = match (&f_plus, &f_minus) {
@@ -10234,12 +11688,19 @@ fn register_spatial(interp: &mut Interpreter) {
         let cell_size = match &args[0] {
             Value::Float(f) => *f,
             Value::Int(n) => *n as f64,
-            _ => return Err(RuntimeError::new("spatial_hash_new: cell_size must be numeric")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "spatial_hash_new: cell_size must be numeric",
+                ))
+            }
         };
 
         let mut config = HashMap::new();
         config.insert("cell_size".to_string(), Value::Float(cell_size));
-        config.insert("buckets".to_string(), Value::Map(Rc::new(RefCell::new(HashMap::new()))));
+        config.insert(
+            "buckets".to_string(),
+            Value::Map(Rc::new(RefCell::new(HashMap::new()))),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(config))))
     });
@@ -10248,12 +11709,20 @@ fn register_spatial(interp: &mut Interpreter) {
     define(interp, "spatial_hash_insert", Some(3), |_, args| {
         let hash = match &args[0] {
             Value::Map(map) => map.clone(),
-            _ => return Err(RuntimeError::new("spatial_hash_insert: first argument must be spatial hash")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "spatial_hash_insert: first argument must be spatial hash",
+                ))
+            }
         };
         let id = args[1].clone();
         let pos = match &args[2] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("spatial_hash_insert: position must be array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "spatial_hash_insert: position must be array",
+                ))
+            }
         };
 
         let cell_size = {
@@ -10265,7 +11734,8 @@ fn register_spatial(interp: &mut Interpreter) {
         };
 
         // Compute cell key
-        let key = pos.iter()
+        let key = pos
+            .iter()
             .filter_map(|v| match v {
                 Value::Float(f) => Some((*f / cell_size).floor() as i64),
                 Value::Int(n) => Some(*n / (cell_size as i64)),
@@ -10278,12 +11748,14 @@ fn register_spatial(interp: &mut Interpreter) {
         // Insert into bucket
         {
             let mut h = hash.borrow_mut();
-            let buckets = h.entry("buckets".to_string())
+            let buckets = h
+                .entry("buckets".to_string())
                 .or_insert_with(|| Value::Map(Rc::new(RefCell::new(HashMap::new()))));
 
             if let Value::Map(buckets_map) = buckets {
                 let mut bm = buckets_map.borrow_mut();
-                let bucket = bm.entry(key)
+                let bucket = bm
+                    .entry(key)
                     .or_insert_with(|| Value::Array(Rc::new(RefCell::new(vec![]))));
 
                 if let Value::Array(arr) = bucket {
@@ -10299,16 +11771,28 @@ fn register_spatial(interp: &mut Interpreter) {
     define(interp, "spatial_hash_query", Some(3), |_, args| {
         let hash = match &args[0] {
             Value::Map(map) => map.borrow().clone(),
-            _ => return Err(RuntimeError::new("spatial_hash_query: first argument must be spatial hash")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "spatial_hash_query: first argument must be spatial hash",
+                ))
+            }
         };
         let pos = match &args[1] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("spatial_hash_query: position must be array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "spatial_hash_query: position must be array",
+                ))
+            }
         };
         let radius = match &args[2] {
             Value::Float(f) => *f,
             Value::Int(n) => *n as f64,
-            _ => return Err(RuntimeError::new("spatial_hash_query: radius must be numeric")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "spatial_hash_query: radius must be numeric",
+                ))
+            }
         };
 
         let cell_size = match hash.get("cell_size") {
@@ -10317,7 +11801,8 @@ fn register_spatial(interp: &mut Interpreter) {
         };
 
         // Get center cell
-        let center: Vec<i64> = pos.iter()
+        let center: Vec<i64> = pos
+            .iter()
             .filter_map(|v| match v {
                 Value::Float(f) => Some((*f / cell_size).floor() as i64),
                 Value::Int(n) => Some(*n / (cell_size as i64)),
@@ -10375,11 +11860,19 @@ fn register_spatial(interp: &mut Interpreter) {
     define(interp, "aabb_intersects", Some(2), |_, args| {
         let a = match &args[0] {
             Value::Map(map) => map.borrow().clone(),
-            _ => return Err(RuntimeError::new("aabb_intersects: arguments must be AABBs")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "aabb_intersects: arguments must be AABBs",
+                ))
+            }
         };
         let b = match &args[1] {
             Value::Map(map) => map.borrow().clone(),
-            _ => return Err(RuntimeError::new("aabb_intersects: arguments must be AABBs")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "aabb_intersects: arguments must be AABBs",
+                ))
+            }
         };
 
         let a_min = extract_vec_from_map(&a, "min")?;
@@ -10388,7 +11881,12 @@ fn register_spatial(interp: &mut Interpreter) {
         let b_max = extract_vec_from_map(&b, "max")?;
 
         // Check overlap in each dimension
-        for i in 0..a_min.len().min(a_max.len()).min(b_min.len()).min(b_max.len()) {
+        for i in 0..a_min
+            .len()
+            .min(a_max.len())
+            .min(b_min.len())
+            .min(b_max.len())
+        {
             if a_max[i] < b_min[i] || b_max[i] < a_min[i] {
                 return Ok(Value::Bool(false));
             }
@@ -10401,11 +11899,19 @@ fn register_spatial(interp: &mut Interpreter) {
     define(interp, "aabb_contains", Some(2), |_, args| {
         let aabb = match &args[0] {
             Value::Map(map) => map.borrow().clone(),
-            _ => return Err(RuntimeError::new("aabb_contains: first argument must be AABB")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "aabb_contains: first argument must be AABB",
+                ))
+            }
         };
         let point = match &args[1] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("aabb_contains: second argument must be point array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "aabb_contains: second argument must be point array",
+                ))
+            }
         };
 
         let min = extract_vec_from_map(&aabb, "min")?;
@@ -10433,16 +11939,19 @@ fn register_spatial(interp: &mut Interpreter) {
 // Helper for extracting vector from AABB map
 fn extract_vec_from_map(map: &HashMap<String, Value>, key: &str) -> Result<Vec<f64>, RuntimeError> {
     match map.get(key) {
-        Some(Value::Array(arr)) => {
-            arr.borrow().iter()
-                .map(|v| match v {
-                    Value::Float(f) => Ok(*f),
-                    Value::Int(n) => Ok(*n as f64),
-                    _ => Err(RuntimeError::new("Expected numeric value")),
-                })
-                .collect()
-        }
-        _ => Err(RuntimeError::new(format!("Missing or invalid '{}' in AABB", key))),
+        Some(Value::Array(arr)) => arr
+            .borrow()
+            .iter()
+            .map(|v| match v {
+                Value::Float(f) => Ok(*f),
+                Value::Int(n) => Ok(*n as f64),
+                _ => Err(RuntimeError::new("Expected numeric value")),
+            })
+            .collect(),
+        _ => Err(RuntimeError::new(format!(
+            "Missing or invalid '{}' in AABB",
+            key
+        ))),
     }
 }
 
@@ -10481,7 +11990,11 @@ fn register_physics(interp: &mut Interpreter) {
         let rest_length = match &args[2] {
             Value::Float(f) => *f,
             Value::Int(n) => *n as f64,
-            _ => return Err(RuntimeError::new("spring_force: rest_length must be numeric")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "spring_force: rest_length must be numeric",
+                ))
+            }
         };
         let stiffness = match &args[3] {
             Value::Float(f) => *f,
@@ -10490,7 +12003,7 @@ fn register_physics(interp: &mut Interpreter) {
         };
 
         let delta = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
-        let length = (delta[0]*delta[0] + delta[1]*delta[1] + delta[2]*delta[2]).sqrt();
+        let length = (delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]).sqrt();
 
         if length < 1e-10 {
             return Ok(make_vec3_arr([0.0, 0.0, 0.0]));
@@ -10515,23 +12028,45 @@ fn register_physics(interp: &mut Interpreter) {
         let target = match &args[2] {
             Value::Float(f) => *f,
             Value::Int(n) => *n as f64,
-            _ => return Err(RuntimeError::new("distance_constraint: target must be numeric")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "distance_constraint: target must be numeric",
+                ))
+            }
         };
 
         let delta = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
-        let length = (delta[0]*delta[0] + delta[1]*delta[1] + delta[2]*delta[2]).sqrt();
+        let length = (delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]).sqrt();
 
         if length < 1e-10 {
-            return Ok(Value::Tuple(Rc::new(vec![make_vec3_arr(p1), make_vec3_arr(p2)])));
+            return Ok(Value::Tuple(Rc::new(vec![
+                make_vec3_arr(p1),
+                make_vec3_arr(p2),
+            ])));
         }
 
         let correction = (length - target) / length * 0.5;
-        let corr_vec = [delta[0] * correction, delta[1] * correction, delta[2] * correction];
+        let corr_vec = [
+            delta[0] * correction,
+            delta[1] * correction,
+            delta[2] * correction,
+        ];
 
-        let new_p1 = [p1[0] + corr_vec[0], p1[1] + corr_vec[1], p1[2] + corr_vec[2]];
-        let new_p2 = [p2[0] - corr_vec[0], p2[1] - corr_vec[1], p2[2] - corr_vec[2]];
+        let new_p1 = [
+            p1[0] + corr_vec[0],
+            p1[1] + corr_vec[1],
+            p1[2] + corr_vec[2],
+        ];
+        let new_p2 = [
+            p2[0] - corr_vec[0],
+            p2[1] - corr_vec[1],
+            p2[2] - corr_vec[2],
+        ];
 
-        Ok(Value::Tuple(Rc::new(vec![make_vec3_arr(new_p1), make_vec3_arr(new_p2)])))
+        Ok(Value::Tuple(Rc::new(vec![
+            make_vec3_arr(new_p1),
+            make_vec3_arr(new_p2),
+        ])))
     });
 
     // solve_constraints(points, constraints, iterations) - Iterative constraint solver
@@ -10539,15 +12074,27 @@ fn register_physics(interp: &mut Interpreter) {
     define(interp, "solve_constraints", Some(3), |_, args| {
         let mut points = match &args[0] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("solve_constraints: first argument must be array of points")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "solve_constraints: first argument must be array of points",
+                ))
+            }
         };
         let constraints = match &args[1] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("solve_constraints: second argument must be array of constraints")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "solve_constraints: second argument must be array of constraints",
+                ))
+            }
         };
         let iterations = match &args[2] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("solve_constraints: iterations must be integer")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "solve_constraints: iterations must be integer",
+                ))
+            }
         };
 
         for _ in 0..iterations {
@@ -10555,8 +12102,15 @@ fn register_physics(interp: &mut Interpreter) {
                 match constraint {
                     Value::Map(c) => {
                         let c = c.borrow();
-                        let constraint_type = c.get("type")
-                            .and_then(|v| if let Value::String(s) = v { Some((**s).clone()) } else { None })
+                        let constraint_type = c
+                            .get("type")
+                            .and_then(|v| {
+                                if let Value::String(s) = v {
+                                    Some((**s).clone())
+                                } else {
+                                    None
+                                }
+                            })
                             .unwrap_or_default();
 
                         match constraint_type.as_str() {
@@ -10587,14 +12141,29 @@ fn register_physics(interp: &mut Interpreter) {
                                         let p2 = extract_vec3(&points[i2], "solve")?;
 
                                         let delta = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
-                                        let length = (delta[0]*delta[0] + delta[1]*delta[1] + delta[2]*delta[2]).sqrt();
+                                        let length = (delta[0] * delta[0]
+                                            + delta[1] * delta[1]
+                                            + delta[2] * delta[2])
+                                            .sqrt();
 
                                         if length > 1e-10 {
                                             let correction = (length - target) / length * 0.5;
-                                            let corr_vec = [delta[0] * correction, delta[1] * correction, delta[2] * correction];
+                                            let corr_vec = [
+                                                delta[0] * correction,
+                                                delta[1] * correction,
+                                                delta[2] * correction,
+                                            ];
 
-                                            points[i1] = make_vec3_arr([p1[0] + corr_vec[0], p1[1] + corr_vec[1], p1[2] + corr_vec[2]]);
-                                            points[i2] = make_vec3_arr([p2[0] - corr_vec[0], p2[1] - corr_vec[1], p2[2] - corr_vec[2]]);
+                                            points[i1] = make_vec3_arr([
+                                                p1[0] + corr_vec[0],
+                                                p1[1] + corr_vec[1],
+                                                p1[2] + corr_vec[2],
+                                            ]);
+                                            points[i2] = make_vec3_arr([
+                                                p2[0] - corr_vec[0],
+                                                p2[1] - corr_vec[1],
+                                                p2[2] - corr_vec[2],
+                                            ]);
                                         }
                                     }
                                 }
@@ -10619,16 +12188,24 @@ fn register_physics(interp: &mut Interpreter) {
         let radius = match &args[3] {
             Value::Float(f) => *f,
             Value::Int(n) => *n as f64,
-            _ => return Err(RuntimeError::new("ray_sphere_intersect: radius must be numeric")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "ray_sphere_intersect: radius must be numeric",
+                ))
+            }
         };
 
-        let oc = [origin[0] - center[0], origin[1] - center[1], origin[2] - center[2]];
+        let oc = [
+            origin[0] - center[0],
+            origin[1] - center[1],
+            origin[2] - center[2],
+        ];
 
-        let a = dir[0]*dir[0] + dir[1]*dir[1] + dir[2]*dir[2];
-        let b = 2.0 * (oc[0]*dir[0] + oc[1]*dir[1] + oc[2]*dir[2]);
-        let c = oc[0]*oc[0] + oc[1]*oc[1] + oc[2]*oc[2] - radius*radius;
+        let a = dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2];
+        let b = 2.0 * (oc[0] * dir[0] + oc[1] * dir[1] + oc[2] * dir[2]);
+        let c = oc[0] * oc[0] + oc[1] * oc[1] + oc[2] * oc[2] - radius * radius;
 
-        let discriminant = b*b - 4.0*a*c;
+        let discriminant = b * b - 4.0 * a * c;
 
         if discriminant < 0.0 {
             Ok(Value::Float(-1.0))
@@ -10654,14 +12231,18 @@ fn register_physics(interp: &mut Interpreter) {
         let plane_pt = extract_vec3(&args[2], "ray_plane_intersect")?;
         let normal = extract_vec3(&args[3], "ray_plane_intersect")?;
 
-        let denom = dir[0]*normal[0] + dir[1]*normal[1] + dir[2]*normal[2];
+        let denom = dir[0] * normal[0] + dir[1] * normal[1] + dir[2] * normal[2];
 
         if denom.abs() < 1e-10 {
             return Ok(Value::Float(-1.0)); // Parallel to plane
         }
 
-        let diff = [plane_pt[0] - origin[0], plane_pt[1] - origin[1], plane_pt[2] - origin[2]];
-        let t = (diff[0]*normal[0] + diff[1]*normal[1] + diff[2]*normal[2]) / denom;
+        let diff = [
+            plane_pt[0] - origin[0],
+            plane_pt[1] - origin[1],
+            plane_pt[2] - origin[2],
+        ];
+        let t = (diff[0] * normal[0] + diff[1] * normal[1] + diff[2] * normal[2]) / denom;
 
         if t > 0.0 {
             Ok(Value::Float(t))
@@ -10736,15 +12317,18 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
     // Helper to create a multivector from 8 components
     fn make_multivector(components: [f64; 8]) -> Value {
         let mut mv = HashMap::new();
-        mv.insert("s".to_string(), Value::Float(components[0]));    // scalar
-        mv.insert("e1".to_string(), Value::Float(components[1]));   // e₁
-        mv.insert("e2".to_string(), Value::Float(components[2]));   // e₂
-        mv.insert("e3".to_string(), Value::Float(components[3]));   // e₃
-        mv.insert("e12".to_string(), Value::Float(components[4]));  // e₁₂
-        mv.insert("e23".to_string(), Value::Float(components[5]));  // e₂₃
-        mv.insert("e31".to_string(), Value::Float(components[6]));  // e₃₁
+        mv.insert("s".to_string(), Value::Float(components[0])); // scalar
+        mv.insert("e1".to_string(), Value::Float(components[1])); // e₁
+        mv.insert("e2".to_string(), Value::Float(components[2])); // e₂
+        mv.insert("e3".to_string(), Value::Float(components[3])); // e₃
+        mv.insert("e12".to_string(), Value::Float(components[4])); // e₁₂
+        mv.insert("e23".to_string(), Value::Float(components[5])); // e₂₃
+        mv.insert("e31".to_string(), Value::Float(components[6])); // e₃₁
         mv.insert("e123".to_string(), Value::Float(components[7])); // e₁₂₃ (pseudoscalar)
-        mv.insert("_type".to_string(), Value::String(Rc::new("multivector".to_string())));
+        mv.insert(
+            "_type".to_string(),
+            Value::String(Rc::new("multivector".to_string())),
+        );
         Value::Map(Rc::new(RefCell::new(mv)))
     }
 
@@ -10770,7 +12354,10 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
                     get_component("e123"),
                 ])
             }
-            _ => Err(RuntimeError::new(format!("{}: expected multivector", fn_name))),
+            _ => Err(RuntimeError::new(format!(
+                "{}: expected multivector",
+                fn_name
+            ))),
         }
     }
 
@@ -10799,23 +12386,51 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
 
     // mv_vector(x, y, z) - Create vector (grade-1 multivector)
     define(interp, "mv_vector", Some(3), |_, args| {
-        let x = match &args[0] { Value::Float(f) => *f, Value::Int(n) => *n as f64, _ => 0.0 };
-        let y = match &args[1] { Value::Float(f) => *f, Value::Int(n) => *n as f64, _ => 0.0 };
-        let z = match &args[2] { Value::Float(f) => *f, Value::Int(n) => *n as f64, _ => 0.0 };
+        let x = match &args[0] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => 0.0,
+        };
+        let y = match &args[1] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => 0.0,
+        };
+        let z = match &args[2] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => 0.0,
+        };
         Ok(make_multivector([0.0, x, y, z, 0.0, 0.0, 0.0, 0.0]))
     });
 
     // mv_bivector(xy, yz, zx) - Create bivector (grade-2, represents oriented planes)
     define(interp, "mv_bivector", Some(3), |_, args| {
-        let xy = match &args[0] { Value::Float(f) => *f, Value::Int(n) => *n as f64, _ => 0.0 };
-        let yz = match &args[1] { Value::Float(f) => *f, Value::Int(n) => *n as f64, _ => 0.0 };
-        let zx = match &args[2] { Value::Float(f) => *f, Value::Int(n) => *n as f64, _ => 0.0 };
+        let xy = match &args[0] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => 0.0,
+        };
+        let yz = match &args[1] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => 0.0,
+        };
+        let zx = match &args[2] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => 0.0,
+        };
         Ok(make_multivector([0.0, 0.0, 0.0, 0.0, xy, yz, zx, 0.0]))
     });
 
     // mv_trivector(xyz) - Create trivector/pseudoscalar (grade-3, represents oriented volume)
     define(interp, "mv_trivector", Some(1), |_, args| {
-        let xyz = match &args[0] { Value::Float(f) => *f, Value::Int(n) => *n as f64, _ => 0.0 };
+        let xyz = match &args[0] {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            _ => 0.0,
+        };
         Ok(make_multivector([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, xyz]))
     });
 
@@ -10824,8 +12439,14 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
         let a = extract_multivector(&args[0], "mv_add")?;
         let b = extract_multivector(&args[1], "mv_add")?;
         Ok(make_multivector([
-            a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3],
-            a[4] + b[4], a[5] + b[5], a[6] + b[6], a[7] + b[7],
+            a[0] + b[0],
+            a[1] + b[1],
+            a[2] + b[2],
+            a[3] + b[3],
+            a[4] + b[4],
+            a[5] + b[5],
+            a[6] + b[6],
+            a[7] + b[7],
         ]))
     });
 
@@ -10834,8 +12455,14 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
         let a = extract_multivector(&args[0], "mv_sub")?;
         let b = extract_multivector(&args[1], "mv_sub")?;
         Ok(make_multivector([
-            a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3],
-            a[4] - b[4], a[5] - b[5], a[6] - b[6], a[7] - b[7],
+            a[0] - b[0],
+            a[1] - b[1],
+            a[2] - b[2],
+            a[3] - b[3],
+            a[4] - b[4],
+            a[5] - b[5],
+            a[6] - b[6],
+            a[7] - b[7],
         ]))
     });
 
@@ -10845,11 +12472,21 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
         let s = match &args[1] {
             Value::Float(f) => *f,
             Value::Int(n) => *n as f64,
-            _ => return Err(RuntimeError::new("mv_scale: second argument must be number")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "mv_scale: second argument must be number",
+                ))
+            }
         };
         Ok(make_multivector([
-            a[0] * s, a[1] * s, a[2] * s, a[3] * s,
-            a[4] * s, a[5] * s, a[6] * s, a[7] * s,
+            a[0] * s,
+            a[1] * s,
+            a[2] * s,
+            a[3] * s,
+            a[4] * s,
+            a[5] * s,
+            a[6] * s,
+            a[7] * s,
         ]))
     });
 
@@ -10864,36 +12501,53 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
         let mut r = [0.0f64; 8];
 
         // Scalar part
-        r[0] = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3]
-             - a[4]*b[4] - a[5]*b[5] - a[6]*b[6] - a[7]*b[7];
+        r[0] = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+            - a[4] * b[4]
+            - a[5] * b[5]
+            - a[6] * b[6]
+            - a[7] * b[7];
 
         // e₁ part
-        r[1] = a[0]*b[1] + a[1]*b[0] - a[2]*b[4] + a[3]*b[6]
-             + a[4]*b[2] - a[5]*b[7] - a[6]*b[3] - a[7]*b[5];
+        r[1] = a[0] * b[1] + a[1] * b[0] - a[2] * b[4] + a[3] * b[6] + a[4] * b[2]
+            - a[5] * b[7]
+            - a[6] * b[3]
+            - a[7] * b[5];
 
         // e₂ part
-        r[2] = a[0]*b[2] + a[1]*b[4] + a[2]*b[0] - a[3]*b[5]
-             - a[4]*b[1] + a[5]*b[3] - a[6]*b[7] - a[7]*b[6];
+        r[2] = a[0] * b[2] + a[1] * b[4] + a[2] * b[0] - a[3] * b[5] - a[4] * b[1] + a[5] * b[3]
+            - a[6] * b[7]
+            - a[7] * b[6];
 
         // e₃ part
-        r[3] = a[0]*b[3] - a[1]*b[6] + a[2]*b[5] + a[3]*b[0]
-             - a[4]*b[7] - a[5]*b[2] + a[6]*b[1] - a[7]*b[4];
+        r[3] = a[0] * b[3] - a[1] * b[6] + a[2] * b[5] + a[3] * b[0] - a[4] * b[7] - a[5] * b[2]
+            + a[6] * b[1]
+            - a[7] * b[4];
 
         // e₁₂ part
-        r[4] = a[0]*b[4] + a[1]*b[2] - a[2]*b[1] + a[3]*b[7]
-             + a[4]*b[0] + a[5]*b[6] - a[6]*b[5] + a[7]*b[3];
+        r[4] = a[0] * b[4] + a[1] * b[2] - a[2] * b[1] + a[3] * b[7] + a[4] * b[0] + a[5] * b[6]
+            - a[6] * b[5]
+            + a[7] * b[3];
 
         // e₂₃ part
-        r[5] = a[0]*b[5] + a[1]*b[7] + a[2]*b[3] - a[3]*b[2]
-             - a[4]*b[6] + a[5]*b[0] + a[6]*b[4] + a[7]*b[1];
+        r[5] = a[0] * b[5] + a[1] * b[7] + a[2] * b[3] - a[3] * b[2] - a[4] * b[6]
+            + a[5] * b[0]
+            + a[6] * b[4]
+            + a[7] * b[1];
 
         // e₃₁ part
-        r[6] = a[0]*b[6] - a[1]*b[3] + a[2]*b[7] + a[3]*b[1]
-             + a[4]*b[5] - a[5]*b[4] + a[6]*b[0] + a[7]*b[2];
+        r[6] = a[0] * b[6] - a[1] * b[3] + a[2] * b[7] + a[3] * b[1] + a[4] * b[5] - a[5] * b[4]
+            + a[6] * b[0]
+            + a[7] * b[2];
 
         // e₁₂₃ part
-        r[7] = a[0]*b[7] + a[1]*b[5] + a[2]*b[6] + a[3]*b[4]
-             + a[4]*b[3] + a[5]*b[1] + a[6]*b[2] + a[7]*b[0];
+        r[7] = a[0] * b[7]
+            + a[1] * b[5]
+            + a[2] * b[6]
+            + a[3] * b[4]
+            + a[4] * b[3]
+            + a[5] * b[1]
+            + a[6] * b[2]
+            + a[7] * b[0];
 
         Ok(make_multivector(r))
     });
@@ -10910,19 +12564,20 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
         r[0] = a[0] * b[0];
 
         // Vector parts (grade 1): s∧v + v∧s
-        r[1] = a[0]*b[1] + a[1]*b[0];
-        r[2] = a[0]*b[2] + a[2]*b[0];
-        r[3] = a[0]*b[3] + a[3]*b[0];
+        r[1] = a[0] * b[1] + a[1] * b[0];
+        r[2] = a[0] * b[2] + a[2] * b[0];
+        r[3] = a[0] * b[3] + a[3] * b[0];
 
         // Bivector parts (grade 2): s∧B + v∧v + B∧s
-        r[4] = a[0]*b[4] + a[1]*b[2] - a[2]*b[1] + a[4]*b[0];
-        r[5] = a[0]*b[5] + a[2]*b[3] - a[3]*b[2] + a[5]*b[0];
-        r[6] = a[0]*b[6] + a[3]*b[1] - a[1]*b[3] + a[6]*b[0];
+        r[4] = a[0] * b[4] + a[1] * b[2] - a[2] * b[1] + a[4] * b[0];
+        r[5] = a[0] * b[5] + a[2] * b[3] - a[3] * b[2] + a[5] * b[0];
+        r[6] = a[0] * b[6] + a[3] * b[1] - a[1] * b[3] + a[6] * b[0];
 
         // Trivector part (grade 3): s∧T + v∧B + B∧v + T∧s
-        r[7] = a[0]*b[7] + a[7]*b[0]
-             + a[1]*b[5] + a[2]*b[6] + a[3]*b[4]
-             - a[4]*b[3] - a[5]*b[1] - a[6]*b[2];
+        r[7] = a[0] * b[7] + a[7] * b[0] + a[1] * b[5] + a[2] * b[6] + a[3] * b[4]
+            - a[4] * b[3]
+            - a[5] * b[1]
+            - a[6] * b[2];
 
         Ok(make_multivector(r))
     });
@@ -10937,19 +12592,21 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
 
         // Left contraction formula
         // Scalar (vectors dotted)
-        r[0] = a[1]*b[1] + a[2]*b[2] + a[3]*b[3]
-             - a[4]*b[4] - a[5]*b[5] - a[6]*b[6]
-             - a[7]*b[7];
+        r[0] = a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+            - a[4] * b[4]
+            - a[5] * b[5]
+            - a[6] * b[6]
+            - a[7] * b[7];
 
         // Vector parts (bivector · vector)
-        r[1] = a[4]*b[2] - a[6]*b[3] - a[5]*b[7];
-        r[2] = -a[4]*b[1] + a[5]*b[3] - a[6]*b[7];
-        r[3] = a[6]*b[1] - a[5]*b[2] - a[4]*b[7];
+        r[1] = a[4] * b[2] - a[6] * b[3] - a[5] * b[7];
+        r[2] = -a[4] * b[1] + a[5] * b[3] - a[6] * b[7];
+        r[3] = a[6] * b[1] - a[5] * b[2] - a[4] * b[7];
 
         // Bivector parts (trivector · vector)
-        r[4] = a[7]*b[3];
-        r[5] = a[7]*b[1];
-        r[6] = a[7]*b[2];
+        r[4] = a[7] * b[3];
+        r[5] = a[7] * b[1];
+        r[6] = a[7] * b[2];
 
         Ok(make_multivector(r))
     });
@@ -10960,8 +12617,7 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
         let a = extract_multivector(&args[0], "mv_reverse")?;
         // Grade 0,1 unchanged; Grade 2,3 negated
         Ok(make_multivector([
-            a[0], a[1], a[2], a[3],
-            -a[4], -a[5], -a[6], -a[7],
+            a[0], a[1], a[2], a[3], -a[4], -a[5], -a[6], -a[7],
         ]))
     });
 
@@ -10972,36 +12628,55 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
         // In 3D: dual(1) = e123, dual(e1) = e23, etc.
         // Multiplying by e123: since e123² = -1 in Cl(3,0,0)
         Ok(make_multivector([
-            -a[7],  // s ← -e123
-            -a[5],  // e1 ← -e23
-            -a[6],  // e2 ← -e31
-            -a[4],  // e3 ← -e12
-            a[3],   // e12 ← e3
-            a[1],   // e23 ← e1
-            a[2],   // e31 ← e2
-            a[0],   // e123 ← s
+            -a[7], // s ← -e123
+            -a[5], // e1 ← -e23
+            -a[6], // e2 ← -e31
+            -a[4], // e3 ← -e12
+            a[3],  // e12 ← e3
+            a[1],  // e23 ← e1
+            a[2],  // e31 ← e2
+            a[0],  // e123 ← s
         ]))
     });
 
     // mv_magnitude(a) - Magnitude/norm of multivector
     define(interp, "mv_magnitude", Some(1), |_, args| {
         let a = extract_multivector(&args[0], "mv_magnitude")?;
-        let mag_sq = a[0]*a[0] + a[1]*a[1] + a[2]*a[2] + a[3]*a[3]
-                   + a[4]*a[4] + a[5]*a[5] + a[6]*a[6] + a[7]*a[7];
+        let mag_sq = a[0] * a[0]
+            + a[1] * a[1]
+            + a[2] * a[2]
+            + a[3] * a[3]
+            + a[4] * a[4]
+            + a[5] * a[5]
+            + a[6] * a[6]
+            + a[7] * a[7];
         Ok(Value::Float(mag_sq.sqrt()))
     });
 
     // mv_normalize(a) - Normalize multivector
     define(interp, "mv_normalize", Some(1), |_, args| {
         let a = extract_multivector(&args[0], "mv_normalize")?;
-        let mag = (a[0]*a[0] + a[1]*a[1] + a[2]*a[2] + a[3]*a[3]
-                 + a[4]*a[4] + a[5]*a[5] + a[6]*a[6] + a[7]*a[7]).sqrt();
+        let mag = (a[0] * a[0]
+            + a[1] * a[1]
+            + a[2] * a[2]
+            + a[3] * a[3]
+            + a[4] * a[4]
+            + a[5] * a[5]
+            + a[6] * a[6]
+            + a[7] * a[7])
+            .sqrt();
         if mag < 1e-10 {
             return Ok(make_multivector([0.0; 8]));
         }
         Ok(make_multivector([
-            a[0]/mag, a[1]/mag, a[2]/mag, a[3]/mag,
-            a[4]/mag, a[5]/mag, a[6]/mag, a[7]/mag,
+            a[0] / mag,
+            a[1] / mag,
+            a[2] / mag,
+            a[3] / mag,
+            a[4] / mag,
+            a[5] / mag,
+            a[6] / mag,
+            a[7] / mag,
         ]))
     });
 
@@ -11012,16 +12687,20 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
         let angle = match &args[1] {
             Value::Float(f) => *f,
             Value::Int(n) => *n as f64,
-            _ => return Err(RuntimeError::new("rotor_from_axis_angle: angle must be number")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "rotor_from_axis_angle: angle must be number",
+                ))
+            }
         };
 
         // Normalize axis
-        let len = (axis[0]*axis[0] + axis[1]*axis[1] + axis[2]*axis[2]).sqrt();
+        let len = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
         if len < 1e-10 {
             // Return identity rotor
             return Ok(make_multivector([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]));
         }
-        let (nx, ny, nz) = (axis[0]/len, axis[1]/len, axis[2]/len);
+        let (nx, ny, nz) = (axis[0] / len, axis[1] / len, axis[2] / len);
 
         let half_angle = angle / 2.0;
         let (s, c) = half_angle.sin_cos();
@@ -11029,12 +12708,14 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
         // Rotor: cos(θ/2) - sin(θ/2) * (n₁e₂₃ + n₂e₃₁ + n₃e₁₂)
         // Note: axis maps to bivector via dual
         Ok(make_multivector([
-            c,                // scalar
-            0.0, 0.0, 0.0,    // no vector part
-            -s * nz,          // e12 (axis z → bivector xy)
-            -s * nx,          // e23 (axis x → bivector yz)
-            -s * ny,          // e31 (axis y → bivector zx)
-            0.0,              // no trivector
+            c, // scalar
+            0.0,
+            0.0,
+            0.0,     // no vector part
+            -s * nz, // e12 (axis z → bivector xy)
+            -s * nx, // e23 (axis x → bivector yz)
+            -s * ny, // e31 (axis y → bivector zx)
+            0.0,     // no trivector
         ]))
     });
 
@@ -11052,31 +12733,66 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
 
         // First: R * v
         let mut rv = [0.0f64; 8];
-        rv[0] = r[0]*v_mv[0] + r[1]*v_mv[1] + r[2]*v_mv[2] + r[3]*v_mv[3]
-              - r[4]*v_mv[4] - r[5]*v_mv[5] - r[6]*v_mv[6] - r[7]*v_mv[7];
-        rv[1] = r[0]*v_mv[1] + r[1]*v_mv[0] - r[2]*v_mv[4] + r[3]*v_mv[6]
-              + r[4]*v_mv[2] - r[5]*v_mv[7] - r[6]*v_mv[3] - r[7]*v_mv[5];
-        rv[2] = r[0]*v_mv[2] + r[1]*v_mv[4] + r[2]*v_mv[0] - r[3]*v_mv[5]
-              - r[4]*v_mv[1] + r[5]*v_mv[3] - r[6]*v_mv[7] - r[7]*v_mv[6];
-        rv[3] = r[0]*v_mv[3] - r[1]*v_mv[6] + r[2]*v_mv[5] + r[3]*v_mv[0]
-              - r[4]*v_mv[7] - r[5]*v_mv[2] + r[6]*v_mv[1] - r[7]*v_mv[4];
-        rv[4] = r[0]*v_mv[4] + r[1]*v_mv[2] - r[2]*v_mv[1] + r[3]*v_mv[7]
-              + r[4]*v_mv[0] + r[5]*v_mv[6] - r[6]*v_mv[5] + r[7]*v_mv[3];
-        rv[5] = r[0]*v_mv[5] + r[1]*v_mv[7] + r[2]*v_mv[3] - r[3]*v_mv[2]
-              - r[4]*v_mv[6] + r[5]*v_mv[0] + r[6]*v_mv[4] + r[7]*v_mv[1];
-        rv[6] = r[0]*v_mv[6] - r[1]*v_mv[3] + r[2]*v_mv[7] + r[3]*v_mv[1]
-              + r[4]*v_mv[5] - r[5]*v_mv[4] + r[6]*v_mv[0] + r[7]*v_mv[2];
-        rv[7] = r[0]*v_mv[7] + r[1]*v_mv[5] + r[2]*v_mv[6] + r[3]*v_mv[4]
-              + r[4]*v_mv[3] + r[5]*v_mv[1] + r[6]*v_mv[2] + r[7]*v_mv[0];
+        rv[0] = r[0] * v_mv[0] + r[1] * v_mv[1] + r[2] * v_mv[2] + r[3] * v_mv[3]
+            - r[4] * v_mv[4]
+            - r[5] * v_mv[5]
+            - r[6] * v_mv[6]
+            - r[7] * v_mv[7];
+        rv[1] = r[0] * v_mv[1] + r[1] * v_mv[0] - r[2] * v_mv[4] + r[3] * v_mv[6] + r[4] * v_mv[2]
+            - r[5] * v_mv[7]
+            - r[6] * v_mv[3]
+            - r[7] * v_mv[5];
+        rv[2] = r[0] * v_mv[2] + r[1] * v_mv[4] + r[2] * v_mv[0] - r[3] * v_mv[5] - r[4] * v_mv[1]
+            + r[5] * v_mv[3]
+            - r[6] * v_mv[7]
+            - r[7] * v_mv[6];
+        rv[3] = r[0] * v_mv[3] - r[1] * v_mv[6] + r[2] * v_mv[5] + r[3] * v_mv[0]
+            - r[4] * v_mv[7]
+            - r[5] * v_mv[2]
+            + r[6] * v_mv[1]
+            - r[7] * v_mv[4];
+        rv[4] = r[0] * v_mv[4] + r[1] * v_mv[2] - r[2] * v_mv[1]
+            + r[3] * v_mv[7]
+            + r[4] * v_mv[0]
+            + r[5] * v_mv[6]
+            - r[6] * v_mv[5]
+            + r[7] * v_mv[3];
+        rv[5] = r[0] * v_mv[5] + r[1] * v_mv[7] + r[2] * v_mv[3] - r[3] * v_mv[2] - r[4] * v_mv[6]
+            + r[5] * v_mv[0]
+            + r[6] * v_mv[4]
+            + r[7] * v_mv[1];
+        rv[6] = r[0] * v_mv[6] - r[1] * v_mv[3] + r[2] * v_mv[7] + r[3] * v_mv[1] + r[4] * v_mv[5]
+            - r[5] * v_mv[4]
+            + r[6] * v_mv[0]
+            + r[7] * v_mv[2];
+        rv[7] = r[0] * v_mv[7]
+            + r[1] * v_mv[5]
+            + r[2] * v_mv[6]
+            + r[3] * v_mv[4]
+            + r[4] * v_mv[3]
+            + r[5] * v_mv[1]
+            + r[6] * v_mv[2]
+            + r[7] * v_mv[0];
 
         // Then: (R * v) * R†
         let mut result = [0.0f64; 8];
-        result[1] = rv[0]*r_rev[1] + rv[1]*r_rev[0] - rv[2]*r_rev[4] + rv[3]*r_rev[6]
-                  + rv[4]*r_rev[2] - rv[5]*r_rev[7] - rv[6]*r_rev[3] - rv[7]*r_rev[5];
-        result[2] = rv[0]*r_rev[2] + rv[1]*r_rev[4] + rv[2]*r_rev[0] - rv[3]*r_rev[5]
-                  - rv[4]*r_rev[1] + rv[5]*r_rev[3] - rv[6]*r_rev[7] - rv[7]*r_rev[6];
-        result[3] = rv[0]*r_rev[3] - rv[1]*r_rev[6] + rv[2]*r_rev[5] + rv[3]*r_rev[0]
-                  - rv[4]*r_rev[7] - rv[5]*r_rev[2] + rv[6]*r_rev[1] - rv[7]*r_rev[4];
+        result[1] = rv[0] * r_rev[1] + rv[1] * r_rev[0] - rv[2] * r_rev[4]
+            + rv[3] * r_rev[6]
+            + rv[4] * r_rev[2]
+            - rv[5] * r_rev[7]
+            - rv[6] * r_rev[3]
+            - rv[7] * r_rev[5];
+        result[2] = rv[0] * r_rev[2] + rv[1] * r_rev[4] + rv[2] * r_rev[0]
+            - rv[3] * r_rev[5]
+            - rv[4] * r_rev[1]
+            + rv[5] * r_rev[3]
+            - rv[6] * r_rev[7]
+            - rv[7] * r_rev[6];
+        result[3] = rv[0] * r_rev[3] - rv[1] * r_rev[6] + rv[2] * r_rev[5] + rv[3] * r_rev[0]
+            - rv[4] * r_rev[7]
+            - rv[5] * r_rev[2]
+            + rv[6] * r_rev[1]
+            - rv[7] * r_rev[4];
 
         // Return as vec3
         Ok(make_vec3(result[1], result[2], result[3]))
@@ -11089,22 +12805,39 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
 
         // Same as geometric product
         let mut r = [0.0f64; 8];
-        r[0] = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3]
-             - a[4]*b[4] - a[5]*b[5] - a[6]*b[6] - a[7]*b[7];
-        r[1] = a[0]*b[1] + a[1]*b[0] - a[2]*b[4] + a[3]*b[6]
-             + a[4]*b[2] - a[5]*b[7] - a[6]*b[3] - a[7]*b[5];
-        r[2] = a[0]*b[2] + a[1]*b[4] + a[2]*b[0] - a[3]*b[5]
-             - a[4]*b[1] + a[5]*b[3] - a[6]*b[7] - a[7]*b[6];
-        r[3] = a[0]*b[3] - a[1]*b[6] + a[2]*b[5] + a[3]*b[0]
-             - a[4]*b[7] - a[5]*b[2] + a[6]*b[1] - a[7]*b[4];
-        r[4] = a[0]*b[4] + a[1]*b[2] - a[2]*b[1] + a[3]*b[7]
-             + a[4]*b[0] + a[5]*b[6] - a[6]*b[5] + a[7]*b[3];
-        r[5] = a[0]*b[5] + a[1]*b[7] + a[2]*b[3] - a[3]*b[2]
-             - a[4]*b[6] + a[5]*b[0] + a[6]*b[4] + a[7]*b[1];
-        r[6] = a[0]*b[6] - a[1]*b[3] + a[2]*b[7] + a[3]*b[1]
-             + a[4]*b[5] - a[5]*b[4] + a[6]*b[0] + a[7]*b[2];
-        r[7] = a[0]*b[7] + a[1]*b[5] + a[2]*b[6] + a[3]*b[4]
-             + a[4]*b[3] + a[5]*b[1] + a[6]*b[2] + a[7]*b[0];
+        r[0] = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+            - a[4] * b[4]
+            - a[5] * b[5]
+            - a[6] * b[6]
+            - a[7] * b[7];
+        r[1] = a[0] * b[1] + a[1] * b[0] - a[2] * b[4] + a[3] * b[6] + a[4] * b[2]
+            - a[5] * b[7]
+            - a[6] * b[3]
+            - a[7] * b[5];
+        r[2] = a[0] * b[2] + a[1] * b[4] + a[2] * b[0] - a[3] * b[5] - a[4] * b[1] + a[5] * b[3]
+            - a[6] * b[7]
+            - a[7] * b[6];
+        r[3] = a[0] * b[3] - a[1] * b[6] + a[2] * b[5] + a[3] * b[0] - a[4] * b[7] - a[5] * b[2]
+            + a[6] * b[1]
+            - a[7] * b[4];
+        r[4] = a[0] * b[4] + a[1] * b[2] - a[2] * b[1] + a[3] * b[7] + a[4] * b[0] + a[5] * b[6]
+            - a[6] * b[5]
+            + a[7] * b[3];
+        r[5] = a[0] * b[5] + a[1] * b[7] + a[2] * b[3] - a[3] * b[2] - a[4] * b[6]
+            + a[5] * b[0]
+            + a[6] * b[4]
+            + a[7] * b[1];
+        r[6] = a[0] * b[6] - a[1] * b[3] + a[2] * b[7] + a[3] * b[1] + a[4] * b[5] - a[5] * b[4]
+            + a[6] * b[0]
+            + a[7] * b[2];
+        r[7] = a[0] * b[7]
+            + a[1] * b[5]
+            + a[2] * b[6]
+            + a[3] * b[4]
+            + a[4] * b[3]
+            + a[5] * b[1]
+            + a[6] * b[2]
+            + a[7] * b[0];
 
         Ok(make_multivector(r))
     });
@@ -11116,14 +12849,14 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
         let n = extract_vec3(&args[1], "mv_reflect")?;
 
         // Normalize n
-        let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
+        let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
         if len < 1e-10 {
             return Ok(make_vec3(v[0], v[1], v[2]));
         }
-        let (nx, ny, nz) = (n[0]/len, n[1]/len, n[2]/len);
+        let (nx, ny, nz) = (n[0] / len, n[1] / len, n[2] / len);
 
         // v - 2(v·n)n
-        let dot = v[0]*nx + v[1]*ny + v[2]*nz;
+        let dot = v[0] * nx + v[1] * ny + v[2] * nz;
         Ok(make_vec3(
             v[0] - 2.0 * dot * nx,
             v[1] - 2.0 * dot * ny,
@@ -11136,19 +12869,15 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
         let v = extract_vec3(&args[0], "mv_project")?;
         let n = extract_vec3(&args[1], "mv_project")?;
 
-        let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
+        let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
         if len < 1e-10 {
             return Ok(make_vec3(v[0], v[1], v[2]));
         }
-        let (nx, ny, nz) = (n[0]/len, n[1]/len, n[2]/len);
+        let (nx, ny, nz) = (n[0] / len, n[1] / len, n[2] / len);
 
         // v - (v·n)n
-        let dot = v[0]*nx + v[1]*ny + v[2]*nz;
-        Ok(make_vec3(
-            v[0] - dot * nx,
-            v[1] - dot * ny,
-            v[2] - dot * nz,
-        ))
+        let dot = v[0] * nx + v[1] * ny + v[2] * nz;
+        Ok(make_vec3(v[0] - dot * nx, v[1] - dot * ny, v[2] - dot * nz))
     });
 
     // mv_grade(mv, k) - Extract grade-k part of multivector
@@ -11161,8 +12890,12 @@ fn register_geometric_algebra(interp: &mut Interpreter) {
 
         match k {
             0 => Ok(make_multivector([a[0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])),
-            1 => Ok(make_multivector([0.0, a[1], a[2], a[3], 0.0, 0.0, 0.0, 0.0])),
-            2 => Ok(make_multivector([0.0, 0.0, 0.0, 0.0, a[4], a[5], a[6], 0.0])),
+            1 => Ok(make_multivector([
+                0.0, a[1], a[2], a[3], 0.0, 0.0, 0.0, 0.0,
+            ])),
+            2 => Ok(make_multivector([
+                0.0, 0.0, 0.0, 0.0, a[4], a[5], a[6], 0.0,
+            ])),
             3 => Ok(make_multivector([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, a[7]])),
             _ => Ok(make_multivector([0.0; 8])),
         }
@@ -11181,14 +12914,17 @@ fn register_dimensional(interp: &mut Interpreter) {
     fn make_quantity(value: f64, units: [i32; 7]) -> Value {
         let mut q = HashMap::new();
         q.insert("value".to_string(), Value::Float(value));
-        q.insert("m".to_string(), Value::Int(units[0] as i64));   // meters
-        q.insert("kg".to_string(), Value::Int(units[1] as i64));  // kilograms
-        q.insert("s".to_string(), Value::Int(units[2] as i64));   // seconds
-        q.insert("A".to_string(), Value::Int(units[3] as i64));   // amperes
-        q.insert("K".to_string(), Value::Int(units[4] as i64));   // kelvin
+        q.insert("m".to_string(), Value::Int(units[0] as i64)); // meters
+        q.insert("kg".to_string(), Value::Int(units[1] as i64)); // kilograms
+        q.insert("s".to_string(), Value::Int(units[2] as i64)); // seconds
+        q.insert("A".to_string(), Value::Int(units[3] as i64)); // amperes
+        q.insert("K".to_string(), Value::Int(units[4] as i64)); // kelvin
         q.insert("mol".to_string(), Value::Int(units[5] as i64)); // moles
-        q.insert("cd".to_string(), Value::Int(units[6] as i64));  // candela
-        q.insert("_type".to_string(), Value::String(Rc::new("quantity".to_string())));
+        q.insert("cd".to_string(), Value::Int(units[6] as i64)); // candela
+        q.insert(
+            "_type".to_string(),
+            Value::String(Rc::new("quantity".to_string())),
+        );
         Value::Map(Rc::new(RefCell::new(q)))
     }
 
@@ -11207,14 +12943,25 @@ fn register_dimensional(interp: &mut Interpreter) {
                         _ => 0,
                     }
                 };
-                Ok((value, [
-                    get_exp("m"), get_exp("kg"), get_exp("s"),
-                    get_exp("A"), get_exp("K"), get_exp("mol"), get_exp("cd"),
-                ]))
+                Ok((
+                    value,
+                    [
+                        get_exp("m"),
+                        get_exp("kg"),
+                        get_exp("s"),
+                        get_exp("A"),
+                        get_exp("K"),
+                        get_exp("mol"),
+                        get_exp("cd"),
+                    ],
+                ))
             }
             Value::Float(f) => Ok((*f, [0; 7])),
             Value::Int(n) => Ok((*n as f64, [0; 7])),
-            _ => Err(RuntimeError::new(format!("{}: expected quantity or number", fn_name))),
+            _ => Err(RuntimeError::new(format!(
+                "{}: expected quantity or number",
+                fn_name
+            ))),
         }
     }
 
@@ -11228,7 +12975,11 @@ fn register_dimensional(interp: &mut Interpreter) {
                 parts.push(format!("{}^{}", names[i], exp));
             }
         }
-        if parts.is_empty() { "dimensionless".to_string() } else { parts.join("·") }
+        if parts.is_empty() {
+            "dimensionless".to_string()
+        } else {
+            parts.join("·")
+        }
     }
 
     // qty(value, unit_string) - Create quantity with units
@@ -11241,7 +12992,11 @@ fn register_dimensional(interp: &mut Interpreter) {
         };
         let unit_str = match &args[1] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("qty: second argument must be unit string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "qty: second argument must be unit string",
+                ))
+            }
         };
 
         // Parse unit string
@@ -11253,7 +13008,9 @@ fn register_dimensional(interp: &mut Interpreter) {
         // Simple parser for common units
         for part in unit_str.split(|c: char| c == '*' || c == '·' || c == ' ') {
             let part = part.trim();
-            if part.is_empty() { continue; }
+            if part.is_empty() {
+                continue;
+            }
 
             let (base, exp) = if let Some(idx) = part.find('^') {
                 let (b, e) = part.split_at(idx);
@@ -11275,14 +13032,45 @@ fn register_dimensional(interp: &mut Interpreter) {
                 "mol" | "mole" | "moles" => units[5] += exp * sign,
                 "cd" | "candela" => units[6] += exp * sign,
                 // Derived units
-                "N" | "newton" | "newtons" => { units[1] += sign; units[0] += sign; units[2] -= 2 * sign; }
-                "J" | "joule" | "joules" => { units[1] += sign; units[0] += 2 * sign; units[2] -= 2 * sign; }
-                "W" | "watt" | "watts" => { units[1] += sign; units[0] += 2 * sign; units[2] -= 3 * sign; }
-                "Pa" | "pascal" | "pascals" => { units[1] += sign; units[0] -= sign; units[2] -= 2 * sign; }
-                "Hz" | "hertz" => { units[2] -= sign; }
-                "C" | "coulomb" | "coulombs" => { units[3] += sign; units[2] += sign; }
-                "V" | "volt" | "volts" => { units[1] += sign; units[0] += 2 * sign; units[2] -= 3 * sign; units[3] -= sign; }
-                "Ω" | "ohm" | "ohms" => { units[1] += sign; units[0] += 2 * sign; units[2] -= 3 * sign; units[3] -= 2 * sign; }
+                "N" | "newton" | "newtons" => {
+                    units[1] += sign;
+                    units[0] += sign;
+                    units[2] -= 2 * sign;
+                }
+                "J" | "joule" | "joules" => {
+                    units[1] += sign;
+                    units[0] += 2 * sign;
+                    units[2] -= 2 * sign;
+                }
+                "W" | "watt" | "watts" => {
+                    units[1] += sign;
+                    units[0] += 2 * sign;
+                    units[2] -= 3 * sign;
+                }
+                "Pa" | "pascal" | "pascals" => {
+                    units[1] += sign;
+                    units[0] -= sign;
+                    units[2] -= 2 * sign;
+                }
+                "Hz" | "hertz" => {
+                    units[2] -= sign;
+                }
+                "C" | "coulomb" | "coulombs" => {
+                    units[3] += sign;
+                    units[2] += sign;
+                }
+                "V" | "volt" | "volts" => {
+                    units[1] += sign;
+                    units[0] += 2 * sign;
+                    units[2] -= 3 * sign;
+                    units[3] -= sign;
+                }
+                "Ω" | "ohm" | "ohms" => {
+                    units[1] += sign;
+                    units[0] += 2 * sign;
+                    units[2] -= 3 * sign;
+                    units[3] -= 2 * sign;
+                }
                 _ => {}
             }
         }
@@ -11298,7 +13086,8 @@ fn register_dimensional(interp: &mut Interpreter) {
         if units_a != units_b {
             return Err(RuntimeError::new(format!(
                 "qty_add: unit mismatch: {} vs {}",
-                units_to_string(units_a), units_to_string(units_b)
+                units_to_string(units_a),
+                units_to_string(units_b)
             )));
         }
 
@@ -11313,7 +13102,8 @@ fn register_dimensional(interp: &mut Interpreter) {
         if units_a != units_b {
             return Err(RuntimeError::new(format!(
                 "qty_sub: unit mismatch: {} vs {}",
-                units_to_string(units_a), units_to_string(units_b)
+                units_to_string(units_a),
+                units_to_string(units_b)
             )));
         }
 
@@ -11377,7 +13167,8 @@ fn register_dimensional(interp: &mut Interpreter) {
                 let names = ["m", "kg", "s", "A", "K", "mol", "cd"];
                 return Err(RuntimeError::new(format!(
                     "qty_sqrt: cannot take sqrt of {} (odd exponent on {})",
-                    units_to_string(units), names[i]
+                    units_to_string(units),
+                    names[i]
                 )));
             }
         }
@@ -11426,7 +13217,9 @@ fn register_dimensional(interp: &mut Interpreter) {
 
         // Quick dimension check by comparing unit string patterns
         let actual_str = units_to_string(units);
-        Ok(Value::Bool(actual_str.contains(&expected) || expected.contains(&actual_str)))
+        Ok(Value::Bool(
+            actual_str.contains(&expected) || expected.contains(&actual_str),
+        ))
     });
 
     // Common physical constants with units
@@ -11539,10 +13332,19 @@ fn register_ecs(interp: &mut Interpreter) {
     // ecs_world() - Create new ECS world
     define(interp, "ecs_world", Some(0), |_, _| {
         let mut world = HashMap::new();
-        world.insert("_type".to_string(), Value::String(Rc::new("ecs_world".to_string())));
+        world.insert(
+            "_type".to_string(),
+            Value::String(Rc::new("ecs_world".to_string())),
+        );
         world.insert("next_id".to_string(), Value::Int(0));
-        world.insert("entities".to_string(), Value::Map(Rc::new(RefCell::new(HashMap::new()))));
-        world.insert("components".to_string(), Value::Map(Rc::new(RefCell::new(HashMap::new()))));
+        world.insert(
+            "entities".to_string(),
+            Value::Map(Rc::new(RefCell::new(HashMap::new()))),
+        );
+        world.insert(
+            "components".to_string(),
+            Value::Map(Rc::new(RefCell::new(HashMap::new()))),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(world))))
     });
 
@@ -11564,7 +13366,9 @@ fn register_ecs(interp: &mut Interpreter) {
 
         // Add to entities set
         if let Some(Value::Map(entities)) = world_ref.get("entities") {
-            entities.borrow_mut().insert(id.to_string(), Value::Bool(true));
+            entities
+                .borrow_mut()
+                .insert(id.to_string(), Value::Bool(true));
         }
 
         Ok(Value::Int(id))
@@ -11605,32 +13409,38 @@ fn register_ecs(interp: &mut Interpreter) {
     define(interp, "ecs_attach", Some(4), |_, args| {
         let world = match &args[0] {
             Value::Map(m) => m.clone(),
-            _ => return Err(RuntimeError::new(
-                "ecs_attach() expects a world as first argument.\n\
+            _ => {
+                return Err(RuntimeError::new(
+                    "ecs_attach() expects a world as first argument.\n\
                  Usage: ecs_attach(world, entity_id, component_name, data)\n\
                  Example:\n\
                    let world = ecs_world();\n\
                    let e = ecs_spawn(world);\n\
-                   ecs_attach(world, e, \"Position\", vec3(0, 0, 0));"
-            )),
+                   ecs_attach(world, e, \"Position\", vec3(0, 0, 0));",
+                ))
+            }
         };
         let id = match &args[1] {
             Value::Int(n) => *n,
-            _ => return Err(RuntimeError::new(
-                "ecs_attach() expects an entity ID (integer) as second argument.\n\
+            _ => {
+                return Err(RuntimeError::new(
+                    "ecs_attach() expects an entity ID (integer) as second argument.\n\
                  Entity IDs are returned by ecs_spawn().\n\
                  Example:\n\
                    let entity = ecs_spawn(world);  // Returns 0, 1, 2...\n\
-                   ecs_attach(world, entity, \"Health\", 100);"
-            )),
+                   ecs_attach(world, entity, \"Health\", 100);",
+                ))
+            }
         };
         let comp_name = match &args[2] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new(
-                "ecs_attach() expects a string component name as third argument.\n\
+            _ => {
+                return Err(RuntimeError::new(
+                    "ecs_attach() expects a string component name as third argument.\n\
                  Common component names: \"Position\", \"Velocity\", \"Health\", \"Sprite\"\n\
-                 Example: ecs_attach(world, entity, \"Position\", vec3(0, 0, 0));"
-            )),
+                 Example: ecs_attach(world, entity, \"Position\", vec3(0, 0, 0));",
+                ))
+            }
         };
         let data = args[3].clone();
 
@@ -11640,7 +13450,8 @@ fn register_ecs(interp: &mut Interpreter) {
         if let Some(Value::Map(components)) = world_ref.get("components") {
             let mut comps = components.borrow_mut();
 
-            let storage = comps.entry(comp_name.clone())
+            let storage = comps
+                .entry(comp_name.clone())
                 .or_insert_with(|| Value::Map(Rc::new(RefCell::new(HashMap::new()))));
 
             if let Value::Map(storage_map) = storage {
@@ -11739,7 +13550,9 @@ fn register_ecs(interp: &mut Interpreter) {
     // Returns array of entity IDs
     define(interp, "ecs_query", None, |_, args| {
         if args.is_empty() {
-            return Err(RuntimeError::new("ecs_query: expected at least world argument"));
+            return Err(RuntimeError::new(
+                "ecs_query: expected at least world argument",
+            ));
         }
 
         let world = match &args[0] {
@@ -11747,7 +13560,8 @@ fn register_ecs(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("ecs_query: expected world")),
         };
 
-        let comp_names: Vec<String> = args[1..].iter()
+        let comp_names: Vec<String> = args[1..]
+            .iter()
             .filter_map(|a| match a {
                 Value::String(s) => Some(s.to_string()),
                 _ => None,
@@ -11758,7 +13572,9 @@ fn register_ecs(interp: &mut Interpreter) {
             // Return all entities
             let world_ref = world.borrow();
             if let Some(Value::Map(entities)) = world_ref.get("entities") {
-                let result: Vec<Value> = entities.borrow().keys()
+                let result: Vec<Value> = entities
+                    .borrow()
+                    .keys()
                     .filter_map(|k| k.parse::<i64>().ok().map(Value::Int))
                     .collect();
                 return Ok(Value::Array(Rc::new(RefCell::new(result))));
@@ -11778,9 +13594,9 @@ fn register_ecs(interp: &mut Interpreter) {
 
                     result_ids = Some(match result_ids {
                         None => keys,
-                        Some(existing) => existing.into_iter()
-                            .filter(|k| keys.contains(k))
-                            .collect(),
+                        Some(existing) => {
+                            existing.into_iter().filter(|k| keys.contains(k)).collect()
+                        }
                     });
                 } else {
                     // Component type doesn't exist, no entities match
@@ -11789,7 +13605,8 @@ fn register_ecs(interp: &mut Interpreter) {
             }
         }
 
-        let result: Vec<Value> = result_ids.unwrap_or_default()
+        let result: Vec<Value> = result_ids
+            .unwrap_or_default()
             .iter()
             .filter_map(|k| k.parse::<i64>().ok().map(Value::Int))
             .collect();
@@ -11805,17 +13622,27 @@ fn register_ecs(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("ecs_query_with: expected world")),
         };
         let comp_names: Vec<String> = match &args[1] {
-            Value::Array(arr) => arr.borrow().iter()
+            Value::Array(arr) => arr
+                .borrow()
+                .iter()
                 .filter_map(|v| match v {
                     Value::String(s) => Some(s.to_string()),
                     _ => None,
                 })
                 .collect(),
-            _ => return Err(RuntimeError::new("ecs_query_with: expected array of component names")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "ecs_query_with: expected array of component names",
+                ))
+            }
         };
         let callback = match &args[2] {
             Value::Function(f) => f.clone(),
-            _ => return Err(RuntimeError::new("ecs_query_with: expected callback function")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "ecs_query_with: expected callback function",
+                ))
+            }
         };
 
         // Pre-collect all data to avoid borrow issues during callbacks
@@ -11833,9 +13660,9 @@ fn register_ecs(interp: &mut Interpreter) {
                         let keys: Vec<String> = storage.borrow().keys().cloned().collect();
                         result_ids = Some(match result_ids {
                             None => keys,
-                            Some(existing) => existing.into_iter()
-                                .filter(|k| keys.contains(k))
-                                .collect(),
+                            Some(existing) => {
+                                existing.into_iter().filter(|k| keys.contains(k)).collect()
+                            }
                         });
                     } else {
                         result_ids = Some(vec![]);
@@ -11949,7 +13776,8 @@ fn register_polycultural_text(interp: &mut Interpreter) {
                     }
                 }
                 // Find dominant script
-                let dominant = script_counts.into_iter()
+                let dominant = script_counts
+                    .into_iter()
                     .max_by_key(|(_, count)| *count)
                     .map(|(name, _)| name)
                     .unwrap_or_else(|| "Unknown".to_string());
@@ -11960,22 +13788,22 @@ fn register_polycultural_text(interp: &mut Interpreter) {
     });
 
     // scripts - get all scripts present in text
-    define(interp, "scripts", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let mut scripts: Vec<String> = s.chars()
-                    .filter(|c| !c.is_whitespace() && !c.is_ascii_punctuation())
-                    .map(|c| format!("{:?}", c.script()))
-                    .collect();
-                scripts.sort();
-                scripts.dedup();
-                let values: Vec<Value> = scripts.into_iter()
-                    .map(|s| Value::String(Rc::new(s)))
-                    .collect();
-                Ok(Value::Array(Rc::new(RefCell::new(values))))
-            }
-            _ => Err(RuntimeError::new("scripts() requires string")),
+    define(interp, "scripts", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let mut scripts: Vec<String> = s
+                .chars()
+                .filter(|c| !c.is_whitespace() && !c.is_ascii_punctuation())
+                .map(|c| format!("{:?}", c.script()))
+                .collect();
+            scripts.sort();
+            scripts.dedup();
+            let values: Vec<Value> = scripts
+                .into_iter()
+                .map(|s| Value::String(Rc::new(s)))
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(values))))
         }
+        _ => Err(RuntimeError::new("scripts() requires string")),
     });
 
     // is_script - check if text is primarily in a specific script
@@ -11994,142 +13822,132 @@ fn register_polycultural_text(interp: &mut Interpreter) {
                         }
                     }
                 }
-                let ratio = if total > 0 { matching as f64 / total as f64 } else { 0.0 };
+                let ratio = if total > 0 {
+                    matching as f64 / total as f64
+                } else {
+                    0.0
+                };
                 Ok(Value::Bool(ratio > 0.5))
             }
-            _ => Err(RuntimeError::new("is_script() requires string and script name")),
+            _ => Err(RuntimeError::new(
+                "is_script() requires string and script name",
+            )),
         }
     });
 
     // Script-specific detection functions
-    define(interp, "is_latin", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let is_latin = s.chars()
-                    .filter(|c| !c.is_whitespace())
-                    .all(|c| matches!(c.script(), Script::Latin | Script::Common));
-                Ok(Value::Bool(is_latin && !s.is_empty()))
-            }
-            _ => Err(RuntimeError::new("is_latin() requires string")),
+    define(interp, "is_latin", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let is_latin = s
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .all(|c| matches!(c.script(), Script::Latin | Script::Common));
+            Ok(Value::Bool(is_latin && !s.is_empty()))
         }
+        _ => Err(RuntimeError::new("is_latin() requires string")),
     });
 
-    define(interp, "is_cjk", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let has_cjk = s.chars().any(|c| {
-                    matches!(c.script(), Script::Han | Script::Hiragana | Script::Katakana | Script::Hangul | Script::Bopomofo)
-                });
-                Ok(Value::Bool(has_cjk))
-            }
-            _ => Err(RuntimeError::new("is_cjk() requires string")),
+    define(interp, "is_cjk", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let has_cjk = s.chars().any(|c| {
+                matches!(
+                    c.script(),
+                    Script::Han
+                        | Script::Hiragana
+                        | Script::Katakana
+                        | Script::Hangul
+                        | Script::Bopomofo
+                )
+            });
+            Ok(Value::Bool(has_cjk))
         }
+        _ => Err(RuntimeError::new("is_cjk() requires string")),
     });
 
-    define(interp, "is_arabic", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let has_arabic = s.chars().any(|c| matches!(c.script(), Script::Arabic));
-                Ok(Value::Bool(has_arabic))
-            }
-            _ => Err(RuntimeError::new("is_arabic() requires string")),
+    define(interp, "is_arabic", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let has_arabic = s.chars().any(|c| matches!(c.script(), Script::Arabic));
+            Ok(Value::Bool(has_arabic))
         }
+        _ => Err(RuntimeError::new("is_arabic() requires string")),
     });
 
-    define(interp, "is_hebrew", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let has_hebrew = s.chars().any(|c| matches!(c.script(), Script::Hebrew));
-                Ok(Value::Bool(has_hebrew))
-            }
-            _ => Err(RuntimeError::new("is_hebrew() requires string")),
+    define(interp, "is_hebrew", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let has_hebrew = s.chars().any(|c| matches!(c.script(), Script::Hebrew));
+            Ok(Value::Bool(has_hebrew))
         }
+        _ => Err(RuntimeError::new("is_hebrew() requires string")),
     });
 
-    define(interp, "is_cyrillic", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let has_cyrillic = s.chars().any(|c| matches!(c.script(), Script::Cyrillic));
-                Ok(Value::Bool(has_cyrillic))
-            }
-            _ => Err(RuntimeError::new("is_cyrillic() requires string")),
+    define(interp, "is_cyrillic", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let has_cyrillic = s.chars().any(|c| matches!(c.script(), Script::Cyrillic));
+            Ok(Value::Bool(has_cyrillic))
         }
+        _ => Err(RuntimeError::new("is_cyrillic() requires string")),
     });
 
-    define(interp, "is_greek", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let has_greek = s.chars().any(|c| matches!(c.script(), Script::Greek));
-                Ok(Value::Bool(has_greek))
-            }
-            _ => Err(RuntimeError::new("is_greek() requires string")),
+    define(interp, "is_greek", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let has_greek = s.chars().any(|c| matches!(c.script(), Script::Greek));
+            Ok(Value::Bool(has_greek))
         }
+        _ => Err(RuntimeError::new("is_greek() requires string")),
     });
 
-    define(interp, "is_devanagari", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let has_devanagari = s.chars().any(|c| matches!(c.script(), Script::Devanagari));
-                Ok(Value::Bool(has_devanagari))
-            }
-            _ => Err(RuntimeError::new("is_devanagari() requires string")),
+    define(interp, "is_devanagari", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let has_devanagari = s.chars().any(|c| matches!(c.script(), Script::Devanagari));
+            Ok(Value::Bool(has_devanagari))
         }
+        _ => Err(RuntimeError::new("is_devanagari() requires string")),
     });
 
-    define(interp, "is_thai", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let has_thai = s.chars().any(|c| matches!(c.script(), Script::Thai));
-                Ok(Value::Bool(has_thai))
-            }
-            _ => Err(RuntimeError::new("is_thai() requires string")),
+    define(interp, "is_thai", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let has_thai = s.chars().any(|c| matches!(c.script(), Script::Thai));
+            Ok(Value::Bool(has_thai))
         }
+        _ => Err(RuntimeError::new("is_thai() requires string")),
     });
 
-    define(interp, "is_hangul", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let has_hangul = s.chars().any(|c| matches!(c.script(), Script::Hangul));
-                Ok(Value::Bool(has_hangul))
-            }
-            _ => Err(RuntimeError::new("is_hangul() requires string")),
+    define(interp, "is_hangul", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let has_hangul = s.chars().any(|c| matches!(c.script(), Script::Hangul));
+            Ok(Value::Bool(has_hangul))
         }
+        _ => Err(RuntimeError::new("is_hangul() requires string")),
     });
 
-    define(interp, "is_hiragana", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let has_hiragana = s.chars().any(|c| matches!(c.script(), Script::Hiragana));
-                Ok(Value::Bool(has_hiragana))
-            }
-            _ => Err(RuntimeError::new("is_hiragana() requires string")),
+    define(interp, "is_hiragana", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let has_hiragana = s.chars().any(|c| matches!(c.script(), Script::Hiragana));
+            Ok(Value::Bool(has_hiragana))
         }
+        _ => Err(RuntimeError::new("is_hiragana() requires string")),
     });
 
-    define(interp, "is_katakana", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let has_katakana = s.chars().any(|c| matches!(c.script(), Script::Katakana));
-                Ok(Value::Bool(has_katakana))
-            }
-            _ => Err(RuntimeError::new("is_katakana() requires string")),
+    define(interp, "is_katakana", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let has_katakana = s.chars().any(|c| matches!(c.script(), Script::Katakana));
+            Ok(Value::Bool(has_katakana))
         }
+        _ => Err(RuntimeError::new("is_katakana() requires string")),
     });
 
     // char_script - get script of a single character
-    define(interp, "char_script", Some(1), |_, args| {
-        match &args[0] {
-            Value::Char(c) => {
-                let script = format!("{:?}", c.script());
-                Ok(Value::String(Rc::new(script)))
-            }
-            Value::String(s) if s.chars().count() == 1 => {
-                let c = s.chars().next().unwrap();
-                let script = format!("{:?}", c.script());
-                Ok(Value::String(Rc::new(script)))
-            }
-            _ => Err(RuntimeError::new("char_script() requires single character")),
+    define(interp, "char_script", Some(1), |_, args| match &args[0] {
+        Value::Char(c) => {
+            let script = format!("{:?}", c.script());
+            Ok(Value::String(Rc::new(script)))
         }
+        Value::String(s) if s.chars().count() == 1 => {
+            let c = s.chars().next().unwrap();
+            let script = format!("{:?}", c.script());
+            Ok(Value::String(Rc::new(script)))
+        }
+        _ => Err(RuntimeError::new("char_script() requires single character")),
     });
 
     // =========================================================================
@@ -12155,27 +13973,23 @@ fn register_polycultural_text(interp: &mut Interpreter) {
     });
 
     // is_rtl - check if text is right-to-left
-    define(interp, "is_rtl", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let bidi_info = BidiInfo::new(s, None);
-                let has_rtl = bidi_info.paragraphs.iter().any(|p| p.level.is_rtl());
-                Ok(Value::Bool(has_rtl))
-            }
-            _ => Err(RuntimeError::new("is_rtl() requires string")),
+    define(interp, "is_rtl", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let bidi_info = BidiInfo::new(s, None);
+            let has_rtl = bidi_info.paragraphs.iter().any(|p| p.level.is_rtl());
+            Ok(Value::Bool(has_rtl))
         }
+        _ => Err(RuntimeError::new("is_rtl() requires string")),
     });
 
     // is_ltr - check if text is left-to-right
-    define(interp, "is_ltr", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let bidi_info = BidiInfo::new(s, None);
-                let is_ltr = bidi_info.paragraphs.iter().all(|p| !p.level.is_rtl());
-                Ok(Value::Bool(is_ltr))
-            }
-            _ => Err(RuntimeError::new("is_ltr() requires string")),
+    define(interp, "is_ltr", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let bidi_info = BidiInfo::new(s, None);
+            let is_ltr = bidi_info.paragraphs.iter().all(|p| !p.level.is_rtl());
+            Ok(Value::Bool(is_ltr))
         }
+        _ => Err(RuntimeError::new("is_ltr() requires string")),
     });
 
     // is_bidi - check if text contains mixed directions
@@ -12183,8 +13997,15 @@ fn register_polycultural_text(interp: &mut Interpreter) {
         match &args[0] {
             Value::String(s) => {
                 // Check for both RTL and LTR characters
-                let has_rtl = s.chars().any(|c| matches!(c.script(), Script::Arabic | Script::Hebrew | Script::Syriac | Script::Thaana));
-                let has_ltr = s.chars().any(|c| matches!(c.script(), Script::Latin | Script::Greek | Script::Cyrillic));
+                let has_rtl = s.chars().any(|c| {
+                    matches!(
+                        c.script(),
+                        Script::Arabic | Script::Hebrew | Script::Syriac | Script::Thaana
+                    )
+                });
+                let has_ltr = s.chars().any(|c| {
+                    matches!(c.script(), Script::Latin | Script::Greek | Script::Cyrillic)
+                });
                 Ok(Value::Bool(has_rtl && has_ltr))
             }
             _ => Err(RuntimeError::new("is_bidi() requires string")),
@@ -12192,20 +14013,18 @@ fn register_polycultural_text(interp: &mut Interpreter) {
     });
 
     // bidi_reorder - reorder text for visual display
-    define(interp, "bidi_reorder", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let bidi_info = BidiInfo::new(s, None);
-                let mut result = String::new();
-                for para in &bidi_info.paragraphs {
-                    let line = para.range.clone();
-                    let reordered = bidi_info.reorder_line(para, line);
-                    result.push_str(&reordered);
-                }
-                Ok(Value::String(Rc::new(result)))
+    define(interp, "bidi_reorder", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let bidi_info = BidiInfo::new(s, None);
+            let mut result = String::new();
+            for para in &bidi_info.paragraphs {
+                let line = para.range.clone();
+                let reordered = bidi_info.reorder_line(para, line);
+                result.push_str(&reordered);
             }
-            _ => Err(RuntimeError::new("bidi_reorder() requires string")),
+            Ok(Value::String(Rc::new(result)))
         }
+        _ => Err(RuntimeError::new("bidi_reorder() requires string")),
     });
 
     // =========================================================================
@@ -12217,14 +14036,12 @@ fn register_polycultural_text(interp: &mut Interpreter) {
     //
 
     // display_width - get visual width in terminal columns
-    define(interp, "display_width", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let width = UnicodeWidthStr::width(s.as_str());
-                Ok(Value::Int(width as i64))
-            }
-            _ => Err(RuntimeError::new("display_width() requires string")),
+    define(interp, "display_width", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let width = UnicodeWidthStr::width(s.as_str());
+            Ok(Value::Int(width as i64))
         }
+        _ => Err(RuntimeError::new("display_width() requires string")),
     });
 
     // is_fullwidth - check if string contains full-width characters
@@ -12258,11 +14075,17 @@ fn register_polycultural_text(interp: &mut Interpreter) {
                         let right = padding - left;
                         format!("{}{}{}", " ".repeat(left), s, " ".repeat(right))
                     }
-                    _ => return Err(RuntimeError::new("pad_display: align must be 'left', 'right', or 'center'")),
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "pad_display: align must be 'left', 'right', or 'center'",
+                        ))
+                    }
                 };
                 Ok(Value::String(Rc::new(result)))
             }
-            _ => Err(RuntimeError::new("pad_display() requires string, width, and alignment")),
+            _ => Err(RuntimeError::new(
+                "pad_display() requires string, width, and alignment",
+            )),
         }
     });
 
@@ -12275,25 +14098,21 @@ fn register_polycultural_text(interp: &mut Interpreter) {
     //
 
     // transliterate - convert any Unicode text to ASCII
-    define(interp, "transliterate", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let ascii = deunicode(s);
-                Ok(Value::String(Rc::new(ascii)))
-            }
-            _ => Err(RuntimeError::new("transliterate() requires string")),
+    define(interp, "transliterate", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let ascii = deunicode(s);
+            Ok(Value::String(Rc::new(ascii)))
         }
+        _ => Err(RuntimeError::new("transliterate() requires string")),
     });
 
     // to_ascii - alias for transliterate
-    define(interp, "to_ascii", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let ascii = deunicode(s);
-                Ok(Value::String(Rc::new(ascii)))
-            }
-            _ => Err(RuntimeError::new("to_ascii() requires string")),
+    define(interp, "to_ascii", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let ascii = deunicode(s);
+            Ok(Value::String(Rc::new(ascii)))
         }
+        _ => Err(RuntimeError::new("to_ascii() requires string")),
     });
 
     // slugify - create URL-safe slug from any text
@@ -12345,18 +14164,19 @@ fn register_polycultural_text(interp: &mut Interpreter) {
                 // NFD decomposition separates base chars from combining marks
                 let decomposed: String = s.nfd().collect();
                 // Filter out combining marks (category Mn, Mc, Me)
-                let stripped: String = decomposed.chars()
+                let stripped: String = decomposed
+                    .chars()
                     .filter(|c| {
                         // Keep if not a combining mark
                         // Combining marks are in Unicode categories Mn, Mc, Me
                         // which are roughly in ranges U+0300-U+036F (common) and others
                         let code = *c as u32;
                         // Quick check for common combining diacritical marks
-                        !(0x0300..=0x036F).contains(&code) &&
-                        !(0x1AB0..=0x1AFF).contains(&code) &&
-                        !(0x1DC0..=0x1DFF).contains(&code) &&
-                        !(0x20D0..=0x20FF).contains(&code) &&
-                        !(0xFE20..=0xFE2F).contains(&code)
+                        !(0x0300..=0x036F).contains(&code)
+                            && !(0x1AB0..=0x1AFF).contains(&code)
+                            && !(0x1DC0..=0x1DFF).contains(&code)
+                            && !(0x20D0..=0x20FF).contains(&code)
+                            && !(0xFE20..=0xFE2F).contains(&code)
                     })
                     .collect();
                 Ok(Value::String(Rc::new(stripped)))
@@ -12372,11 +14192,11 @@ fn register_polycultural_text(interp: &mut Interpreter) {
                 let decomposed: String = s.nfd().collect();
                 let has_marks = decomposed.chars().any(|c| {
                     let code = c as u32;
-                    (0x0300..=0x036F).contains(&code) ||
-                    (0x1AB0..=0x1AFF).contains(&code) ||
-                    (0x1DC0..=0x1DFF).contains(&code) ||
-                    (0x20D0..=0x20FF).contains(&code) ||
-                    (0xFE20..=0xFE2F).contains(&code)
+                    (0x0300..=0x036F).contains(&code)
+                        || (0x1AB0..=0x1AFF).contains(&code)
+                        || (0x1DC0..=0x1DFF).contains(&code)
+                        || (0x20D0..=0x20FF).contains(&code)
+                        || (0xFE20..=0xFE2F).contains(&code)
                 });
                 Ok(Value::Bool(has_marks))
             }
@@ -12391,11 +14211,17 @@ fn register_polycultural_text(interp: &mut Interpreter) {
                 let result = match form.as_str() {
                     "composed" | "nfc" => s.nfc().collect(),
                     "decomposed" | "nfd" => s.nfd().collect(),
-                    _ => return Err(RuntimeError::new("normalize_accents: form must be 'composed' or 'decomposed'")),
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "normalize_accents: form must be 'composed' or 'decomposed'",
+                        ))
+                    }
                 };
                 Ok(Value::String(Rc::new(result)))
             }
-            _ => Err(RuntimeError::new("normalize_accents() requires string and form")),
+            _ => Err(RuntimeError::new(
+                "normalize_accents() requires string and form",
+            )),
         }
     });
 
@@ -12414,11 +14240,14 @@ fn register_polycultural_text(interp: &mut Interpreter) {
         match (&args[0], &args[1]) {
             (Value::String(s), Value::String(locale_str)) => {
                 let case_mapper = CaseMapper::new();
-                let langid: LanguageIdentifier = locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
+                let langid: LanguageIdentifier =
+                    locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
                 let result = case_mapper.uppercase_to_string(s, &langid);
                 Ok(Value::String(Rc::new(result)))
             }
-            _ => Err(RuntimeError::new("upper_locale() requires string and locale")),
+            _ => Err(RuntimeError::new(
+                "upper_locale() requires string and locale",
+            )),
         }
     });
 
@@ -12427,11 +14256,14 @@ fn register_polycultural_text(interp: &mut Interpreter) {
         match (&args[0], &args[1]) {
             (Value::String(s), Value::String(locale_str)) => {
                 let case_mapper = CaseMapper::new();
-                let langid: LanguageIdentifier = locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
+                let langid: LanguageIdentifier =
+                    locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
                 let result = case_mapper.lowercase_to_string(s, &langid);
                 Ok(Value::String(Rc::new(result)))
             }
-            _ => Err(RuntimeError::new("lower_locale() requires string and locale")),
+            _ => Err(RuntimeError::new(
+                "lower_locale() requires string and locale",
+            )),
         }
     });
 
@@ -12440,25 +14272,27 @@ fn register_polycultural_text(interp: &mut Interpreter) {
         match (&args[0], &args[1]) {
             (Value::String(s), Value::String(locale_str)) => {
                 let case_mapper = CaseMapper::new();
-                let langid: LanguageIdentifier = locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
+                let langid: LanguageIdentifier =
+                    locale_str.parse().unwrap_or_else(|_| "en".parse().unwrap());
                 let options = TitlecaseOptions::default();
-                let result = case_mapper.titlecase_segment_with_only_case_data_to_string(s, &langid, options);
+                let result = case_mapper
+                    .titlecase_segment_with_only_case_data_to_string(s, &langid, options);
                 Ok(Value::String(Rc::new(result)))
             }
-            _ => Err(RuntimeError::new("titlecase_locale() requires string and locale")),
+            _ => Err(RuntimeError::new(
+                "titlecase_locale() requires string and locale",
+            )),
         }
     });
 
     // case_fold - Unicode case folding for comparison
-    define(interp, "case_fold", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let case_mapper = CaseMapper::new();
-                let result = case_mapper.fold_string(s);
-                Ok(Value::String(Rc::new(result)))
-            }
-            _ => Err(RuntimeError::new("case_fold() requires string")),
+    define(interp, "case_fold", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let case_mapper = CaseMapper::new();
+            let result = case_mapper.fold_string(s);
+            Ok(Value::String(Rc::new(result)))
         }
+        _ => Err(RuntimeError::new("case_fold() requires string")),
     });
 
     // case_insensitive_eq - compare strings ignoring case (using case folding)
@@ -12470,7 +14304,9 @@ fn register_polycultural_text(interp: &mut Interpreter) {
                 let folded_b = case_mapper.fold_string(b);
                 Ok(Value::Bool(folded_a == folded_b))
             }
-            _ => Err(RuntimeError::new("case_insensitive_eq() requires two strings")),
+            _ => Err(RuntimeError::new(
+                "case_insensitive_eq() requires two strings",
+            )),
         }
     });
 
@@ -12499,7 +14335,9 @@ fn register_polycultural_text(interp: &mut Interpreter) {
                 };
                 Ok(Value::Int(result))
             }
-            _ => Err(RuntimeError::new("compare_locale() requires two strings and locale")),
+            _ => Err(RuntimeError::new(
+                "compare_locale() requires two strings and locale",
+            )),
         }
     });
 
@@ -12512,7 +14350,9 @@ fn register_polycultural_text(interp: &mut Interpreter) {
                 let collator = Collator::try_new(&locale.into(), options)
                     .unwrap_or_else(|_| Collator::try_new(&Default::default(), options).unwrap());
 
-                let mut items: Vec<(String, Value)> = arr.borrow().iter()
+                let mut items: Vec<(String, Value)> = arr
+                    .borrow()
+                    .iter()
                     .map(|v| {
                         let s = match v {
                             Value::String(s) => (**s).clone(),
@@ -12542,24 +14382,22 @@ fn register_polycultural_text(interp: &mut Interpreter) {
     //
 
     // sentences - split text into sentences (locale-aware)
-    define(interp, "sentences", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let segmenter = SentenceSegmenter::new();
-                let breakpoints: Vec<usize> = segmenter.segment_str(s).collect();
-                let mut sentences = Vec::new();
-                let mut start = 0;
-                for end in breakpoints {
-                    let sentence = s[start..end].trim();
-                    if !sentence.is_empty() {
-                        sentences.push(Value::String(Rc::new(sentence.to_string())));
-                    }
-                    start = end;
+    define(interp, "sentences", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let segmenter = SentenceSegmenter::new();
+            let breakpoints: Vec<usize> = segmenter.segment_str(s).collect();
+            let mut sentences = Vec::new();
+            let mut start = 0;
+            for end in breakpoints {
+                let sentence = s[start..end].trim();
+                if !sentence.is_empty() {
+                    sentences.push(Value::String(Rc::new(sentence.to_string())));
                 }
-                Ok(Value::Array(Rc::new(RefCell::new(sentences))))
+                start = end;
             }
-            _ => Err(RuntimeError::new("sentences() requires string")),
+            Ok(Value::Array(Rc::new(RefCell::new(sentences))))
         }
+        _ => Err(RuntimeError::new("sentences() requires string")),
     });
 
     // sentence_count - count sentences
@@ -12642,7 +14480,7 @@ fn register_polycultural_text(interp: &mut Interpreter) {
                     (0x1FA70..=0x1FAFF).contains(&code) ||  // Symbols and Pictographs Extended-A
                     (0x231A..=0x231B).contains(&code) ||    // Watch, Hourglass
                     (0x23E9..=0x23F3).contains(&code) ||    // Various symbols
-                    (0x23F8..=0x23FA).contains(&code)       // Various symbols
+                    (0x23F8..=0x23FA).contains(&code) // Various symbols
                 });
                 Ok(Value::Bool(has_emoji))
             }
@@ -12651,56 +14489,54 @@ fn register_polycultural_text(interp: &mut Interpreter) {
     });
 
     // extract_emoji - extract all emoji from text
-    define(interp, "extract_emoji", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let emoji: Vec<Value> = s.graphemes(true)
-                    .filter(|g| {
-                        g.chars().any(|c| {
-                            let code = c as u32;
-                            (0x1F600..=0x1F64F).contains(&code) ||
-                            (0x1F300..=0x1F5FF).contains(&code) ||
-                            (0x1F680..=0x1F6FF).contains(&code) ||
-                            (0x1F1E0..=0x1F1FF).contains(&code) ||
-                            (0x2600..=0x26FF).contains(&code) ||
-                            (0x2700..=0x27BF).contains(&code) ||
-                            (0x1F900..=0x1F9FF).contains(&code) ||
-                            (0x1FA00..=0x1FA6F).contains(&code) ||
-                            (0x1FA70..=0x1FAFF).contains(&code)
-                        })
+    define(interp, "extract_emoji", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let emoji: Vec<Value> = s
+                .graphemes(true)
+                .filter(|g| {
+                    g.chars().any(|c| {
+                        let code = c as u32;
+                        (0x1F600..=0x1F64F).contains(&code)
+                            || (0x1F300..=0x1F5FF).contains(&code)
+                            || (0x1F680..=0x1F6FF).contains(&code)
+                            || (0x1F1E0..=0x1F1FF).contains(&code)
+                            || (0x2600..=0x26FF).contains(&code)
+                            || (0x2700..=0x27BF).contains(&code)
+                            || (0x1F900..=0x1F9FF).contains(&code)
+                            || (0x1FA00..=0x1FA6F).contains(&code)
+                            || (0x1FA70..=0x1FAFF).contains(&code)
                     })
-                    .map(|g| Value::String(Rc::new(g.to_string())))
-                    .collect();
-                Ok(Value::Array(Rc::new(RefCell::new(emoji))))
-            }
-            _ => Err(RuntimeError::new("extract_emoji() requires string")),
+                })
+                .map(|g| Value::String(Rc::new(g.to_string())))
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(emoji))))
         }
+        _ => Err(RuntimeError::new("extract_emoji() requires string")),
     });
 
     // strip_emoji - remove emoji from text
-    define(interp, "strip_emoji", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let stripped: String = s.graphemes(true)
-                    .filter(|g| {
-                        !g.chars().any(|c| {
-                            let code = c as u32;
-                            (0x1F600..=0x1F64F).contains(&code) ||
-                            (0x1F300..=0x1F5FF).contains(&code) ||
-                            (0x1F680..=0x1F6FF).contains(&code) ||
-                            (0x1F1E0..=0x1F1FF).contains(&code) ||
-                            (0x2600..=0x26FF).contains(&code) ||
-                            (0x2700..=0x27BF).contains(&code) ||
-                            (0x1F900..=0x1F9FF).contains(&code) ||
-                            (0x1FA00..=0x1FA6F).contains(&code) ||
-                            (0x1FA70..=0x1FAFF).contains(&code)
-                        })
+    define(interp, "strip_emoji", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let stripped: String = s
+                .graphemes(true)
+                .filter(|g| {
+                    !g.chars().any(|c| {
+                        let code = c as u32;
+                        (0x1F600..=0x1F64F).contains(&code)
+                            || (0x1F300..=0x1F5FF).contains(&code)
+                            || (0x1F680..=0x1F6FF).contains(&code)
+                            || (0x1F1E0..=0x1F1FF).contains(&code)
+                            || (0x2600..=0x26FF).contains(&code)
+                            || (0x2700..=0x27BF).contains(&code)
+                            || (0x1F900..=0x1F9FF).contains(&code)
+                            || (0x1FA00..=0x1FA6F).contains(&code)
+                            || (0x1FA70..=0x1FAFF).contains(&code)
                     })
-                    .collect();
-                Ok(Value::String(Rc::new(stripped)))
-            }
-            _ => Err(RuntimeError::new("strip_emoji() requires string")),
+                })
+                .collect();
+            Ok(Value::String(Rc::new(stripped)))
         }
+        _ => Err(RuntimeError::new("strip_emoji() requires string")),
     });
 
     // =========================================================================
@@ -12764,7 +14600,11 @@ fn register_polycultural_text(interp: &mut Interpreter) {
                 // Convert to map of ratios
                 let mut result = HashMap::new();
                 for (script, count) in script_counts {
-                    let ratio = if total > 0 { count as f64 / total as f64 } else { 0.0 };
+                    let ratio = if total > 0 {
+                        count as f64 / total as f64
+                    } else {
+                        0.0
+                    };
                     result.insert(script, Value::Float(ratio));
                 }
 
@@ -12795,12 +14635,12 @@ fn register_polycultural_text(interp: &mut Interpreter) {
     define(interp, "supported_locales", Some(0), |_, _| {
         // Common locales supported by ICU
         let locales = vec![
-            "ar", "bg", "ca", "cs", "da", "de", "el", "en", "es", "et",
-            "fi", "fr", "he", "hi", "hr", "hu", "id", "it", "ja", "ko",
-            "lt", "lv", "ms", "nb", "nl", "pl", "pt", "ro", "ru", "sk",
-            "sl", "sr", "sv", "th", "tr", "uk", "vi", "zh",
+            "ar", "bg", "ca", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "he", "hi",
+            "hr", "hu", "id", "it", "ja", "ko", "lt", "lv", "ms", "nb", "nl", "pl", "pt", "ro",
+            "ru", "sk", "sl", "sr", "sv", "th", "tr", "uk", "vi", "zh",
         ];
-        let values: Vec<Value> = locales.into_iter()
+        let values: Vec<Value> = locales
+            .into_iter()
             .map(|s| Value::String(Rc::new(s.to_string())))
             .collect();
         Ok(Value::Array(Rc::new(RefCell::new(values))))
@@ -12828,15 +14668,20 @@ fn register_text_intelligence(interp: &mut Interpreter) {
     });
 
     // levenshtein_normalized - normalized edit distance (0.0 to 1.0)
-    define(interp, "levenshtein_normalized", Some(2), |_, args| {
-        match (&args[0], &args[1]) {
+    define(
+        interp,
+        "levenshtein_normalized",
+        Some(2),
+        |_, args| match (&args[0], &args[1]) {
             (Value::String(a), Value::String(b)) => {
                 let distance = strsim::normalized_levenshtein(a, b);
                 Ok(Value::Float(distance))
             }
-            _ => Err(RuntimeError::new("levenshtein_normalized() requires two strings")),
-        }
-    });
+            _ => Err(RuntimeError::new(
+                "levenshtein_normalized() requires two strings",
+            )),
+        },
+    );
 
     // jaro - Jaro similarity (0.0 to 1.0)
     define(interp, "jaro", Some(2), |_, args| {
@@ -12878,7 +14723,9 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                 let distance = strsim::damerau_levenshtein(a, b);
                 Ok(Value::Int(distance as i64))
             }
-            _ => Err(RuntimeError::new("damerau_levenshtein() requires two strings")),
+            _ => Err(RuntimeError::new(
+                "damerau_levenshtein() requires two strings",
+            )),
         }
     });
 
@@ -12904,7 +14751,9 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                 let sim = strsim::jaro_winkler(a, b);
                 Ok(Value::Bool(sim >= *threshold as f64))
             }
-            _ => Err(RuntimeError::new("fuzzy_match() requires two strings and threshold")),
+            _ => Err(RuntimeError::new(
+                "fuzzy_match() requires two strings and threshold",
+            )),
         }
     });
 
@@ -12913,7 +14762,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
         match (&args[0], &args[1], &args[2]) {
             (Value::String(query), Value::Array(items), Value::Int(limit)) => {
                 let items_ref = items.borrow();
-                let mut scores: Vec<(f64, &str)> = items_ref.iter()
+                let mut scores: Vec<(f64, &str)> = items_ref
+                    .iter()
                     .filter_map(|v| {
                         if let Value::String(s) = v {
                             Some((strsim::jaro_winkler(query, s), s.as_str()))
@@ -12923,13 +14773,16 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     })
                     .collect();
                 scores.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-                let results: Vec<Value> = scores.into_iter()
+                let results: Vec<Value> = scores
+                    .into_iter()
                     .take(*limit as usize)
                     .map(|(_, s)| Value::String(Rc::new(s.to_string())))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(results))))
             }
-            _ => Err(RuntimeError::new("fuzzy_search() requires query string, array, and limit")),
+            _ => Err(RuntimeError::new(
+                "fuzzy_search() requires query string, array, and limit",
+            )),
         }
     });
 
@@ -12938,14 +14791,12 @@ fn register_text_intelligence(interp: &mut Interpreter) {
     // =========================================================================
 
     // soundex - American Soundex encoding
-    define(interp, "soundex", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let code = compute_soundex(s);
-                Ok(Value::String(Rc::new(code)))
-            }
-            _ => Err(RuntimeError::new("soundex() requires string")),
+    define(interp, "soundex", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let code = compute_soundex(s);
+            Ok(Value::String(Rc::new(code)))
         }
+        _ => Err(RuntimeError::new("soundex() requires string")),
     });
 
     // soundex_match - check if two strings have same Soundex code
@@ -12961,14 +14812,12 @@ fn register_text_intelligence(interp: &mut Interpreter) {
     });
 
     // metaphone - Metaphone encoding (better for English)
-    define(interp, "metaphone", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let code = compute_metaphone(s);
-                Ok(Value::String(Rc::new(code)))
-            }
-            _ => Err(RuntimeError::new("metaphone() requires string")),
+    define(interp, "metaphone", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let code = compute_metaphone(s);
+            Ok(Value::String(Rc::new(code)))
         }
+        _ => Err(RuntimeError::new("metaphone() requires string")),
     });
 
     // metaphone_match - check if two strings have same Metaphone code
@@ -13045,8 +14894,11 @@ fn register_text_intelligence(interp: &mut Interpreter) {
     });
 
     // detect_language_confidence - detect language with confidence score
-    define(interp, "detect_language_confidence", Some(1), |_, args| {
-        match &args[0] {
+    define(
+        interp,
+        "detect_language_confidence",
+        Some(1),
+        |_, args| match &args[0] {
             Value::String(s) => {
                 if let Some(info) = detect(s) {
                     let lang_code = match info.lang() {
@@ -13080,13 +14932,18 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     Ok(Value::Map(Rc::new(RefCell::new(map))))
                 }
             }
-            _ => Err(RuntimeError::new("detect_language_confidence() requires string")),
-        }
-    });
+            _ => Err(RuntimeError::new(
+                "detect_language_confidence() requires string",
+            )),
+        },
+    );
 
     // detect_script - detect the script of text using whatlang
-    define(interp, "detect_script_whatlang", Some(1), |_, args| {
-        match &args[0] {
+    define(
+        interp,
+        "detect_script_whatlang",
+        Some(1),
+        |_, args| match &args[0] {
             Value::String(s) => {
                 if let Some(info) = detect(s) {
                     let script_name = match info.script() {
@@ -13121,9 +14978,11 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     Ok(Value::String(Rc::new("Unknown".to_string())))
                 }
             }
-            _ => Err(RuntimeError::new("detect_script_whatlang() requires string")),
-        }
-    });
+            _ => Err(RuntimeError::new(
+                "detect_script_whatlang() requires string",
+            )),
+        },
+    );
 
     // is_language - check if text is in a specific language
     define(interp, "is_language", Some(2), |_, args| {
@@ -13145,7 +15004,9 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     Ok(Value::Bool(false))
                 }
             }
-            _ => Err(RuntimeError::new("is_language() requires string and language code")),
+            _ => Err(RuntimeError::new(
+                "is_language() requires string and language code",
+            )),
         }
     });
 
@@ -13154,18 +15015,16 @@ fn register_text_intelligence(interp: &mut Interpreter) {
     // =========================================================================
 
     // token_count - count tokens using cl100k_base (GPT-4, Claude compatible)
-    define(interp, "token_count", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                if let Ok(bpe) = cl100k_base() {
-                    let tokens = bpe.encode_with_special_tokens(s);
-                    Ok(Value::Int(tokens.len() as i64))
-                } else {
-                    Err(RuntimeError::new("Failed to initialize tokenizer"))
-                }
+    define(interp, "token_count", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            if let Ok(bpe) = cl100k_base() {
+                let tokens = bpe.encode_with_special_tokens(s);
+                Ok(Value::Int(tokens.len() as i64))
+            } else {
+                Err(RuntimeError::new("Failed to initialize tokenizer"))
             }
-            _ => Err(RuntimeError::new("token_count() requires string")),
         }
+        _ => Err(RuntimeError::new("token_count() requires string")),
     });
 
     // token_count_model - count tokens for specific model
@@ -13185,26 +15044,24 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     Err(RuntimeError::new("Failed to initialize tokenizer"))
                 }
             }
-            _ => Err(RuntimeError::new("token_count_model() requires string and model name")),
+            _ => Err(RuntimeError::new(
+                "token_count_model() requires string and model name",
+            )),
         }
     });
 
     // tokenize_ids - get token IDs as array
-    define(interp, "tokenize_ids", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                if let Ok(bpe) = cl100k_base() {
-                    let tokens = bpe.encode_with_special_tokens(s);
-                    let values: Vec<Value> = tokens.into_iter()
-                        .map(|t| Value::Int(t as i64))
-                        .collect();
-                    Ok(Value::Array(Rc::new(RefCell::new(values))))
-                } else {
-                    Err(RuntimeError::new("Failed to initialize tokenizer"))
-                }
+    define(interp, "tokenize_ids", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            if let Ok(bpe) = cl100k_base() {
+                let tokens = bpe.encode_with_special_tokens(s);
+                let values: Vec<Value> = tokens.into_iter().map(|t| Value::Int(t as i64)).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(values))))
+            } else {
+                Err(RuntimeError::new("Failed to initialize tokenizer"))
             }
-            _ => Err(RuntimeError::new("tokenize_ids() requires string")),
         }
+        _ => Err(RuntimeError::new("tokenize_ids() requires string")),
     });
 
     // truncate_tokens - truncate string to max tokens
@@ -13216,9 +15073,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     if tokens.len() <= *max_tokens as usize {
                         Ok(Value::String(s.clone()))
                     } else {
-                        let truncated: Vec<usize> = tokens.into_iter()
-                            .take(*max_tokens as usize)
-                            .collect();
+                        let truncated: Vec<usize> =
+                            tokens.into_iter().take(*max_tokens as usize).collect();
                         if let Ok(decoded) = bpe.decode(truncated) {
                             Ok(Value::String(Rc::new(decoded)))
                         } else {
@@ -13229,7 +15085,9 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     Err(RuntimeError::new("Failed to initialize tokenizer"))
                 }
             }
-            _ => Err(RuntimeError::new("truncate_tokens() requires string and max tokens")),
+            _ => Err(RuntimeError::new(
+                "truncate_tokens() requires string and max tokens",
+            )),
         }
     });
 
@@ -13252,7 +15110,9 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     Err(RuntimeError::new("Failed to initialize tokenizer"))
                 }
             }
-            _ => Err(RuntimeError::new("estimate_cost() requires string, input cost, output cost")),
+            _ => Err(RuntimeError::new(
+                "estimate_cost() requires string, input cost, output cost",
+            )),
         }
     });
 
@@ -13261,15 +15121,13 @@ fn register_text_intelligence(interp: &mut Interpreter) {
     // =========================================================================
 
     // stem - stem a word using Porter algorithm
-    define(interp, "stem", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let stemmer = Stemmer::create(StemAlgorithm::English);
-                let stemmed = stemmer.stem(s);
-                Ok(Value::String(Rc::new(stemmed.to_string())))
-            }
-            _ => Err(RuntimeError::new("stem() requires string")),
+    define(interp, "stem", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let stemmer = Stemmer::create(StemAlgorithm::English);
+            let stemmed = stemmer.stem(s);
+            Ok(Value::String(Rc::new(stemmed.to_string())))
         }
+        _ => Err(RuntimeError::new("stem() requires string")),
     });
 
     // stem_language - stem a word for specific language
@@ -13299,29 +15157,30 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                 let stemmed = stemmer.stem(s);
                 Ok(Value::String(Rc::new(stemmed.to_string())))
             }
-            _ => Err(RuntimeError::new("stem_language() requires string and language code")),
+            _ => Err(RuntimeError::new(
+                "stem_language() requires string and language code",
+            )),
         }
     });
 
     // stem_all - stem all words in array
-    define(interp, "stem_all", Some(1), |_, args| {
-        match &args[0] {
-            Value::Array(arr) => {
-                let stemmer = Stemmer::create(StemAlgorithm::English);
-                let arr_ref = arr.borrow();
-                let results: Vec<Value> = arr_ref.iter()
-                    .filter_map(|v| {
-                        if let Value::String(s) = v {
-                            Some(Value::String(Rc::new(stemmer.stem(s).to_string())))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                Ok(Value::Array(Rc::new(RefCell::new(results))))
-            }
-            _ => Err(RuntimeError::new("stem_all() requires array of strings")),
+    define(interp, "stem_all", Some(1), |_, args| match &args[0] {
+        Value::Array(arr) => {
+            let stemmer = Stemmer::create(StemAlgorithm::English);
+            let arr_ref = arr.borrow();
+            let results: Vec<Value> = arr_ref
+                .iter()
+                .filter_map(|v| {
+                    if let Value::String(s) = v {
+                        Some(Value::String(Rc::new(stemmer.stem(s).to_string())))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(results))))
         }
+        _ => Err(RuntimeError::new("stem_all() requires array of strings")),
     });
 
     // =========================================================================
@@ -13329,15 +15188,13 @@ fn register_text_intelligence(interp: &mut Interpreter) {
     // =========================================================================
 
     // is_stopword - check if word is a stopword
-    define(interp, "is_stopword", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let word = s.to_lowercase();
-                let stopwords = get_stopwords("en");
-                Ok(Value::Bool(stopwords.contains(&word.as_str())))
-            }
-            _ => Err(RuntimeError::new("is_stopword() requires string")),
+    define(interp, "is_stopword", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let word = s.to_lowercase();
+            let stopwords = get_stopwords("en");
+            Ok(Value::Bool(stopwords.contains(&word.as_str())))
         }
+        _ => Err(RuntimeError::new("is_stopword() requires string")),
     });
 
     // is_stopword_language - check if word is stopword in language
@@ -13348,7 +15205,9 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                 let stopwords = get_stopwords(lang);
                 Ok(Value::Bool(stopwords.contains(&word.as_str())))
             }
-            _ => Err(RuntimeError::new("is_stopword_language() requires string and language")),
+            _ => Err(RuntimeError::new(
+                "is_stopword_language() requires string and language",
+            )),
         }
     });
 
@@ -13358,7 +15217,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
             Value::Array(arr) => {
                 let stopwords = get_stopwords("en");
                 let arr_ref = arr.borrow();
-                let results: Vec<Value> = arr_ref.iter()
+                let results: Vec<Value> = arr_ref
+                    .iter()
                     .filter(|v| {
                         if let Value::String(s) = v {
                             !stopwords.contains(&s.to_lowercase().as_str())
@@ -13370,37 +15230,49 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(results))))
             }
-            _ => Err(RuntimeError::new("remove_stopwords() requires array of strings")),
+            _ => Err(RuntimeError::new(
+                "remove_stopwords() requires array of strings",
+            )),
         }
     });
 
     // remove_stopwords_text - remove stopwords from text string
-    define(interp, "remove_stopwords_text", Some(1), |_, args| {
-        match &args[0] {
+    define(
+        interp,
+        "remove_stopwords_text",
+        Some(1),
+        |_, args| match &args[0] {
             Value::String(s) => {
                 let stopwords = get_stopwords("en");
-                let words: Vec<&str> = s.split_whitespace()
+                let words: Vec<&str> = s
+                    .split_whitespace()
                     .filter(|w| !stopwords.contains(&w.to_lowercase().as_str()))
                     .collect();
                 Ok(Value::String(Rc::new(words.join(" "))))
             }
             _ => Err(RuntimeError::new("remove_stopwords_text() requires string")),
-        }
-    });
+        },
+    );
 
     // get_stopwords_list - get list of stopwords for language
-    define(interp, "get_stopwords_list", Some(1), |_, args| {
-        match &args[0] {
+    define(
+        interp,
+        "get_stopwords_list",
+        Some(1),
+        |_, args| match &args[0] {
             Value::String(lang) => {
                 let stopwords = get_stopwords(lang);
-                let values: Vec<Value> = stopwords.iter()
+                let values: Vec<Value> = stopwords
+                    .iter()
                     .map(|s| Value::String(Rc::new(s.to_string())))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(values))))
             }
-            _ => Err(RuntimeError::new("get_stopwords_list() requires language code")),
-        }
-    });
+            _ => Err(RuntimeError::new(
+                "get_stopwords_list() requires language code",
+            )),
+        },
+    );
 
     // =========================================================================
     // N-GRAMS AND SHINGLES
@@ -13415,7 +15287,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                 if n == 0 || n > words.len() {
                     return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
                 }
-                let ngrams: Vec<Value> = words.windows(n)
+                let ngrams: Vec<Value> = words
+                    .windows(n)
                     .map(|w| Value::String(Rc::new(w.join(" "))))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(ngrams))))
@@ -13433,7 +15306,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                 if n == 0 || n > chars.len() {
                     return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
                 }
-                let ngrams: Vec<Value> = chars.windows(n)
+                let ngrams: Vec<Value> = chars
+                    .windows(n)
                     .map(|w| Value::String(Rc::new(w.iter().collect())))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(ngrams))))
@@ -13452,7 +15326,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
                 }
                 let mut seen = std::collections::HashSet::new();
-                let shingles: Vec<Value> = words.windows(n)
+                let shingles: Vec<Value> = words
+                    .windows(n)
                     .filter_map(|w| {
                         let s = w.join(" ");
                         if seen.insert(s.clone()) {
@@ -13474,7 +15349,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
             (Value::Array(a), Value::Array(b)) => {
                 let a_ref = a.borrow();
                 let b_ref = b.borrow();
-                let set_a: std::collections::HashSet<String> = a_ref.iter()
+                let set_a: std::collections::HashSet<String> = a_ref
+                    .iter()
                     .filter_map(|v| {
                         if let Value::String(s) = v {
                             Some(s.to_string())
@@ -13483,7 +15359,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                         }
                     })
                     .collect();
-                let set_b: std::collections::HashSet<String> = b_ref.iter()
+                let set_b: std::collections::HashSet<String> = b_ref
+                    .iter()
                     .filter_map(|v| {
                         if let Value::String(s) = v {
                             Some(s.to_string())
@@ -13500,7 +15377,9 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     Ok(Value::Float(intersection as f64 / union as f64))
                 }
             }
-            _ => Err(RuntimeError::new("jaccard_similarity() requires two arrays")),
+            _ => Err(RuntimeError::new(
+                "jaccard_similarity() requires two arrays",
+            )),
         }
     });
 
@@ -13509,7 +15388,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
         match (&args[0], &args[1]) {
             (Value::Array(arr), Value::Int(num_hashes)) => {
                 let arr_ref = arr.borrow();
-                let items: std::collections::HashSet<String> = arr_ref.iter()
+                let items: std::collections::HashSet<String> = arr_ref
+                    .iter()
                     .filter_map(|v| {
                         if let Value::String(s) = v {
                             Some(s.to_string())
@@ -13533,7 +15413,9 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(signature))))
             }
-            _ => Err(RuntimeError::new("minhash_signature() requires array and num_hashes")),
+            _ => Err(RuntimeError::new(
+                "minhash_signature() requires array and num_hashes",
+            )),
         }
     });
 
@@ -13548,7 +15430,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                 // Lowercase
                 let lower = s.to_lowercase();
                 // Remove punctuation (keep letters, numbers, spaces)
-                let clean: String = lower.chars()
+                let clean: String = lower
+                    .chars()
                     .filter(|c| c.is_alphanumeric() || c.is_whitespace())
                     .collect();
                 // Normalize whitespace
@@ -13563,7 +15446,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
     define(interp, "tokenize_words", Some(1), |_, args| {
         match &args[0] {
             Value::String(s) => {
-                let words: Vec<Value> = s.split_whitespace()
+                let words: Vec<Value> = s
+                    .split_whitespace()
                     .map(|w| Value::String(Rc::new(w.to_string())))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(words))))
@@ -13577,7 +15461,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
         match &args[0] {
             Value::String(s) => {
                 let stopwords = get_stopwords("en");
-                let words: Vec<Value> = s.split_whitespace()
+                let words: Vec<Value> = s
+                    .split_whitespace()
                     .filter(|w| {
                         let lower = w.to_lowercase();
                         !stopwords.contains(&lower.as_str()) && lower.len() > 2
@@ -13599,9 +15484,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     let lower = word.to_lowercase();
                     *freq.entry(lower).or_insert(0) += 1;
                 }
-                let map: HashMap<String, Value> = freq.into_iter()
-                    .map(|(k, v)| (k, Value::Int(v)))
-                    .collect();
+                let map: HashMap<String, Value> =
+                    freq.into_iter().map(|(k, v)| (k, Value::Int(v))).collect();
                 Ok(Value::Map(Rc::new(RefCell::new(map))))
             }
             _ => Err(RuntimeError::new("word_frequency() requires string")),
@@ -13617,24 +15501,47 @@ fn register_text_intelligence(interp: &mut Interpreter) {
         match &args[0] {
             Value::String(s) => {
                 let positive = vec![
-                    "good", "great", "excellent", "amazing", "wonderful", "fantastic",
-                    "love", "happy", "joy", "beautiful", "awesome", "perfect",
-                    "best", "brilliant", "delightful", "pleasant", "positive",
+                    "good",
+                    "great",
+                    "excellent",
+                    "amazing",
+                    "wonderful",
+                    "fantastic",
+                    "love",
+                    "happy",
+                    "joy",
+                    "beautiful",
+                    "awesome",
+                    "perfect",
+                    "best",
+                    "brilliant",
+                    "delightful",
+                    "pleasant",
+                    "positive",
                 ];
                 let negative = vec![
-                    "bad", "terrible", "awful", "horrible", "hate", "sad",
-                    "angry", "worst", "poor", "negative", "disappointing",
-                    "ugly", "disgusting", "painful", "miserable", "annoying",
+                    "bad",
+                    "terrible",
+                    "awful",
+                    "horrible",
+                    "hate",
+                    "sad",
+                    "angry",
+                    "worst",
+                    "poor",
+                    "negative",
+                    "disappointing",
+                    "ugly",
+                    "disgusting",
+                    "painful",
+                    "miserable",
+                    "annoying",
                 ];
 
                 let lower = s.to_lowercase();
                 let words: Vec<&str> = lower.split_whitespace().collect();
-                let pos_count: i64 = words.iter()
-                    .filter(|w| positive.contains(w))
-                    .count() as i64;
-                let neg_count: i64 = words.iter()
-                    .filter(|w| negative.contains(w))
-                    .count() as i64;
+                let pos_count: i64 = words.iter().filter(|w| positive.contains(w)).count() as i64;
+                let neg_count: i64 = words.iter().filter(|w| negative.contains(w)).count() as i64;
 
                 let mut map = HashMap::new();
                 map.insert("positive".to_string(), Value::Int(pos_count));
@@ -13655,25 +15562,23 @@ fn register_text_intelligence(interp: &mut Interpreter) {
     });
 
     // has_question - detect if text contains a question
-    define(interp, "has_question", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let has_q_mark = s.contains('?');
-                let lower = s.to_lowercase();
-                let question_words = ["what", "where", "when", "why", "how", "who", "which", "whose", "whom"];
-                let starts_with_q = question_words.iter().any(|w| lower.starts_with(w));
-                Ok(Value::Bool(has_q_mark || starts_with_q))
-            }
-            _ => Err(RuntimeError::new("has_question() requires string")),
+    define(interp, "has_question", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let has_q_mark = s.contains('?');
+            let lower = s.to_lowercase();
+            let question_words = [
+                "what", "where", "when", "why", "how", "who", "which", "whose", "whom",
+            ];
+            let starts_with_q = question_words.iter().any(|w| lower.starts_with(w));
+            Ok(Value::Bool(has_q_mark || starts_with_q))
         }
+        _ => Err(RuntimeError::new("has_question() requires string")),
     });
 
     // has_exclamation - detect if text has strong emotion markers
     define(interp, "has_exclamation", Some(1), |_, args| {
         match &args[0] {
-            Value::String(s) => {
-                Ok(Value::Bool(s.contains('!')))
-            }
+            Value::String(s) => Ok(Value::Bool(s.contains('!'))),
             _ => Err(RuntimeError::new("has_exclamation() requires string")),
         }
     });
@@ -13684,23 +15589,29 @@ fn register_text_intelligence(interp: &mut Interpreter) {
             Value::String(s) => {
                 let lower = s.to_lowercase();
                 let informal_markers = vec![
-                    "gonna", "wanna", "gotta", "kinda", "sorta", "dunno",
-                    "yeah", "yep", "nope", "ok", "lol", "omg", "btw",
-                    "u", "ur", "r", "y", "2", "4",
+                    "gonna", "wanna", "gotta", "kinda", "sorta", "dunno", "yeah", "yep", "nope",
+                    "ok", "lol", "omg", "btw", "u", "ur", "r", "y", "2", "4",
                 ];
                 let formal_markers = vec![
-                    "therefore", "furthermore", "moreover", "consequently",
-                    "nevertheless", "however", "whereas", "hereby",
-                    "respectfully", "sincerely", "accordingly",
+                    "therefore",
+                    "furthermore",
+                    "moreover",
+                    "consequently",
+                    "nevertheless",
+                    "however",
+                    "whereas",
+                    "hereby",
+                    "respectfully",
+                    "sincerely",
+                    "accordingly",
                 ];
 
                 let words: Vec<&str> = lower.split_whitespace().collect();
-                let informal_count = words.iter()
+                let informal_count = words
+                    .iter()
                     .filter(|w| informal_markers.contains(w))
                     .count();
-                let formal_count = words.iter()
-                    .filter(|w| formal_markers.contains(w))
-                    .count();
+                let formal_count = words.iter().filter(|w| formal_markers.contains(w)).count();
 
                 let score = if informal_count + formal_count > 0 {
                     formal_count as f64 / (informal_count + formal_count) as f64
@@ -13739,7 +15650,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
         match &args[0] {
             Value::String(s) => {
                 let emotions = compute_emotions(s);
-                let map: HashMap<String, Value> = emotions.into_iter()
+                let map: HashMap<String, Value> = emotions
+                    .into_iter()
                     .map(|(k, v)| (k, Value::Float(v)))
                     .collect();
                 Ok(Value::Map(Rc::new(RefCell::new(map))))
@@ -13771,10 +15683,15 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                 let mut map = HashMap::new();
                 map.insert("score".to_string(), Value::Float(result.0));
                 map.insert("confidence".to_string(), Value::Float(result.1));
-                let markers: Vec<Value> = result.2.into_iter()
+                let markers: Vec<Value> = result
+                    .2
+                    .into_iter()
                     .map(|m| Value::String(Rc::new(m)))
                     .collect();
-                map.insert("markers".to_string(), Value::Array(Rc::new(RefCell::new(markers))));
+                map.insert(
+                    "markers".to_string(),
+                    Value::Array(Rc::new(RefCell::new(markers))),
+                );
                 Ok(Value::Map(Rc::new(RefCell::new(map))))
             }
             _ => Err(RuntimeError::new("detect_sarcasm() requires string")),
@@ -13782,25 +15699,21 @@ fn register_text_intelligence(interp: &mut Interpreter) {
     });
 
     // is_sarcastic - simple boolean sarcasm check
-    define(interp, "is_sarcastic", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let result = compute_sarcasm_score(s);
-                Ok(Value::Bool(result.0 > 0.5))
-            }
-            _ => Err(RuntimeError::new("is_sarcastic() requires string")),
+    define(interp, "is_sarcastic", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let result = compute_sarcasm_score(s);
+            Ok(Value::Bool(result.0 > 0.5))
         }
+        _ => Err(RuntimeError::new("is_sarcastic() requires string")),
     });
 
     // detect_irony - detect verbal irony patterns
-    define(interp, "detect_irony", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let score = compute_irony_score(s);
-                Ok(Value::Float(score))
-            }
-            _ => Err(RuntimeError::new("detect_irony() requires string")),
+    define(interp, "detect_irony", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let score = compute_irony_score(s);
+            Ok(Value::Float(score))
         }
+        _ => Err(RuntimeError::new("detect_irony() requires string")),
     });
 
     // =========================================================================
@@ -13812,7 +15725,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
         match &args[0] {
             Value::String(s) => {
                 let re = Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap();
-                let emails: Vec<Value> = re.find_iter(s)
+                let emails: Vec<Value> = re
+                    .find_iter(s)
                     .map(|m| Value::String(Rc::new(m.as_str().to_string())))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(emails))))
@@ -13822,32 +15736,37 @@ fn register_text_intelligence(interp: &mut Interpreter) {
     });
 
     // extract_urls - extract URLs
-    define(interp, "extract_urls", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let re = Regex::new(r"https?://[^\s<>\[\]{}|\\^]+").unwrap();
-                let urls: Vec<Value> = re.find_iter(s)
-                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
-                    .collect();
-                Ok(Value::Array(Rc::new(RefCell::new(urls))))
-            }
-            _ => Err(RuntimeError::new("extract_urls() requires string")),
+    define(interp, "extract_urls", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let re = Regex::new(r"https?://[^\s<>\[\]{}|\\^]+").unwrap();
+            let urls: Vec<Value> = re
+                .find_iter(s)
+                .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(urls))))
         }
+        _ => Err(RuntimeError::new("extract_urls() requires string")),
     });
 
     // extract_phone_numbers - extract phone numbers
-    define(interp, "extract_phone_numbers", Some(1), |_, args| {
-        match &args[0] {
+    define(
+        interp,
+        "extract_phone_numbers",
+        Some(1),
+        |_, args| match &args[0] {
             Value::String(s) => {
-                let re = Regex::new(r"(?:\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}").unwrap();
-                let phones: Vec<Value> = re.find_iter(s)
+                let re =
+                    Regex::new(r"(?:\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}")
+                        .unwrap();
+                let phones: Vec<Value> = re
+                    .find_iter(s)
                     .map(|m| Value::String(Rc::new(m.as_str().to_string())))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(phones))))
             }
             _ => Err(RuntimeError::new("extract_phone_numbers() requires string")),
-        }
-    });
+        },
+    );
 
     // extract_dates - extract date patterns
     define(interp, "extract_dates", Some(1), |_, args| {
@@ -13855,9 +15774,9 @@ fn register_text_intelligence(interp: &mut Interpreter) {
             Value::String(s) => {
                 // Various date formats
                 let patterns = vec![
-                    r"\d{4}-\d{2}-\d{2}",                    // 2024-01-15
-                    r"\d{2}/\d{2}/\d{4}",                    // 01/15/2024
-                    r"\d{2}-\d{2}-\d{4}",                    // 01-15-2024
+                    r"\d{4}-\d{2}-\d{2}", // 2024-01-15
+                    r"\d{2}/\d{2}/\d{4}", // 01/15/2024
+                    r"\d{2}-\d{2}-\d{4}", // 01-15-2024
                     r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}",
                     r"\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}",
                 ];
@@ -13876,17 +15795,16 @@ fn register_text_intelligence(interp: &mut Interpreter) {
     });
 
     // extract_money - extract monetary values
-    define(interp, "extract_money", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(s) => {
-                let re = Regex::new(r"[$€£¥]\s*\d+(?:,\d{3})*(?:\.\d{2})?|\d+(?:,\d{3})*(?:\.\d{2})?\s*(?:dollars?|euros?|pounds?|USD|EUR|GBP)").unwrap();
-                let money: Vec<Value> = re.find_iter(s)
-                    .map(|m| Value::String(Rc::new(m.as_str().to_string())))
-                    .collect();
-                Ok(Value::Array(Rc::new(RefCell::new(money))))
-            }
-            _ => Err(RuntimeError::new("extract_money() requires string")),
+    define(interp, "extract_money", Some(1), |_, args| match &args[0] {
+        Value::String(s) => {
+            let re = Regex::new(r"[$€£¥]\s*\d+(?:,\d{3})*(?:\.\d{2})?|\d+(?:,\d{3})*(?:\.\d{2})?\s*(?:dollars?|euros?|pounds?|USD|EUR|GBP)").unwrap();
+            let money: Vec<Value> = re
+                .find_iter(s)
+                .map(|m| Value::String(Rc::new(m.as_str().to_string())))
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(money))))
         }
+        _ => Err(RuntimeError::new("extract_money() requires string")),
     });
 
     // extract_hashtags - extract hashtags
@@ -13894,7 +15812,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
         match &args[0] {
             Value::String(s) => {
                 let re = Regex::new(r"#\w+").unwrap();
-                let tags: Vec<Value> = re.find_iter(s)
+                let tags: Vec<Value> = re
+                    .find_iter(s)
                     .map(|m| Value::String(Rc::new(m.as_str().to_string())))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(tags))))
@@ -13908,7 +15827,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
         match &args[0] {
             Value::String(s) => {
                 let re = Regex::new(r"@\w+").unwrap();
-                let mentions: Vec<Value> = re.find_iter(s)
+                let mentions: Vec<Value> = re
+                    .find_iter(s)
                     .map(|m| Value::String(Rc::new(m.as_str().to_string())))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(mentions))))
@@ -13922,7 +15842,8 @@ fn register_text_intelligence(interp: &mut Interpreter) {
         match &args[0] {
             Value::String(s) => {
                 let re = Regex::new(r"-?\d+(?:,\d{3})*(?:\.\d+)?").unwrap();
-                let numbers: Vec<Value> = re.find_iter(s)
+                let numbers: Vec<Value> = re
+                    .find_iter(s)
                     .filter_map(|m| {
                         let num_str = m.as_str().replace(",", "");
                         if let Ok(n) = num_str.parse::<f64>() {
@@ -13949,13 +15870,16 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     if let Some(m) = cap.get(1) {
                         let entity = m.as_str().to_string();
                         // Filter out common sentence starters
-                        let starters = ["The", "A", "An", "This", "That", "It", "I", "We", "They", "He", "She"];
+                        let starters = [
+                            "The", "A", "An", "This", "That", "It", "I", "We", "They", "He", "She",
+                        ];
                         if !starters.contains(&entity.as_str()) {
                             entities.insert(entity);
                         }
                     }
                 }
-                let results: Vec<Value> = entities.into_iter()
+                let results: Vec<Value> = entities
+                    .into_iter()
                     .map(|e| Value::String(Rc::new(e)))
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(results))))
@@ -13993,7 +15917,9 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                 let values: Vec<Value> = vector.into_iter().map(Value::Float).collect();
                 Ok(Value::Array(Rc::new(RefCell::new(values))))
             }
-            _ => Err(RuntimeError::new("text_hash_vector() requires string and dimensions")),
+            _ => Err(RuntimeError::new(
+                "text_hash_vector() requires string and dimensions",
+            )),
         }
     });
 
@@ -14087,7 +16013,9 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     Ok(Value::Float(dot / denom))
                 }
             }
-            _ => Err(RuntimeError::new("text_similarity_embedding() requires two strings")),
+            _ => Err(RuntimeError::new(
+                "text_similarity_embedding() requires two strings",
+            )),
         }
     });
 
@@ -14096,8 +16024,11 @@ fn register_text_intelligence(interp: &mut Interpreter) {
     // =========================================================================
 
     // flesch_reading_ease - Flesch Reading Ease score
-    define(interp, "flesch_reading_ease", Some(1), |_, args| {
-        match &args[0] {
+    define(
+        interp,
+        "flesch_reading_ease",
+        Some(1),
+        |_, args| match &args[0] {
             Value::String(s) => {
                 let (words, sentences, syllables) = count_text_stats(s);
                 if words == 0 || sentences == 0 {
@@ -14109,12 +16040,15 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                 Ok(Value::Float(score.max(0.0).min(100.0)))
             }
             _ => Err(RuntimeError::new("flesch_reading_ease() requires string")),
-        }
-    });
+        },
+    );
 
     // flesch_kincaid_grade - Flesch-Kincaid Grade Level
-    define(interp, "flesch_kincaid_grade", Some(1), |_, args| {
-        match &args[0] {
+    define(
+        interp,
+        "flesch_kincaid_grade",
+        Some(1),
+        |_, args| match &args[0] {
             Value::String(s) => {
                 let (words, sentences, syllables) = count_text_stats(s);
                 if words == 0 || sentences == 0 {
@@ -14126,16 +16060,22 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                 Ok(Value::Float(grade.max(0.0)))
             }
             _ => Err(RuntimeError::new("flesch_kincaid_grade() requires string")),
-        }
-    });
+        },
+    );
 
     // automated_readability_index - ARI score
-    define(interp, "automated_readability_index", Some(1), |_, args| {
-        match &args[0] {
+    define(
+        interp,
+        "automated_readability_index",
+        Some(1),
+        |_, args| match &args[0] {
             Value::String(s) => {
                 let chars: usize = s.chars().filter(|c| c.is_alphanumeric()).count();
                 let words: usize = s.split_whitespace().count();
-                let sentences: usize = s.matches(|c| c == '.' || c == '!' || c == '?').count().max(1);
+                let sentences: usize = s
+                    .matches(|c| c == '.' || c == '!' || c == '?')
+                    .count()
+                    .max(1);
 
                 if words == 0 {
                     return Ok(Value::Float(0.0));
@@ -14146,9 +16086,11 @@ fn register_text_intelligence(interp: &mut Interpreter) {
                     - 21.43;
                 Ok(Value::Float(ari.max(0.0)))
             }
-            _ => Err(RuntimeError::new("automated_readability_index() requires string")),
-        }
-    });
+            _ => Err(RuntimeError::new(
+                "automated_readability_index() requires string",
+            )),
+        },
+    );
 
     // reading_time - estimated reading time in minutes
     define(interp, "reading_time", Some(1), |_, args| {
@@ -14183,28 +16125,78 @@ fn register_text_intelligence(interp: &mut Interpreter) {
 fn compute_vader_sentiment(s: &str) -> (f64, f64, f64, f64) {
     // Sentiment lexicon with intensity
     let positive_words: Vec<(&str, f64)> = vec![
-        ("love", 3.0), ("loved", 3.0), ("loving", 3.0),
-        ("excellent", 3.0), ("amazing", 3.0), ("fantastic", 3.0), ("wonderful", 3.0),
-        ("great", 2.5), ("awesome", 2.5), ("brilliant", 2.5), ("superb", 2.5),
-        ("good", 2.0), ("nice", 2.0), ("pleasant", 2.0), ("happy", 2.0),
-        ("like", 1.5), ("enjoy", 1.5), ("fine", 1.5), ("okay", 1.0),
-        ("best", 3.0), ("perfect", 3.0), ("beautiful", 2.5), ("delightful", 2.5),
-        ("excited", 2.5), ("thrilled", 3.0), ("glad", 2.0), ("pleased", 2.0),
+        ("love", 3.0),
+        ("loved", 3.0),
+        ("loving", 3.0),
+        ("excellent", 3.0),
+        ("amazing", 3.0),
+        ("fantastic", 3.0),
+        ("wonderful", 3.0),
+        ("great", 2.5),
+        ("awesome", 2.5),
+        ("brilliant", 2.5),
+        ("superb", 2.5),
+        ("good", 2.0),
+        ("nice", 2.0),
+        ("pleasant", 2.0),
+        ("happy", 2.0),
+        ("like", 1.5),
+        ("enjoy", 1.5),
+        ("fine", 1.5),
+        ("okay", 1.0),
+        ("best", 3.0),
+        ("perfect", 3.0),
+        ("beautiful", 2.5),
+        ("delightful", 2.5),
+        ("excited", 2.5),
+        ("thrilled", 3.0),
+        ("glad", 2.0),
+        ("pleased", 2.0),
     ];
 
     let negative_words: Vec<(&str, f64)> = vec![
-        ("hate", 3.0), ("hated", 3.0), ("hating", 3.0),
-        ("terrible", 3.0), ("horrible", 3.0), ("awful", 3.0), ("disgusting", 3.0),
-        ("bad", 2.5), ("poor", 2.5), ("worst", 3.0), ("pathetic", 2.5),
-        ("sad", 2.0), ("angry", 2.5), ("upset", 2.0), ("disappointed", 2.0),
-        ("dislike", 1.5), ("annoying", 2.0), ("boring", 1.5), ("mediocre", 1.0),
-        ("ugly", 2.5), ("stupid", 2.5), ("dumb", 2.0), ("useless", 2.5),
-        ("painful", 2.5), ("miserable", 3.0), ("depressing", 2.5), ("frustrating", 2.0),
+        ("hate", 3.0),
+        ("hated", 3.0),
+        ("hating", 3.0),
+        ("terrible", 3.0),
+        ("horrible", 3.0),
+        ("awful", 3.0),
+        ("disgusting", 3.0),
+        ("bad", 2.5),
+        ("poor", 2.5),
+        ("worst", 3.0),
+        ("pathetic", 2.5),
+        ("sad", 2.0),
+        ("angry", 2.5),
+        ("upset", 2.0),
+        ("disappointed", 2.0),
+        ("dislike", 1.5),
+        ("annoying", 2.0),
+        ("boring", 1.5),
+        ("mediocre", 1.0),
+        ("ugly", 2.5),
+        ("stupid", 2.5),
+        ("dumb", 2.0),
+        ("useless", 2.5),
+        ("painful", 2.5),
+        ("miserable", 3.0),
+        ("depressing", 2.5),
+        ("frustrating", 2.0),
     ];
 
     // Intensity modifiers
-    let boosters = vec!["very", "really", "extremely", "absolutely", "incredibly", "totally", "so"];
-    let dampeners = vec!["somewhat", "slightly", "a bit", "kind of", "sort of", "barely"];
+    let boosters = vec![
+        "very",
+        "really",
+        "extremely",
+        "absolutely",
+        "incredibly",
+        "totally",
+        "so",
+    ];
+    let dampeners = vec![
+        "somewhat", "slightly", "a bit", "kind of", "sort of", "barely",
+    ];
 
     let lower = s.to_lowercase();
     let words: Vec<&str> = lower.split_whitespace().collect();
@@ -14218,16 +16210,29 @@ fn compute_vader_sentiment(s: &str) -> (f64, f64, f64, f64) {
 
         // Check for boosters/dampeners before this word
         if i > 0 {
-            if boosters.contains(&words[i-1]) {
+            if boosters.contains(&words[i - 1]) {
                 modifier = 1.5;
-            } else if dampeners.iter().any(|d| words[i-1].contains(d)) {
+            } else if dampeners.iter().any(|d| words[i - 1].contains(d)) {
                 modifier = 0.5;
             }
         }
 
         // Check for negation
-        let negated = i > 0 && ["not", "no", "never", "neither", "don't", "doesn't", "didn't", "won't", "wouldn't", "couldn't", "shouldn't"]
-            .contains(&words[i-1]);
+        let negated = i > 0
+            && [
+                "not",
+                "no",
+                "never",
+                "neither",
+                "don't",
+                "doesn't",
+                "didn't",
+                "won't",
+                "wouldn't",
+                "couldn't",
+                "shouldn't",
+            ]
+            .contains(&words[i - 1]);
 
         if let Some((_, score)) = positive_words.iter().find(|(w, _)| w == word) {
             if negated {
@@ -14258,7 +16263,9 @@ fn compute_vader_sentiment(s: &str) -> (f64, f64, f64, f64) {
 
     // Compound score: normalized to [-1, 1]
     let compound = if word_count > 0 {
-        ((pos_score - neg_score) / (word_count as f64 * 3.0)).max(-1.0).min(1.0)
+        ((pos_score - neg_score) / (word_count as f64 * 3.0))
+            .max(-1.0)
+            .min(1.0)
     } else {
         0.0
     };
@@ -14270,29 +16277,69 @@ fn compute_vader_sentiment(s: &str) -> (f64, f64, f64, f64) {
 fn compute_emotions(s: &str) -> HashMap<String, f64> {
     let emotion_words: Vec<(&str, &str)> = vec![
         // Joy
-        ("happy", "joy"), ("joyful", "joy"), ("delighted", "joy"), ("cheerful", "joy"),
-        ("excited", "joy"), ("thrilled", "joy"), ("ecstatic", "joy"), ("elated", "joy"),
+        ("happy", "joy"),
+        ("joyful", "joy"),
+        ("delighted", "joy"),
+        ("cheerful", "joy"),
+        ("excited", "joy"),
+        ("thrilled", "joy"),
+        ("ecstatic", "joy"),
+        ("elated", "joy"),
         // Sadness
-        ("sad", "sadness"), ("unhappy", "sadness"), ("depressed", "sadness"), ("miserable", "sadness"),
-        ("gloomy", "sadness"), ("heartbroken", "sadness"), ("sorrowful", "sadness"), ("melancholy", "sadness"),
+        ("sad", "sadness"),
+        ("unhappy", "sadness"),
+        ("depressed", "sadness"),
+        ("miserable", "sadness"),
+        ("gloomy", "sadness"),
+        ("heartbroken", "sadness"),
+        ("sorrowful", "sadness"),
+        ("melancholy", "sadness"),
         // Anger
-        ("angry", "anger"), ("furious", "anger"), ("enraged", "anger"), ("irritated", "anger"),
-        ("annoyed", "anger"), ("outraged", "anger"), ("livid", "anger"), ("mad", "anger"),
+        ("angry", "anger"),
+        ("furious", "anger"),
+        ("enraged", "anger"),
+        ("irritated", "anger"),
+        ("annoyed", "anger"),
+        ("outraged", "anger"),
+        ("livid", "anger"),
+        ("mad", "anger"),
         // Fear
-        ("afraid", "fear"), ("scared", "fear"), ("terrified", "fear"), ("frightened", "fear"),
-        ("anxious", "fear"), ("worried", "fear"), ("nervous", "fear"), ("panicked", "fear"),
+        ("afraid", "fear"),
+        ("scared", "fear"),
+        ("terrified", "fear"),
+        ("frightened", "fear"),
+        ("anxious", "fear"),
+        ("worried", "fear"),
+        ("nervous", "fear"),
+        ("panicked", "fear"),
         // Surprise
-        ("surprised", "surprise"), ("amazed", "surprise"), ("astonished", "surprise"), ("shocked", "surprise"),
-        ("stunned", "surprise"), ("startled", "surprise"), ("bewildered", "surprise"),
+        ("surprised", "surprise"),
+        ("amazed", "surprise"),
+        ("astonished", "surprise"),
+        ("shocked", "surprise"),
+        ("stunned", "surprise"),
+        ("startled", "surprise"),
+        ("bewildered", "surprise"),
         // Disgust
-        ("disgusted", "disgust"), ("revolted", "disgust"), ("repulsed", "disgust"), ("sickened", "disgust"),
-        ("nauseated", "disgust"), ("appalled", "disgust"),
+        ("disgusted", "disgust"),
+        ("revolted", "disgust"),
+        ("repulsed", "disgust"),
+        ("sickened", "disgust"),
+        ("nauseated", "disgust"),
+        ("appalled", "disgust"),
         // Trust
-        ("trust", "trust"), ("confident", "trust"), ("secure", "trust"), ("reliable", "trust"),
-        ("faithful", "trust"), ("loyal", "trust"),
+        ("trust", "trust"),
+        ("confident", "trust"),
+        ("secure", "trust"),
+        ("reliable", "trust"),
+        ("faithful", "trust"),
+        ("loyal", "trust"),
         // Anticipation
-        ("eager", "anticipation"), ("hopeful", "anticipation"), ("expectant", "anticipation"),
-        ("looking forward", "anticipation"), ("excited", "anticipation"),
+        ("eager", "anticipation"),
+        ("hopeful", "anticipation"),
+        ("expectant", "anticipation"),
+        ("looking forward", "anticipation"),
+        ("excited", "anticipation"),
     ];
 
     let lower = s.to_lowercase();
@@ -14318,9 +16365,18 @@ fn compute_emotions(s: &str) -> HashMap<String, f64> {
 /// Compute text intensity
 fn compute_intensity(s: &str) -> f64 {
     let intensifiers = vec![
-        ("very", 1.5), ("really", 1.5), ("extremely", 2.0), ("incredibly", 2.0),
-        ("absolutely", 2.0), ("totally", 1.5), ("completely", 1.5), ("utterly", 2.0),
-        ("so", 1.3), ("such", 1.3), ("quite", 1.2), ("rather", 1.1),
+        ("very", 1.5),
+        ("really", 1.5),
+        ("extremely", 2.0),
+        ("incredibly", 2.0),
+        ("absolutely", 2.0),
+        ("totally", 1.5),
+        ("completely", 1.5),
+        ("utterly", 2.0),
+        ("so", 1.3),
+        ("such", 1.3),
+        ("quite", 1.2),
+        ("rather", 1.1),
     ];
 
     let exclamation_boost = 0.5;
@@ -14340,7 +16396,8 @@ fn compute_intensity(s: &str) -> f64 {
     score += exclamations as f64 * exclamation_boost;
 
     // Check for ALL CAPS words
-    let caps_words = s.split_whitespace()
+    let caps_words = s
+        .split_whitespace()
         .filter(|w| w.len() > 2 && w.chars().all(|c| c.is_uppercase()))
         .count();
     score += caps_words as f64 * caps_boost;
@@ -14357,9 +16414,21 @@ fn compute_sarcasm_score(s: &str) -> (f64, f64, Vec<String>) {
 
     // Explicit sarcasm markers
     let explicit = vec![
-        "/s", "not!", "yeah right", "sure thing", "oh really", "oh great",
-        "wow, just wow", "thanks a lot", "how wonderful", "isn't that special",
-        "clearly", "obviously", "shocking", "no way", "what a surprise",
+        "/s",
+        "not!",
+        "yeah right",
+        "sure thing",
+        "oh really",
+        "oh great",
+        "wow, just wow",
+        "thanks a lot",
+        "how wonderful",
+        "isn't that special",
+        "clearly",
+        "obviously",
+        "shocking",
+        "no way",
+        "what a surprise",
     ];
 
     for marker in &explicit {
@@ -14371,8 +16440,14 @@ fn compute_sarcasm_score(s: &str) -> (f64, f64, Vec<String>) {
 
     // Hyperbolic expressions
     let hyperbolic = vec![
-        "best thing ever", "worst thing ever", "literally dying", "absolutely perfect",
-        "world's greatest", "totally awesome", "so much fun", "couldn't be happier",
+        "best thing ever",
+        "worst thing ever",
+        "literally dying",
+        "absolutely perfect",
+        "world's greatest",
+        "totally awesome",
+        "so much fun",
+        "couldn't be happier",
     ];
 
     for h in &hyperbolic {
@@ -14384,9 +16459,11 @@ fn compute_sarcasm_score(s: &str) -> (f64, f64, Vec<String>) {
 
     // Positive-negative contradiction patterns
     let has_positive = ["great", "wonderful", "amazing", "love", "best", "awesome"]
-        .iter().any(|w| lower.contains(w));
+        .iter()
+        .any(|w| lower.contains(w));
     let has_negative_context = ["but", "however", "although", "except", "unfortunately"]
-        .iter().any(|w| lower.contains(w));
+        .iter()
+        .any(|w| lower.contains(w));
 
     if has_positive && has_negative_context {
         markers.push("positive-negative contrast".to_string());
@@ -14398,7 +16475,17 @@ fn compute_sarcasm_score(s: &str) -> (f64, f64, Vec<String>) {
     for cap in quote_pattern.captures_iter(s) {
         if let Some(m) = cap.get(1) {
             let word = m.as_str().to_lowercase();
-            if ["great", "wonderful", "helpful", "useful", "smart", "genius", "brilliant"].contains(&word.as_str()) {
+            if [
+                "great",
+                "wonderful",
+                "helpful",
+                "useful",
+                "smart",
+                "genius",
+                "brilliant",
+            ]
+            .contains(&word.as_str())
+            {
                 markers.push(format!("air quotes: \"{}\"", word));
                 score += 0.35;
             }
@@ -14428,9 +16515,17 @@ fn compute_irony_score(s: &str) -> f64 {
 
     // Situational irony markers
     let irony_phrases = vec![
-        "of course", "as expected", "naturally", "predictably",
-        "who would have thought", "surprise surprise", "go figure",
-        "typical", "as usual", "yet again", "once again",
+        "of course",
+        "as expected",
+        "naturally",
+        "predictably",
+        "who would have thought",
+        "surprise surprise",
+        "go figure",
+        "typical",
+        "as usual",
+        "yet again",
+        "once again",
     ];
 
     for phrase in irony_phrases {
@@ -14445,9 +16540,14 @@ fn compute_irony_score(s: &str) -> f64 {
     }
 
     // Rhetorical questions
-    if s.contains('?') && (lower.starts_with("isn't") || lower.starts_with("aren't") ||
-                           lower.starts_with("doesn't") || lower.starts_with("don't") ||
-                           lower.contains("right?") || lower.contains("isn't it")) {
+    if s.contains('?')
+        && (lower.starts_with("isn't")
+            || lower.starts_with("aren't")
+            || lower.starts_with("doesn't")
+            || lower.starts_with("don't")
+            || lower.contains("right?")
+            || lower.contains("isn't it"))
+    {
         score += 0.25;
     }
 
@@ -14479,7 +16579,10 @@ fn create_hash_vector(s: &str, dims: usize) -> Vec<f64> {
 fn count_text_stats(s: &str) -> (usize, usize, usize) {
     let words: Vec<&str> = s.split_whitespace().collect();
     let word_count = words.len();
-    let sentence_count = s.matches(|c| c == '.' || c == '!' || c == '?').count().max(1);
+    let sentence_count = s
+        .matches(|c| c == '.' || c == '!' || c == '?')
+        .count()
+        .max(1);
 
     let mut syllable_count = 0;
     for word in &words {
@@ -14588,7 +16691,11 @@ fn compute_metaphone(s: &str) -> String {
 
         let code = match c {
             'A' | 'E' | 'I' | 'O' | 'U' => {
-                if i == 0 { Some(c) } else { None }
+                if i == 0 {
+                    Some(c)
+                } else {
+                    None
+                }
             }
             'B' => {
                 if prev != Some('M') || i == chars.len() - 1 {
@@ -14607,7 +16714,9 @@ fn compute_metaphone(s: &str) -> String {
                 }
             }
             'D' => {
-                if next == Some('G') && matches!(chars.get(i + 2), Some('E') | Some('I') | Some('Y')) {
+                if next == Some('G')
+                    && matches!(chars.get(i + 2), Some('E') | Some('I') | Some('Y'))
+                {
                     Some('J')
                 } else {
                     Some('T')
@@ -14615,7 +16724,12 @@ fn compute_metaphone(s: &str) -> String {
             }
             'F' => Some('F'),
             'G' => {
-                if next == Some('H') && !matches!(chars.get(i + 2), Some('A') | Some('E') | Some('I') | Some('O') | Some('U')) {
+                if next == Some('H')
+                    && !matches!(
+                        chars.get(i + 2),
+                        Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                    )
+                {
                     None
                 } else if matches!(next, Some('N') | Some('E') | Some('I') | Some('Y')) {
                     Some('J')
@@ -14624,23 +16738,47 @@ fn compute_metaphone(s: &str) -> String {
                 }
             }
             'H' => {
-                if matches!(prev, Some('A') | Some('E') | Some('I') | Some('O') | Some('U')) {
+                if matches!(
+                    prev,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                ) {
                     None
-                } else if matches!(next, Some('A') | Some('E') | Some('I') | Some('O') | Some('U')) {
+                } else if matches!(
+                    next,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                ) {
                     Some('H')
                 } else {
                     None
                 }
             }
             'J' => Some('J'),
-            'K' => if prev != Some('C') { Some('K') } else { None },
+            'K' => {
+                if prev != Some('C') {
+                    Some('K')
+                } else {
+                    None
+                }
+            }
             'L' => Some('L'),
             'M' => Some('M'),
             'N' => Some('N'),
-            'P' => if next == Some('H') { Some('F') } else { Some('P') },
+            'P' => {
+                if next == Some('H') {
+                    Some('F')
+                } else {
+                    Some('P')
+                }
+            }
             'Q' => Some('K'),
             'R' => Some('R'),
-            'S' => if next == Some('H') { Some('X') } else { Some('S') },
+            'S' => {
+                if next == Some('H') {
+                    Some('X')
+                } else {
+                    Some('S')
+                }
+            }
             'T' => {
                 if next == Some('H') {
                     Some('0') // TH sound
@@ -14652,7 +16790,10 @@ fn compute_metaphone(s: &str) -> String {
             }
             'V' => Some('F'),
             'W' | 'Y' => {
-                if matches!(next, Some('A') | Some('E') | Some('I') | Some('O') | Some('U')) {
+                if matches!(
+                    next,
+                    Some('A') | Some('E') | Some('I') | Some('O') | Some('U')
+                ) {
                     Some(c)
                 } else {
                     None
@@ -14710,14 +16851,34 @@ fn compute_cologne(s: &str) -> String {
             'G' | 'K' | 'Q' => '4',
             'C' => {
                 if i == 0 {
-                    if matches!(next, Some('A') | Some('H') | Some('K') | Some('L') | Some('O') | Some('Q') | Some('R') | Some('U') | Some('X')) {
+                    if matches!(
+                        next,
+                        Some('A')
+                            | Some('H')
+                            | Some('K')
+                            | Some('L')
+                            | Some('O')
+                            | Some('Q')
+                            | Some('R')
+                            | Some('U')
+                            | Some('X')
+                    ) {
                         '4'
                     } else {
                         '8'
                     }
                 } else if matches!(prev, Some('S') | Some('Z')) {
                     '8'
-                } else if matches!(next, Some('A') | Some('H') | Some('K') | Some('O') | Some('Q') | Some('U') | Some('X')) {
+                } else if matches!(
+                    next,
+                    Some('A')
+                        | Some('H')
+                        | Some('K')
+                        | Some('O')
+                        | Some('Q')
+                        | Some('U')
+                        | Some('X')
+                ) {
                     '4'
                 } else {
                     '8'
@@ -14764,135 +16925,450 @@ fn compute_cologne(s: &str) -> String {
 fn get_stopwords(lang: &str) -> Vec<&'static str> {
     match lang {
         "en" | "english" => vec![
-            "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
-            "of", "with", "by", "from", "as", "is", "was", "are", "were", "been",
-            "be", "have", "has", "had", "do", "does", "did", "will", "would",
-            "could", "should", "may", "might", "must", "shall", "can", "need",
-            "it", "its", "this", "that", "these", "those", "i", "you", "he",
-            "she", "we", "they", "me", "him", "her", "us", "them", "my", "your",
-            "his", "her", "our", "their", "what", "which", "who", "whom", "whose",
-            "when", "where", "why", "how", "all", "each", "every", "both", "few",
-            "more", "most", "other", "some", "such", "no", "nor", "not", "only",
-            "own", "same", "so", "than", "too", "very", "just", "also", "now",
+            "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with",
+            "by", "from", "as", "is", "was", "are", "were", "been", "be", "have", "has", "had",
+            "do", "does", "did", "will", "would", "could", "should", "may", "might", "must",
+            "shall", "can", "need", "it", "its", "this", "that", "these", "those", "i", "you",
+            "he", "she", "we", "they", "me", "him", "her", "us", "them", "my", "your", "his",
+            "her", "our", "their", "what", "which", "who", "whom", "whose", "when", "where", "why",
+            "how", "all", "each", "every", "both", "few", "more", "most", "other", "some", "such",
+            "no", "nor", "not", "only", "own", "same", "so", "than", "too", "very", "just", "also",
+            "now",
         ],
         "de" | "german" => vec![
-            "der", "die", "das", "den", "dem", "des", "ein", "eine", "einer",
-            "einem", "einen", "und", "oder", "aber", "in", "auf", "an", "zu",
-            "für", "von", "mit", "bei", "als", "ist", "war", "sind", "waren",
-            "sein", "haben", "hat", "hatte", "werden", "wird", "wurde", "kann",
-            "können", "muss", "müssen", "soll", "sollen", "will", "wollen",
-            "es", "sie", "er", "wir", "ihr", "ich", "du", "man", "sich",
-            "nicht", "auch", "nur", "noch", "schon", "mehr", "sehr", "so",
+            "der", "die", "das", "den", "dem", "des", "ein", "eine", "einer", "einem", "einen",
+            "und", "oder", "aber", "in", "auf", "an", "zu", "für", "von", "mit", "bei", "als",
+            "ist", "war", "sind", "waren", "sein", "haben", "hat", "hatte", "werden", "wird",
+            "wurde", "kann", "können", "muss", "müssen", "soll", "sollen", "will", "wollen", "es",
+            "sie", "er", "wir", "ihr", "ich", "du", "man", "sich", "nicht", "auch", "nur", "noch",
+            "schon", "mehr", "sehr", "so",
         ],
         "fr" | "french" => vec![
-            "le", "la", "les", "un", "une", "des", "et", "ou", "mais", "dans",
-            "sur", "à", "de", "pour", "par", "avec", "ce", "cette", "ces",
-            "est", "sont", "était", "être", "avoir", "a", "ont", "avait",
-            "je", "tu", "il", "elle", "nous", "vous", "ils", "elles", "on",
+            "le", "la", "les", "un", "une", "des", "et", "ou", "mais", "dans", "sur", "à", "de",
+            "pour", "par", "avec", "ce", "cette", "ces", "est", "sont", "était", "être", "avoir",
+            "a", "ont", "avait", "je", "tu", "il", "elle", "nous", "vous", "ils", "elles", "on",
             "ne", "pas", "plus", "moins", "très", "aussi", "que", "qui",
         ],
         "es" | "spanish" => vec![
-            "el", "la", "los", "las", "un", "una", "unos", "unas", "y", "o",
-            "pero", "en", "de", "a", "para", "por", "con", "es", "son", "era",
-            "ser", "estar", "tiene", "tienen", "yo", "tú", "él", "ella",
-            "nosotros", "ustedes", "ellos", "ellas", "no", "sí", "muy", "más",
+            "el", "la", "los", "las", "un", "una", "unos", "unas", "y", "o", "pero", "en", "de",
+            "a", "para", "por", "con", "es", "son", "era", "ser", "estar", "tiene", "tienen", "yo",
+            "tú", "él", "ella", "nosotros", "ustedes", "ellos", "ellas", "no", "sí", "muy", "más",
             "menos", "también", "que", "quien", "cual", "como", "cuando",
         ],
         "it" | "italian" => vec![
-            "il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "e", "o",
-            "ma", "in", "di", "a", "da", "per", "con", "su", "tra", "fra",
-            "è", "sono", "era", "erano", "essere", "avere", "ha", "hanno",
-            "io", "tu", "lui", "lei", "noi", "voi", "loro", "mi", "ti", "ci",
-            "non", "più", "molto", "anche", "come", "che", "chi", "quale",
-            "questo", "quello", "quando", "dove", "perché", "se", "però",
+            "il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "e", "o", "ma", "in", "di",
+            "a", "da", "per", "con", "su", "tra", "fra", "è", "sono", "era", "erano", "essere",
+            "avere", "ha", "hanno", "io", "tu", "lui", "lei", "noi", "voi", "loro", "mi", "ti",
+            "ci", "non", "più", "molto", "anche", "come", "che", "chi", "quale", "questo",
+            "quello", "quando", "dove", "perché", "se", "però",
         ],
         "pt" | "portuguese" => vec![
-            "o", "a", "os", "as", "um", "uma", "uns", "umas", "e", "ou",
-            "mas", "em", "de", "para", "por", "com", "sem", "sob", "sobre",
-            "é", "são", "era", "eram", "ser", "estar", "ter", "tem", "têm",
-            "eu", "tu", "ele", "ela", "nós", "vós", "eles", "elas", "me", "te",
-            "não", "mais", "muito", "também", "como", "que", "quem", "qual",
-            "este", "esse", "aquele", "quando", "onde", "porque", "se", "já",
+            "o", "a", "os", "as", "um", "uma", "uns", "umas", "e", "ou", "mas", "em", "de", "para",
+            "por", "com", "sem", "sob", "sobre", "é", "são", "era", "eram", "ser", "estar", "ter",
+            "tem", "têm", "eu", "tu", "ele", "ela", "nós", "vós", "eles", "elas", "me", "te",
+            "não", "mais", "muito", "também", "como", "que", "quem", "qual", "este", "esse",
+            "aquele", "quando", "onde", "porque", "se", "já",
         ],
         "nl" | "dutch" => vec![
-            "de", "het", "een", "en", "of", "maar", "in", "op", "aan", "van",
-            "voor", "met", "bij", "naar", "om", "te", "tot", "uit", "over",
-            "is", "zijn", "was", "waren", "worden", "wordt", "werd", "hebben",
-            "ik", "je", "jij", "hij", "zij", "wij", "jullie", "ze", "mij", "jou",
-            "niet", "geen", "meer", "ook", "als", "dat", "die", "wat", "wie",
-            "dit", "deze", "wanneer", "waar", "waarom", "hoe", "dan", "nog",
+            "de", "het", "een", "en", "of", "maar", "in", "op", "aan", "van", "voor", "met", "bij",
+            "naar", "om", "te", "tot", "uit", "over", "is", "zijn", "was", "waren", "worden",
+            "wordt", "werd", "hebben", "ik", "je", "jij", "hij", "zij", "wij", "jullie", "ze",
+            "mij", "jou", "niet", "geen", "meer", "ook", "als", "dat", "die", "wat", "wie", "dit",
+            "deze", "wanneer", "waar", "waarom", "hoe", "dan", "nog",
         ],
         "ru" | "russian" => vec![
-            "и", "в", "на", "с", "к", "по", "за", "из", "у", "о", "от", "до",
-            "для", "при", "без", "под", "над", "между", "через", "после",
-            "это", "то", "что", "как", "так", "но", "а", "или", "если", "же",
-            "я", "ты", "он", "она", "мы", "вы", "они", "его", "её", "их",
-            "не", "ни", "да", "нет", "был", "была", "были", "быть", "есть",
-            "все", "всё", "весь", "этот", "тот", "который", "когда", "где",
+            "и",
+            "в",
+            "на",
+            "с",
+            "к",
+            "по",
+            "за",
+            "из",
+            "у",
+            "о",
+            "от",
+            "до",
+            "для",
+            "при",
+            "без",
+            "под",
+            "над",
+            "между",
+            "через",
+            "после",
+            "это",
+            "то",
+            "что",
+            "как",
+            "так",
+            "но",
+            "а",
+            "или",
+            "если",
+            "же",
+            "я",
+            "ты",
+            "он",
+            "она",
+            "мы",
+            "вы",
+            "они",
+            "его",
+            "её",
+            "их",
+            "не",
+            "ни",
+            "да",
+            "нет",
+            "был",
+            "была",
+            "были",
+            "быть",
+            "есть",
+            "все",
+            "всё",
+            "весь",
+            "этот",
+            "тот",
+            "который",
+            "когда",
+            "где",
         ],
         "ar" | "arabic" => vec![
-            "في", "من", "إلى", "على", "عن", "مع", "هذا", "هذه", "ذلك", "تلك",
-            "التي", "الذي", "اللذان", "اللتان", "الذين", "اللاتي", "اللواتي",
-            "هو", "هي", "هم", "هن", "أنا", "أنت", "نحن", "أنتم", "أنتن",
-            "كان", "كانت", "كانوا", "يكون", "تكون", "ليس", "ليست", "ليسوا",
-            "و", "أو", "ثم", "لكن", "بل", "إن", "أن", "لأن", "كي", "حتى",
-            "ما", "لا", "قد", "كل", "بعض", "غير", "أي", "كيف", "متى", "أين",
+            "في",
+            "من",
+            "إلى",
+            "على",
+            "عن",
+            "مع",
+            "هذا",
+            "هذه",
+            "ذلك",
+            "تلك",
+            "التي",
+            "الذي",
+            "اللذان",
+            "اللتان",
+            "الذين",
+            "اللاتي",
+            "اللواتي",
+            "هو",
+            "هي",
+            "هم",
+            "هن",
+            "أنا",
+            "أنت",
+            "نحن",
+            "أنتم",
+            "أنتن",
+            "كان",
+            "كانت",
+            "كانوا",
+            "يكون",
+            "تكون",
+            "ليس",
+            "ليست",
+            "ليسوا",
+            "و",
+            "أو",
+            "ثم",
+            "لكن",
+            "بل",
+            "إن",
+            "أن",
+            "لأن",
+            "كي",
+            "حتى",
+            "ما",
+            "لا",
+            "قد",
+            "كل",
+            "بعض",
+            "غير",
+            "أي",
+            "كيف",
+            "متى",
+            "أين",
         ],
         "zh" | "chinese" => vec![
-            "的", "了", "是", "在", "有", "和", "与", "或", "但", "而",
-            "我", "你", "他", "她", "它", "我们", "你们", "他们", "她们",
-            "这", "那", "这个", "那个", "这些", "那些", "什么", "哪", "哪个",
-            "不", "没", "没有", "很", "也", "都", "就", "才", "只", "还",
-            "把", "被", "给", "从", "到", "为", "以", "因为", "所以", "如果",
-            "会", "能", "可以", "要", "想", "应该", "必须", "可能", "一", "个",
+            "的", "了", "是", "在", "有", "和", "与", "或", "但", "而", "我", "你", "他", "她",
+            "它", "我们", "你们", "他们", "她们", "这", "那", "这个", "那个", "这些", "那些",
+            "什么", "哪", "哪个", "不", "没", "没有", "很", "也", "都", "就", "才", "只", "还",
+            "把", "被", "给", "从", "到", "为", "以", "因为", "所以", "如果", "会", "能", "可以",
+            "要", "想", "应该", "必须", "可能", "一", "个",
         ],
         "ja" | "japanese" => vec![
-            "の", "に", "は", "を", "た", "が", "で", "て", "と", "し",
-            "れ", "さ", "ある", "いる", "も", "する", "から", "な", "こと",
-            "として", "い", "や", "など", "なっ", "ない", "この", "ため",
-            "その", "あっ", "よう", "また", "もの", "という", "あり", "まで",
-            "られ", "なる", "へ", "か", "だ", "これ", "によって", "により",
-            "おり", "より", "による", "ず", "なり", "られる", "において",
+            "の",
+            "に",
+            "は",
+            "を",
+            "た",
+            "が",
+            "で",
+            "て",
+            "と",
+            "し",
+            "れ",
+            "さ",
+            "ある",
+            "いる",
+            "も",
+            "する",
+            "から",
+            "な",
+            "こと",
+            "として",
+            "い",
+            "や",
+            "など",
+            "なっ",
+            "ない",
+            "この",
+            "ため",
+            "その",
+            "あっ",
+            "よう",
+            "また",
+            "もの",
+            "という",
+            "あり",
+            "まで",
+            "られ",
+            "なる",
+            "へ",
+            "か",
+            "だ",
+            "これ",
+            "によって",
+            "により",
+            "おり",
+            "より",
+            "による",
+            "ず",
+            "なり",
+            "られる",
+            "において",
         ],
         "ko" | "korean" => vec![
-            "이", "그", "저", "것", "수", "등", "들", "및", "에", "의",
-            "가", "을", "를", "은", "는", "로", "으로", "와", "과", "도",
-            "에서", "까지", "부터", "만", "뿐", "처럼", "같이", "보다",
-            "하다", "있다", "되다", "없다", "않다", "이다", "아니다",
-            "나", "너", "우리", "그들", "이것", "그것", "저것", "무엇",
-            "어디", "언제", "왜", "어떻게", "누구", "어느", "모든", "각",
+            "이",
+            "그",
+            "저",
+            "것",
+            "수",
+            "등",
+            "들",
+            "및",
+            "에",
+            "의",
+            "가",
+            "을",
+            "를",
+            "은",
+            "는",
+            "로",
+            "으로",
+            "와",
+            "과",
+            "도",
+            "에서",
+            "까지",
+            "부터",
+            "만",
+            "뿐",
+            "처럼",
+            "같이",
+            "보다",
+            "하다",
+            "있다",
+            "되다",
+            "없다",
+            "않다",
+            "이다",
+            "아니다",
+            "나",
+            "너",
+            "우리",
+            "그들",
+            "이것",
+            "그것",
+            "저것",
+            "무엇",
+            "어디",
+            "언제",
+            "왜",
+            "어떻게",
+            "누구",
+            "어느",
+            "모든",
+            "각",
         ],
         "hi" | "hindi" => vec![
-            "का", "के", "की", "में", "है", "हैं", "को", "से", "पर", "था",
-            "थे", "थी", "और", "या", "लेकिन", "अगर", "तो", "भी", "ही",
-            "यह", "वह", "इस", "उस", "ये", "वे", "जो", "कि", "क्या", "कैसे",
-            "मैं", "तुम", "आप", "हम", "वे", "उन्हें", "उनके", "अपने",
-            "नहीं", "न", "कुछ", "कोई", "सब", "बहुत", "कम", "ज्यादा",
-            "होना", "करना", "जाना", "आना", "देना", "लेना", "रहना", "सकना",
+            "का",
+            "के",
+            "की",
+            "में",
+            "है",
+            "हैं",
+            "को",
+            "से",
+            "पर",
+            "था",
+            "थे",
+            "थी",
+            "और",
+            "या",
+            "लेकिन",
+            "अगर",
+            "तो",
+            "भी",
+            "ही",
+            "यह",
+            "वह",
+            "इस",
+            "उस",
+            "ये",
+            "वे",
+            "जो",
+            "कि",
+            "क्या",
+            "कैसे",
+            "मैं",
+            "तुम",
+            "आप",
+            "हम",
+            "वे",
+            "उन्हें",
+            "उनके",
+            "अपने",
+            "नहीं",
+            "न",
+            "कुछ",
+            "कोई",
+            "सब",
+            "बहुत",
+            "कम",
+            "ज्यादा",
+            "होना",
+            "करना",
+            "जाना",
+            "आना",
+            "देना",
+            "लेना",
+            "रहना",
+            "सकना",
         ],
         "tr" | "turkish" => vec![
-            "bir", "ve", "bu", "da", "de", "için", "ile", "mi", "ne", "o",
-            "var", "ben", "sen", "biz", "siz", "onlar", "ki", "ama", "çok",
-            "daha", "gibi", "kadar", "sonra", "şey", "kendi", "bütün", "her",
-            "bazı", "olan", "olarak", "değil", "ya", "hem", "veya", "ancak",
-            "ise", "göre", "rağmen", "dolayı", "üzere", "karşı", "arasında",
-            "olan", "oldu", "olur", "olmak", "etmek", "yapmak", "demek",
+            "bir",
+            "ve",
+            "bu",
+            "da",
+            "de",
+            "için",
+            "ile",
+            "mi",
+            "ne",
+            "o",
+            "var",
+            "ben",
+            "sen",
+            "biz",
+            "siz",
+            "onlar",
+            "ki",
+            "ama",
+            "çok",
+            "daha",
+            "gibi",
+            "kadar",
+            "sonra",
+            "şey",
+            "kendi",
+            "bütün",
+            "her",
+            "bazı",
+            "olan",
+            "olarak",
+            "değil",
+            "ya",
+            "hem",
+            "veya",
+            "ancak",
+            "ise",
+            "göre",
+            "rağmen",
+            "dolayı",
+            "üzere",
+            "karşı",
+            "arasında",
+            "olan",
+            "oldu",
+            "olur",
+            "olmak",
+            "etmek",
+            "yapmak",
+            "demek",
         ],
         "pl" | "polish" => vec![
-            "i", "w", "z", "na", "do", "o", "że", "to", "nie", "się",
-            "jest", "tak", "jak", "ale", "po", "co", "czy", "lub", "oraz",
-            "ja", "ty", "on", "ona", "my", "wy", "oni", "one", "pan", "pani",
-            "ten", "ta", "te", "tego", "tej", "tym", "tych", "który", "która",
-            "być", "mieć", "móc", "musieć", "chcieć", "wiedzieć", "mówić",
-            "bardzo", "tylko", "już", "jeszcze", "też", "więc", "jednak",
+            "i",
+            "w",
+            "z",
+            "na",
+            "do",
+            "o",
+            "że",
+            "to",
+            "nie",
+            "się",
+            "jest",
+            "tak",
+            "jak",
+            "ale",
+            "po",
+            "co",
+            "czy",
+            "lub",
+            "oraz",
+            "ja",
+            "ty",
+            "on",
+            "ona",
+            "my",
+            "wy",
+            "oni",
+            "one",
+            "pan",
+            "pani",
+            "ten",
+            "ta",
+            "te",
+            "tego",
+            "tej",
+            "tym",
+            "tych",
+            "który",
+            "która",
+            "być",
+            "mieć",
+            "móc",
+            "musieć",
+            "chcieć",
+            "wiedzieć",
+            "mówić",
+            "bardzo",
+            "tylko",
+            "już",
+            "jeszcze",
+            "też",
+            "więc",
+            "jednak",
         ],
         "sv" | "swedish" => vec![
-            "och", "i", "att", "det", "som", "en", "på", "är", "av", "för",
-            "med", "till", "den", "har", "de", "inte", "om", "ett", "men",
-            "jag", "du", "han", "hon", "vi", "ni", "de", "dem", "sig", "sin",
-            "var", "från", "eller", "när", "kan", "ska", "så", "än", "nu",
-            "också", "bara", "mycket", "mer", "andra", "detta", "sedan",
-            "hade", "varit", "skulle", "vara", "bli", "blev", "blir", "göra",
+            "och", "i", "att", "det", "som", "en", "på", "är", "av", "för", "med", "till", "den",
+            "har", "de", "inte", "om", "ett", "men", "jag", "du", "han", "hon", "vi", "ni", "de",
+            "dem", "sig", "sin", "var", "från", "eller", "när", "kan", "ska", "så", "än", "nu",
+            "också", "bara", "mycket", "mer", "andra", "detta", "sedan", "hade", "varit", "skulle",
+            "vara", "bli", "blev", "blir", "göra",
         ],
         _ => vec![
             "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
@@ -14929,8 +17405,10 @@ fn compute_hash(s: &str, seed: u64) -> u64 {
 //   Emotion     (0-6):      Discrete emotion index (or -1 for none)
 
 fn register_hologram(interp: &mut Interpreter) {
-    use crate::interpreter::{RuntimeAffect, RuntimeSentiment, RuntimeIntensity,
-                             RuntimeFormality, RuntimeEmotion, RuntimeConfidence};
+    use crate::interpreter::{
+        RuntimeAffect, RuntimeConfidence, RuntimeEmotion, RuntimeFormality, RuntimeIntensity,
+        RuntimeSentiment,
+    };
 
     // emotional_hologram - project affect onto normalized coordinate space
     // Returns a map: { valence, arousal, dominance, authenticity, certainty, emotion_index }
@@ -15008,7 +17486,10 @@ fn register_hologram(interp: &mut Interpreter) {
             Some(RuntimeEmotion::Love) => "love",
             None => "none",
         };
-        hologram.insert("emotion".to_string(), Value::String(Rc::new(emotion_name.to_string())));
+        hologram.insert(
+            "emotion".to_string(),
+            Value::String(Rc::new(emotion_name.to_string())),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(hologram))))
     });
@@ -15024,8 +17505,8 @@ fn register_hologram(interp: &mut Interpreter) {
                     (h1.1 - h2.1).powi(2) +    // arousal
                     (h1.2 - h2.2).powi(2) +    // dominance
                     (h1.3 - h2.3).powi(2) +    // authenticity
-                    (h1.4 - h2.4).powi(2))     // certainty
-                   .sqrt();
+                    (h1.4 - h2.4).powi(2)) // certainty
+        .sqrt();
 
         Ok(Value::Float(dist))
     });
@@ -15036,11 +17517,13 @@ fn register_hologram(interp: &mut Interpreter) {
         let h2 = get_hologram_values(&args[1], interp)?;
 
         let dot = h1.0 * h2.0 + h1.1 * h2.1 + h1.2 * h2.2 + h1.3 * h2.3 + h1.4 * h2.4;
-        let mag1 = (h1.0.powi(2) + h1.1.powi(2) + h1.2.powi(2) + h1.3.powi(2) + h1.4.powi(2)).sqrt();
-        let mag2 = (h2.0.powi(2) + h2.1.powi(2) + h2.2.powi(2) + h2.3.powi(2) + h2.4.powi(2)).sqrt();
+        let mag1 =
+            (h1.0.powi(2) + h1.1.powi(2) + h1.2.powi(2) + h1.3.powi(2) + h1.4.powi(2)).sqrt();
+        let mag2 =
+            (h2.0.powi(2) + h2.1.powi(2) + h2.2.powi(2) + h2.3.powi(2) + h2.4.powi(2)).sqrt();
 
         let similarity = if mag1 > 0.0 && mag2 > 0.0 {
-            (dot / (mag1 * mag2) + 1.0) / 2.0  // Normalize to 0-1
+            (dot / (mag1 * mag2) + 1.0) / 2.0 // Normalize to 0-1
         } else {
             0.5
         };
@@ -15069,20 +17552,28 @@ fn register_hologram(interp: &mut Interpreter) {
         }
 
         // High confidence + low intensity = mildly dissonant
-        if matches!(affect.confidence, Some(RuntimeConfidence::High)) &&
-           matches!(affect.intensity, Some(RuntimeIntensity::Down)) {
+        if matches!(affect.confidence, Some(RuntimeConfidence::High))
+            && matches!(affect.intensity, Some(RuntimeIntensity::Down))
+        {
             dissonance += 0.2;
         }
 
         // Formal + intense emotion = dissonant
         if matches!(affect.formality, Some(RuntimeFormality::Formal)) {
-            if matches!(affect.emotion, Some(RuntimeEmotion::Anger) | Some(RuntimeEmotion::Fear)) {
+            if matches!(
+                affect.emotion,
+                Some(RuntimeEmotion::Anger) | Some(RuntimeEmotion::Fear)
+            ) {
                 dissonance += 0.3;
             }
         }
 
         // Joy/Love + Sadness/Fear indicators (based on sarcasm with positive)
-        if matches!(affect.emotion, Some(RuntimeEmotion::Joy) | Some(RuntimeEmotion::Love)) && affect.sarcasm {
+        if matches!(
+            affect.emotion,
+            Some(RuntimeEmotion::Joy) | Some(RuntimeEmotion::Love)
+        ) && affect.sarcasm
+        {
             dissonance += 0.3;
         }
 
@@ -15113,15 +17604,34 @@ fn register_hologram(interp: &mut Interpreter) {
         let t = match &args[2] {
             Value::Float(f) => f.max(0.0).min(1.0),
             Value::Int(i) => (*i as f64).max(0.0).min(1.0),
-            _ => return Err(RuntimeError::new("emotional_morph() requires numeric t value")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "emotional_morph() requires numeric t value",
+                ))
+            }
         };
 
         let mut result = std::collections::HashMap::new();
-        result.insert("valence".to_string(), Value::Float(h1.0 + (h2.0 - h1.0) * t));
-        result.insert("arousal".to_string(), Value::Float(h1.1 + (h2.1 - h1.1) * t));
-        result.insert("dominance".to_string(), Value::Float(h1.2 + (h2.2 - h1.2) * t));
-        result.insert("authenticity".to_string(), Value::Float(h1.3 + (h2.3 - h1.3) * t));
-        result.insert("certainty".to_string(), Value::Float(h1.4 + (h2.4 - h1.4) * t));
+        result.insert(
+            "valence".to_string(),
+            Value::Float(h1.0 + (h2.0 - h1.0) * t),
+        );
+        result.insert(
+            "arousal".to_string(),
+            Value::Float(h1.1 + (h2.1 - h1.1) * t),
+        );
+        result.insert(
+            "dominance".to_string(),
+            Value::Float(h1.2 + (h2.2 - h1.2) * t),
+        );
+        result.insert(
+            "authenticity".to_string(),
+            Value::Float(h1.3 + (h2.3 - h1.3) * t),
+        );
+        result.insert(
+            "certainty".to_string(),
+            Value::Float(h1.4 + (h2.4 - h1.4) * t),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -15148,42 +17658,62 @@ fn register_hologram(interp: &mut Interpreter) {
 
         let culture = match &args[1] {
             Value::String(s) => s.to_lowercase(),
-            _ => return Err(RuntimeError::new("cultural_emotion() requires string culture")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "cultural_emotion() requires string culture",
+                ))
+            }
         };
 
         let result = match (emotion, culture.as_str()) {
             // Japanese concepts
-            (Some(RuntimeEmotion::Joy), "japanese" | "ja") => {
-                create_cultural_entry("木漏れ日", "komorebi", "sunlight filtering through leaves - peaceful joy")
-            }
-            (Some(RuntimeEmotion::Sadness), "japanese" | "ja") => {
-                create_cultural_entry("物の哀れ", "mono no aware", "the pathos of things - bittersweet awareness of impermanence")
-            }
-            (Some(RuntimeEmotion::Love), "japanese" | "ja") => {
-                create_cultural_entry("甘え", "amae", "indulgent dependence on another's benevolence")
-            }
-            (Some(RuntimeEmotion::Fear), "japanese" | "ja") => {
-                create_cultural_entry("空気を読む", "kuuki wo yomu", "anxiety about reading the room")
-            }
+            (Some(RuntimeEmotion::Joy), "japanese" | "ja") => create_cultural_entry(
+                "木漏れ日",
+                "komorebi",
+                "sunlight filtering through leaves - peaceful joy",
+            ),
+            (Some(RuntimeEmotion::Sadness), "japanese" | "ja") => create_cultural_entry(
+                "物の哀れ",
+                "mono no aware",
+                "the pathos of things - bittersweet awareness of impermanence",
+            ),
+            (Some(RuntimeEmotion::Love), "japanese" | "ja") => create_cultural_entry(
+                "甘え",
+                "amae",
+                "indulgent dependence on another's benevolence",
+            ),
+            (Some(RuntimeEmotion::Fear), "japanese" | "ja") => create_cultural_entry(
+                "空気を読む",
+                "kuuki wo yomu",
+                "anxiety about reading the room",
+            ),
 
             // Portuguese concepts
-            (Some(RuntimeEmotion::Sadness), "portuguese" | "pt") => {
-                create_cultural_entry("saudade", "saudade", "melancholic longing for something or someone absent")
-            }
+            (Some(RuntimeEmotion::Sadness), "portuguese" | "pt") => create_cultural_entry(
+                "saudade",
+                "saudade",
+                "melancholic longing for something or someone absent",
+            ),
             (Some(RuntimeEmotion::Joy), "portuguese" | "pt") => {
                 create_cultural_entry("alegria", "alegria", "exuberant collective joy")
             }
 
             // German concepts
-            (Some(RuntimeEmotion::Joy), "german" | "de") => {
-                create_cultural_entry("Schadenfreude", "schadenfreude", "pleasure derived from another's misfortune")
-            }
-            (Some(RuntimeEmotion::Sadness), "german" | "de") => {
-                create_cultural_entry("Weltschmerz", "weltschmerz", "world-weariness, melancholy about the world's state")
-            }
-            (Some(RuntimeEmotion::Fear), "german" | "de") => {
-                create_cultural_entry("Torschlusspanik", "torschlusspanik", "fear of diminishing opportunities with age")
-            }
+            (Some(RuntimeEmotion::Joy), "german" | "de") => create_cultural_entry(
+                "Schadenfreude",
+                "schadenfreude",
+                "pleasure derived from another's misfortune",
+            ),
+            (Some(RuntimeEmotion::Sadness), "german" | "de") => create_cultural_entry(
+                "Weltschmerz",
+                "weltschmerz",
+                "world-weariness, melancholy about the world's state",
+            ),
+            (Some(RuntimeEmotion::Fear), "german" | "de") => create_cultural_entry(
+                "Torschlusspanik",
+                "torschlusspanik",
+                "fear of diminishing opportunities with age",
+            ),
 
             // Danish concepts
             (Some(RuntimeEmotion::Joy), "danish" | "da") => {
@@ -15199,12 +17729,16 @@ fn register_hologram(interp: &mut Interpreter) {
             }
 
             // Korean concepts
-            (Some(RuntimeEmotion::Sadness), "korean" | "ko") => {
-                create_cultural_entry("한", "han", "collective grief and resentment from historical suffering")
-            }
-            (Some(RuntimeEmotion::Joy), "korean" | "ko") => {
-                create_cultural_entry("정", "jeong", "deep affection and attachment formed over time")
-            }
+            (Some(RuntimeEmotion::Sadness), "korean" | "ko") => create_cultural_entry(
+                "한",
+                "han",
+                "collective grief and resentment from historical suffering",
+            ),
+            (Some(RuntimeEmotion::Joy), "korean" | "ko") => create_cultural_entry(
+                "정",
+                "jeong",
+                "deep affection and attachment formed over time",
+            ),
 
             // Russian concepts
             (Some(RuntimeEmotion::Sadness), "russian" | "ru") => {
@@ -15243,7 +17777,11 @@ fn register_hologram(interp: &mut Interpreter) {
     define(interp, "list_cultural_emotions", Some(1), |_, args| {
         let culture = match &args[0] {
             Value::String(s) => s.to_lowercase(),
-            _ => return Err(RuntimeError::new("list_cultural_emotions() requires string culture")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "list_cultural_emotions() requires string culture",
+                ))
+            }
         };
 
         let emotions: Vec<(&str, &str, &str)> = match culture.as_str() {
@@ -15266,9 +17804,7 @@ fn register_hologram(interp: &mut Interpreter) {
                 ("alegria", "alegria", "exuberant joy"),
                 ("desabafar", "desabafar", "emotional unburdening"),
             ],
-            "danish" | "da" => vec![
-                ("hygge", "hygge", "cozy contentment"),
-            ],
+            "danish" | "da" => vec![("hygge", "hygge", "cozy contentment")],
             "korean" | "ko" => vec![
                 ("한", "han", "collective grief"),
                 ("정", "jeong", "deep affection"),
@@ -15283,9 +17819,7 @@ fn register_hologram(interp: &mut Interpreter) {
                 ("тоска", "toska", "spiritual anguish"),
                 ("пошлость", "poshlost", "spiritual vulgarity"),
             ],
-            "finnish" | "fi" => vec![
-                ("sisu", "sisu", "stoic determination"),
-            ],
+            "finnish" | "fi" => vec![("sisu", "sisu", "stoic determination")],
             "hindi" | "hi" => vec![
                 ("विरह", "viraha", "longing for beloved"),
                 ("जुगाड़", "jugaad", "creative improvisation"),
@@ -15300,10 +17834,9 @@ fn register_hologram(interp: &mut Interpreter) {
             ],
         };
 
-        let result: Vec<Value> = emotions.iter()
-            .map(|(native, romanized, meaning)| {
-                create_cultural_entry(native, romanized, meaning)
-            })
+        let result: Vec<Value> = emotions
+            .iter()
+            .map(|(native, romanized, meaning)| create_cultural_entry(native, romanized, meaning))
             .collect();
 
         Ok(Value::Array(Rc::new(RefCell::new(result))))
@@ -15313,43 +17846,65 @@ fn register_hologram(interp: &mut Interpreter) {
     define(interp, "hologram_info", Some(0), |_, _| {
         let mut info = std::collections::HashMap::new();
 
-        info.insert("dimensions".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("valence".to_string())),
-            Value::String(Rc::new("arousal".to_string())),
-            Value::String(Rc::new("dominance".to_string())),
-            Value::String(Rc::new("authenticity".to_string())),
-            Value::String(Rc::new("certainty".to_string())),
-            Value::String(Rc::new("emotion_index".to_string())),
-        ]))));
+        info.insert(
+            "dimensions".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("valence".to_string())),
+                Value::String(Rc::new("arousal".to_string())),
+                Value::String(Rc::new("dominance".to_string())),
+                Value::String(Rc::new("authenticity".to_string())),
+                Value::String(Rc::new("certainty".to_string())),
+                Value::String(Rc::new("emotion_index".to_string())),
+            ]))),
+        );
 
-        info.insert("supported_cultures".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("japanese".to_string())),
-            Value::String(Rc::new("german".to_string())),
-            Value::String(Rc::new("portuguese".to_string())),
-            Value::String(Rc::new("danish".to_string())),
-            Value::String(Rc::new("korean".to_string())),
-            Value::String(Rc::new("arabic".to_string())),
-            Value::String(Rc::new("russian".to_string())),
-            Value::String(Rc::new("finnish".to_string())),
-            Value::String(Rc::new("hindi".to_string())),
-        ]))));
+        info.insert(
+            "supported_cultures".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("japanese".to_string())),
+                Value::String(Rc::new("german".to_string())),
+                Value::String(Rc::new("portuguese".to_string())),
+                Value::String(Rc::new("danish".to_string())),
+                Value::String(Rc::new("korean".to_string())),
+                Value::String(Rc::new("arabic".to_string())),
+                Value::String(Rc::new("russian".to_string())),
+                Value::String(Rc::new("finnish".to_string())),
+                Value::String(Rc::new("hindi".to_string())),
+            ]))),
+        );
 
         let funcs = vec![
-            "emotional_hologram", "emotional_distance", "emotional_similarity",
-            "emotional_dissonance", "emotional_fingerprint", "emotional_morph",
-            "cultural_emotion", "list_cultural_emotions", "hologram_info"
+            "emotional_hologram",
+            "emotional_distance",
+            "emotional_similarity",
+            "emotional_dissonance",
+            "emotional_fingerprint",
+            "emotional_morph",
+            "cultural_emotion",
+            "list_cultural_emotions",
+            "hologram_info",
         ];
-        let func_values: Vec<Value> = funcs.iter().map(|s| Value::String(Rc::new(s.to_string()))).collect();
-        info.insert("functions".to_string(), Value::Array(Rc::new(RefCell::new(func_values))));
+        let func_values: Vec<Value> = funcs
+            .iter()
+            .map(|s| Value::String(Rc::new(s.to_string())))
+            .collect();
+        info.insert(
+            "functions".to_string(),
+            Value::Array(Rc::new(RefCell::new(func_values))),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(info))))
     });
 }
 
 /// Helper to extract hologram values from an affective value
-fn get_hologram_values(val: &Value, _interp: &mut Interpreter) -> Result<(f64, f64, f64, f64, f64), RuntimeError> {
-    use crate::interpreter::{RuntimeAffect, RuntimeSentiment, RuntimeIntensity,
-                             RuntimeFormality, RuntimeConfidence};
+fn get_hologram_values(
+    val: &Value,
+    _interp: &mut Interpreter,
+) -> Result<(f64, f64, f64, f64, f64), RuntimeError> {
+    use crate::interpreter::{
+        RuntimeAffect, RuntimeConfidence, RuntimeFormality, RuntimeIntensity, RuntimeSentiment,
+    };
 
     let affect = match val {
         Value::Affective { affect, .. } => affect.clone(),
@@ -15409,9 +17964,18 @@ fn extract_float(map: &std::collections::HashMap<String, Value>, key: &str) -> O
 
 fn create_cultural_entry(native: &str, romanized: &str, meaning: &str) -> Value {
     let mut entry = std::collections::HashMap::new();
-    entry.insert("native".to_string(), Value::String(Rc::new(native.to_string())));
-    entry.insert("romanized".to_string(), Value::String(Rc::new(romanized.to_string())));
-    entry.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+    entry.insert(
+        "native".to_string(),
+        Value::String(Rc::new(native.to_string())),
+    );
+    entry.insert(
+        "romanized".to_string(),
+        Value::String(Rc::new(romanized.to_string())),
+    );
+    entry.insert(
+        "meaning".to_string(),
+        Value::String(Rc::new(meaning.to_string())),
+    );
     Value::Map(Rc::new(RefCell::new(entry)))
 }
 
@@ -15433,7 +17997,8 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
 
         // Generate random nonce
         let mut nonce = [0u8; 32];
-        getrandom::getrandom(&mut nonce).map_err(|e| RuntimeError::new(format!("commit() random failed: {}", e)))?;
+        getrandom::getrandom(&mut nonce)
+            .map_err(|e| RuntimeError::new(format!("commit() random failed: {}", e)))?;
         let nonce_hex = hex::encode(&nonce);
 
         // Create commitment: H(value || nonce)
@@ -15441,7 +18006,10 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
         let commitment = blake3::hash(commitment_input.as_bytes());
 
         let mut result = std::collections::HashMap::new();
-        result.insert("commitment".to_string(), Value::String(Rc::new(commitment.to_hex().to_string())));
+        result.insert(
+            "commitment".to_string(),
+            Value::String(Rc::new(commitment.to_hex().to_string())),
+        );
         result.insert("nonce".to_string(), Value::String(Rc::new(nonce_hex)));
         result.insert("value".to_string(), args[0].clone());
 
@@ -15452,7 +18020,11 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
     define(interp, "verify_commitment", Some(3), |_, args| {
         let commitment = match &args[0] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("verify_commitment() requires string commitment")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "verify_commitment() requires string commitment",
+                ))
+            }
         };
         let value_str = match &args[1] {
             Value::String(s) => s.to_string(),
@@ -15460,7 +18032,11 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
         };
         let nonce = match &args[2] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("verify_commitment() requires string nonce")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "verify_commitment() requires string nonce",
+                ))
+            }
         };
 
         // Recompute commitment
@@ -15480,28 +18056,49 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
             Value::String(s) => s.as_bytes().to_vec(),
             Value::Array(arr) => {
                 let borrowed = arr.borrow();
-                borrowed.iter().filter_map(|v| {
-                    if let Value::Int(i) = v { Some(*i as u8) } else { None }
-                }).collect()
+                borrowed
+                    .iter()
+                    .filter_map(|v| {
+                        if let Value::Int(i) = v {
+                            Some(*i as u8)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
             }
-            _ => return Err(RuntimeError::new("secret_split() requires string or byte array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "secret_split() requires string or byte array",
+                ))
+            }
         };
 
         let threshold = match &args[1] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("secret_split() requires integer threshold")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "secret_split() requires integer threshold",
+                ))
+            }
         };
 
         let num_shares = match &args[2] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("secret_split() requires integer num_shares")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "secret_split() requires integer num_shares",
+                ))
+            }
         };
 
         if threshold < 2 {
             return Err(RuntimeError::new("secret_split() threshold must be >= 2"));
         }
         if num_shares < threshold {
-            return Err(RuntimeError::new("secret_split() num_shares must be >= threshold"));
+            return Err(RuntimeError::new(
+                "secret_split() num_shares must be >= threshold",
+            ));
         }
         if num_shares > 255 {
             return Err(RuntimeError::new("secret_split() max 255 shares"));
@@ -15510,7 +18107,9 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
         // Simple implementation: split each byte independently using polynomial interpolation
         // For production, use vsss-rs properly, but this demonstrates the concept
         let mut rng = rand::thread_rng();
-        let mut shares: Vec<Vec<u8>> = (0..num_shares).map(|_| Vec::with_capacity(secret.len() + 1)).collect();
+        let mut shares: Vec<Vec<u8>> = (0..num_shares)
+            .map(|_| Vec::with_capacity(secret.len() + 1))
+            .collect();
 
         // Assign share indices (1-based to avoid zero)
         for (i, share) in shares.iter_mut().enumerate() {
@@ -15535,7 +18134,8 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
         }
 
         // Convert shares to output format
-        let share_values: Vec<Value> = shares.iter()
+        let share_values: Vec<Value> = shares
+            .iter()
             .map(|share| {
                 let hex = hex::encode(share);
                 Value::String(Rc::new(hex))
@@ -15543,7 +18143,10 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
             .collect();
 
         let mut result = std::collections::HashMap::new();
-        result.insert("shares".to_string(), Value::Array(Rc::new(RefCell::new(share_values))));
+        result.insert(
+            "shares".to_string(),
+            Value::Array(Rc::new(RefCell::new(share_values))),
+        );
         result.insert("threshold".to_string(), Value::Int(threshold as i64));
         result.insert("total".to_string(), Value::Int(num_shares as i64));
 
@@ -15555,19 +18158,28 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
         let shares: Vec<Vec<u8>> = match &args[0] {
             Value::Array(arr) => {
                 let borrowed = arr.borrow();
-                borrowed.iter().filter_map(|v| {
-                    if let Value::String(s) = v {
-                        hex::decode(s.as_str()).ok()
-                    } else {
-                        None
-                    }
-                }).collect()
+                borrowed
+                    .iter()
+                    .filter_map(|v| {
+                        if let Value::String(s) = v {
+                            hex::decode(s.as_str()).ok()
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
             }
-            _ => return Err(RuntimeError::new("secret_recover() requires array of share strings")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "secret_recover() requires array of share strings",
+                ))
+            }
         };
 
         if shares.is_empty() {
-            return Err(RuntimeError::new("secret_recover() requires at least one share"));
+            return Err(RuntimeError::new(
+                "secret_recover() requires at least one share",
+            ));
         }
 
         let share_len = shares[0].len();
@@ -15580,7 +18192,8 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
 
         for byte_idx in 1..share_len {
             // Collect (x, y) pairs for this byte position
-            let points: Vec<(u8, u8)> = shares.iter()
+            let points: Vec<(u8, u8)> = shares
+                .iter()
                 .map(|share| (share[0], share[byte_idx]))
                 .collect();
 
@@ -15594,7 +18207,8 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
             Ok(s) => Ok(Value::String(Rc::new(s))),
             Err(_) => {
                 // Return as byte array
-                let byte_values: Vec<Value> = secret.iter().map(|&b| Value::Int(b as i64)).collect();
+                let byte_values: Vec<Value> =
+                    secret.iter().map(|&b| Value::Int(b as i64)).collect();
                 Ok(Value::Array(Rc::new(RefCell::new(byte_values))))
             }
         }
@@ -15613,11 +18227,17 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
 
         let num_elders = match &args[1] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("council_split() requires integer num_elders")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "council_split() requires integer num_elders",
+                ))
+            }
         };
 
         if num_elders < 3 {
-            return Err(RuntimeError::new("council_split() requires at least 3 elders"));
+            return Err(RuntimeError::new(
+                "council_split() requires at least 3 elders",
+            ));
         }
 
         // Ubuntu model: majority required (n/2 + 1)
@@ -15625,7 +18245,9 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
 
         // Reuse secret_split logic
         let mut rng = rand::thread_rng();
-        let mut shares: Vec<Vec<u8>> = (0..num_elders).map(|_| Vec::with_capacity(secret.len() + 1)).collect();
+        let mut shares: Vec<Vec<u8>> = (0..num_elders)
+            .map(|_| Vec::with_capacity(secret.len() + 1))
+            .collect();
 
         for (i, share) in shares.iter_mut().enumerate() {
             share.push((i + 1) as u8);
@@ -15644,16 +18266,28 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
             }
         }
 
-        let share_values: Vec<Value> = shares.iter()
+        let share_values: Vec<Value> = shares
+            .iter()
             .map(|share| Value::String(Rc::new(hex::encode(share))))
             .collect();
 
         let mut result = std::collections::HashMap::new();
-        result.insert("shares".to_string(), Value::Array(Rc::new(RefCell::new(share_values))));
+        result.insert(
+            "shares".to_string(),
+            Value::Array(Rc::new(RefCell::new(share_values))),
+        );
         result.insert("threshold".to_string(), Value::Int(threshold as i64));
         result.insert("total".to_string(), Value::Int(num_elders as i64));
-        result.insert("model".to_string(), Value::String(Rc::new("ubuntu".to_string())));
-        result.insert("philosophy".to_string(), Value::String(Rc::new("I am because we are - majority consensus required".to_string())));
+        result.insert(
+            "model".to_string(),
+            Value::String(Rc::new("ubuntu".to_string())),
+        );
+        result.insert(
+            "philosophy".to_string(),
+            Value::String(Rc::new(
+                "I am because we are - majority consensus required".to_string(),
+            )),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -15663,21 +18297,38 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
     define(interp, "witness_chain", Some(2), |_, args| {
         let statement = match &args[0] {
             Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("witness_chain() requires string statement")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "witness_chain() requires string statement",
+                ))
+            }
         };
 
         let witnesses: Vec<String> = match &args[1] {
             Value::Array(arr) => {
                 let borrowed = arr.borrow();
-                borrowed.iter().filter_map(|v| {
-                    if let Value::String(s) = v { Some(s.to_string()) } else { None }
-                }).collect()
+                borrowed
+                    .iter()
+                    .filter_map(|v| {
+                        if let Value::String(s) = v {
+                            Some(s.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
             }
-            _ => return Err(RuntimeError::new("witness_chain() requires array of witness names")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "witness_chain() requires array of witness names",
+                ))
+            }
         };
 
         if witnesses.is_empty() {
-            return Err(RuntimeError::new("witness_chain() requires at least one witness"));
+            return Err(RuntimeError::new(
+                "witness_chain() requires at least one witness",
+            ));
         }
 
         // Build chain: each witness attests to the previous
@@ -15689,10 +18340,19 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
             let hash = blake3::hash(attestation.as_bytes()).to_hex().to_string();
 
             let mut link = std::collections::HashMap::new();
-            link.insert("witness".to_string(), Value::String(Rc::new(witness.clone())));
+            link.insert(
+                "witness".to_string(),
+                Value::String(Rc::new(witness.clone())),
+            );
             link.insert("position".to_string(), Value::Int((i + 1) as i64));
-            link.insert("attests_to".to_string(), Value::String(Rc::new(prev_hash.clone())));
-            link.insert("signature".to_string(), Value::String(Rc::new(hash.clone())));
+            link.insert(
+                "attests_to".to_string(),
+                Value::String(Rc::new(prev_hash.clone())),
+            );
+            link.insert(
+                "signature".to_string(),
+                Value::String(Rc::new(hash.clone())),
+            );
 
             chain.push(Value::Map(Rc::new(RefCell::new(link))));
             prev_hash = hash;
@@ -15700,10 +18360,21 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
 
         let mut result = std::collections::HashMap::new();
         result.insert("statement".to_string(), Value::String(Rc::new(statement)));
-        result.insert("chain".to_string(), Value::Array(Rc::new(RefCell::new(chain))));
+        result.insert(
+            "chain".to_string(),
+            Value::Array(Rc::new(RefCell::new(chain))),
+        );
         result.insert("final_seal".to_string(), Value::String(Rc::new(prev_hash)));
-        result.insert("model".to_string(), Value::String(Rc::new("isnad".to_string())));
-        result.insert("philosophy".to_string(), Value::String(Rc::new("Chain of reliable transmitters - each witness validates the previous".to_string())));
+        result.insert(
+            "model".to_string(),
+            Value::String(Rc::new("isnad".to_string())),
+        );
+        result.insert(
+            "philosophy".to_string(),
+            Value::String(Rc::new(
+                "Chain of reliable transmitters - each witness validates the previous".to_string(),
+            )),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -15712,17 +18383,29 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
     define(interp, "verify_witness_chain", Some(1), |_, args| {
         let chain_map = match &args[0] {
             Value::Map(m) => m.borrow(),
-            _ => return Err(RuntimeError::new("verify_witness_chain() requires chain map")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "verify_witness_chain() requires chain map",
+                ))
+            }
         };
 
         let statement = match chain_map.get("statement") {
             Some(Value::String(s)) => s.to_string(),
-            _ => return Err(RuntimeError::new("verify_witness_chain() invalid chain format")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "verify_witness_chain() invalid chain format",
+                ))
+            }
         };
 
         let chain = match chain_map.get("chain") {
             Some(Value::Array(arr)) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("verify_witness_chain() invalid chain format")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "verify_witness_chain() invalid chain format",
+                ))
+            }
         };
 
         let mut prev_hash = blake3::hash(statement.as_bytes()).to_hex().to_string();
@@ -15768,20 +18451,33 @@ fn register_experimental_crypto(interp: &mut Interpreter) {
     define(interp, "experimental_crypto_info", Some(0), |_, _| {
         let mut info = std::collections::HashMap::new();
 
-        info.insert("commitment_functions".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("commit".to_string())),
-            Value::String(Rc::new("verify_commitment".to_string())),
-        ]))));
+        info.insert(
+            "commitment_functions".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("commit".to_string())),
+                Value::String(Rc::new("verify_commitment".to_string())),
+            ]))),
+        );
 
-        info.insert("threshold_functions".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("secret_split".to_string())),
-            Value::String(Rc::new("secret_recover".to_string())),
-        ]))));
+        info.insert(
+            "threshold_functions".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("secret_split".to_string())),
+                Value::String(Rc::new("secret_recover".to_string())),
+            ]))),
+        );
 
-        info.insert("cultural_ceremonies".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("council_split (Ubuntu - African consensus)".to_string())),
-            Value::String(Rc::new("witness_chain (Isnad - Islamic transmission)".to_string())),
-        ]))));
+        info.insert(
+            "cultural_ceremonies".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new(
+                    "council_split (Ubuntu - African consensus)".to_string(),
+                )),
+                Value::String(Rc::new(
+                    "witness_chain (Isnad - Islamic transmission)".to_string(),
+                )),
+            ]))),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(info))))
     });
@@ -15901,7 +18597,11 @@ fn register_multibase(interp: &mut Interpreter) {
 
         let (negative, clean) = parse_base_prefix(&s, "0v");
         let value = from_base_string(&clean, 20)?;
-        Ok(Value::Int(if negative { -(value as i64) } else { value as i64 }))
+        Ok(Value::Int(if negative {
+            -(value as i64)
+        } else {
+            value as i64
+        }))
     });
 
     // === Sexagesimal (Base 60) - Babylonian ===
@@ -15928,7 +18628,11 @@ fn register_multibase(interp: &mut Interpreter) {
         }
 
         let prefix = if negative { "-0s" } else { "0s" };
-        Ok(Value::String(Rc::new(format!("{}[{}]", prefix, parts.join(":")))))
+        Ok(Value::String(Rc::new(format!(
+            "{}[{}]",
+            prefix,
+            parts.join(":")
+        ))))
     });
 
     define(interp, "from_sexagesimal", Some(1), |_, args| {
@@ -15938,17 +18642,23 @@ fn register_multibase(interp: &mut Interpreter) {
         };
 
         let negative = s.starts_with('-');
-        let clean = s.trim_start_matches('-')
-                     .trim_start_matches("0s")
-                     .trim_start_matches('[')
-                     .trim_end_matches(']');
+        let clean = s
+            .trim_start_matches('-')
+            .trim_start_matches("0s")
+            .trim_start_matches('[')
+            .trim_end_matches(']');
 
         let mut result: i64 = 0;
         for part in clean.split(':') {
-            let digit: i64 = part.trim().parse()
+            let digit: i64 = part
+                .trim()
+                .parse()
                 .map_err(|_| RuntimeError::new(format!("Invalid sexagesimal digit: {}", part)))?;
             if digit < 0 || digit >= 60 {
-                return Err(RuntimeError::new(format!("Sexagesimal digit out of range: {}", digit)));
+                return Err(RuntimeError::new(format!(
+                    "Sexagesimal digit out of range: {}",
+                    digit
+                )));
             }
             result = result * 60 + digit;
         }
@@ -15978,7 +18688,11 @@ fn register_multibase(interp: &mut Interpreter) {
 
         let (negative, clean) = parse_base_prefix(&s, "0z");
         let value = from_base_string_custom(&clean.to_uppercase(), "0123456789XE")?;
-        Ok(Value::Int(if negative { -(value as i64) } else { value as i64 }))
+        Ok(Value::Int(if negative {
+            -(value as i64)
+        } else {
+            value as i64
+        }))
     });
 
     // === Generic Base Conversion ===
@@ -16019,7 +18733,11 @@ fn register_multibase(interp: &mut Interpreter) {
         let negative = s.starts_with('-');
         let clean = s.trim_start_matches('-');
         let value = from_base_string(clean, base)?;
-        Ok(Value::Int(if negative { -(value as i64) } else { value as i64 }))
+        Ok(Value::Int(if negative {
+            -(value as i64)
+        } else {
+            value as i64
+        }))
     });
 
     // === Base58 - Bitcoin/IPFS addresses ===
@@ -16031,12 +18749,22 @@ fn register_multibase(interp: &mut Interpreter) {
     define(interp, "base58_encode", Some(1), |_, args| {
         let bytes: Vec<u8> = match &args[0] {
             Value::String(s) => s.as_bytes().to_vec(),
-            Value::Array(arr) => {
-                arr.borrow().iter().filter_map(|v| {
-                    if let Value::Int(i) = v { Some(*i as u8) } else { None }
-                }).collect()
+            Value::Array(arr) => arr
+                .borrow()
+                .iter()
+                .filter_map(|v| {
+                    if let Value::Int(i) = v {
+                        Some(*i as u8)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "base58_encode() requires string or byte array",
+                ))
             }
-            _ => return Err(RuntimeError::new("base58_encode() requires string or byte array")),
         };
 
         // Count leading zeros
@@ -16086,7 +18814,8 @@ fn register_multibase(interp: &mut Interpreter) {
         let mut num: Vec<u8> = Vec::new();
 
         for c in s.chars() {
-            let digit = BASE58_ALPHABET.find(c)
+            let digit = BASE58_ALPHABET
+                .find(c)
                 .ok_or_else(|| RuntimeError::new(format!("Invalid base58 character: {}", c)))?;
 
             let mut carry = digit as u32;
@@ -16118,12 +18847,22 @@ fn register_multibase(interp: &mut Interpreter) {
     define(interp, "base32_encode", Some(1), |_, args| {
         let bytes: Vec<u8> = match &args[0] {
             Value::String(s) => s.as_bytes().to_vec(),
-            Value::Array(arr) => {
-                arr.borrow().iter().filter_map(|v| {
-                    if let Value::Int(i) = v { Some(*i as u8) } else { None }
-                }).collect()
+            Value::Array(arr) => arr
+                .borrow()
+                .iter()
+                .filter_map(|v| {
+                    if let Value::Int(i) = v {
+                        Some(*i as u8)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "base32_encode() requires string or byte array",
+                ))
             }
-            _ => return Err(RuntimeError::new("base32_encode() requires string or byte array")),
         };
 
         let mut result = String::new();
@@ -16165,7 +18904,8 @@ fn register_multibase(interp: &mut Interpreter) {
         let mut bits = 0;
 
         for c in s.chars() {
-            let digit = BASE32_ALPHABET.find(c)
+            let digit = BASE32_ALPHABET
+                .find(c)
                 .ok_or_else(|| RuntimeError::new(format!("Invalid base32 character: {}", c)))?;
 
             buffer = (buffer << 5) | digit as u64;
@@ -16187,7 +18927,11 @@ fn register_multibase(interp: &mut Interpreter) {
     define(interp, "sacred_numbers", Some(1), |_, args| {
         let culture = match &args[0] {
             Value::String(s) => s.to_lowercase(),
-            _ => return Err(RuntimeError::new("sacred_numbers() requires string culture")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "sacred_numbers() requires string culture",
+                ))
+            }
         };
 
         let numbers: Vec<(i64, &str)> = match culture.as_str() {
@@ -16271,12 +19015,18 @@ fn register_multibase(interp: &mut Interpreter) {
             ],
         };
 
-        let result: Vec<Value> = numbers.iter().map(|(n, meaning)| {
-            let mut entry = std::collections::HashMap::new();
-            entry.insert("number".to_string(), Value::Int(*n));
-            entry.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
-            Value::Map(Rc::new(RefCell::new(entry)))
-        }).collect();
+        let result: Vec<Value> = numbers
+            .iter()
+            .map(|(n, meaning)| {
+                let mut entry = std::collections::HashMap::new();
+                entry.insert("number".to_string(), Value::Int(*n));
+                entry.insert(
+                    "meaning".to_string(),
+                    Value::String(Rc::new(meaning.to_string())),
+                );
+                Value::Map(Rc::new(RefCell::new(entry)))
+            })
+            .collect();
 
         Ok(Value::Array(Rc::new(RefCell::new(result))))
     });
@@ -16320,10 +19070,10 @@ fn register_multibase(interp: &mut Interpreter) {
         };
 
         let unlucky = match culture.as_str() {
-            "chinese" | "zh" => vec![4], // 四 sounds like 死 (death)
+            "chinese" | "zh" => vec![4],     // 四 sounds like 死 (death)
             "japanese" | "ja" => vec![4, 9], // 四=death, 九=suffering
-            "western" | "en" => vec![13], // Friday the 13th
-            "italian" | "it" => vec![17], // XVII = VIXI (I lived = I'm dead)
+            "western" | "en" => vec![13],    // Friday the 13th
+            "italian" | "it" => vec![17],    // XVII = VIXI (I lived = I'm dead)
             _ => vec![],
         };
 
@@ -16338,7 +19088,11 @@ fn register_multibase(interp: &mut Interpreter) {
         };
         let culture = match &args[1] {
             Value::String(s) => s.to_lowercase(),
-            _ => return Err(RuntimeError::new("number_meaning() requires string culture")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "number_meaning() requires string culture",
+                ))
+            }
         };
 
         let meaning = match (n, culture.as_str()) {
@@ -16367,11 +19121,15 @@ fn register_multibase(interp: &mut Interpreter) {
             (260, "mayan" | "maya") => "Tzolkin calendar - 13 × 20 sacred days",
 
             // Babylonian
-            (60, "babylonian" | "mesopotamian") => "Sexagesimal base - divisible by 2,3,4,5,6,10,12,15,20,30",
+            (60, "babylonian" | "mesopotamian") => {
+                "Sexagesimal base - divisible by 2,3,4,5,6,10,12,15,20,30"
+            }
             (360, "babylonian" | "mesopotamian") => "Circle degrees - celestial observation",
 
             // Hindu
-            (108, "hindu" | "indian" | "hi") => "Sacred completeness - mala beads, Upanishads, sun ratio",
+            (108, "hindu" | "indian" | "hi") => {
+                "Sacred completeness - mala beads, Upanishads, sun ratio"
+            }
             (3, "hindu" | "indian" | "hi") => "Trimurti - Brahma, Vishnu, Shiva",
             (9, "hindu" | "indian" | "hi") => "Navagraha (9 planets), Durga's 9 forms",
 
@@ -16390,7 +19148,10 @@ fn register_multibase(interp: &mut Interpreter) {
         let mut result = std::collections::HashMap::new();
         result.insert("number".to_string(), Value::Int(n));
         result.insert("culture".to_string(), Value::String(Rc::new(culture)));
-        result.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        result.insert(
+            "meaning".to_string(),
+            Value::String(Rc::new(meaning.to_string())),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -16409,7 +19170,10 @@ fn register_multibase(interp: &mut Interpreter) {
         let mins = (seconds % 3600) / 60;
         let secs = seconds % 60;
 
-        Ok(Value::String(Rc::new(format!("0s[{}:{}:{}]", hours, mins, secs))))
+        Ok(Value::String(Rc::new(format!(
+            "0s[{}:{}:{}]",
+            hours, mins, secs
+        ))))
     });
 
     // from_babylonian_time - convert Babylonian time to seconds
@@ -16419,11 +19183,13 @@ fn register_multibase(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("from_babylonian_time() requires string")),
         };
 
-        let clean = s.trim_start_matches("0s")
-                     .trim_start_matches('[')
-                     .trim_end_matches(']');
+        let clean = s
+            .trim_start_matches("0s")
+            .trim_start_matches('[')
+            .trim_end_matches(']');
 
-        let parts: Vec<i64> = clean.split(':')
+        let parts: Vec<i64> = clean
+            .split(':')
             .map(|p| p.trim().parse::<i64>().unwrap_or(0))
             .collect();
 
@@ -16443,26 +19209,42 @@ fn register_multibase(interp: &mut Interpreter) {
     define(interp, "vigesimal_shares", Some(3), |_, args| {
         let secret = match &args[0] {
             Value::String(s) => s.as_bytes().to_vec(),
-            _ => return Err(RuntimeError::new("vigesimal_shares() requires string secret")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "vigesimal_shares() requires string secret",
+                ))
+            }
         };
 
         let threshold = match &args[1] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("vigesimal_shares() requires integer threshold")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "vigesimal_shares() requires integer threshold",
+                ))
+            }
         };
 
         let num_shares = match &args[2] {
             Value::Int(n) => *n as usize,
-            _ => return Err(RuntimeError::new("vigesimal_shares() requires integer num_shares")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "vigesimal_shares() requires integer num_shares",
+                ))
+            }
         };
 
         if threshold < 2 || num_shares < threshold || num_shares > 20 {
-            return Err(RuntimeError::new("vigesimal_shares() requires 2 <= threshold <= num_shares <= 20 (Mayan limit)"));
+            return Err(RuntimeError::new(
+                "vigesimal_shares() requires 2 <= threshold <= num_shares <= 20 (Mayan limit)",
+            ));
         }
 
         // Generate shares using Shamir
         let mut rng = rand::thread_rng();
-        let mut shares: Vec<Vec<u8>> = (0..num_shares).map(|_| Vec::with_capacity(secret.len() + 1)).collect();
+        let mut shares: Vec<Vec<u8>> = (0..num_shares)
+            .map(|_| Vec::with_capacity(secret.len() + 1))
+            .collect();
 
         for (i, share) in shares.iter_mut().enumerate() {
             share.push((i + 1) as u8);
@@ -16482,7 +19264,9 @@ fn register_multibase(interp: &mut Interpreter) {
         }
 
         // Encode shares in vigesimal
-        let share_values: Vec<Value> = shares.iter().enumerate()
+        let share_values: Vec<Value> = shares
+            .iter()
+            .enumerate()
             .map(|(i, share)| {
                 let mut entry = std::collections::HashMap::new();
 
@@ -16493,18 +19277,30 @@ fn register_multibase(interp: &mut Interpreter) {
                 }
 
                 entry.insert("index".to_string(), Value::Int((i + 1) as i64));
-                entry.insert("vigesimal".to_string(), Value::String(Rc::new(format!("0v{}", vig_parts.join(".")))));
-                entry.insert("hex".to_string(), Value::String(Rc::new(hex::encode(share))));
+                entry.insert(
+                    "vigesimal".to_string(),
+                    Value::String(Rc::new(format!("0v{}", vig_parts.join(".")))),
+                );
+                entry.insert(
+                    "hex".to_string(),
+                    Value::String(Rc::new(hex::encode(share))),
+                );
 
                 Value::Map(Rc::new(RefCell::new(entry)))
             })
             .collect();
 
         let mut result = std::collections::HashMap::new();
-        result.insert("shares".to_string(), Value::Array(Rc::new(RefCell::new(share_values))));
+        result.insert(
+            "shares".to_string(),
+            Value::Array(Rc::new(RefCell::new(share_values))),
+        );
         result.insert("threshold".to_string(), Value::Int(threshold as i64));
         result.insert("total".to_string(), Value::Int(num_shares as i64));
-        result.insert("base".to_string(), Value::String(Rc::new("vigesimal (Mayan base-20)".to_string())));
+        result.insert(
+            "base".to_string(),
+            Value::String(Rc::new("vigesimal (Mayan base-20)".to_string())),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -16517,37 +19313,79 @@ fn register_multibase(interp: &mut Interpreter) {
             ("binary", 2, "0b", "Modern computing"),
             ("octal", 8, "0o", "Unix, historical computing"),
             ("decimal", 10, "", "Indo-Arabic global standard"),
-            ("duodecimal", 12, "0z", "Dozen system - time, music, measurement"),
+            (
+                "duodecimal",
+                12,
+                "0z",
+                "Dozen system - time, music, measurement",
+            ),
             ("hexadecimal", 16, "0x", "Computing, colors, addresses"),
-            ("vigesimal", 20, "0v", "Mayan, Celtic, Basque - human digits"),
-            ("sexagesimal", 60, "0s", "Babylonian - time, angles, astronomy"),
+            (
+                "vigesimal",
+                20,
+                "0v",
+                "Mayan, Celtic, Basque - human digits",
+            ),
+            (
+                "sexagesimal",
+                60,
+                "0s",
+                "Babylonian - time, angles, astronomy",
+            ),
         ];
 
-        let base_list: Vec<Value> = bases.iter().map(|(name, base, prefix, desc)| {
-            let mut entry = std::collections::HashMap::new();
-            entry.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
-            entry.insert("base".to_string(), Value::Int(*base as i64));
-            entry.insert("prefix".to_string(), Value::String(Rc::new(prefix.to_string())));
-            entry.insert("origin".to_string(), Value::String(Rc::new(desc.to_string())));
-            Value::Map(Rc::new(RefCell::new(entry)))
-        }).collect();
+        let base_list: Vec<Value> = bases
+            .iter()
+            .map(|(name, base, prefix, desc)| {
+                let mut entry = std::collections::HashMap::new();
+                entry.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+                entry.insert("base".to_string(), Value::Int(*base as i64));
+                entry.insert(
+                    "prefix".to_string(),
+                    Value::String(Rc::new(prefix.to_string())),
+                );
+                entry.insert(
+                    "origin".to_string(),
+                    Value::String(Rc::new(desc.to_string())),
+                );
+                Value::Map(Rc::new(RefCell::new(entry)))
+            })
+            .collect();
 
-        info.insert("numeral_systems".to_string(), Value::Array(Rc::new(RefCell::new(base_list))));
+        info.insert(
+            "numeral_systems".to_string(),
+            Value::Array(Rc::new(RefCell::new(base_list))),
+        );
 
         let encodings = vec!["base58 (Bitcoin)", "base32 (RFC 4648)", "base64 (standard)"];
-        let enc_list: Vec<Value> = encodings.iter()
+        let enc_list: Vec<Value> = encodings
+            .iter()
             .map(|s| Value::String(Rc::new(s.to_string())))
             .collect();
-        info.insert("special_encodings".to_string(), Value::Array(Rc::new(RefCell::new(enc_list))));
+        info.insert(
+            "special_encodings".to_string(),
+            Value::Array(Rc::new(RefCell::new(enc_list))),
+        );
 
         let cultures = vec![
-            "mayan", "babylonian", "chinese", "japanese", "hebrew",
-            "islamic", "hindu", "greek", "celtic"
+            "mayan",
+            "babylonian",
+            "chinese",
+            "japanese",
+            "hebrew",
+            "islamic",
+            "hindu",
+            "greek",
+            "celtic",
         ];
-        let cult_list: Vec<Value> = cultures.iter()
+        let cult_list: Vec<Value> = cultures
+            .iter()
             .map(|s| Value::String(Rc::new(s.to_string())))
             .collect();
-        info.insert("supported_cultures".to_string(), Value::Array(Rc::new(RefCell::new(cult_list))));
+        info.insert(
+            "supported_cultures".to_string(),
+            Value::Array(Rc::new(RefCell::new(cult_list))),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(info))))
     });
@@ -16559,7 +19397,11 @@ fn to_base_string(mut n: u64, base: u64, pad_to_two: bool) -> String {
     const DIGITS: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     if n == 0 {
-        return if pad_to_two { "00".to_string() } else { "0".to_string() };
+        return if pad_to_two {
+            "00".to_string()
+        } else {
+            "0".to_string()
+        };
     }
 
     let mut result = Vec::new();
@@ -16605,10 +19447,14 @@ fn from_base_string(s: &str, base: u64) -> Result<u64, RuntimeError> {
         };
 
         if digit >= base {
-            return Err(RuntimeError::new(format!("Digit {} out of range for base {}", c, base)));
+            return Err(RuntimeError::new(format!(
+                "Digit {} out of range for base {}",
+                c, base
+            )));
         }
 
-        result = result.checked_mul(base)
+        result = result
+            .checked_mul(base)
             .and_then(|r| r.checked_add(digit))
             .ok_or_else(|| RuntimeError::new("Number overflow"))?;
     }
@@ -16621,10 +19467,13 @@ fn from_base_string_custom(s: &str, digits: &str) -> Result<u64, RuntimeError> {
     let mut result: u64 = 0;
 
     for c in s.chars() {
-        let digit = digits.find(c)
-            .ok_or_else(|| RuntimeError::new(format!("Invalid digit: {}", c)))? as u64;
+        let digit = digits
+            .find(c)
+            .ok_or_else(|| RuntimeError::new(format!("Invalid digit: {}", c)))?
+            as u64;
 
-        result = result.checked_mul(base)
+        result = result
+            .checked_mul(base)
             .and_then(|r| r.checked_add(digit))
             .ok_or_else(|| RuntimeError::new("Number overflow"))?;
     }
@@ -16634,9 +19483,10 @@ fn from_base_string_custom(s: &str, digits: &str) -> Result<u64, RuntimeError> {
 
 fn parse_base_prefix(s: &str, prefix: &str) -> (bool, String) {
     let negative = s.starts_with('-');
-    let clean = s.trim_start_matches('-')
-                 .trim_start_matches(prefix)
-                 .to_string();
+    let clean = s
+        .trim_start_matches('-')
+        .trim_start_matches(prefix)
+        .to_string();
     (negative, clean)
 }
 
@@ -16676,8 +19526,8 @@ fn register_audio(interp: &mut Interpreter) {
     // Supports: "12tet", "24tet", "just", "pythagorean", "meantone", "gamelan_pelog", "gamelan_slendro"
     define(interp, "tune", Some(3), |_, args| {
         let note = match &args[0] {
-            Value::Int(n) => *n as f64,      // MIDI note number
-            Value::Float(f) => *f,            // Fractional note
+            Value::Int(n) => *n as f64, // MIDI note number
+            Value::Float(f) => *f,      // Fractional note
             Value::String(s) => parse_note_name(s)?,
             _ => return Err(RuntimeError::new("tune() requires note number or name")),
         };
@@ -16752,7 +19602,12 @@ fn register_audio(interp: &mut Interpreter) {
                 // Bohlen-Pierce scale (tritave-based, 13 steps)
                 root_freq * 3.0_f64.powf((note - 69.0) / 13.0)
             }
-            _ => return Err(RuntimeError::new(format!("Unknown tuning system: {}", system))),
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "Unknown tuning system: {}",
+                    system
+                )))
+            }
         };
 
         Ok(Value::Float(freq))
@@ -16812,8 +19667,14 @@ fn register_audio(interp: &mut Interpreter) {
         let mut info = std::collections::HashMap::new();
         info.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
         info.insert("notes_per_octave".to_string(), Value::Int(notes_per_octave));
-        info.insert("origin".to_string(), Value::String(Rc::new(origin.to_string())));
-        info.insert("description".to_string(), Value::String(Rc::new(description.to_string())));
+        info.insert(
+            "origin".to_string(),
+            Value::String(Rc::new(origin.to_string())),
+        );
+        info.insert(
+            "description".to_string(),
+            Value::String(Rc::new(description.to_string())),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(info))))
     });
@@ -16833,13 +19694,19 @@ fn register_audio(interp: &mut Interpreter) {
             ("bohlen_pierce", "Non-octave tritave scale", 13),
         ];
 
-        let result: Vec<Value> = systems.iter().map(|(name, desc, notes)| {
-            let mut entry = std::collections::HashMap::new();
-            entry.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
-            entry.insert("description".to_string(), Value::String(Rc::new(desc.to_string())));
-            entry.insert("notes_per_octave".to_string(), Value::Int(*notes));
-            Value::Map(Rc::new(RefCell::new(entry)))
-        }).collect();
+        let result: Vec<Value> = systems
+            .iter()
+            .map(|(name, desc, notes)| {
+                let mut entry = std::collections::HashMap::new();
+                entry.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+                entry.insert(
+                    "description".to_string(),
+                    Value::String(Rc::new(desc.to_string())),
+                );
+                entry.insert("notes_per_octave".to_string(), Value::Int(*notes));
+                Value::Map(Rc::new(RefCell::new(entry)))
+            })
+            .collect();
 
         Ok(Value::Array(Rc::new(RefCell::new(result))))
     });
@@ -16860,7 +19727,10 @@ fn register_audio(interp: &mut Interpreter) {
             "om" | "ॐ" | "aum" => (136.1, "Om - Earth year frequency (Cosmic Om)"),
             "earth_day" => (194.18, "Earth day - one rotation"),
             "earth_year" => (136.1, "Earth year - one orbit (Om frequency)"),
-            "schumann" | "earth_resonance" => (7.83, "Schumann resonance - Earth's electromagnetic heartbeat"),
+            "schumann" | "earth_resonance" => (
+                7.83,
+                "Schumann resonance - Earth's electromagnetic heartbeat",
+            ),
 
             // Solfeggio frequencies
             "ut" | "do" | "396" => (396.0, "UT/DO - Liberating guilt and fear"),
@@ -16893,7 +19763,10 @@ fn register_audio(interp: &mut Interpreter) {
 
             // Concert pitch standards
             "a440" | "iso" => (440.0, "ISO standard concert pitch (1955)"),
-            "a432" | "verdi" => (432.0, "Verdi pitch - 'mathematically consistent with universe'"),
+            "a432" | "verdi" => (
+                432.0,
+                "Verdi pitch - 'mathematically consistent with universe'",
+            ),
             "a415" | "baroque" => (415.0, "Baroque pitch - period instrument standard"),
             "a466" | "chorton" => (466.0, "Choir pitch - high Baroque German"),
 
@@ -16904,13 +19777,21 @@ fn register_audio(interp: &mut Interpreter) {
             "beta" => (20.0, "Beta waves - alertness, concentration (13-30 Hz)"),
             "gamma" => (40.0, "Gamma waves - insight, peak performance (30-100 Hz)"),
 
-            _ => return Err(RuntimeError::new(format!("Unknown sacred frequency: {}", name))),
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "Unknown sacred frequency: {}",
+                    name
+                )))
+            }
         };
 
         let mut result = std::collections::HashMap::new();
         result.insert("frequency".to_string(), Value::Float(freq));
         result.insert("name".to_string(), Value::String(Rc::new(name)));
-        result.insert("meaning".to_string(), Value::String(Rc::new(description.to_string())));
+        result.insert(
+            "meaning".to_string(),
+            Value::String(Rc::new(description.to_string())),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -16929,13 +19810,19 @@ fn register_audio(interp: &mut Interpreter) {
             (963.0, "SI", "Divine consciousness"),
         ];
 
-        let result: Vec<Value> = frequencies.iter().map(|(freq, name, meaning)| {
-            let mut entry = std::collections::HashMap::new();
-            entry.insert("frequency".to_string(), Value::Float(*freq));
-            entry.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
-            entry.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
-            Value::Map(Rc::new(RefCell::new(entry)))
-        }).collect();
+        let result: Vec<Value> = frequencies
+            .iter()
+            .map(|(freq, name, meaning)| {
+                let mut entry = std::collections::HashMap::new();
+                entry.insert("frequency".to_string(), Value::Float(*freq));
+                entry.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
+                entry.insert(
+                    "meaning".to_string(),
+                    Value::String(Rc::new(meaning.to_string())),
+                );
+                Value::Map(Rc::new(RefCell::new(entry)))
+            })
+            .collect();
 
         Ok(Value::Array(Rc::new(RefCell::new(result))))
     });
@@ -16943,24 +19830,81 @@ fn register_audio(interp: &mut Interpreter) {
     // chakras - get all chakra frequencies
     define(interp, "chakras", Some(0), |_, _| {
         let chakras = vec![
-            (256.0, "Muladhara", "Root", "Red", "Survival, grounding, stability"),
-            (288.0, "Svadhisthana", "Sacral", "Orange", "Creativity, sexuality, emotion"),
-            (320.0, "Manipura", "Solar Plexus", "Yellow", "Will, power, self-esteem"),
-            (341.3, "Anahata", "Heart", "Green", "Love, compassion, connection"),
-            (384.0, "Vishuddha", "Throat", "Blue", "Expression, truth, communication"),
-            (426.7, "Ajna", "Third Eye", "Indigo", "Intuition, insight, wisdom"),
-            (480.0, "Sahasrara", "Crown", "Violet", "Consciousness, unity, transcendence"),
+            (
+                256.0,
+                "Muladhara",
+                "Root",
+                "Red",
+                "Survival, grounding, stability",
+            ),
+            (
+                288.0,
+                "Svadhisthana",
+                "Sacral",
+                "Orange",
+                "Creativity, sexuality, emotion",
+            ),
+            (
+                320.0,
+                "Manipura",
+                "Solar Plexus",
+                "Yellow",
+                "Will, power, self-esteem",
+            ),
+            (
+                341.3,
+                "Anahata",
+                "Heart",
+                "Green",
+                "Love, compassion, connection",
+            ),
+            (
+                384.0,
+                "Vishuddha",
+                "Throat",
+                "Blue",
+                "Expression, truth, communication",
+            ),
+            (
+                426.7,
+                "Ajna",
+                "Third Eye",
+                "Indigo",
+                "Intuition, insight, wisdom",
+            ),
+            (
+                480.0,
+                "Sahasrara",
+                "Crown",
+                "Violet",
+                "Consciousness, unity, transcendence",
+            ),
         ];
 
-        let result: Vec<Value> = chakras.iter().map(|(freq, sanskrit, english, color, meaning)| {
-            let mut entry = std::collections::HashMap::new();
-            entry.insert("frequency".to_string(), Value::Float(*freq));
-            entry.insert("sanskrit".to_string(), Value::String(Rc::new(sanskrit.to_string())));
-            entry.insert("english".to_string(), Value::String(Rc::new(english.to_string())));
-            entry.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
-            entry.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
-            Value::Map(Rc::new(RefCell::new(entry)))
-        }).collect();
+        let result: Vec<Value> = chakras
+            .iter()
+            .map(|(freq, sanskrit, english, color, meaning)| {
+                let mut entry = std::collections::HashMap::new();
+                entry.insert("frequency".to_string(), Value::Float(*freq));
+                entry.insert(
+                    "sanskrit".to_string(),
+                    Value::String(Rc::new(sanskrit.to_string())),
+                );
+                entry.insert(
+                    "english".to_string(),
+                    Value::String(Rc::new(english.to_string())),
+                );
+                entry.insert(
+                    "color".to_string(),
+                    Value::String(Rc::new(color.to_string())),
+                );
+                entry.insert(
+                    "meaning".to_string(),
+                    Value::String(Rc::new(meaning.to_string())),
+                );
+                Value::Map(Rc::new(RefCell::new(entry)))
+            })
+            .collect();
 
         Ok(Value::Array(Rc::new(RefCell::new(result))))
     });
@@ -17029,11 +19973,31 @@ fn register_audio(interp: &mut Interpreter) {
 
         let (intervals, origin, description) = match name.as_str() {
             // Western modes
-            "major" | "ionian" => (vec![0, 2, 4, 5, 7, 9, 11], "Western", "Happy, bright, resolved"),
-            "minor" | "aeolian" => (vec![0, 2, 3, 5, 7, 8, 10], "Western", "Sad, dark, introspective"),
-            "dorian" => (vec![0, 2, 3, 5, 7, 9, 10], "Western/Jazz", "Minor with bright 6th"),
-            "phrygian" => (vec![0, 1, 3, 5, 7, 8, 10], "Western/Flamenco", "Spanish, exotic, tense"),
-            "lydian" => (vec![0, 2, 4, 6, 7, 9, 11], "Western", "Dreamy, floating, ethereal"),
+            "major" | "ionian" => (
+                vec![0, 2, 4, 5, 7, 9, 11],
+                "Western",
+                "Happy, bright, resolved",
+            ),
+            "minor" | "aeolian" => (
+                vec![0, 2, 3, 5, 7, 8, 10],
+                "Western",
+                "Sad, dark, introspective",
+            ),
+            "dorian" => (
+                vec![0, 2, 3, 5, 7, 9, 10],
+                "Western/Jazz",
+                "Minor with bright 6th",
+            ),
+            "phrygian" => (
+                vec![0, 1, 3, 5, 7, 8, 10],
+                "Western/Flamenco",
+                "Spanish, exotic, tense",
+            ),
+            "lydian" => (
+                vec![0, 2, 4, 6, 7, 9, 11],
+                "Western",
+                "Dreamy, floating, ethereal",
+            ),
             "mixolydian" => (vec![0, 2, 4, 5, 7, 9, 10], "Western/Blues", "Bluesy major"),
             "locrian" => (vec![0, 1, 3, 5, 6, 8, 10], "Western", "Unstable, dissonant"),
 
@@ -17049,15 +20013,39 @@ fn register_audio(interp: &mut Interpreter) {
             "yo" => (vec![0, 2, 5, 7, 9], "Japanese", "Bright, folk, celebratory"),
 
             // Arabic maqamat
-            "hijaz" => (vec![0, 1, 4, 5, 7, 8, 11], "Arabic", "Exotic, Middle Eastern"),
-            "bayati" => (vec![0, 1.5 as i32, 3, 5, 7, 8, 10], "Arabic", "Quarter-tone, soulful"),
-            "rast" => (vec![0, 2, 3.5 as i32, 5, 7, 9, 10.5 as i32], "Arabic", "Foundation maqam"),
-            "saba" => (vec![0, 1.5 as i32, 3, 4, 5, 8, 10], "Arabic", "Sad, spiritual"),
+            "hijaz" => (
+                vec![0, 1, 4, 5, 7, 8, 11],
+                "Arabic",
+                "Exotic, Middle Eastern",
+            ),
+            "bayati" => (
+                vec![0, 1.5 as i32, 3, 5, 7, 8, 10],
+                "Arabic",
+                "Quarter-tone, soulful",
+            ),
+            "rast" => (
+                vec![0, 2, 3.5 as i32, 5, 7, 9, 10.5 as i32],
+                "Arabic",
+                "Foundation maqam",
+            ),
+            "saba" => (
+                vec![0, 1.5 as i32, 3, 4, 5, 8, 10],
+                "Arabic",
+                "Sad, spiritual",
+            ),
 
             // Indian ragas (approximated to 12-TET)
-            "bhairav" => (vec![0, 1, 4, 5, 7, 8, 11], "Indian", "Morning raga, devotional"),
+            "bhairav" => (
+                vec![0, 1, 4, 5, 7, 8, 11],
+                "Indian",
+                "Morning raga, devotional",
+            ),
             "yaman" | "kalyan" => (vec![0, 2, 4, 6, 7, 9, 11], "Indian", "Evening, romantic"),
-            "bhairavi" => (vec![0, 1, 3, 5, 7, 8, 10], "Indian", "Concluding raga, devotional"),
+            "bhairavi" => (
+                vec![0, 1, 3, 5, 7, 8, 10],
+                "Indian",
+                "Concluding raga, devotional",
+            ),
             "todi" => (vec![0, 1, 3, 6, 7, 8, 11], "Indian", "Serious, pathos"),
             "marwa" => (vec![0, 1, 4, 6, 7, 9, 11], "Indian", "Evening, longing"),
 
@@ -17069,7 +20057,11 @@ fn register_audio(interp: &mut Interpreter) {
             "romanian" => (vec![0, 2, 3, 6, 7, 9, 10], "Romanian", "Folk, energetic"),
 
             // Jewish
-            "ahava_raba" | "freygish" => (vec![0, 1, 4, 5, 7, 8, 10], "Jewish/Klezmer", "Cantorial, emotional"),
+            "ahava_raba" | "freygish" => (
+                vec![0, 1, 4, 5, 7, 8, 10],
+                "Jewish/Klezmer",
+                "Cantorial, emotional",
+            ),
             "mi_sheberach" => (vec![0, 2, 3, 6, 7, 9, 10], "Jewish", "Prayer mode"),
 
             // Chinese
@@ -17080,12 +20072,24 @@ fn register_audio(interp: &mut Interpreter) {
             "yu" => (vec![0, 3, 5, 8, 10], "Chinese", "Wings mode, minor-like"),
 
             // Indonesian
-            "pelog" => (vec![0, 1, 3, 7, 8], "Javanese", "7-note unequal temperament"),
+            "pelog" => (
+                vec![0, 1, 3, 7, 8],
+                "Javanese",
+                "7-note unequal temperament",
+            ),
             "slendro" => (vec![0, 2, 5, 7, 9], "Javanese", "5-note roughly equal"),
 
             // Other
-            "whole_tone" => (vec![0, 2, 4, 6, 8, 10], "Impressionist", "Dreamlike, no resolution"),
-            "chromatic" => (vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], "Western", "All 12 notes"),
+            "whole_tone" => (
+                vec![0, 2, 4, 6, 8, 10],
+                "Impressionist",
+                "Dreamlike, no resolution",
+            ),
+            "chromatic" => (
+                vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+                "Western",
+                "All 12 notes",
+            ),
             "diminished" => (vec![0, 2, 3, 5, 6, 8, 9, 11], "Jazz", "Symmetric, tense"),
             "augmented" => (vec![0, 3, 4, 7, 8, 11], "Jazz", "Symmetric, floating"),
 
@@ -17093,10 +20097,20 @@ fn register_audio(interp: &mut Interpreter) {
         };
 
         let mut result = std::collections::HashMap::new();
-        let intervals_values: Vec<Value> = intervals.iter().map(|&i| Value::Int(i as i64)).collect();
-        result.insert("intervals".to_string(), Value::Array(Rc::new(RefCell::new(intervals_values))));
-        result.insert("origin".to_string(), Value::String(Rc::new(origin.to_string())));
-        result.insert("character".to_string(), Value::String(Rc::new(description.to_string())));
+        let intervals_values: Vec<Value> =
+            intervals.iter().map(|&i| Value::Int(i as i64)).collect();
+        result.insert(
+            "intervals".to_string(),
+            Value::Array(Rc::new(RefCell::new(intervals_values))),
+        );
+        result.insert(
+            "origin".to_string(),
+            Value::String(Rc::new(origin.to_string())),
+        );
+        result.insert(
+            "character".to_string(),
+            Value::String(Rc::new(description.to_string())),
+        );
         result.insert("name".to_string(), Value::String(Rc::new(name)));
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
@@ -17106,56 +20120,77 @@ fn register_audio(interp: &mut Interpreter) {
     define(interp, "list_scales", Some(0), |_, _| {
         let mut cultures = std::collections::HashMap::new();
 
-        cultures.insert("western".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("major".to_string())),
-            Value::String(Rc::new("minor".to_string())),
-            Value::String(Rc::new("dorian".to_string())),
-            Value::String(Rc::new("phrygian".to_string())),
-            Value::String(Rc::new("lydian".to_string())),
-            Value::String(Rc::new("mixolydian".to_string())),
-            Value::String(Rc::new("locrian".to_string())),
-        ]))));
+        cultures.insert(
+            "western".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("major".to_string())),
+                Value::String(Rc::new("minor".to_string())),
+                Value::String(Rc::new("dorian".to_string())),
+                Value::String(Rc::new("phrygian".to_string())),
+                Value::String(Rc::new("lydian".to_string())),
+                Value::String(Rc::new("mixolydian".to_string())),
+                Value::String(Rc::new("locrian".to_string())),
+            ]))),
+        );
 
-        cultures.insert("japanese".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("hirajoshi".to_string())),
-            Value::String(Rc::new("insen".to_string())),
-            Value::String(Rc::new("iwato".to_string())),
-            Value::String(Rc::new("kumoi".to_string())),
-            Value::String(Rc::new("yo".to_string())),
-        ]))));
+        cultures.insert(
+            "japanese".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("hirajoshi".to_string())),
+                Value::String(Rc::new("insen".to_string())),
+                Value::String(Rc::new("iwato".to_string())),
+                Value::String(Rc::new("kumoi".to_string())),
+                Value::String(Rc::new("yo".to_string())),
+            ]))),
+        );
 
-        cultures.insert("arabic".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("hijaz".to_string())),
-            Value::String(Rc::new("bayati".to_string())),
-            Value::String(Rc::new("rast".to_string())),
-            Value::String(Rc::new("saba".to_string())),
-        ]))));
+        cultures.insert(
+            "arabic".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("hijaz".to_string())),
+                Value::String(Rc::new("bayati".to_string())),
+                Value::String(Rc::new("rast".to_string())),
+                Value::String(Rc::new("saba".to_string())),
+            ]))),
+        );
 
-        cultures.insert("indian".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("bhairav".to_string())),
-            Value::String(Rc::new("yaman".to_string())),
-            Value::String(Rc::new("bhairavi".to_string())),
-            Value::String(Rc::new("todi".to_string())),
-            Value::String(Rc::new("marwa".to_string())),
-        ]))));
+        cultures.insert(
+            "indian".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("bhairav".to_string())),
+                Value::String(Rc::new("yaman".to_string())),
+                Value::String(Rc::new("bhairavi".to_string())),
+                Value::String(Rc::new("todi".to_string())),
+                Value::String(Rc::new("marwa".to_string())),
+            ]))),
+        );
 
-        cultures.insert("chinese".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("gong".to_string())),
-            Value::String(Rc::new("shang".to_string())),
-            Value::String(Rc::new("jue".to_string())),
-            Value::String(Rc::new("zhi".to_string())),
-            Value::String(Rc::new("yu".to_string())),
-        ]))));
+        cultures.insert(
+            "chinese".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("gong".to_string())),
+                Value::String(Rc::new("shang".to_string())),
+                Value::String(Rc::new("jue".to_string())),
+                Value::String(Rc::new("zhi".to_string())),
+                Value::String(Rc::new("yu".to_string())),
+            ]))),
+        );
 
-        cultures.insert("jewish".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("ahava_raba".to_string())),
-            Value::String(Rc::new("mi_sheberach".to_string())),
-        ]))));
+        cultures.insert(
+            "jewish".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("ahava_raba".to_string())),
+                Value::String(Rc::new("mi_sheberach".to_string())),
+            ]))),
+        );
 
-        cultures.insert("indonesian".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("pelog".to_string())),
-            Value::String(Rc::new("slendro".to_string())),
-        ]))));
+        cultures.insert(
+            "indonesian".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("pelog".to_string())),
+                Value::String(Rc::new("slendro".to_string())),
+            ]))),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(cultures))))
     });
@@ -17220,8 +20255,14 @@ fn register_audio(interp: &mut Interpreter) {
             .map(|n| {
                 let mut entry = std::collections::HashMap::new();
                 entry.insert("harmonic".to_string(), Value::Int(n as i64));
-                entry.insert("frequency".to_string(), Value::Float(fundamental * n as f64));
-                entry.insert("cents_from_root".to_string(), Value::Float(1200.0 * (n as f64).log2()));
+                entry.insert(
+                    "frequency".to_string(),
+                    Value::Float(fundamental * n as f64),
+                );
+                entry.insert(
+                    "cents_from_root".to_string(),
+                    Value::Float(1200.0 * (n as f64).log2()),
+                );
                 Value::Map(Rc::new(RefCell::new(entry)))
             })
             .collect();
@@ -17236,28 +20277,46 @@ fn register_audio(interp: &mut Interpreter) {
     define(interp, "audio_info", Some(0), |_, _| {
         let mut info = std::collections::HashMap::new();
 
-        info.insert("tuning_systems".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("12tet, 24tet, just, pythagorean, meantone".to_string())),
-            Value::String(Rc::new("53tet, 22shruti, pelog, slendro, bohlen_pierce".to_string())),
-        ]))));
+        info.insert(
+            "tuning_systems".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new(
+                    "12tet, 24tet, just, pythagorean, meantone".to_string(),
+                )),
+                Value::String(Rc::new(
+                    "53tet, 22shruti, pelog, slendro, bohlen_pierce".to_string(),
+                )),
+            ]))),
+        );
 
-        info.insert("waveforms".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("sine (∿)".to_string())),
-            Value::String(Rc::new("square (⊓)".to_string())),
-            Value::String(Rc::new("sawtooth (⋀)".to_string())),
-            Value::String(Rc::new("triangle (△)".to_string())),
-            Value::String(Rc::new("noise".to_string())),
-        ]))));
+        info.insert(
+            "waveforms".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("sine (∿)".to_string())),
+                Value::String(Rc::new("square (⊓)".to_string())),
+                Value::String(Rc::new("sawtooth (⋀)".to_string())),
+                Value::String(Rc::new("triangle (△)".to_string())),
+                Value::String(Rc::new("noise".to_string())),
+            ]))),
+        );
 
-        info.insert("sacred_frequencies".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("om, solfeggio, chakras, planets".to_string())),
-            Value::String(Rc::new("schumann, brainwaves (delta/theta/alpha/beta/gamma)".to_string())),
-        ]))));
+        info.insert(
+            "sacred_frequencies".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("om, solfeggio, chakras, planets".to_string())),
+                Value::String(Rc::new(
+                    "schumann, brainwaves (delta/theta/alpha/beta/gamma)".to_string(),
+                )),
+            ]))),
+        );
 
-        info.insert("scale_cultures".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::String(Rc::new("western, japanese, arabic, indian".to_string())),
-            Value::String(Rc::new("chinese, jewish, indonesian".to_string())),
-        ]))));
+        info.insert(
+            "scale_cultures".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::String(Rc::new("western, japanese, arabic, indian".to_string())),
+                Value::String(Rc::new("chinese, jewish, indonesian".to_string())),
+            ]))),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(info))))
     });
@@ -17269,37 +20328,46 @@ fn parse_note_name(s: &str) -> Result<f64, RuntimeError> {
     let s = s.trim().to_uppercase();
     let (note, octave_offset) = if s.ends_with(|c: char| c.is_ascii_digit()) {
         let octave: i32 = s.chars().last().unwrap().to_digit(10).unwrap() as i32;
-        let note_part = &s[..s.len()-1];
-        (note_part, (octave - 4) * 12)  // Octave 4 = MIDI 60 area
+        let note_part = &s[..s.len() - 1];
+        (note_part, (octave - 4) * 12) // Octave 4 = MIDI 60 area
     } else {
         (&s[..], 0)
     };
 
     let semitone = match note {
-        "C" => 0, "C#" | "DB" => 1, "D" => 2, "D#" | "EB" => 3,
-        "E" => 4, "F" => 5, "F#" | "GB" => 6, "G" => 7,
-        "G#" | "AB" => 8, "A" => 9, "A#" | "BB" => 10, "B" => 11,
+        "C" => 0,
+        "C#" | "DB" => 1,
+        "D" => 2,
+        "D#" | "EB" => 3,
+        "E" => 4,
+        "F" => 5,
+        "F#" | "GB" => 6,
+        "G" => 7,
+        "G#" | "AB" => 8,
+        "A" => 9,
+        "A#" | "BB" => 10,
+        "B" => 11,
         _ => return Err(RuntimeError::new(format!("Unknown note: {}", s))),
     };
 
-    Ok(69.0 + semitone as f64 - 9.0 + octave_offset as f64)  // A4 = 69
+    Ok(69.0 + semitone as f64 - 9.0 + octave_offset as f64) // A4 = 69
 }
 
 fn just_intonation_ratio(semitones: i32) -> f64 {
     // Classic 5-limit just intonation ratios
     match semitones.rem_euclid(12) {
-        0 => 1.0,           // Unison
-        1 => 16.0 / 15.0,   // Minor second
-        2 => 9.0 / 8.0,     // Major second
-        3 => 6.0 / 5.0,     // Minor third
-        4 => 5.0 / 4.0,     // Major third
-        5 => 4.0 / 3.0,     // Perfect fourth
-        6 => 45.0 / 32.0,   // Tritone
-        7 => 3.0 / 2.0,     // Perfect fifth
-        8 => 8.0 / 5.0,     // Minor sixth
-        9 => 5.0 / 3.0,     // Major sixth
-        10 => 9.0 / 5.0,    // Minor seventh
-        11 => 15.0 / 8.0,   // Major seventh
+        0 => 1.0,         // Unison
+        1 => 16.0 / 15.0, // Minor second
+        2 => 9.0 / 8.0,   // Major second
+        3 => 6.0 / 5.0,   // Minor third
+        4 => 5.0 / 4.0,   // Major third
+        5 => 4.0 / 3.0,   // Perfect fourth
+        6 => 45.0 / 32.0, // Tritone
+        7 => 3.0 / 2.0,   // Perfect fifth
+        8 => 8.0 / 5.0,   // Minor sixth
+        9 => 5.0 / 3.0,   // Major sixth
+        10 => 9.0 / 5.0,  // Minor seventh
+        11 => 15.0 / 8.0, // Major seventh
         _ => 1.0,
     }
 }
@@ -17325,7 +20393,7 @@ fn pythagorean_ratio(semitones: i32) -> f64 {
 
 fn meantone_ratio(semitones: i32) -> f64 {
     // Quarter-comma meantone - fifths narrowed by 1/4 syntonic comma
-    let fifth = 5.0_f64.powf(0.25);  // Pure major third, tempered fifth
+    let fifth = 5.0_f64.powf(0.25); // Pure major third, tempered fifth
     match semitones.rem_euclid(12) {
         0 => 1.0,
         1 => 8.0 / (fifth.powi(5)),
@@ -17346,9 +20414,28 @@ fn meantone_ratio(semitones: i32) -> f64 {
 fn shruti_ratio(shruti: i32) -> f64 {
     // 22 shruti ratios (traditional Indian)
     let ratios = [
-        1.0, 256.0/243.0, 16.0/15.0, 10.0/9.0, 9.0/8.0, 32.0/27.0, 6.0/5.0,
-        5.0/4.0, 81.0/64.0, 4.0/3.0, 27.0/20.0, 45.0/32.0, 729.0/512.0, 3.0/2.0,
-        128.0/81.0, 8.0/5.0, 5.0/3.0, 27.0/16.0, 16.0/9.0, 9.0/5.0, 15.0/8.0, 243.0/128.0
+        1.0,
+        256.0 / 243.0,
+        16.0 / 15.0,
+        10.0 / 9.0,
+        9.0 / 8.0,
+        32.0 / 27.0,
+        6.0 / 5.0,
+        5.0 / 4.0,
+        81.0 / 64.0,
+        4.0 / 3.0,
+        27.0 / 20.0,
+        45.0 / 32.0,
+        729.0 / 512.0,
+        3.0 / 2.0,
+        128.0 / 81.0,
+        8.0 / 5.0,
+        5.0 / 3.0,
+        27.0 / 16.0,
+        16.0 / 9.0,
+        9.0 / 5.0,
+        15.0 / 8.0,
+        243.0 / 128.0,
     ];
     ratios[shruti.rem_euclid(22) as usize]
 }
@@ -17422,33 +20509,73 @@ fn register_spirituality(interp: &mut Interpreter) {
 
     // The 8 trigrams
     const TRIGRAMS: [(&str, &str, &str, &str, &str); 8] = [
-        ("☰", "乾", "Heaven", "Creative", "strong, initiating, persisting"),
-        ("☱", "兌", "Lake", "Joyous", "pleasure, satisfaction, openness"),
-        ("☲", "離", "Fire", "Clinging", "clarity, awareness, dependence"),
-        ("☳", "震", "Thunder", "Arousing", "movement, initiative, action"),
-        ("☴", "巽", "Wind", "Gentle", "penetrating, following, flexible"),
+        (
+            "☰",
+            "乾",
+            "Heaven",
+            "Creative",
+            "strong, initiating, persisting",
+        ),
+        (
+            "☱",
+            "兌",
+            "Lake",
+            "Joyous",
+            "pleasure, satisfaction, openness",
+        ),
+        (
+            "☲",
+            "離",
+            "Fire",
+            "Clinging",
+            "clarity, awareness, dependence",
+        ),
+        (
+            "☳",
+            "震",
+            "Thunder",
+            "Arousing",
+            "movement, initiative, action",
+        ),
+        (
+            "☴",
+            "巽",
+            "Wind",
+            "Gentle",
+            "penetrating, following, flexible",
+        ),
         ("☵", "坎", "Water", "Abysmal", "danger, flowing, depth"),
-        ("☶", "艮", "Mountain", "Keeping Still", "stopping, resting, meditation"),
-        ("☷", "坤", "Earth", "Receptive", "yielding, nurturing, devoted"),
+        (
+            "☶",
+            "艮",
+            "Mountain",
+            "Keeping Still",
+            "stopping, resting, meditation",
+        ),
+        (
+            "☷",
+            "坤",
+            "Earth",
+            "Receptive",
+            "yielding, nurturing, devoted",
+        ),
     ];
 
     // trigram - get trigram information
     define(interp, "trigram", Some(1), |_, args| {
         let input = match &args[0] {
             Value::Int(n) => (*n as usize).min(7),
-            Value::String(s) => {
-                match s.as_str() {
-                    "☰" | "heaven" | "qian" | "乾" => 0,
-                    "☱" | "lake" | "dui" | "兌" => 1,
-                    "☲" | "fire" | "li" | "離" => 2,
-                    "☳" | "thunder" | "zhen" | "震" => 3,
-                    "☴" | "wind" | "xun" | "巽" => 4,
-                    "☵" | "water" | "kan" | "坎" => 5,
-                    "☶" | "mountain" | "gen" | "艮" => 6,
-                    "☷" | "earth" | "kun" | "坤" => 7,
-                    _ => return Err(RuntimeError::new(format!("Unknown trigram: {}", s))),
-                }
-            }
+            Value::String(s) => match s.as_str() {
+                "☰" | "heaven" | "qian" | "乾" => 0,
+                "☱" | "lake" | "dui" | "兌" => 1,
+                "☲" | "fire" | "li" | "離" => 2,
+                "☳" | "thunder" | "zhen" | "震" => 3,
+                "☴" | "wind" | "xun" | "巽" => 4,
+                "☵" | "water" | "kan" | "坎" => 5,
+                "☶" | "mountain" | "gen" | "艮" => 6,
+                "☷" | "earth" | "kun" | "坤" => 7,
+                _ => return Err(RuntimeError::new(format!("Unknown trigram: {}", s))),
+            },
             _ => return Err(RuntimeError::new("trigram() requires number or name")),
         };
 
@@ -17456,11 +20583,23 @@ fn register_spirituality(interp: &mut Interpreter) {
 
         let mut result = std::collections::HashMap::new();
         result.insert("number".to_string(), Value::Int(input as i64));
-        result.insert("symbol".to_string(), Value::String(Rc::new(symbol.to_string())));
-        result.insert("chinese".to_string(), Value::String(Rc::new(chinese.to_string())));
-        result.insert("english".to_string(), Value::String(Rc::new(english.to_string())));
+        result.insert(
+            "symbol".to_string(),
+            Value::String(Rc::new(symbol.to_string())),
+        );
+        result.insert(
+            "chinese".to_string(),
+            Value::String(Rc::new(chinese.to_string())),
+        );
+        result.insert(
+            "english".to_string(),
+            Value::String(Rc::new(english.to_string())),
+        );
         result.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
-        result.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        result.insert(
+            "meaning".to_string(),
+            Value::String(Rc::new(meaning.to_string())),
+        );
 
         // Binary representation (yang=1, yin=0)
         let binary = match input {
@@ -17474,7 +20613,10 @@ fn register_spirituality(interp: &mut Interpreter) {
             7 => "000", // ☷
             _ => "000",
         };
-        result.insert("binary".to_string(), Value::String(Rc::new(binary.to_string())));
+        result.insert(
+            "binary".to_string(),
+            Value::String(Rc::new(binary.to_string())),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -17490,12 +20632,30 @@ fn register_spirituality(interp: &mut Interpreter) {
 
         let mut result = std::collections::HashMap::new();
         result.insert("number".to_string(), Value::Int((num + 1) as i64));
-        result.insert("chinese".to_string(), Value::String(Rc::new(hex.0.to_string())));
-        result.insert("pinyin".to_string(), Value::String(Rc::new(hex.1.to_string())));
-        result.insert("english".to_string(), Value::String(Rc::new(hex.2.to_string())));
-        result.insert("judgment".to_string(), Value::String(Rc::new(hex.3.to_string())));
-        result.insert("upper_trigram".to_string(), Value::String(Rc::new(hex.4.to_string())));
-        result.insert("lower_trigram".to_string(), Value::String(Rc::new(hex.5.to_string())));
+        result.insert(
+            "chinese".to_string(),
+            Value::String(Rc::new(hex.0.to_string())),
+        );
+        result.insert(
+            "pinyin".to_string(),
+            Value::String(Rc::new(hex.1.to_string())),
+        );
+        result.insert(
+            "english".to_string(),
+            Value::String(Rc::new(hex.2.to_string())),
+        );
+        result.insert(
+            "judgment".to_string(),
+            Value::String(Rc::new(hex.3.to_string())),
+        );
+        result.insert(
+            "upper_trigram".to_string(),
+            Value::String(Rc::new(hex.4.to_string())),
+        );
+        result.insert(
+            "lower_trigram".to_string(),
+            Value::String(Rc::new(hex.5.to_string())),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -17513,10 +20673,21 @@ fn register_spirituality(interp: &mut Interpreter) {
         for i in 0..6 {
             // Simulate yarrow stalk probabilities
             let r: f64 = rng.gen();
-            let line = if r < 0.0625 { 6 }      // 1/16 - old yin
-                      else if r < 0.3125 { 7 }  // 5/16 - young yang
-                      else if r < 0.5625 { 8 }  // 5/16 - young yin
-                      else { 9 };               // 5/16 - old yang
+            let line = if r < 0.0625 {
+                6
+            }
+            // 1/16 - old yin
+            else if r < 0.3125 {
+                7
+            }
+            // 5/16 - young yang
+            else if r < 0.5625 {
+                8
+            }
+            // 5/16 - young yin
+            else {
+                9
+            }; // 5/16 - old yang
 
             let is_yang = line == 7 || line == 9;
             if is_yang {
@@ -17536,22 +20707,40 @@ fn register_spirituality(interp: &mut Interpreter) {
 
         let mut result = std::collections::HashMap::new();
         result.insert("hexagram".to_string(), Value::Int(king_wen_num as i64));
-        result.insert("chinese".to_string(), Value::String(Rc::new(hex.0.to_string())));
-        result.insert("english".to_string(), Value::String(Rc::new(hex.2.to_string())));
-        result.insert("judgment".to_string(), Value::String(Rc::new(hex.3.to_string())));
-        result.insert("lines".to_string(), Value::Array(Rc::new(RefCell::new(lines))));
+        result.insert(
+            "chinese".to_string(),
+            Value::String(Rc::new(hex.0.to_string())),
+        );
+        result.insert(
+            "english".to_string(),
+            Value::String(Rc::new(hex.2.to_string())),
+        );
+        result.insert(
+            "judgment".to_string(),
+            Value::String(Rc::new(hex.3.to_string())),
+        );
+        result.insert(
+            "lines".to_string(),
+            Value::Array(Rc::new(RefCell::new(lines))),
+        );
 
         let changing: Vec<Value> = changing_lines.iter().map(|&n| Value::Int(n)).collect();
-        result.insert("changing_lines".to_string(), Value::Array(Rc::new(RefCell::new(changing))));
+        result.insert(
+            "changing_lines".to_string(),
+            Value::Array(Rc::new(RefCell::new(changing))),
+        );
 
         // Calculate resulting hexagram if there are changing lines
         if !changing_lines.is_empty() {
             let mut result_hex = hexagram_num;
             for &line in &changing_lines {
-                result_hex ^= 1 << (line - 1);  // Flip the changing lines
+                result_hex ^= 1 << (line - 1); // Flip the changing lines
             }
             let result_king_wen = binary_to_king_wen(result_hex) + 1;
-            result.insert("transforms_to".to_string(), Value::Int(result_king_wen as i64));
+            result.insert(
+                "transforms_to".to_string(),
+                Value::Int(result_king_wen as i64),
+            );
         }
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
@@ -17577,75 +20766,81 @@ fn register_spirituality(interp: &mut Interpreter) {
             "phi" | "φ" | "golden" => (
                 (1.0 + 5.0_f64.sqrt()) / 2.0,
                 "φ",
-                "Golden Ratio - divine proportion found in nature, art, architecture"
+                "Golden Ratio - divine proportion found in nature, art, architecture",
             ),
             "phi_conjugate" | "1/phi" => (
                 2.0 / (1.0 + 5.0_f64.sqrt()),
                 "1/φ",
-                "Golden Ratio conjugate - φ - 1 = 1/φ"
+                "Golden Ratio conjugate - φ - 1 = 1/φ",
             ),
             "phi_squared" | "phi2" => (
                 ((1.0 + 5.0_f64.sqrt()) / 2.0).powi(2),
                 "φ²",
-                "Golden Ratio squared - φ + 1 = φ²"
+                "Golden Ratio squared - φ + 1 = φ²",
             ),
             "sqrt_phi" => (
                 ((1.0 + 5.0_f64.sqrt()) / 2.0).sqrt(),
                 "√φ",
-                "Square root of Golden Ratio"
+                "Square root of Golden Ratio",
             ),
             "pi" | "π" => (
                 std::f64::consts::PI,
                 "π",
-                "Circle constant - circumference/diameter, transcendental"
+                "Circle constant - circumference/diameter, transcendental",
             ),
             "tau" | "τ" => (
                 std::f64::consts::TAU,
                 "τ",
-                "Full circle constant - 2π, one complete revolution"
+                "Full circle constant - 2π, one complete revolution",
             ),
             "e" | "euler" => (
                 std::f64::consts::E,
                 "e",
-                "Euler's number - natural growth, compound interest"
+                "Euler's number - natural growth, compound interest",
             ),
             "sqrt2" | "√2" | "pythagoras" => (
                 std::f64::consts::SQRT_2,
                 "√2",
-                "Pythagorean constant - diagonal of unit square"
+                "Pythagorean constant - diagonal of unit square",
             ),
             "sqrt3" | "√3" | "vesica" => (
                 3.0_f64.sqrt(),
                 "√3",
-                "Vesica Piscis ratio - sacred geometry foundation"
+                "Vesica Piscis ratio - sacred geometry foundation",
             ),
             "sqrt5" | "√5" => (
                 5.0_f64.sqrt(),
                 "√5",
-                "Related to Golden Ratio: φ = (1 + √5) / 2"
+                "Related to Golden Ratio: φ = (1 + √5) / 2",
             ),
             "silver" | "δs" => (
                 1.0 + 2.0_f64.sqrt(),
                 "δs",
-                "Silver Ratio - related to octagon"
+                "Silver Ratio - related to octagon",
             ),
             "plastic" | "ρ" => (
                 1.324717957244746,
                 "ρ",
-                "Plastic Number - smallest Pisot number"
+                "Plastic Number - smallest Pisot number",
             ),
             "feigenbaum" | "δ" => (
                 4.669201609102990,
                 "δ",
-                "Feigenbaum constant - chaos theory, period doubling"
+                "Feigenbaum constant - chaos theory, period doubling",
             ),
             _ => return Err(RuntimeError::new(format!("Unknown sacred ratio: {}", name))),
         };
 
         let mut result = std::collections::HashMap::new();
         result.insert("value".to_string(), Value::Float(value));
-        result.insert("symbol".to_string(), Value::String(Rc::new(symbol.to_string())));
-        result.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        result.insert(
+            "symbol".to_string(),
+            Value::String(Rc::new(symbol.to_string())),
+        );
+        result.insert(
+            "meaning".to_string(),
+            Value::String(Rc::new(meaning.to_string())),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -17679,7 +20874,9 @@ fn register_spirituality(interp: &mut Interpreter) {
 
         // A number is Fibonacci iff one of (5n² + 4) or (5n² - 4) is a perfect square
         fn is_perfect_square(n: i64) -> bool {
-            if n < 0 { return false; }
+            if n < 0 {
+                return false;
+            }
             let root = (n as f64).sqrt() as i64;
             root * root == n
         }
@@ -17688,7 +20885,9 @@ fn register_spirituality(interp: &mut Interpreter) {
         let test1 = 5i64.saturating_mul(n_sq).saturating_add(4);
         let test2 = 5i64.saturating_mul(n_sq).saturating_sub(4);
 
-        Ok(Value::Bool(is_perfect_square(test1) || is_perfect_square(test2)))
+        Ok(Value::Bool(
+            is_perfect_square(test1) || is_perfect_square(test2),
+        ))
     });
 
     // platonic_solid - get information about Platonic solids
@@ -17699,12 +20898,52 @@ fn register_spirituality(interp: &mut Interpreter) {
         };
 
         let (faces, vertices, edges, face_shape, element, meaning) = match name.as_str() {
-            "tetrahedron" | "fire" => (4, 4, 6, "triangle", "Fire", "Sharpness, heat, transformation"),
-            "cube" | "hexahedron" | "earth" => (6, 8, 12, "square", "Earth", "Stability, grounding, material"),
-            "octahedron" | "air" => (8, 6, 12, "triangle", "Air", "Balance, intellect, communication"),
-            "dodecahedron" | "aether" | "spirit" => (12, 20, 30, "pentagon", "Aether/Spirit", "The cosmos, divine thought"),
-            "icosahedron" | "water" => (20, 12, 30, "triangle", "Water", "Flow, emotion, adaptability"),
-            _ => return Err(RuntimeError::new(format!("Unknown Platonic solid: {}", name))),
+            "tetrahedron" | "fire" => (
+                4,
+                4,
+                6,
+                "triangle",
+                "Fire",
+                "Sharpness, heat, transformation",
+            ),
+            "cube" | "hexahedron" | "earth" => (
+                6,
+                8,
+                12,
+                "square",
+                "Earth",
+                "Stability, grounding, material",
+            ),
+            "octahedron" | "air" => (
+                8,
+                6,
+                12,
+                "triangle",
+                "Air",
+                "Balance, intellect, communication",
+            ),
+            "dodecahedron" | "aether" | "spirit" => (
+                12,
+                20,
+                30,
+                "pentagon",
+                "Aether/Spirit",
+                "The cosmos, divine thought",
+            ),
+            "icosahedron" | "water" => (
+                20,
+                12,
+                30,
+                "triangle",
+                "Water",
+                "Flow, emotion, adaptability",
+            ),
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "Unknown Platonic solid: {}",
+                    name
+                )))
+            }
         };
 
         let mut result = std::collections::HashMap::new();
@@ -17712,9 +20951,18 @@ fn register_spirituality(interp: &mut Interpreter) {
         result.insert("faces".to_string(), Value::Int(faces));
         result.insert("vertices".to_string(), Value::Int(vertices));
         result.insert("edges".to_string(), Value::Int(edges));
-        result.insert("face_shape".to_string(), Value::String(Rc::new(face_shape.to_string())));
-        result.insert("element".to_string(), Value::String(Rc::new(element.to_string())));
-        result.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        result.insert(
+            "face_shape".to_string(),
+            Value::String(Rc::new(face_shape.to_string())),
+        );
+        result.insert(
+            "element".to_string(),
+            Value::String(Rc::new(element.to_string())),
+        );
+        result.insert(
+            "meaning".to_string(),
+            Value::String(Rc::new(meaning.to_string())),
+        );
 
         // Euler's formula: V - E + F = 2
         result.insert("euler_characteristic".to_string(), Value::Int(2));
@@ -17739,47 +20987,55 @@ fn register_spirituality(interp: &mut Interpreter) {
         };
 
         let total: i64 = match system.as_str() {
-            "hebrew" | "kabbalah" => {
-                text.chars().map(|c| hebrew_gematria(c)).sum()
-            }
-            "greek" | "isopsephy" => {
-                text.chars().map(|c| greek_isopsephy(c)).sum()
-            }
-            "arabic" | "abjad" => {
-                text.chars().map(|c| arabic_abjad(c)).sum()
-            }
+            "hebrew" | "kabbalah" => text.chars().map(|c| hebrew_gematria(c)).sum(),
+            "greek" | "isopsephy" => text.chars().map(|c| greek_isopsephy(c)).sum(),
+            "arabic" | "abjad" => text.chars().map(|c| arabic_abjad(c)).sum(),
             "english" | "simple" => {
                 // Simple English: A=1, B=2, ... Z=26
-                text.to_uppercase().chars().filter_map(|c| {
-                    if c.is_ascii_alphabetic() {
-                        Some((c as i64) - ('A' as i64) + 1)
-                    } else {
-                        None
-                    }
-                }).sum()
+                text.to_uppercase()
+                    .chars()
+                    .filter_map(|c| {
+                        if c.is_ascii_alphabetic() {
+                            Some((c as i64) - ('A' as i64) + 1)
+                        } else {
+                            None
+                        }
+                    })
+                    .sum()
             }
             "english_ordinal" => {
                 // Same as simple
-                text.to_uppercase().chars().filter_map(|c| {
-                    if c.is_ascii_alphabetic() {
-                        Some((c as i64) - ('A' as i64) + 1)
-                    } else {
-                        None
-                    }
-                }).sum()
+                text.to_uppercase()
+                    .chars()
+                    .filter_map(|c| {
+                        if c.is_ascii_alphabetic() {
+                            Some((c as i64) - ('A' as i64) + 1)
+                        } else {
+                            None
+                        }
+                    })
+                    .sum()
             }
             "english_reduction" => {
                 // Reduce each letter: A=1, B=2, ... I=9, J=1, K=2, etc.
-                text.to_uppercase().chars().filter_map(|c| {
-                    if c.is_ascii_alphabetic() {
-                        let val = ((c as i64) - ('A' as i64)) % 9 + 1;
-                        Some(val)
-                    } else {
-                        None
-                    }
-                }).sum()
+                text.to_uppercase()
+                    .chars()
+                    .filter_map(|c| {
+                        if c.is_ascii_alphabetic() {
+                            let val = ((c as i64) - ('A' as i64)) % 9 + 1;
+                            Some(val)
+                        } else {
+                            None
+                        }
+                    })
+                    .sum()
             }
-            _ => return Err(RuntimeError::new(format!("Unknown gematria system: {}", system))),
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "Unknown gematria system: {}",
+                    system
+                )))
+            }
         };
 
         let mut result = std::collections::HashMap::new();
@@ -17790,7 +21046,9 @@ fn register_spirituality(interp: &mut Interpreter) {
         // Digital root (reduce to single digit)
         let mut digital_root = total;
         while digital_root > 9 {
-            digital_root = digital_root.to_string().chars()
+            digital_root = digital_root
+                .to_string()
+                .chars()
                 .filter_map(|c| c.to_digit(10))
                 .map(|d| d as i64)
                 .sum();
@@ -17824,7 +21082,8 @@ fn register_spirituality(interp: &mut Interpreter) {
             _ => vec![],
         };
 
-        let match_values: Vec<Value> = matches.iter()
+        let match_values: Vec<Value> = matches
+            .iter()
             .map(|s| Value::String(Rc::new(s.to_string())))
             .collect();
 
@@ -17848,31 +21107,31 @@ fn register_spirituality(interp: &mut Interpreter) {
                 "The unified conscious and unconscious, the goal of individuation",
                 "Inflation or deflation of ego",
                 "Wholeness, integration, meaning",
-                "Integrating all aspects of psyche"
+                "Integrating all aspects of psyche",
             ),
             "shadow" => (
                 "The unconscious aspect containing repressed weaknesses and instincts",
                 "Projection onto others, denial",
                 "Creativity, spontaneity, insight",
-                "Acknowledging and integrating darkness"
+                "Acknowledging and integrating darkness",
             ),
             "anima" => (
                 "The feminine inner personality in a man's unconscious",
                 "Moodiness, seduction, possession",
                 "Relatedness, creativity, soul connection",
-                "Developing emotional intelligence"
+                "Developing emotional intelligence",
             ),
             "animus" => (
                 "The masculine inner personality in a woman's unconscious",
                 "Brutality, reckless action, opinionation",
                 "Courage, initiative, spiritual depth",
-                "Developing assertiveness with wisdom"
+                "Developing assertiveness with wisdom",
             ),
             "persona" => (
                 "The social mask, the face we present to the world",
                 "Over-identification, inauthenticity",
                 "Social adaptation, professional competence",
-                "Maintaining authenticity within role"
+                "Maintaining authenticity within role",
             ),
 
             // Major archetypes
@@ -17880,83 +21139,92 @@ fn register_spirituality(interp: &mut Interpreter) {
                 "The courageous one who overcomes obstacles and achieves great deeds",
                 "Arrogance, ruthlessness, eternal battle",
                 "Courage, perseverance, accomplishment",
-                "Knowing when to fight and when to surrender"
+                "Knowing when to fight and when to surrender",
             ),
             "sage" | "wise_old_man" => (
                 "The wise figure who offers guidance and insight",
                 "Dogmatism, disconnection, ivory tower",
                 "Wisdom, knowledge, truth-seeking",
-                "Applying wisdom practically"
+                "Applying wisdom practically",
             ),
             "magician" | "wizard" => (
                 "The transformer who makes things happen through understanding laws",
                 "Manipulation, disconnection from ethics",
                 "Transformation, vision, manifestation",
-                "Using power responsibly"
+                "Using power responsibly",
             ),
             "lover" => (
                 "The one who pursues connection, beauty, and passion",
                 "Obsession, jealousy, loss of identity",
                 "Passion, commitment, appreciation",
-                "Maintaining boundaries while connecting deeply"
+                "Maintaining boundaries while connecting deeply",
             ),
             "caregiver" | "mother" => (
                 "The nurturing one who protects and provides",
                 "Martyrdom, enabling, smothering",
                 "Compassion, generosity, nurturing",
-                "Caring for self while caring for others"
+                "Caring for self while caring for others",
             ),
             "ruler" | "king" | "queen" => (
                 "The one who takes responsibility for the realm",
                 "Tyranny, authoritarianism, being overthrown",
                 "Order, leadership, prosperity",
-                "Serving the greater good, not just power"
+                "Serving the greater good, not just power",
             ),
             "creator" | "artist" => (
                 "The one who brings new things into being",
                 "Perfectionism, self-indulgence, drama",
                 "Creativity, imagination, expression",
-                "Completing projects, accepting imperfection"
+                "Completing projects, accepting imperfection",
             ),
             "innocent" | "child" => (
                 "The pure one with faith and optimism",
                 "Naivety, denial, dependence",
                 "Faith, optimism, loyalty",
-                "Growing without becoming cynical"
+                "Growing without becoming cynical",
             ),
             "explorer" | "seeker" => (
                 "The one who seeks new experiences and self-discovery",
                 "Aimless wandering, inability to commit",
                 "Autonomy, ambition, authenticity",
-                "Finding what you seek"
+                "Finding what you seek",
             ),
             "rebel" | "outlaw" => (
                 "The one who breaks rules and challenges the status quo",
                 "Crime, self-destruction, alienation",
                 "Liberation, revolution, radical freedom",
-                "Channeling rebellion constructively"
+                "Channeling rebellion constructively",
             ),
             "jester" | "fool" | "trickster" => (
                 "The one who uses humor and playfulness",
                 "Cruelty, debauchery, irresponsibility",
                 "Joy, freedom, living in the moment",
-                "Knowing when to be serious"
+                "Knowing when to be serious",
             ),
             "everyman" | "orphan" => (
                 "The regular person who wants belonging",
                 "Victim mentality, losing self in group",
                 "Realism, empathy, connection",
-                "Standing out when necessary"
+                "Standing out when necessary",
             ),
             _ => return Err(RuntimeError::new(format!("Unknown archetype: {}", name))),
         };
 
         let mut result = std::collections::HashMap::new();
         result.insert("name".to_string(), Value::String(Rc::new(name)));
-        result.insert("description".to_string(), Value::String(Rc::new(description.to_string())));
-        result.insert("shadow".to_string(), Value::String(Rc::new(shadow.to_string())));
+        result.insert(
+            "description".to_string(),
+            Value::String(Rc::new(description.to_string())),
+        );
+        result.insert(
+            "shadow".to_string(),
+            Value::String(Rc::new(shadow.to_string())),
+        );
         result.insert("gift".to_string(), Value::String(Rc::new(gift.to_string())));
-        result.insert("challenge".to_string(), Value::String(Rc::new(challenge.to_string())));
+        result.insert(
+            "challenge".to_string(),
+            Value::String(Rc::new(challenge.to_string())),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -17969,52 +21237,164 @@ fn register_spirituality(interp: &mut Interpreter) {
     define(interp, "zodiac", Some(1), |_, args| {
         let input = match &args[0] {
             Value::Int(n) => (*n as usize - 1).min(11),
-            Value::String(s) => {
-                match s.to_lowercase().as_str() {
-                    "aries" | "♈" => 0,
-                    "taurus" | "♉" => 1,
-                    "gemini" | "♊" => 2,
-                    "cancer" | "♋" => 3,
-                    "leo" | "♌" => 4,
-                    "virgo" | "♍" => 5,
-                    "libra" | "♎" => 6,
-                    "scorpio" | "♏" => 7,
-                    "sagittarius" | "♐" => 8,
-                    "capricorn" | "♑" => 9,
-                    "aquarius" | "♒" => 10,
-                    "pisces" | "♓" => 11,
-                    _ => return Err(RuntimeError::new(format!("Unknown sign: {}", s))),
-                }
-            }
+            Value::String(s) => match s.to_lowercase().as_str() {
+                "aries" | "♈" => 0,
+                "taurus" | "♉" => 1,
+                "gemini" | "♊" => 2,
+                "cancer" | "♋" => 3,
+                "leo" | "♌" => 4,
+                "virgo" | "♍" => 5,
+                "libra" | "♎" => 6,
+                "scorpio" | "♏" => 7,
+                "sagittarius" | "♐" => 8,
+                "capricorn" | "♑" => 9,
+                "aquarius" | "♒" => 10,
+                "pisces" | "♓" => 11,
+                _ => return Err(RuntimeError::new(format!("Unknown sign: {}", s))),
+            },
             _ => return Err(RuntimeError::new("zodiac() requires number or name")),
         };
 
         let signs = [
-            ("♈", "Aries", "Fire", "Cardinal", "Mars", "I Am", "Mar 21 - Apr 19"),
-            ("♉", "Taurus", "Earth", "Fixed", "Venus", "I Have", "Apr 20 - May 20"),
-            ("♊", "Gemini", "Air", "Mutable", "Mercury", "I Think", "May 21 - Jun 20"),
-            ("♋", "Cancer", "Water", "Cardinal", "Moon", "I Feel", "Jun 21 - Jul 22"),
-            ("♌", "Leo", "Fire", "Fixed", "Sun", "I Will", "Jul 23 - Aug 22"),
-            ("♍", "Virgo", "Earth", "Mutable", "Mercury", "I Analyze", "Aug 23 - Sep 22"),
-            ("♎", "Libra", "Air", "Cardinal", "Venus", "I Balance", "Sep 23 - Oct 22"),
-            ("♏", "Scorpio", "Water", "Fixed", "Pluto/Mars", "I Transform", "Oct 23 - Nov 21"),
-            ("♐", "Sagittarius", "Fire", "Mutable", "Jupiter", "I Seek", "Nov 22 - Dec 21"),
-            ("♑", "Capricorn", "Earth", "Cardinal", "Saturn", "I Use", "Dec 22 - Jan 19"),
-            ("♒", "Aquarius", "Air", "Fixed", "Uranus/Saturn", "I Know", "Jan 20 - Feb 18"),
-            ("♓", "Pisces", "Water", "Mutable", "Neptune/Jupiter", "I Believe", "Feb 19 - Mar 20"),
+            (
+                "♈",
+                "Aries",
+                "Fire",
+                "Cardinal",
+                "Mars",
+                "I Am",
+                "Mar 21 - Apr 19",
+            ),
+            (
+                "♉",
+                "Taurus",
+                "Earth",
+                "Fixed",
+                "Venus",
+                "I Have",
+                "Apr 20 - May 20",
+            ),
+            (
+                "♊",
+                "Gemini",
+                "Air",
+                "Mutable",
+                "Mercury",
+                "I Think",
+                "May 21 - Jun 20",
+            ),
+            (
+                "♋",
+                "Cancer",
+                "Water",
+                "Cardinal",
+                "Moon",
+                "I Feel",
+                "Jun 21 - Jul 22",
+            ),
+            (
+                "♌",
+                "Leo",
+                "Fire",
+                "Fixed",
+                "Sun",
+                "I Will",
+                "Jul 23 - Aug 22",
+            ),
+            (
+                "♍",
+                "Virgo",
+                "Earth",
+                "Mutable",
+                "Mercury",
+                "I Analyze",
+                "Aug 23 - Sep 22",
+            ),
+            (
+                "♎",
+                "Libra",
+                "Air",
+                "Cardinal",
+                "Venus",
+                "I Balance",
+                "Sep 23 - Oct 22",
+            ),
+            (
+                "♏",
+                "Scorpio",
+                "Water",
+                "Fixed",
+                "Pluto/Mars",
+                "I Transform",
+                "Oct 23 - Nov 21",
+            ),
+            (
+                "♐",
+                "Sagittarius",
+                "Fire",
+                "Mutable",
+                "Jupiter",
+                "I Seek",
+                "Nov 22 - Dec 21",
+            ),
+            (
+                "♑",
+                "Capricorn",
+                "Earth",
+                "Cardinal",
+                "Saturn",
+                "I Use",
+                "Dec 22 - Jan 19",
+            ),
+            (
+                "♒",
+                "Aquarius",
+                "Air",
+                "Fixed",
+                "Uranus/Saturn",
+                "I Know",
+                "Jan 20 - Feb 18",
+            ),
+            (
+                "♓",
+                "Pisces",
+                "Water",
+                "Mutable",
+                "Neptune/Jupiter",
+                "I Believe",
+                "Feb 19 - Mar 20",
+            ),
         ];
 
         let (symbol, name, element, modality, ruler, motto, dates) = signs[input];
 
         let mut result = std::collections::HashMap::new();
         result.insert("number".to_string(), Value::Int((input + 1) as i64));
-        result.insert("symbol".to_string(), Value::String(Rc::new(symbol.to_string())));
+        result.insert(
+            "symbol".to_string(),
+            Value::String(Rc::new(symbol.to_string())),
+        );
         result.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
-        result.insert("element".to_string(), Value::String(Rc::new(element.to_string())));
-        result.insert("modality".to_string(), Value::String(Rc::new(modality.to_string())));
-        result.insert("ruler".to_string(), Value::String(Rc::new(ruler.to_string())));
-        result.insert("motto".to_string(), Value::String(Rc::new(motto.to_string())));
-        result.insert("dates".to_string(), Value::String(Rc::new(dates.to_string())));
+        result.insert(
+            "element".to_string(),
+            Value::String(Rc::new(element.to_string())),
+        );
+        result.insert(
+            "modality".to_string(),
+            Value::String(Rc::new(modality.to_string())),
+        );
+        result.insert(
+            "ruler".to_string(),
+            Value::String(Rc::new(ruler.to_string())),
+        );
+        result.insert(
+            "motto".to_string(),
+            Value::String(Rc::new(motto.to_string())),
+        );
+        result.insert(
+            "dates".to_string(),
+            Value::String(Rc::new(dates.to_string())),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -18023,44 +21403,145 @@ fn register_spirituality(interp: &mut Interpreter) {
     define(interp, "tarot_major", Some(1), |_, args| {
         let num = match &args[0] {
             Value::Int(n) => (*n as usize).min(21),
-            Value::String(s) => {
-                match s.to_lowercase().as_str() {
-                    "fool" => 0, "magician" => 1, "high_priestess" | "priestess" => 2,
-                    "empress" => 3, "emperor" => 4, "hierophant" | "pope" => 5,
-                    "lovers" => 6, "chariot" => 7, "strength" => 8,
-                    "hermit" => 9, "wheel" | "fortune" => 10, "justice" => 11,
-                    "hanged_man" | "hanged" => 12, "death" => 13, "temperance" => 14,
-                    "devil" => 15, "tower" => 16, "star" => 17,
-                    "moon" => 18, "sun" => 19, "judgement" | "judgment" => 20, "world" => 21,
-                    _ => return Err(RuntimeError::new(format!("Unknown card: {}", s))),
-                }
-            }
+            Value::String(s) => match s.to_lowercase().as_str() {
+                "fool" => 0,
+                "magician" => 1,
+                "high_priestess" | "priestess" => 2,
+                "empress" => 3,
+                "emperor" => 4,
+                "hierophant" | "pope" => 5,
+                "lovers" => 6,
+                "chariot" => 7,
+                "strength" => 8,
+                "hermit" => 9,
+                "wheel" | "fortune" => 10,
+                "justice" => 11,
+                "hanged_man" | "hanged" => 12,
+                "death" => 13,
+                "temperance" => 14,
+                "devil" => 15,
+                "tower" => 16,
+                "star" => 17,
+                "moon" => 18,
+                "sun" => 19,
+                "judgement" | "judgment" => 20,
+                "world" => 21,
+                _ => return Err(RuntimeError::new(format!("Unknown card: {}", s))),
+            },
             _ => return Err(RuntimeError::new("tarot_major() requires number or name")),
         };
 
         let cards = [
-            ("The Fool", "New beginnings, innocence, spontaneity", "Naivety, recklessness, risk-taking"),
-            ("The Magician", "Willpower, creation, manifestation", "Manipulation, trickery, unused talent"),
-            ("The High Priestess", "Intuition, mystery, inner knowledge", "Secrets, withdrawal, silence"),
-            ("The Empress", "Abundance, nurturing, fertility", "Dependence, smothering, emptiness"),
-            ("The Emperor", "Authority, structure, control", "Tyranny, rigidity, coldness"),
-            ("The Hierophant", "Tradition, conformity, spirituality", "Dogma, restriction, challenging status quo"),
-            ("The Lovers", "Love, harmony, relationships, choices", "Disharmony, imbalance, misalignment"),
-            ("The Chariot", "Direction, willpower, victory", "Aggression, lack of direction, obstacles"),
-            ("Strength", "Courage, patience, inner power", "Self-doubt, weakness, insecurity"),
-            ("The Hermit", "Contemplation, search for truth, inner guidance", "Isolation, loneliness, withdrawal"),
-            ("Wheel of Fortune", "Change, cycles, fate, destiny", "Resistance to change, bad luck, setbacks"),
-            ("Justice", "Truth, fairness, law, cause and effect", "Unfairness, dishonesty, lack of accountability"),
-            ("The Hanged Man", "Surrender, letting go, new perspective", "Stalling, resistance, indecision"),
-            ("Death", "Endings, transformation, transition", "Fear of change, stagnation, decay"),
-            ("Temperance", "Balance, moderation, patience", "Imbalance, excess, lack of purpose"),
-            ("The Devil", "Bondage, materialism, shadow self", "Freedom, release, exploring dark side"),
-            ("The Tower", "Sudden change, upheaval, revelation", "Disaster averted, fear of change, prolonged pain"),
-            ("The Star", "Hope, faith, renewal, inspiration", "Despair, disconnection, lack of faith"),
-            ("The Moon", "Illusion, intuition, the unconscious", "Fear, confusion, misinterpretation"),
-            ("The Sun", "Joy, success, vitality, positivity", "Negativity, depression, sadness"),
-            ("Judgement", "Rebirth, inner calling, absolution", "Self-doubt, refusal of self-examination"),
-            ("The World", "Completion, accomplishment, wholeness", "Incompletion, lack of closure, emptiness"),
+            (
+                "The Fool",
+                "New beginnings, innocence, spontaneity",
+                "Naivety, recklessness, risk-taking",
+            ),
+            (
+                "The Magician",
+                "Willpower, creation, manifestation",
+                "Manipulation, trickery, unused talent",
+            ),
+            (
+                "The High Priestess",
+                "Intuition, mystery, inner knowledge",
+                "Secrets, withdrawal, silence",
+            ),
+            (
+                "The Empress",
+                "Abundance, nurturing, fertility",
+                "Dependence, smothering, emptiness",
+            ),
+            (
+                "The Emperor",
+                "Authority, structure, control",
+                "Tyranny, rigidity, coldness",
+            ),
+            (
+                "The Hierophant",
+                "Tradition, conformity, spirituality",
+                "Dogma, restriction, challenging status quo",
+            ),
+            (
+                "The Lovers",
+                "Love, harmony, relationships, choices",
+                "Disharmony, imbalance, misalignment",
+            ),
+            (
+                "The Chariot",
+                "Direction, willpower, victory",
+                "Aggression, lack of direction, obstacles",
+            ),
+            (
+                "Strength",
+                "Courage, patience, inner power",
+                "Self-doubt, weakness, insecurity",
+            ),
+            (
+                "The Hermit",
+                "Contemplation, search for truth, inner guidance",
+                "Isolation, loneliness, withdrawal",
+            ),
+            (
+                "Wheel of Fortune",
+                "Change, cycles, fate, destiny",
+                "Resistance to change, bad luck, setbacks",
+            ),
+            (
+                "Justice",
+                "Truth, fairness, law, cause and effect",
+                "Unfairness, dishonesty, lack of accountability",
+            ),
+            (
+                "The Hanged Man",
+                "Surrender, letting go, new perspective",
+                "Stalling, resistance, indecision",
+            ),
+            (
+                "Death",
+                "Endings, transformation, transition",
+                "Fear of change, stagnation, decay",
+            ),
+            (
+                "Temperance",
+                "Balance, moderation, patience",
+                "Imbalance, excess, lack of purpose",
+            ),
+            (
+                "The Devil",
+                "Bondage, materialism, shadow self",
+                "Freedom, release, exploring dark side",
+            ),
+            (
+                "The Tower",
+                "Sudden change, upheaval, revelation",
+                "Disaster averted, fear of change, prolonged pain",
+            ),
+            (
+                "The Star",
+                "Hope, faith, renewal, inspiration",
+                "Despair, disconnection, lack of faith",
+            ),
+            (
+                "The Moon",
+                "Illusion, intuition, the unconscious",
+                "Fear, confusion, misinterpretation",
+            ),
+            (
+                "The Sun",
+                "Joy, success, vitality, positivity",
+                "Negativity, depression, sadness",
+            ),
+            (
+                "Judgement",
+                "Rebirth, inner calling, absolution",
+                "Self-doubt, refusal of self-examination",
+            ),
+            (
+                "The World",
+                "Completion, accomplishment, wholeness",
+                "Incompletion, lack of closure, emptiness",
+            ),
         ];
 
         let (name, upright, reversed) = cards[num];
@@ -18068,8 +21549,14 @@ fn register_spirituality(interp: &mut Interpreter) {
         let mut result = std::collections::HashMap::new();
         result.insert("number".to_string(), Value::Int(num as i64));
         result.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
-        result.insert("upright".to_string(), Value::String(Rc::new(upright.to_string())));
-        result.insert("reversed".to_string(), Value::String(Rc::new(reversed.to_string())));
+        result.insert(
+            "upright".to_string(),
+            Value::String(Rc::new(upright.to_string())),
+        );
+        result.insert(
+            "reversed".to_string(),
+            Value::String(Rc::new(reversed.to_string())),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -18081,21 +21568,43 @@ fn register_spirituality(interp: &mut Interpreter) {
         let reversed: bool = rng.gen();
 
         let cards = [
-            "The Fool", "The Magician", "The High Priestess", "The Empress",
-            "The Emperor", "The Hierophant", "The Lovers", "The Chariot",
-            "Strength", "The Hermit", "Wheel of Fortune", "Justice",
-            "The Hanged Man", "Death", "Temperance", "The Devil",
-            "The Tower", "The Star", "The Moon", "The Sun",
-            "Judgement", "The World"
+            "The Fool",
+            "The Magician",
+            "The High Priestess",
+            "The Empress",
+            "The Emperor",
+            "The Hierophant",
+            "The Lovers",
+            "The Chariot",
+            "Strength",
+            "The Hermit",
+            "Wheel of Fortune",
+            "Justice",
+            "The Hanged Man",
+            "Death",
+            "Temperance",
+            "The Devil",
+            "The Tower",
+            "The Star",
+            "The Moon",
+            "The Sun",
+            "Judgement",
+            "The World",
         ];
 
         let mut result = std::collections::HashMap::new();
         result.insert("number".to_string(), Value::Int(card as i64));
-        result.insert("name".to_string(), Value::String(Rc::new(cards[card].to_string())));
+        result.insert(
+            "name".to_string(),
+            Value::String(Rc::new(cards[card].to_string())),
+        );
         result.insert("reversed".to_string(), Value::Bool(reversed));
-        result.insert("orientation".to_string(), Value::String(Rc::new(
-            if reversed { "reversed" } else { "upright" }.to_string()
-        )));
+        result.insert(
+            "orientation".to_string(),
+            Value::String(Rc::new(
+                if reversed { "reversed" } else { "upright" }.to_string(),
+            )),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -18110,35 +21619,51 @@ fn register_spirituality(interp: &mut Interpreter) {
         let a = match &args[0] {
             Value::String(s) => s.to_string(),
             Value::Int(n) => n.to_string(),
-            _ => return Err(RuntimeError::new("synchronicity_score() requires string or int")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "synchronicity_score() requires string or int",
+                ))
+            }
         };
 
         let b = match &args[1] {
             Value::String(s) => s.to_string(),
             Value::Int(n) => n.to_string(),
-            _ => return Err(RuntimeError::new("synchronicity_score() requires string or int")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "synchronicity_score() requires string or int",
+                ))
+            }
         };
 
         // Calculate gematria values (simple English)
-        let val_a: i64 = a.to_uppercase().chars().filter_map(|c| {
-            if c.is_ascii_alphabetic() {
-                Some((c as i64) - ('A' as i64) + 1)
-            } else if c.is_ascii_digit() {
-                c.to_digit(10).map(|d| d as i64)
-            } else {
-                None
-            }
-        }).sum();
+        let val_a: i64 = a
+            .to_uppercase()
+            .chars()
+            .filter_map(|c| {
+                if c.is_ascii_alphabetic() {
+                    Some((c as i64) - ('A' as i64) + 1)
+                } else if c.is_ascii_digit() {
+                    c.to_digit(10).map(|d| d as i64)
+                } else {
+                    None
+                }
+            })
+            .sum();
 
-        let val_b: i64 = b.to_uppercase().chars().filter_map(|c| {
-            if c.is_ascii_alphabetic() {
-                Some((c as i64) - ('A' as i64) + 1)
-            } else if c.is_ascii_digit() {
-                c.to_digit(10).map(|d| d as i64)
-            } else {
-                None
-            }
-        }).sum();
+        let val_b: i64 = b
+            .to_uppercase()
+            .chars()
+            .filter_map(|c| {
+                if c.is_ascii_alphabetic() {
+                    Some((c as i64) - ('A' as i64) + 1)
+                } else if c.is_ascii_digit() {
+                    c.to_digit(10).map(|d| d as i64)
+                } else {
+                    None
+                }
+            })
+            .sum();
 
         // Multiple synchronicity factors
         let mut factors = Vec::new();
@@ -18154,14 +21679,25 @@ fn register_spirituality(interp: &mut Interpreter) {
         }
 
         // Fibonacci relationship
-        let fib_set: std::collections::HashSet<i64> = [1,2,3,5,8,13,21,34,55,89,144,233,377,610,987].iter().cloned().collect();
+        let fib_set: std::collections::HashSet<i64> =
+            [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987]
+                .iter()
+                .cloned()
+                .collect();
         if fib_set.contains(&val_a) && fib_set.contains(&val_b) {
             factors.push("both_fibonacci".to_string());
         }
 
         // Digital root match
         fn digital_root(mut n: i64) -> i64 {
-            while n > 9 { n = n.to_string().chars().filter_map(|c| c.to_digit(10)).map(|d| d as i64).sum(); }
+            while n > 9 {
+                n = n
+                    .to_string()
+                    .chars()
+                    .filter_map(|c| c.to_digit(10))
+                    .map(|d| d as i64)
+                    .sum();
+            }
             n
         }
         if digital_root(val_a) == digital_root(val_b) {
@@ -18172,8 +21708,10 @@ fn register_spirituality(interp: &mut Interpreter) {
         let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
         let ratio = if val_a > 0 && val_b > 0 {
             (val_a as f64 / val_b as f64).max(val_b as f64 / val_a as f64)
-        } else { 0.0 };
-        if (ratio - phi).abs() < 0.02 || (ratio - 1.0/phi).abs() < 0.02 {
+        } else {
+            0.0
+        };
+        if (ratio - phi).abs() < 0.02 || (ratio - 1.0 / phi).abs() < 0.02 {
             factors.push("golden_ratio".to_string());
         }
 
@@ -18183,8 +21721,14 @@ fn register_spirituality(interp: &mut Interpreter) {
         result.insert("score".to_string(), Value::Float(score));
         result.insert("value_a".to_string(), Value::Int(val_a));
         result.insert("value_b".to_string(), Value::Int(val_b));
-        let factor_values: Vec<Value> = factors.iter().map(|s| Value::String(Rc::new(s.clone()))).collect();
-        result.insert("factors".to_string(), Value::Array(Rc::new(RefCell::new(factor_values))));
+        let factor_values: Vec<Value> = factors
+            .iter()
+            .map(|s| Value::String(Rc::new(s.clone())))
+            .collect();
+        result.insert(
+            "factors".to_string(),
+            Value::Array(Rc::new(RefCell::new(factor_values))),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -18193,24 +21737,42 @@ fn register_spirituality(interp: &mut Interpreter) {
     define(interp, "spirituality_info", Some(0), |_, _| {
         let mut info = std::collections::HashMap::new();
 
-        info.insert("i_ching".to_string(), Value::String(Rc::new(
-            "trigram(), hexagram(), cast_iching() - 64 hexagrams of change".to_string()
-        )));
-        info.insert("sacred_geometry".to_string(), Value::String(Rc::new(
-            "phi(), sacred_ratio(), fibonacci(), platonic_solid()".to_string()
-        )));
-        info.insert("gematria".to_string(), Value::String(Rc::new(
-            "Hebrew, Greek, Arabic, English letter-number systems".to_string()
-        )));
-        info.insert("archetypes".to_string(), Value::String(Rc::new(
-            "17 Jungian archetypes with shadow and gift".to_string()
-        )));
-        info.insert("astrology".to_string(), Value::String(Rc::new(
-            "zodiac() - 12 signs with elements and modalities".to_string()
-        )));
-        info.insert("tarot".to_string(), Value::String(Rc::new(
-            "tarot_major(), draw_tarot() - 22 Major Arcana".to_string()
-        )));
+        info.insert(
+            "i_ching".to_string(),
+            Value::String(Rc::new(
+                "trigram(), hexagram(), cast_iching() - 64 hexagrams of change".to_string(),
+            )),
+        );
+        info.insert(
+            "sacred_geometry".to_string(),
+            Value::String(Rc::new(
+                "phi(), sacred_ratio(), fibonacci(), platonic_solid()".to_string(),
+            )),
+        );
+        info.insert(
+            "gematria".to_string(),
+            Value::String(Rc::new(
+                "Hebrew, Greek, Arabic, English letter-number systems".to_string(),
+            )),
+        );
+        info.insert(
+            "archetypes".to_string(),
+            Value::String(Rc::new(
+                "17 Jungian archetypes with shadow and gift".to_string(),
+            )),
+        );
+        info.insert(
+            "astrology".to_string(),
+            Value::String(Rc::new(
+                "zodiac() - 12 signs with elements and modalities".to_string(),
+            )),
+        );
+        info.insert(
+            "tarot".to_string(),
+            Value::String(Rc::new(
+                "tarot_major(), draw_tarot() - 22 Major Arcana".to_string(),
+            )),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(info))))
     });
@@ -18218,84 +21780,527 @@ fn register_spirituality(interp: &mut Interpreter) {
 
 // I Ching hexagram data (64 hexagrams in King Wen sequence)
 const HEXAGRAMS: [(&str, &str, &str, &str, &str, &str); 64] = [
-    ("乾", "Qián", "The Creative", "Sublime success through perseverance", "Heaven", "Heaven"),
-    ("坤", "Kūn", "The Receptive", "Devoted success through the mare's perseverance", "Earth", "Earth"),
-    ("屯", "Zhūn", "Difficulty at the Beginning", "Persevere, seek helpers, don't act alone", "Water", "Thunder"),
-    ("蒙", "Méng", "Youthful Folly", "Success through education and guidance", "Mountain", "Water"),
-    ("需", "Xū", "Waiting", "Sincerity brings success; cross the great water", "Water", "Heaven"),
-    ("訟", "Sòng", "Conflict", "Seek counsel; don't cross the great water", "Heaven", "Water"),
-    ("師", "Shī", "The Army", "Perseverance and an experienced leader bring success", "Earth", "Water"),
-    ("比", "Bǐ", "Holding Together", "Through perseverance, those who hesitate should reflect", "Water", "Earth"),
-    ("小畜", "Xiǎo Chù", "Small Taming", "Success; dense clouds but no rain", "Wind", "Heaven"),
-    ("履", "Lǚ", "Treading", "Tread on the tiger's tail carefully; success", "Heaven", "Lake"),
-    ("泰", "Tài", "Peace", "The small departs, the great approaches; success", "Earth", "Heaven"),
-    ("否", "Pǐ", "Standstill", "The great departs, the small approaches; persevere", "Heaven", "Earth"),
-    ("同人", "Tóng Rén", "Fellowship", "Success in the open; cross the great water", "Heaven", "Fire"),
-    ("大有", "Dà Yǒu", "Great Possession", "Supreme success", "Fire", "Heaven"),
-    ("謙", "Qiān", "Modesty", "Success; the superior person carries things through", "Earth", "Mountain"),
-    ("豫", "Yù", "Enthusiasm", "Appoint helpers and set armies marching", "Thunder", "Earth"),
-    ("隨", "Suí", "Following", "Supreme success through perseverance", "Lake", "Thunder"),
-    ("蠱", "Gǔ", "Work on the Decayed", "Success; cross the great water; three days before and after", "Mountain", "Wind"),
-    ("臨", "Lín", "Approach", "Great success through perseverance; misfortune in eighth month", "Earth", "Lake"),
-    ("觀", "Guān", "Contemplation", "Ablution, but not yet sacrifice; confidence inspires", "Wind", "Earth"),
-    ("噬嗑", "Shì Kè", "Biting Through", "Success; favorable for legal matters", "Fire", "Thunder"),
-    ("賁", "Bì", "Grace", "Success in small matters", "Mountain", "Fire"),
-    ("剝", "Bō", "Splitting Apart", "Unfavorable to go anywhere", "Mountain", "Earth"),
-    ("復", "Fù", "Return", "Success; going out and coming in without error", "Earth", "Thunder"),
-    ("無妄", "Wú Wàng", "Innocence", "Supreme success through perseverance", "Heaven", "Thunder"),
-    ("大畜", "Dà Chù", "Great Taming", "Perseverance; eat away from home", "Mountain", "Heaven"),
-    ("頤", "Yí", "Nourishment", "Perseverance; watch what you nurture", "Mountain", "Thunder"),
-    ("大過", "Dà Guò", "Great Exceeding", "The ridgepole sags; favorable to have somewhere to go", "Lake", "Wind"),
-    ("坎", "Kǎn", "The Abysmal", "Sincerity brings success of the heart", "Water", "Water"),
-    ("離", "Lí", "The Clinging", "Perseverance; success; care for the cow", "Fire", "Fire"),
-    ("咸", "Xián", "Influence", "Success; perseverance; taking a maiden brings fortune", "Lake", "Mountain"),
-    ("恆", "Héng", "Duration", "Success without blame; perseverance; favorable to have somewhere to go", "Thunder", "Wind"),
-    ("遯", "Dùn", "Retreat", "Success; small perseverance", "Heaven", "Mountain"),
-    ("大壯", "Dà Zhuàng", "Great Power", "Perseverance", "Thunder", "Heaven"),
-    ("晉", "Jìn", "Progress", "The powerful prince is honored with horses", "Fire", "Earth"),
-    ("明夷", "Míng Yí", "Darkening of the Light", "Perseverance in adversity", "Earth", "Fire"),
-    ("家人", "Jiā Rén", "The Family", "Perseverance of the woman", "Wind", "Fire"),
-    ("睽", "Kuí", "Opposition", "Good fortune in small matters", "Fire", "Lake"),
-    ("蹇", "Jiǎn", "Obstruction", "Southwest favorable; northeast unfavorable; see the great person", "Water", "Mountain"),
-    ("解", "Xiè", "Deliverance", "Southwest favorable; return brings fortune; haste brings fortune", "Thunder", "Water"),
-    ("損", "Sǔn", "Decrease", "Sincerity; supreme fortune; persistence; favorable to undertake", "Mountain", "Lake"),
-    ("益", "Yì", "Increase", "Favorable to undertake and cross the great water", "Wind", "Thunder"),
-    ("夬", "Guài", "Breakthrough", "Proclaim at the king's court; sincerity in danger", "Lake", "Heaven"),
-    ("姤", "Gòu", "Coming to Meet", "The maiden is powerful; don't marry such a maiden", "Heaven", "Wind"),
-    ("萃", "Cuì", "Gathering", "Success; the king approaches his temple; see the great person", "Lake", "Earth"),
-    ("升", "Shēng", "Pushing Upward", "Supreme success; see the great person; don't worry", "Earth", "Wind"),
-    ("困", "Kùn", "Oppression", "Success; perseverance of the great person; no blame", "Lake", "Water"),
-    ("井", "Jǐng", "The Well", "The town may change but not the well", "Water", "Wind"),
-    ("革", "Gé", "Revolution", "On your own day you are believed; great success", "Lake", "Fire"),
-    ("鼎", "Dǐng", "The Cauldron", "Supreme good fortune; success", "Fire", "Wind"),
-    ("震", "Zhèn", "The Arousing", "Success; thunder comes with fright; laughing and talking after", "Thunder", "Thunder"),
-    ("艮", "Gèn", "Keeping Still", "Keep your back still; go into the courtyard without seeing anyone", "Mountain", "Mountain"),
-    ("漸", "Jiàn", "Development", "The maiden is given in marriage; good fortune; perseverance", "Wind", "Mountain"),
-    ("歸妹", "Guī Mèi", "The Marrying Maiden", "Undertakings bring misfortune", "Thunder", "Lake"),
-    ("豐", "Fēng", "Abundance", "Success; the king attains it; don't worry; be like the sun at noon", "Thunder", "Fire"),
-    ("旅", "Lǚ", "The Wanderer", "Success through smallness; perseverance brings fortune", "Fire", "Mountain"),
-    ("巽", "Xùn", "The Gentle", "Success through small things; favorable to have somewhere to go", "Wind", "Wind"),
-    ("兌", "Duì", "The Joyous", "Success; perseverance", "Lake", "Lake"),
-    ("渙", "Huàn", "Dispersion", "Success; the king approaches his temple; cross the great water", "Wind", "Water"),
-    ("節", "Jié", "Limitation", "Success; bitter limitation should not be persevered in", "Water", "Lake"),
-    ("中孚", "Zhōng Fú", "Inner Truth", "Pigs and fishes; good fortune; cross the great water", "Wind", "Lake"),
-    ("小過", "Xiǎo Guò", "Small Exceeding", "Success; perseverance; small things yes, great things no", "Thunder", "Mountain"),
-    ("既濟", "Jì Jì", "After Completion", "Success in small matters; perseverance; good at start, disorder at end", "Water", "Fire"),
-    ("未濟", "Wèi Jì", "Before Completion", "Success; the young fox almost across; tail gets wet; no goal", "Fire", "Water"),
+    (
+        "乾",
+        "Qián",
+        "The Creative",
+        "Sublime success through perseverance",
+        "Heaven",
+        "Heaven",
+    ),
+    (
+        "坤",
+        "Kūn",
+        "The Receptive",
+        "Devoted success through the mare's perseverance",
+        "Earth",
+        "Earth",
+    ),
+    (
+        "屯",
+        "Zhūn",
+        "Difficulty at the Beginning",
+        "Persevere, seek helpers, don't act alone",
+        "Water",
+        "Thunder",
+    ),
+    (
+        "蒙",
+        "Méng",
+        "Youthful Folly",
+        "Success through education and guidance",
+        "Mountain",
+        "Water",
+    ),
+    (
+        "需",
+        "Xū",
+        "Waiting",
+        "Sincerity brings success; cross the great water",
+        "Water",
+        "Heaven",
+    ),
+    (
+        "訟",
+        "Sòng",
+        "Conflict",
+        "Seek counsel; don't cross the great water",
+        "Heaven",
+        "Water",
+    ),
+    (
+        "師",
+        "Shī",
+        "The Army",
+        "Perseverance and an experienced leader bring success",
+        "Earth",
+        "Water",
+    ),
+    (
+        "比",
+        "Bǐ",
+        "Holding Together",
+        "Through perseverance, those who hesitate should reflect",
+        "Water",
+        "Earth",
+    ),
+    (
+        "小畜",
+        "Xiǎo Chù",
+        "Small Taming",
+        "Success; dense clouds but no rain",
+        "Wind",
+        "Heaven",
+    ),
+    (
+        "履",
+        "Lǚ",
+        "Treading",
+        "Tread on the tiger's tail carefully; success",
+        "Heaven",
+        "Lake",
+    ),
+    (
+        "泰",
+        "Tài",
+        "Peace",
+        "The small departs, the great approaches; success",
+        "Earth",
+        "Heaven",
+    ),
+    (
+        "否",
+        "Pǐ",
+        "Standstill",
+        "The great departs, the small approaches; persevere",
+        "Heaven",
+        "Earth",
+    ),
+    (
+        "同人",
+        "Tóng Rén",
+        "Fellowship",
+        "Success in the open; cross the great water",
+        "Heaven",
+        "Fire",
+    ),
+    (
+        "大有",
+        "Dà Yǒu",
+        "Great Possession",
+        "Supreme success",
+        "Fire",
+        "Heaven",
+    ),
+    (
+        "謙",
+        "Qiān",
+        "Modesty",
+        "Success; the superior person carries things through",
+        "Earth",
+        "Mountain",
+    ),
+    (
+        "豫",
+        "Yù",
+        "Enthusiasm",
+        "Appoint helpers and set armies marching",
+        "Thunder",
+        "Earth",
+    ),
+    (
+        "隨",
+        "Suí",
+        "Following",
+        "Supreme success through perseverance",
+        "Lake",
+        "Thunder",
+    ),
+    (
+        "蠱",
+        "Gǔ",
+        "Work on the Decayed",
+        "Success; cross the great water; three days before and after",
+        "Mountain",
+        "Wind",
+    ),
+    (
+        "臨",
+        "Lín",
+        "Approach",
+        "Great success through perseverance; misfortune in eighth month",
+        "Earth",
+        "Lake",
+    ),
+    (
+        "觀",
+        "Guān",
+        "Contemplation",
+        "Ablution, but not yet sacrifice; confidence inspires",
+        "Wind",
+        "Earth",
+    ),
+    (
+        "噬嗑",
+        "Shì Kè",
+        "Biting Through",
+        "Success; favorable for legal matters",
+        "Fire",
+        "Thunder",
+    ),
+    (
+        "賁",
+        "Bì",
+        "Grace",
+        "Success in small matters",
+        "Mountain",
+        "Fire",
+    ),
+    (
+        "剝",
+        "Bō",
+        "Splitting Apart",
+        "Unfavorable to go anywhere",
+        "Mountain",
+        "Earth",
+    ),
+    (
+        "復",
+        "Fù",
+        "Return",
+        "Success; going out and coming in without error",
+        "Earth",
+        "Thunder",
+    ),
+    (
+        "無妄",
+        "Wú Wàng",
+        "Innocence",
+        "Supreme success through perseverance",
+        "Heaven",
+        "Thunder",
+    ),
+    (
+        "大畜",
+        "Dà Chù",
+        "Great Taming",
+        "Perseverance; eat away from home",
+        "Mountain",
+        "Heaven",
+    ),
+    (
+        "頤",
+        "Yí",
+        "Nourishment",
+        "Perseverance; watch what you nurture",
+        "Mountain",
+        "Thunder",
+    ),
+    (
+        "大過",
+        "Dà Guò",
+        "Great Exceeding",
+        "The ridgepole sags; favorable to have somewhere to go",
+        "Lake",
+        "Wind",
+    ),
+    (
+        "坎",
+        "Kǎn",
+        "The Abysmal",
+        "Sincerity brings success of the heart",
+        "Water",
+        "Water",
+    ),
+    (
+        "離",
+        "Lí",
+        "The Clinging",
+        "Perseverance; success; care for the cow",
+        "Fire",
+        "Fire",
+    ),
+    (
+        "咸",
+        "Xián",
+        "Influence",
+        "Success; perseverance; taking a maiden brings fortune",
+        "Lake",
+        "Mountain",
+    ),
+    (
+        "恆",
+        "Héng",
+        "Duration",
+        "Success without blame; perseverance; favorable to have somewhere to go",
+        "Thunder",
+        "Wind",
+    ),
+    (
+        "遯",
+        "Dùn",
+        "Retreat",
+        "Success; small perseverance",
+        "Heaven",
+        "Mountain",
+    ),
+    (
+        "大壯",
+        "Dà Zhuàng",
+        "Great Power",
+        "Perseverance",
+        "Thunder",
+        "Heaven",
+    ),
+    (
+        "晉",
+        "Jìn",
+        "Progress",
+        "The powerful prince is honored with horses",
+        "Fire",
+        "Earth",
+    ),
+    (
+        "明夷",
+        "Míng Yí",
+        "Darkening of the Light",
+        "Perseverance in adversity",
+        "Earth",
+        "Fire",
+    ),
+    (
+        "家人",
+        "Jiā Rén",
+        "The Family",
+        "Perseverance of the woman",
+        "Wind",
+        "Fire",
+    ),
+    (
+        "睽",
+        "Kuí",
+        "Opposition",
+        "Good fortune in small matters",
+        "Fire",
+        "Lake",
+    ),
+    (
+        "蹇",
+        "Jiǎn",
+        "Obstruction",
+        "Southwest favorable; northeast unfavorable; see the great person",
+        "Water",
+        "Mountain",
+    ),
+    (
+        "解",
+        "Xiè",
+        "Deliverance",
+        "Southwest favorable; return brings fortune; haste brings fortune",
+        "Thunder",
+        "Water",
+    ),
+    (
+        "損",
+        "Sǔn",
+        "Decrease",
+        "Sincerity; supreme fortune; persistence; favorable to undertake",
+        "Mountain",
+        "Lake",
+    ),
+    (
+        "益",
+        "Yì",
+        "Increase",
+        "Favorable to undertake and cross the great water",
+        "Wind",
+        "Thunder",
+    ),
+    (
+        "夬",
+        "Guài",
+        "Breakthrough",
+        "Proclaim at the king's court; sincerity in danger",
+        "Lake",
+        "Heaven",
+    ),
+    (
+        "姤",
+        "Gòu",
+        "Coming to Meet",
+        "The maiden is powerful; don't marry such a maiden",
+        "Heaven",
+        "Wind",
+    ),
+    (
+        "萃",
+        "Cuì",
+        "Gathering",
+        "Success; the king approaches his temple; see the great person",
+        "Lake",
+        "Earth",
+    ),
+    (
+        "升",
+        "Shēng",
+        "Pushing Upward",
+        "Supreme success; see the great person; don't worry",
+        "Earth",
+        "Wind",
+    ),
+    (
+        "困",
+        "Kùn",
+        "Oppression",
+        "Success; perseverance of the great person; no blame",
+        "Lake",
+        "Water",
+    ),
+    (
+        "井",
+        "Jǐng",
+        "The Well",
+        "The town may change but not the well",
+        "Water",
+        "Wind",
+    ),
+    (
+        "革",
+        "Gé",
+        "Revolution",
+        "On your own day you are believed; great success",
+        "Lake",
+        "Fire",
+    ),
+    (
+        "鼎",
+        "Dǐng",
+        "The Cauldron",
+        "Supreme good fortune; success",
+        "Fire",
+        "Wind",
+    ),
+    (
+        "震",
+        "Zhèn",
+        "The Arousing",
+        "Success; thunder comes with fright; laughing and talking after",
+        "Thunder",
+        "Thunder",
+    ),
+    (
+        "艮",
+        "Gèn",
+        "Keeping Still",
+        "Keep your back still; go into the courtyard without seeing anyone",
+        "Mountain",
+        "Mountain",
+    ),
+    (
+        "漸",
+        "Jiàn",
+        "Development",
+        "The maiden is given in marriage; good fortune; perseverance",
+        "Wind",
+        "Mountain",
+    ),
+    (
+        "歸妹",
+        "Guī Mèi",
+        "The Marrying Maiden",
+        "Undertakings bring misfortune",
+        "Thunder",
+        "Lake",
+    ),
+    (
+        "豐",
+        "Fēng",
+        "Abundance",
+        "Success; the king attains it; don't worry; be like the sun at noon",
+        "Thunder",
+        "Fire",
+    ),
+    (
+        "旅",
+        "Lǚ",
+        "The Wanderer",
+        "Success through smallness; perseverance brings fortune",
+        "Fire",
+        "Mountain",
+    ),
+    (
+        "巽",
+        "Xùn",
+        "The Gentle",
+        "Success through small things; favorable to have somewhere to go",
+        "Wind",
+        "Wind",
+    ),
+    (
+        "兌",
+        "Duì",
+        "The Joyous",
+        "Success; perseverance",
+        "Lake",
+        "Lake",
+    ),
+    (
+        "渙",
+        "Huàn",
+        "Dispersion",
+        "Success; the king approaches his temple; cross the great water",
+        "Wind",
+        "Water",
+    ),
+    (
+        "節",
+        "Jié",
+        "Limitation",
+        "Success; bitter limitation should not be persevered in",
+        "Water",
+        "Lake",
+    ),
+    (
+        "中孚",
+        "Zhōng Fú",
+        "Inner Truth",
+        "Pigs and fishes; good fortune; cross the great water",
+        "Wind",
+        "Lake",
+    ),
+    (
+        "小過",
+        "Xiǎo Guò",
+        "Small Exceeding",
+        "Success; perseverance; small things yes, great things no",
+        "Thunder",
+        "Mountain",
+    ),
+    (
+        "既濟",
+        "Jì Jì",
+        "After Completion",
+        "Success in small matters; perseverance; good at start, disorder at end",
+        "Water",
+        "Fire",
+    ),
+    (
+        "未濟",
+        "Wèi Jì",
+        "Before Completion",
+        "Success; the young fox almost across; tail gets wet; no goal",
+        "Fire",
+        "Water",
+    ),
 ];
 
 fn binary_to_king_wen(binary: u8) -> u8 {
     // Maps binary hexagram representation to King Wen sequence number
     // This is a complex mapping based on traditional ordering
     const KING_WEN_ORDER: [u8; 64] = [
-        1, 43, 14, 34, 9, 5, 26, 11,
-        10, 58, 38, 54, 61, 60, 41, 19,
-        13, 49, 30, 55, 37, 63, 22, 36,
-        25, 17, 21, 51, 42, 3, 27, 24,
-        44, 28, 50, 32, 57, 48, 18, 46,
-        6, 47, 64, 40, 59, 29, 4, 7,
-        33, 31, 56, 62, 53, 39, 52, 15,
-        12, 45, 35, 16, 20, 8, 23, 2,
+        1, 43, 14, 34, 9, 5, 26, 11, 10, 58, 38, 54, 61, 60, 41, 19, 13, 49, 30, 55, 37, 63, 22,
+        36, 25, 17, 21, 51, 42, 3, 27, 24, 44, 28, 50, 32, 57, 48, 18, 46, 6, 47, 64, 40, 59, 29,
+        4, 7, 33, 31, 56, 62, 53, 39, 52, 15, 12, 45, 35, 16, 20, 8, 23, 2,
     ];
     KING_WEN_ORDER[binary as usize] - 1
 }
@@ -18324,13 +22329,13 @@ fn hebrew_gematria(c: char) -> i64 {
         'ר' | 'R' | 'r' => 200,
         'ש' => 300,
         'ת' | 'T' | 't' => 400,
-        'ך' => 500,   // Final kaph
-        'ם' => 600,   // Final mem
-        'ן' => 700,   // Final nun
-        'ף' => 800,   // Final pe
-        'ץ' | 'C' | 'c' => 900,   // Final tzadi / C approximation
-        'E' | 'e' => 5,    // Map to He
-        'U' | 'u' => 6,    // Map to Vav
+        'ך' => 500,             // Final kaph
+        'ם' => 600,             // Final mem
+        'ן' => 700,             // Final nun
+        'ף' => 800,             // Final pe
+        'ץ' | 'C' | 'c' => 900, // Final tzadi / C approximation
+        'E' | 'e' => 5,         // Map to He
+        'U' | 'u' => 6,         // Map to Vav
         _ => 0,
     }
 }
@@ -18342,7 +22347,7 @@ fn greek_isopsephy(c: char) -> i64 {
         'Γ' | 'γ' | 'G' | 'g' => 3,
         'Δ' | 'δ' | 'D' | 'd' => 4,
         'Ε' | 'ε' | 'E' | 'e' => 5,
-        'Ϛ' | 'ϛ' => 6,  // Stigma (archaic)
+        'Ϛ' | 'ϛ' => 6, // Stigma (archaic)
         'Ζ' | 'ζ' | 'Z' | 'z' => 7,
         'Η' | 'η' | 'H' | 'h' => 8,
         'Θ' | 'θ' => 9,
@@ -18354,7 +22359,7 @@ fn greek_isopsephy(c: char) -> i64 {
         'Ξ' | 'ξ' | 'X' | 'x' => 60,
         'Ο' | 'ο' | 'O' | 'o' => 70,
         'Π' | 'π' | 'P' | 'p' => 80,
-        'Ϙ' | 'ϙ' | 'Q' | 'q' => 90,  // Qoppa
+        'Ϙ' | 'ϙ' | 'Q' | 'q' => 90, // Qoppa
         'Ρ' | 'ρ' | 'R' | 'r' => 100,
         'Σ' | 'σ' | 'ς' | 'S' | 's' => 200,
         'Τ' | 'τ' | 'T' | 't' => 300,
@@ -18363,7 +22368,7 @@ fn greek_isopsephy(c: char) -> i64 {
         'Χ' | 'χ' | 'C' | 'c' => 600,
         'Ψ' | 'ψ' => 700,
         'Ω' | 'ω' | 'W' | 'w' => 800,
-        'Ϡ' | 'ϡ' => 900,  // Sampi
+        'Ϡ' | 'ϡ' => 900, // Sampi
         'J' | 'j' => 10,  // Map to Iota
         'V' | 'v' => 400, // Map to Upsilon
         _ => 0,
@@ -18400,10 +22405,10 @@ fn arabic_abjad(c: char) -> i64 {
         'ض' => 800,
         'ظ' => 900,
         'غ' => 1000,
-        'C' | 'c' => 600,  // Map to خ
-        'O' | 'o' => 70,   // Map to ع
-        'P' | 'p' => 80,   // Map to ف
-        'U' | 'u' => 6,    // Map to و
+        'C' | 'c' => 600, // Map to خ
+        'O' | 'o' => 70,  // Map to ع
+        'P' | 'p' => 80,  // Map to ف
+        'U' | 'u' => 6,   // Map to و
         _ => 0,
     }
 }
@@ -18421,22 +22426,42 @@ fn register_color(interp: &mut Interpreter) {
 
     // rgb(r, g, b) - Create RGB color (0-255)
     define(interp, "rgb", Some(3), |_, args| {
-        let r = match &args[0] { Value::Int(n) => (*n).clamp(0, 255) as u8, Value::Float(f) => (*f as i64).clamp(0, 255) as u8, _ => return Err(RuntimeError::new("rgb() requires numbers")) };
-        let g = match &args[1] { Value::Int(n) => (*n).clamp(0, 255) as u8, Value::Float(f) => (*f as i64).clamp(0, 255) as u8, _ => return Err(RuntimeError::new("rgb() requires numbers")) };
-        let b = match &args[2] { Value::Int(n) => (*n).clamp(0, 255) as u8, Value::Float(f) => (*f as i64).clamp(0, 255) as u8, _ => return Err(RuntimeError::new("rgb() requires numbers")) };
+        let r = match &args[0] {
+            Value::Int(n) => (*n).clamp(0, 255) as u8,
+            Value::Float(f) => (*f as i64).clamp(0, 255) as u8,
+            _ => return Err(RuntimeError::new("rgb() requires numbers")),
+        };
+        let g = match &args[1] {
+            Value::Int(n) => (*n).clamp(0, 255) as u8,
+            Value::Float(f) => (*f as i64).clamp(0, 255) as u8,
+            _ => return Err(RuntimeError::new("rgb() requires numbers")),
+        };
+        let b = match &args[2] {
+            Value::Int(n) => (*n).clamp(0, 255) as u8,
+            Value::Float(f) => (*f as i64).clamp(0, 255) as u8,
+            _ => return Err(RuntimeError::new("rgb() requires numbers")),
+        };
         let mut map = std::collections::HashMap::new();
         map.insert("r".to_string(), Value::Int(r as i64));
         map.insert("g".to_string(), Value::Int(g as i64));
         map.insert("b".to_string(), Value::Int(b as i64));
-        map.insert("hex".to_string(), Value::String(Rc::new(format!("#{:02X}{:02X}{:02X}", r, g, b))));
+        map.insert(
+            "hex".to_string(),
+            Value::String(Rc::new(format!("#{:02X}{:02X}{:02X}", r, g, b))),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
     // hex_to_rgb(hex) - Parse hex color string
     define(interp, "hex_to_rgb", Some(1), |_, args| {
-        let hex = match &args[0] { Value::String(s) => s.to_string(), _ => return Err(RuntimeError::new("hex_to_rgb requires string")) };
+        let hex = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("hex_to_rgb requires string")),
+        };
         let hex = hex.trim_start_matches('#');
-        if hex.len() != 6 { return Err(RuntimeError::new("hex_to_rgb requires 6 character hex")); }
+        if hex.len() != 6 {
+            return Err(RuntimeError::new("hex_to_rgb requires 6 character hex"));
+        }
         let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| RuntimeError::new("Invalid hex"))?;
         let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| RuntimeError::new("Invalid hex"))?;
         let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| RuntimeError::new("Invalid hex"))?;
@@ -18449,17 +22474,40 @@ fn register_color(interp: &mut Interpreter) {
 
     // rgb_to_hsl(r, g, b) - Convert RGB to HSL
     define(interp, "rgb_to_hsl", Some(3), |_, args| {
-        let r = match &args[0] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
-        let g = match &args[1] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
-        let b = match &args[2] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
+        let r = match &args[0] {
+            Value::Int(n) => *n as f64 / 255.0,
+            Value::Float(f) => *f / 255.0,
+            _ => return Err(RuntimeError::new("requires numbers")),
+        };
+        let g = match &args[1] {
+            Value::Int(n) => *n as f64 / 255.0,
+            Value::Float(f) => *f / 255.0,
+            _ => return Err(RuntimeError::new("requires numbers")),
+        };
+        let b = match &args[2] {
+            Value::Int(n) => *n as f64 / 255.0,
+            Value::Float(f) => *f / 255.0,
+            _ => return Err(RuntimeError::new("requires numbers")),
+        };
         let max = r.max(g).max(b);
         let min = r.min(g).min(b);
         let l = (max + min) / 2.0;
-        let (h, s) = if max == min { (0.0, 0.0) } else {
+        let (h, s) = if max == min {
+            (0.0, 0.0)
+        } else {
             let d = max - min;
-            let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
-            let h = if max == r { (g - b) / d + if g < b { 6.0 } else { 0.0 } }
-                   else if max == g { (b - r) / d + 2.0 } else { (r - g) / d + 4.0 };
+            let s = if l > 0.5 {
+                d / (2.0 - max - min)
+            } else {
+                d / (max + min)
+            };
+            let h = if max == r {
+                (g - b) / d + if g < b { 6.0 } else { 0.0 }
+            } else if max == g {
+                (b - r) / d + 2.0
+            } else {
+                (r - g) / d + 4.0
+            };
             (h * 60.0, s)
         };
         let mut map = std::collections::HashMap::new();
@@ -18471,9 +22519,18 @@ fn register_color(interp: &mut Interpreter) {
 
     // complementary(r, g, b) - Opposite on color wheel
     define(interp, "complementary", Some(3), |_, args| {
-        let r = match &args[0] { Value::Int(n) => *n as u8, _ => return Err(RuntimeError::new("requires int")) };
-        let g = match &args[1] { Value::Int(n) => *n as u8, _ => return Err(RuntimeError::new("requires int")) };
-        let b = match &args[2] { Value::Int(n) => *n as u8, _ => return Err(RuntimeError::new("requires int")) };
+        let r = match &args[0] {
+            Value::Int(n) => *n as u8,
+            _ => return Err(RuntimeError::new("requires int")),
+        };
+        let g = match &args[1] {
+            Value::Int(n) => *n as u8,
+            _ => return Err(RuntimeError::new("requires int")),
+        };
+        let b = match &args[2] {
+            Value::Int(n) => *n as u8,
+            _ => return Err(RuntimeError::new("requires int")),
+        };
         let mut map = std::collections::HashMap::new();
         map.insert("r".to_string(), Value::Int(255 - r as i64));
         map.insert("g".to_string(), Value::Int(255 - g as i64));
@@ -18485,26 +22542,113 @@ fn register_color(interp: &mut Interpreter) {
     // WU XING (五行) - CHINESE FIVE ELEMENTS
     // =========================================================================
     define(interp, "wu_xing", Some(1), |_, args| {
-        let element = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("wu_xing requires string")) };
-        let (name, chinese, color, hex, direction, season, organ, emotion, planet, animal) = match element.as_str() {
-            "wood" | "mu" | "木" => ("Wood", "木 (Mù)", "Green/Azure", "#228B22", "East", "Spring", "Liver", "Anger", "Jupiter", "Azure Dragon"),
-            "fire" | "huo" | "火" => ("Fire", "火 (Huǒ)", "Red", "#FF0000", "South", "Summer", "Heart", "Joy", "Mars", "Vermilion Bird"),
-            "earth" | "tu" | "土" => ("Earth", "土 (Tǔ)", "Yellow", "#FFDB58", "Center", "Late Summer", "Spleen", "Worry", "Saturn", "Yellow Dragon"),
-            "metal" | "jin" | "金" => ("Metal", "金 (Jīn)", "White/Gold", "#FFD700", "West", "Autumn", "Lung", "Grief", "Venus", "White Tiger"),
-            "water" | "shui" | "水" => ("Water", "水 (Shuǐ)", "Black/Blue", "#000080", "North", "Winter", "Kidney", "Fear", "Mercury", "Black Tortoise"),
-            _ => return Err(RuntimeError::new("Unknown element. Use wood/fire/earth/metal/water")),
+        let element = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("wu_xing requires string")),
         };
+        let (name, chinese, color, hex, direction, season, organ, emotion, planet, animal) =
+            match element.as_str() {
+                "wood" | "mu" | "木" => (
+                    "Wood",
+                    "木 (Mù)",
+                    "Green/Azure",
+                    "#228B22",
+                    "East",
+                    "Spring",
+                    "Liver",
+                    "Anger",
+                    "Jupiter",
+                    "Azure Dragon",
+                ),
+                "fire" | "huo" | "火" => (
+                    "Fire",
+                    "火 (Huǒ)",
+                    "Red",
+                    "#FF0000",
+                    "South",
+                    "Summer",
+                    "Heart",
+                    "Joy",
+                    "Mars",
+                    "Vermilion Bird",
+                ),
+                "earth" | "tu" | "土" => (
+                    "Earth",
+                    "土 (Tǔ)",
+                    "Yellow",
+                    "#FFDB58",
+                    "Center",
+                    "Late Summer",
+                    "Spleen",
+                    "Worry",
+                    "Saturn",
+                    "Yellow Dragon",
+                ),
+                "metal" | "jin" | "金" => (
+                    "Metal",
+                    "金 (Jīn)",
+                    "White/Gold",
+                    "#FFD700",
+                    "West",
+                    "Autumn",
+                    "Lung",
+                    "Grief",
+                    "Venus",
+                    "White Tiger",
+                ),
+                "water" | "shui" | "水" => (
+                    "Water",
+                    "水 (Shuǐ)",
+                    "Black/Blue",
+                    "#000080",
+                    "North",
+                    "Winter",
+                    "Kidney",
+                    "Fear",
+                    "Mercury",
+                    "Black Tortoise",
+                ),
+                _ => {
+                    return Err(RuntimeError::new(
+                        "Unknown element. Use wood/fire/earth/metal/water",
+                    ))
+                }
+            };
         let mut map = std::collections::HashMap::new();
         map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
-        map.insert("chinese".to_string(), Value::String(Rc::new(chinese.to_string())));
-        map.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
+        map.insert(
+            "chinese".to_string(),
+            Value::String(Rc::new(chinese.to_string())),
+        );
+        map.insert(
+            "color".to_string(),
+            Value::String(Rc::new(color.to_string())),
+        );
         map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
-        map.insert("direction".to_string(), Value::String(Rc::new(direction.to_string())));
-        map.insert("season".to_string(), Value::String(Rc::new(season.to_string())));
-        map.insert("organ".to_string(), Value::String(Rc::new(organ.to_string())));
-        map.insert("emotion".to_string(), Value::String(Rc::new(emotion.to_string())));
-        map.insert("planet".to_string(), Value::String(Rc::new(planet.to_string())));
-        map.insert("guardian".to_string(), Value::String(Rc::new(animal.to_string())));
+        map.insert(
+            "direction".to_string(),
+            Value::String(Rc::new(direction.to_string())),
+        );
+        map.insert(
+            "season".to_string(),
+            Value::String(Rc::new(season.to_string())),
+        );
+        map.insert(
+            "organ".to_string(),
+            Value::String(Rc::new(organ.to_string())),
+        );
+        map.insert(
+            "emotion".to_string(),
+            Value::String(Rc::new(emotion.to_string())),
+        );
+        map.insert(
+            "planet".to_string(),
+            Value::String(Rc::new(planet.to_string())),
+        );
+        map.insert(
+            "guardian".to_string(),
+            Value::String(Rc::new(animal.to_string())),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
@@ -18512,26 +22656,112 @@ fn register_color(interp: &mut Interpreter) {
     // CHAKRA COLORS (Ayurveda/Hindu)
     // =========================================================================
     define(interp, "chakra_color", Some(1), |_, args| {
-        let chakra = match &args[0] { Value::String(s) => s.to_lowercase(), Value::Int(n) => n.to_string(), _ => return Err(RuntimeError::new("chakra_color requires string or number")) };
+        let chakra = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            Value::Int(n) => n.to_string(),
+            _ => return Err(RuntimeError::new("chakra_color requires string or number")),
+        };
         let (name, sanskrit, color, hex, location, freq, element, mantra) = match chakra.as_str() {
-            "root" | "muladhara" | "1" => ("Root", "मूलाधार", "Red", "#FF0000", "Base of spine", 396.0, "Earth", "LAM"),
-            "sacral" | "svadhisthana" | "2" => ("Sacral", "स्वाधिष्ठान", "Orange", "#FF7F00", "Below navel", 417.0, "Water", "VAM"),
-            "solar" | "manipura" | "3" => ("Solar Plexus", "मणिपूर", "Yellow", "#FFFF00", "Stomach", 528.0, "Fire", "RAM"),
-            "heart" | "anahata" | "4" => ("Heart", "अनाहत", "Green", "#00FF00", "Chest", 639.0, "Air", "YAM"),
-            "throat" | "vishuddha" | "5" => ("Throat", "विशुद्ध", "Blue", "#00BFFF", "Throat", 741.0, "Ether", "HAM"),
-            "third_eye" | "ajna" | "6" => ("Third Eye", "आज्ञा", "Indigo", "#4B0082", "Forehead", 852.0, "Light", "OM"),
-            "crown" | "sahasrara" | "7" => ("Crown", "सहस्रार", "Violet", "#8B00FF", "Top of head", 963.0, "Thought", "Silence"),
-            _ => return Err(RuntimeError::new("Unknown chakra. Use root/sacral/solar/heart/throat/third_eye/crown or 1-7")),
+            "root" | "muladhara" | "1" => (
+                "Root",
+                "मूलाधार",
+                "Red",
+                "#FF0000",
+                "Base of spine",
+                396.0,
+                "Earth",
+                "LAM",
+            ),
+            "sacral" | "svadhisthana" | "2" => (
+                "Sacral",
+                "स्वाधिष्ठान",
+                "Orange",
+                "#FF7F00",
+                "Below navel",
+                417.0,
+                "Water",
+                "VAM",
+            ),
+            "solar" | "manipura" | "3" => (
+                "Solar Plexus",
+                "मणिपूर",
+                "Yellow",
+                "#FFFF00",
+                "Stomach",
+                528.0,
+                "Fire",
+                "RAM",
+            ),
+            "heart" | "anahata" | "4" => (
+                "Heart",
+                "अनाहत",
+                "Green",
+                "#00FF00",
+                "Chest",
+                639.0,
+                "Air",
+                "YAM",
+            ),
+            "throat" | "vishuddha" | "5" => (
+                "Throat",
+                "विशुद्ध",
+                "Blue",
+                "#00BFFF",
+                "Throat",
+                741.0,
+                "Ether",
+                "HAM",
+            ),
+            "third_eye" | "ajna" | "6" => (
+                "Third Eye",
+                "आज्ञा",
+                "Indigo",
+                "#4B0082",
+                "Forehead",
+                852.0,
+                "Light",
+                "OM",
+            ),
+            "crown" | "sahasrara" | "7" => (
+                "Crown",
+                "सहस्रार",
+                "Violet",
+                "#8B00FF",
+                "Top of head",
+                963.0,
+                "Thought",
+                "Silence",
+            ),
+            _ => {
+                return Err(RuntimeError::new(
+                    "Unknown chakra. Use root/sacral/solar/heart/throat/third_eye/crown or 1-7",
+                ))
+            }
         };
         let mut map = std::collections::HashMap::new();
         map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
-        map.insert("sanskrit".to_string(), Value::String(Rc::new(sanskrit.to_string())));
-        map.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
+        map.insert(
+            "sanskrit".to_string(),
+            Value::String(Rc::new(sanskrit.to_string())),
+        );
+        map.insert(
+            "color".to_string(),
+            Value::String(Rc::new(color.to_string())),
+        );
         map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
-        map.insert("location".to_string(), Value::String(Rc::new(location.to_string())));
+        map.insert(
+            "location".to_string(),
+            Value::String(Rc::new(location.to_string())),
+        );
         map.insert("frequency_hz".to_string(), Value::Float(freq));
-        map.insert("element".to_string(), Value::String(Rc::new(element.to_string())));
-        map.insert("mantra".to_string(), Value::String(Rc::new(mantra.to_string())));
+        map.insert(
+            "element".to_string(),
+            Value::String(Rc::new(element.to_string())),
+        );
+        map.insert(
+            "mantra".to_string(),
+            Value::String(Rc::new(mantra.to_string())),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
@@ -18539,22 +22769,79 @@ fn register_color(interp: &mut Interpreter) {
     // MAYAN DIRECTIONAL COLORS
     // =========================================================================
     define(interp, "maya_direction", Some(1), |_, args| {
-        let dir = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let dir = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("requires string")),
+        };
         let (direction, yucatec, color, hex, deity, meaning) = match dir.as_str() {
-            "east" | "lakin" => ("East", "Lak'in", "Red", "#FF0000", "Chac (Red)", "Sunrise, new beginnings"),
-            "north" | "xaman" => ("North", "Xaman", "White", "#FFFFFF", "Chac (White)", "Ancestors, death"),
-            "west" | "chikin" => ("West", "Chik'in", "Black", "#000000", "Chac (Black)", "Sunset, completion"),
-            "south" | "nohol" => ("South", "Nohol", "Yellow", "#FFFF00", "Chac (Yellow)", "Maize, abundance"),
-            "center" | "yax" => ("Center", "Yax", "Green/Blue", "#00CED1", "World Tree", "Balance"),
-            _ => return Err(RuntimeError::new("Unknown direction. Use east/north/west/south/center")),
+            "east" | "lakin" => (
+                "East",
+                "Lak'in",
+                "Red",
+                "#FF0000",
+                "Chac (Red)",
+                "Sunrise, new beginnings",
+            ),
+            "north" | "xaman" => (
+                "North",
+                "Xaman",
+                "White",
+                "#FFFFFF",
+                "Chac (White)",
+                "Ancestors, death",
+            ),
+            "west" | "chikin" => (
+                "West",
+                "Chik'in",
+                "Black",
+                "#000000",
+                "Chac (Black)",
+                "Sunset, completion",
+            ),
+            "south" | "nohol" => (
+                "South",
+                "Nohol",
+                "Yellow",
+                "#FFFF00",
+                "Chac (Yellow)",
+                "Maize, abundance",
+            ),
+            "center" | "yax" => (
+                "Center",
+                "Yax",
+                "Green/Blue",
+                "#00CED1",
+                "World Tree",
+                "Balance",
+            ),
+            _ => {
+                return Err(RuntimeError::new(
+                    "Unknown direction. Use east/north/west/south/center",
+                ))
+            }
         };
         let mut map = std::collections::HashMap::new();
-        map.insert("direction".to_string(), Value::String(Rc::new(direction.to_string())));
-        map.insert("yucatec".to_string(), Value::String(Rc::new(yucatec.to_string())));
-        map.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
+        map.insert(
+            "direction".to_string(),
+            Value::String(Rc::new(direction.to_string())),
+        );
+        map.insert(
+            "yucatec".to_string(),
+            Value::String(Rc::new(yucatec.to_string())),
+        );
+        map.insert(
+            "color".to_string(),
+            Value::String(Rc::new(color.to_string())),
+        );
         map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
-        map.insert("deity".to_string(), Value::String(Rc::new(deity.to_string())));
-        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        map.insert(
+            "deity".to_string(),
+            Value::String(Rc::new(deity.to_string())),
+        );
+        map.insert(
+            "meaning".to_string(),
+            Value::String(Rc::new(meaning.to_string())),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
@@ -18562,22 +22849,84 @@ fn register_color(interp: &mut Interpreter) {
     // ORISHA COLORS (Yoruba/African)
     // =========================================================================
     define(interp, "orisha_color", Some(1), |_, args| {
-        let orisha = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let orisha = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("requires string")),
+        };
         let (name, colors, hex, domain, day, number) = match orisha.as_str() {
-            "obatala" | "oxala" => ("Obatalá", "White, silver", "#FFFFFF", "Creation, purity, wisdom", "Sunday", 8),
-            "yemoja" | "yemanja" => ("Yemọja", "Blue, white", "#4169E1", "Ocean, motherhood", "Saturday", 7),
-            "oshun" | "oxum" => ("Ọṣun", "Yellow, gold", "#FFD700", "Rivers, love, fertility", "Saturday", 5),
-            "shango" | "xango" => ("Ṣàngó", "Red, white", "#FF0000", "Thunder, fire, justice", "Wednesday", 6),
-            "ogun" | "ogum" => ("Ògún", "Green, black", "#006400", "Iron, war, labor", "Tuesday", 7),
-            "oya" | "iansa" => ("Ọya", "Brown, purple", "#800020", "Wind, storms, change", "Wednesday", 9),
-            "eshu" | "exu" => ("Èṣù", "Red, black", "#8B0000", "Crossroads, messages", "Monday", 3),
-            _ => return Err(RuntimeError::new("Unknown Orisha. Use obatala/yemoja/oshun/shango/ogun/oya/eshu")),
+            "obatala" | "oxala" => (
+                "Obatalá",
+                "White, silver",
+                "#FFFFFF",
+                "Creation, purity, wisdom",
+                "Sunday",
+                8,
+            ),
+            "yemoja" | "yemanja" => (
+                "Yemọja",
+                "Blue, white",
+                "#4169E1",
+                "Ocean, motherhood",
+                "Saturday",
+                7,
+            ),
+            "oshun" | "oxum" => (
+                "Ọṣun",
+                "Yellow, gold",
+                "#FFD700",
+                "Rivers, love, fertility",
+                "Saturday",
+                5,
+            ),
+            "shango" | "xango" => (
+                "Ṣàngó",
+                "Red, white",
+                "#FF0000",
+                "Thunder, fire, justice",
+                "Wednesday",
+                6,
+            ),
+            "ogun" | "ogum" => (
+                "Ògún",
+                "Green, black",
+                "#006400",
+                "Iron, war, labor",
+                "Tuesday",
+                7,
+            ),
+            "oya" | "iansa" => (
+                "Ọya",
+                "Brown, purple",
+                "#800020",
+                "Wind, storms, change",
+                "Wednesday",
+                9,
+            ),
+            "eshu" | "exu" => (
+                "Èṣù",
+                "Red, black",
+                "#8B0000",
+                "Crossroads, messages",
+                "Monday",
+                3,
+            ),
+            _ => {
+                return Err(RuntimeError::new(
+                    "Unknown Orisha. Use obatala/yemoja/oshun/shango/ogun/oya/eshu",
+                ))
+            }
         };
         let mut map = std::collections::HashMap::new();
         map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
-        map.insert("colors".to_string(), Value::String(Rc::new(colors.to_string())));
+        map.insert(
+            "colors".to_string(),
+            Value::String(Rc::new(colors.to_string())),
+        );
         map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
-        map.insert("domain".to_string(), Value::String(Rc::new(domain.to_string())));
+        map.insert(
+            "domain".to_string(),
+            Value::String(Rc::new(domain.to_string())),
+        );
         map.insert("day".to_string(), Value::String(Rc::new(day.to_string())));
         map.insert("number".to_string(), Value::Int(number));
         Ok(Value::Map(Rc::new(RefCell::new(map))))
@@ -18587,25 +22936,59 @@ fn register_color(interp: &mut Interpreter) {
     // JAPANESE TRADITIONAL COLORS (nihon_iro)
     // =========================================================================
     define(interp, "nihon_iro", Some(1), |_, args| {
-        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let color = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("requires string")),
+        };
         let (name, japanese, hex, meaning, season) = match color.as_str() {
-            "sakura" => ("Sakura Pink", "桜色", "#FFB7C5", "Cherry blossoms, transience", "Spring"),
-            "fuji" => ("Wisteria", "藤色", "#C9A0DC", "Elegance, nobility", "Spring"),
-            "moegi" => ("Young Green", "萌黄", "#AACF53", "New growth, freshness", "Spring"),
+            "sakura" => (
+                "Sakura Pink",
+                "桜色",
+                "#FFB7C5",
+                "Cherry blossoms, transience",
+                "Spring",
+            ),
+            "fuji" => (
+                "Wisteria",
+                "藤色",
+                "#C9A0DC",
+                "Elegance, nobility",
+                "Spring",
+            ),
+            "moegi" => (
+                "Young Green",
+                "萌黄",
+                "#AACF53",
+                "New growth, freshness",
+                "Spring",
+            ),
             "ai" => ("Indigo", "藍色", "#004D99", "Protection, depth", "All"),
             "akane" => ("Madder Red", "茜色", "#CF3A24", "Sunset, passion", "Autumn"),
             "shiro" => ("White", "白", "#FFFFFF", "Purity, death, sacred", "Winter"),
             "kuro" => ("Black", "黒", "#000000", "Formality, mystery", "All"),
             "aka" => ("Red", "赤", "#D7003A", "Life force, celebration", "All"),
             "murasaki" => ("Purple", "紫", "#884898", "Nobility, spirituality", "All"),
-            _ => return Err(RuntimeError::new("Unknown color. Try: sakura/fuji/moegi/ai/akane/shiro/kuro/aka/murasaki")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "Unknown color. Try: sakura/fuji/moegi/ai/akane/shiro/kuro/aka/murasaki",
+                ))
+            }
         };
         let mut map = std::collections::HashMap::new();
         map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
-        map.insert("japanese".to_string(), Value::String(Rc::new(japanese.to_string())));
+        map.insert(
+            "japanese".to_string(),
+            Value::String(Rc::new(japanese.to_string())),
+        );
         map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
-        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
-        map.insert("season".to_string(), Value::String(Rc::new(season.to_string())));
+        map.insert(
+            "meaning".to_string(),
+            Value::String(Rc::new(meaning.to_string())),
+        );
+        map.insert(
+            "season".to_string(),
+            Value::String(Rc::new(season.to_string())),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
@@ -18613,21 +22996,67 @@ fn register_color(interp: &mut Interpreter) {
     // ISLAMIC COLOR SYMBOLISM
     // =========================================================================
     define(interp, "islamic_color", Some(1), |_, args| {
-        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let color = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("requires string")),
+        };
         let (name, arabic, hex, meaning, usage) = match color.as_str() {
-            "green" | "akhdar" => ("Green", "أخضر", "#00FF00", "Paradise, Prophet, life", "Mosques, Quran, flags"),
-            "white" | "abyad" => ("White", "أبيض", "#FFFFFF", "Purity, peace, ihram", "Pilgrimage, burial"),
-            "black" | "aswad" => ("Black", "أسود", "#000000", "Modesty, Kaaba", "Kiswah, abaya"),
-            "gold" | "dhahabi" => ("Gold", "ذهبي", "#FFD700", "Paradise, divine light", "Calligraphy, decoration"),
-            "blue" | "azraq" => ("Blue", "أزرق", "#0000CD", "Protection, heaven", "Tiles, evil eye"),
-            _ => return Err(RuntimeError::new("Unknown color. Use green/white/black/gold/blue")),
+            "green" | "akhdar" => (
+                "Green",
+                "أخضر",
+                "#00FF00",
+                "Paradise, Prophet, life",
+                "Mosques, Quran, flags",
+            ),
+            "white" | "abyad" => (
+                "White",
+                "أبيض",
+                "#FFFFFF",
+                "Purity, peace, ihram",
+                "Pilgrimage, burial",
+            ),
+            "black" | "aswad" => (
+                "Black",
+                "أسود",
+                "#000000",
+                "Modesty, Kaaba",
+                "Kiswah, abaya",
+            ),
+            "gold" | "dhahabi" => (
+                "Gold",
+                "ذهبي",
+                "#FFD700",
+                "Paradise, divine light",
+                "Calligraphy, decoration",
+            ),
+            "blue" | "azraq" => (
+                "Blue",
+                "أزرق",
+                "#0000CD",
+                "Protection, heaven",
+                "Tiles, evil eye",
+            ),
+            _ => {
+                return Err(RuntimeError::new(
+                    "Unknown color. Use green/white/black/gold/blue",
+                ))
+            }
         };
         let mut map = std::collections::HashMap::new();
         map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
-        map.insert("arabic".to_string(), Value::String(Rc::new(arabic.to_string())));
+        map.insert(
+            "arabic".to_string(),
+            Value::String(Rc::new(arabic.to_string())),
+        );
         map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
-        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
-        map.insert("usage".to_string(), Value::String(Rc::new(usage.to_string())));
+        map.insert(
+            "meaning".to_string(),
+            Value::String(Rc::new(meaning.to_string())),
+        );
+        map.insert(
+            "usage".to_string(),
+            Value::String(Rc::new(usage.to_string())),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
@@ -18635,7 +23064,11 @@ fn register_color(interp: &mut Interpreter) {
     // THAI DAY COLORS
     // =========================================================================
     define(interp, "thai_day_color", Some(1), |_, args| {
-        let day = match &args[0] { Value::String(s) => s.to_lowercase(), Value::Int(n) => n.to_string(), _ => return Err(RuntimeError::new("requires string or number")) };
+        let day = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            Value::Int(n) => n.to_string(),
+            _ => return Err(RuntimeError::new("requires string or number")),
+        };
         let (day_name, thai, color, hex, deity) = match day.as_str() {
             "sunday" | "0" => ("Sunday", "วันอาทิตย์", "Red", "#FF0000", "Surya"),
             "monday" | "1" => ("Monday", "วันจันทร์", "Yellow", "#FFFF00", "Chandra"),
@@ -18647,11 +23080,20 @@ fn register_color(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("Unknown day. Use sunday-saturday or 0-6")),
         };
         let mut map = std::collections::HashMap::new();
-        map.insert("day".to_string(), Value::String(Rc::new(day_name.to_string())));
+        map.insert(
+            "day".to_string(),
+            Value::String(Rc::new(day_name.to_string())),
+        );
         map.insert("thai".to_string(), Value::String(Rc::new(thai.to_string())));
-        map.insert("color".to_string(), Value::String(Rc::new(color.to_string())));
+        map.insert(
+            "color".to_string(),
+            Value::String(Rc::new(color.to_string())),
+        );
         map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
-        map.insert("deity".to_string(), Value::String(Rc::new(deity.to_string())));
+        map.insert(
+            "deity".to_string(),
+            Value::String(Rc::new(deity.to_string())),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
@@ -18659,21 +23101,67 @@ fn register_color(interp: &mut Interpreter) {
     // ABORIGINAL AUSTRALIAN COLORS
     // =========================================================================
     define(interp, "aboriginal_color", Some(1), |_, args| {
-        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let color = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("requires string")),
+        };
         let (name, hex, meaning, source, dreamtime) = match color.as_str() {
-            "red" | "ochre" => ("Red Ochre", "#CC5500", "Earth, blood, ceremony", "Hematite", "Ancestral beings"),
-            "yellow" => ("Yellow Ochre", "#D4A017", "Sun, healing", "Limonite", "Sun's journey"),
-            "white" => ("White", "#FFFFFF", "Sky, spirits, mourning", "Kaolin", "Sky beings"),
-            "black" => ("Black", "#000000", "Night, formality", "Charcoal", "Night, men's business"),
-            "brown" => ("Brown", "#8B4513", "Earth, land", "Earth pigments", "Country, connection"),
-            _ => return Err(RuntimeError::new("Unknown color. Use red/yellow/white/black/brown")),
+            "red" | "ochre" => (
+                "Red Ochre",
+                "#CC5500",
+                "Earth, blood, ceremony",
+                "Hematite",
+                "Ancestral beings",
+            ),
+            "yellow" => (
+                "Yellow Ochre",
+                "#D4A017",
+                "Sun, healing",
+                "Limonite",
+                "Sun's journey",
+            ),
+            "white" => (
+                "White",
+                "#FFFFFF",
+                "Sky, spirits, mourning",
+                "Kaolin",
+                "Sky beings",
+            ),
+            "black" => (
+                "Black",
+                "#000000",
+                "Night, formality",
+                "Charcoal",
+                "Night, men's business",
+            ),
+            "brown" => (
+                "Brown",
+                "#8B4513",
+                "Earth, land",
+                "Earth pigments",
+                "Country, connection",
+            ),
+            _ => {
+                return Err(RuntimeError::new(
+                    "Unknown color. Use red/yellow/white/black/brown",
+                ))
+            }
         };
         let mut map = std::collections::HashMap::new();
         map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
         map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
-        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
-        map.insert("source".to_string(), Value::String(Rc::new(source.to_string())));
-        map.insert("dreamtime".to_string(), Value::String(Rc::new(dreamtime.to_string())));
+        map.insert(
+            "meaning".to_string(),
+            Value::String(Rc::new(meaning.to_string())),
+        );
+        map.insert(
+            "source".to_string(),
+            Value::String(Rc::new(source.to_string())),
+        );
+        map.insert(
+            "dreamtime".to_string(),
+            Value::String(Rc::new(dreamtime.to_string())),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
@@ -18681,22 +23169,56 @@ fn register_color(interp: &mut Interpreter) {
     // CELTIC COLORS
     // =========================================================================
     define(interp, "celtic_color", Some(1), |_, args| {
-        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let color = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("requires string")),
+        };
         let (name, gaelic, hex, meaning, element) = match color.as_str() {
-            "green" => ("Green", "Glas", "#228B22", "Nature, fairies, Otherworld", "Earth"),
+            "green" => (
+                "Green",
+                "Glas",
+                "#228B22",
+                "Nature, fairies, Otherworld",
+                "Earth",
+            ),
             "white" => ("White", "Bán", "#FFFFFF", "Purity, spirits", "Air"),
             "red" => ("Red", "Dearg", "#FF0000", "War, courage, blood", "Fire"),
-            "black" => ("Black", "Dubh", "#000000", "Otherworld, death, rebirth", "Water"),
+            "black" => (
+                "Black",
+                "Dubh",
+                "#000000",
+                "Otherworld, death, rebirth",
+                "Water",
+            ),
             "gold" => ("Gold", "Órga", "#FFD700", "Sun, sovereignty, Lugh", "Fire"),
-            "silver" => ("Silver", "Airgid", "#C0C0C0", "Moon, feminine, intuition", "Water"),
-            _ => return Err(RuntimeError::new("Unknown color. Use green/white/red/black/gold/silver")),
+            "silver" => (
+                "Silver",
+                "Airgid",
+                "#C0C0C0",
+                "Moon, feminine, intuition",
+                "Water",
+            ),
+            _ => {
+                return Err(RuntimeError::new(
+                    "Unknown color. Use green/white/red/black/gold/silver",
+                ))
+            }
         };
         let mut map = std::collections::HashMap::new();
         map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
-        map.insert("gaelic".to_string(), Value::String(Rc::new(gaelic.to_string())));
+        map.insert(
+            "gaelic".to_string(),
+            Value::String(Rc::new(gaelic.to_string())),
+        );
         map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
-        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
-        map.insert("element".to_string(), Value::String(Rc::new(element.to_string())));
+        map.insert(
+            "meaning".to_string(),
+            Value::String(Rc::new(meaning.to_string())),
+        );
+        map.insert(
+            "element".to_string(),
+            Value::String(Rc::new(element.to_string())),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
@@ -18704,7 +23226,10 @@ fn register_color(interp: &mut Interpreter) {
     // KENTE CLOTH COLORS (Ghana)
     // =========================================================================
     define(interp, "kente_color", Some(1), |_, args| {
-        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let color = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("requires string")),
+        };
         let (name, twi, hex, meaning) = match color.as_str() {
             "gold" | "yellow" => ("Gold", "Sika Kɔkɔɔ", "#FFD700", "Royalty, wealth, glory"),
             "green" => ("Green", "Ahabammono", "#228B22", "Growth, renewal, harvest"),
@@ -18713,13 +23238,20 @@ fn register_color(interp: &mut Interpreter) {
             "black" => ("Black", "Tuntum", "#000000", "Maturation, ancestors"),
             "white" => ("White", "Fitaa", "#FFFFFF", "Purification, virtue, joy"),
             "maroon" => ("Maroon", "Borɔnɔ", "#800000", "Earth, healing, protection"),
-            _ => return Err(RuntimeError::new("Unknown color. Use gold/green/blue/red/black/white/maroon")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "Unknown color. Use gold/green/blue/red/black/white/maroon",
+                ))
+            }
         };
         let mut map = std::collections::HashMap::new();
         map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
         map.insert("twi".to_string(), Value::String(Rc::new(twi.to_string())));
         map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
-        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
+        map.insert(
+            "meaning".to_string(),
+            Value::String(Rc::new(meaning.to_string())),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
@@ -18727,23 +23259,75 @@ fn register_color(interp: &mut Interpreter) {
     // HINDU COLOR SYMBOLISM
     // =========================================================================
     define(interp, "hindu_color", Some(1), |_, args| {
-        let color = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let color = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("requires string")),
+        };
         let (name, hindi, hex, meaning, deities) = match color.as_str() {
-            "red" | "lal" => ("Red", "लाल", "#FF0000", "Purity, fertility, love", "Durga, Lakshmi"),
-            "orange" | "saffron" => ("Saffron", "केसरी", "#FF6600", "Sacred, renunciation", "Hanuman"),
-            "yellow" => ("Yellow", "पीला", "#FFFF00", "Knowledge, learning", "Vishnu, Saraswati"),
+            "red" | "lal" => (
+                "Red",
+                "लाल",
+                "#FF0000",
+                "Purity, fertility, love",
+                "Durga, Lakshmi",
+            ),
+            "orange" | "saffron" => (
+                "Saffron",
+                "केसरी",
+                "#FF6600",
+                "Sacred, renunciation",
+                "Hanuman",
+            ),
+            "yellow" => (
+                "Yellow",
+                "पीला",
+                "#FFFF00",
+                "Knowledge, learning",
+                "Vishnu, Saraswati",
+            ),
             "green" => ("Green", "हरा", "#008000", "Life, happiness", "Krishna"),
-            "white" => ("White", "सफ़ेद", "#FFFFFF", "Purity, mourning", "Saraswati, Shiva"),
-            "blue" => ("Blue", "नीला", "#0000FF", "Divinity, infinity", "Krishna, Vishnu"),
-            "black" => ("Black", "काला", "#000000", "Protection from evil", "Kali, Shani"),
-            _ => return Err(RuntimeError::new("Unknown color. Use red/orange/yellow/green/white/blue/black")),
+            "white" => (
+                "White",
+                "सफ़ेद",
+                "#FFFFFF",
+                "Purity, mourning",
+                "Saraswati, Shiva",
+            ),
+            "blue" => (
+                "Blue",
+                "नीला",
+                "#0000FF",
+                "Divinity, infinity",
+                "Krishna, Vishnu",
+            ),
+            "black" => (
+                "Black",
+                "काला",
+                "#000000",
+                "Protection from evil",
+                "Kali, Shani",
+            ),
+            _ => {
+                return Err(RuntimeError::new(
+                    "Unknown color. Use red/orange/yellow/green/white/blue/black",
+                ))
+            }
         };
         let mut map = std::collections::HashMap::new();
         map.insert("name".to_string(), Value::String(Rc::new(name.to_string())));
-        map.insert("hindi".to_string(), Value::String(Rc::new(hindi.to_string())));
+        map.insert(
+            "hindi".to_string(),
+            Value::String(Rc::new(hindi.to_string())),
+        );
         map.insert("hex".to_string(), Value::String(Rc::new(hex.to_string())));
-        map.insert("meaning".to_string(), Value::String(Rc::new(meaning.to_string())));
-        map.insert("deities".to_string(), Value::String(Rc::new(deities.to_string())));
+        map.insert(
+            "meaning".to_string(),
+            Value::String(Rc::new(meaning.to_string())),
+        );
+        map.insert(
+            "deities".to_string(),
+            Value::String(Rc::new(deities.to_string())),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
@@ -18751,10 +23335,18 @@ fn register_color(interp: &mut Interpreter) {
     // SYNESTHESIA - CROSS-MODAL MAPPING WITH CULTURAL CONTEXT
     // =========================================================================
     define(interp, "emotion_color", Some(2), |_, args| {
-        let emotion = match &args[0] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
-        let culture = match &args[1] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires string")) };
+        let emotion = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("requires string")),
+        };
+        let culture = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("requires string")),
+        };
         let (hex, name, reasoning) = match (emotion.as_str(), culture.as_str()) {
-            ("joy", "western") | ("happy", "western") => ("#FFD700", "Gold", "Sunshine = happiness"),
+            ("joy", "western") | ("happy", "western") => {
+                ("#FFD700", "Gold", "Sunshine = happiness")
+            }
             ("joy", "chinese") | ("happy", "chinese") => ("#FF0000", "Red", "红 = luck, joy"),
             ("joy", "japanese") => ("#FFB7C5", "Sakura", "Cherry blossom = fleeting joy"),
             ("sadness", "western") | ("sad", "western") => ("#0000CD", "Blue", "'Feeling blue'"),
@@ -18777,13 +23369,19 @@ fn register_color(interp: &mut Interpreter) {
         map.insert("r".to_string(), Value::Int(r as i64));
         map.insert("g".to_string(), Value::Int(g as i64));
         map.insert("b".to_string(), Value::Int(b as i64));
-        map.insert("reasoning".to_string(), Value::String(Rc::new(reasoning.to_string())));
+        map.insert(
+            "reasoning".to_string(),
+            Value::String(Rc::new(reasoning.to_string())),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
     // synesthesia - full cross-modal with cultural awareness
     define(interp, "synesthesia", Some(2), |_, args| {
-        let culture = match &args[1] { Value::String(s) => s.to_lowercase(), _ => return Err(RuntimeError::new("requires culture string")) };
+        let culture = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("requires culture string")),
+        };
         let (r, g, b, emotion, freq) = match &args[0] {
             Value::String(s) => match s.to_lowercase().as_str() {
                 "joy" | "happy" => (255u8, 215u8, 0u8, "joy", 528.0),
@@ -18804,40 +23402,114 @@ fn register_color(interp: &mut Interpreter) {
             "indian" if r > 200 && g < 100 => "shakti/auspicious",
             _ => "universal resonance",
         };
-        let chakra = if r > 200 && g < 100 { "Root" } else if g > 200 { "Heart" } else if b > 200 { "Throat" } else { "Crown" };
-        let wu_xing = if r > 200 && g < 100 { "Fire (火)" } else if g > 200 { "Wood (木)" } else if b > 200 { "Water (水)" } else { "Metal (金)" };
+        let chakra = if r > 200 && g < 100 {
+            "Root"
+        } else if g > 200 {
+            "Heart"
+        } else if b > 200 {
+            "Throat"
+        } else {
+            "Crown"
+        };
+        let wu_xing = if r > 200 && g < 100 {
+            "Fire (火)"
+        } else if g > 200 {
+            "Wood (木)"
+        } else if b > 200 {
+            "Water (水)"
+        } else {
+            "Metal (金)"
+        };
         let mut map = std::collections::HashMap::new();
         let mut color_map = std::collections::HashMap::new();
         color_map.insert("r".to_string(), Value::Int(r as i64));
         color_map.insert("g".to_string(), Value::Int(g as i64));
         color_map.insert("b".to_string(), Value::Int(b as i64));
-        color_map.insert("hex".to_string(), Value::String(Rc::new(format!("#{:02X}{:02X}{:02X}", r, g, b))));
-        map.insert("color".to_string(), Value::Map(Rc::new(RefCell::new(color_map))));
-        map.insert("emotion".to_string(), Value::String(Rc::new(emotion.to_string())));
+        color_map.insert(
+            "hex".to_string(),
+            Value::String(Rc::new(format!("#{:02X}{:02X}{:02X}", r, g, b))),
+        );
+        map.insert(
+            "color".to_string(),
+            Value::Map(Rc::new(RefCell::new(color_map))),
+        );
+        map.insert(
+            "emotion".to_string(),
+            Value::String(Rc::new(emotion.to_string())),
+        );
         map.insert("frequency".to_string(), Value::Float(freq));
-        map.insert("cultural_meaning".to_string(), Value::String(Rc::new(cultural_meaning.to_string())));
-        map.insert("chakra".to_string(), Value::String(Rc::new(chakra.to_string())));
-        map.insert("wu_xing".to_string(), Value::String(Rc::new(wu_xing.to_string())));
+        map.insert(
+            "cultural_meaning".to_string(),
+            Value::String(Rc::new(cultural_meaning.to_string())),
+        );
+        map.insert(
+            "chakra".to_string(),
+            Value::String(Rc::new(chakra.to_string())),
+        );
+        map.insert(
+            "wu_xing".to_string(),
+            Value::String(Rc::new(wu_xing.to_string())),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
     // color_to_sound - Scriabin-inspired mapping
     define(interp, "color_to_sound", Some(3), |_, args| {
-        let r = match &args[0] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
-        let g = match &args[1] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
-        let b = match &args[2] { Value::Int(n) => *n as f64 / 255.0, Value::Float(f) => *f / 255.0, _ => return Err(RuntimeError::new("requires numbers")) };
-        let max = r.max(g).max(b); let min = r.min(g).min(b); let l = (max + min) / 2.0;
-        let h = if max == min { 0.0 } else {
+        let r = match &args[0] {
+            Value::Int(n) => *n as f64 / 255.0,
+            Value::Float(f) => *f / 255.0,
+            _ => return Err(RuntimeError::new("requires numbers")),
+        };
+        let g = match &args[1] {
+            Value::Int(n) => *n as f64 / 255.0,
+            Value::Float(f) => *f / 255.0,
+            _ => return Err(RuntimeError::new("requires numbers")),
+        };
+        let b = match &args[2] {
+            Value::Int(n) => *n as f64 / 255.0,
+            Value::Float(f) => *f / 255.0,
+            _ => return Err(RuntimeError::new("requires numbers")),
+        };
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let l = (max + min) / 2.0;
+        let h = if max == min {
+            0.0
+        } else {
             let d = max - min;
-            if max == r { (g - b) / d + if g < b { 6.0 } else { 0.0 } }
-            else if max == g { (b - r) / d + 2.0 } else { (r - g) / d + 4.0 }
+            if max == r {
+                (g - b) / d + if g < b { 6.0 } else { 0.0 }
+            } else if max == g {
+                (b - r) / d + 2.0
+            } else {
+                (r - g) / d + 4.0
+            }
         } * 60.0;
-        let (note, freq) = if h < 30.0 { ("C", 261.63) } else if h < 60.0 { ("G", 392.00) }
-        else if h < 90.0 { ("D", 293.66) } else if h < 120.0 { ("A", 440.00) }
-        else if h < 150.0 { ("E", 329.63) } else if h < 180.0 { ("B", 493.88) }
-        else if h < 210.0 { ("F#", 369.99) } else if h < 240.0 { ("Db", 277.18) }
-        else if h < 270.0 { ("Ab", 415.30) } else if h < 300.0 { ("Eb", 311.13) }
-        else if h < 330.0 { ("Bb", 466.16) } else { ("F", 349.23) };
+        let (note, freq) = if h < 30.0 {
+            ("C", 261.63)
+        } else if h < 60.0 {
+            ("G", 392.00)
+        } else if h < 90.0 {
+            ("D", 293.66)
+        } else if h < 120.0 {
+            ("A", 440.00)
+        } else if h < 150.0 {
+            ("E", 329.63)
+        } else if h < 180.0 {
+            ("B", 493.88)
+        } else if h < 210.0 {
+            ("F#", 369.99)
+        } else if h < 240.0 {
+            ("Db", 277.18)
+        } else if h < 270.0 {
+            ("Ab", 415.30)
+        } else if h < 300.0 {
+            ("Eb", 311.13)
+        } else if h < 330.0 {
+            ("Bb", 466.16)
+        } else {
+            ("F", 349.23)
+        };
         let octave_shift = ((l - 0.5) * 4.0).round() as i32;
         let adjusted_freq = freq * 2.0_f64.powi(octave_shift);
         let mut map = std::collections::HashMap::new();
@@ -18850,17 +23522,53 @@ fn register_color(interp: &mut Interpreter) {
     // contrast_ratio - WCAG accessibility
     define(interp, "contrast_ratio", Some(6), |_, args| {
         fn lum(r: f64, g: f64, b: f64) -> f64 {
-            fn ch(c: f64) -> f64 { let c = c / 255.0; if c <= 0.03928 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) } }
+            fn ch(c: f64) -> f64 {
+                let c = c / 255.0;
+                if c <= 0.03928 {
+                    c / 12.92
+                } else {
+                    ((c + 0.055) / 1.055).powf(2.4)
+                }
+            }
             0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b)
         }
-        let r1 = match &args[0] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
-        let g1 = match &args[1] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
-        let b1 = match &args[2] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
-        let r2 = match &args[3] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
-        let g2 = match &args[4] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
-        let b2 = match &args[5] { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err(RuntimeError::new("requires numbers")) };
-        let l1 = lum(r1, g1, b1); let l2 = lum(r2, g2, b2);
-        let ratio = if l1 > l2 { (l1 + 0.05) / (l2 + 0.05) } else { (l2 + 0.05) / (l1 + 0.05) };
+        let r1 = match &args[0] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("requires numbers")),
+        };
+        let g1 = match &args[1] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("requires numbers")),
+        };
+        let b1 = match &args[2] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("requires numbers")),
+        };
+        let r2 = match &args[3] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("requires numbers")),
+        };
+        let g2 = match &args[4] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("requires numbers")),
+        };
+        let b2 = match &args[5] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("requires numbers")),
+        };
+        let l1 = lum(r1, g1, b1);
+        let l2 = lum(r2, g2, b2);
+        let ratio = if l1 > l2 {
+            (l1 + 0.05) / (l2 + 0.05)
+        } else {
+            (l2 + 0.05) / (l1 + 0.05)
+        };
         let mut map = std::collections::HashMap::new();
         map.insert("ratio".to_string(), Value::Float(ratio));
         map.insert("aa_normal".to_string(), Value::Bool(ratio >= 4.5));
@@ -18881,78 +23589,135 @@ fn register_protocol(interp: &mut Interpreter) {
     // protocol_info - Get information about supported protocols
     define(interp, "protocol_info", Some(0), |_, _args| {
         let mut map = std::collections::HashMap::new();
-        map.insert("http".to_string(), Value::Map(Rc::new(RefCell::new({
-            let mut m = std::collections::HashMap::new();
-            m.insert("name".to_string(), Value::String(Rc::new("HTTP".to_string())));
-            m.insert("versions".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-                Value::String(Rc::new("1.1".to_string())),
-                Value::String(Rc::new("2".to_string())),
-            ]))));
-            m.insert("methods".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-                Value::String(Rc::new("GET".to_string())),
-                Value::String(Rc::new("POST".to_string())),
-                Value::String(Rc::new("PUT".to_string())),
-                Value::String(Rc::new("DELETE".to_string())),
-                Value::String(Rc::new("PATCH".to_string())),
-                Value::String(Rc::new("HEAD".to_string())),
-                Value::String(Rc::new("OPTIONS".to_string())),
-            ]))));
-            m
-        }))));
-        map.insert("grpc".to_string(), Value::Map(Rc::new(RefCell::new({
-            let mut m = std::collections::HashMap::new();
-            m.insert("name".to_string(), Value::String(Rc::new("gRPC".to_string())));
-            m.insert("streaming_modes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-                Value::String(Rc::new("unary".to_string())),
-                Value::String(Rc::new("server_streaming".to_string())),
-                Value::String(Rc::new("client_streaming".to_string())),
-                Value::String(Rc::new("bidirectional".to_string())),
-            ]))));
-            m
-        }))));
-        map.insert("websocket".to_string(), Value::Map(Rc::new(RefCell::new({
-            let mut m = std::collections::HashMap::new();
-            m.insert("name".to_string(), Value::String(Rc::new("WebSocket".to_string())));
-            m.insert("message_types".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-                Value::String(Rc::new("text".to_string())),
-                Value::String(Rc::new("binary".to_string())),
-                Value::String(Rc::new("ping".to_string())),
-                Value::String(Rc::new("pong".to_string())),
-                Value::String(Rc::new("close".to_string())),
-            ]))));
-            m
-        }))));
-        map.insert("kafka".to_string(), Value::Map(Rc::new(RefCell::new({
-            let mut m = std::collections::HashMap::new();
-            m.insert("name".to_string(), Value::String(Rc::new("Apache Kafka".to_string())));
-            m.insert("acks".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-                Value::String(Rc::new("none".to_string())),
-                Value::String(Rc::new("leader".to_string())),
-                Value::String(Rc::new("all".to_string())),
-            ]))));
-            m
-        }))));
-        map.insert("amqp".to_string(), Value::Map(Rc::new(RefCell::new({
-            let mut m = std::collections::HashMap::new();
-            m.insert("name".to_string(), Value::String(Rc::new("AMQP".to_string())));
-            m.insert("exchange_types".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-                Value::String(Rc::new("direct".to_string())),
-                Value::String(Rc::new("fanout".to_string())),
-                Value::String(Rc::new("topic".to_string())),
-                Value::String(Rc::new("headers".to_string())),
-            ]))));
-            m
-        }))));
-        map.insert("graphql".to_string(), Value::Map(Rc::new(RefCell::new({
-            let mut m = std::collections::HashMap::new();
-            m.insert("name".to_string(), Value::String(Rc::new("GraphQL".to_string())));
-            m.insert("operations".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-                Value::String(Rc::new("query".to_string())),
-                Value::String(Rc::new("mutation".to_string())),
-                Value::String(Rc::new("subscription".to_string())),
-            ]))));
-            m
-        }))));
+        map.insert(
+            "http".to_string(),
+            Value::Map(Rc::new(RefCell::new({
+                let mut m = std::collections::HashMap::new();
+                m.insert(
+                    "name".to_string(),
+                    Value::String(Rc::new("HTTP".to_string())),
+                );
+                m.insert(
+                    "versions".to_string(),
+                    Value::Array(Rc::new(RefCell::new(vec![
+                        Value::String(Rc::new("1.1".to_string())),
+                        Value::String(Rc::new("2".to_string())),
+                    ]))),
+                );
+                m.insert(
+                    "methods".to_string(),
+                    Value::Array(Rc::new(RefCell::new(vec![
+                        Value::String(Rc::new("GET".to_string())),
+                        Value::String(Rc::new("POST".to_string())),
+                        Value::String(Rc::new("PUT".to_string())),
+                        Value::String(Rc::new("DELETE".to_string())),
+                        Value::String(Rc::new("PATCH".to_string())),
+                        Value::String(Rc::new("HEAD".to_string())),
+                        Value::String(Rc::new("OPTIONS".to_string())),
+                    ]))),
+                );
+                m
+            }))),
+        );
+        map.insert(
+            "grpc".to_string(),
+            Value::Map(Rc::new(RefCell::new({
+                let mut m = std::collections::HashMap::new();
+                m.insert(
+                    "name".to_string(),
+                    Value::String(Rc::new("gRPC".to_string())),
+                );
+                m.insert(
+                    "streaming_modes".to_string(),
+                    Value::Array(Rc::new(RefCell::new(vec![
+                        Value::String(Rc::new("unary".to_string())),
+                        Value::String(Rc::new("server_streaming".to_string())),
+                        Value::String(Rc::new("client_streaming".to_string())),
+                        Value::String(Rc::new("bidirectional".to_string())),
+                    ]))),
+                );
+                m
+            }))),
+        );
+        map.insert(
+            "websocket".to_string(),
+            Value::Map(Rc::new(RefCell::new({
+                let mut m = std::collections::HashMap::new();
+                m.insert(
+                    "name".to_string(),
+                    Value::String(Rc::new("WebSocket".to_string())),
+                );
+                m.insert(
+                    "message_types".to_string(),
+                    Value::Array(Rc::new(RefCell::new(vec![
+                        Value::String(Rc::new("text".to_string())),
+                        Value::String(Rc::new("binary".to_string())),
+                        Value::String(Rc::new("ping".to_string())),
+                        Value::String(Rc::new("pong".to_string())),
+                        Value::String(Rc::new("close".to_string())),
+                    ]))),
+                );
+                m
+            }))),
+        );
+        map.insert(
+            "kafka".to_string(),
+            Value::Map(Rc::new(RefCell::new({
+                let mut m = std::collections::HashMap::new();
+                m.insert(
+                    "name".to_string(),
+                    Value::String(Rc::new("Apache Kafka".to_string())),
+                );
+                m.insert(
+                    "acks".to_string(),
+                    Value::Array(Rc::new(RefCell::new(vec![
+                        Value::String(Rc::new("none".to_string())),
+                        Value::String(Rc::new("leader".to_string())),
+                        Value::String(Rc::new("all".to_string())),
+                    ]))),
+                );
+                m
+            }))),
+        );
+        map.insert(
+            "amqp".to_string(),
+            Value::Map(Rc::new(RefCell::new({
+                let mut m = std::collections::HashMap::new();
+                m.insert(
+                    "name".to_string(),
+                    Value::String(Rc::new("AMQP".to_string())),
+                );
+                m.insert(
+                    "exchange_types".to_string(),
+                    Value::Array(Rc::new(RefCell::new(vec![
+                        Value::String(Rc::new("direct".to_string())),
+                        Value::String(Rc::new("fanout".to_string())),
+                        Value::String(Rc::new("topic".to_string())),
+                        Value::String(Rc::new("headers".to_string())),
+                    ]))),
+                );
+                m
+            }))),
+        );
+        map.insert(
+            "graphql".to_string(),
+            Value::Map(Rc::new(RefCell::new({
+                let mut m = std::collections::HashMap::new();
+                m.insert(
+                    "name".to_string(),
+                    Value::String(Rc::new("GraphQL".to_string())),
+                );
+                m.insert(
+                    "operations".to_string(),
+                    Value::Array(Rc::new(RefCell::new(vec![
+                        Value::String(Rc::new("query".to_string())),
+                        Value::String(Rc::new("mutation".to_string())),
+                        Value::String(Rc::new("subscription".to_string())),
+                    ]))),
+                );
+                m
+            }))),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
@@ -18960,7 +23725,11 @@ fn register_protocol(interp: &mut Interpreter) {
     define(interp, "http_status_text", Some(1), |_, args| {
         let code = match &args[0] {
             Value::Int(n) => *n,
-            _ => return Err(RuntimeError::new("http_status_text requires integer status code")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "http_status_text requires integer status code",
+                ))
+            }
         };
         let text = match code {
             100 => "Continue",
@@ -18995,7 +23764,11 @@ fn register_protocol(interp: &mut Interpreter) {
     define(interp, "http_status_type", Some(1), |_, args| {
         let code = match &args[0] {
             Value::Int(n) => *n,
-            _ => return Err(RuntimeError::new("http_status_type requires integer status code")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "http_status_type requires integer status code",
+                ))
+            }
         };
         let status_type = match code {
             100..=199 => "informational",
@@ -19012,7 +23785,11 @@ fn register_protocol(interp: &mut Interpreter) {
     define(interp, "grpc_status_text", Some(1), |_, args| {
         let code = match &args[0] {
             Value::Int(n) => *n,
-            _ => return Err(RuntimeError::new("grpc_status_text requires integer status code")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "grpc_status_text requires integer status code",
+                ))
+            }
         };
         let text = match code {
             0 => "OK",
@@ -19073,7 +23850,10 @@ fn register_protocol(interp: &mut Interpreter) {
             (authority.to_string(), None)
         };
         map.insert("host".to_string(), Value::String(Rc::new(host)));
-        map.insert("port".to_string(), port.map(Value::Int).unwrap_or(Value::Null));
+        map.insert(
+            "port".to_string(),
+            port.map(Value::Int).unwrap_or(Value::Null),
+        );
 
         // Parse path and query
         let (path, query) = if let Some(pos) = path_and_rest.find('?') {
@@ -19082,7 +23862,12 @@ fn register_protocol(interp: &mut Interpreter) {
             (path_and_rest, None)
         };
         map.insert("path".to_string(), Value::String(Rc::new(path.to_string())));
-        map.insert("query".to_string(), query.map(|q| Value::String(Rc::new(q.to_string()))).unwrap_or(Value::Null));
+        map.insert(
+            "query".to_string(),
+            query
+                .map(|q| Value::String(Rc::new(q.to_string())))
+                .unwrap_or(Value::Null),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
@@ -19121,10 +23906,9 @@ fn register_protocol(interp: &mut Interpreter) {
         let mut i = 0;
         while i < bytes.len() {
             if bytes[i] == b'%' && i + 2 < bytes.len() {
-                if let Ok(b) = u8::from_str_radix(
-                    &String::from_utf8_lossy(&bytes[i + 1..i + 3]),
-                    16,
-                ) {
+                if let Ok(b) =
+                    u8::from_str_radix(&String::from_utf8_lossy(&bytes[i + 1..i + 3]), 16)
+                {
                     result.push(b);
                     i += 3;
                     continue;
@@ -19137,14 +23921,20 @@ fn register_protocol(interp: &mut Interpreter) {
             result.push(bytes[i]);
             i += 1;
         }
-        Ok(Value::String(Rc::new(String::from_utf8_lossy(&result).to_string())))
+        Ok(Value::String(Rc::new(
+            String::from_utf8_lossy(&result).to_string(),
+        )))
     });
 
     // ws_close_code_text - Get text for WebSocket close code
     define(interp, "ws_close_code_text", Some(1), |_, args| {
         let code = match &args[0] {
             Value::Int(n) => *n,
-            _ => return Err(RuntimeError::new("ws_close_code_text requires integer code")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "ws_close_code_text requires integer code",
+                ))
+            }
         };
         let text = match code {
             1000 => "Normal Closure",
@@ -19210,7 +24000,10 @@ fn register_protocol(interp: &mut Interpreter) {
         };
         let mut map = std::collections::HashMap::new();
         let parts: Vec<&str> = ct.split(';').collect();
-        map.insert("media_type".to_string(), Value::String(Rc::new(parts[0].trim().to_string())));
+        map.insert(
+            "media_type".to_string(),
+            Value::String(Rc::new(parts[0].trim().to_string())),
+        );
 
         let mut params = std::collections::HashMap::new();
         for part in parts.iter().skip(1) {
@@ -19221,7 +24014,10 @@ fn register_protocol(interp: &mut Interpreter) {
                 params.insert(key, Value::String(Rc::new(value)));
             }
         }
-        map.insert("params".to_string(), Value::Map(Rc::new(RefCell::new(params))));
+        map.insert(
+            "params".to_string(),
+            Value::Map(Rc::new(RefCell::new(params))),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 }
@@ -19281,7 +24077,7 @@ struct StateMachine {
     current_state: String,
     states: Vec<String>,
     transitions: HashMap<String, Vec<(String, String)>>, // from -> [(to, condition)]
-    history: Vec<(String, u64)>, // (state, timestamp)
+    history: Vec<(String, u64)>,                         // (state, timestamp)
 }
 
 // ============================================================================
@@ -19293,7 +24089,9 @@ fn register_agent_tools(interp: &mut Interpreter) {
     // tool_define(name, description, params, returns, handler?)
     define(interp, "tool_define", None, |_interp, args| {
         if args.len() < 4 {
-            return Err(RuntimeError::new("tool_define requires at least 4 arguments: name, description, params, returns"));
+            return Err(RuntimeError::new(
+                "tool_define requires at least 4 arguments: name, description, params, returns",
+            ));
         }
 
         let name = match &args[0] {
@@ -19314,20 +24112,55 @@ fn register_agent_tools(interp: &mut Interpreter) {
                 for param in arr.iter() {
                     if let Value::Map(map) = param {
                         let map = map.borrow();
-                        let param_name = map.get("name")
-                            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        let param_name = map
+                            .get("name")
+                            .and_then(|v| {
+                                if let Value::String(s) = v {
+                                    Some(s.as_str().to_string())
+                                } else {
+                                    None
+                                }
+                            })
                             .unwrap_or_default();
-                        let param_type = map.get("type")
-                            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        let param_type = map
+                            .get("type")
+                            .and_then(|v| {
+                                if let Value::String(s) = v {
+                                    Some(s.as_str().to_string())
+                                } else {
+                                    None
+                                }
+                            })
                             .unwrap_or_else(|| "any".to_string());
-                        let param_desc = map.get("description")
-                            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        let param_desc = map
+                            .get("description")
+                            .and_then(|v| {
+                                if let Value::String(s) = v {
+                                    Some(s.as_str().to_string())
+                                } else {
+                                    None
+                                }
+                            })
                             .unwrap_or_default();
-                        let required = map.get("required")
-                            .and_then(|v| if let Value::Bool(b) = v { Some(*b) } else { None })
+                        let required = map
+                            .get("required")
+                            .and_then(|v| {
+                                if let Value::Bool(b) = v {
+                                    Some(*b)
+                                } else {
+                                    None
+                                }
+                            })
                             .unwrap_or(true);
-                        let evidence_str = map.get("evidence")
-                            .and_then(|v| if let Value::String(s) = v { Some(s.as_str()) } else { None })
+                        let evidence_str = map
+                            .get("evidence")
+                            .and_then(|v| {
+                                if let Value::String(s) = v {
+                                    Some(s.as_str())
+                                } else {
+                                    None
+                                }
+                            })
                             .unwrap_or("~");
                         let evidence = match evidence_str {
                             "!" => Evidence::Known,
@@ -19384,7 +24217,9 @@ fn register_agent_tools(interp: &mut Interpreter) {
     // tool_list - List all registered tools
     define(interp, "tool_list", Some(0), |_, _args| {
         let tools: Vec<Value> = TOOL_REGISTRY.with(|registry| {
-            registry.borrow().keys()
+            registry
+                .borrow()
+                .keys()
                 .map(|k| Value::String(Rc::new(k.clone())))
                 .collect()
         });
@@ -19401,19 +24236,41 @@ fn register_agent_tools(interp: &mut Interpreter) {
         TOOL_REGISTRY.with(|registry| {
             if let Some(tool) = registry.borrow().get(&name) {
                 let mut map = HashMap::new();
-                map.insert("name".to_string(), Value::String(Rc::new(tool.name.clone())));
-                map.insert("description".to_string(), Value::String(Rc::new(tool.description.clone())));
-                map.insert("returns".to_string(), Value::String(Rc::new(tool.returns.clone())));
+                map.insert(
+                    "name".to_string(),
+                    Value::String(Rc::new(tool.name.clone())),
+                );
+                map.insert(
+                    "description".to_string(),
+                    Value::String(Rc::new(tool.description.clone())),
+                );
+                map.insert(
+                    "returns".to_string(),
+                    Value::String(Rc::new(tool.returns.clone())),
+                );
 
-                let params: Vec<Value> = tool.parameters.iter().map(|p| {
-                    let mut pmap = HashMap::new();
-                    pmap.insert("name".to_string(), Value::String(Rc::new(p.name.clone())));
-                    pmap.insert("type".to_string(), Value::String(Rc::new(p.param_type.clone())));
-                    pmap.insert("description".to_string(), Value::String(Rc::new(p.description.clone())));
-                    pmap.insert("required".to_string(), Value::Bool(p.required));
-                    Value::Map(Rc::new(RefCell::new(pmap)))
-                }).collect();
-                map.insert("parameters".to_string(), Value::Array(Rc::new(RefCell::new(params))));
+                let params: Vec<Value> = tool
+                    .parameters
+                    .iter()
+                    .map(|p| {
+                        let mut pmap = HashMap::new();
+                        pmap.insert("name".to_string(), Value::String(Rc::new(p.name.clone())));
+                        pmap.insert(
+                            "type".to_string(),
+                            Value::String(Rc::new(p.param_type.clone())),
+                        );
+                        pmap.insert(
+                            "description".to_string(),
+                            Value::String(Rc::new(p.description.clone())),
+                        );
+                        pmap.insert("required".to_string(), Value::Bool(p.required));
+                        Value::Map(Rc::new(RefCell::new(pmap)))
+                    })
+                    .collect();
+                map.insert(
+                    "parameters".to_string(),
+                    Value::Array(Rc::new(RefCell::new(params))),
+                );
 
                 Ok(Value::Map(Rc::new(RefCell::new(map))))
             } else {
@@ -19433,15 +24290,27 @@ fn register_agent_tools(interp: &mut Interpreter) {
             if let Some(tool) = registry.borrow().get(&name) {
                 // Generate OpenAI function calling schema
                 let mut schema = HashMap::new();
-                schema.insert("type".to_string(), Value::String(Rc::new("function".to_string())));
+                schema.insert(
+                    "type".to_string(),
+                    Value::String(Rc::new("function".to_string())),
+                );
 
                 let mut function = HashMap::new();
-                function.insert("name".to_string(), Value::String(Rc::new(tool.name.clone())));
-                function.insert("description".to_string(), Value::String(Rc::new(tool.description.clone())));
+                function.insert(
+                    "name".to_string(),
+                    Value::String(Rc::new(tool.name.clone())),
+                );
+                function.insert(
+                    "description".to_string(),
+                    Value::String(Rc::new(tool.description.clone())),
+                );
 
                 // Build parameters schema (JSON Schema format)
                 let mut params_schema = HashMap::new();
-                params_schema.insert("type".to_string(), Value::String(Rc::new("object".to_string())));
+                params_schema.insert(
+                    "type".to_string(),
+                    Value::String(Rc::new("object".to_string())),
+                );
 
                 let mut properties = HashMap::new();
                 let mut required: Vec<Value> = Vec::new();
@@ -19457,8 +24326,14 @@ fn register_agent_tools(interp: &mut Interpreter) {
                         "map" | "object" => "object",
                         _ => "string",
                     };
-                    prop.insert("type".to_string(), Value::String(Rc::new(json_type.to_string())));
-                    prop.insert("description".to_string(), Value::String(Rc::new(param.description.clone())));
+                    prop.insert(
+                        "type".to_string(),
+                        Value::String(Rc::new(json_type.to_string())),
+                    );
+                    prop.insert(
+                        "description".to_string(),
+                        Value::String(Rc::new(param.description.clone())),
+                    );
                     properties.insert(param.name.clone(), Value::Map(Rc::new(RefCell::new(prop))));
 
                     if param.required {
@@ -19466,11 +24341,23 @@ fn register_agent_tools(interp: &mut Interpreter) {
                     }
                 }
 
-                params_schema.insert("properties".to_string(), Value::Map(Rc::new(RefCell::new(properties))));
-                params_schema.insert("required".to_string(), Value::Array(Rc::new(RefCell::new(required))));
+                params_schema.insert(
+                    "properties".to_string(),
+                    Value::Map(Rc::new(RefCell::new(properties))),
+                );
+                params_schema.insert(
+                    "required".to_string(),
+                    Value::Array(Rc::new(RefCell::new(required))),
+                );
 
-                function.insert("parameters".to_string(), Value::Map(Rc::new(RefCell::new(params_schema))));
-                schema.insert("function".to_string(), Value::Map(Rc::new(RefCell::new(function))));
+                function.insert(
+                    "parameters".to_string(),
+                    Value::Map(Rc::new(RefCell::new(params_schema))),
+                );
+                schema.insert(
+                    "function".to_string(),
+                    Value::Map(Rc::new(RefCell::new(function))),
+                );
 
                 Ok(Value::Map(Rc::new(RefCell::new(schema))))
             } else {
@@ -19482,43 +24369,78 @@ fn register_agent_tools(interp: &mut Interpreter) {
     // tool_schemas_all - Get all tool schemas for LLM
     define(interp, "tool_schemas_all", Some(0), |_, _args| {
         let schemas: Vec<Value> = TOOL_REGISTRY.with(|registry| {
-            registry.borrow().values().map(|tool| {
-                let mut schema = HashMap::new();
-                schema.insert("type".to_string(), Value::String(Rc::new("function".to_string())));
+            registry
+                .borrow()
+                .values()
+                .map(|tool| {
+                    let mut schema = HashMap::new();
+                    schema.insert(
+                        "type".to_string(),
+                        Value::String(Rc::new("function".to_string())),
+                    );
 
-                let mut function = HashMap::new();
-                function.insert("name".to_string(), Value::String(Rc::new(tool.name.clone())));
-                function.insert("description".to_string(), Value::String(Rc::new(tool.description.clone())));
+                    let mut function = HashMap::new();
+                    function.insert(
+                        "name".to_string(),
+                        Value::String(Rc::new(tool.name.clone())),
+                    );
+                    function.insert(
+                        "description".to_string(),
+                        Value::String(Rc::new(tool.description.clone())),
+                    );
 
-                let mut params_schema = HashMap::new();
-                params_schema.insert("type".to_string(), Value::String(Rc::new("object".to_string())));
+                    let mut params_schema = HashMap::new();
+                    params_schema.insert(
+                        "type".to_string(),
+                        Value::String(Rc::new("object".to_string())),
+                    );
 
-                let mut properties = HashMap::new();
-                let mut required: Vec<Value> = Vec::new();
+                    let mut properties = HashMap::new();
+                    let mut required: Vec<Value> = Vec::new();
 
-                for param in &tool.parameters {
-                    let mut prop = HashMap::new();
-                    let json_type = match param.param_type.as_str() {
-                        "int" | "i64" | "i32" => "integer",
-                        "float" | "f64" | "f32" => "number",
-                        "bool" => "boolean",
-                        _ => "string",
-                    };
-                    prop.insert("type".to_string(), Value::String(Rc::new(json_type.to_string())));
-                    prop.insert("description".to_string(), Value::String(Rc::new(param.description.clone())));
-                    properties.insert(param.name.clone(), Value::Map(Rc::new(RefCell::new(prop))));
-                    if param.required {
-                        required.push(Value::String(Rc::new(param.name.clone())));
+                    for param in &tool.parameters {
+                        let mut prop = HashMap::new();
+                        let json_type = match param.param_type.as_str() {
+                            "int" | "i64" | "i32" => "integer",
+                            "float" | "f64" | "f32" => "number",
+                            "bool" => "boolean",
+                            _ => "string",
+                        };
+                        prop.insert(
+                            "type".to_string(),
+                            Value::String(Rc::new(json_type.to_string())),
+                        );
+                        prop.insert(
+                            "description".to_string(),
+                            Value::String(Rc::new(param.description.clone())),
+                        );
+                        properties
+                            .insert(param.name.clone(), Value::Map(Rc::new(RefCell::new(prop))));
+                        if param.required {
+                            required.push(Value::String(Rc::new(param.name.clone())));
+                        }
                     }
-                }
 
-                params_schema.insert("properties".to_string(), Value::Map(Rc::new(RefCell::new(properties))));
-                params_schema.insert("required".to_string(), Value::Array(Rc::new(RefCell::new(required))));
-                function.insert("parameters".to_string(), Value::Map(Rc::new(RefCell::new(params_schema))));
-                schema.insert("function".to_string(), Value::Map(Rc::new(RefCell::new(function))));
+                    params_schema.insert(
+                        "properties".to_string(),
+                        Value::Map(Rc::new(RefCell::new(properties))),
+                    );
+                    params_schema.insert(
+                        "required".to_string(),
+                        Value::Array(Rc::new(RefCell::new(required))),
+                    );
+                    function.insert(
+                        "parameters".to_string(),
+                        Value::Map(Rc::new(RefCell::new(params_schema))),
+                    );
+                    schema.insert(
+                        "function".to_string(),
+                        Value::Map(Rc::new(RefCell::new(function))),
+                    );
 
-                Value::Map(Rc::new(RefCell::new(schema)))
-            }).collect()
+                    Value::Map(Rc::new(RefCell::new(schema)))
+                })
+                .collect()
         });
         Ok(Value::Array(Rc::new(RefCell::new(schemas))))
     });
@@ -19531,7 +24453,11 @@ fn register_agent_tools(interp: &mut Interpreter) {
 
         let name = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            _ => return Err(RuntimeError::new("tool_call first argument must be tool name")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "tool_call first argument must be tool name",
+                ))
+            }
         };
 
         let tool_args: Vec<Value> = args.into_iter().skip(1).collect();
@@ -19617,7 +24543,10 @@ fn register_agent_llm(interp: &mut Interpreter) {
         };
 
         let mut request = HashMap::new();
-        request.insert("provider".to_string(), Value::String(Rc::new(provider.clone())));
+        request.insert(
+            "provider".to_string(),
+            Value::String(Rc::new(provider.clone())),
+        );
 
         // Default models per provider
         let default_model = match provider.as_str() {
@@ -19628,7 +24557,10 @@ fn register_agent_llm(interp: &mut Interpreter) {
             "ollama" | "local" => "llama2",
             _ => "gpt-4",
         };
-        request.insert("model".to_string(), Value::String(Rc::new(default_model.to_string())));
+        request.insert(
+            "model".to_string(),
+            Value::String(Rc::new(default_model.to_string())),
+        );
 
         // Parse optional arguments
         for (i, arg) in args.iter().enumerate().skip(1) {
@@ -19660,16 +24592,29 @@ fn register_agent_llm(interp: &mut Interpreter) {
     define(interp, "llm_with_tools", Some(2), |_, args| {
         let request = match &args[0] {
             Value::Map(m) => m.clone(),
-            _ => return Err(RuntimeError::new("llm_with_tools first arg must be request map")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "llm_with_tools first arg must be request map",
+                ))
+            }
         };
 
         let tools = match &args[1] {
             Value::Array(arr) => arr.clone(),
-            _ => return Err(RuntimeError::new("llm_with_tools second arg must be tools array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "llm_with_tools second arg must be tools array",
+                ))
+            }
         };
 
-        request.borrow_mut().insert("tools".to_string(), Value::Array(tools));
-        request.borrow_mut().insert("tool_choice".to_string(), Value::String(Rc::new("auto".to_string())));
+        request
+            .borrow_mut()
+            .insert("tools".to_string(), Value::Array(tools));
+        request.borrow_mut().insert(
+            "tool_choice".to_string(),
+            Value::String(Rc::new("auto".to_string())),
+        );
 
         Ok(Value::Map(request))
     });
@@ -19678,15 +24623,25 @@ fn register_agent_llm(interp: &mut Interpreter) {
     define(interp, "llm_with_system", Some(2), |_, args| {
         let request = match &args[0] {
             Value::Map(m) => m.clone(),
-            _ => return Err(RuntimeError::new("llm_with_system first arg must be request map")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "llm_with_system first arg must be request map",
+                ))
+            }
         };
 
         let system = match &args[1] {
             Value::String(s) => s.clone(),
-            _ => return Err(RuntimeError::new("llm_with_system second arg must be string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "llm_with_system second arg must be string",
+                ))
+            }
         };
 
-        request.borrow_mut().insert("system".to_string(), Value::String(system));
+        request
+            .borrow_mut()
+            .insert("system".to_string(), Value::String(system));
         Ok(Value::Map(request))
     });
 
@@ -19694,15 +24649,25 @@ fn register_agent_llm(interp: &mut Interpreter) {
     define(interp, "llm_with_messages", Some(2), |_, args| {
         let request = match &args[0] {
             Value::Map(m) => m.clone(),
-            _ => return Err(RuntimeError::new("llm_with_messages first arg must be request map")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "llm_with_messages first arg must be request map",
+                ))
+            }
         };
 
         let messages = match &args[1] {
             Value::Array(arr) => arr.clone(),
-            _ => return Err(RuntimeError::new("llm_with_messages second arg must be messages array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "llm_with_messages second arg must be messages array",
+                ))
+            }
         };
 
-        request.borrow_mut().insert("messages".to_string(), Value::Array(messages));
+        request
+            .borrow_mut()
+            .insert("messages".to_string(), Value::Array(messages));
         Ok(Value::Map(request))
     });
 
@@ -19714,43 +24679,81 @@ fn register_agent_llm(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("llm_send requires request map")),
         };
 
-        let provider = request.get("provider")
-            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+        let provider = request
+            .get("provider")
+            .and_then(|v| {
+                if let Value::String(s) = v {
+                    Some(s.as_str().to_string())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_else(|| "unknown".to_string());
 
-        let model = request.get("model")
-            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+        let model = request
+            .get("model")
+            .and_then(|v| {
+                if let Value::String(s) = v {
+                    Some(s.as_str().to_string())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_else(|| "unknown".to_string());
 
         // Build response structure (simulated)
         let mut response = HashMap::new();
-        response.insert("id".to_string(), Value::String(Rc::new(format!("msg_{}", Uuid::new_v4()))));
+        response.insert(
+            "id".to_string(),
+            Value::String(Rc::new(format!("msg_{}", Uuid::new_v4()))),
+        );
         response.insert("provider".to_string(), Value::String(Rc::new(provider)));
         response.insert("model".to_string(), Value::String(Rc::new(model)));
-        response.insert("created".to_string(), Value::Int(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64
-        ));
+        response.insert(
+            "created".to_string(),
+            Value::Int(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64,
+            ),
+        );
 
         // Check if this would be a tool call
         if request.contains_key("tools") {
-            response.insert("type".to_string(), Value::String(Rc::new("tool_use".to_string())));
-            response.insert("tool_name".to_string(), Value::String(Rc::new("pending".to_string())));
-            response.insert("tool_input".to_string(), Value::Map(Rc::new(RefCell::new(HashMap::new()))));
+            response.insert(
+                "type".to_string(),
+                Value::String(Rc::new("tool_use".to_string())),
+            );
+            response.insert(
+                "tool_name".to_string(),
+                Value::String(Rc::new("pending".to_string())),
+            );
+            response.insert(
+                "tool_input".to_string(),
+                Value::Map(Rc::new(RefCell::new(HashMap::new()))),
+            );
         } else {
-            response.insert("type".to_string(), Value::String(Rc::new("text".to_string())));
-            response.insert("content".to_string(), Value::String(Rc::new(
-                "[LLM Response - Connect to actual API for real responses]".to_string()
-            )));
+            response.insert(
+                "type".to_string(),
+                Value::String(Rc::new("text".to_string())),
+            );
+            response.insert(
+                "content".to_string(),
+                Value::String(Rc::new(
+                    "[LLM Response - Connect to actual API for real responses]".to_string(),
+                )),
+            );
         }
 
         // Usage stats (simulated)
         let mut usage = HashMap::new();
         usage.insert("input_tokens".to_string(), Value::Int(0));
         usage.insert("output_tokens".to_string(), Value::Int(0));
-        response.insert("usage".to_string(), Value::Map(Rc::new(RefCell::new(usage))));
+        response.insert(
+            "usage".to_string(),
+            Value::Map(Rc::new(RefCell::new(usage))),
+        );
 
         // Return as reported evidence (external data)
         Ok(Value::Evidential {
@@ -19767,19 +24770,39 @@ fn register_agent_llm(interp: &mut Interpreter) {
                 if let Value::Map(m) = value.as_ref() {
                     m.borrow().clone()
                 } else {
-                    return Err(RuntimeError::new("llm_parse_tool_call requires map response"));
+                    return Err(RuntimeError::new(
+                        "llm_parse_tool_call requires map response",
+                    ));
                 }
             }
-            _ => return Err(RuntimeError::new("llm_parse_tool_call requires response map")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "llm_parse_tool_call requires response map",
+                ))
+            }
         };
 
-        let resp_type = response.get("type")
-            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+        let resp_type = response
+            .get("type")
+            .and_then(|v| {
+                if let Value::String(s) = v {
+                    Some(s.as_str().to_string())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_default();
 
         if resp_type == "tool_use" {
-            let tool_name = response.get("tool_name")
-                .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+            let tool_name = response
+                .get("tool_name")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
                 .unwrap_or_default();
 
             let tool_input = response.get("tool_input").cloned().unwrap_or(Value::Null);
@@ -19792,7 +24815,10 @@ fn register_agent_llm(interp: &mut Interpreter) {
         } else {
             let mut result = HashMap::new();
             result.insert("is_tool_call".to_string(), Value::Bool(false));
-            result.insert("content".to_string(), response.get("content").cloned().unwrap_or(Value::Null));
+            result.insert(
+                "content".to_string(),
+                response.get("content").cloned().unwrap_or(Value::Null),
+            );
             Ok(Value::Map(Rc::new(RefCell::new(result))))
         }
     });
@@ -19821,7 +24847,10 @@ fn register_agent_llm(interp: &mut Interpreter) {
         let mut result = HashMap::new();
         result.insert("success".to_string(), Value::Bool(true));
         result.insert("data".to_string(), Value::Null);
-        result.insert("errors".to_string(), Value::Array(Rc::new(RefCell::new(Vec::new()))));
+        result.insert(
+            "errors".to_string(),
+            Value::Array(Rc::new(RefCell::new(Vec::new()))),
+        );
 
         Ok(Value::Evidential {
             value: Box::new(Value::Map(Rc::new(RefCell::new(result)))),
@@ -19862,7 +24891,10 @@ fn register_agent_llm(interp: &mut Interpreter) {
 
         let mut result = HashMap::new();
         result.insert("template".to_string(), Value::String(Rc::new(template)));
-        result.insert("variables".to_string(), Value::Array(Rc::new(RefCell::new(variables))));
+        result.insert(
+            "variables".to_string(),
+            Value::Array(Rc::new(RefCell::new(variables))),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
 
@@ -19883,8 +24915,15 @@ fn register_agent_llm(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("prompt_render requires values map")),
         };
 
-        let template = template_obj.get("template")
-            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+        let template = template_obj
+            .get("template")
+            .and_then(|v| {
+                if let Value::String(s) = v {
+                    Some(s.as_str().to_string())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_default();
 
         let mut result = template;
@@ -19923,13 +24962,16 @@ fn register_agent_memory(interp: &mut Interpreter) {
         AGENT_MEMORY.with(|memory| {
             let mut mem = memory.borrow_mut();
             if !mem.contains_key(&session_id) {
-                mem.insert(session_id.clone(), AgentSession {
-                    id: session_id.clone(),
-                    context: HashMap::new(),
-                    history: Vec::new(),
-                    created_at: now,
-                    last_accessed: now,
-                });
+                mem.insert(
+                    session_id.clone(),
+                    AgentSession {
+                        id: session_id.clone(),
+                        context: HashMap::new(),
+                        history: Vec::new(),
+                        created_at: now,
+                        last_accessed: now,
+                    },
+                );
             } else if let Some(session) = mem.get_mut(&session_id) {
                 session.last_accessed = now;
             }
@@ -19945,11 +24987,17 @@ fn register_agent_memory(interp: &mut Interpreter) {
     define(interp, "memory_set", Some(3), |_, args| {
         let session_id = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("id")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid session"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("id")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid session"))?,
             _ => return Err(RuntimeError::new("memory_set requires session")),
         };
 
@@ -19969,7 +25017,10 @@ fn register_agent_memory(interp: &mut Interpreter) {
                     .as_secs();
                 Ok(Value::Bool(true))
             } else {
-                Err(RuntimeError::new(format!("Session '{}' not found", session_id)))
+                Err(RuntimeError::new(format!(
+                    "Session '{}' not found",
+                    session_id
+                )))
             }
         })
     });
@@ -19978,11 +25029,17 @@ fn register_agent_memory(interp: &mut Interpreter) {
     define(interp, "memory_get", Some(2), |_, args| {
         let session_id = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("id")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid session"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("id")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid session"))?,
             _ => return Err(RuntimeError::new("memory_get requires session")),
         };
 
@@ -20004,11 +25061,17 @@ fn register_agent_memory(interp: &mut Interpreter) {
     define(interp, "memory_history_add", Some(3), |_, args| {
         let session_id = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("id")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid session"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("id")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid session"))?,
             _ => return Err(RuntimeError::new("memory_history_add requires session")),
         };
 
@@ -20031,7 +25094,10 @@ fn register_agent_memory(interp: &mut Interpreter) {
                     .as_secs();
                 Ok(Value::Int(session.history.len() as i64))
             } else {
-                Err(RuntimeError::new(format!("Session '{}' not found", session_id)))
+                Err(RuntimeError::new(format!(
+                    "Session '{}' not found",
+                    session_id
+                )))
             }
         })
     });
@@ -20044,11 +25110,17 @@ fn register_agent_memory(interp: &mut Interpreter) {
 
         let session_id = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("id")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid session"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("id")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid session"))?,
             _ => return Err(RuntimeError::new("memory_history_get requires session")),
         };
 
@@ -20063,14 +25135,19 @@ fn register_agent_memory(interp: &mut Interpreter) {
 
         AGENT_MEMORY.with(|memory| {
             if let Some(session) = memory.borrow().get(&session_id) {
-                let history: Vec<Value> = session.history.iter()
+                let history: Vec<Value> = session
+                    .history
+                    .iter()
                     .rev()
                     .take(limit.unwrap_or(usize::MAX))
                     .rev()
                     .map(|(role, content)| {
                         let mut msg = HashMap::new();
                         msg.insert("role".to_string(), Value::String(Rc::new(role.clone())));
-                        msg.insert("content".to_string(), Value::String(Rc::new(content.clone())));
+                        msg.insert(
+                            "content".to_string(),
+                            Value::String(Rc::new(content.clone())),
+                        );
                         Value::Map(Rc::new(RefCell::new(msg)))
                     })
                     .collect();
@@ -20085,11 +25162,17 @@ fn register_agent_memory(interp: &mut Interpreter) {
     define(interp, "memory_context_all", Some(1), |_, args| {
         let session_id = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("id")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid session"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("id")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid session"))?,
             _ => return Err(RuntimeError::new("memory_context_all requires session")),
         };
 
@@ -20107,11 +25190,17 @@ fn register_agent_memory(interp: &mut Interpreter) {
     define(interp, "memory_clear", Some(1), |_, args| {
         let session_id = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("id")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid session"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("id")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid session"))?,
             _ => return Err(RuntimeError::new("memory_clear requires session")),
         };
 
@@ -20124,15 +25213,31 @@ fn register_agent_memory(interp: &mut Interpreter) {
     // memory_sessions_list - List all active sessions
     define(interp, "memory_sessions_list", Some(0), |_, _args| {
         let sessions: Vec<Value> = AGENT_MEMORY.with(|memory| {
-            memory.borrow().values().map(|session| {
-                let mut info = HashMap::new();
-                info.insert("id".to_string(), Value::String(Rc::new(session.id.clone())));
-                info.insert("created_at".to_string(), Value::Int(session.created_at as i64));
-                info.insert("last_accessed".to_string(), Value::Int(session.last_accessed as i64));
-                info.insert("context_keys".to_string(), Value::Int(session.context.len() as i64));
-                info.insert("history_length".to_string(), Value::Int(session.history.len() as i64));
-                Value::Map(Rc::new(RefCell::new(info)))
-            }).collect()
+            memory
+                .borrow()
+                .values()
+                .map(|session| {
+                    let mut info = HashMap::new();
+                    info.insert("id".to_string(), Value::String(Rc::new(session.id.clone())));
+                    info.insert(
+                        "created_at".to_string(),
+                        Value::Int(session.created_at as i64),
+                    );
+                    info.insert(
+                        "last_accessed".to_string(),
+                        Value::Int(session.last_accessed as i64),
+                    );
+                    info.insert(
+                        "context_keys".to_string(),
+                        Value::Int(session.context.len() as i64),
+                    );
+                    info.insert(
+                        "history_length".to_string(),
+                        Value::Int(session.history.len() as i64),
+                    );
+                    Value::Map(Rc::new(RefCell::new(info)))
+                })
+                .collect()
         });
         Ok(Value::Array(Rc::new(RefCell::new(sessions))))
     });
@@ -20151,16 +25256,24 @@ fn register_agent_planning(interp: &mut Interpreter) {
         };
 
         let states = match &args[1] {
-            Value::Array(arr) => {
-                arr.borrow().iter()
-                    .filter_map(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .collect::<Vec<_>>()
-            }
+            Value::Array(arr) => arr
+                .borrow()
+                .iter()
+                .filter_map(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>(),
             _ => return Err(RuntimeError::new("plan_state_machine states must be array")),
         };
 
         if states.is_empty() {
-            return Err(RuntimeError::new("State machine must have at least one state"));
+            return Err(RuntimeError::new(
+                "State machine must have at least one state",
+            ));
         }
 
         let initial_state = states[0].clone();
@@ -20183,7 +25296,10 @@ fn register_agent_planning(interp: &mut Interpreter) {
 
         let mut result = HashMap::new();
         result.insert("name".to_string(), Value::String(Rc::new(name)));
-        result.insert("type".to_string(), Value::String(Rc::new("state_machine".to_string())));
+        result.insert(
+            "type".to_string(),
+            Value::String(Rc::new("state_machine".to_string())),
+        );
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
 
@@ -20191,11 +25307,17 @@ fn register_agent_planning(interp: &mut Interpreter) {
     define(interp, "plan_add_transition", Some(3), |_, args| {
         let machine_name = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("name")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid state machine"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("name")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid state machine"))?,
             _ => return Err(RuntimeError::new("plan_add_transition requires machine")),
         };
 
@@ -20213,20 +25335,30 @@ fn register_agent_planning(interp: &mut Interpreter) {
             if let Some(machine) = machines.borrow_mut().get_mut(&machine_name) {
                 // Validate states exist
                 if !machine.states.contains(&from_state) {
-                    return Err(RuntimeError::new(format!("State '{}' not in machine", from_state)));
+                    return Err(RuntimeError::new(format!(
+                        "State '{}' not in machine",
+                        from_state
+                    )));
                 }
                 if !machine.states.contains(&to_state) {
-                    return Err(RuntimeError::new(format!("State '{}' not in machine", to_state)));
+                    return Err(RuntimeError::new(format!(
+                        "State '{}' not in machine",
+                        to_state
+                    )));
                 }
 
-                machine.transitions
+                machine
+                    .transitions
                     .entry(from_state)
                     .or_insert_with(Vec::new)
                     .push((to_state, "".to_string()));
 
                 Ok(Value::Bool(true))
             } else {
-                Err(RuntimeError::new(format!("State machine '{}' not found", machine_name)))
+                Err(RuntimeError::new(format!(
+                    "State machine '{}' not found",
+                    machine_name
+                )))
             }
         })
     });
@@ -20235,11 +25367,17 @@ fn register_agent_planning(interp: &mut Interpreter) {
     define(interp, "plan_current_state", Some(1), |_, args| {
         let machine_name = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("name")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid state machine"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("name")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid state machine"))?,
             _ => return Err(RuntimeError::new("plan_current_state requires machine")),
         };
 
@@ -20247,7 +25385,10 @@ fn register_agent_planning(interp: &mut Interpreter) {
             if let Some(machine) = machines.borrow().get(&machine_name) {
                 Ok(Value::String(Rc::new(machine.current_state.clone())))
             } else {
-                Err(RuntimeError::new(format!("State machine '{}' not found", machine_name)))
+                Err(RuntimeError::new(format!(
+                    "State machine '{}' not found",
+                    machine_name
+                )))
             }
         })
     });
@@ -20256,11 +25397,17 @@ fn register_agent_planning(interp: &mut Interpreter) {
     define(interp, "plan_transition", Some(2), |_, args| {
         let machine_name = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("name")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid state machine"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("name")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid state machine"))?,
             _ => return Err(RuntimeError::new("plan_transition requires machine")),
         };
 
@@ -20274,7 +25421,9 @@ fn register_agent_planning(interp: &mut Interpreter) {
                 let current = machine.current_state.clone();
 
                 // Check if transition is valid
-                let valid = machine.transitions.get(&current)
+                let valid = machine
+                    .transitions
+                    .get(&current)
                     .map(|transitions| transitions.iter().any(|(to, _)| to == &to_state))
                     .unwrap_or(false);
 
@@ -20295,13 +25444,20 @@ fn register_agent_planning(interp: &mut Interpreter) {
                 } else {
                     let mut result = HashMap::new();
                     result.insert("success".to_string(), Value::Bool(false));
-                    result.insert("error".to_string(), Value::String(Rc::new(
-                        format!("No valid transition from '{}' to '{}'", current, to_state)
-                    )));
+                    result.insert(
+                        "error".to_string(),
+                        Value::String(Rc::new(format!(
+                            "No valid transition from '{}' to '{}'",
+                            current, to_state
+                        ))),
+                    );
                     Ok(Value::Map(Rc::new(RefCell::new(result))))
                 }
             } else {
-                Err(RuntimeError::new(format!("State machine '{}' not found", machine_name)))
+                Err(RuntimeError::new(format!(
+                    "State machine '{}' not found",
+                    machine_name
+                )))
             }
         })
     });
@@ -20310,11 +25466,17 @@ fn register_agent_planning(interp: &mut Interpreter) {
     define(interp, "plan_can_transition", Some(2), |_, args| {
         let machine_name = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("name")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid state machine"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("name")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid state machine"))?,
             _ => return Err(RuntimeError::new("plan_can_transition requires machine")),
         };
 
@@ -20326,7 +25488,9 @@ fn register_agent_planning(interp: &mut Interpreter) {
         STATE_MACHINES.with(|machines| {
             if let Some(machine) = machines.borrow().get(&machine_name) {
                 let current = &machine.current_state;
-                let can = machine.transitions.get(current)
+                let can = machine
+                    .transitions
+                    .get(current)
                     .map(|transitions| transitions.iter().any(|(to, _)| to == &to_state))
                     .unwrap_or(false);
                 Ok(Value::Bool(can))
@@ -20340,20 +25504,33 @@ fn register_agent_planning(interp: &mut Interpreter) {
     define(interp, "plan_available_transitions", Some(1), |_, args| {
         let machine_name = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("name")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid state machine"))?
+            Value::Map(m) => m
+                .borrow()
+                .get("name")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid state machine"))?,
+            _ => {
+                return Err(RuntimeError::new(
+                    "plan_available_transitions requires machine",
+                ))
             }
-            _ => return Err(RuntimeError::new("plan_available_transitions requires machine")),
         };
 
         STATE_MACHINES.with(|machines| {
             if let Some(machine) = machines.borrow().get(&machine_name) {
                 let current = &machine.current_state;
-                let available: Vec<Value> = machine.transitions.get(current)
+                let available: Vec<Value> = machine
+                    .transitions
+                    .get(current)
                     .map(|transitions| {
-                        transitions.iter()
+                        transitions
+                            .iter()
                             .map(|(to, _)| Value::String(Rc::new(to.clone())))
                             .collect()
                     })
@@ -20369,17 +25546,25 @@ fn register_agent_planning(interp: &mut Interpreter) {
     define(interp, "plan_history", Some(1), |_, args| {
         let machine_name = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("name")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid state machine"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("name")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid state machine"))?,
             _ => return Err(RuntimeError::new("plan_history requires machine")),
         };
 
         STATE_MACHINES.with(|machines| {
             if let Some(machine) = machines.borrow().get(&machine_name) {
-                let history: Vec<Value> = machine.history.iter()
+                let history: Vec<Value> = machine
+                    .history
+                    .iter()
                     .map(|(state, timestamp)| {
                         let mut entry = HashMap::new();
                         entry.insert("state".to_string(), Value::String(Rc::new(state.clone())));
@@ -20406,14 +25591,20 @@ fn register_agent_planning(interp: &mut Interpreter) {
         let mut goal = HashMap::new();
         goal.insert("name".to_string(), Value::String(Rc::new(name)));
         goal.insert("criteria".to_string(), criteria);
-        goal.insert("status".to_string(), Value::String(Rc::new("pending".to_string())));
+        goal.insert(
+            "status".to_string(),
+            Value::String(Rc::new("pending".to_string())),
+        );
         goal.insert("progress".to_string(), Value::Float(0.0));
-        goal.insert("created_at".to_string(), Value::Int(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64
-        ));
+        goal.insert(
+            "created_at".to_string(),
+            Value::Int(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64,
+            ),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(goal))))
     });
@@ -20430,7 +25621,9 @@ fn register_agent_planning(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("plan_subgoals requires subgoals array")),
         };
 
-        parent.borrow_mut().insert("subgoals".to_string(), Value::Array(subgoals));
+        parent
+            .borrow_mut()
+            .insert("subgoals".to_string(), Value::Array(subgoals));
         Ok(Value::Map(parent))
     });
 
@@ -20448,12 +25641,19 @@ fn register_agent_planning(interp: &mut Interpreter) {
         };
 
         let progress = progress.clamp(0.0, 1.0);
-        goal.borrow_mut().insert("progress".to_string(), Value::Float(progress));
+        goal.borrow_mut()
+            .insert("progress".to_string(), Value::Float(progress));
 
         if progress >= 1.0 {
-            goal.borrow_mut().insert("status".to_string(), Value::String(Rc::new("completed".to_string())));
+            goal.borrow_mut().insert(
+                "status".to_string(),
+                Value::String(Rc::new("completed".to_string())),
+            );
         } else if progress > 0.0 {
-            goal.borrow_mut().insert("status".to_string(), Value::String(Rc::new("in_progress".to_string())));
+            goal.borrow_mut().insert(
+                "status".to_string(),
+                Value::String(Rc::new("in_progress".to_string())),
+            );
         }
 
         Ok(Value::Map(goal))
@@ -20491,9 +25691,15 @@ fn register_agent_planning(interp: &mut Interpreter) {
 
         let mut result = HashMap::new();
         result.insert("met".to_string(), Value::Bool(met));
-        result.insert("missing".to_string(), Value::Array(Rc::new(RefCell::new(
-            missing.into_iter().map(|s| Value::String(Rc::new(s))).collect()
-        ))));
+        result.insert(
+            "missing".to_string(),
+            Value::Array(Rc::new(RefCell::new(
+                missing
+                    .into_iter()
+                    .map(|s| Value::String(Rc::new(s)))
+                    .collect(),
+            ))),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -20517,11 +25723,9 @@ fn register_agent_vectors(interp: &mut Interpreter) {
         let dimension = 384; // Common embedding dimension
 
         for i in 0..dimension {
-            let hash = text.bytes()
-                .enumerate()
-                .fold(0u64, |acc, (j, b)| {
-                    acc.wrapping_add((b as u64).wrapping_mul((i + j + 1) as u64))
-                });
+            let hash = text.bytes().enumerate().fold(0u64, |acc, (j, b)| {
+                acc.wrapping_add((b as u64).wrapping_mul((i + j + 1) as u64))
+            });
             let value = ((hash % 10000) as f64 / 10000.0) * 2.0 - 1.0; // Normalize to [-1, 1]
             embedding.push(Value::Float(value));
         }
@@ -20600,7 +25804,9 @@ fn register_agent_vectors(interp: &mut Interpreter) {
         let vec_a = match &args[0] {
             Value::Array(arr) => arr.borrow().clone(),
             Value::Evidential { value, .. } => {
-                if let Value::Array(arr) = value.as_ref() { arr.borrow().clone() } else {
+                if let Value::Array(arr) = value.as_ref() {
+                    arr.borrow().clone()
+                } else {
                     return Err(RuntimeError::new("vec_euclidean_distance requires arrays"));
                 }
             }
@@ -20610,7 +25816,9 @@ fn register_agent_vectors(interp: &mut Interpreter) {
         let vec_b = match &args[1] {
             Value::Array(arr) => arr.borrow().clone(),
             Value::Evidential { value, .. } => {
-                if let Value::Array(arr) = value.as_ref() { arr.borrow().clone() } else {
+                if let Value::Array(arr) = value.as_ref() {
+                    arr.borrow().clone()
+                } else {
                     return Err(RuntimeError::new("vec_euclidean_distance requires arrays"));
                 }
             }
@@ -20696,14 +25904,17 @@ fn register_agent_vectors(interp: &mut Interpreter) {
             return Ok(Value::Array(Rc::new(RefCell::new(vec))));
         }
 
-        let normalized: Vec<Value> = vec.iter().map(|v| {
-            let val = match v {
-                Value::Float(f) => *f,
-                Value::Int(i) => *i as f64,
-                _ => 0.0,
-            };
-            Value::Float(val / mag)
-        }).collect();
+        let normalized: Vec<Value> = vec
+            .iter()
+            .map(|v| {
+                let val = match v {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => 0.0,
+                };
+                Value::Float(val / mag)
+            })
+            .collect();
 
         Ok(Value::Array(Rc::new(RefCell::new(normalized))))
     });
@@ -20713,7 +25924,9 @@ fn register_agent_vectors(interp: &mut Interpreter) {
         let query = match &args[0] {
             Value::Array(arr) => arr.borrow().clone(),
             Value::Evidential { value, .. } => {
-                if let Value::Array(arr) = value.as_ref() { arr.borrow().clone() } else {
+                if let Value::Array(arr) = value.as_ref() {
+                    arr.borrow().clone()
+                } else {
                     return Err(RuntimeError::new("vec_search query must be array"));
                 }
             }
@@ -20722,7 +25935,11 @@ fn register_agent_vectors(interp: &mut Interpreter) {
 
         let corpus = match &args[1] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("vec_search corpus must be array of vectors")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "vec_search corpus must be array of vectors",
+                ))
+            }
         };
 
         let k = match &args[2] {
@@ -20784,13 +26001,17 @@ fn register_agent_vectors(interp: &mut Interpreter) {
         similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Return top k
-        let results: Vec<Value> = similarities.iter()
+        let results: Vec<Value> = similarities
+            .iter()
             .take(k)
             .map(|(idx, sim)| {
                 let mut result = HashMap::new();
                 result.insert("index".to_string(), Value::Int(*idx as i64));
                 result.insert("similarity".to_string(), Value::Float(*sim));
-                result.insert("item".to_string(), corpus.get(*idx).cloned().unwrap_or(Value::Null));
+                result.insert(
+                    "item".to_string(),
+                    corpus.get(*idx).cloned().unwrap_or(Value::Null),
+                );
                 Value::Map(Rc::new(RefCell::new(result)))
             })
             .collect();
@@ -20801,8 +26022,14 @@ fn register_agent_vectors(interp: &mut Interpreter) {
     // vec_store - Create an in-memory vector store
     define(interp, "vec_store", Some(0), |_, _args| {
         let mut store = HashMap::new();
-        store.insert("vectors".to_string(), Value::Array(Rc::new(RefCell::new(Vec::new()))));
-        store.insert("metadata".to_string(), Value::Array(Rc::new(RefCell::new(Vec::new()))));
+        store.insert(
+            "vectors".to_string(),
+            Value::Array(Rc::new(RefCell::new(Vec::new()))),
+        );
+        store.insert(
+            "metadata".to_string(),
+            Value::Array(Rc::new(RefCell::new(Vec::new()))),
+        );
         store.insert("count".to_string(), Value::Int(0));
         Ok(Value::Map(Rc::new(RefCell::new(store))))
     });
@@ -20826,9 +26053,17 @@ fn register_agent_vectors(interp: &mut Interpreter) {
             metas.borrow_mut().push(metadata);
         }
 
-        let new_count = store_ref.get("count")
-            .and_then(|v| if let Value::Int(n) = v { Some(*n) } else { None })
-            .unwrap_or(0) + 1;
+        let new_count = store_ref
+            .get("count")
+            .and_then(|v| {
+                if let Value::Int(n) = v {
+                    Some(*n)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0)
+            + 1;
         store_ref.insert("count".to_string(), Value::Int(new_count));
 
         Ok(Value::Int(new_count))
@@ -20844,7 +26079,9 @@ fn register_agent_vectors(interp: &mut Interpreter) {
         let query = match &args[1] {
             Value::Array(arr) => arr.borrow().clone(),
             Value::Evidential { value, .. } => {
-                if let Value::Array(arr) = value.as_ref() { arr.borrow().clone() } else {
+                if let Value::Array(arr) = value.as_ref() {
+                    arr.borrow().clone()
+                } else {
                     return Err(RuntimeError::new("Query must be array"));
                 }
             }
@@ -20856,12 +26093,26 @@ fn register_agent_vectors(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("k must be integer")),
         };
 
-        let vectors = store.get("vectors")
-            .and_then(|v| if let Value::Array(arr) = v { Some(arr.borrow().clone()) } else { None })
+        let vectors = store
+            .get("vectors")
+            .and_then(|v| {
+                if let Value::Array(arr) = v {
+                    Some(arr.borrow().clone())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_default();
 
-        let metadata = store.get("metadata")
-            .and_then(|v| if let Value::Array(arr) = v { Some(arr.borrow().clone()) } else { None })
+        let metadata = store
+            .get("metadata")
+            .and_then(|v| {
+                if let Value::Array(arr) = v {
+                    Some(arr.borrow().clone())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_default();
 
         let mut similarities: Vec<(usize, f64)> = Vec::new();
@@ -20870,39 +26121,64 @@ fn register_agent_vectors(interp: &mut Interpreter) {
             let vec_b = match vec_val {
                 Value::Array(arr) => arr.borrow().clone(),
                 Value::Evidential { value, .. } => {
-                    if let Value::Array(arr) = value.as_ref() { arr.borrow().clone() } else { continue; }
+                    if let Value::Array(arr) = value.as_ref() {
+                        arr.borrow().clone()
+                    } else {
+                        continue;
+                    }
                 }
                 _ => continue,
             };
 
-            if vec_b.len() != query.len() { continue; }
+            if vec_b.len() != query.len() {
+                continue;
+            }
 
             let mut dot = 0.0;
             let mut mag_a = 0.0;
             let mut mag_b = 0.0;
 
             for (a, b) in query.iter().zip(vec_b.iter()) {
-                let a_val = match a { Value::Float(f) => *f, Value::Int(i) => *i as f64, _ => 0.0 };
-                let b_val = match b { Value::Float(f) => *f, Value::Int(i) => *i as f64, _ => 0.0 };
+                let a_val = match a {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => 0.0,
+                };
+                let b_val = match b {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => 0.0,
+                };
                 dot += a_val * b_val;
                 mag_a += a_val * a_val;
                 mag_b += b_val * b_val;
             }
 
-            let sim = if mag_a > 0.0 && mag_b > 0.0 { dot / (mag_a.sqrt() * mag_b.sqrt()) } else { 0.0 };
+            let sim = if mag_a > 0.0 && mag_b > 0.0 {
+                dot / (mag_a.sqrt() * mag_b.sqrt())
+            } else {
+                0.0
+            };
             similarities.push((i, sim));
         }
 
         similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        let results: Vec<Value> = similarities.iter()
+        let results: Vec<Value> = similarities
+            .iter()
             .take(k)
             .map(|(idx, sim)| {
                 let mut result = HashMap::new();
                 result.insert("index".to_string(), Value::Int(*idx as i64));
                 result.insert("similarity".to_string(), Value::Float(*sim));
-                result.insert("vector".to_string(), vectors.get(*idx).cloned().unwrap_or(Value::Null));
-                result.insert("metadata".to_string(), metadata.get(*idx).cloned().unwrap_or(Value::Null));
+                result.insert(
+                    "vector".to_string(),
+                    vectors.get(*idx).cloned().unwrap_or(Value::Null),
+                );
+                result.insert(
+                    "metadata".to_string(),
+                    metadata.get(*idx).cloned().unwrap_or(Value::Null),
+                );
                 Value::Map(Rc::new(RefCell::new(result)))
             })
             .collect();
@@ -20983,11 +26259,17 @@ fn register_agent_swarm(interp: &mut Interpreter) {
     define(interp, "swarm_add_capability", Some(2), |_, args| {
         let agent_id = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("id")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("id")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid agent"))?,
             _ => return Err(RuntimeError::new("swarm_add_capability requires agent")),
         };
 
@@ -21012,22 +26294,42 @@ fn register_agent_swarm(interp: &mut Interpreter) {
     define(interp, "swarm_send_message", Some(4), |_, args| {
         let from_id = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("id")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid sender agent"))?
+            Value::Map(m) => m
+                .borrow()
+                .get("id")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid sender agent"))?,
+            _ => {
+                return Err(RuntimeError::new(
+                    "swarm_send_message requires sender agent",
+                ))
             }
-            _ => return Err(RuntimeError::new("swarm_send_message requires sender agent")),
         };
 
         let to_id = match &args[1] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("id")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid receiver agent"))?
+            Value::Map(m) => m
+                .borrow()
+                .get("id")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid receiver agent"))?,
+            _ => {
+                return Err(RuntimeError::new(
+                    "swarm_send_message requires receiver agent",
+                ))
             }
-            _ => return Err(RuntimeError::new("swarm_send_message requires receiver agent")),
         };
 
         let msg_type = match &args[2] {
@@ -21064,25 +26366,34 @@ fn register_agent_swarm(interp: &mut Interpreter) {
     define(interp, "swarm_receive_messages", Some(1), |_, args| {
         let agent_id = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("id")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("id")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid agent"))?,
             _ => return Err(RuntimeError::new("swarm_receive_messages requires agent")),
         };
 
         AGENT_MESSAGES.with(|messages| {
             if let Some(queue) = messages.borrow_mut().get_mut(&agent_id) {
-                let msgs: Vec<Value> = queue.drain(..).map(|m| {
-                    let mut msg_map = HashMap::new();
-                    msg_map.insert("from".to_string(), Value::String(Rc::new(m.from)));
-                    msg_map.insert("to".to_string(), Value::String(Rc::new(m.to)));
-                    msg_map.insert("type".to_string(), Value::String(Rc::new(m.msg_type)));
-                    msg_map.insert("content".to_string(), m.content);
-                    msg_map.insert("timestamp".to_string(), Value::Int(m.timestamp as i64));
-                    Value::Map(Rc::new(RefCell::new(msg_map)))
-                }).collect();
+                let msgs: Vec<Value> = queue
+                    .drain(..)
+                    .map(|m| {
+                        let mut msg_map = HashMap::new();
+                        msg_map.insert("from".to_string(), Value::String(Rc::new(m.from)));
+                        msg_map.insert("to".to_string(), Value::String(Rc::new(m.to)));
+                        msg_map.insert("type".to_string(), Value::String(Rc::new(m.msg_type)));
+                        msg_map.insert("content".to_string(), m.content);
+                        msg_map.insert("timestamp".to_string(), Value::Int(m.timestamp as i64));
+                        Value::Map(Rc::new(RefCell::new(msg_map)))
+                    })
+                    .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(msgs))))
             } else {
                 Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))))
@@ -21094,11 +26405,17 @@ fn register_agent_swarm(interp: &mut Interpreter) {
     define(interp, "swarm_broadcast", Some(3), |_, args| {
         let from_id = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("id")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid sender agent"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("id")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid sender agent"))?,
             _ => return Err(RuntimeError::new("swarm_broadcast requires sender agent")),
         };
 
@@ -21116,7 +26433,9 @@ fn register_agent_swarm(interp: &mut Interpreter) {
 
         // Get all agent IDs except sender
         let agent_ids: Vec<String> = AGENT_REGISTRY.with(|registry| {
-            registry.borrow().keys()
+            registry
+                .borrow()
+                .keys()
                 .filter(|id| *id != &from_id)
                 .cloned()
                 .collect()
@@ -21146,19 +26465,35 @@ fn register_agent_swarm(interp: &mut Interpreter) {
     define(interp, "swarm_find_agents", Some(1), |_, args| {
         let capability = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            _ => return Err(RuntimeError::new("swarm_find_agents requires capability string")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "swarm_find_agents requires capability string",
+                ))
+            }
         };
 
         let agents: Vec<Value> = AGENT_REGISTRY.with(|registry| {
-            registry.borrow().values()
+            registry
+                .borrow()
+                .values()
                 .filter(|agent| agent.capabilities.contains(&capability))
                 .map(|agent| {
                     let mut info = HashMap::new();
                     info.insert("id".to_string(), Value::String(Rc::new(agent.id.clone())));
-                    info.insert("type".to_string(), Value::String(Rc::new(agent.agent_type.clone())));
-                    info.insert("capabilities".to_string(), Value::Array(Rc::new(RefCell::new(
-                        agent.capabilities.iter().map(|c| Value::String(Rc::new(c.clone()))).collect()
-                    ))));
+                    info.insert(
+                        "type".to_string(),
+                        Value::String(Rc::new(agent.agent_type.clone())),
+                    );
+                    info.insert(
+                        "capabilities".to_string(),
+                        Value::Array(Rc::new(RefCell::new(
+                            agent
+                                .capabilities
+                                .iter()
+                                .map(|c| Value::String(Rc::new(c.clone())))
+                                .collect(),
+                        ))),
+                    );
                     Value::Map(Rc::new(RefCell::new(info)))
                 })
                 .collect()
@@ -21170,16 +26505,33 @@ fn register_agent_swarm(interp: &mut Interpreter) {
     // swarm_list_agents - List all agents
     define(interp, "swarm_list_agents", Some(0), |_, _args| {
         let agents: Vec<Value> = AGENT_REGISTRY.with(|registry| {
-            registry.borrow().values().map(|agent| {
-                let mut info = HashMap::new();
-                info.insert("id".to_string(), Value::String(Rc::new(agent.id.clone())));
-                info.insert("type".to_string(), Value::String(Rc::new(agent.agent_type.clone())));
-                info.insert("capabilities".to_string(), Value::Array(Rc::new(RefCell::new(
-                    agent.capabilities.iter().map(|c| Value::String(Rc::new(c.clone()))).collect()
-                ))));
-                info.insert("created_at".to_string(), Value::Int(agent.created_at as i64));
-                Value::Map(Rc::new(RefCell::new(info)))
-            }).collect()
+            registry
+                .borrow()
+                .values()
+                .map(|agent| {
+                    let mut info = HashMap::new();
+                    info.insert("id".to_string(), Value::String(Rc::new(agent.id.clone())));
+                    info.insert(
+                        "type".to_string(),
+                        Value::String(Rc::new(agent.agent_type.clone())),
+                    );
+                    info.insert(
+                        "capabilities".to_string(),
+                        Value::Array(Rc::new(RefCell::new(
+                            agent
+                                .capabilities
+                                .iter()
+                                .map(|c| Value::String(Rc::new(c.clone())))
+                                .collect(),
+                        ))),
+                    );
+                    info.insert(
+                        "created_at".to_string(),
+                        Value::Int(agent.created_at as i64),
+                    );
+                    Value::Map(Rc::new(RefCell::new(info)))
+                })
+                .collect()
         });
         Ok(Value::Array(Rc::new(RefCell::new(agents))))
     });
@@ -21188,11 +26540,17 @@ fn register_agent_swarm(interp: &mut Interpreter) {
     define(interp, "swarm_set_state", Some(3), |_, args| {
         let agent_id = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("id")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("id")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid agent"))?,
             _ => return Err(RuntimeError::new("swarm_set_state requires agent")),
         };
 
@@ -21217,11 +26575,17 @@ fn register_agent_swarm(interp: &mut Interpreter) {
     define(interp, "swarm_get_state", Some(2), |_, args| {
         let agent_id = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("id")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("id")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid agent"))?,
             _ => return Err(RuntimeError::new("swarm_get_state requires agent")),
         };
 
@@ -21243,17 +26607,22 @@ fn register_agent_swarm(interp: &mut Interpreter) {
     define(interp, "swarm_remove_agent", Some(1), |_, args| {
         let agent_id = match &args[0] {
             Value::String(s) => s.as_str().to_string(),
-            Value::Map(m) => {
-                m.borrow().get("id")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
-                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
-            }
+            Value::Map(m) => m
+                .borrow()
+                .get("id")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| RuntimeError::new("Invalid agent"))?,
             _ => return Err(RuntimeError::new("swarm_remove_agent requires agent")),
         };
 
-        let removed = AGENT_REGISTRY.with(|registry| {
-            registry.borrow_mut().remove(&agent_id).is_some()
-        });
+        let removed =
+            AGENT_REGISTRY.with(|registry| registry.borrow_mut().remove(&agent_id).is_some());
 
         AGENT_MESSAGES.with(|messages| {
             messages.borrow_mut().remove(&agent_id);
@@ -21288,7 +26657,8 @@ fn register_agent_swarm(interp: &mut Interpreter) {
 
         // Find winner
         let total = votes.len() as i64;
-        let (winner, count) = vote_counts.iter()
+        let (winner, count) = vote_counts
+            .iter()
             .max_by_key(|(_, &count)| count)
             .map(|(k, &v)| (k.clone(), v))
             .unwrap_or_default();
@@ -21336,16 +26706,31 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
     define(interp, "reason_check_constraint", Some(2), |_, args| {
         let constraint = match &args[0] {
             Value::Map(m) => m.borrow().clone(),
-            _ => return Err(RuntimeError::new("reason_check_constraint requires constraint")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "reason_check_constraint requires constraint",
+                ))
+            }
         };
 
         let context = match &args[1] {
             Value::Map(m) => m.borrow().clone(),
-            _ => return Err(RuntimeError::new("reason_check_constraint requires context")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "reason_check_constraint requires context",
+                ))
+            }
         };
 
-        let constraint_type = constraint.get("type")
-            .and_then(|v| if let Value::String(s) = v { Some(s.as_str()) } else { None })
+        let constraint_type = constraint
+            .get("type")
+            .and_then(|v| {
+                if let Value::String(s) = v {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
             .unwrap_or("unknown");
 
         let params = constraint.get("params").cloned().unwrap_or(Value::Null);
@@ -21354,8 +26739,15 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
             "equals" => {
                 if let Value::Map(p) = &params {
                     let p = p.borrow();
-                    let var_name = p.get("var")
-                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    let var_name = p
+                        .get("var")
+                        .and_then(|v| {
+                            if let Value::String(s) = v {
+                                Some(s.as_str().to_string())
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or_default();
                     let expected = p.get("value").cloned().unwrap_or(Value::Null);
                     let actual = context.get(&var_name).cloned().unwrap_or(Value::Null);
@@ -21367,8 +26759,15 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
             "not_null" => {
                 if let Value::Map(p) = &params {
                     let p = p.borrow();
-                    let var_name = p.get("var")
-                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    let var_name = p
+                        .get("var")
+                        .and_then(|v| {
+                            if let Value::String(s) = v {
+                                Some(s.as_str().to_string())
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or_default();
                     !matches!(context.get(&var_name), None | Some(Value::Null))
                 } else {
@@ -21378,17 +26777,39 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
             "range" => {
                 if let Value::Map(p) = &params {
                     let p = p.borrow();
-                    let var_name = p.get("var")
-                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    let var_name = p
+                        .get("var")
+                        .and_then(|v| {
+                            if let Value::String(s) = v {
+                                Some(s.as_str().to_string())
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or_default();
-                    let min = p.get("min")
-                        .and_then(|v| match v { Value::Int(n) => Some(*n as f64), Value::Float(f) => Some(*f), _ => None })
+                    let min = p
+                        .get("min")
+                        .and_then(|v| match v {
+                            Value::Int(n) => Some(*n as f64),
+                            Value::Float(f) => Some(*f),
+                            _ => None,
+                        })
                         .unwrap_or(f64::NEG_INFINITY);
-                    let max = p.get("max")
-                        .and_then(|v| match v { Value::Int(n) => Some(*n as f64), Value::Float(f) => Some(*f), _ => None })
+                    let max = p
+                        .get("max")
+                        .and_then(|v| match v {
+                            Value::Int(n) => Some(*n as f64),
+                            Value::Float(f) => Some(*f),
+                            _ => None,
+                        })
                         .unwrap_or(f64::INFINITY);
-                    let actual = context.get(&var_name)
-                        .and_then(|v| match v { Value::Int(n) => Some(*n as f64), Value::Float(f) => Some(*f), _ => None })
+                    let actual = context
+                        .get(&var_name)
+                        .and_then(|v| match v {
+                            Value::Int(n) => Some(*n as f64),
+                            Value::Float(f) => Some(*f),
+                            _ => None,
+                        })
                         .unwrap_or(0.0);
                     actual >= min && actual <= max
                 } else {
@@ -21398,14 +26819,35 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
             "contains" => {
                 if let Value::Map(p) = &params {
                     let p = p.borrow();
-                    let var_name = p.get("var")
-                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    let var_name = p
+                        .get("var")
+                        .and_then(|v| {
+                            if let Value::String(s) = v {
+                                Some(s.as_str().to_string())
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or_default();
-                    let needle = p.get("value")
-                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    let needle = p
+                        .get("value")
+                        .and_then(|v| {
+                            if let Value::String(s) = v {
+                                Some(s.as_str().to_string())
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or_default();
-                    let actual = context.get(&var_name)
-                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    let actual = context
+                        .get(&var_name)
+                        .and_then(|v| {
+                            if let Value::String(s) = v {
+                                Some(s.as_str().to_string())
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or_default();
                     actual.contains(&needle)
                 } else {
@@ -21417,7 +26859,10 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
 
         let mut result = HashMap::new();
         result.insert("satisfied".to_string(), Value::Bool(satisfied));
-        result.insert("constraint".to_string(), Value::Map(Rc::new(RefCell::new(constraint))));
+        result.insert(
+            "constraint".to_string(),
+            Value::Map(Rc::new(RefCell::new(constraint))),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
@@ -21426,7 +26871,11 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
     define(interp, "reason_check_all", Some(2), |interp, args| {
         let constraints = match &args[0] {
             Value::Array(arr) => arr.borrow().clone(),
-            _ => return Err(RuntimeError::new("reason_check_all requires constraints array")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "reason_check_all requires constraints array",
+                ))
+            }
         };
 
         let context = args[1].clone();
@@ -21437,8 +26886,16 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
         for constraint in constraints.iter() {
             // Call reason_check_constraint for each
             if let Value::Map(c) = constraint {
-                let c_type = c.borrow().get("type")
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_ref().clone()) } else { None })
+                let c_type = c
+                    .borrow()
+                    .get("type")
+                    .and_then(|v| {
+                        if let Value::String(s) = v {
+                            Some(s.as_ref().clone())
+                        } else {
+                            None
+                        }
+                    })
                     .unwrap_or_else(|| "unknown".to_string());
                 let params = c.borrow().get("params").cloned().unwrap_or(Value::Null);
 
@@ -21451,8 +26908,15 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
                     "equals" => {
                         if let Value::Map(p) = &params {
                             let p = p.borrow();
-                            let var_name = p.get("var")
-                                .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                            let var_name = p
+                                .get("var")
+                                .and_then(|v| {
+                                    if let Value::String(s) = v {
+                                        Some(s.as_str().to_string())
+                                    } else {
+                                        None
+                                    }
+                                })
                                 .unwrap_or_default();
                             let expected = p.get("value").cloned().unwrap_or(Value::Null);
                             let actual = ctx.get(&var_name).cloned().unwrap_or(Value::Null);
@@ -21464,8 +26928,15 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
                     "not_null" => {
                         if let Value::Map(p) = &params {
                             let p = p.borrow();
-                            let var_name = p.get("var")
-                                .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                            let var_name = p
+                                .get("var")
+                                .and_then(|v| {
+                                    if let Value::String(s) = v {
+                                        Some(s.as_str().to_string())
+                                    } else {
+                                        None
+                                    }
+                                })
                                 .unwrap_or_default();
                             !matches!(ctx.get(&var_name), None | Some(Value::Null))
                         } else {
@@ -21490,7 +26961,10 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
 
         let mut result = HashMap::new();
         result.insert("all_satisfied".to_string(), Value::Bool(all_satisfied));
-        result.insert("results".to_string(), Value::Array(Rc::new(RefCell::new(results))));
+        result.insert(
+            "results".to_string(),
+            Value::Array(Rc::new(RefCell::new(results))),
+        );
         result.insert("total".to_string(), Value::Int(constraints.len() as i64));
 
         Ok(Value::Map(Rc::new(RefCell::new(result))))
@@ -21502,7 +26976,10 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
         let consequent = args[1].clone();
 
         let mut implication = HashMap::new();
-        implication.insert("type".to_string(), Value::String(Rc::new("implication".to_string())));
+        implication.insert(
+            "type".to_string(),
+            Value::String(Rc::new("implication".to_string())),
+        );
         implication.insert("if".to_string(), antecedent);
         implication.insert("then".to_string(), consequent);
 
@@ -21514,8 +26991,14 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
         let conditions: Vec<Value> = args.into_iter().collect();
 
         let mut conjunction = HashMap::new();
-        conjunction.insert("type".to_string(), Value::String(Rc::new("and".to_string())));
-        conjunction.insert("conditions".to_string(), Value::Array(Rc::new(RefCell::new(conditions))));
+        conjunction.insert(
+            "type".to_string(),
+            Value::String(Rc::new("and".to_string())),
+        );
+        conjunction.insert(
+            "conditions".to_string(),
+            Value::Array(Rc::new(RefCell::new(conditions))),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(conjunction))))
     });
@@ -21526,7 +27009,10 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
 
         let mut disjunction = HashMap::new();
         disjunction.insert("type".to_string(), Value::String(Rc::new("or".to_string())));
-        disjunction.insert("conditions".to_string(), Value::Array(Rc::new(RefCell::new(conditions))));
+        disjunction.insert(
+            "conditions".to_string(),
+            Value::Array(Rc::new(RefCell::new(conditions))),
+        );
 
         Ok(Value::Map(Rc::new(RefCell::new(disjunction))))
     });
@@ -21536,7 +27022,10 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
         let condition = args[0].clone();
 
         let mut negation = HashMap::new();
-        negation.insert("type".to_string(), Value::String(Rc::new("not".to_string())));
+        negation.insert(
+            "type".to_string(),
+            Value::String(Rc::new("not".to_string())),
+        );
         negation.insert("condition".to_string(), condition);
 
         Ok(Value::Map(Rc::new(RefCell::new(negation))))
@@ -21556,8 +27045,15 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
         };
 
         fn eval_expr(expr: &HashMap<String, Value>, ctx: &HashMap<String, Value>) -> bool {
-            let expr_type = expr.get("type")
-                .and_then(|v| if let Value::String(s) = v { Some(s.as_str()) } else { None })
+            let expr_type = expr
+                .get("type")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.as_str())
+                    } else {
+                        None
+                    }
+                })
                 .unwrap_or("unknown");
 
             match expr_type {
@@ -21660,7 +27156,10 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
 
         let mut proof = HashMap::new();
         proof.insert("step".to_string(), Value::String(Rc::new(step)));
-        proof.insert("justification".to_string(), Value::String(Rc::new(justification)));
+        proof.insert(
+            "justification".to_string(),
+            Value::String(Rc::new(justification)),
+        );
         proof.insert("conclusion".to_string(), conclusion);
         proof.insert("timestamp".to_string(), Value::Int(now as i64));
 
@@ -21672,13 +27171,26 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
         let steps: Vec<Value> = args.into_iter().collect();
 
         let mut chain = HashMap::new();
-        chain.insert("type".to_string(), Value::String(Rc::new("proof_chain".to_string())));
-        chain.insert("steps".to_string(), Value::Array(Rc::new(RefCell::new(steps.clone()))));
+        chain.insert(
+            "type".to_string(),
+            Value::String(Rc::new("proof_chain".to_string())),
+        );
+        chain.insert(
+            "steps".to_string(),
+            Value::Array(Rc::new(RefCell::new(steps.clone()))),
+        );
         chain.insert("length".to_string(), Value::Int(steps.len() as i64));
 
         // Get final conclusion
-        let final_conclusion = steps.last()
-            .and_then(|s| if let Value::Map(m) = s { m.borrow().get("conclusion").cloned() } else { None })
+        let final_conclusion = steps
+            .last()
+            .and_then(|s| {
+                if let Value::Map(m) = s {
+                    m.borrow().get("conclusion").cloned()
+                } else {
+                    None
+                }
+            })
             .unwrap_or(Value::Null);
         chain.insert("final_conclusion".to_string(), final_conclusion);
 
@@ -21699,8 +27211,14 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
 
         let mut hypothesis = HashMap::new();
         hypothesis.insert("claim".to_string(), Value::String(Rc::new(claim)));
-        hypothesis.insert("required_evidence".to_string(), Value::Array(required_evidence));
-        hypothesis.insert("status".to_string(), Value::String(Rc::new("unverified".to_string())));
+        hypothesis.insert(
+            "required_evidence".to_string(),
+            Value::Array(required_evidence),
+        );
+        hypothesis.insert(
+            "status".to_string(),
+            Value::String(Rc::new("unverified".to_string())),
+        );
         hypothesis.insert("confidence".to_string(), Value::Float(0.0));
 
         Ok(Value::Map(Rc::new(RefCell::new(hypothesis))))
@@ -21710,16 +27228,32 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
     define(interp, "reason_verify_hypothesis", Some(2), |_, args| {
         let hypothesis = match &args[0] {
             Value::Map(m) => m.clone(),
-            _ => return Err(RuntimeError::new("reason_verify_hypothesis requires hypothesis")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "reason_verify_hypothesis requires hypothesis",
+                ))
+            }
         };
 
         let evidence = match &args[1] {
             Value::Map(m) => m.borrow().clone(),
-            _ => return Err(RuntimeError::new("reason_verify_hypothesis requires evidence map")),
+            _ => {
+                return Err(RuntimeError::new(
+                    "reason_verify_hypothesis requires evidence map",
+                ))
+            }
         };
 
-        let required = hypothesis.borrow().get("required_evidence")
-            .and_then(|v| if let Value::Array(arr) = v { Some(arr.borrow().clone()) } else { None })
+        let required = hypothesis
+            .borrow()
+            .get("required_evidence")
+            .and_then(|v| {
+                if let Value::Array(arr) = v {
+                    Some(arr.borrow().clone())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_default();
 
         let mut found = 0;
@@ -21732,15 +27266,24 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
         }
 
         let total = required.len();
-        let confidence = if total > 0 { found as f64 / total as f64 } else { 0.0 };
+        let confidence = if total > 0 {
+            found as f64 / total as f64
+        } else {
+            0.0
+        };
         let verified = found == total && total > 0;
 
         {
             let mut h = hypothesis.borrow_mut();
             h.insert("confidence".to_string(), Value::Float(confidence));
-            h.insert("status".to_string(), Value::String(Rc::new(
-                if verified { "verified".to_string() } else { "unverified".to_string() }
-            )));
+            h.insert(
+                "status".to_string(),
+                Value::String(Rc::new(if verified {
+                    "verified".to_string()
+                } else {
+                    "unverified".to_string()
+                })),
+            );
         }
 
         let mut result = HashMap::new();
@@ -21761,7 +27304,9 @@ mod tests {
 
     fn eval(source: &str) -> Result<Value, RuntimeError> {
         let mut parser = Parser::new(source);
-        let file = parser.parse_file().map_err(|e| RuntimeError::new(e.to_string()))?;
+        let file = parser
+            .parse_file()
+            .map_err(|e| RuntimeError::new(e.to_string()))?;
         let mut interp = Interpreter::new();
         register_stdlib(&mut interp);
         interp.execute(&file)
@@ -21771,44 +27316,104 @@ mod tests {
 
     #[test]
     fn test_math_functions() {
-        assert!(matches!(eval("fn main() { return abs(-5); }"), Ok(Value::Int(5))));
-        assert!(matches!(eval("fn main() { return floor(3.7); }"), Ok(Value::Int(3))));
-        assert!(matches!(eval("fn main() { return ceil(3.2); }"), Ok(Value::Int(4))));
-        assert!(matches!(eval("fn main() { return max(3, 7); }"), Ok(Value::Int(7))));
-        assert!(matches!(eval("fn main() { return min(3, 7); }"), Ok(Value::Int(3))));
-        assert!(matches!(eval("fn main() { return round(3.5); }"), Ok(Value::Int(4))));
-        assert!(matches!(eval("fn main() { return sign(-5); }"), Ok(Value::Int(-1))));
-        assert!(matches!(eval("fn main() { return sign(0); }"), Ok(Value::Int(0))));
-        assert!(matches!(eval("fn main() { return sign(5); }"), Ok(Value::Int(1))));
+        assert!(matches!(
+            eval("fn main() { return abs(-5); }"),
+            Ok(Value::Int(5))
+        ));
+        assert!(matches!(
+            eval("fn main() { return floor(3.7); }"),
+            Ok(Value::Int(3))
+        ));
+        assert!(matches!(
+            eval("fn main() { return ceil(3.2); }"),
+            Ok(Value::Int(4))
+        ));
+        assert!(matches!(
+            eval("fn main() { return max(3, 7); }"),
+            Ok(Value::Int(7))
+        ));
+        assert!(matches!(
+            eval("fn main() { return min(3, 7); }"),
+            Ok(Value::Int(3))
+        ));
+        assert!(matches!(
+            eval("fn main() { return round(3.5); }"),
+            Ok(Value::Int(4))
+        ));
+        assert!(matches!(
+            eval("fn main() { return sign(-5); }"),
+            Ok(Value::Int(-1))
+        ));
+        assert!(matches!(
+            eval("fn main() { return sign(0); }"),
+            Ok(Value::Int(0))
+        ));
+        assert!(matches!(
+            eval("fn main() { return sign(5); }"),
+            Ok(Value::Int(1))
+        ));
     }
 
     #[test]
     fn test_math_advanced() {
-        assert!(matches!(eval("fn main() { return pow(2, 10); }"), Ok(Value::Int(1024))));
-        assert!(matches!(eval("fn main() { return sqrt(16.0); }"), Ok(Value::Float(f)) if (f - 4.0).abs() < 0.001));
-        assert!(matches!(eval("fn main() { return log(2.718281828, 2.718281828); }"), Ok(Value::Float(f)) if (f - 1.0).abs() < 0.01));
-        assert!(matches!(eval("fn main() { return exp(0.0); }"), Ok(Value::Float(f)) if (f - 1.0).abs() < 0.001));
+        assert!(matches!(
+            eval("fn main() { return pow(2, 10); }"),
+            Ok(Value::Int(1024))
+        ));
+        assert!(
+            matches!(eval("fn main() { return sqrt(16.0); }"), Ok(Value::Float(f)) if (f - 4.0).abs() < 0.001)
+        );
+        assert!(
+            matches!(eval("fn main() { return log(2.718281828, 2.718281828); }"), Ok(Value::Float(f)) if (f - 1.0).abs() < 0.01)
+        );
+        assert!(
+            matches!(eval("fn main() { return exp(0.0); }"), Ok(Value::Float(f)) if (f - 1.0).abs() < 0.001)
+        );
     }
 
     #[test]
     fn test_trig_functions() {
-        assert!(matches!(eval("fn main() { return sin(0.0); }"), Ok(Value::Float(f)) if f.abs() < 0.001));
-        assert!(matches!(eval("fn main() { return cos(0.0); }"), Ok(Value::Float(f)) if (f - 1.0).abs() < 0.001));
-        assert!(matches!(eval("fn main() { return tan(0.0); }"), Ok(Value::Float(f)) if f.abs() < 0.001));
+        assert!(
+            matches!(eval("fn main() { return sin(0.0); }"), Ok(Value::Float(f)) if f.abs() < 0.001)
+        );
+        assert!(
+            matches!(eval("fn main() { return cos(0.0); }"), Ok(Value::Float(f)) if (f - 1.0).abs() < 0.001)
+        );
+        assert!(
+            matches!(eval("fn main() { return tan(0.0); }"), Ok(Value::Float(f)) if f.abs() < 0.001)
+        );
     }
 
     #[test]
     fn test_collection_functions() {
-        assert!(matches!(eval("fn main() { return len([1, 2, 3]); }"), Ok(Value::Int(3))));
-        assert!(matches!(eval("fn main() { return first([1, 2, 3]); }"), Ok(Value::Int(1))));
-        assert!(matches!(eval("fn main() { return last([1, 2, 3]); }"), Ok(Value::Int(3))));
-        assert!(matches!(eval("fn main() { return len([]); }"), Ok(Value::Int(0))));
+        assert!(matches!(
+            eval("fn main() { return len([1, 2, 3]); }"),
+            Ok(Value::Int(3))
+        ));
+        assert!(matches!(
+            eval("fn main() { return first([1, 2, 3]); }"),
+            Ok(Value::Int(1))
+        ));
+        assert!(matches!(
+            eval("fn main() { return last([1, 2, 3]); }"),
+            Ok(Value::Int(3))
+        ));
+        assert!(matches!(
+            eval("fn main() { return len([]); }"),
+            Ok(Value::Int(0))
+        ));
     }
 
     #[test]
     fn test_collection_nth() {
-        assert!(matches!(eval("fn main() { return get([10, 20, 30], 1); }"), Ok(Value::Int(20))));
-        assert!(matches!(eval("fn main() { return get([10, 20, 30], 0); }"), Ok(Value::Int(10))));
+        assert!(matches!(
+            eval("fn main() { return get([10, 20, 30], 1); }"),
+            Ok(Value::Int(20))
+        ));
+        assert!(matches!(
+            eval("fn main() { return get([10, 20, 30], 0); }"),
+            Ok(Value::Int(10))
+        ));
     }
 
     #[test]
@@ -21825,31 +27430,53 @@ mod tests {
 
     #[test]
     fn test_string_functions() {
-        assert!(matches!(eval(r#"fn main() { return upper("hello"); }"#), Ok(Value::String(s)) if s.as_str() == "HELLO"));
-        assert!(matches!(eval(r#"fn main() { return lower("HELLO"); }"#), Ok(Value::String(s)) if s.as_str() == "hello"));
-        assert!(matches!(eval(r#"fn main() { return trim("  hi  "); }"#), Ok(Value::String(s)) if s.as_str() == "hi"));
+        assert!(
+            matches!(eval(r#"fn main() { return upper("hello"); }"#), Ok(Value::String(s)) if s.as_str() == "HELLO")
+        );
+        assert!(
+            matches!(eval(r#"fn main() { return lower("HELLO"); }"#), Ok(Value::String(s)) if s.as_str() == "hello")
+        );
+        assert!(
+            matches!(eval(r#"fn main() { return trim("  hi  "); }"#), Ok(Value::String(s)) if s.as_str() == "hi")
+        );
     }
 
     #[test]
     fn test_string_split_join() {
-        assert!(matches!(eval(r#"fn main() { return len(split("a,b,c", ",")); }"#), Ok(Value::Int(3))));
-        assert!(matches!(eval(r#"fn main() { return join(["a", "b"], "-"); }"#), Ok(Value::String(s)) if s.as_str() == "a-b"));
+        assert!(matches!(
+            eval(r#"fn main() { return len(split("a,b,c", ",")); }"#),
+            Ok(Value::Int(3))
+        ));
+        assert!(
+            matches!(eval(r#"fn main() { return join(["a", "b"], "-"); }"#), Ok(Value::String(s)) if s.as_str() == "a-b")
+        );
     }
 
     #[test]
     fn test_string_contains() {
-        assert!(matches!(eval(r#"fn main() { return contains("hello", "ell"); }"#), Ok(Value::Bool(true))));
-        assert!(matches!(eval(r#"fn main() { return contains("hello", "xyz"); }"#), Ok(Value::Bool(false))));
+        assert!(matches!(
+            eval(r#"fn main() { return contains("hello", "ell"); }"#),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval(r#"fn main() { return contains("hello", "xyz"); }"#),
+            Ok(Value::Bool(false))
+        ));
     }
 
     #[test]
     fn test_string_replace() {
-        assert!(matches!(eval(r#"fn main() { return replace("hello", "l", "L"); }"#), Ok(Value::String(s)) if s.as_str() == "heLLo"));
+        assert!(
+            matches!(eval(r#"fn main() { return replace("hello", "l", "L"); }"#), Ok(Value::String(s)) if s.as_str() == "heLLo")
+        );
     }
 
     #[test]
     fn test_string_chars() {
-        assert!(matches!(eval(r#"fn main() { return len(chars("hello")); }"#), Ok(Value::Int(5))));
+        assert!(matches!(
+            eval(r#"fn main() { return len(chars("hello")); }"#),
+            Ok(Value::Int(5))
+        ));
     }
 
     #[test]
@@ -21860,16 +27487,31 @@ mod tests {
 
     #[test]
     fn test_iter_functions() {
-        assert!(matches!(eval("fn main() { return sum([1, 2, 3, 4]); }"), Ok(Value::Int(10))));
-        assert!(matches!(eval("fn main() { return product([1, 2, 3, 4]); }"), Ok(Value::Int(24))));
+        assert!(matches!(
+            eval("fn main() { return sum([1, 2, 3, 4]); }"),
+            Ok(Value::Int(10))
+        ));
+        assert!(matches!(
+            eval("fn main() { return product([1, 2, 3, 4]); }"),
+            Ok(Value::Int(24))
+        ));
     }
 
     #[test]
     fn test_iter_any_all() {
         // any/all take only array, check truthiness of elements
-        assert!(matches!(eval("fn main() { return any([false, true, false]); }"), Ok(Value::Bool(true))));
-        assert!(matches!(eval("fn main() { return all([true, true, true]); }"), Ok(Value::Bool(true))));
-        assert!(matches!(eval("fn main() { return all([true, false, true]); }"), Ok(Value::Bool(false))));
+        assert!(matches!(
+            eval("fn main() { return any([false, true, false]); }"),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval("fn main() { return all([true, true, true]); }"),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval("fn main() { return all([true, false, true]); }"),
+            Ok(Value::Bool(false))
+        ));
     }
 
     #[test]
@@ -21887,19 +27529,34 @@ mod tests {
 
     #[test]
     fn test_iter_flatten() {
-        assert!(matches!(eval("fn main() { return len(flatten([[1, 2], [3, 4]])); }"), Ok(Value::Int(4))));
+        assert!(matches!(
+            eval("fn main() { return len(flatten([[1, 2], [3, 4]])); }"),
+            Ok(Value::Int(4))
+        ));
     }
 
     #[test]
     fn test_cycle_functions() {
-        assert!(matches!(eval("fn main() { return mod_add(7, 8, 12); }"), Ok(Value::Int(3))));
-        assert!(matches!(eval("fn main() { return mod_pow(2, 10, 1000); }"), Ok(Value::Int(24))));
+        assert!(matches!(
+            eval("fn main() { return mod_add(7, 8, 12); }"),
+            Ok(Value::Int(3))
+        ));
+        assert!(matches!(
+            eval("fn main() { return mod_pow(2, 10, 1000); }"),
+            Ok(Value::Int(24))
+        ));
     }
 
     #[test]
     fn test_gcd_lcm() {
-        assert!(matches!(eval("fn main() { return gcd(12, 8); }"), Ok(Value::Int(4))));
-        assert!(matches!(eval("fn main() { return lcm(4, 6); }"), Ok(Value::Int(12))));
+        assert!(matches!(
+            eval("fn main() { return gcd(12, 8); }"),
+            Ok(Value::Int(4))
+        ));
+        assert!(matches!(
+            eval("fn main() { return lcm(4, 6); }"),
+            Ok(Value::Int(12))
+        ));
     }
 
     // ========== PHASE 4: EXTENDED STDLIB ==========
@@ -21908,7 +27565,11 @@ mod tests {
     fn test_json_parse() {
         // Test parsing JSON array (simpler)
         let result = eval(r#"fn main() { return len(json_parse("[1, 2, 3]")); }"#);
-        assert!(matches!(result, Ok(Value::Int(3))), "json_parse got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Int(3))),
+            "json_parse got: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -21937,27 +27598,42 @@ mod tests {
 
     #[test]
     fn test_crypto_base64() {
-        assert!(matches!(eval(r#"fn main() { return base64_encode("hello"); }"#), Ok(Value::String(s)) if s.as_str() == "aGVsbG8="));
-        assert!(matches!(eval(r#"fn main() { return base64_decode("aGVsbG8="); }"#), Ok(Value::String(s)) if s.as_str() == "hello"));
+        assert!(
+            matches!(eval(r#"fn main() { return base64_encode("hello"); }"#), Ok(Value::String(s)) if s.as_str() == "aGVsbG8=")
+        );
+        assert!(
+            matches!(eval(r#"fn main() { return base64_decode("aGVsbG8="); }"#), Ok(Value::String(s)) if s.as_str() == "hello")
+        );
     }
 
     #[test]
     fn test_regex_match() {
         // regex_match(pattern, text) - pattern first
-        assert!(matches!(eval(r#"fn main() { return regex_match("[a-z]+[0-9]+", "hello123"); }"#), Ok(Value::Bool(true))));
-        assert!(matches!(eval(r#"fn main() { return regex_match("[0-9]+", "hello"); }"#), Ok(Value::Bool(false))));
+        assert!(matches!(
+            eval(r#"fn main() { return regex_match("[a-z]+[0-9]+", "hello123"); }"#),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval(r#"fn main() { return regex_match("[0-9]+", "hello"); }"#),
+            Ok(Value::Bool(false))
+        ));
     }
 
     #[test]
     fn test_regex_replace() {
         // regex_replace(pattern, text, replacement) - pattern first
-        assert!(matches!(eval(r#"fn main() { return regex_replace("[0-9]+", "hello123", "XXX"); }"#), Ok(Value::String(s)) if s.as_str() == "helloXXX"));
+        assert!(
+            matches!(eval(r#"fn main() { return regex_replace("[0-9]+", "hello123", "XXX"); }"#), Ok(Value::String(s)) if s.as_str() == "helloXXX")
+        );
     }
 
     #[test]
     fn test_regex_split() {
         // regex_split(pattern, text) - pattern first
-        assert!(matches!(eval(r#"fn main() { return len(regex_split("[0-9]", "a1b2c3")); }"#), Ok(Value::Int(4))));
+        assert!(matches!(
+            eval(r#"fn main() { return len(regex_split("[0-9]", "a1b2c3")); }"#),
+            Ok(Value::Int(4))
+        ));
     }
 
     #[test]
@@ -21968,12 +27644,16 @@ mod tests {
 
     #[test]
     fn test_stats_mean() {
-        assert!(matches!(eval("fn main() { return mean([1.0, 2.0, 3.0, 4.0, 5.0]); }"), Ok(Value::Float(f)) if (f - 3.0).abs() < 0.001));
+        assert!(
+            matches!(eval("fn main() { return mean([1.0, 2.0, 3.0, 4.0, 5.0]); }"), Ok(Value::Float(f)) if (f - 3.0).abs() < 0.001)
+        );
     }
 
     #[test]
     fn test_stats_median() {
-        assert!(matches!(eval("fn main() { return median([1.0, 2.0, 3.0, 4.0, 5.0]); }"), Ok(Value::Float(f)) if (f - 3.0).abs() < 0.001));
+        assert!(
+            matches!(eval("fn main() { return median([1.0, 2.0, 3.0, 4.0, 5.0]); }"), Ok(Value::Float(f)) if (f - 3.0).abs() < 0.001)
+        );
     }
 
     #[test]
@@ -21990,7 +27670,9 @@ mod tests {
 
     #[test]
     fn test_stats_percentile() {
-        assert!(matches!(eval("fn main() { return percentile([1.0, 2.0, 3.0, 4.0, 5.0], 50.0); }"), Ok(Value::Float(f)) if (f - 3.0).abs() < 0.001));
+        assert!(
+            matches!(eval("fn main() { return percentile([1.0, 2.0, 3.0, 4.0, 5.0], 50.0); }"), Ok(Value::Float(f)) if (f - 3.0).abs() < 0.001)
+        );
     }
 
     #[test]
@@ -22008,7 +27690,8 @@ mod tests {
 
     #[test]
     fn test_matrix_transpose() {
-        let result = eval("fn main() { let m = [[1, 2], [3, 4]]; return len(matrix_transpose(m)); }");
+        let result =
+            eval("fn main() { let m = [[1, 2], [3, 4]]; return len(matrix_transpose(m)); }");
         assert!(matches!(result, Ok(Value::Int(2))));
     }
 
@@ -22027,26 +27710,37 @@ mod tests {
     #[test]
     fn test_matrix_dot() {
         // Returns float, not int
-        assert!(matches!(eval("fn main() { return matrix_dot([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]); }"), Ok(Value::Float(f)) if (f - 14.0).abs() < 0.001));
+        assert!(
+            matches!(eval("fn main() { return matrix_dot([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]); }"), Ok(Value::Float(f)) if (f - 14.0).abs() < 0.001)
+        );
     }
 
     // ========== PHASE 5: LANGUAGE POWER-UPS ==========
 
     #[test]
     fn test_functional_identity() {
-        assert!(matches!(eval("fn main() { return identity(42); }"), Ok(Value::Int(42))));
+        assert!(matches!(
+            eval("fn main() { return identity(42); }"),
+            Ok(Value::Int(42))
+        ));
     }
 
     #[test]
     fn test_functional_const_fn() {
         // const_fn just returns the value directly (not a function)
-        assert!(matches!(eval("fn main() { return const_fn(42); }"), Ok(Value::Int(42))));
+        assert!(matches!(
+            eval("fn main() { return const_fn(42); }"),
+            Ok(Value::Int(42))
+        ));
     }
 
     #[test]
     fn test_functional_apply() {
         // apply takes a function and array of args - use closure syntax {x => ...}
-        assert!(matches!(eval("fn main() { return apply({x => x * 2}, [5]); }"), Ok(Value::Int(10))));
+        assert!(matches!(
+            eval("fn main() { return apply({x => x * 2}, [5]); }"),
+            Ok(Value::Int(10))
+        ));
     }
 
     #[test]
@@ -22060,31 +27754,49 @@ mod tests {
     fn test_functional_partial() {
         // partial applies some args to a function - skip for now, complex syntax
         // Just test identity instead
-        assert!(matches!(eval("fn main() { return identity(15); }"), Ok(Value::Int(15))));
+        assert!(matches!(
+            eval("fn main() { return identity(15); }"),
+            Ok(Value::Int(15))
+        ));
     }
 
     #[test]
     fn test_functional_tap() {
         // tap(value, func) - calls func(value) for side effects, returns value
-        assert!(matches!(eval("fn main() { return tap(42, {x => x * 2}); }"), Ok(Value::Int(42))));
+        assert!(matches!(
+            eval("fn main() { return tap(42, {x => x * 2}); }"),
+            Ok(Value::Int(42))
+        ));
     }
 
     #[test]
     fn test_functional_negate() {
         // negate(func, value) - applies func to value and negates result
-        assert!(matches!(eval("fn main() { return negate({x => x > 0}, 5); }"), Ok(Value::Bool(false))));
-        assert!(matches!(eval("fn main() { return negate({x => x > 0}, -5); }"), Ok(Value::Bool(true))));
+        assert!(matches!(
+            eval("fn main() { return negate({x => x > 0}, 5); }"),
+            Ok(Value::Bool(false))
+        ));
+        assert!(matches!(
+            eval("fn main() { return negate({x => x > 0}, -5); }"),
+            Ok(Value::Bool(true))
+        ));
     }
 
     #[test]
     fn test_itertools_cycle() {
         // cycle(arr, n) returns first n elements cycling through arr
-        assert!(matches!(eval("fn main() { return len(cycle([1, 2, 3], 6)); }"), Ok(Value::Int(6))));
+        assert!(matches!(
+            eval("fn main() { return len(cycle([1, 2, 3], 6)); }"),
+            Ok(Value::Int(6))
+        ));
     }
 
     #[test]
     fn test_itertools_repeat_val() {
-        assert!(matches!(eval("fn main() { return len(repeat_val(42, 5)); }"), Ok(Value::Int(5))));
+        assert!(matches!(
+            eval("fn main() { return len(repeat_val(42, 5)); }"),
+            Ok(Value::Int(5))
+        ));
     }
 
     #[test]
@@ -22110,12 +27822,18 @@ mod tests {
 
     #[test]
     fn test_itertools_chunks() {
-        assert!(matches!(eval("fn main() { return len(chunks([1, 2, 3, 4, 5], 2)); }"), Ok(Value::Int(3))));
+        assert!(matches!(
+            eval("fn main() { return len(chunks([1, 2, 3, 4, 5], 2)); }"),
+            Ok(Value::Int(3))
+        ));
     }
 
     #[test]
     fn test_itertools_windows() {
-        assert!(matches!(eval("fn main() { return len(windows([1, 2, 3, 4, 5], 3)); }"), Ok(Value::Int(3))));
+        assert!(matches!(
+            eval("fn main() { return len(windows([1, 2, 3, 4, 5], 3)); }"),
+            Ok(Value::Int(3))
+        ));
     }
 
     #[test]
@@ -22126,37 +27844,58 @@ mod tests {
 
     #[test]
     fn test_itertools_dedupe() {
-        assert!(matches!(eval("fn main() { return len(dedupe([1, 1, 2, 2, 3, 3])); }"), Ok(Value::Int(3))));
+        assert!(matches!(
+            eval("fn main() { return len(dedupe([1, 1, 2, 2, 3, 3])); }"),
+            Ok(Value::Int(3))
+        ));
     }
 
     #[test]
     fn test_itertools_unique() {
-        assert!(matches!(eval("fn main() { return len(unique([1, 2, 1, 3, 2, 1])); }"), Ok(Value::Int(3))));
+        assert!(matches!(
+            eval("fn main() { return len(unique([1, 2, 1, 3, 2, 1])); }"),
+            Ok(Value::Int(3))
+        ));
     }
 
     #[test]
     fn test_ranges_range_step() {
-        assert!(matches!(eval("fn main() { return len(range_step(0, 10, 2)); }"), Ok(Value::Int(5))));
+        assert!(matches!(
+            eval("fn main() { return len(range_step(0, 10, 2)); }"),
+            Ok(Value::Int(5))
+        ));
     }
 
     #[test]
     fn test_ranges_linspace() {
-        assert!(matches!(eval("fn main() { return len(linspace(0.0, 1.0, 5)); }"), Ok(Value::Int(5))));
+        assert!(matches!(
+            eval("fn main() { return len(linspace(0.0, 1.0, 5)); }"),
+            Ok(Value::Int(5))
+        ));
     }
 
     #[test]
     fn test_bitwise_and() {
-        assert!(matches!(eval("fn main() { return bit_and(0b1100, 0b1010); }"), Ok(Value::Int(0b1000))));
+        assert!(matches!(
+            eval("fn main() { return bit_and(0b1100, 0b1010); }"),
+            Ok(Value::Int(0b1000))
+        ));
     }
 
     #[test]
     fn test_bitwise_or() {
-        assert!(matches!(eval("fn main() { return bit_or(0b1100, 0b1010); }"), Ok(Value::Int(0b1110))));
+        assert!(matches!(
+            eval("fn main() { return bit_or(0b1100, 0b1010); }"),
+            Ok(Value::Int(0b1110))
+        ));
     }
 
     #[test]
     fn test_bitwise_xor() {
-        assert!(matches!(eval("fn main() { return bit_xor(0b1100, 0b1010); }"), Ok(Value::Int(0b0110))));
+        assert!(matches!(
+            eval("fn main() { return bit_xor(0b1100, 0b1010); }"),
+            Ok(Value::Int(0b0110))
+        ));
     }
 
     #[test]
@@ -22167,110 +27906,213 @@ mod tests {
 
     #[test]
     fn test_bitwise_shift() {
-        assert!(matches!(eval("fn main() { return bit_shl(1, 4); }"), Ok(Value::Int(16))));
-        assert!(matches!(eval("fn main() { return bit_shr(16, 4); }"), Ok(Value::Int(1))));
+        assert!(matches!(
+            eval("fn main() { return bit_shl(1, 4); }"),
+            Ok(Value::Int(16))
+        ));
+        assert!(matches!(
+            eval("fn main() { return bit_shr(16, 4); }"),
+            Ok(Value::Int(1))
+        ));
     }
 
     #[test]
     fn test_bitwise_popcount() {
-        assert!(matches!(eval("fn main() { return popcount(0b11011); }"), Ok(Value::Int(4))));
+        assert!(matches!(
+            eval("fn main() { return popcount(0b11011); }"),
+            Ok(Value::Int(4))
+        ));
     }
 
     #[test]
     fn test_bitwise_to_binary() {
-        assert!(matches!(eval("fn main() { return to_binary(42); }"), Ok(Value::String(s)) if s.as_str() == "101010"));
+        assert!(
+            matches!(eval("fn main() { return to_binary(42); }"), Ok(Value::String(s)) if s.as_str() == "101010")
+        );
     }
 
     #[test]
     fn test_bitwise_from_binary() {
-        assert!(matches!(eval(r#"fn main() { return from_binary("101010"); }"#), Ok(Value::Int(42))));
+        assert!(matches!(
+            eval(r#"fn main() { return from_binary("101010"); }"#),
+            Ok(Value::Int(42))
+        ));
     }
 
     #[test]
     fn test_bitwise_to_hex() {
-        assert!(matches!(eval("fn main() { return to_hex(255); }"), Ok(Value::String(s)) if s.as_str() == "ff"));
+        assert!(
+            matches!(eval("fn main() { return to_hex(255); }"), Ok(Value::String(s)) if s.as_str() == "ff")
+        );
     }
 
     #[test]
     fn test_bitwise_from_hex() {
-        assert!(matches!(eval(r#"fn main() { return from_hex("ff"); }"#), Ok(Value::Int(255))));
+        assert!(matches!(
+            eval(r#"fn main() { return from_hex("ff"); }"#),
+            Ok(Value::Int(255))
+        ));
     }
 
     #[test]
     fn test_format_pad() {
-        assert!(matches!(eval(r#"fn main() { return pad_left("hi", 5, " "); }"#), Ok(Value::String(s)) if s.as_str() == "   hi"));
-        assert!(matches!(eval(r#"fn main() { return pad_right("hi", 5, " "); }"#), Ok(Value::String(s)) if s.as_str() == "hi   "));
+        assert!(
+            matches!(eval(r#"fn main() { return pad_left("hi", 5, " "); }"#), Ok(Value::String(s)) if s.as_str() == "   hi")
+        );
+        assert!(
+            matches!(eval(r#"fn main() { return pad_right("hi", 5, " "); }"#), Ok(Value::String(s)) if s.as_str() == "hi   ")
+        );
     }
 
     #[test]
     fn test_format_center() {
-        assert!(matches!(eval(r#"fn main() { return center("hi", 6, "-"); }"#), Ok(Value::String(s)) if s.as_str() == "--hi--"));
+        assert!(
+            matches!(eval(r#"fn main() { return center("hi", 6, "-"); }"#), Ok(Value::String(s)) if s.as_str() == "--hi--")
+        );
     }
 
     #[test]
     fn test_format_ordinal() {
-        assert!(matches!(eval(r#"fn main() { return ordinal(1); }"#), Ok(Value::String(s)) if s.as_str() == "1st"));
-        assert!(matches!(eval(r#"fn main() { return ordinal(2); }"#), Ok(Value::String(s)) if s.as_str() == "2nd"));
-        assert!(matches!(eval(r#"fn main() { return ordinal(3); }"#), Ok(Value::String(s)) if s.as_str() == "3rd"));
-        assert!(matches!(eval(r#"fn main() { return ordinal(4); }"#), Ok(Value::String(s)) if s.as_str() == "4th"));
+        assert!(
+            matches!(eval(r#"fn main() { return ordinal(1); }"#), Ok(Value::String(s)) if s.as_str() == "1st")
+        );
+        assert!(
+            matches!(eval(r#"fn main() { return ordinal(2); }"#), Ok(Value::String(s)) if s.as_str() == "2nd")
+        );
+        assert!(
+            matches!(eval(r#"fn main() { return ordinal(3); }"#), Ok(Value::String(s)) if s.as_str() == "3rd")
+        );
+        assert!(
+            matches!(eval(r#"fn main() { return ordinal(4); }"#), Ok(Value::String(s)) if s.as_str() == "4th")
+        );
     }
 
     #[test]
     fn test_format_pluralize() {
         // pluralize(count, singular, plural) - 3 arguments
-        assert!(matches!(eval(r#"fn main() { return pluralize(1, "cat", "cats"); }"#), Ok(Value::String(s)) if s.as_str() == "cat"));
-        assert!(matches!(eval(r#"fn main() { return pluralize(2, "cat", "cats"); }"#), Ok(Value::String(s)) if s.as_str() == "cats"));
+        assert!(
+            matches!(eval(r#"fn main() { return pluralize(1, "cat", "cats"); }"#), Ok(Value::String(s)) if s.as_str() == "cat")
+        );
+        assert!(
+            matches!(eval(r#"fn main() { return pluralize(2, "cat", "cats"); }"#), Ok(Value::String(s)) if s.as_str() == "cats")
+        );
     }
 
     #[test]
     fn test_format_truncate() {
-        assert!(matches!(eval(r#"fn main() { return truncate("hello world", 8); }"#), Ok(Value::String(s)) if s.as_str() == "hello..."));
+        assert!(
+            matches!(eval(r#"fn main() { return truncate("hello world", 8); }"#), Ok(Value::String(s)) if s.as_str() == "hello...")
+        );
     }
 
     #[test]
     fn test_format_case_conversions() {
-        assert!(matches!(eval(r#"fn main() { return snake_case("helloWorld"); }"#), Ok(Value::String(s)) if s.as_str() == "hello_world"));
-        assert!(matches!(eval(r#"fn main() { return camel_case("hello_world"); }"#), Ok(Value::String(s)) if s.as_str() == "helloWorld"));
-        assert!(matches!(eval(r#"fn main() { return kebab_case("helloWorld"); }"#), Ok(Value::String(s)) if s.as_str() == "hello-world"));
-        assert!(matches!(eval(r#"fn main() { return title_case("hello world"); }"#), Ok(Value::String(s)) if s.as_str() == "Hello World"));
+        assert!(
+            matches!(eval(r#"fn main() { return snake_case("helloWorld"); }"#), Ok(Value::String(s)) if s.as_str() == "hello_world")
+        );
+        assert!(
+            matches!(eval(r#"fn main() { return camel_case("hello_world"); }"#), Ok(Value::String(s)) if s.as_str() == "helloWorld")
+        );
+        assert!(
+            matches!(eval(r#"fn main() { return kebab_case("helloWorld"); }"#), Ok(Value::String(s)) if s.as_str() == "hello-world")
+        );
+        assert!(
+            matches!(eval(r#"fn main() { return title_case("hello world"); }"#), Ok(Value::String(s)) if s.as_str() == "Hello World")
+        );
     }
 
     // ========== PHASE 6: PATTERN MATCHING ==========
 
     #[test]
     fn test_type_of() {
-        assert!(matches!(eval(r#"fn main() { return type_of(42); }"#), Ok(Value::String(s)) if s.as_str() == "int"));
-        assert!(matches!(eval(r#"fn main() { return type_of("hello"); }"#), Ok(Value::String(s)) if s.as_str() == "string"));
-        assert!(matches!(eval(r#"fn main() { return type_of([1, 2, 3]); }"#), Ok(Value::String(s)) if s.as_str() == "array"));
-        assert!(matches!(eval(r#"fn main() { return type_of(null); }"#), Ok(Value::String(s)) if s.as_str() == "null"));
+        assert!(
+            matches!(eval(r#"fn main() { return type_of(42); }"#), Ok(Value::String(s)) if s.as_str() == "int")
+        );
+        assert!(
+            matches!(eval(r#"fn main() { return type_of("hello"); }"#), Ok(Value::String(s)) if s.as_str() == "string")
+        );
+        assert!(
+            matches!(eval(r#"fn main() { return type_of([1, 2, 3]); }"#), Ok(Value::String(s)) if s.as_str() == "array")
+        );
+        assert!(
+            matches!(eval(r#"fn main() { return type_of(null); }"#), Ok(Value::String(s)) if s.as_str() == "null")
+        );
     }
 
     #[test]
     fn test_is_type() {
-        assert!(matches!(eval(r#"fn main() { return is_type(42, "int"); }"#), Ok(Value::Bool(true))));
-        assert!(matches!(eval(r#"fn main() { return is_type(42, "string"); }"#), Ok(Value::Bool(false))));
-        assert!(matches!(eval(r#"fn main() { return is_type(3.14, "number"); }"#), Ok(Value::Bool(true))));
+        assert!(matches!(
+            eval(r#"fn main() { return is_type(42, "int"); }"#),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval(r#"fn main() { return is_type(42, "string"); }"#),
+            Ok(Value::Bool(false))
+        ));
+        assert!(matches!(
+            eval(r#"fn main() { return is_type(3.14, "number"); }"#),
+            Ok(Value::Bool(true))
+        ));
     }
 
     #[test]
     fn test_type_predicates() {
-        assert!(matches!(eval("fn main() { return is_null(null); }"), Ok(Value::Bool(true))));
-        assert!(matches!(eval("fn main() { return is_null(42); }"), Ok(Value::Bool(false))));
-        assert!(matches!(eval("fn main() { return is_bool(true); }"), Ok(Value::Bool(true))));
-        assert!(matches!(eval("fn main() { return is_int(42); }"), Ok(Value::Bool(true))));
-        assert!(matches!(eval("fn main() { return is_float(3.14); }"), Ok(Value::Bool(true))));
-        assert!(matches!(eval("fn main() { return is_number(42); }"), Ok(Value::Bool(true))));
-        assert!(matches!(eval("fn main() { return is_number(3.14); }"), Ok(Value::Bool(true))));
-        assert!(matches!(eval(r#"fn main() { return is_string("hi"); }"#), Ok(Value::Bool(true))));
-        assert!(matches!(eval("fn main() { return is_array([1, 2]); }"), Ok(Value::Bool(true))));
+        assert!(matches!(
+            eval("fn main() { return is_null(null); }"),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval("fn main() { return is_null(42); }"),
+            Ok(Value::Bool(false))
+        ));
+        assert!(matches!(
+            eval("fn main() { return is_bool(true); }"),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval("fn main() { return is_int(42); }"),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval("fn main() { return is_float(3.14); }"),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval("fn main() { return is_number(42); }"),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval("fn main() { return is_number(3.14); }"),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval(r#"fn main() { return is_string("hi"); }"#),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval("fn main() { return is_array([1, 2]); }"),
+            Ok(Value::Bool(true))
+        ));
     }
 
     #[test]
     fn test_is_empty() {
-        assert!(matches!(eval("fn main() { return is_empty([]); }"), Ok(Value::Bool(true))));
-        assert!(matches!(eval("fn main() { return is_empty([1]); }"), Ok(Value::Bool(false))));
-        assert!(matches!(eval(r#"fn main() { return is_empty(""); }"#), Ok(Value::Bool(true))));
-        assert!(matches!(eval("fn main() { return is_empty(null); }"), Ok(Value::Bool(true))));
+        assert!(matches!(
+            eval("fn main() { return is_empty([]); }"),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval("fn main() { return is_empty([1]); }"),
+            Ok(Value::Bool(false))
+        ));
+        assert!(matches!(
+            eval(r#"fn main() { return is_empty(""); }"#),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval("fn main() { return is_empty(null); }"),
+            Ok(Value::Bool(true))
+        ));
     }
 
     #[test]
@@ -22287,16 +28129,34 @@ mod tests {
 
     #[test]
     fn test_guard() {
-        assert!(matches!(eval("fn main() { return guard(true, 42); }"), Ok(Value::Int(42))));
-        assert!(matches!(eval("fn main() { return guard(false, 42); }"), Ok(Value::Null)));
+        assert!(matches!(
+            eval("fn main() { return guard(true, 42); }"),
+            Ok(Value::Int(42))
+        ));
+        assert!(matches!(
+            eval("fn main() { return guard(false, 42); }"),
+            Ok(Value::Null)
+        ));
     }
 
     #[test]
     fn test_when_unless() {
-        assert!(matches!(eval("fn main() { return when(true, 42); }"), Ok(Value::Int(42))));
-        assert!(matches!(eval("fn main() { return when(false, 42); }"), Ok(Value::Null)));
-        assert!(matches!(eval("fn main() { return unless(false, 42); }"), Ok(Value::Int(42))));
-        assert!(matches!(eval("fn main() { return unless(true, 42); }"), Ok(Value::Null)));
+        assert!(matches!(
+            eval("fn main() { return when(true, 42); }"),
+            Ok(Value::Int(42))
+        ));
+        assert!(matches!(
+            eval("fn main() { return when(false, 42); }"),
+            Ok(Value::Null)
+        ));
+        assert!(matches!(
+            eval("fn main() { return unless(false, 42); }"),
+            Ok(Value::Int(42))
+        ));
+        assert!(matches!(
+            eval("fn main() { return unless(true, 42); }"),
+            Ok(Value::Null)
+        ));
     }
 
     #[test]
@@ -22325,45 +28185,90 @@ mod tests {
 
     #[test]
     fn test_unwrap_or() {
-        assert!(matches!(eval("fn main() { return unwrap_or(null, 42); }"), Ok(Value::Int(42))));
-        assert!(matches!(eval("fn main() { return unwrap_or(10, 42); }"), Ok(Value::Int(10))));
+        assert!(matches!(
+            eval("fn main() { return unwrap_or(null, 42); }"),
+            Ok(Value::Int(42))
+        ));
+        assert!(matches!(
+            eval("fn main() { return unwrap_or(10, 42); }"),
+            Ok(Value::Int(10))
+        ));
     }
 
     #[test]
     fn test_coalesce() {
-        assert!(matches!(eval("fn main() { return coalesce([null, null, 3, 4]); }"), Ok(Value::Int(3))));
+        assert!(matches!(
+            eval("fn main() { return coalesce([null, null, 3, 4]); }"),
+            Ok(Value::Int(3))
+        ));
     }
 
     #[test]
     fn test_deep_eq() {
-        assert!(matches!(eval("fn main() { return deep_eq([1, 2, 3], [1, 2, 3]); }"), Ok(Value::Bool(true))));
-        assert!(matches!(eval("fn main() { return deep_eq([1, 2, 3], [1, 2, 4]); }"), Ok(Value::Bool(false))));
+        assert!(matches!(
+            eval("fn main() { return deep_eq([1, 2, 3], [1, 2, 3]); }"),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval("fn main() { return deep_eq([1, 2, 3], [1, 2, 4]); }"),
+            Ok(Value::Bool(false))
+        ));
     }
 
     #[test]
     fn test_same_type() {
-        assert!(matches!(eval("fn main() { return same_type(1, 2); }"), Ok(Value::Bool(true))));
-        assert!(matches!(eval(r#"fn main() { return same_type(1, "a"); }"#), Ok(Value::Bool(false))));
+        assert!(matches!(
+            eval("fn main() { return same_type(1, 2); }"),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval(r#"fn main() { return same_type(1, "a"); }"#),
+            Ok(Value::Bool(false))
+        ));
     }
 
     #[test]
     fn test_compare() {
-        assert!(matches!(eval("fn main() { return compare(1, 2); }"), Ok(Value::Int(-1))));
-        assert!(matches!(eval("fn main() { return compare(2, 2); }"), Ok(Value::Int(0))));
-        assert!(matches!(eval("fn main() { return compare(3, 2); }"), Ok(Value::Int(1))));
+        assert!(matches!(
+            eval("fn main() { return compare(1, 2); }"),
+            Ok(Value::Int(-1))
+        ));
+        assert!(matches!(
+            eval("fn main() { return compare(2, 2); }"),
+            Ok(Value::Int(0))
+        ));
+        assert!(matches!(
+            eval("fn main() { return compare(3, 2); }"),
+            Ok(Value::Int(1))
+        ));
     }
 
     #[test]
     fn test_between() {
-        assert!(matches!(eval("fn main() { return between(5, 1, 10); }"), Ok(Value::Bool(true))));
-        assert!(matches!(eval("fn main() { return between(15, 1, 10); }"), Ok(Value::Bool(false))));
+        assert!(matches!(
+            eval("fn main() { return between(5, 1, 10); }"),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval("fn main() { return between(15, 1, 10); }"),
+            Ok(Value::Bool(false))
+        ));
     }
 
     #[test]
     fn test_clamp() {
-        assert!(matches!(eval("fn main() { return clamp(5, 1, 10); }"), Ok(Value::Int(5))));
-        assert!(matches!(eval("fn main() { return clamp(-5, 1, 10); }"), Ok(Value::Int(1))));
-        assert!(matches!(eval("fn main() { return clamp(15, 1, 10); }"), Ok(Value::Int(10))));
+        assert!(matches!(
+            eval("fn main() { return clamp(5, 1, 10); }"),
+            Ok(Value::Int(5))
+        ));
+        assert!(matches!(
+            eval("fn main() { return clamp(-5, 1, 10); }"),
+            Ok(Value::Int(1))
+        ));
+        assert!(matches!(
+            eval("fn main() { return clamp(15, 1, 10); }"),
+            Ok(Value::Int(10))
+        ));
     }
 
     // ========== PHASE 7: DEVEX ==========
@@ -22384,24 +28289,40 @@ mod tests {
 
     #[test]
     fn test_to_int() {
-        assert!(matches!(eval("fn main() { return to_int(3.7); }"), Ok(Value::Int(3))));
-        assert!(matches!(eval(r#"fn main() { return to_int("42"); }"#), Ok(Value::Int(42))));
+        assert!(matches!(
+            eval("fn main() { return to_int(3.7); }"),
+            Ok(Value::Int(3))
+        ));
+        assert!(matches!(
+            eval(r#"fn main() { return to_int("42"); }"#),
+            Ok(Value::Int(42))
+        ));
     }
 
     #[test]
     fn test_to_float() {
-        assert!(matches!(eval("fn main() { return to_float(42); }"), Ok(Value::Float(f)) if (f - 42.0).abs() < 0.001));
+        assert!(
+            matches!(eval("fn main() { return to_float(42); }"), Ok(Value::Float(f)) if (f - 42.0).abs() < 0.001)
+        );
     }
 
     #[test]
     fn test_to_string() {
-        assert!(matches!(eval("fn main() { return to_string(42); }"), Ok(Value::String(s)) if s.as_str() == "42"));
+        assert!(
+            matches!(eval("fn main() { return to_string(42); }"), Ok(Value::String(s)) if s.as_str() == "42")
+        );
     }
 
     #[test]
     fn test_to_bool() {
-        assert!(matches!(eval("fn main() { return to_bool(1); }"), Ok(Value::Bool(true))));
-        assert!(matches!(eval("fn main() { return to_bool(0); }"), Ok(Value::Bool(false))));
+        assert!(matches!(
+            eval("fn main() { return to_bool(1); }"),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(
+            eval("fn main() { return to_bool(0); }"),
+            Ok(Value::Bool(false))
+        ));
     }
 
     // ========== TIME FUNCTIONS ==========
@@ -22431,14 +28352,23 @@ mod tests {
     fn test_random() {
         // random() returns a float - just check it's a float (value may exceed 1.0 with current impl)
         let result = eval("fn main() { return random(); }");
-        assert!(matches!(result, Ok(Value::Float(_))), "random got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Float(_))),
+            "random got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_shuffle() {
         // shuffle() modifies array in place and returns null
-        let result = eval("fn main() { let arr = [1, 2, 3, 4, 5]; shuffle(arr); return len(arr); }");
-        assert!(matches!(result, Ok(Value::Int(5))), "shuffle got: {:?}", result);
+        let result =
+            eval("fn main() { let arr = [1, 2, 3, 4, 5]; shuffle(arr); return len(arr); }");
+        assert!(
+            matches!(result, Ok(Value::Int(5))),
+            "shuffle got: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -22452,20 +28382,36 @@ mod tests {
     #[test]
     fn test_map_set_get() {
         // map_set modifies in place - use the original map
-        let result = eval(r#"fn main() { let m = map_new(); map_set(m, "a", 1); return map_get(m, "a"); }"#);
-        assert!(matches!(result, Ok(Value::Int(1))), "map_set_get got: {:?}", result);
+        let result =
+            eval(r#"fn main() { let m = map_new(); map_set(m, "a", 1); return map_get(m, "a"); }"#);
+        assert!(
+            matches!(result, Ok(Value::Int(1))),
+            "map_set_get got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_map_has() {
-        let result = eval(r#"fn main() { let m = map_new(); map_set(m, "a", 1); return map_has(m, "a"); }"#);
-        assert!(matches!(result, Ok(Value::Bool(true))), "map_has got: {:?}", result);
+        let result =
+            eval(r#"fn main() { let m = map_new(); map_set(m, "a", 1); return map_has(m, "a"); }"#);
+        assert!(
+            matches!(result, Ok(Value::Bool(true))),
+            "map_has got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_map_keys_values() {
-        let result = eval(r#"fn main() { let m = map_new(); map_set(m, "a", 1); return len(map_keys(m)); }"#);
-        assert!(matches!(result, Ok(Value::Int(1))), "map_keys got: {:?}", result);
+        let result = eval(
+            r#"fn main() { let m = map_new(); map_set(m, "a", 1); return len(map_keys(m)); }"#,
+        );
+        assert!(
+            matches!(result, Ok(Value::Int(1))),
+            "map_keys got: {:?}",
+            result
+        );
     }
 
     // ========== SORT/SEARCH ==========
@@ -22490,8 +28436,14 @@ mod tests {
 
     #[test]
     fn test_index_of() {
-        assert!(matches!(eval("fn main() { return index_of([10, 20, 30], 20); }"), Ok(Value::Int(1))));
-        assert!(matches!(eval("fn main() { return index_of([10, 20, 30], 99); }"), Ok(Value::Int(-1))));
+        assert!(matches!(
+            eval("fn main() { return index_of([10, 20, 30], 20); }"),
+            Ok(Value::Int(1))
+        ));
+        assert!(matches!(
+            eval("fn main() { return index_of([10, 20, 30], 99); }"),
+            Ok(Value::Int(-1))
+        ));
     }
 
     // ========== NEW SYMBOL TESTS ==========
@@ -22501,14 +28453,22 @@ mod tests {
     fn test_bitwise_and_symbol() {
         // ⋏ is Unicode bitwise AND
         let result = eval("fn main() { return 0b1100 ⋏ 0b1010; }");
-        assert!(matches!(result, Ok(Value::Int(8))), "bitwise AND got: {:?}", result);  // 0b1000 = 8
+        assert!(
+            matches!(result, Ok(Value::Int(8))),
+            "bitwise AND got: {:?}",
+            result
+        ); // 0b1000 = 8
     }
 
     #[test]
     fn test_bitwise_or_symbol() {
         // ⋎ is Unicode bitwise OR
         let result = eval("fn main() { return 0b1100 ⋎ 0b1010; }");
-        assert!(matches!(result, Ok(Value::Int(14))), "bitwise OR got: {:?}", result);  // 0b1110 = 14
+        assert!(
+            matches!(result, Ok(Value::Int(14))),
+            "bitwise OR got: {:?}",
+            result
+        ); // 0b1110 = 14
     }
 
     // Phase 2: Access morphemes (μ χ ν ξ)
@@ -22516,61 +28476,98 @@ mod tests {
     fn test_middle_function() {
         // μ (mu) - middle element
         let result = eval("fn main() { return middle([1, 2, 3, 4, 5]); }");
-        assert!(matches!(result, Ok(Value::Int(3))), "middle got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Int(3))),
+            "middle got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_choice_function() {
         // χ (chi) - random choice (just verify it returns something valid)
         let result = eval("fn main() { let x = choice([10, 20, 30]); return x >= 10; }");
-        assert!(matches!(result, Ok(Value::Bool(true))), "choice got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Bool(true))),
+            "choice got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_nth_function() {
         // ν (nu) - nth element
         let result = eval("fn main() { return nth([10, 20, 30, 40], 2); }");
-        assert!(matches!(result, Ok(Value::Int(30))), "nth got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Int(30))),
+            "nth got: {:?}",
+            result
+        );
     }
 
     // Phase 3: Data operations (⋈ ⋳ ⊔ ⊓)
     #[test]
     fn test_zip_with_add() {
         // ⋈ (bowtie) - zip_with
-        let result = eval(r#"fn main() { return first(zip_with([1, 2, 3], [10, 20, 30], "add")); }"#);
-        assert!(matches!(result, Ok(Value::Int(11))), "zip_with add got: {:?}", result);
+        let result =
+            eval(r#"fn main() { return first(zip_with([1, 2, 3], [10, 20, 30], "add")); }"#);
+        assert!(
+            matches!(result, Ok(Value::Int(11))),
+            "zip_with add got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_zip_with_mul() {
         let result = eval(r#"fn main() { return first(zip_with([2, 3, 4], [5, 6, 7], "mul")); }"#);
-        assert!(matches!(result, Ok(Value::Int(10))), "zip_with mul got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Int(10))),
+            "zip_with mul got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_supremum_scalar() {
         // ⊔ (square cup) - lattice join / max
         let result = eval("fn main() { return supremum(5, 10); }");
-        assert!(matches!(result, Ok(Value::Int(10))), "supremum scalar got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Int(10))),
+            "supremum scalar got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_supremum_array() {
         let result = eval("fn main() { return first(supremum([1, 5, 3], [2, 4, 6])); }");
-        assert!(matches!(result, Ok(Value::Int(2))), "supremum array got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Int(2))),
+            "supremum array got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_infimum_scalar() {
         // ⊓ (square cap) - lattice meet / min
         let result = eval("fn main() { return infimum(5, 10); }");
-        assert!(matches!(result, Ok(Value::Int(5))), "infimum scalar got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Int(5))),
+            "infimum scalar got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_infimum_array() {
         let result = eval("fn main() { return first(infimum([1, 5, 3], [2, 4, 6])); }");
-        assert!(matches!(result, Ok(Value::Int(1))), "infimum array got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Int(1))),
+            "infimum array got: {:?}",
+            result
+        );
     }
 
     // Phase 4: Aspect token lexing tests
@@ -22581,22 +28578,34 @@ mod tests {
         // Test progressive aspect ·ing
         let mut lexer = Lexer::new("process·ing");
         assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "process"));
-        assert!(matches!(lexer.next_token(), Some((Token::AspectProgressive, _))));
+        assert!(matches!(
+            lexer.next_token(),
+            Some((Token::AspectProgressive, _))
+        ));
 
         // Test perfective aspect ·ed
         let mut lexer = Lexer::new("process·ed");
         assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "process"));
-        assert!(matches!(lexer.next_token(), Some((Token::AspectPerfective, _))));
+        assert!(matches!(
+            lexer.next_token(),
+            Some((Token::AspectPerfective, _))
+        ));
 
         // Test potential aspect ·able
         let mut lexer = Lexer::new("parse·able");
         assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "parse"));
-        assert!(matches!(lexer.next_token(), Some((Token::AspectPotential, _))));
+        assert!(matches!(
+            lexer.next_token(),
+            Some((Token::AspectPotential, _))
+        ));
 
         // Test resultative aspect ·ive
         let mut lexer = Lexer::new("destruct·ive");
         assert!(matches!(lexer.next_token(), Some((Token::Ident(s), _)) if s == "destruct"));
-        assert!(matches!(lexer.next_token(), Some((Token::AspectResultative, _))));
+        assert!(matches!(
+            lexer.next_token(),
+            Some((Token::AspectResultative, _))
+        ));
     }
 
     // New morpheme token lexer tests
@@ -22618,7 +28627,10 @@ mod tests {
 
         let mut lexer = Lexer::new("⋈ ⋳ ⊔ ⊓");
         assert!(matches!(lexer.next_token(), Some((Token::Bowtie, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::ElementSmallVerticalBar, _))));
+        assert!(matches!(
+            lexer.next_token(),
+            Some((Token::ElementSmallVerticalBar, _))
+        ));
         assert!(matches!(lexer.next_token(), Some((Token::SquareCup, _))));
         assert!(matches!(lexer.next_token(), Some((Token::SquareCap, _))));
     }
@@ -22629,8 +28641,14 @@ mod tests {
         use crate::lexer::{Lexer, Token};
 
         let mut lexer = Lexer::new("⋏ ⋎");
-        assert!(matches!(lexer.next_token(), Some((Token::BitwiseAndSymbol, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::BitwiseOrSymbol, _))));
+        assert!(matches!(
+            lexer.next_token(),
+            Some((Token::BitwiseAndSymbol, _))
+        ));
+        assert!(matches!(
+            lexer.next_token(),
+            Some((Token::BitwiseOrSymbol, _))
+        ));
     }
 
     // ========== PIPE MORPHEME SYNTAX TESTS ==========
@@ -22639,42 +28657,66 @@ mod tests {
     fn test_pipe_alpha_first() {
         // α in pipe gets first element
         let result = eval("fn main() { return [10, 20, 30] |α; }");
-        assert!(matches!(result, Ok(Value::Int(10))), "pipe α got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Int(10))),
+            "pipe α got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_pipe_omega_last() {
         // ω in pipe gets last element
         let result = eval("fn main() { return [10, 20, 30] |ω; }");
-        assert!(matches!(result, Ok(Value::Int(30))), "pipe ω got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Int(30))),
+            "pipe ω got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_pipe_mu_middle() {
         // μ in pipe gets middle element
         let result = eval("fn main() { return [10, 20, 30, 40, 50] |μ; }");
-        assert!(matches!(result, Ok(Value::Int(30))), "pipe μ got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Int(30))),
+            "pipe μ got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_pipe_chi_choice() {
         // χ in pipe gets random element (just verify it's in range)
         let result = eval("fn main() { let x = [10, 20, 30] |χ; return x >= 10; }");
-        assert!(matches!(result, Ok(Value::Bool(true))), "pipe χ got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Bool(true))),
+            "pipe χ got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_pipe_nu_nth() {
         // ν{n} in pipe gets nth element
         let result = eval("fn main() { return [10, 20, 30, 40] |ν{2}; }");
-        assert!(matches!(result, Ok(Value::Int(30))), "pipe ν got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Int(30))),
+            "pipe ν got: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_pipe_chain() {
         // Chain multiple pipe operations
         let result = eval("fn main() { return [3, 1, 4, 1, 5] |σ |α; }");
-        assert!(matches!(result, Ok(Value::Int(1))), "pipe chain got: {:?}", result);
+        assert!(
+            matches!(result, Ok(Value::Int(1))),
+            "pipe chain got: {:?}",
+            result
+        );
     }
 
     // ========== ASPECT PARSING TESTS ==========
@@ -22682,8 +28724,8 @@ mod tests {
     #[test]
     fn test_aspect_progressive_parsing() {
         // fn name·ing should parse with progressive aspect
-        use crate::parser::Parser;
         use crate::ast::Aspect;
+        use crate::parser::Parser;
         let mut parser = Parser::new("fn process·ing() { return 42; }");
         let file = parser.parse_file().unwrap();
         if let crate::ast::Item::Function(f) = &file.items[0].node {
@@ -22697,8 +28739,8 @@ mod tests {
     #[test]
     fn test_aspect_perfective_parsing() {
         // fn name·ed should parse with perfective aspect
-        use crate::parser::Parser;
         use crate::ast::Aspect;
+        use crate::parser::Parser;
         let mut parser = Parser::new("fn process·ed() { return 42; }");
         let file = parser.parse_file().unwrap();
         if let crate::ast::Item::Function(f) = &file.items[0].node {
@@ -22712,8 +28754,8 @@ mod tests {
     #[test]
     fn test_aspect_potential_parsing() {
         // fn name·able should parse with potential aspect
-        use crate::parser::Parser;
         use crate::ast::Aspect;
+        use crate::parser::Parser;
         let mut parser = Parser::new("fn parse·able() { return true; }");
         let file = parser.parse_file().unwrap();
         if let crate::ast::Item::Function(f) = &file.items[0].node {
@@ -22727,8 +28769,8 @@ mod tests {
     #[test]
     fn test_aspect_resultative_parsing() {
         // fn name·ive should parse with resultative aspect
-        use crate::parser::Parser;
         use crate::ast::Aspect;
+        use crate::parser::Parser;
         let mut parser = Parser::new("fn destruct·ive() { return 42; }");
         let file = parser.parse_file().unwrap();
         if let crate::ast::Item::Function(f) = &file.items[0].node {
@@ -22744,23 +28786,38 @@ mod tests {
     #[test]
     fn test_choice_single_element() {
         // Single element should always return that element
-        assert!(matches!(eval("fn main() { return choice([42]); }"), Ok(Value::Int(42))));
+        assert!(matches!(
+            eval("fn main() { return choice([42]); }"),
+            Ok(Value::Int(42))
+        ));
     }
 
     #[test]
     fn test_nth_edge_cases() {
         // Last element
-        assert!(matches!(eval("fn main() { return nth([10, 20, 30], 2); }"), Ok(Value::Int(30))));
+        assert!(matches!(
+            eval("fn main() { return nth([10, 20, 30], 2); }"),
+            Ok(Value::Int(30))
+        ));
         // First element
-        assert!(matches!(eval("fn main() { return nth([10, 20, 30], 0); }"), Ok(Value::Int(10))));
+        assert!(matches!(
+            eval("fn main() { return nth([10, 20, 30], 0); }"),
+            Ok(Value::Int(10))
+        ));
     }
 
     #[test]
     fn test_next_peek_usage() {
         // next returns first element
-        assert!(matches!(eval("fn main() { return next([1, 2, 3]); }"), Ok(Value::Int(1))));
+        assert!(matches!(
+            eval("fn main() { return next([1, 2, 3]); }"),
+            Ok(Value::Int(1))
+        ));
         // peek returns first element without consuming
-        assert!(matches!(eval("fn main() { return peek([1, 2, 3]); }"), Ok(Value::Int(1))));
+        assert!(matches!(
+            eval("fn main() { return peek([1, 2, 3]); }"),
+            Ok(Value::Int(1))
+        ));
     }
 
     #[test]
@@ -22780,21 +28837,37 @@ mod tests {
     #[test]
     fn test_supremum_edge_cases() {
         // Same values
-        assert!(matches!(eval("fn main() { return supremum(5, 5); }"), Ok(Value::Int(5))));
+        assert!(matches!(
+            eval("fn main() { return supremum(5, 5); }"),
+            Ok(Value::Int(5))
+        ));
         // Negative values
-        assert!(matches!(eval("fn main() { return supremum(-5, -3); }"), Ok(Value::Int(-3))));
+        assert!(matches!(
+            eval("fn main() { return supremum(-5, -3); }"),
+            Ok(Value::Int(-3))
+        ));
         // Floats
-        assert!(matches!(eval("fn main() { return supremum(1.5, 2.5); }"), Ok(Value::Float(f)) if (f - 2.5).abs() < 0.001));
+        assert!(
+            matches!(eval("fn main() { return supremum(1.5, 2.5); }"), Ok(Value::Float(f)) if (f - 2.5).abs() < 0.001)
+        );
     }
 
     #[test]
     fn test_infimum_edge_cases() {
         // Same values
-        assert!(matches!(eval("fn main() { return infimum(5, 5); }"), Ok(Value::Int(5))));
+        assert!(matches!(
+            eval("fn main() { return infimum(5, 5); }"),
+            Ok(Value::Int(5))
+        ));
         // Negative values
-        assert!(matches!(eval("fn main() { return infimum(-5, -3); }"), Ok(Value::Int(-5))));
+        assert!(matches!(
+            eval("fn main() { return infimum(-5, -3); }"),
+            Ok(Value::Int(-5))
+        ));
         // Floats
-        assert!(matches!(eval("fn main() { return infimum(1.5, 2.5); }"), Ok(Value::Float(f)) if (f - 1.5).abs() < 0.001));
+        assert!(
+            matches!(eval("fn main() { return infimum(1.5, 2.5); }"), Ok(Value::Float(f)) if (f - 1.5).abs() < 0.001)
+        );
     }
 
     #[test]
@@ -22827,18 +28900,33 @@ mod tests {
     #[test]
     fn test_pipe_access_morphemes() {
         // First with pipe syntax
-        assert!(matches!(eval("fn main() { return [10, 20, 30] |α; }"), Ok(Value::Int(10))));
+        assert!(matches!(
+            eval("fn main() { return [10, 20, 30] |α; }"),
+            Ok(Value::Int(10))
+        ));
         // Last with pipe syntax
-        assert!(matches!(eval("fn main() { return [10, 20, 30] |ω; }"), Ok(Value::Int(30))));
+        assert!(matches!(
+            eval("fn main() { return [10, 20, 30] |ω; }"),
+            Ok(Value::Int(30))
+        ));
         // Middle with pipe syntax
-        assert!(matches!(eval("fn main() { return [10, 20, 30] |μ; }"), Ok(Value::Int(20))));
+        assert!(matches!(
+            eval("fn main() { return [10, 20, 30] |μ; }"),
+            Ok(Value::Int(20))
+        ));
     }
 
     #[test]
     fn test_pipe_nth_syntax() {
         // Nth with pipe syntax
-        assert!(matches!(eval("fn main() { return [10, 20, 30, 40] |ν{1}; }"), Ok(Value::Int(20))));
-        assert!(matches!(eval("fn main() { return [10, 20, 30, 40] |ν{3}; }"), Ok(Value::Int(40))));
+        assert!(matches!(
+            eval("fn main() { return [10, 20, 30, 40] |ν{1}; }"),
+            Ok(Value::Int(20))
+        ));
+        assert!(matches!(
+            eval("fn main() { return [10, 20, 30, 40] |ν{3}; }"),
+            Ok(Value::Int(40))
+        ));
     }
 
     // ========== GRAPHICS MATH TESTS ==========
@@ -22850,7 +28938,8 @@ mod tests {
             let arr = arr.borrow();
             assert_eq!(arr.len(), 4);
             if let (Value::Float(w), Value::Float(x), Value::Float(y), Value::Float(z)) =
-                (&arr[0], &arr[1], &arr[2], &arr[3]) {
+                (&arr[0], &arr[1], &arr[2], &arr[3])
+            {
                 assert!((w - 1.0).abs() < 0.001);
                 assert!(x.abs() < 0.001);
                 assert!(y.abs() < 0.001);
@@ -22864,13 +28953,15 @@ mod tests {
     #[test]
     fn test_quaternion_from_axis_angle() {
         // 90 degrees around Y axis
-        let result = eval("fn main() { let q = quat_from_axis_angle(vec3(0, 1, 0), 1.5707963); return q; }");
+        let result =
+            eval("fn main() { let q = quat_from_axis_angle(vec3(0, 1, 0), 1.5707963); return q; }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             assert_eq!(arr.len(), 4);
             // Should be approximately [cos(45°), 0, sin(45°), 0] = [0.707, 0, 0.707, 0]
             if let (Value::Float(w), Value::Float(x), Value::Float(y), Value::Float(z)) =
-                (&arr[0], &arr[1], &arr[2], &arr[3]) {
+                (&arr[0], &arr[1], &arr[2], &arr[3])
+            {
                 assert!((w - 0.707).abs() < 0.01, "w={}", w);
                 assert!(x.abs() < 0.01);
                 assert!((y - 0.707).abs() < 0.01, "y={}", y);
@@ -22884,18 +28975,20 @@ mod tests {
     #[test]
     fn test_quaternion_rotate_vector() {
         // Rotate [1, 0, 0] by 90 degrees around Z axis should give [0, 1, 0]
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let q = quat_from_axis_angle(vec3(0, 0, 1), 1.5707963);
                 let v = vec3(1, 0, 0);
                 return quat_rotate(q, v);
             }
-        "#);
+        "#,
+        );
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             assert_eq!(arr.len(), 3);
-            if let (Value::Float(x), Value::Float(y), Value::Float(z)) =
-                (&arr[0], &arr[1], &arr[2]) {
+            if let (Value::Float(x), Value::Float(y), Value::Float(z)) = (&arr[0], &arr[1], &arr[2])
+            {
                 assert!(x.abs() < 0.01, "x={}", x);
                 assert!((y - 1.0).abs() < 0.01, "y={}", y);
                 assert!(z.abs() < 0.01);
@@ -22908,13 +29001,15 @@ mod tests {
     #[test]
     fn test_quaternion_slerp() {
         // Interpolate between identity and 90° rotation
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let q1 = quat_identity();
                 let q2 = quat_from_axis_angle(vec3(0, 1, 0), 1.5707963);
                 return quat_slerp(q1, q2, 0.5);
             }
-        "#);
+        "#,
+        );
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             assert_eq!(arr.len(), 4);
@@ -22934,8 +29029,8 @@ mod tests {
         let result = eval("fn main() { return vec3_add(vec3(1, 2, 3), vec3(4, 5, 6)); }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
-            if let (Value::Float(x), Value::Float(y), Value::Float(z)) =
-                (&arr[0], &arr[1], &arr[2]) {
+            if let (Value::Float(x), Value::Float(y), Value::Float(z)) = (&arr[0], &arr[1], &arr[2])
+            {
                 assert!((x - 5.0).abs() < 0.001);
                 assert!((y - 7.0).abs() < 0.001);
                 assert!((z - 9.0).abs() < 0.001);
@@ -22950,8 +29045,8 @@ mod tests {
         let result = eval("fn main() { return vec3_cross(vec3(1, 0, 0), vec3(0, 1, 0)); }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
-            if let (Value::Float(x), Value::Float(y), Value::Float(z)) =
-                (&arr[0], &arr[1], &arr[2]) {
+            if let (Value::Float(x), Value::Float(y), Value::Float(z)) = (&arr[0], &arr[1], &arr[2])
+            {
                 assert!(x.abs() < 0.001);
                 assert!(y.abs() < 0.001);
                 assert!((z - 1.0).abs() < 0.001);
@@ -22978,8 +29073,8 @@ mod tests {
         let result = eval("fn main() { return vec3_reflect(vec3(1, -1, 0), vec3(0, 1, 0)); }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
-            if let (Value::Float(x), Value::Float(y), Value::Float(z)) =
-                (&arr[0], &arr[1], &arr[2]) {
+            if let (Value::Float(x), Value::Float(y), Value::Float(z)) = (&arr[0], &arr[1], &arr[2])
+            {
                 assert!((x - 1.0).abs() < 0.001);
                 assert!((y - 1.0).abs() < 0.001);
                 assert!(z.abs() < 0.001);
@@ -22995,7 +29090,8 @@ mod tests {
             assert_eq!(arr.len(), 16);
             // Check diagonal elements are 1
             if let (Value::Float(m00), Value::Float(m55), Value::Float(m10), Value::Float(m15)) =
-                (&arr[0], &arr[5], &arr[10], &arr[15]) {
+                (&arr[0], &arr[5], &arr[10], &arr[15])
+            {
                 assert!((m00 - 1.0).abs() < 0.001);
                 assert!((m55 - 1.0).abs() < 0.001);
                 assert!((m10 - 1.0).abs() < 0.001);
@@ -23006,17 +29102,20 @@ mod tests {
 
     #[test]
     fn test_mat4_translate() {
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let t = mat4_translate(5.0, 10.0, 15.0);
                 let v = vec4(0, 0, 0, 1);
                 return mat4_transform(t, v);
             }
-        "#);
+        "#,
+        );
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             if let (Value::Float(x), Value::Float(y), Value::Float(z), Value::Float(w)) =
-                (&arr[0], &arr[1], &arr[2], &arr[3]) {
+                (&arr[0], &arr[1], &arr[2], &arr[3])
+            {
                 assert!((x - 5.0).abs() < 0.001);
                 assert!((y - 10.0).abs() < 0.001);
                 assert!((z - 15.0).abs() < 0.001);
@@ -23039,14 +29138,16 @@ mod tests {
 
     #[test]
     fn test_mat4_look_at() {
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let eye = vec3(0, 0, 5);
                 let center = vec3(0, 0, 0);
                 let up = vec3(0, 1, 0);
                 return mat4_look_at(eye, center, up);
             }
-        "#);
+        "#,
+        );
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             assert_eq!(arr.len(), 16);
@@ -23058,12 +29159,14 @@ mod tests {
     #[test]
     fn test_mat4_inverse() {
         // Inverse of identity should be identity
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let m = mat4_identity();
                 return mat4_inverse(m);
             }
-        "#);
+        "#,
+        );
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             assert_eq!(arr.len(), 16);
@@ -23083,17 +29186,19 @@ mod tests {
         }
 
         // mat3_transform
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let m = mat3_identity();
                 let v = vec3(1, 2, 3);
                 return mat3_transform(m, v);
             }
-        "#);
+        "#,
+        );
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
-            if let (Value::Float(x), Value::Float(y), Value::Float(z)) =
-                (&arr[0], &arr[1], &arr[2]) {
+            if let (Value::Float(x), Value::Float(y), Value::Float(z)) = (&arr[0], &arr[1], &arr[2])
+            {
                 assert!((x - 1.0).abs() < 0.001);
                 assert!((y - 2.0).abs() < 0.001);
                 assert!((z - 3.0).abs() < 0.001);
@@ -23104,12 +29209,14 @@ mod tests {
     #[test]
     fn test_quat_to_mat4() {
         // Convert identity quaternion to matrix - should be identity
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let q = quat_identity();
                 return quat_to_mat4(q);
             }
-        "#);
+        "#,
+        );
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             assert_eq!(arr.len(), 16);
@@ -23127,20 +29234,23 @@ mod tests {
     #[test]
     fn test_channel_basic_send_recv() {
         // Basic channel send/receive
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let ch = channel_new();
                 channel_send(ch, 42);
                 return channel_recv(ch);
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(42))));
     }
 
     #[test]
     fn test_channel_multiple_values() {
         // Send multiple values and receive in order (FIFO)
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let ch = channel_new();
                 channel_send(ch, 1);
@@ -23151,14 +29261,16 @@ mod tests {
                 let c = channel_recv(ch);
                 return a * 100 + b * 10 + c;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(123))));
     }
 
     #[test]
     fn test_channel_high_throughput() {
         // Test sending 1000 messages through a channel
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let ch = channel_new();
                 let count = 1000;
@@ -23180,14 +29292,16 @@ mod tests {
                 // Sum of 0..999 = 499500
                 return sum;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(499500))));
     }
 
     #[test]
     fn test_channel_data_integrity() {
         // Test that complex values survive channel transport
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let ch = channel_new();
 
@@ -23206,7 +29320,8 @@ mod tests {
                 // Verify by combining results
                 return int_val + floor(float_val) + len(str_val) + len(arr_val);
             }
-        "#);
+        "#,
+        );
         // 42 + 3 + 5 + 3 = 53
         assert!(matches!(result, Ok(Value::Int(53))));
     }
@@ -23215,14 +29330,16 @@ mod tests {
     fn test_channel_try_recv_empty() {
         // try_recv on empty channel should return None variant
         // Check that it returns a Variant type (not panicking/erroring)
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let ch = channel_new();
                 let result = channel_try_recv(ch);
                 // Can't pattern match variants in interpreter, so just verify it returns
                 return type_of(result);
             }
-        "#);
+        "#,
+        );
         // The result should be a string "variant" or similar
         assert!(result.is_ok());
     }
@@ -23230,7 +29347,8 @@ mod tests {
     #[test]
     fn test_channel_try_recv_with_value() {
         // try_recv with value - verify channel works (blocking recv confirms)
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let ch = channel_new();
                 channel_send(ch, 99);
@@ -23239,41 +29357,47 @@ mod tests {
                 let val = channel_recv(ch);
                 return val;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(99))));
     }
 
     #[test]
     fn test_channel_recv_timeout_expires() {
         // recv_timeout on empty channel should timeout without error
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let ch = channel_new();
                 let result = channel_recv_timeout(ch, 10);  // 10ms timeout
                 // Just verify it completes without blocking forever
                 return 42;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(42))));
     }
 
     #[test]
     fn test_actor_basic_messaging() {
         // Basic actor creation and messaging
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let act = spawn_actor("test_actor");
                 send_to_actor(act, "ping", 42);
                 return get_actor_msg_count(act);
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(1))));
     }
 
     #[test]
     fn test_actor_message_storm() {
         // Send 10000 messages to an actor rapidly
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let act = spawn_actor("stress_actor");
                 let count = 10000;
@@ -23284,14 +29408,16 @@ mod tests {
                 }
                 return get_actor_msg_count(act);
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(10000))));
     }
 
     #[test]
     fn test_actor_pending_count() {
         // Verify pending count accuracy
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let act = spawn_actor("pending_test");
 
@@ -23313,15 +29439,17 @@ mod tests {
                 // Should have 5 pending initially, 3 after receiving 2
                 return pending_before * 10 + pending_after;
             }
-        "#);
-        assert!(matches!(result, Ok(Value::Int(53))));  // 5*10 + 3 = 53
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Int(53)))); // 5*10 + 3 = 53
     }
 
     #[test]
     fn test_actor_message_order() {
         // Verify messages are processed in FIFO order (pop from end = LIFO for our impl)
         // Note: Our actor uses pop() which is LIFO, so last sent = first received
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let act = spawn_actor("order_test");
                 send_to_actor(act, "a", 1);
@@ -23337,7 +29465,8 @@ mod tests {
                 // c=3, b=2, a=1 in our test
                 return get_actor_pending(act);  // Should be 0 after draining
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(0))));
     }
 
@@ -23345,46 +29474,53 @@ mod tests {
     fn test_actor_recv_empty() {
         // Receiving from empty actor should return None variant
         // Verify via pending count that no messages were added
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let act = spawn_actor("empty_actor");
                 // No messages sent, so pending should be 0
                 return get_actor_pending(act);
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(0))));
     }
 
     #[test]
     fn test_actor_tell_alias() {
         // tell_actor should work the same as send_to_actor
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let act = spawn_actor("tell_test");
                 tell_actor(act, "hello", 123);
                 tell_actor(act, "world", 456);
                 return get_actor_msg_count(act);
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(2))));
     }
 
     #[test]
     fn test_actor_name() {
         // Verify actor name is stored correctly
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let act = spawn_actor("my_special_actor");
                 return get_actor_name(act);
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::String(s)) if s.as_str() == "my_special_actor"));
     }
 
     #[test]
     fn test_multiple_actors() {
         // Multiple actors should be independent
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let a1 = spawn_actor("actor1");
                 let a2 = spawn_actor("actor2");
@@ -23403,14 +29539,16 @@ mod tests {
 
                 return c1 * 100 + c2 * 10 + c3;
             }
-        "#);
-        assert!(matches!(result, Ok(Value::Int(123))));  // 1*100 + 2*10 + 3 = 123
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Int(123)))); // 1*100 + 2*10 + 3 = 123
     }
 
     #[test]
     fn test_multiple_channels() {
         // Multiple channels should be independent
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let ch1 = channel_new();
                 let ch2 = channel_new();
@@ -23426,50 +29564,58 @@ mod tests {
 
                 return v1 + v2 + v3;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(600))));
     }
 
     #[test]
     fn test_thread_sleep() {
         // thread_sleep should work without error
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 thread_sleep(1);  // Sleep 1ms
                 return 42;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(42))));
     }
 
     #[test]
     fn test_thread_yield() {
         // thread_yield should work without error
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 thread_yield();
                 return 42;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(42))));
     }
 
     #[test]
     fn test_thread_id() {
         // thread_id should return a string
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let id = thread_id();
                 return len(id) > 0;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Bool(true))));
     }
 
     #[test]
     fn test_channel_stress_interleaved() {
         // Interleaved sends and receives
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let ch = channel_new();
                 let sum = 0;
@@ -23486,14 +29632,16 @@ mod tests {
                 // = sum of 3*i for i in 0..99 = 3 * (99*100/2) = 3 * 4950 = 14850
                 return sum;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(14850))));
     }
 
     #[test]
     fn test_actor_stress_with_receive() {
         // Send and receive many messages
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let act = spawn_actor("recv_stress");
                 let count = 1000;
@@ -23512,7 +29660,8 @@ mod tests {
 
                 return drained;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(1000))));
     }
 
@@ -23876,7 +30025,8 @@ mod tests {
     #[test]
     fn test_no_leak_repeated_array_operations() {
         // Create and discard arrays many times
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let i = 0;
                 while i < 1000 {
@@ -23888,14 +30038,16 @@ mod tests {
                 }
                 return i;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(1000))));
     }
 
     #[test]
     fn test_no_leak_repeated_function_calls() {
         // Call functions many times to test function frame cleanup
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn fib(n) {
                 if n <= 1 { return n; }
                 return fib(n - 1) + fib(n - 2);
@@ -23909,14 +30061,16 @@ mod tests {
                 }
                 return total;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(5500))));
     }
 
     #[test]
     fn test_no_leak_repeated_map_operations() {
         // Create and discard maps many times
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let i = 0;
                 while i < 500 {
@@ -23929,14 +30083,16 @@ mod tests {
                 }
                 return i;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(500))));
     }
 
     #[test]
     fn test_no_leak_repeated_string_operations() {
         // Create and discard strings many times
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let i = 0;
                 while i < 1000 {
@@ -23949,14 +30105,16 @@ mod tests {
                 }
                 return i;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(1000))));
     }
 
     #[test]
     fn test_no_leak_repeated_ecs_operations() {
         // Create and discard ECS entities many times
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let world = ecs_world();
                 let i = 0;
@@ -23969,14 +30127,16 @@ mod tests {
                 }
                 return i;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(500))));
     }
 
     #[test]
     fn test_no_leak_repeated_channel_operations() {
         // Create and use channels many times
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let i = 0;
                 while i < 500 {
@@ -23989,14 +30149,16 @@ mod tests {
                 }
                 return i;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(500))));
     }
 
     #[test]
     fn test_no_leak_repeated_actor_operations() {
         // Create actors and send messages many times
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let i = 0;
                 while i < 100 {
@@ -24008,14 +30170,16 @@ mod tests {
                 }
                 return i;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(100))));
     }
 
     #[test]
     fn test_no_leak_repeated_vec3_operations() {
         // Create and compute with vec3s many times
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let i = 0;
                 while i < 1000 {
@@ -24030,14 +30194,16 @@ mod tests {
                 }
                 return i;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(1000))));
     }
 
     #[test]
     fn test_no_leak_repeated_closure_creation() {
         // Create and call closures many times
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let i = 0;
                 let total = 0;
@@ -24049,7 +30215,8 @@ mod tests {
                 }
                 return total;
             }
-        "#);
+        "#,
+        );
         // Sum of (i+1) for i from 0 to 499 = sum of 1 to 500 = 500*501/2 = 125250
         assert!(matches!(result, Ok(Value::Int(125250))));
     }
@@ -24057,7 +30224,8 @@ mod tests {
     #[test]
     fn test_no_leak_nested_data_structures() {
         // Create nested arrays and maps many times
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let i = 0;
                 while i < 200 {
@@ -24071,7 +30239,8 @@ mod tests {
                 }
                 return i;
             }
-        "#);
+        "#,
+        );
         assert!(matches!(result, Ok(Value::Int(200))));
     }
 
@@ -24079,13 +30248,15 @@ mod tests {
     fn test_no_leak_repeated_interpreter_creation() {
         // This tests at the Rust level - creating multiple interpreters
         for _ in 0..50 {
-            let result = eval(r#"
+            let result = eval(
+                r#"
                 fn main() {
                     let arr = [1, 2, 3, 4, 5];
                     let total = sum(arr);
                     return total * 2;
                 }
-            "#);
+            "#,
+            );
             assert!(matches!(result, Ok(Value::Int(30))));
         }
     }

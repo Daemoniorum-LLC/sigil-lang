@@ -124,7 +124,10 @@ fn lower_item(ctx: &mut LoweringContext, module: &mut IrModule, item: &ast::Item
                 }
             }
         }
-        ast::Item::Static(_) | ast::Item::Actor(_) | ast::Item::Use(_) | ast::Item::ExternBlock(_) => {
+        ast::Item::Static(_)
+        | ast::Item::Actor(_)
+        | ast::Item::Use(_)
+        | ast::Item::ExternBlock(_) => {
             // TODO: Handle these items
         }
     }
@@ -134,11 +137,7 @@ fn lower_function(ctx: &mut LoweringContext, f: &ast::Function) -> Option<IrFunc
     let id = ctx.ids.next("fn");
     ctx.push_scope();
 
-    let params: Vec<IrParam> = f
-        .params
-        .iter()
-        .map(|p| lower_param(ctx, p))
-        .collect();
+    let params: Vec<IrParam> = f.params.iter().map(|p| lower_param(ctx, p)).collect();
 
     let return_type = f
         .return_type
@@ -200,9 +199,9 @@ fn extract_pattern_name(p: &ast::Pattern) -> String {
 
 fn extract_pattern_evidence(p: &ast::Pattern) -> IrEvidence {
     match p {
-        ast::Pattern::Ident { evidentiality, .. } => {
-            evidentiality.map(lower_evidentiality).unwrap_or(IrEvidence::Known)
-        }
+        ast::Pattern::Ident { evidentiality, .. } => evidentiality
+            .map(lower_evidentiality)
+            .unwrap_or(IrEvidence::Known),
         _ => IrEvidence::Known,
     }
 }
@@ -423,14 +422,13 @@ fn lower_pattern(ctx: &mut LoweringContext, pattern: &ast::Pattern) -> IrPattern
                 .map(|f| {
                     (
                         f.name.name.clone(),
-                        f.pattern
-                            .as_ref()
-                            .map(|p| lower_pattern(ctx, p))
-                            .unwrap_or(IrPattern::Ident {
+                        f.pattern.as_ref().map(|p| lower_pattern(ctx, p)).unwrap_or(
+                            IrPattern::Ident {
                                 name: f.name.name.clone(),
                                 mutable: false,
                                 evidence: None,
-                            }),
+                            },
+                        ),
                     )
                 })
                 .collect(),
@@ -592,7 +590,10 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             }
         }
 
-        ast::Expr::Match { expr: scrutinee, arms } => {
+        ast::Expr::Match {
+            expr: scrutinee,
+            arms,
+        } => {
             let scrutinee_ir = lower_expr(ctx, scrutinee);
             let arms_ir: Vec<IrMatchArm> = arms
                 .iter()
@@ -636,7 +637,11 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             evidence: IrEvidence::Known,
         },
 
-        ast::Expr::For { pattern, iter, body } => {
+        ast::Expr::For {
+            pattern,
+            iter,
+            body,
+        } => {
             ctx.push_scope();
             let pat = lower_pattern(ctx, pattern);
             let iter_ir = lower_expr(ctx, iter);
@@ -685,7 +690,8 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
         ast::Expr::Block(block) => lower_block(ctx, block),
 
         ast::Expr::Array(elements) => {
-            let elements_ir: Vec<IrOperation> = elements.iter().map(|e| lower_expr(ctx, e)).collect();
+            let elements_ir: Vec<IrOperation> =
+                elements.iter().map(|e| lower_expr(ctx, e)).collect();
             IrOperation::Array {
                 elements: elements_ir,
                 ty: IrType::Infer,
@@ -694,7 +700,8 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
         }
 
         ast::Expr::Tuple(elements) => {
-            let elements_ir: Vec<IrOperation> = elements.iter().map(|e| lower_expr(ctx, e)).collect();
+            let elements_ir: Vec<IrOperation> =
+                elements.iter().map(|e| lower_expr(ctx, e)).collect();
             IrOperation::Tuple {
                 elements: elements_ir,
                 ty: IrType::Infer,
@@ -915,17 +922,14 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
         } => IrOperation::GrpcCall {
             service: expr_to_string(service),
             method: expr_to_string(method),
-            message: Box::new(
-                message
-                    .as_ref()
-                    .map(|m| lower_expr(ctx, m))
-                    .unwrap_or(IrOperation::Literal {
-                        variant: LiteralVariant::Null,
-                        value: serde_json::Value::Null,
-                        ty: IrType::Unit,
-                        evidence: IrEvidence::Known,
-                    }),
-            ),
+            message: Box::new(message.as_ref().map(|m| lower_expr(ctx, m)).unwrap_or(
+                IrOperation::Literal {
+                    variant: LiteralVariant::Null,
+                    value: serde_json::Value::Null,
+                    ty: IrType::Unit,
+                    evidence: IrEvidence::Known,
+                },
+            )),
             metadata: if metadata.is_empty() {
                 None
             } else {
@@ -1125,7 +1129,11 @@ fn pipe_op_evidence(op: &ast::PipeOp) -> IrEvidence {
 
 fn lower_literal(lit: &ast::Literal) -> IrOperation {
     match lit {
-        ast::Literal::Int { value, base, suffix } => IrOperation::Literal {
+        ast::Literal::Int {
+            value,
+            base,
+            suffix,
+        } => IrOperation::Literal {
             variant: LiteralVariant::Int,
             value: serde_json::json!({
                 "value": value,
@@ -1151,16 +1159,16 @@ fn lower_literal(lit: &ast::Literal) -> IrOperation {
                 }),
             evidence: IrEvidence::Known,
         },
-        ast::Literal::String(s)
-        | ast::Literal::MultiLineString(s)
-        | ast::Literal::RawString(s) => IrOperation::Literal {
-            variant: LiteralVariant::String,
-            value: serde_json::Value::String(s.clone()),
-            ty: IrType::Primitive {
-                name: "str".to_string(),
-            },
-            evidence: IrEvidence::Known,
-        },
+        ast::Literal::String(s) | ast::Literal::MultiLineString(s) | ast::Literal::RawString(s) => {
+            IrOperation::Literal {
+                variant: LiteralVariant::String,
+                value: serde_json::Value::String(s.clone()),
+                ty: IrType::Primitive {
+                    name: "str".to_string(),
+                },
+                evidence: IrEvidence::Known,
+            }
+        }
         ast::Literal::Char(c) => IrOperation::Literal {
             variant: LiteralVariant::Char,
             value: serde_json::Value::String(c.to_string()),

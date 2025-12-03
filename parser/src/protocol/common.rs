@@ -43,7 +43,11 @@ impl Uri {
                 userinfo: if url.username().is_empty() {
                     None
                 } else {
-                    Some(format!("{}:{}", url.username(), url.password().unwrap_or("")))
+                    Some(format!(
+                        "{}:{}",
+                        url.username(),
+                        url.password().unwrap_or("")
+                    ))
                 },
             })
         }
@@ -194,7 +198,9 @@ impl Headers {
 
     /// Get the first value for a header
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.inner.get(&key.to_lowercase()).and_then(|v| v.first().map(|s| s.as_str()))
+        self.inner
+            .get(&key.to_lowercase())
+            .and_then(|v| v.first().map(|s| s.as_str()))
     }
 
     /// Get all values for a header
@@ -462,11 +468,19 @@ impl BackoffStrategy {
     pub fn delay_for_attempt(&self, attempt: u32) -> Duration {
         match self {
             BackoffStrategy::Fixed(d) => *d,
-            BackoffStrategy::Linear { initial, increment, max } => {
+            BackoffStrategy::Linear {
+                initial,
+                increment,
+                max,
+            } => {
                 let delay = *initial + (*increment * attempt);
                 max.map(|m| delay.min(m)).unwrap_or(delay)
             }
-            BackoffStrategy::Exponential { initial, factor, max } => {
+            BackoffStrategy::Exponential {
+                initial,
+                factor,
+                max,
+            } => {
                 let multiplier = factor.powi(attempt as i32);
                 let delay = initial.mul_f64(multiplier);
                 max.map(|m| delay.min(m)).unwrap_or(delay)
@@ -649,12 +663,23 @@ impl Method {
 
     /// Check if the method is idempotent
     pub fn is_idempotent(&self) -> bool {
-        matches!(self, Method::GET | Method::HEAD | Method::PUT | Method::DELETE | Method::OPTIONS | Method::TRACE)
+        matches!(
+            self,
+            Method::GET
+                | Method::HEAD
+                | Method::PUT
+                | Method::DELETE
+                | Method::OPTIONS
+                | Method::TRACE
+        )
     }
 
     /// Check if the method is safe (no side effects)
     pub fn is_safe(&self) -> bool {
-        matches!(self, Method::GET | Method::HEAD | Method::OPTIONS | Method::TRACE)
+        matches!(
+            self,
+            Method::GET | Method::HEAD | Method::OPTIONS | Method::TRACE
+        )
     }
 }
 
@@ -678,7 +703,10 @@ impl TryFrom<&str> for Method {
             "OPTIONS" => Ok(Method::OPTIONS),
             "CONNECT" => Ok(Method::CONNECT),
             "TRACE" => Ok(Method::TRACE),
-            _ => Err(ProtocolError::Protocol(format!("Unknown HTTP method: {}", s))),
+            _ => Err(ProtocolError::Protocol(format!(
+                "Unknown HTTP method: {}",
+                s
+            ))),
         }
     }
 }
@@ -689,7 +717,8 @@ mod tests {
 
     #[test]
     fn test_uri_parsing() {
-        let uri = Uri::parse("https://user:pass@example.com:8080/path?query=value#fragment").unwrap();
+        let uri =
+            Uri::parse("https://user:pass@example.com:8080/path?query=value#fragment").unwrap();
         assert_eq!(uri.scheme, "https");
         assert_eq!(uri.host, "example.com");
         assert_eq!(uri.port, Some(8080));

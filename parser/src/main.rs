@@ -1,17 +1,17 @@
 //! Sigil CLI - Parse, check, and run Sigil source files.
 
-use sigil_parser::{Parser, Interpreter, register_stdlib, Lexer, Token, Diagnostics, Diagnostic};
+use sigil_parser::lower::lower_source_file;
 use sigil_parser::span::Span;
 use sigil_parser::typeck::TypeChecker;
-use sigil_parser::lower::lower_source_file;
 #[cfg(feature = "jit")]
 use sigil_parser::JitCompiler;
+use sigil_parser::{register_stdlib, Diagnostic, Diagnostics, Interpreter, Lexer, Parser, Token};
 #[cfg(feature = "llvm")]
-use sigil_parser::{LlvmCompiler, CompileMode, OptLevel};
+use sigil_parser::{CompileMode, LlvmCompiler, OptLevel};
+use std::borrow::Cow;
 use std::env;
 use std::fs;
 use std::process::ExitCode;
-use std::borrow::Cow;
 
 /// Output format for diagnostics.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -113,11 +113,17 @@ fn main() -> ExitCode {
                 if pos + 1 < args.len() {
                     args[pos + 1].clone()
                 } else {
-                    args[2].trim_end_matches(".sigil").trim_end_matches(".sg").to_string()
+                    args[2]
+                        .trim_end_matches(".sigil")
+                        .trim_end_matches(".sg")
+                        .to_string()
                 }
             } else {
                 // Default output name: strip extension
-                args[2].trim_end_matches(".sigil").trim_end_matches(".sg").to_string()
+                args[2]
+                    .trim_end_matches(".sigil")
+                    .trim_end_matches(".sg")
+                    .to_string()
             };
             compile_file(&args[2], &output, use_lto)
         }
@@ -141,13 +147,17 @@ fn main() -> ExitCode {
                 OutputFormat::Human
             };
             let quiet = args.iter().any(|a| a == "--quiet");
-            let apply_fixes = args.iter().any(|a| a == "--apply-suggestions" || a == "--fix");
+            let apply_fixes = args
+                .iter()
+                .any(|a| a == "--apply-suggestions" || a == "--fix");
             check_file(&args[2], format, quiet, apply_fixes)
         }
         "dump-ir" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil dump-ir <file.sigil> [--pretty|--compact] [-o output.json]");
+                eprintln!(
+                    "Usage: sigil dump-ir <file.sigil> [--pretty|--compact] [-o output.json]"
+                );
                 return ExitCode::from(1);
             }
             let pretty = !args.iter().any(|a| a == "--compact");
@@ -176,9 +186,7 @@ fn main() -> ExitCode {
             }
             lex_file(&args[2])
         }
-        "repl" => {
-            repl()
-        }
+        "repl" => repl(),
         "new" => {
             if args.len() < 3 {
                 eprintln!("Error: missing project name");
@@ -187,15 +195,9 @@ fn main() -> ExitCode {
             }
             new_project(&args[2])
         }
-        "init" => {
-            init_project()
-        }
-        "test" => {
-            run_tests()
-        }
-        "build" => {
-            build_project()
-        }
+        "init" => init_project(),
+        "test" => run_tests(),
+        "build" => build_project(),
         _ => {
             // Treat as file if it ends with .sigil or .sg
             if args[1].ends_with(".sigil") || args[1].ends_with(".sg") {
@@ -349,13 +351,14 @@ fn compile_file(path: &str, output: &str, use_lto: bool) -> ExitCode {
 
     // Create LLVM context and compiler in AOT mode
     let context = Context::create();
-    let mut compiler = match LlvmCompiler::with_mode(&context, OptLevel::Aggressive, CompileMode::Aot) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Failed to initialize LLVM compiler: {}", e);
-            return ExitCode::from(1);
-        }
-    };
+    let mut compiler =
+        match LlvmCompiler::with_mode(&context, OptLevel::Aggressive, CompileMode::Aot) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Failed to initialize LLVM compiler: {}", e);
+                return ExitCode::from(1);
+            }
+        };
 
     // Compile
     if let Err(e) = compiler.compile(&source) {
@@ -410,9 +413,7 @@ fn compile_file(path: &str, output: &str, use_lto: bool) -> ExitCode {
         args.insert(0, "-O3");
     }
 
-    let link_result = Command::new(&linker)
-        .args(&args)
-        .status();
+    let link_result = Command::new(&linker).args(&args).status();
 
     // Clean up object file
     let _ = std::fs::remove_file(&obj_path);
@@ -559,8 +560,9 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) 
             let mut type_checker = TypeChecker::new();
             if let Err(type_errors) = type_checker.check_file(&ast) {
                 for err in type_errors {
-                    let mut diag = Diagnostic::error(&err.message, err.span.unwrap_or(Span::default()))
-                        .with_code("E0003");
+                    let mut diag =
+                        Diagnostic::error(&err.message, err.span.unwrap_or(Span::default()))
+                            .with_code("E0003");
                     for note in &err.notes {
                         diag = diag.with_note(note);
                     }
@@ -570,15 +572,15 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) 
         }
         Err(e) => {
             // Convert parse error to diagnostic
-            let diag = Diagnostic::error(format!("{}", e), Span::default())
-                .with_code("E0002");
+            let diag = Diagnostic::error(format!("{}", e), Span::default()).with_code("E0002");
             diagnostics.add(diag);
         }
     }
 
     // Apply fixes if requested
     let source = if apply_fixes && !diagnostics.is_empty() {
-        let suggestions: Vec<_> = diagnostics.iter()
+        let suggestions: Vec<_> = diagnostics
+            .iter()
             .flat_map(|d| d.suggestions.iter())
             .collect();
 
@@ -594,7 +596,10 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) 
             for suggestion in sorted_suggestions {
                 // Apply the fix
                 if suggestion.span.end <= fixed.len() {
-                    fixed.replace_range(suggestion.span.start..suggestion.span.end, &suggestion.replacement);
+                    fixed.replace_range(
+                        suggestion.span.start..suggestion.span.end,
+                        &suggestion.replacement,
+                    );
                     applied_fixes.push(suggestion.message.clone());
                 }
             }
@@ -609,8 +614,11 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) 
                 }
 
                 if format == OutputFormat::Human && !quiet {
-                    println!("Applied {} fix{}:", applied_fixes.len(),
-                        if applied_fixes.len() == 1 { "" } else { "es" });
+                    println!(
+                        "Applied {} fix{}:",
+                        applied_fixes.len(),
+                        if applied_fixes.len() == 1 { "" } else { "es" }
+                    );
                     for fix in &applied_fixes {
                         println!("  • {}", fix);
                     }
@@ -777,7 +785,9 @@ fn print_item_summary(item: &sigil_parser::Item) {
         }
         Item::Impl(i) => {
             if let Some(ref trait_) = i.trait_ {
-                let trait_name = trait_.segments.iter()
+                let trait_name = trait_
+                    .segments
+                    .iter()
                     .map(|s| s.ident.name.as_str())
                     .collect::<Vec<_>>()
                     .join("::");
@@ -842,20 +852,20 @@ mod colors {
     pub const DIM: &str = "\x1b[2m";
 
     // Status colors
-    pub const GREEN: &str = "\x1b[38;5;114m";        // Green for success
-    pub const ERROR: &str = "\x1b[38;5;203m";        // Red for errors
+    pub const GREEN: &str = "\x1b[38;5;114m"; // Green for success
+    pub const ERROR: &str = "\x1b[38;5;203m"; // Red for errors
 
     // Semantic colors for Sigil
-    pub const KEYWORD: &str = "\x1b[38;5;198m";      // Magenta/pink for keywords
-    pub const MORPHEME: &str = "\x1b[38;5;51m";      // Cyan for morphemes (τ, φ, σ, ρ, λ)
-    pub const EVIDENCE: &str = "\x1b[38;5;214m";     // Orange for evidentiality (!, ?, ~, ‽)
-    pub const STRING: &str = "\x1b[38;5;114m";       // Green for strings
-    pub const NUMBER: &str = "\x1b[38;5;141m";       // Purple for numbers
-    pub const COMMENT: &str = "\x1b[38;5;245m";      // Gray for comments
-    pub const OPERATOR: &str = "\x1b[38;5;252m";     // Light gray for operators
-    pub const FUNCTION: &str = "\x1b[38;5;81m";      // Blue for function names
-    pub const TYPE: &str = "\x1b[38;5;222m";         // Yellow for types
-    pub const SPECIAL: &str = "\x1b[38;5;203m";      // Red for special symbols
+    pub const KEYWORD: &str = "\x1b[38;5;198m"; // Magenta/pink for keywords
+    pub const MORPHEME: &str = "\x1b[38;5;51m"; // Cyan for morphemes (τ, φ, σ, ρ, λ)
+    pub const EVIDENCE: &str = "\x1b[38;5;214m"; // Orange for evidentiality (!, ?, ~, ‽)
+    pub const STRING: &str = "\x1b[38;5;114m"; // Green for strings
+    pub const NUMBER: &str = "\x1b[38;5;141m"; // Purple for numbers
+    pub const COMMENT: &str = "\x1b[38;5;245m"; // Gray for comments
+    pub const OPERATOR: &str = "\x1b[38;5;252m"; // Light gray for operators
+    pub const FUNCTION: &str = "\x1b[38;5;81m"; // Blue for function names
+    pub const TYPE: &str = "\x1b[38;5;222m"; // Yellow for types
+    pub const SPECIAL: &str = "\x1b[38;5;203m"; // Red for special symbols
 }
 
 /// Sigil syntax highlighter using the lexer
@@ -865,68 +875,136 @@ impl SigilHighlighter {
     fn highlight_token(token: &Token) -> &'static str {
         match token {
             // Keywords
-            Token::Fn | Token::Let | Token::Mut | Token::If | Token::Else |
-            Token::While | Token::For | Token::In | Token::Match | Token::Return |
-            Token::Break | Token::Continue | Token::Struct | Token::Enum |
-            Token::Impl | Token::Trait | Token::Pub | Token::Use | Token::Mod |
-            Token::Const | Token::Static | Token::Type | Token::Where |
-            Token::Async | Token::Await | Token::Actor |
-            Token::SelfLower | Token::SelfUpper |
-            Token::True | Token::False => colors::KEYWORD,
+            Token::Fn
+            | Token::Let
+            | Token::Mut
+            | Token::If
+            | Token::Else
+            | Token::While
+            | Token::For
+            | Token::In
+            | Token::Match
+            | Token::Return
+            | Token::Break
+            | Token::Continue
+            | Token::Struct
+            | Token::Enum
+            | Token::Impl
+            | Token::Trait
+            | Token::Pub
+            | Token::Use
+            | Token::Mod
+            | Token::Const
+            | Token::Static
+            | Token::Type
+            | Token::Where
+            | Token::Async
+            | Token::Await
+            | Token::Actor
+            | Token::SelfLower
+            | Token::SelfUpper
+            | Token::True
+            | Token::False => colors::KEYWORD,
 
             // Morphemes (polysynthetic operators) - including new access morphemes
-            Token::Tau | Token::Phi | Token::Sigma | Token::Rho | Token::Lambda |
-            Token::Pi | Token::Alpha | Token::Omega | Token::Mu | Token::Chi |
-            Token::Nu | Token::Xi => colors::MORPHEME,
+            Token::Tau
+            | Token::Phi
+            | Token::Sigma
+            | Token::Rho
+            | Token::Lambda
+            | Token::Pi
+            | Token::Alpha
+            | Token::Omega
+            | Token::Mu
+            | Token::Chi
+            | Token::Nu
+            | Token::Xi => colors::MORPHEME,
 
             // Aspect morphemes
-            Token::AspectProgressive | Token::AspectPerfective |
-            Token::AspectPotential | Token::AspectResultative => colors::MORPHEME,
+            Token::AspectProgressive
+            | Token::AspectPerfective
+            | Token::AspectPotential
+            | Token::AspectResultative => colors::MORPHEME,
 
             // Bitwise operators (Unicode)
             Token::BitwiseAndSymbol | Token::BitwiseOrSymbol => colors::OPERATOR,
 
             // Data operation symbols
-            Token::Bowtie | Token::ElementSmallVerticalBar |
-            Token::SquareCup | Token::SquareCap => colors::SPECIAL,
+            Token::Bowtie
+            | Token::ElementSmallVerticalBar
+            | Token::SquareCup
+            | Token::SquareCap => colors::SPECIAL,
 
             // Evidentiality markers
             Token::Bang | Token::Question | Token::Tilde | Token::Interrobang => colors::EVIDENCE,
 
             // Special symbols
-            Token::Hourglass | Token::Circle | Token::Empty | Token::Infinity |
-            Token::MiddleDot => colors::SPECIAL,
+            Token::Hourglass
+            | Token::Circle
+            | Token::Empty
+            | Token::Infinity
+            | Token::MiddleDot => colors::SPECIAL,
 
             // Strings and chars
             Token::StringLit(_) | Token::CharLit(_) => colors::STRING,
 
             // Numbers
-            Token::IntLit(_) | Token::FloatLit(_) | Token::BinaryLit(_) |
-            Token::OctalLit(_) | Token::HexLit(_) | Token::DuodecimalLit(_) |
-            Token::SexagesimalLit(_) | Token::VigesimalLit(_) => colors::NUMBER,
+            Token::IntLit(_)
+            | Token::FloatLit(_)
+            | Token::BinaryLit(_)
+            | Token::OctalLit(_)
+            | Token::HexLit(_)
+            | Token::DuodecimalLit(_)
+            | Token::SexagesimalLit(_)
+            | Token::VigesimalLit(_) => colors::NUMBER,
 
             // Comments
             Token::LineComment(_) | Token::DocComment(_) => colors::COMMENT,
 
             // Operators
-            Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent |
-            Token::StarStar | Token::PlusPlus | Token::Eq | Token::EqEq | Token::NotEq |
-            Token::Lt | Token::LtEq | Token::Gt | Token::GtEq | Token::AndAnd |
-            Token::OrOr | Token::Amp | Token::Caret | Token::Shl | Token::Shr |
-            Token::Pipe | Token::Arrow | Token::FatArrow | Token::ColonColon => colors::OPERATOR,
+            Token::Plus
+            | Token::Minus
+            | Token::Star
+            | Token::Slash
+            | Token::Percent
+            | Token::StarStar
+            | Token::PlusPlus
+            | Token::Eq
+            | Token::EqEq
+            | Token::NotEq
+            | Token::Lt
+            | Token::LtEq
+            | Token::Gt
+            | Token::GtEq
+            | Token::AndAnd
+            | Token::OrOr
+            | Token::Amp
+            | Token::Caret
+            | Token::Shl
+            | Token::Shr
+            | Token::Pipe
+            | Token::Arrow
+            | Token::FatArrow
+            | Token::ColonColon => colors::OPERATOR,
 
             // Identifiers - check for common stdlib functions
             Token::Ident(name) => {
                 // Built-in functions get special coloring
                 match name.as_str() {
-                    "print" | "println" | "dbg" | "assert" | "panic" | "todo" |
-                    "sqrt" | "pow" | "sin" | "cos" | "tan" | "abs" | "floor" | "ceil" |
-                    "len" | "push" | "pop" | "sum" | "product" | "sort" | "reverse" |
-                    "known" | "uncertain" | "reported" | "paradox" | "evidence_of" |
-                    "upper" | "lower" | "trim" | "split" | "join" |
-                    "random" | "shuffle" | "now" | "sleep" => colors::FUNCTION,
+                    "print" | "println" | "dbg" | "assert" | "panic" | "todo" | "sqrt" | "pow"
+                    | "sin" | "cos" | "tan" | "abs" | "floor" | "ceil" | "len" | "push" | "pop"
+                    | "sum" | "product" | "sort" | "reverse" | "known" | "uncertain"
+                    | "reported" | "paradox" | "evidence_of" | "upper" | "lower" | "trim"
+                    | "split" | "join" | "random" | "shuffle" | "now" | "sleep" => colors::FUNCTION,
                     // Type names (capitalized)
-                    _ if name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) => colors::TYPE,
+                    _ if name
+                        .chars()
+                        .next()
+                        .map(|c| c.is_uppercase())
+                        .unwrap_or(false) =>
+                    {
+                        colors::TYPE
+                    }
                     _ => colors::RESET,
                 }
             }
@@ -948,75 +1026,256 @@ impl SigilHelper {
     fn new() -> Self {
         let completions = vec![
             // Keywords
-            "fn", "let", "mut", "if", "else", "while", "for", "in", "match",
-            "return", "break", "continue", "struct", "enum", "impl", "trait",
-            "pub", "use", "mod", "const", "static", "type", "where", "async", "await",
-            "actor", "handler", "receive", "send", "true", "false", "null",
-
+            "fn",
+            "let",
+            "mut",
+            "if",
+            "else",
+            "while",
+            "for",
+            "in",
+            "match",
+            "return",
+            "break",
+            "continue",
+            "struct",
+            "enum",
+            "impl",
+            "trait",
+            "pub",
+            "use",
+            "mod",
+            "const",
+            "static",
+            "type",
+            "where",
+            "async",
+            "await",
+            "actor",
+            "handler",
+            "receive",
+            "send",
+            "true",
+            "false",
+            "null",
             // Transform morphemes (Greek letters)
-            "τ", "Τ", "φ", "Φ", "σ", "Σ", "ρ", "Ρ", "λ", "Λ", "Π",
-
+            "τ",
+            "Τ",
+            "φ",
+            "Φ",
+            "σ",
+            "Σ",
+            "ρ",
+            "Ρ",
+            "λ",
+            "Λ",
+            "Π",
             // Access morphemes
-            "α", "ω", "Ω", "μ", "Μ", "χ", "Χ", "ν", "Ν", "ξ", "Ξ",
-
+            "α",
+            "ω",
+            "Ω",
+            "μ",
+            "Μ",
+            "χ",
+            "Χ",
+            "ν",
+            "Ν",
+            "ξ",
+            "Ξ",
             // Other Greek letters
-            "δ", "Δ", "ε", "ζ",
-
+            "δ",
+            "Δ",
+            "ε",
+            "ζ",
             // Aspect suffixes
-            "·ing", "·ed", "·able", "·ive",
-
+            "·ing",
+            "·ed",
+            "·able",
+            "·ive",
             // Logic operators (Unicode)
-            "∧", "∨", "¬", "⊻", "⊤", "⊥",
-
+            "∧",
+            "∨",
+            "¬",
+            "⊻",
+            "⊤",
+            "⊥",
             // Bitwise operators (Unicode)
-            "⋏", "⋎",
-
+            "⋏",
+            "⋎",
             // Set operators
-            "∪", "∩", "∖", "⊂", "⊆", "⊃", "⊇", "∈", "∉",
-
+            "∪",
+            "∩",
+            "∖",
+            "⊂",
+            "⊆",
+            "⊃",
+            "⊇",
+            "∈",
+            "∉",
             // Math operators
-            "∘", "⊗", "⊕", "∫", "∂", "√", "∛",
-
+            "∘",
+            "⊗",
+            "⊕",
+            "∫",
+            "∂",
+            "√",
+            "∛",
             // Data operations
-            "⋈", "⋳", "⊔", "⊓",
-
+            "⋈",
+            "⋳",
+            "⊔",
+            "⊓",
             // Special literals
-            "∅", "∞", "◯",
-
+            "∅",
+            "∞",
+            "◯",
             // Quantifiers
-            "∀", "∃",
-
+            "∀",
+            "∃",
             // Evidentiality markers
-            "!", "?", "~", "‽",
-
+            "!",
+            "?",
+            "~",
+            "‽",
             // Stdlib functions
-            "print", "println", "dbg", "assert", "panic", "todo", "unreachable",
-            "clone", "id", "default",
-            "abs", "sqrt", "pow", "sin", "cos", "tan", "asin", "acos", "atan",
-            "sinh", "cosh", "tanh", "exp", "ln", "log", "floor", "ceil", "round",
-            "min", "max", "clamp", "sign", "gcd", "lcm", "is_prime", "fibonacci",
-            "len", "push", "pop", "first", "last", "get", "set", "contains",
-            "index_of", "reverse", "sort", "unique", "flatten", "zip", "enumerate",
-            "chunks", "windows", "take", "skip", "concat",
-            "chars", "bytes", "split", "join", "trim", "upper", "lower",
-            "replace", "starts_with", "ends_with", "substring", "repeat",
-            "known", "uncertain", "reported", "paradox", "evidence_of",
-            "is_known", "strip_evidence", "trust", "verify",
-            "sum", "product", "mean", "median", "min_of", "max_of", "any", "all", "none",
-            "read_file", "write_file", "file_exists", "env", "cwd", "args",
-            "now", "now_secs", "sleep",
-            "random", "random_int", "shuffle", "sample",
-            "to_string", "to_int", "to_float", "hex", "oct", "bin", "parse_int",
-            "cycle", "mod_add", "mod_sub", "mod_mul", "mod_pow", "mod_inv",
-            "octave", "interval", "cents", "freq", "midi",
-
+            "print",
+            "println",
+            "dbg",
+            "assert",
+            "panic",
+            "todo",
+            "unreachable",
+            "clone",
+            "id",
+            "default",
+            "abs",
+            "sqrt",
+            "pow",
+            "sin",
+            "cos",
+            "tan",
+            "asin",
+            "acos",
+            "atan",
+            "sinh",
+            "cosh",
+            "tanh",
+            "exp",
+            "ln",
+            "log",
+            "floor",
+            "ceil",
+            "round",
+            "min",
+            "max",
+            "clamp",
+            "sign",
+            "gcd",
+            "lcm",
+            "is_prime",
+            "fibonacci",
+            "len",
+            "push",
+            "pop",
+            "first",
+            "last",
+            "get",
+            "set",
+            "contains",
+            "index_of",
+            "reverse",
+            "sort",
+            "unique",
+            "flatten",
+            "zip",
+            "enumerate",
+            "chunks",
+            "windows",
+            "take",
+            "skip",
+            "concat",
+            "chars",
+            "bytes",
+            "split",
+            "join",
+            "trim",
+            "upper",
+            "lower",
+            "replace",
+            "starts_with",
+            "ends_with",
+            "substring",
+            "repeat",
+            "known",
+            "uncertain",
+            "reported",
+            "paradox",
+            "evidence_of",
+            "is_known",
+            "strip_evidence",
+            "trust",
+            "verify",
+            "sum",
+            "product",
+            "mean",
+            "median",
+            "min_of",
+            "max_of",
+            "any",
+            "all",
+            "none",
+            "read_file",
+            "write_file",
+            "file_exists",
+            "env",
+            "cwd",
+            "args",
+            "now",
+            "now_secs",
+            "sleep",
+            "random",
+            "random_int",
+            "shuffle",
+            "sample",
+            "to_string",
+            "to_int",
+            "to_float",
+            "hex",
+            "oct",
+            "bin",
+            "parse_int",
+            "cycle",
+            "mod_add",
+            "mod_sub",
+            "mod_mul",
+            "mod_pow",
+            "mod_inv",
+            "octave",
+            "interval",
+            "cents",
+            "freq",
+            "midi",
             // New stdlib functions
-            "middle", "choice", "nth", "next", "peek",
-            "zip_with", "supremum", "infimum",
-
+            "middle",
+            "choice",
+            "nth",
+            "next",
+            "peek",
+            "zip_with",
+            "supremum",
+            "infimum",
             // REPL commands
-            ":help", ":ast", ":exit", ":quit", ":clear", ":type", ":symbols",
-        ].into_iter().map(String::from).collect();
+            ":help",
+            ":ast",
+            ":exit",
+            ":quit",
+            ":clear",
+            ":type",
+            ":symbols",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
 
         Self { completions }
     }
@@ -1039,7 +1298,8 @@ impl Completer for SigilHelper {
 
         let prefix = &line[start..pos];
 
-        let matches: Vec<Pair> = self.completions
+        let matches: Vec<Pair> = self
+            .completions
             .iter()
             .filter(|s| s.starts_with(prefix))
             .map(|s| Pair {
@@ -1111,7 +1371,12 @@ impl Highlighter for SigilHelper {
         _prompt: &'p str,
         _default: bool,
     ) -> Cow<'b, str> {
-        Cow::Owned(format!("{}{}λ>{} ", colors::BOLD, colors::MORPHEME, colors::RESET))
+        Cow::Owned(format!(
+            "{}{}λ>{} ",
+            colors::BOLD,
+            colors::MORPHEME,
+            colors::RESET
+        ))
     }
 
     fn highlight_char(&self, _line: &str, _pos: usize, _forced: bool) -> bool {
@@ -1127,7 +1392,8 @@ impl Validator for SigilHelper {}
 
 /// Default sigil.toml content for a new project
 fn default_manifest(name: &str) -> String {
-    format!(r#"[package]
+    format!(
+        r#"[package]
 name = "{name}"
 version = "0.1.0"
 authors = []
@@ -1150,12 +1416,14 @@ external_default = "reported"
 [[bin]]
 name = "{name}"
 path = "src/main.sigil"
-"#)
+"#
+    )
 }
 
 /// Default main.sigil for a new project
 fn default_main(name: &str) -> String {
-    format!(r#"// {name} - A Sigil project
+    format!(
+        r#"// {name} - A Sigil project
 //
 // Run with: sigil run src/main.sigil
 // Or: sigil build && ./{name}
@@ -1184,7 +1452,8 @@ fn main() {{
 
     return 0;
 }}
-"#)
+"#
+    )
 }
 
 /// Default test file for a new project
@@ -1205,7 +1474,8 @@ fn test_morpheme_pipeline() {
     let doubled = data|τ{_ * 2};
     assert_eq(doubled, [2, 4, 6]);
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Create a new Sigil project in a new directory
@@ -1279,9 +1549,21 @@ Thumbs.db
 
     println!("✓ Created Sigil project '{}'", name);
     println!();
-    println!("  {}sigil.toml{}       Project manifest", colors::DIM, colors::RESET);
-    println!("  {}src/main.sigil{} Entry point", colors::DIM, colors::RESET);
-    println!("  {}tests/{}          Test directory", colors::DIM, colors::RESET);
+    println!(
+        "  {}sigil.toml{}       Project manifest",
+        colors::DIM,
+        colors::RESET
+    );
+    println!(
+        "  {}src/main.sigil{} Entry point",
+        colors::DIM,
+        colors::RESET
+    );
+    println!(
+        "  {}tests/{}          Test directory",
+        colors::DIM,
+        colors::RESET
+    );
     println!();
     println!("Get started:");
     println!("  cd {}", name);
@@ -1365,7 +1647,11 @@ fn run_tests() -> ExitCode {
         if let Ok(entries) = fs::read_dir(tests_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map(|e| e == "sigil" || e == "sg").unwrap_or(false) {
+                if path
+                    .extension()
+                    .map(|e| e == "sigil" || e == "sg")
+                    .unwrap_or(false)
+                {
                     test_files.push(path);
                 }
             }
@@ -1398,9 +1684,13 @@ fn run_tests() -> ExitCode {
         let source = match fs::read_to_string(test_file) {
             Ok(s) => s,
             Err(e) => {
-                println!("  {}✗{} {} - read error: {}",
-                    colors::ERROR, colors::RESET,
-                    test_file.display(), e);
+                println!(
+                    "  {}✗{} {} - read error: {}",
+                    colors::ERROR,
+                    colors::RESET,
+                    test_file.display(),
+                    e
+                );
                 failed_tests += 1;
                 total_tests += 1;
                 continue;
@@ -1411,9 +1701,13 @@ fn run_tests() -> ExitCode {
         let ast = match parser.parse_file() {
             Ok(ast) => ast,
             Err(e) => {
-                println!("  {}✗{} {} - parse error: {}",
-                    colors::ERROR, colors::RESET,
-                    test_file.display(), e);
+                println!(
+                    "  {}✗{} {} - parse error: {}",
+                    colors::ERROR,
+                    colors::RESET,
+                    test_file.display(),
+                    e
+                );
                 failed_tests += 1;
                 total_tests += 1;
                 continue;
@@ -1423,9 +1717,12 @@ fn run_tests() -> ExitCode {
         // Type check
         let mut type_checker = TypeChecker::new();
         if let Err(errors) = type_checker.check_file(&ast) {
-            println!("  {}✗{} {} - type error:",
-                colors::ERROR, colors::RESET,
-                test_file.display());
+            println!(
+                "  {}✗{} {} - type error:",
+                colors::ERROR,
+                colors::RESET,
+                test_file.display()
+            );
             for err in &errors {
                 println!("      {}", err.message);
             }
@@ -1452,17 +1749,23 @@ fn run_tests() -> ExitCode {
 
             match interpreter.execute(&ast) {
                 Ok(_) => {
-                    println!("  {}✓{} {} ({} tests)",
-                        colors::GREEN, colors::RESET,
+                    println!(
+                        "  {}✓{} {} ({} tests)",
+                        colors::GREEN,
+                        colors::RESET,
                         test_file.file_stem().unwrap_or_default().to_string_lossy(),
-                        file_tests);
+                        file_tests
+                    );
                     passed_tests += file_tests;
                 }
                 Err(e) => {
-                    println!("  {}✗{} {} - runtime error: {}",
-                        colors::ERROR, colors::RESET,
+                    println!(
+                        "  {}✗{} {} - runtime error: {}",
+                        colors::ERROR,
+                        colors::RESET,
                         test_file.file_stem().unwrap_or_default().to_string_lossy(),
-                        e);
+                        e
+                    );
                     failed_tests += file_tests;
                 }
             }
@@ -1475,11 +1778,21 @@ fn run_tests() -> ExitCode {
         println!("No test functions found (functions with #[test] attribute)");
         ExitCode::SUCCESS
     } else if failed_tests == 0 {
-        println!("{}All {} tests passed!{}", colors::GREEN, total_tests, colors::RESET);
+        println!(
+            "{}All {} tests passed!{}",
+            colors::GREEN,
+            total_tests,
+            colors::RESET
+        );
         ExitCode::SUCCESS
     } else {
-        println!("{}{} passed, {} failed{}",
-            colors::ERROR, passed_tests, failed_tests, colors::RESET);
+        println!(
+            "{}{} passed, {} failed{}",
+            colors::ERROR,
+            passed_tests,
+            failed_tests,
+            colors::RESET
+        );
         ExitCode::from(1)
     }
 }
@@ -1506,7 +1819,8 @@ fn build_project() -> ExitCode {
     };
 
     // Simple TOML parsing for name
-    let name = manifest.lines()
+    let name = manifest
+        .lines()
         .find(|l| l.starts_with("name"))
         .and_then(|l| l.split('=').nth(1))
         .map(|s| s.trim().trim_matches('"'))
@@ -1581,16 +1895,33 @@ fn build_project() -> ExitCode {
 }
 
 fn repl() -> ExitCode {
-    println!("{}{}Sigil REPL v0.1.0{}", colors::BOLD, colors::MORPHEME, colors::RESET);
+    println!(
+        "{}{}Sigil REPL v0.1.0{}",
+        colors::BOLD,
+        colors::MORPHEME,
+        colors::RESET
+    );
     println!("A polysynthetic language with evidentiality types.");
     println!();
     println!("{}Commands:{}", colors::DIM, colors::RESET);
     println!("  {}:help{}     Show help", colors::KEYWORD, colors::RESET);
-    println!("  {}:ast{}      Toggle AST display", colors::KEYWORD, colors::RESET);
-    println!("  {}:clear{}    Clear screen", colors::KEYWORD, colors::RESET);
+    println!(
+        "  {}:ast{}      Toggle AST display",
+        colors::KEYWORD,
+        colors::RESET
+    );
+    println!(
+        "  {}:clear{}    Clear screen",
+        colors::KEYWORD,
+        colors::RESET
+    );
     println!("  {}:exit{}     Exit REPL", colors::KEYWORD, colors::RESET);
     println!();
-    println!("{}Press Tab for completions, ↑/↓ for history{}", colors::DIM, colors::RESET);
+    println!(
+        "{}Press Tab for completions, ↑/↓ for history{}",
+        colors::DIM,
+        colors::RESET
+    );
     println!();
 
     let config = Config::builder()
@@ -1646,10 +1977,12 @@ fn repl() -> ExitCode {
                     }
                     ":ast" => {
                         show_ast = !show_ast;
-                        println!("AST display: {}{}{}",
+                        println!(
+                            "AST display: {}{}{}",
                             colors::KEYWORD,
                             if show_ast { "on" } else { "off" },
-                            colors::RESET);
+                            colors::RESET
+                        );
                         continue;
                     }
                     _ => {}
@@ -1686,146 +2019,503 @@ fn dirs_home() -> Option<std::path::PathBuf> {
 }
 
 fn print_help() {
-    println!("{}{}Sigil REPL Commands:{}", colors::BOLD, colors::MORPHEME, colors::RESET);
+    println!(
+        "{}{}Sigil REPL Commands:{}",
+        colors::BOLD,
+        colors::MORPHEME,
+        colors::RESET
+    );
     println!();
-    println!("  {}:help{}      Show this help", colors::KEYWORD, colors::RESET);
-    println!("  {}:symbols{}   Show all Unicode symbols", colors::KEYWORD, colors::RESET);
-    println!("  {}:ast{}       Toggle AST display mode", colors::KEYWORD, colors::RESET);
-    println!("  {}:clear{}     Clear the screen", colors::KEYWORD, colors::RESET);
-    println!("  {}:exit{}      Exit the REPL", colors::KEYWORD, colors::RESET);
+    println!(
+        "  {}:help{}      Show this help",
+        colors::KEYWORD,
+        colors::RESET
+    );
+    println!(
+        "  {}:symbols{}   Show all Unicode symbols",
+        colors::KEYWORD,
+        colors::RESET
+    );
+    println!(
+        "  {}:ast{}       Toggle AST display mode",
+        colors::KEYWORD,
+        colors::RESET
+    );
+    println!(
+        "  {}:clear{}     Clear the screen",
+        colors::KEYWORD,
+        colors::RESET
+    );
+    println!(
+        "  {}:exit{}      Exit the REPL",
+        colors::KEYWORD,
+        colors::RESET
+    );
     println!();
     println!("{}{}Examples:{}", colors::BOLD, colors::TYPE, colors::RESET);
     println!();
     println!("  {}// Arithmetic{}", colors::COMMENT, colors::RESET);
-    println!("  {}1{} + {}2{} * {}3{}",
-        colors::NUMBER, colors::RESET, colors::NUMBER, colors::RESET, colors::NUMBER, colors::RESET);
+    println!(
+        "  {}1{} + {}2{} * {}3{}",
+        colors::NUMBER,
+        colors::RESET,
+        colors::NUMBER,
+        colors::RESET,
+        colors::NUMBER,
+        colors::RESET
+    );
     println!();
     println!("  {}// Variables{}", colors::COMMENT, colors::RESET);
-    println!("  {}let{} x = {}42{};", colors::KEYWORD, colors::RESET, colors::NUMBER, colors::RESET);
+    println!(
+        "  {}let{} x = {}42{};",
+        colors::KEYWORD,
+        colors::RESET,
+        colors::NUMBER,
+        colors::RESET
+    );
     println!();
-    println!("  {}// Pipe transforms (polysynthetic){}", colors::COMMENT, colors::RESET);
-    println!("  [{}1{}, {}2{}, {}3{}]|{}τ{}{{_ * {}2{}}}  {}// [2, 4, 6]{}",
-        colors::NUMBER, colors::RESET, colors::NUMBER, colors::RESET, colors::NUMBER, colors::RESET,
-        colors::MORPHEME, colors::RESET, colors::NUMBER, colors::RESET,
-        colors::COMMENT, colors::RESET);
+    println!(
+        "  {}// Pipe transforms (polysynthetic){}",
+        colors::COMMENT,
+        colors::RESET
+    );
+    println!(
+        "  [{}1{}, {}2{}, {}3{}]|{}τ{}{{_ * {}2{}}}  {}// [2, 4, 6]{}",
+        colors::NUMBER,
+        colors::RESET,
+        colors::NUMBER,
+        colors::RESET,
+        colors::NUMBER,
+        colors::RESET,
+        colors::MORPHEME,
+        colors::RESET,
+        colors::NUMBER,
+        colors::RESET,
+        colors::COMMENT,
+        colors::RESET
+    );
     println!();
-    println!("  {}// Evidentiality markers{}", colors::COMMENT, colors::RESET);
-    println!("  {}known{}({}42{})    {}// Certain value (!){}",
-        colors::FUNCTION, colors::RESET, colors::NUMBER, colors::RESET, colors::COMMENT, colors::RESET);
-    println!("  {}uncertain{}(x) {}// Uncertain value (?){}",
-        colors::FUNCTION, colors::RESET, colors::COMMENT, colors::RESET);
+    println!(
+        "  {}// Evidentiality markers{}",
+        colors::COMMENT,
+        colors::RESET
+    );
+    println!(
+        "  {}known{}({}42{})    {}// Certain value (!){}",
+        colors::FUNCTION,
+        colors::RESET,
+        colors::NUMBER,
+        colors::RESET,
+        colors::COMMENT,
+        colors::RESET
+    );
+    println!(
+        "  {}uncertain{}(x) {}// Uncertain value (?){}",
+        colors::FUNCTION,
+        colors::RESET,
+        colors::COMMENT,
+        colors::RESET
+    );
     println!();
     println!("  {}// Functions{}", colors::COMMENT, colors::RESET);
-    println!("  {}fn{} add(a, b) {{ a + b }}", colors::KEYWORD, colors::RESET);
+    println!(
+        "  {}fn{} add(a, b) {{ a + b }}",
+        colors::KEYWORD,
+        colors::RESET
+    );
     println!();
-    println!("{}{}Morphemes:{}", colors::BOLD, colors::MORPHEME, colors::RESET);
-    println!("  {}τ{} transform  {}φ{} filter  {}σ{} sort  {}ρ{} reduce  {}λ{} lambda",
-        colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET,
-        colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET,
-        colors::MORPHEME, colors::RESET);
+    println!(
+        "{}{}Morphemes:{}",
+        colors::BOLD,
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}τ{} transform  {}φ{} filter  {}σ{} sort  {}ρ{} reduce  {}λ{} lambda",
+        colors::MORPHEME,
+        colors::RESET,
+        colors::MORPHEME,
+        colors::RESET,
+        colors::MORPHEME,
+        colors::RESET,
+        colors::MORPHEME,
+        colors::RESET,
+        colors::MORPHEME,
+        colors::RESET
+    );
     println!();
-    println!("Type {}:symbols{} for a complete symbol reference.", colors::KEYWORD, colors::RESET);
+    println!(
+        "Type {}:symbols{} for a complete symbol reference.",
+        colors::KEYWORD,
+        colors::RESET
+    );
     println!();
 }
 
 fn print_symbols() {
-    println!("{}{}Sigil Unicode Symbols Reference{}", colors::BOLD, colors::MORPHEME, colors::RESET);
+    println!(
+        "{}{}Sigil Unicode Symbols Reference{}",
+        colors::BOLD,
+        colors::MORPHEME,
+        colors::RESET
+    );
     println!();
 
     // Transform Morphemes
-    println!("{}{}Transform Morphemes (Pipe Syntax: data|morpheme):{}", colors::BOLD, colors::MORPHEME, colors::RESET);
-    println!("  {}τ{}/{}Τ{}  transform/map   data|τ{{_ * 2}}", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
-    println!("  {}φ{}/{}Φ{}  filter          data|φ{{_ > 0}}", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
-    println!("  {}σ{}     sort            data|σ", colors::MORPHEME, colors::RESET);
-    println!("  {}Σ{}     sum             data|Σ", colors::MORPHEME, colors::RESET);
-    println!("  {}ρ{}/{}Ρ{}  reduce/fold     data|ρ{{acc + _}}", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
-    println!("  {}λ{}/{}Λ{}  lambda          λ x -> x + 1", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
-    println!("  {}Π{}     product         data|Π", colors::MORPHEME, colors::RESET);
+    println!(
+        "{}{}Transform Morphemes (Pipe Syntax: data|morpheme):{}",
+        colors::BOLD,
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}τ{}/{}Τ{}  transform/map   data|τ{{_ * 2}}",
+        colors::MORPHEME,
+        colors::RESET,
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}φ{}/{}Φ{}  filter          data|φ{{_ > 0}}",
+        colors::MORPHEME,
+        colors::RESET,
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}σ{}     sort            data|σ",
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}Σ{}     sum             data|Σ",
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}ρ{}/{}Ρ{}  reduce/fold     data|ρ{{acc + _}}",
+        colors::MORPHEME,
+        colors::RESET,
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}λ{}/{}Λ{}  lambda          λ x -> x + 1",
+        colors::MORPHEME,
+        colors::RESET,
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}Π{}     product         data|Π",
+        colors::MORPHEME,
+        colors::RESET
+    );
     println!();
 
     // Access Morphemes
-    println!("{}{}Access Morphemes (Pipe Syntax: data|morpheme):{}", colors::BOLD, colors::MORPHEME, colors::RESET);
-    println!("  {}α{}     first element   data|α", colors::MORPHEME, colors::RESET);
-    println!("  {}ω{}/{}Ω{}  last element    data|ω", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
-    println!("  {}μ{}/{}Μ{}  middle/median   data|μ", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
-    println!("  {}χ{}/{}Χ{}  random choice   data|χ", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
-    println!("  {}ν{}/{}Ν{}  nth element     data|ν{{2}}", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
-    println!("  {}ξ{}/{}Ξ{}  next in iter    data|ξ", colors::MORPHEME, colors::RESET, colors::MORPHEME, colors::RESET);
+    println!(
+        "{}{}Access Morphemes (Pipe Syntax: data|morpheme):{}",
+        colors::BOLD,
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}α{}     first element   data|α",
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}ω{}/{}Ω{}  last element    data|ω",
+        colors::MORPHEME,
+        colors::RESET,
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}μ{}/{}Μ{}  middle/median   data|μ",
+        colors::MORPHEME,
+        colors::RESET,
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}χ{}/{}Χ{}  random choice   data|χ",
+        colors::MORPHEME,
+        colors::RESET,
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}ν{}/{}Ν{}  nth element     data|ν{{2}}",
+        colors::MORPHEME,
+        colors::RESET,
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}ξ{}/{}Ξ{}  next in iter    data|ξ",
+        colors::MORPHEME,
+        colors::RESET,
+        colors::MORPHEME,
+        colors::RESET
+    );
     println!();
 
     // Evidentiality
-    println!("{}{}Evidentiality Markers:{}", colors::BOLD, colors::EVIDENCE, colors::RESET);
-    println!("  {}!{}  known/direct     let x{}!{} = verified();", colors::EVIDENCE, colors::RESET, colors::EVIDENCE, colors::RESET);
-    println!("  {}?{}  uncertain        let x{}?{} = maybe_get();", colors::EVIDENCE, colors::RESET, colors::EVIDENCE, colors::RESET);
-    println!("  {}~{}  reported         let x{}~{} = fetch_api();", colors::EVIDENCE, colors::RESET, colors::EVIDENCE, colors::RESET);
-    println!("  {}‽{}  paradox          let x{}‽{} = contradict();", colors::EVIDENCE, colors::RESET, colors::EVIDENCE, colors::RESET);
+    println!(
+        "{}{}Evidentiality Markers:{}",
+        colors::BOLD,
+        colors::EVIDENCE,
+        colors::RESET
+    );
+    println!(
+        "  {}!{}  known/direct     let x{}!{} = verified();",
+        colors::EVIDENCE,
+        colors::RESET,
+        colors::EVIDENCE,
+        colors::RESET
+    );
+    println!(
+        "  {}?{}  uncertain        let x{}?{} = maybe_get();",
+        colors::EVIDENCE,
+        colors::RESET,
+        colors::EVIDENCE,
+        colors::RESET
+    );
+    println!(
+        "  {}~{}  reported         let x{}~{} = fetch_api();",
+        colors::EVIDENCE,
+        colors::RESET,
+        colors::EVIDENCE,
+        colors::RESET
+    );
+    println!(
+        "  {}‽{}  paradox          let x{}‽{} = contradict();",
+        colors::EVIDENCE,
+        colors::RESET,
+        colors::EVIDENCE,
+        colors::RESET
+    );
     println!();
 
     // Logic Operators
-    println!("{}{}Logic Operators:{}", colors::BOLD, colors::OPERATOR, colors::RESET);
-    println!("  {}∧{}  AND (&&)        a ∧ b", colors::OPERATOR, colors::RESET);
-    println!("  {}∨{}  OR (||)         a ∨ b", colors::OPERATOR, colors::RESET);
-    println!("  {}¬{}  NOT (!)         ¬a", colors::OPERATOR, colors::RESET);
-    println!("  {}⊻{}  XOR             a ⊻ b", colors::OPERATOR, colors::RESET);
+    println!(
+        "{}{}Logic Operators:{}",
+        colors::BOLD,
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}∧{}  AND (&&)        a ∧ b",
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}∨{}  OR (||)         a ∨ b",
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}¬{}  NOT (!)         ¬a",
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}⊻{}  XOR             a ⊻ b",
+        colors::OPERATOR,
+        colors::RESET
+    );
     println!("  {}⊤{}  true/top", colors::OPERATOR, colors::RESET);
     println!("  {}⊥{}  false/bottom", colors::OPERATOR, colors::RESET);
     println!();
 
     // Bitwise Operators
-    println!("{}{}Bitwise Operators:{}", colors::BOLD, colors::OPERATOR, colors::RESET);
-    println!("  {}⋏{}  AND (&)         a ⋏ b", colors::OPERATOR, colors::RESET);
-    println!("  {}⋎{}  OR              a ⋎ b", colors::OPERATOR, colors::RESET);
+    println!(
+        "{}{}Bitwise Operators:{}",
+        colors::BOLD,
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}⋏{}  AND (&)         a ⋏ b",
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}⋎{}  OR              a ⋎ b",
+        colors::OPERATOR,
+        colors::RESET
+    );
     println!();
 
     // Set Operators
-    println!("{}{}Set Operators:{}", colors::BOLD, colors::OPERATOR, colors::RESET);
-    println!("  {}∪{}  union           a ∪ b", colors::OPERATOR, colors::RESET);
-    println!("  {}∩{}  intersection    a ∩ b", colors::OPERATOR, colors::RESET);
-    println!("  {}∖{}  difference      a ∖ b", colors::OPERATOR, colors::RESET);
-    println!("  {}⊂{}  proper subset   a ⊂ b", colors::OPERATOR, colors::RESET);
-    println!("  {}⊆{}  subset/equal    a ⊆ b", colors::OPERATOR, colors::RESET);
-    println!("  {}∈{}  element of      x ∈ set", colors::OPERATOR, colors::RESET);
-    println!("  {}∉{}  not element of  x ∉ set", colors::OPERATOR, colors::RESET);
+    println!(
+        "{}{}Set Operators:{}",
+        colors::BOLD,
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}∪{}  union           a ∪ b",
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}∩{}  intersection    a ∩ b",
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}∖{}  difference      a ∖ b",
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}⊂{}  proper subset   a ⊂ b",
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}⊆{}  subset/equal    a ⊆ b",
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}∈{}  element of      x ∈ set",
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}∉{}  not element of  x ∉ set",
+        colors::OPERATOR,
+        colors::RESET
+    );
     println!();
 
     // Data Operations
-    println!("{}{}Data Operations:{}", colors::BOLD, colors::SPECIAL, colors::RESET);
-    println!("  {}⋈{}  zip with op     zip_with(a, b, \"add\")", colors::SPECIAL, colors::RESET);
-    println!("  {}⋳{}  flatten         flatten(nested)", colors::SPECIAL, colors::RESET);
-    println!("  {}⊔{}  supremum/max    supremum(a, b)", colors::SPECIAL, colors::RESET);
-    println!("  {}⊓{}  infimum/min     infimum(a, b)", colors::SPECIAL, colors::RESET);
+    println!(
+        "{}{}Data Operations:{}",
+        colors::BOLD,
+        colors::SPECIAL,
+        colors::RESET
+    );
+    println!(
+        "  {}⋈{}  zip with op     zip_with(a, b, \"add\")",
+        colors::SPECIAL,
+        colors::RESET
+    );
+    println!(
+        "  {}⋳{}  flatten         flatten(nested)",
+        colors::SPECIAL,
+        colors::RESET
+    );
+    println!(
+        "  {}⊔{}  supremum/max    supremum(a, b)",
+        colors::SPECIAL,
+        colors::RESET
+    );
+    println!(
+        "  {}⊓{}  infimum/min     infimum(a, b)",
+        colors::SPECIAL,
+        colors::RESET
+    );
     println!();
 
     // Math Operations
-    println!("{}{}Math Operations:{}", colors::BOLD, colors::OPERATOR, colors::RESET);
-    println!("  {}∘{}  compose         f ∘ g", colors::OPERATOR, colors::RESET);
-    println!("  {}⊗{}  tensor          a ⊗ b", colors::OPERATOR, colors::RESET);
-    println!("  {}⊕{}  direct sum      a ⊕ b", colors::OPERATOR, colors::RESET);
+    println!(
+        "{}{}Math Operations:{}",
+        colors::BOLD,
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}∘{}  compose         f ∘ g",
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}⊗{}  tensor          a ⊗ b",
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}⊕{}  direct sum      a ⊕ b",
+        colors::OPERATOR,
+        colors::RESET
+    );
     println!("  {}∫{}  integral/cumsum", colors::OPERATOR, colors::RESET);
     println!("  {}∂{}  partial/deriv", colors::OPERATOR, colors::RESET);
-    println!("  {}√{}  sqrt            √x", colors::OPERATOR, colors::RESET);
-    println!("  {}∛{}  cbrt            ∛x", colors::OPERATOR, colors::RESET);
+    println!(
+        "  {}√{}  sqrt            √x",
+        colors::OPERATOR,
+        colors::RESET
+    );
+    println!(
+        "  {}∛{}  cbrt            ∛x",
+        colors::OPERATOR,
+        colors::RESET
+    );
     println!();
 
     // Special Literals
-    println!("{}{}Special Literals:{}", colors::BOLD, colors::SPECIAL, colors::RESET);
-    println!("  {}∅{}  empty/void      let x = ∅;", colors::SPECIAL, colors::RESET);
-    println!("  {}∞{}  infinity        let x = ∞;", colors::SPECIAL, colors::RESET);
+    println!(
+        "{}{}Special Literals:{}",
+        colors::BOLD,
+        colors::SPECIAL,
+        colors::RESET
+    );
+    println!(
+        "  {}∅{}  empty/void      let x = ∅;",
+        colors::SPECIAL,
+        colors::RESET
+    );
+    println!(
+        "  {}∞{}  infinity        let x = ∞;",
+        colors::SPECIAL,
+        colors::RESET
+    );
     println!("  {}◯{}  geometric zero", colors::SPECIAL, colors::RESET);
     println!();
 
     // Quantifiers
-    println!("{}{}Quantifiers:{}", colors::BOLD, colors::OPERATOR, colors::RESET);
+    println!(
+        "{}{}Quantifiers:{}",
+        colors::BOLD,
+        colors::OPERATOR,
+        colors::RESET
+    );
     println!("  {}∀{}  for all", colors::OPERATOR, colors::RESET);
     println!("  {}∃{}  exists", colors::OPERATOR, colors::RESET);
     println!();
 
     // Aspect Morphemes
-    println!("{}{}Aspect Suffixes (Function naming):{}", colors::BOLD, colors::MORPHEME, colors::RESET);
-    println!("  {}·ing{}  progressive   fn read·ing() -> Stream", colors::MORPHEME, colors::RESET);
-    println!("  {}·ed{}   perfective    fn process·ed() -> Result", colors::MORPHEME, colors::RESET);
-    println!("  {}·able{} potential     fn parse·able() -> Bool", colors::MORPHEME, colors::RESET);
-    println!("  {}·ive{}  resultative   fn destruct·ive() -> Parts", colors::MORPHEME, colors::RESET);
+    println!(
+        "{}{}Aspect Suffixes (Function naming):{}",
+        colors::BOLD,
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}·ing{}  progressive   fn read·ing() -> Stream",
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}·ed{}   perfective    fn process·ed() -> Result",
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}·able{} potential     fn parse·able() -> Bool",
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!(
+        "  {}·ive{}  resultative   fn destruct·ive() -> Parts",
+        colors::MORPHEME,
+        colors::RESET
+    );
     println!();
 }
 
@@ -1865,9 +2555,8 @@ fn evaluate_input(interpreter: &mut Interpreter, input: &str, show_ast: bool) {
                         match interpreter.execute(&ast) {
                             Ok(_) => {
                                 // Call __repl__ to get the result
-                                let repl_fn = interpreter.globals.borrow()
-                                    .get("__repl__")
-                                    .and_then(|v| {
+                                let repl_fn =
+                                    interpreter.globals.borrow().get("__repl__").and_then(|v| {
                                         if let sigil_parser::Value::Function(f) = v {
                                             Some(f.clone())
                                         } else {
@@ -1878,10 +2567,20 @@ fn evaluate_input(interpreter: &mut Interpreter, input: &str, show_ast: bool) {
                                     match interpreter.call_function(&f, vec![]) {
                                         Ok(value) => {
                                             if !matches!(value, sigil_parser::Value::Null) {
-                                                println!("{}=> {}{}", colors::DIM, colors::RESET, value);
+                                                println!(
+                                                    "{}=> {}{}",
+                                                    colors::DIM,
+                                                    colors::RESET,
+                                                    value
+                                                );
                                             }
                                         }
-                                        Err(e) => eprintln!("{}Error: {}{}", colors::SPECIAL, e, colors::RESET),
+                                        Err(e) => eprintln!(
+                                            "{}Error: {}{}",
+                                            colors::SPECIAL,
+                                            e,
+                                            colors::RESET
+                                        ),
                                     }
                                 }
                             }

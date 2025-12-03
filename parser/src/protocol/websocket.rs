@@ -303,7 +303,11 @@ pub struct WebSocket {
     /// Negotiated subprotocol
     subprotocol: Option<String>,
     #[cfg(feature = "tokio-tungstenite")]
-    inner: Option<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>,
+    inner: Option<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    >,
 }
 
 impl WebSocket {
@@ -325,7 +329,9 @@ impl WebSocket {
     #[cfg(not(feature = "tokio-tungstenite"))]
     pub async fn connect(url: impl Into<String>) -> ProtocolResult<Self> {
         let _ = url;
-        Err(ProtocolError::Protocol("WebSocket requires 'websocket' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "WebSocket requires 'websocket' feature".to_string(),
+        ))
     }
 
     /// Get the connection URL
@@ -375,7 +381,9 @@ impl WebSocket {
         };
 
         if let Some(ref mut inner) = self.inner {
-            inner.send(msg).await
+            inner
+                .send(msg)
+                .await
                 .map_err(|e| ProtocolError::Protocol(e.to_string()))?;
         }
 
@@ -386,7 +394,9 @@ impl WebSocket {
     #[cfg(not(feature = "tokio-tungstenite"))]
     pub async fn send(&mut self, message: Message) -> ProtocolResult<()> {
         let _ = message;
-        Err(ProtocolError::Protocol("WebSocket requires 'websocket' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "WebSocket requires 'websocket' feature".to_string(),
+        ))
     }
 
     /// Receive a message
@@ -435,7 +445,9 @@ impl WebSocket {
     /// Receive a message (stub for non-tungstenite builds)
     #[cfg(not(feature = "tokio-tungstenite"))]
     pub async fn recv(&mut self) -> ProtocolResult<Option<Message>> {
-        Err(ProtocolError::Protocol("WebSocket requires 'websocket' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "WebSocket requires 'websocket' feature".to_string(),
+        ))
     }
 
     /// Send a text message
@@ -454,7 +466,11 @@ impl WebSocket {
     }
 
     /// Close the connection
-    pub async fn close(&mut self, code: CloseCode, reason: impl Into<String>) -> ProtocolResult<()> {
+    pub async fn close(
+        &mut self,
+        code: CloseCode,
+        reason: impl Into<String>,
+    ) -> ProtocolResult<()> {
         if self.state != ConnectionState::Open {
             return Ok(());
         }
@@ -537,7 +553,8 @@ impl WebSocketBuilder {
     pub async fn connect(self) -> ProtocolResult<WebSocket> {
         use tokio_tungstenite::connect_async;
 
-        let (ws_stream, _response) = connect_async(&self.url).await
+        let (ws_stream, _response) = connect_async(&self.url)
+            .await
             .map_err(|e| ProtocolError::ConnectionFailed(e.to_string()))?;
 
         Ok(WebSocket {
@@ -552,7 +569,9 @@ impl WebSocketBuilder {
     /// Connect to the WebSocket server (stub for non-tungstenite builds)
     #[cfg(not(feature = "tokio-tungstenite"))]
     pub async fn connect(self) -> ProtocolResult<WebSocket> {
-        Err(ProtocolError::Protocol("WebSocket requires 'websocket' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "WebSocket requires 'websocket' feature".to_string(),
+        ))
     }
 }
 
@@ -637,7 +656,10 @@ impl ReconnectingWebSocket {
 
     /// Check if connected
     pub fn is_connected(&self) -> bool {
-        self.connection.as_ref().map(|c| c.is_open()).unwrap_or(false)
+        self.connection
+            .as_ref()
+            .map(|c| c.is_open())
+            .unwrap_or(false)
     }
 
     /// Get the current connection
@@ -648,7 +670,9 @@ impl ReconnectingWebSocket {
     /// Calculate the delay for the next reconnection attempt
     fn next_delay(&self) -> Duration {
         let delay = self.reconnect_config.initial_delay.mul_f64(
-            self.reconnect_config.multiplier.powi(self.attempt_count as i32)
+            self.reconnect_config
+                .multiplier
+                .powi(self.attempt_count as i32),
         );
         delay.min(self.reconnect_config.max_delay)
     }
@@ -657,9 +681,10 @@ impl ReconnectingWebSocket {
     pub async fn reconnect(&mut self) -> ProtocolResult<()> {
         if let Some(max) = self.reconnect_config.max_attempts {
             if self.attempt_count >= max {
-                return Err(ProtocolError::ConnectionFailed(
-                    format!("Max reconnection attempts ({}) exceeded", max)
-                ));
+                return Err(ProtocolError::ConnectionFailed(format!(
+                    "Max reconnection attempts ({}) exceeded",
+                    max
+                )));
             }
         }
 
@@ -711,7 +736,10 @@ mod tests {
             .connect_timeout(Duration::from_secs(10));
 
         assert_eq!(builder.url, "wss://example.com/socket");
-        assert!(builder.config.subprotocols.contains(&"graphql-transport-ws".to_string()));
+        assert!(builder
+            .config
+            .subprotocols
+            .contains(&"graphql-transport-ws".to_string()));
     }
 
     #[test]
@@ -723,8 +751,7 @@ mod tests {
             max_attempts: Some(5),
         };
 
-        let ws = ReconnectingWebSocket::new("wss://example.com")
-            .reconnect_config(config);
+        let ws = ReconnectingWebSocket::new("wss://example.com").reconnect_config(config);
 
         assert_eq!(ws.reconnect_config.max_attempts, Some(5));
     }

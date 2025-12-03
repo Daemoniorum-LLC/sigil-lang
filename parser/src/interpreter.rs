@@ -4,11 +4,11 @@
 
 use crate::ast::*;
 use crate::span::Span;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
-use std::cell::RefCell;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 
 /// Runtime value in Sigil.
@@ -143,24 +143,24 @@ impl Clone for ChannelInner {
 /// For true async actors, use the JIT backend
 pub struct ActorInner {
     pub name: String,
-    pub message_queue: Mutex<Vec<(String, String)>>,  // (msg_type, serialized_data)
+    pub message_queue: Mutex<Vec<(String, String)>>, // (msg_type, serialized_data)
     pub message_count: std::sync::atomic::AtomicUsize,
 }
 
 /// Evidence level at runtime
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Evidence {
-    Known,      // !
-    Uncertain,  // ?
-    Reported,   // ~
-    Paradox,    // ‽
+    Known,     // !
+    Uncertain, // ?
+    Reported,  // ~
+    Paradox,   // ‽
 }
 
 /// Runtime affect markers for sentiment and emotion tracking
 #[derive(Debug, Clone, PartialEq)]
 pub struct RuntimeAffect {
     pub sentiment: Option<RuntimeSentiment>,
-    pub sarcasm: bool,           // ⸮
+    pub sarcasm: bool, // ⸮
     pub intensity: Option<RuntimeIntensity>,
     pub formality: Option<RuntimeFormality>,
     pub emotion: Option<RuntimeEmotion>,
@@ -169,9 +169,9 @@ pub struct RuntimeAffect {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeSentiment {
-    Positive,  // ⊕
-    Negative,  // ⊖
-    Neutral,   // ⊜
+    Positive, // ⊕
+    Negative, // ⊖
+    Neutral,  // ⊜
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -232,7 +232,9 @@ impl fmt::Debug for Value {
                 let arr = arr.borrow();
                 write!(f, "[")?;
                 for (i, v) in arr.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{:?}", v)?;
                 }
                 write!(f, "]")
@@ -240,7 +242,9 @@ impl fmt::Debug for Value {
             Value::Tuple(vals) => {
                 write!(f, "(")?;
                 for (i, v) in vals.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{:?}", v)?;
                 }
                 write!(f, ")")
@@ -249,17 +253,25 @@ impl fmt::Debug for Value {
                 write!(f, "{} {{ ", name)?;
                 let fields = fields.borrow();
                 for (i, (k, v)) in fields.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}: {:?}", k, v)?;
                 }
                 write!(f, " }}")
             }
-            Value::Variant { enum_name, variant_name, fields } => {
+            Value::Variant {
+                enum_name,
+                variant_name,
+                fields,
+            } => {
                 write!(f, "{}::{}", enum_name, variant_name)?;
                 if let Some(fields) = fields {
                     write!(f, "(")?;
                     for (i, v) in fields.iter().enumerate() {
-                        if i > 0 { write!(f, ", ")?; }
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
                         write!(f, "{:?}", v)?;
                     }
                     write!(f, ")")?;
@@ -286,7 +298,9 @@ impl fmt::Debug for Value {
                 let map = map.borrow();
                 write!(f, "{{")?;
                 for (i, (k, v)) in map.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{:?}: {:?}", k, v)?;
                 }
                 write!(f, "}}")
@@ -295,7 +309,9 @@ impl fmt::Debug for Value {
                 let set = set.borrow();
                 write!(f, "Set{{")?;
                 for (i, k) in set.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{:?}", k)?;
                 }
                 write!(f, "}}")
@@ -321,7 +337,9 @@ impl fmt::Debug for Value {
                         RuntimeSentiment::Neutral => write!(f, "⊜")?,
                     }
                 }
-                if affect.sarcasm { write!(f, "⸮")?; }
+                if affect.sarcasm {
+                    write!(f, "⸮")?;
+                }
                 if let Some(i) = &affect.intensity {
                     match i {
                         RuntimeIntensity::Up => write!(f, "↑")?,
@@ -371,7 +389,9 @@ impl fmt::Display for Value {
                 let arr = arr.borrow();
                 write!(f, "[")?;
                 for (i, v) in arr.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", v)?;
                 }
                 write!(f, "]")
@@ -387,7 +407,9 @@ impl fmt::Display for Value {
                         RuntimeSentiment::Neutral => '⊜',
                     });
                 }
-                if affect.sarcasm { suffix.push('⸮'); }
+                if affect.sarcasm {
+                    suffix.push('⸮');
+                }
                 if let Some(int) = &affect.intensity {
                     suffix.push(match int {
                         RuntimeIntensity::Up => '↑',
@@ -641,66 +663,52 @@ impl Interpreter {
         });
 
         // Array operations
-        self.define_builtin("len", Some(1), |_, args| {
-            match &args[0] {
-                Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
-                Value::String(s) => Ok(Value::Int(s.len() as i64)),
-                Value::Tuple(t) => Ok(Value::Int(t.len() as i64)),
-                _ => Err(RuntimeError::new("len() requires array, string, or tuple")),
-            }
+        self.define_builtin("len", Some(1), |_, args| match &args[0] {
+            Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
+            Value::String(s) => Ok(Value::Int(s.len() as i64)),
+            Value::Tuple(t) => Ok(Value::Int(t.len() as i64)),
+            _ => Err(RuntimeError::new("len() requires array, string, or tuple")),
         });
 
-        self.define_builtin("push", Some(2), |_, args| {
-            match &args[0] {
-                Value::Array(arr) => {
-                    arr.borrow_mut().push(args[1].clone());
-                    Ok(Value::Null)
-                }
-                _ => Err(RuntimeError::new("push() requires array")),
+        self.define_builtin("push", Some(2), |_, args| match &args[0] {
+            Value::Array(arr) => {
+                arr.borrow_mut().push(args[1].clone());
+                Ok(Value::Null)
             }
+            _ => Err(RuntimeError::new("push() requires array")),
         });
 
-        self.define_builtin("pop", Some(1), |_, args| {
-            match &args[0] {
-                Value::Array(arr) => {
-                    arr.borrow_mut().pop()
-                        .ok_or_else(|| RuntimeError::new("pop() on empty array"))
-                }
-                _ => Err(RuntimeError::new("pop() requires array")),
-            }
+        self.define_builtin("pop", Some(1), |_, args| match &args[0] {
+            Value::Array(arr) => arr
+                .borrow_mut()
+                .pop()
+                .ok_or_else(|| RuntimeError::new("pop() on empty array")),
+            _ => Err(RuntimeError::new("pop() requires array")),
         });
 
         // Math functions
-        self.define_builtin("abs", Some(1), |_, args| {
-            match &args[0] {
-                Value::Int(n) => Ok(Value::Int(n.abs())),
-                Value::Float(n) => Ok(Value::Float(n.abs())),
-                _ => Err(RuntimeError::new("abs() requires number")),
-            }
+        self.define_builtin("abs", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Int(n.abs())),
+            Value::Float(n) => Ok(Value::Float(n.abs())),
+            _ => Err(RuntimeError::new("abs() requires number")),
         });
 
-        self.define_builtin("sqrt", Some(1), |_, args| {
-            match &args[0] {
-                Value::Int(n) => Ok(Value::Float((*n as f64).sqrt())),
-                Value::Float(n) => Ok(Value::Float(n.sqrt())),
-                _ => Err(RuntimeError::new("sqrt() requires number")),
-            }
+        self.define_builtin("sqrt", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).sqrt())),
+            Value::Float(n) => Ok(Value::Float(n.sqrt())),
+            _ => Err(RuntimeError::new("sqrt() requires number")),
         });
 
-        self.define_builtin("sin", Some(1), |_, args| {
-            match &args[0] {
-                Value::Int(n) => Ok(Value::Float((*n as f64).sin())),
-                Value::Float(n) => Ok(Value::Float(n.sin())),
-                _ => Err(RuntimeError::new("sin() requires number")),
-            }
+        self.define_builtin("sin", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).sin())),
+            Value::Float(n) => Ok(Value::Float(n.sin())),
+            _ => Err(RuntimeError::new("sin() requires number")),
         });
 
-        self.define_builtin("cos", Some(1), |_, args| {
-            match &args[0] {
-                Value::Int(n) => Ok(Value::Float((*n as f64).cos())),
-                Value::Float(n) => Ok(Value::Float(n.cos())),
-                _ => Err(RuntimeError::new("cos() requires number")),
-            }
+        self.define_builtin("cos", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).cos())),
+            Value::Float(n) => Ok(Value::Float(n.cos())),
+            _ => Err(RuntimeError::new("cos() requires number")),
         });
 
         // Evidence operations
@@ -781,15 +789,19 @@ impl Interpreter {
         match item {
             Item::Function(func) => {
                 let fn_value = self.create_function(func)?;
-                self.globals.borrow_mut().define(func.name.name.clone(), fn_value);
+                self.globals
+                    .borrow_mut()
+                    .define(func.name.name.clone(), fn_value);
                 Ok(Value::Null)
             }
             Item::Struct(s) => {
-                self.types.insert(s.name.name.clone(), TypeDef::Struct(s.clone()));
+                self.types
+                    .insert(s.name.name.clone(), TypeDef::Struct(s.clone()));
                 Ok(Value::Null)
             }
             Item::Enum(e) => {
-                self.types.insert(e.name.name.clone(), TypeDef::Enum(e.clone()));
+                self.types
+                    .insert(e.name.name.clone(), TypeDef::Enum(e.clone()));
                 Ok(Value::Null)
             }
             Item::Const(c) => {
@@ -807,14 +819,18 @@ impl Interpreter {
     }
 
     fn create_function(&self, func: &crate::ast::Function) -> Result<Value, RuntimeError> {
-        let params: Vec<String> = func.params.iter().map(|p| {
-            match &p.pattern {
+        let params: Vec<String> = func
+            .params
+            .iter()
+            .map(|p| match &p.pattern {
                 Pattern::Ident { name, .. } => name.name.clone(),
                 _ => "_".to_string(),
-            }
-        }).collect();
+            })
+            .collect();
 
-        let body = func.body.as_ref()
+        let body = func
+            .body
+            .as_ref()
             .map(|b| Expr::Block(b.clone()))
             .unwrap_or(Expr::Literal(Literal::Bool(false)));
 
@@ -837,11 +853,17 @@ impl Interpreter {
             Expr::Array(elements) => self.eval_array(elements),
             Expr::Tuple(elements) => self.eval_tuple(elements),
             Expr::Block(block) => self.eval_block(block),
-            Expr::If { condition, then_branch, else_branch } => {
-                self.eval_if(condition, then_branch, else_branch)
-            }
+            Expr::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => self.eval_if(condition, then_branch, else_branch),
             Expr::Match { expr, arms } => self.eval_match(expr, arms),
-            Expr::For { pattern, iter, body } => self.eval_for(pattern, iter, body),
+            Expr::For {
+                pattern,
+                iter,
+                body,
+            } => self.eval_for(pattern, iter, body),
             Expr::While { condition, body } => self.eval_while(condition, body),
             Expr::Loop(body) => self.eval_loop(body),
             Expr::Return(value) => self.eval_return(value),
@@ -849,20 +871,32 @@ impl Interpreter {
             Expr::Continue => Err(RuntimeError::new("continue outside loop")),
             Expr::Index { expr, index } => self.eval_index(expr, index),
             Expr::Field { expr, field } => self.eval_field(expr, field),
-            Expr::MethodCall { receiver, method, args } => {
-                self.eval_method_call(receiver, method, args)
-            }
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => self.eval_method_call(receiver, method, args),
             Expr::Pipe { expr, operations } => self.eval_pipe(expr, operations),
             Expr::Closure { params, body } => self.eval_closure(params, body),
             Expr::Struct { path, fields, rest } => self.eval_struct_literal(path, fields, rest),
-            Expr::Evidential { expr, evidentiality } => self.eval_evidential(expr, evidentiality),
-            Expr::Range { start, end, inclusive } => self.eval_range(start, end, *inclusive),
+            Expr::Evidential {
+                expr,
+                evidentiality,
+            } => self.eval_evidential(expr, evidentiality),
+            Expr::Range {
+                start,
+                end,
+                inclusive,
+            } => self.eval_range(start, end, *inclusive),
             Expr::Assign { target, value } => self.eval_assign(target, value),
             Expr::Await(inner) => {
                 let value = self.evaluate(inner)?;
                 self.await_value(value)
             }
-            _ => Err(RuntimeError::new(format!("Unsupported expression: {:?}", expr))),
+            _ => Err(RuntimeError::new(format!(
+                "Unsupported expression: {:?}",
+                expr
+            ))),
         }
     }
 
@@ -887,8 +921,9 @@ impl Interpreter {
                 if let Expr::Path(path) = expr.as_ref() {
                     if path.segments.len() == 1 {
                         let name = &path.segments[0].ident.name;
-                        let current = self.environment.borrow().get(name)
-                            .ok_or_else(|| RuntimeError::new(format!("Undefined variable: {}", name)))?;
+                        let current = self.environment.borrow().get(name).ok_or_else(|| {
+                            RuntimeError::new(format!("Undefined variable: {}", name))
+                        })?;
 
                         if let Value::Array(arr) = current {
                             let borrowed = arr.borrow();
@@ -896,7 +931,9 @@ impl Interpreter {
                             drop(borrowed);
                             if idx < new_arr.len() {
                                 new_arr[idx] = val.clone();
-                                self.environment.borrow_mut().set(name, Value::Array(Rc::new(RefCell::new(new_arr))))?;
+                                self.environment
+                                    .borrow_mut()
+                                    .set(name, Value::Array(Rc::new(RefCell::new(new_arr))))?;
                                 return Ok(val);
                             }
                         }
@@ -915,9 +952,9 @@ impl Interpreter {
                 Ok(Value::Int(n))
             }
             Literal::Float { value, .. } => {
-                let n: f64 = value.parse().map_err(|_| {
-                    RuntimeError::new(format!("Invalid float: {}", value))
-                })?;
+                let n: f64 = value
+                    .parse()
+                    .map_err(|_| RuntimeError::new(format!("Invalid float: {}", value)))?;
                 Ok(Value::Float(n))
             }
             Literal::String(s) => Ok(Value::String(Rc::new(s.clone()))),
@@ -963,31 +1000,34 @@ impl Interpreter {
 
     fn parse_int(&self, value: &str, base: &NumBase) -> Result<i64, RuntimeError> {
         let (radix, prefix_len) = match base {
-            NumBase::Binary => (2, 2),      // 0b
-            NumBase::Octal => (8, 2),       // 0o
+            NumBase::Binary => (2, 2), // 0b
+            NumBase::Octal => (8, 2),  // 0o
             NumBase::Decimal => (10, 0),
-            NumBase::Hex => (16, 2),        // 0x
-            NumBase::Vigesimal => (20, 2),  // 0v
+            NumBase::Hex => (16, 2),         // 0x
+            NumBase::Vigesimal => (20, 2),   // 0v
             NumBase::Sexagesimal => (60, 2), // 0s
-            NumBase::Duodecimal => (12, 2), // 0z
+            NumBase::Duodecimal => (12, 2),  // 0z
             NumBase::Explicit(b) => (*b as u32, 0),
         };
 
         let clean = value[prefix_len..].replace('_', "");
-        i64::from_str_radix(&clean, radix).map_err(|_| {
-            RuntimeError::new(format!("Invalid integer: {}", value))
-        })
+        i64::from_str_radix(&clean, radix)
+            .map_err(|_| RuntimeError::new(format!("Invalid integer: {}", value)))
     }
 
     fn eval_path(&self, path: &TypePath) -> Result<Value, RuntimeError> {
         if path.segments.len() == 1 {
             let name = &path.segments[0].ident.name;
-            self.environment.borrow().get(name)
+            self.environment
+                .borrow()
+                .get(name)
                 .ok_or_else(|| RuntimeError::new(format!("Undefined variable: {}", name)))
         } else {
             // Multi-segment path (module::item or Type·method)
             // Try full qualified name first (joined with ·)
-            let full_name = path.segments.iter()
+            let full_name = path
+                .segments
+                .iter()
                 .map(|s| s.ident.name.as_str())
                 .collect::<Vec<_>>()
                 .join("·");
@@ -1031,7 +1071,12 @@ impl Interpreter {
         }
     }
 
-    fn eval_binary(&mut self, left: &Expr, op: &BinOp, right: &Expr) -> Result<Value, RuntimeError> {
+    fn eval_binary(
+        &mut self,
+        left: &Expr,
+        op: &BinOp,
+        right: &Expr,
+    ) -> Result<Value, RuntimeError> {
         let lhs = self.evaluate(left)?;
 
         // Short-circuit for && and ||
@@ -1060,31 +1105,25 @@ impl Interpreter {
             (Value::Float(a), Value::Float(b)) => self.float_binary_op(a, b, op),
             (Value::Int(a), Value::Float(b)) => self.float_binary_op(a as f64, b, op),
             (Value::Float(a), Value::Int(b)) => self.float_binary_op(a, b as f64, op),
-            (Value::String(a), Value::String(b)) => {
-                match op {
-                    BinOp::Add | BinOp::Concat => Ok(Value::String(Rc::new(format!("{}{}", a, b)))),
-                    BinOp::Eq => Ok(Value::Bool(*a == *b)),
-                    BinOp::Ne => Ok(Value::Bool(*a != *b)),
-                    _ => Err(RuntimeError::new("Invalid string operation")),
+            (Value::String(a), Value::String(b)) => match op {
+                BinOp::Add | BinOp::Concat => Ok(Value::String(Rc::new(format!("{}{}", a, b)))),
+                BinOp::Eq => Ok(Value::Bool(*a == *b)),
+                BinOp::Ne => Ok(Value::Bool(*a != *b)),
+                _ => Err(RuntimeError::new("Invalid string operation")),
+            },
+            (Value::Bool(a), Value::Bool(b)) => match op {
+                BinOp::Eq => Ok(Value::Bool(a == b)),
+                BinOp::Ne => Ok(Value::Bool(a != b)),
+                _ => Err(RuntimeError::new("Invalid boolean operation")),
+            },
+            (Value::Array(a), Value::Array(b)) => match op {
+                BinOp::Concat => {
+                    let mut result = a.borrow().clone();
+                    result.extend(b.borrow().iter().cloned());
+                    Ok(Value::Array(Rc::new(RefCell::new(result))))
                 }
-            }
-            (Value::Bool(a), Value::Bool(b)) => {
-                match op {
-                    BinOp::Eq => Ok(Value::Bool(a == b)),
-                    BinOp::Ne => Ok(Value::Bool(a != b)),
-                    _ => Err(RuntimeError::new("Invalid boolean operation")),
-                }
-            }
-            (Value::Array(a), Value::Array(b)) => {
-                match op {
-                    BinOp::Concat => {
-                        let mut result = a.borrow().clone();
-                        result.extend(b.borrow().iter().cloned());
-                        Ok(Value::Array(Rc::new(RefCell::new(result))))
-                    }
-                    _ => Err(RuntimeError::new("Invalid array operation")),
-                }
-            }
+                _ => Err(RuntimeError::new("Invalid array operation")),
+            },
             _ => Err(RuntimeError::new("Type mismatch in binary operation")),
         }
     }
@@ -1155,7 +1194,8 @@ impl Interpreter {
 
     fn eval_call(&mut self, func_expr: &Expr, args: &[Expr]) -> Result<Value, RuntimeError> {
         let func = self.evaluate(func_expr)?;
-        let arg_values: Vec<Value> = args.iter()
+        let arg_values: Vec<Value> = args
+            .iter()
             .map(|a| self.evaluate(a))
             .collect::<Result<_, _>>()?;
 
@@ -1166,7 +1206,11 @@ impl Interpreter {
         }
     }
 
-    pub fn call_function(&mut self, func: &Function, args: Vec<Value>) -> Result<Value, RuntimeError> {
+    pub fn call_function(
+        &mut self,
+        func: &Function,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
         if args.len() != func.params.len() {
             return Err(RuntimeError::new(format!(
                 "Expected {} arguments, got {}",
@@ -1200,12 +1244,18 @@ impl Interpreter {
         result
     }
 
-    fn call_builtin(&mut self, builtin: &BuiltInFn, args: Vec<Value>) -> Result<Value, RuntimeError> {
+    fn call_builtin(
+        &mut self,
+        builtin: &BuiltInFn,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
         if let Some(arity) = builtin.arity {
             if args.len() != arity {
                 return Err(RuntimeError::new(format!(
                     "{}() expects {} arguments, got {}",
-                    builtin.name, arity, args.len()
+                    builtin.name,
+                    arity,
+                    args.len()
                 )));
             }
         }
@@ -1340,21 +1390,25 @@ impl Interpreter {
     }
 
     fn eval_array(&mut self, elements: &[Expr]) -> Result<Value, RuntimeError> {
-        let values: Vec<Value> = elements.iter()
+        let values: Vec<Value> = elements
+            .iter()
             .map(|e| self.evaluate(e))
             .collect::<Result<_, _>>()?;
         Ok(Value::Array(Rc::new(RefCell::new(values))))
     }
 
     fn eval_tuple(&mut self, elements: &[Expr]) -> Result<Value, RuntimeError> {
-        let values: Vec<Value> = elements.iter()
+        let values: Vec<Value> = elements
+            .iter()
             .map(|e| self.evaluate(e))
             .collect::<Result<_, _>>()?;
         Ok(Value::Tuple(Rc::new(values)))
     }
 
     fn eval_block(&mut self, block: &Block) -> Result<Value, RuntimeError> {
-        let env = Rc::new(RefCell::new(Environment::with_parent(self.environment.clone())));
+        let env = Rc::new(RefCell::new(Environment::with_parent(
+            self.environment.clone(),
+        )));
         let prev_env = self.environment.clone();
         self.environment = env;
 
@@ -1393,7 +1447,9 @@ impl Interpreter {
     fn bind_pattern(&mut self, pattern: &Pattern, value: Value) -> Result<(), RuntimeError> {
         match pattern {
             Pattern::Ident { name, .. } => {
-                self.environment.borrow_mut().define(name.name.clone(), value);
+                self.environment
+                    .borrow_mut()
+                    .define(name.name.clone(), value);
                 Ok(())
             }
             Pattern::Tuple(patterns) => {
@@ -1444,7 +1500,9 @@ impl Interpreter {
                 }
 
                 // Bind pattern variables and evaluate body
-                let env = Rc::new(RefCell::new(Environment::with_parent(self.environment.clone())));
+                let env = Rc::new(RefCell::new(Environment::with_parent(
+                    self.environment.clone(),
+                )));
                 let prev_env = self.environment.clone();
                 self.environment = env;
 
@@ -1494,7 +1552,12 @@ impl Interpreter {
         }
     }
 
-    fn eval_for(&mut self, pattern: &Pattern, iter: &Expr, body: &Block) -> Result<Value, RuntimeError> {
+    fn eval_for(
+        &mut self,
+        pattern: &Pattern,
+        iter: &Expr,
+        body: &Block,
+    ) -> Result<Value, RuntimeError> {
         let iterable = self.evaluate(iter)?;
         let items = match iterable {
             Value::Array(arr) => arr.borrow().clone(),
@@ -1504,7 +1567,9 @@ impl Interpreter {
 
         let mut result = Value::Null;
         for item in items {
-            let env = Rc::new(RefCell::new(Environment::with_parent(self.environment.clone())));
+            let env = Rc::new(RefCell::new(Environment::with_parent(
+                self.environment.clone(),
+            )));
             let prev_env = self.environment.clone();
             self.environment = env;
 
@@ -1585,17 +1650,20 @@ impl Interpreter {
             (Value::Array(arr), Value::Int(i)) => {
                 let arr = arr.borrow();
                 let i = if i < 0 { arr.len() as i64 + i } else { i } as usize;
-                arr.get(i).cloned()
+                arr.get(i)
+                    .cloned()
                     .ok_or_else(|| RuntimeError::new("Index out of bounds"))
             }
             (Value::Tuple(t), Value::Int(i)) => {
                 let i = if i < 0 { t.len() as i64 + i } else { i } as usize;
-                t.get(i).cloned()
+                t.get(i)
+                    .cloned()
                     .ok_or_else(|| RuntimeError::new("Index out of bounds"))
             }
             (Value::String(s), Value::Int(i)) => {
                 let i = if i < 0 { s.len() as i64 + i } else { i } as usize;
-                s.chars().nth(i)
+                s.chars()
+                    .nth(i)
                     .map(Value::Char)
                     .ok_or_else(|| RuntimeError::new("Index out of bounds"))
             }
@@ -1606,15 +1674,19 @@ impl Interpreter {
     fn eval_field(&mut self, expr: &Expr, field: &Ident) -> Result<Value, RuntimeError> {
         let value = self.evaluate(expr)?;
         match value {
-            Value::Struct { fields, .. } => {
-                fields.borrow().get(&field.name).cloned()
-                    .ok_or_else(|| RuntimeError::new(format!("Unknown field: {}", field.name)))
-            }
+            Value::Struct { fields, .. } => fields
+                .borrow()
+                .get(&field.name)
+                .cloned()
+                .ok_or_else(|| RuntimeError::new(format!("Unknown field: {}", field.name))),
             Value::Tuple(t) => {
                 // Tuple field access like .0, .1
-                let idx: usize = field.name.parse()
+                let idx: usize = field
+                    .name
+                    .parse()
                     .map_err(|_| RuntimeError::new("Invalid tuple index"))?;
-                t.get(idx).cloned()
+                t.get(idx)
+                    .cloned()
                     .ok_or_else(|| RuntimeError::new("Tuple index out of bounds"))
             }
             _ => Err(RuntimeError::new("Cannot access field on non-struct")),
@@ -1628,7 +1700,8 @@ impl Interpreter {
         args: &[Expr],
     ) -> Result<Value, RuntimeError> {
         let recv = self.evaluate(receiver)?;
-        let arg_values: Vec<Value> = args.iter()
+        let arg_values: Vec<Value> = args
+            .iter()
             .map(|a| self.evaluate(a))
             .collect::<Result<_, _>>()?;
 
@@ -1642,10 +1715,10 @@ impl Interpreter {
                 arr.borrow_mut().push(arg_values[0].clone());
                 Ok(Value::Null)
             }
-            (Value::Array(arr), "pop") => {
-                arr.borrow_mut().pop()
-                    .ok_or_else(|| RuntimeError::new("pop on empty array"))
-            }
+            (Value::Array(arr), "pop") => arr
+                .borrow_mut()
+                .pop()
+                .ok_or_else(|| RuntimeError::new("pop on empty array")),
             (Value::Array(arr), "reverse") => {
                 let mut v = arr.borrow().clone();
                 v.reverse();
@@ -1665,7 +1738,10 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("contains expects string")),
                 }
             }
-            _ => Err(RuntimeError::new(format!("Unknown method: {}", method.name))),
+            _ => Err(RuntimeError::new(format!(
+                "Unknown method: {}",
+                method.name
+            ))),
         }
     }
 
@@ -1685,16 +1761,22 @@ impl Interpreter {
                 // τ{f} - map over collection or apply to single value
                 match value {
                     Value::Array(arr) => {
-                        let results: Vec<Value> = arr.borrow().iter()
+                        let results: Vec<Value> = arr
+                            .borrow()
+                            .iter()
                             .map(|item| {
-                                self.environment.borrow_mut().define("_".to_string(), item.clone());
+                                self.environment
+                                    .borrow_mut()
+                                    .define("_".to_string(), item.clone());
                                 self.evaluate(body)
                             })
                             .collect::<Result<_, _>>()?;
                         Ok(Value::Array(Rc::new(RefCell::new(results))))
                     }
                     single => {
-                        self.environment.borrow_mut().define("_".to_string(), single);
+                        self.environment
+                            .borrow_mut()
+                            .define("_".to_string(), single);
                         self.evaluate(body)
                     }
                 }
@@ -1703,9 +1785,13 @@ impl Interpreter {
                 // φ{p} - filter collection
                 match value {
                     Value::Array(arr) => {
-                        let results: Vec<Value> = arr.borrow().iter()
+                        let results: Vec<Value> = arr
+                            .borrow()
+                            .iter()
                             .filter_map(|item| {
-                                self.environment.borrow_mut().define("_".to_string(), item.clone());
+                                self.environment
+                                    .borrow_mut()
+                                    .define("_".to_string(), item.clone());
                                 match self.evaluate(predicate) {
                                     Ok(v) if self.is_truthy(&v) => Some(Ok(item.clone())),
                                     Ok(_) => None,
@@ -1740,7 +1826,9 @@ impl Interpreter {
                         let mut acc = arr[0].clone();
                         for item in arr.iter().skip(1) {
                             self.environment.borrow_mut().define("acc".to_string(), acc);
-                            self.environment.borrow_mut().define("_".to_string(), item.clone());
+                            self.environment
+                                .borrow_mut()
+                                .define("_".to_string(), item.clone());
                             acc = self.evaluate(body)?;
                         }
                         Ok(acc)
@@ -1749,7 +1837,8 @@ impl Interpreter {
                 }
             }
             PipeOp::Method { name, args } => {
-                let arg_values: Vec<Value> = args.iter()
+                let arg_values: Vec<Value> = args
+                    .iter()
                     .map(|a| self.evaluate(a))
                     .collect::<Result<_, _>>()?;
 
@@ -1758,37 +1847,35 @@ impl Interpreter {
                     "collect" => Ok(value), // Already collected
                     "sum" | "Σ" => self.sum_values(value),
                     "product" | "Π" => self.product_values(value),
-                    "len" => {
-                        match &value {
-                            Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
-                            Value::String(s) => Ok(Value::Int(s.len() as i64)),
-                            _ => Err(RuntimeError::new("len requires array or string")),
+                    "len" => match &value {
+                        Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
+                        Value::String(s) => Ok(Value::Int(s.len() as i64)),
+                        _ => Err(RuntimeError::new("len requires array or string")),
+                    },
+                    "reverse" => match value {
+                        Value::Array(arr) => {
+                            let mut v = arr.borrow().clone();
+                            v.reverse();
+                            Ok(Value::Array(Rc::new(RefCell::new(v))))
                         }
-                    }
-                    "reverse" => {
-                        match value {
-                            Value::Array(arr) => {
-                                let mut v = arr.borrow().clone();
-                                v.reverse();
-                                Ok(Value::Array(Rc::new(RefCell::new(v))))
-                            }
-                            _ => Err(RuntimeError::new("reverse requires array")),
-                        }
-                    }
-                    "first" => {
-                        match &value {
-                            Value::Array(arr) => arr.borrow().first().cloned()
-                                .ok_or_else(|| RuntimeError::new("first on empty array")),
-                            _ => Err(RuntimeError::new("first requires array")),
-                        }
-                    }
-                    "last" => {
-                        match &value {
-                            Value::Array(arr) => arr.borrow().last().cloned()
-                                .ok_or_else(|| RuntimeError::new("last on empty array")),
-                            _ => Err(RuntimeError::new("last requires array")),
-                        }
-                    }
+                        _ => Err(RuntimeError::new("reverse requires array")),
+                    },
+                    "first" => match &value {
+                        Value::Array(arr) => arr
+                            .borrow()
+                            .first()
+                            .cloned()
+                            .ok_or_else(|| RuntimeError::new("first on empty array")),
+                        _ => Err(RuntimeError::new("first requires array")),
+                    },
+                    "last" => match &value {
+                        Value::Array(arr) => arr
+                            .borrow()
+                            .last()
+                            .cloned()
+                            .ok_or_else(|| RuntimeError::new("last on empty array")),
+                        _ => Err(RuntimeError::new("last requires array")),
+                    },
                     "take" => {
                         if arg_values.len() != 1 {
                             return Err(RuntimeError::new("take requires 1 argument"));
@@ -1821,7 +1908,10 @@ impl Interpreter {
                             _ => Err(RuntimeError::new("skip requires array")),
                         }
                     }
-                    _ => Err(RuntimeError::new(format!("Unknown pipe method: {}", name.name))),
+                    _ => Err(RuntimeError::new(format!(
+                        "Unknown pipe method: {}",
+                        name.name
+                    ))),
                 }
             }
             PipeOp::Await => {
@@ -1832,9 +1922,14 @@ impl Interpreter {
             PipeOp::First => {
                 // α - first element
                 match &value {
-                    Value::Array(arr) => arr.borrow().first().cloned()
+                    Value::Array(arr) => arr
+                        .borrow()
+                        .first()
+                        .cloned()
                         .ok_or_else(|| RuntimeError::new("first (α) on empty array")),
-                    Value::Tuple(t) => t.first().cloned()
+                    Value::Tuple(t) => t
+                        .first()
+                        .cloned()
                         .ok_or_else(|| RuntimeError::new("first (α) on empty tuple")),
                     _ => Err(RuntimeError::new("first (α) requires array or tuple")),
                 }
@@ -1842,9 +1937,14 @@ impl Interpreter {
             PipeOp::Last => {
                 // ω - last element
                 match &value {
-                    Value::Array(arr) => arr.borrow().last().cloned()
+                    Value::Array(arr) => arr
+                        .borrow()
+                        .last()
+                        .cloned()
                         .ok_or_else(|| RuntimeError::new("last (ω) on empty array")),
-                    Value::Tuple(t) => t.last().cloned()
+                    Value::Tuple(t) => t
+                        .last()
+                        .cloned()
                         .ok_or_else(|| RuntimeError::new("last (ω) on empty tuple")),
                     _ => Err(RuntimeError::new("last (ω) requires array or tuple")),
                 }
@@ -1883,7 +1983,9 @@ impl Interpreter {
                             .duration_since(UNIX_EPOCH)
                             .unwrap_or(std::time::Duration::ZERO)
                             .as_nanos() as u64;
-                        let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % arr.len();
+                        let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16)
+                            as usize
+                            % arr.len();
                         Ok(arr[idx].clone())
                     }
                     Value::Tuple(t) => {
@@ -1894,7 +1996,9 @@ impl Interpreter {
                             .duration_since(UNIX_EPOCH)
                             .unwrap_or(std::time::Duration::ZERO)
                             .as_nanos() as u64;
-                        let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16) as usize % t.len();
+                        let idx = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) >> 16)
+                            as usize
+                            % t.len();
                         Ok(t[idx].clone())
                     }
                     _ => Err(RuntimeError::new("choice (χ) requires array or tuple")),
@@ -1927,24 +2031,37 @@ impl Interpreter {
                 // ξ - next element (for iterators, currently just returns first)
                 // In a full implementation, this would advance an iterator
                 match &value {
-                    Value::Array(arr) => arr.borrow().first().cloned()
+                    Value::Array(arr) => arr
+                        .borrow()
+                        .first()
+                        .cloned()
                         .ok_or_else(|| RuntimeError::new("next (ξ) on empty array")),
-                    Value::Tuple(t) => t.first().cloned()
+                    Value::Tuple(t) => t
+                        .first()
+                        .cloned()
                         .ok_or_else(|| RuntimeError::new("next (ξ) on empty tuple")),
                     _ => Err(RuntimeError::new("next (ξ) requires array or tuple")),
                 }
             }
             PipeOp::Named { prefix, body } => {
                 // Named morpheme like ·map{f}
-                let method_name = prefix.iter().map(|i| i.name.as_str()).collect::<Vec<_>>().join("·");
+                let method_name = prefix
+                    .iter()
+                    .map(|i| i.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("·");
                 match method_name.as_str() {
                     "map" => {
                         if let Some(body) = body {
                             match value {
                                 Value::Array(arr) => {
-                                    let results: Vec<Value> = arr.borrow().iter()
+                                    let results: Vec<Value> = arr
+                                        .borrow()
+                                        .iter()
                                         .map(|item| {
-                                            self.environment.borrow_mut().define("_".to_string(), item.clone());
+                                            self.environment
+                                                .borrow_mut()
+                                                .define("_".to_string(), item.clone());
                                             self.evaluate(body)
                                         })
                                         .collect::<Result<_, _>>()?;
@@ -1960,11 +2077,17 @@ impl Interpreter {
                         if let Some(body) = body {
                             match value {
                                 Value::Array(arr) => {
-                                    let results: Vec<Value> = arr.borrow().iter()
+                                    let results: Vec<Value> = arr
+                                        .borrow()
+                                        .iter()
                                         .filter_map(|item| {
-                                            self.environment.borrow_mut().define("_".to_string(), item.clone());
+                                            self.environment
+                                                .borrow_mut()
+                                                .define("_".to_string(), item.clone());
                                             match self.evaluate(body) {
-                                                Ok(v) if self.is_truthy(&v) => Some(Ok(item.clone())),
+                                                Ok(v) if self.is_truthy(&v) => {
+                                                    Some(Ok(item.clone()))
+                                                }
                                                 Ok(_) => None,
                                                 Err(e) => Some(Err(e)),
                                             }
@@ -1978,7 +2101,10 @@ impl Interpreter {
                             Ok(value)
                         }
                     }
-                    _ => Err(RuntimeError::new(format!("Unknown named morpheme: {}", method_name))),
+                    _ => Err(RuntimeError::new(format!(
+                        "Unknown named morpheme: {}",
+                        method_name
+                    ))),
                 }
             }
             PipeOp::Parallel(inner_op) => {
@@ -2017,7 +2143,9 @@ impl Interpreter {
                                 // In production, this would use Rayon or a work-stealing scheduler
                                 let mut result_vec = Vec::with_capacity(len);
                                 for item in items.iter() {
-                                    self.environment.borrow_mut().define("_".to_string(), item.clone());
+                                    self.environment
+                                        .borrow_mut()
+                                        .define("_".to_string(), item.clone());
                                     result_vec.push(self.evaluate(body)?);
                                 }
                                 Ok(Value::Array(Rc::new(RefCell::new(result_vec))))
@@ -2029,7 +2157,9 @@ impl Interpreter {
 
                                 let mut result_vec = Vec::new();
                                 for item in items.iter() {
-                                    self.environment.borrow_mut().define("_".to_string(), item.clone());
+                                    self.environment
+                                        .borrow_mut()
+                                        .define("_".to_string(), item.clone());
                                     let pred_result = self.evaluate(predicate)?;
                                     if self.is_truthy(&pred_result) {
                                         result_vec.push(item.clone());
@@ -2062,11 +2192,14 @@ impl Interpreter {
                         // For now, emit a hint that GPU execution would occur
                         // and fall back to CPU
                         #[cfg(debug_assertions)]
-                        eprintln!("[GPU] Would execute {:?} on GPU, falling back to CPU", inner_op);
+                        eprintln!(
+                            "[GPU] Would execute {:?} on GPU, falling back to CPU",
+                            inner_op
+                        );
 
                         self.apply_pipe_op(Value::Array(arr), inner_op)
                     }
-                    _ => self.apply_pipe_op(value, inner_op)
+                    _ => self.apply_pipe_op(value, inner_op),
                 }
             }
 
@@ -2075,7 +2208,6 @@ impl Interpreter {
             // All protocol results are wrapped with Reported evidentiality
             // since network data comes from external sources ("hearsay")
             // ==========================================
-
             PipeOp::Send(data_expr) => {
                 // |send{data} or |⇒{data} - Send data over a connection
                 // The value should be a connection object
@@ -2128,7 +2260,10 @@ impl Interpreter {
                 Ok(Value::Null)
             }
 
-            PipeOp::Header { name, value: value_expr } => {
+            PipeOp::Header {
+                name,
+                value: value_expr,
+            } => {
                 // |header{name, value} - Add/set header on request
                 let header_name = self.evaluate(name)?;
                 let header_value = self.evaluate(value_expr)?;
@@ -2197,7 +2332,10 @@ impl Interpreter {
                                 let mut response = HashMap::new();
                                 response.insert("status".to_string(), Value::Int(200));
                                 response.insert("body".to_string(), data.clone());
-                                response.insert("__protocol__".to_string(), Value::String(Rc::new("http_response".to_string())));
+                                response.insert(
+                                    "__protocol__".to_string(),
+                                    Value::String(Rc::new("http_response".to_string())),
+                                );
                                 response
                             }))))
                         }
@@ -2215,7 +2353,10 @@ impl Interpreter {
                                 let mut response = HashMap::new();
                                 response.insert("status".to_string(), Value::Int(0)); // OK
                                 response.insert("message".to_string(), data.clone());
-                                response.insert("__protocol__".to_string(), Value::String(Rc::new("grpc_response".to_string())));
+                                response.insert(
+                                    "__protocol__".to_string(),
+                                    Value::String(Rc::new("grpc_response".to_string())),
+                                );
                                 response
                             }))))
                         }
@@ -2233,7 +2374,9 @@ impl Interpreter {
                         _ => Err(RuntimeError::new(format!("Unknown protocol: {}", protocol))),
                     }
                 } else {
-                    Err(RuntimeError::new("Connection object missing __protocol__ field"))
+                    Err(RuntimeError::new(
+                        "Connection object missing __protocol__ field",
+                    ))
                 }
             }
             _ => Err(RuntimeError::new("send requires a connection object")),
@@ -2260,7 +2403,10 @@ impl Interpreter {
                             Ok(Value::Map(Rc::new(RefCell::new({
                                 let mut msg = HashMap::new();
                                 msg.insert("key".to_string(), Value::Null);
-                                msg.insert("value".to_string(), Value::String(Rc::new("consumed message".to_string())));
+                                msg.insert(
+                                    "value".to_string(),
+                                    Value::String(Rc::new("consumed message".to_string())),
+                                );
                                 msg.insert("partition".to_string(), Value::Int(0));
                                 msg.insert("offset".to_string(), Value::Int(100));
                                 msg
@@ -2272,14 +2418,22 @@ impl Interpreter {
                             eprintln!("[gRPC] Would receive stream message");
                             Ok(Value::Map(Rc::new(RefCell::new({
                                 let mut msg = HashMap::new();
-                                msg.insert("data".to_string(), Value::String(Rc::new("stream data".to_string())));
+                                msg.insert(
+                                    "data".to_string(),
+                                    Value::String(Rc::new("stream data".to_string())),
+                                );
                                 msg
                             }))))
                         }
-                        _ => Err(RuntimeError::new(format!("recv not supported for protocol: {}", protocol))),
+                        _ => Err(RuntimeError::new(format!(
+                            "recv not supported for protocol: {}",
+                            protocol
+                        ))),
                     }
                 } else {
-                    Err(RuntimeError::new("Connection object missing __protocol__ field"))
+                    Err(RuntimeError::new(
+                        "Connection object missing __protocol__ field",
+                    ))
                 }
             }
             _ => Err(RuntimeError::new("recv requires a connection object")),
@@ -2287,7 +2441,11 @@ impl Interpreter {
     }
 
     /// Create a streaming iterator over protocol data
-    fn protocol_stream(&mut self, connection: &Value, _handler: &Value) -> Result<Value, RuntimeError> {
+    fn protocol_stream(
+        &mut self,
+        connection: &Value,
+        _handler: &Value,
+    ) -> Result<Value, RuntimeError> {
         // Create a lazy stream that yields values with Reported evidentiality
         match connection {
             Value::Map(obj) => {
@@ -2299,13 +2457,21 @@ impl Interpreter {
                     // Return a stream object that can be iterated
                     Ok(Value::Map(Rc::new(RefCell::new({
                         let mut stream = HashMap::new();
-                        stream.insert("__type__".to_string(), Value::String(Rc::new("Stream".to_string())));
+                        stream.insert(
+                            "__type__".to_string(),
+                            Value::String(Rc::new("Stream".to_string())),
+                        );
                         stream.insert("__protocol__".to_string(), Value::String(protocol.clone()));
-                        stream.insert("__evidentiality__".to_string(), Value::String(Rc::new("reported".to_string())));
+                        stream.insert(
+                            "__evidentiality__".to_string(),
+                            Value::String(Rc::new("reported".to_string())),
+                        );
                         stream
                     }))))
                 } else {
-                    Err(RuntimeError::new("Connection object missing __protocol__ field"))
+                    Err(RuntimeError::new(
+                        "Connection object missing __protocol__ field",
+                    ))
                 }
             }
             _ => Err(RuntimeError::new("stream requires a connection object")),
@@ -2313,14 +2479,26 @@ impl Interpreter {
     }
 
     /// Establish a protocol connection
-    fn protocol_connect(&mut self, target: &Value, _config: Option<&Value>) -> Result<Value, RuntimeError> {
+    fn protocol_connect(
+        &mut self,
+        target: &Value,
+        _config: Option<&Value>,
+    ) -> Result<Value, RuntimeError> {
         match target {
             Value::String(url) => {
                 // Parse URL to determine protocol
                 let protocol = if url.starts_with("wss://") || url.starts_with("ws://") {
-                    if url.starts_with("wss://") { "wss" } else { "ws" }
+                    if url.starts_with("wss://") {
+                        "wss"
+                    } else {
+                        "ws"
+                    }
                 } else if url.starts_with("https://") || url.starts_with("http://") {
-                    if url.starts_with("https://") { "https" } else { "http" }
+                    if url.starts_with("https://") {
+                        "https"
+                    } else {
+                        "http"
+                    }
                 } else if url.starts_with("grpc://") || url.starts_with("grpcs://") {
                     "grpc"
                 } else if url.starts_with("kafka://") {
@@ -2337,7 +2515,10 @@ impl Interpreter {
                 // Return a connection object
                 Ok(Value::Map(Rc::new(RefCell::new({
                     let mut conn = HashMap::new();
-                    conn.insert("__protocol__".to_string(), Value::String(Rc::new(protocol.to_string())));
+                    conn.insert(
+                        "__protocol__".to_string(),
+                        Value::String(Rc::new(protocol.to_string())),
+                    );
                     conn.insert("url".to_string(), Value::String(url.clone()));
                     conn.insert("connected".to_string(), Value::Bool(true));
                     conn
@@ -2349,7 +2530,9 @@ impl Interpreter {
                 conn.insert("connected".to_string(), Value::Bool(true));
                 Ok(Value::Map(Rc::new(RefCell::new(conn))))
             }
-            _ => Err(RuntimeError::new("connect requires URL string or config object")),
+            _ => Err(RuntimeError::new(
+                "connect requires URL string or config object",
+            )),
         }
     }
 
@@ -2364,7 +2547,9 @@ impl Interpreter {
                     obj.insert("connected".to_string(), Value::Bool(false));
                     Ok(())
                 } else {
-                    Err(RuntimeError::new("Connection object missing __protocol__ field"))
+                    Err(RuntimeError::new(
+                        "Connection object missing __protocol__ field",
+                    ))
                 }
             }
             _ => Err(RuntimeError::new("close requires a connection object")),
@@ -2372,7 +2557,12 @@ impl Interpreter {
     }
 
     /// Add a header to a protocol request
-    fn protocol_add_header(&mut self, mut request: Value, name: &Value, header_value: &Value) -> Result<Value, RuntimeError> {
+    fn protocol_add_header(
+        &mut self,
+        mut request: Value,
+        name: &Value,
+        header_value: &Value,
+    ) -> Result<Value, RuntimeError> {
         let name_str = match name {
             Value::String(s) => (**s).clone(),
             _ => return Err(RuntimeError::new("Header name must be a string")),
@@ -2388,11 +2578,14 @@ impl Interpreter {
                 let mut obj = obj.borrow_mut();
 
                 // Get or create headers map
-                let headers = obj.entry("headers".to_string())
+                let headers = obj
+                    .entry("headers".to_string())
                     .or_insert_with(|| Value::Map(Rc::new(RefCell::new(HashMap::new()))));
 
                 if let Value::Map(headers_obj) = headers {
-                    headers_obj.borrow_mut().insert(name_str, Value::String(Rc::new(value_str)));
+                    headers_obj
+                        .borrow_mut()
+                        .insert(name_str, Value::String(Rc::new(value_str)));
                 }
                 drop(obj);
                 Ok(request)
@@ -2402,7 +2595,11 @@ impl Interpreter {
     }
 
     /// Set the body of a protocol request
-    fn protocol_set_body(&mut self, mut request: Value, body: &Value) -> Result<Value, RuntimeError> {
+    fn protocol_set_body(
+        &mut self,
+        mut request: Value,
+        body: &Value,
+    ) -> Result<Value, RuntimeError> {
         match &mut request {
             Value::Map(obj) => {
                 obj.borrow_mut().insert("body".to_string(), body.clone());
@@ -2413,7 +2610,11 @@ impl Interpreter {
     }
 
     /// Set the timeout for a protocol operation
-    fn protocol_set_timeout(&mut self, mut request: Value, ms: &Value) -> Result<Value, RuntimeError> {
+    fn protocol_set_timeout(
+        &mut self,
+        mut request: Value,
+        ms: &Value,
+    ) -> Result<Value, RuntimeError> {
         let timeout_ms = match ms {
             Value::Int(n) => *n,
             Value::Float(f) => *f as i64,
@@ -2422,7 +2623,8 @@ impl Interpreter {
 
         match &mut request {
             Value::Map(obj) => {
-                obj.borrow_mut().insert("timeout_ms".to_string(), Value::Int(timeout_ms));
+                obj.borrow_mut()
+                    .insert("timeout_ms".to_string(), Value::Int(timeout_ms));
                 Ok(request)
             }
             _ => Err(RuntimeError::new("timeout requires a request object")),
@@ -2430,7 +2632,12 @@ impl Interpreter {
     }
 
     /// Set the retry policy for a protocol operation
-    fn protocol_set_retry(&mut self, mut request: Value, count: &Value, strategy: Option<&Value>) -> Result<Value, RuntimeError> {
+    fn protocol_set_retry(
+        &mut self,
+        mut request: Value,
+        count: &Value,
+        strategy: Option<&Value>,
+    ) -> Result<Value, RuntimeError> {
         let retry_count = match count {
             Value::Int(n) => *n,
             _ => return Err(RuntimeError::new("Retry count must be an integer")),
@@ -2508,19 +2715,26 @@ impl Interpreter {
         // Simple comparison for now
         match (a, b) {
             (Value::Int(a), Value::Int(b)) => a.cmp(b),
-            (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+            (Value::Float(a), Value::Float(b)) => {
+                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+            }
             (Value::String(a), Value::String(b)) => a.cmp(b),
             _ => std::cmp::Ordering::Equal,
         }
     }
 
-    fn eval_closure(&mut self, params: &[ClosureParam], body: &Expr) -> Result<Value, RuntimeError> {
-        let param_names: Vec<String> = params.iter().map(|p| {
-            match &p.pattern {
+    fn eval_closure(
+        &mut self,
+        params: &[ClosureParam],
+        body: &Expr,
+    ) -> Result<Value, RuntimeError> {
+        let param_names: Vec<String> = params
+            .iter()
+            .map(|p| match &p.pattern {
                 Pattern::Ident { name, .. } => name.name.clone(),
                 _ => "_".to_string(),
-            }
-        }).collect();
+            })
+            .collect();
 
         Ok(Value::Function(Rc::new(Function {
             name: None,
@@ -2536,7 +2750,9 @@ impl Interpreter {
         fields: &[FieldInit],
         _rest: &Option<Box<Expr>>,
     ) -> Result<Value, RuntimeError> {
-        let name = path.segments.iter()
+        let name = path
+            .segments
+            .iter()
             .map(|s| s.ident.name.as_str())
             .collect::<Vec<_>>()
             .join("::");
@@ -2545,8 +2761,13 @@ impl Interpreter {
         for field in fields {
             let value = match &field.value {
                 Some(expr) => self.evaluate(expr)?,
-                None => self.environment.borrow().get(&field.name.name)
-                    .ok_or_else(|| RuntimeError::new(format!("Unknown variable: {}", field.name.name)))?,
+                None => self
+                    .environment
+                    .borrow()
+                    .get(&field.name.name)
+                    .ok_or_else(|| {
+                        RuntimeError::new(format!("Unknown variable: {}", field.name.name))
+                    })?,
             };
             field_values.insert(field.name.name.clone(), value);
         }
@@ -2630,23 +2851,43 @@ mod tests {
 
     fn run(source: &str) -> Result<Value, RuntimeError> {
         let mut parser = Parser::new(source);
-        let file = parser.parse_file().map_err(|e| RuntimeError::new(e.to_string()))?;
+        let file = parser
+            .parse_file()
+            .map_err(|e| RuntimeError::new(e.to_string()))?;
         let mut interp = Interpreter::new();
         interp.execute(&file)
     }
 
     #[test]
     fn test_arithmetic() {
-        assert!(matches!(run("fn main() { return 2 + 3; }"), Ok(Value::Int(5))));
-        assert!(matches!(run("fn main() { return 10 - 4; }"), Ok(Value::Int(6))));
-        assert!(matches!(run("fn main() { return 3 * 4; }"), Ok(Value::Int(12))));
-        assert!(matches!(run("fn main() { return 15 / 3; }"), Ok(Value::Int(5))));
-        assert!(matches!(run("fn main() { return 2 ** 10; }"), Ok(Value::Int(1024))));
+        assert!(matches!(
+            run("fn main() { return 2 + 3; }"),
+            Ok(Value::Int(5))
+        ));
+        assert!(matches!(
+            run("fn main() { return 10 - 4; }"),
+            Ok(Value::Int(6))
+        ));
+        assert!(matches!(
+            run("fn main() { return 3 * 4; }"),
+            Ok(Value::Int(12))
+        ));
+        assert!(matches!(
+            run("fn main() { return 15 / 3; }"),
+            Ok(Value::Int(5))
+        ));
+        assert!(matches!(
+            run("fn main() { return 2 ** 10; }"),
+            Ok(Value::Int(1024))
+        ));
     }
 
     #[test]
     fn test_variables() {
-        assert!(matches!(run("fn main() { let x = 42; return x; }"), Ok(Value::Int(42))));
+        assert!(matches!(
+            run("fn main() { let x = 42; return x; }"),
+            Ok(Value::Int(42))
+        ));
     }
 
     #[test]
@@ -2663,7 +2904,10 @@ mod tests {
 
     #[test]
     fn test_arrays() {
-        assert!(matches!(run("fn main() { return [1, 2, 3][1]; }"), Ok(Value::Int(2))));
+        assert!(matches!(
+            run("fn main() { return [1, 2, 3][1]; }"),
+            Ok(Value::Int(2))
+        ));
     }
 
     #[test]

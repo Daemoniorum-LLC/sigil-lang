@@ -22,9 +22,9 @@ pub enum CType {
     Void,
 
     // Character types
-    Char,      // c_char (signed or unsigned depending on platform)
-    SChar,     // c_schar (signed char)
-    UChar,     // c_uchar (unsigned char)
+    Char,  // c_char (signed or unsigned depending on platform)
+    SChar, // c_schar (signed char)
+    UChar, // c_uchar (unsigned char)
 
     // Integer types
     Short,     // c_short
@@ -37,13 +37,13 @@ pub enum CType {
     ULongLong, // c_ulonglong
 
     // Floating point
-    Float,     // c_float
-    Double,    // c_double
+    Float,  // c_float
+    Double, // c_double
 
     // Size types
-    Size,      // size_t (usize in Sigil)
-    SSize,     // ssize_t (isize in Sigil)
-    PtrDiff,   // ptrdiff_t
+    Size,    // size_t (usize in Sigil)
+    SSize,   // ssize_t (isize in Sigil)
+    PtrDiff, // ptrdiff_t
 
     // Fixed-width integers (from stdint.h)
     Int8,
@@ -95,11 +95,11 @@ impl CType {
             CType::Char | CType::SChar | CType::UChar => 1,
             CType::Short | CType::UShort => 2,
             CType::Int | CType::UInt => 4,
-            CType::Long | CType::ULong => 8,  // LP64
+            CType::Long | CType::ULong => 8, // LP64
             CType::LongLong | CType::ULongLong => 8,
             CType::Float => 4,
             CType::Double => 8,
-            CType::Size | CType::SSize | CType::PtrDiff => 8,  // 64-bit
+            CType::Size | CType::SSize | CType::PtrDiff => 8, // 64-bit
             CType::Int8 | CType::UInt8 => 1,
             CType::Int16 | CType::UInt16 => 2,
             CType::Int32 | CType::UInt32 => 4,
@@ -111,9 +111,17 @@ impl CType {
     pub fn is_signed(&self) -> bool {
         matches!(
             self,
-            CType::SChar | CType::Short | CType::Int | CType::Long | CType::LongLong |
-            CType::SSize | CType::PtrDiff |
-            CType::Int8 | CType::Int16 | CType::Int32 | CType::Int64
+            CType::SChar
+                | CType::Short
+                | CType::Int
+                | CType::Long
+                | CType::LongLong
+                | CType::SSize
+                | CType::PtrDiff
+                | CType::Int8
+                | CType::Int16
+                | CType::Int32
+                | CType::Int64
         )
     }
 
@@ -154,31 +162,26 @@ impl CType {
 pub const C_TYPE_ALIASES: &[(&str, &str)] = &[
     // Void
     ("c_void", "()"),
-
     // Character types
-    ("c_char", "i8"),   // Platform-dependent, assume signed
+    ("c_char", "i8"), // Platform-dependent, assume signed
     ("c_schar", "i8"),
     ("c_uchar", "u8"),
-
     // Integer types (LP64 model)
     ("c_short", "i16"),
     ("c_ushort", "u16"),
     ("c_int", "i32"),
     ("c_uint", "u32"),
-    ("c_long", "i64"),      // LP64: long is 64-bit
+    ("c_long", "i64"), // LP64: long is 64-bit
     ("c_ulong", "u64"),
     ("c_longlong", "i64"),
     ("c_ulonglong", "u64"),
-
     // Floating point
     ("c_float", "f32"),
     ("c_double", "f64"),
-
     // Size types
     ("size_t", "usize"),
     ("ssize_t", "isize"),
     ("ptrdiff_t", "isize"),
-
     // Fixed-width (these are just aliases)
     ("int8_t", "i8"),
     ("int16_t", "i16"),

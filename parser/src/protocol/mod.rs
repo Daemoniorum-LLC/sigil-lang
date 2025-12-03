@@ -43,6 +43,5 @@ pub mod graphql;
 // Re-export common types when protocol-core is enabled
 #[cfg(feature = "protocol-core")]
 pub use common::{
-    Uri, Headers, StatusCode, Timeout, RetryConfig, BackoffStrategy,
-    ProtocolError, ProtocolResult,
+    BackoffStrategy, Headers, ProtocolError, ProtocolResult, RetryConfig, StatusCode, Timeout, Uri,
 };

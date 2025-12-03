@@ -10,18 +10,18 @@
 //! - Rich diagnostic reporting with colored output
 //! - AI-facing IR for tooling and agent integration
 
-pub mod lexer;
 pub mod ast;
-pub mod parser;
-pub mod span;
-pub mod interpreter;
-pub mod typeck;
-pub mod stdlib;
-pub mod optimize;
 pub mod diagnostic;
 pub mod ffi;
+pub mod interpreter;
 pub mod ir;
+pub mod lexer;
 pub mod lower;
+pub mod optimize;
+pub mod parser;
+pub mod span;
+pub mod stdlib;
+pub mod typeck;
 
 #[cfg(feature = "jit")]
 pub mod codegen;
@@ -32,20 +32,20 @@ pub mod llvm_codegen;
 #[cfg(feature = "protocol-core")]
 pub mod protocol;
 
-pub use lexer::{Token, Lexer};
 pub use ast::*;
+pub use diagnostic::{Diagnostic, DiagnosticBuilder, Diagnostics, FixSuggestion, Severity};
+pub use interpreter::{Evidence, Function, Interpreter, RuntimeError, Value};
+pub use ir::{IrDumpOptions, IrEvidence, IrFunction, IrModule, IrOperation, IrType};
+pub use lexer::{Lexer, Token};
+pub use lower::lower_source_file;
+pub use optimize::{optimize, OptLevel, OptStats, Optimizer};
 pub use parser::Parser;
 pub use span::Span;
-pub use interpreter::{Interpreter, Value, Evidence, RuntimeError, Function};
-pub use typeck::{TypeChecker, Type, TypeError, EvidenceLevel};
 pub use stdlib::register_stdlib;
-pub use optimize::{Optimizer, OptLevel, OptStats, optimize};
-pub use diagnostic::{Diagnostic, DiagnosticBuilder, Diagnostics, Severity, FixSuggestion};
-pub use ir::{IrModule, IrFunction, IrOperation, IrType, IrEvidence, IrDumpOptions};
-pub use lower::lower_source_file;
+pub use typeck::{EvidenceLevel, Type, TypeChecker, TypeError};
 
 #[cfg(feature = "jit")]
 pub use codegen::JitCompiler;
 
 #[cfg(feature = "llvm")]
-pub use llvm_codegen::llvm::{LlvmCompiler, CompileMode};
+pub use llvm_codegen::llvm::{CompileMode, LlvmCompiler};

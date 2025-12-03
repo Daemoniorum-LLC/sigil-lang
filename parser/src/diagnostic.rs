@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use std::ops::Range;
 use strsim::jaro_winkler;
 
-use crate::span::Span;
 use crate::lexer::Token;
+use crate::span::Span;
 
 /// Severity level for diagnostics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -157,7 +157,12 @@ impl Diagnostic {
     }
 
     /// Add a fix suggestion.
-    pub fn with_suggestion(mut self, message: impl Into<String>, span: Span, replacement: impl Into<String>) -> Self {
+    pub fn with_suggestion(
+        mut self,
+        message: impl Into<String>,
+        span: Span,
+        replacement: impl Into<String>,
+    ) -> Self {
         self.suggestions.push(FixSuggestion {
             message: message.into(),
             span,
@@ -256,10 +261,14 @@ impl Diagnostic {
             column,
             end_line,
             end_column,
-            labels: self.labels.iter().map(|(span, msg)| DiagnosticLabel {
-                span: *span,
-                message: msg.clone(),
-            }).collect(),
+            labels: self
+                .labels
+                .iter()
+                .map(|(span, msg)| DiagnosticLabel {
+                    span: *span,
+                    message: msg.clone(),
+                })
+                .collect(),
             notes: self.notes.clone(),
             suggestions: self.suggestions.clone(),
             related: self.related.clone(),
@@ -292,39 +301,25 @@ pub struct DiagnosticBuilder;
 
 impl DiagnosticBuilder {
     /// Create an "unexpected token" error with suggestions.
-    pub fn unexpected_token(
-        expected: &str,
-        found: &Token,
-        span: Span,
-        source: &str,
-    ) -> Diagnostic {
+    pub fn unexpected_token(expected: &str, found: &Token, span: Span, source: &str) -> Diagnostic {
         let found_str = format!("{:?}", found);
         let message = format!("expected {}, found {}", expected, found_str);
 
-        let mut diag = Diagnostic::error(message, span)
-            .with_code("E0001");
+        let mut diag = Diagnostic::error(message, span).with_code("E0001");
 
         // Add context about what was expected
         diag = diag.with_label(span, format!("expected {} here", expected));
 
         // Add suggestions for common mistakes
         if let Some(suggestion) = Self::suggest_token_fix(expected, found, source, span) {
-            diag = diag.with_suggestion(
-                suggestion.0,
-                span,
-                suggestion.1,
-            );
+            diag = diag.with_suggestion(suggestion.0, span, suggestion.1);
         }
 
         diag
     }
 
     /// Create an "undefined variable" error with "did you mean?" suggestions.
-    pub fn undefined_variable(
-        name: &str,
-        span: Span,
-        known_names: &[&str],
-    ) -> Diagnostic {
+    pub fn undefined_variable(name: &str, span: Span, known_names: &[&str]) -> Diagnostic {
         let message = format!("cannot find value `{}` in this scope", name);
         let mut diag = Diagnostic::error(message, span)
             .with_code("E0425")
@@ -349,7 +344,10 @@ impl DiagnosticBuilder {
         span: Span,
         expected_span: Option<Span>,
     ) -> Diagnostic {
-        let message = format!("mismatched types: expected `{}`, found `{}`", expected, found);
+        let message = format!(
+            "mismatched types: expected `{}`, found `{}`",
+            expected, found
+        );
         let mut diag = Diagnostic::error(message, span)
             .with_code("E0308")
             .with_label(span, format!("expected `{}`", expected));
@@ -362,11 +360,7 @@ impl DiagnosticBuilder {
     }
 
     /// Create an "evidentiality mismatch" error.
-    pub fn evidentiality_mismatch(
-        expected: &str,
-        found: &str,
-        span: Span,
-    ) -> Diagnostic {
+    pub fn evidentiality_mismatch(expected: &str, found: &str, span: Span) -> Diagnostic {
         let message = format!(
             "evidentiality mismatch: expected `{}`, found `{}`",
             expected, found
@@ -383,22 +377,12 @@ impl DiagnosticBuilder {
     }
 
     /// Create an "untrusted data" error for evidentiality violations.
-    pub fn untrusted_data_used(
-        span: Span,
-        source_span: Option<Span>,
-    ) -> Diagnostic {
-        let mut diag = Diagnostic::error(
-            "cannot use reported (~) data without validation",
-            span,
-        )
-        .with_code("E0601")
-        .with_label(span, "untrusted data used here")
-        .with_note("data from external sources must be validated before use")
-        .with_suggestion(
-            "validate the data first",
-            span,
-            "value|validate!{...}",
-        );
+    pub fn untrusted_data_used(span: Span, source_span: Option<Span>) -> Diagnostic {
+        let mut diag = Diagnostic::error("cannot use reported (~) data without validation", span)
+            .with_code("E0601")
+            .with_label(span, "untrusted data used here")
+            .with_note("data from external sources must be validated before use")
+            .with_suggestion("validate the data first", span, "value|validate!{...}");
 
         if let Some(src) = source_span {
             diag = diag.with_related("data originates from external source here", src);
@@ -408,13 +392,9 @@ impl DiagnosticBuilder {
     }
 
     /// Create a "missing morpheme" error with ASCII alternatives.
-    pub fn unknown_morpheme(
-        found: &str,
-        span: Span,
-    ) -> Diagnostic {
+    pub fn unknown_morpheme(found: &str, span: Span) -> Diagnostic {
         let message = format!("unknown morpheme `{}`", found);
-        let mut diag = Diagnostic::error(message, span)
-            .with_code("E0100");
+        let mut diag = Diagnostic::error(message, span).with_code("E0100");
 
         // Suggest similar morphemes
         let morphemes = [
@@ -433,9 +413,10 @@ impl DiagnosticBuilder {
             ("ξ", "xi", "next in sequence"),
         ];
 
-        if let Some((greek, _ascii, desc)) = morphemes.iter().find(|(g, a, _)| {
-            jaro_winkler(found, g) > 0.8 || jaro_winkler(found, a) > 0.8
-        }) {
+        if let Some((greek, _ascii, desc)) = morphemes
+            .iter()
+            .find(|(g, a, _)| jaro_winkler(found, g) > 0.8 || jaro_winkler(found, a) > 0.8)
+        {
             diag = diag.with_suggestion(
                 format!("did you mean the {} morpheme?", desc),
                 span,
@@ -443,8 +424,12 @@ impl DiagnosticBuilder {
             );
         }
 
-        diag = diag.with_note("transform morphemes: τ (map), φ (filter), σ (sort), ρ (reduce), Σ (sum), Π (product)");
-        diag = diag.with_note("access morphemes: α (first), ω (last), μ (middle), χ (choice), ν (nth), ξ (next)");
+        diag = diag.with_note(
+            "transform morphemes: τ (map), φ (filter), σ (sort), ρ (reduce), Σ (sum), Π (product)",
+        );
+        diag = diag.with_note(
+            "access morphemes: α (first), ω (last), μ (middle), χ (choice), ν (nth), ξ (next)",
+        );
 
         diag
     }
@@ -521,10 +506,7 @@ impl DiagnosticBuilder {
     }
 
     /// Create a hint diagnostic suggesting a Unicode symbol.
-    pub fn suggest_symbol_upgrade(
-        ascii: &str,
-        span: Span,
-    ) -> Option<Diagnostic> {
+    pub fn suggest_symbol_upgrade(ascii: &str, span: Span) -> Option<Diagnostic> {
         Self::suggest_unicode_symbol(ascii).map(|(unicode, desc)| {
             Diagnostic::warning(
                 format!("consider using Unicode symbol `{}` for {}", unicode, desc),
@@ -626,10 +608,16 @@ impl DiagnosticBuilder {
     /// Generate help text for evidentiality issues.
     fn evidentiality_help(expected: &str, found: &str) -> String {
         match (expected, found) {
-            ("!", "~") => "use `value|validate!{...}` to promote reported data to known".to_string(),
-            ("!", "?") => "handle the uncertain case with `match` or unwrap with `value!`".to_string(),
+            ("!", "~") => {
+                "use `value|validate!{...}` to promote reported data to known".to_string()
+            }
+            ("!", "?") => {
+                "handle the uncertain case with `match` or unwrap with `value!`".to_string()
+            }
             ("?", "~") => "reported data is already uncertain, no conversion needed".to_string(),
-            _ => format!("evidentiality flows: ! (known) < ? (uncertain) < ~ (reported) < ‽ (paradox)"),
+            _ => format!(
+                "evidentiality flows: ! (known) < ? (uncertain) < ~ (reported) < ‽ (paradox)"
+            ),
         }
     }
 }
@@ -684,12 +672,18 @@ impl Diagnostics {
 
     /// Get error count.
     pub fn error_count(&self) -> usize {
-        self.items.iter().filter(|d| d.severity == Severity::Error).count()
+        self.items
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .count()
     }
 
     /// Get warning count.
     pub fn warning_count(&self) -> usize {
-        self.items.iter().filter(|d| d.severity == Severity::Warning).count()
+        self.items
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .count()
     }
 
     /// Print summary.
@@ -723,7 +717,8 @@ impl Diagnostics {
     /// Returns a structured JSON object suitable for machine consumption,
     /// with line/column positions, fix suggestions, and metadata.
     pub fn to_json_output(&self, filename: &str, source: &str) -> JsonDiagnosticsOutput {
-        let diagnostics: Vec<JsonDiagnostic> = self.items
+        let diagnostics: Vec<JsonDiagnostic> = self
+            .items
             .iter()
             .map(|d| d.to_json(filename, source))
             .collect();
@@ -779,21 +774,48 @@ mod tests {
     #[test]
     fn test_unicode_symbol_suggestions() {
         // Logic operators
-        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("&&"), Some(("∧", "logical AND")));
-        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("||"), Some(("∨", "logical OR")));
+        assert_eq!(
+            DiagnosticBuilder::suggest_unicode_symbol("&&"),
+            Some(("∧", "logical AND"))
+        );
+        assert_eq!(
+            DiagnosticBuilder::suggest_unicode_symbol("||"),
+            Some(("∨", "logical OR"))
+        );
 
         // Bitwise operators
-        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("&"), Some(("⋏", "bitwise AND")));
-        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("|"), Some(("⋎", "bitwise OR")));
+        assert_eq!(
+            DiagnosticBuilder::suggest_unicode_symbol("&"),
+            Some(("⋏", "bitwise AND"))
+        );
+        assert_eq!(
+            DiagnosticBuilder::suggest_unicode_symbol("|"),
+            Some(("⋎", "bitwise OR"))
+        );
 
         // Morphemes
-        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("tau"), Some(("τ", "transform morpheme")));
-        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("filter"), Some(("φ", "filter morpheme")));
-        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("alpha"), Some(("α", "first element")));
+        assert_eq!(
+            DiagnosticBuilder::suggest_unicode_symbol("tau"),
+            Some(("τ", "transform morpheme"))
+        );
+        assert_eq!(
+            DiagnosticBuilder::suggest_unicode_symbol("filter"),
+            Some(("φ", "filter morpheme"))
+        );
+        assert_eq!(
+            DiagnosticBuilder::suggest_unicode_symbol("alpha"),
+            Some(("α", "first element"))
+        );
 
         // Math
-        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("sqrt"), Some(("√", "square root")));
-        assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("infinity"), Some(("∞", "infinity")));
+        assert_eq!(
+            DiagnosticBuilder::suggest_unicode_symbol("sqrt"),
+            Some(("√", "square root"))
+        );
+        assert_eq!(
+            DiagnosticBuilder::suggest_unicode_symbol("infinity"),
+            Some(("∞", "infinity"))
+        );
 
         // Unknown
         assert_eq!(DiagnosticBuilder::suggest_unicode_symbol("foobar"), None);

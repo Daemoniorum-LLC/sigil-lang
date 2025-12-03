@@ -77,7 +77,9 @@ impl Client {
 
     /// Set bearer authentication
     pub fn bearer_auth(mut self, token: impl Into<String>) -> Self {
-        self.config.headers.insert("Authorization", format!("Bearer {}", token.into()));
+        self.config
+            .headers
+            .insert("Authorization", format!("Bearer {}", token.into()));
         self
     }
 
@@ -96,7 +98,8 @@ impl Client {
         mutation: &str,
         variables: Option<V>,
     ) -> ProtocolResult<GraphQLResponse<R>> {
-        self.execute(mutation, variables, OperationType::Mutation).await
+        self.execute(mutation, variables, OperationType::Mutation)
+            .await
     }
 
     /// Execute an operation
@@ -116,7 +119,8 @@ impl Client {
             };
 
             let client = reqwest::Client::new();
-            let mut req = client.post(&self.config.endpoint)
+            let mut req = client
+                .post(&self.config.endpoint)
                 .header("Content-Type", "application/json")
                 .timeout(self.config.timeout);
 
@@ -139,8 +143,10 @@ impl Client {
                 .map_err(|e| ProtocolError::Deserialization(e.to_string()))?;
 
             let data = if let Some(data) = body.data {
-                Some(serde_json::from_value(data)
-                    .map_err(|e| ProtocolError::Deserialization(e.to_string()))?)
+                Some(
+                    serde_json::from_value(data)
+                        .map_err(|e| ProtocolError::Deserialization(e.to_string()))?,
+                )
             } else {
                 None
             };
@@ -155,7 +161,9 @@ impl Client {
         #[cfg(not(feature = "reqwest"))]
         {
             let _ = (query, variables);
-            Err(ProtocolError::Protocol("GraphQL requires 'graphql' feature".to_string()))
+            Err(ProtocolError::Protocol(
+                "GraphQL requires 'graphql' feature".to_string(),
+            ))
         }
     }
 }
@@ -267,7 +275,8 @@ impl<T> GraphQLResponse<T> {
                 return Err(ProtocolError::Protocol(first_error.message));
             }
         }
-        self.data.ok_or_else(|| ProtocolError::Protocol("No data in response".to_string()))
+        self.data
+            .ok_or_else(|| ProtocolError::Protocol("No data in response".to_string()))
     }
 
     /// Get a reference to the data
@@ -392,7 +401,9 @@ impl QueryBuilder {
             Some(serde_json::to_value(self.variables).unwrap_or_default())
         };
 
-        client.execute(&self.query, variables, OperationType::Query).await
+        client
+            .execute(&self.query, variables, OperationType::Query)
+            .await
     }
 }
 
@@ -439,7 +450,9 @@ impl MutationBuilder {
             Some(serde_json::to_value(self.variables).unwrap_or_default())
         };
 
-        client.execute(&self.mutation, variables, OperationType::Mutation).await
+        client
+            .execute(&self.mutation, variables, OperationType::Mutation)
+            .await
     }
 }
 
@@ -472,7 +485,10 @@ mod tests {
     fn test_graphql_error() {
         let error = GraphQLError {
             message: "Field not found".to_string(),
-            locations: vec![Location { line: 1, column: 10 }],
+            locations: vec![Location {
+                line: 1,
+                column: 10,
+            }],
             path: vec![PathSegment::Field("user".to_string())],
             extensions: None,
         };

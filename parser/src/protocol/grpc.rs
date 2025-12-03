@@ -252,7 +252,10 @@ impl Metadata {
     /// Insert a metadata value (ASCII)
     pub fn insert(&mut self, key: impl Into<String>, value: impl Into<String>) -> &mut Self {
         let key = key.into().to_lowercase();
-        self.inner.entry(key).or_insert_with(Vec::new).push(value.into());
+        self.inner
+            .entry(key)
+            .or_insert_with(Vec::new)
+            .push(value.into());
         self
     }
 
@@ -269,7 +272,9 @@ impl Metadata {
 
     /// Get a metadata value
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.inner.get(&key.to_lowercase()).and_then(|v| v.first().map(|s| s.as_str()))
+        self.inner
+            .get(&key.to_lowercase())
+            .and_then(|v| v.first().map(|s| s.as_str()))
     }
 
     /// Get binary metadata
@@ -464,7 +469,9 @@ impl Channel {
     #[cfg(not(feature = "tonic"))]
     pub async fn connect(uri: impl Into<String>) -> ProtocolResult<Self> {
         let _ = uri;
-        Err(ProtocolError::Protocol("gRPC requires 'grpc' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "gRPC requires 'grpc' feature".to_string(),
+        ))
     }
 
     /// Get the target URI
@@ -555,11 +562,14 @@ impl ChannelBuilder {
                 tls_config = tls_config.domain_name(domain);
             }
 
-            endpoint = endpoint.tls_config(tls_config)
+            endpoint = endpoint
+                .tls_config(tls_config)
                 .map_err(|e| ProtocolError::TlsError(e.to_string()))?;
         }
 
-        let inner = endpoint.connect().await
+        let inner = endpoint
+            .connect()
+            .await
             .map_err(|e| ProtocolError::ConnectionFailed(e.to_string()))?;
 
         Ok(Channel {
@@ -572,7 +582,9 @@ impl ChannelBuilder {
     /// Build and connect (stub for non-tonic builds)
     #[cfg(not(feature = "tonic"))]
     pub async fn connect(self) -> ProtocolResult<Channel> {
-        Err(ProtocolError::Protocol("gRPC requires 'grpc' feature".to_string()))
+        Err(ProtocolError::Protocol(
+            "gRPC requires 'grpc' feature".to_string(),
+        ))
     }
 }
 
@@ -756,8 +768,7 @@ mod tests {
 
     #[test]
     fn test_request_response() {
-        let req = Request::new("hello")
-            .metadata("x-custom", "value");
+        let req = Request::new("hello").metadata("x-custom", "value");
         assert_eq!(req.get_ref(), &"hello");
         assert_eq!(req.metadata.get("x-custom"), Some("value"));
 

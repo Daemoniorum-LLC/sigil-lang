@@ -290,24 +290,15 @@ pub enum IrType {
 
     /// Named struct/enum type
     #[serde(rename = "named")]
-    Named {
-        name: String,
-        generics: Vec<IrType>,
-    },
+    Named { name: String, generics: Vec<IrType> },
 
     /// Reference &T or &mut T
     #[serde(rename = "reference")]
-    Reference {
-        mutable: bool,
-        inner: Box<IrType>,
-    },
+    Reference { mutable: bool, inner: Box<IrType> },
 
     /// Pointer *const T or *mut T
     #[serde(rename = "pointer")]
-    Pointer {
-        mutable: bool,
-        inner: Box<IrType>,
-    },
+    Pointer { mutable: bool, inner: Box<IrType> },
 
     /// Function type fn(A, B) -> C
     #[serde(rename = "function")]
@@ -330,10 +321,7 @@ pub enum IrType {
 
     /// SIMD vector type
     #[serde(rename = "simd")]
-    Simd {
-        element: Box<IrType>,
-        lanes: usize,
-    },
+    Simd { element: Box<IrType>, lanes: usize },
 
     /// Atomic type
     #[serde(rename = "atomic")]
