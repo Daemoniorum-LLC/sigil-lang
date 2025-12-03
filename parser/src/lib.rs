@@ -19,6 +19,7 @@ pub mod stdlib;
 pub mod optimize;
 pub mod diagnostic;
 pub mod ffi;
+pub mod ir;
 
 #[cfg(feature = "jit")]
 pub mod codegen;
@@ -38,6 +39,7 @@ pub use typeck::{TypeChecker, Type, TypeError, EvidenceLevel};
 pub use stdlib::register_stdlib;
 pub use optimize::{Optimizer, OptLevel, OptStats, optimize};
 pub use diagnostic::{Diagnostic, DiagnosticBuilder, Diagnostics, Severity, FixSuggestion};
+pub use ir::{IrEmitter, IrEmitterOptions, IrDocument, emit_ir, emit_ir_json};
 
 #[cfg(feature = "jit")]
 pub use codegen::JitCompiler;

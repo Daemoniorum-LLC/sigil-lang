@@ -1,6 +1,6 @@
 //! Sigil CLI - Parse, check, and run Sigil source files.
 
-use sigil_parser::{Parser, Interpreter, register_stdlib, Lexer, Token, Diagnostics, Diagnostic};
+use sigil_parser::{Parser, Interpreter, register_stdlib, Lexer, Token, Diagnostics, Diagnostic, IrEmitterOptions};
 use sigil_parser::span::Span;
 #[cfg(feature = "jit")]
 use sigil_parser::JitCompiler;
@@ -40,15 +40,21 @@ fn main() -> ExitCode {
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
         eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO)");
         eprintln!("  check <file>    Type-check and validate (for AI agents: --format=json)");
+        eprintln!("  ir <file>       Emit AI-facing JSON IR (for AI agents/tooling)");
         eprintln!("  parse <file>    Parse and check a Sigil file");
         eprintln!("  lex <file>      Tokenize a Sigil file");
         eprintln!("  repl            Start interactive REPL");
         eprintln!();
-        eprintln!("AI Agent Options (for 'check' command):");
-        eprintln!("  --format=json       Output diagnostics as JSON (pretty-printed)");
-        eprintln!("  --format=compact    Output diagnostics as single-line JSON");
+        eprintln!("AI Agent Options:");
+        eprintln!("  --format=json       Output as JSON (pretty-printed)");
+        eprintln!("  --format=compact    Output as single-line JSON");
         eprintln!("  --quiet             Exit code only, no output (for fast validation)");
         eprintln!("  --apply-suggestions Auto-apply fix suggestions (alias: --fix)");
+        eprintln!();
+        eprintln!("IR Emission Options (for 'ir' command):");
+        eprintln!("  --compact           Output as single-line JSON");
+        eprintln!("  --include-spans     Include source spans in output");
+        eprintln!("  --include-types     Include type annotations");
         return ExitCode::from(1);
     }
 
@@ -129,6 +135,17 @@ fn main() -> ExitCode {
             let quiet = args.iter().any(|a| a == "--quiet");
             let apply_fixes = args.iter().any(|a| a == "--apply-suggestions" || a == "--fix");
             check_file(&args[2], format, quiet, apply_fixes)
+        }
+        "ir" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing file argument");
+                eprintln!("Usage: sigil ir <file.sigil> [--compact] [--include-spans] [--include-types]");
+                return ExitCode::from(1);
+            }
+            let compact = args.iter().any(|a| a == "--compact");
+            let include_spans = args.iter().any(|a| a == "--include-spans");
+            let include_types = args.iter().any(|a| a == "--include-types");
+            emit_ir_file(&args[2], !compact, include_spans, include_types)
         }
         "parse" => {
             if args.len() < 3 {
@@ -612,6 +629,66 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) 
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
+    }
+}
+
+/// Emit AI-facing JSON IR for a source file.
+///
+/// This is the primary interface for AI agents - provides structured
+/// JSON output that can be consumed by LLMs and tooling.
+fn emit_ir_file(path: &str, pretty: bool, include_spans: bool, include_types: bool) -> ExitCode {
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            // Output error as JSON for consistency
+            let error_json = serde_json::json!({
+                "error": format!("Failed to read file: {}", e),
+                "file": path
+            });
+            if pretty {
+                eprintln!("{}", serde_json::to_string_pretty(&error_json).unwrap());
+            } else {
+                eprintln!("{}", serde_json::to_string(&error_json).unwrap());
+            }
+            return ExitCode::from(1);
+        }
+    };
+
+    let mut parser = Parser::new(&source);
+    match parser.parse_file() {
+        Ok(ast) => {
+            let options = IrEmitterOptions {
+                include_types,
+                include_spans,
+                pretty,
+            };
+            let mut emitter = sigil_parser::ir::IrEmitter::with_options(options);
+            let doc = emitter.emit(&ast, path);
+
+            match emitter.to_json(&doc) {
+                Ok(json) => {
+                    println!("{}", json);
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("Error serializing IR: {}", e);
+                    ExitCode::from(1)
+                }
+            }
+        }
+        Err(e) => {
+            // Output parse error as JSON
+            let error_json = serde_json::json!({
+                "error": format!("Parse error: {}", e),
+                "file": path
+            });
+            if pretty {
+                eprintln!("{}", serde_json::to_string_pretty(&error_json).unwrap());
+            } else {
+                eprintln!("{}", serde_json::to_string(&error_json).unwrap());
+            }
+            ExitCode::from(1)
+        }
     }
 }
 
