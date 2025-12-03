@@ -1,0 +1,1309 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sigil-lang.dev/schemas/ir/v1.json",
+  "title": "Sigil AI-Facing IR Schema",
+  "description": "JSON Schema for Sigil Intermediate Representation v1.0",
+  "type": "object",
+  "required": ["version", "module"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Schema URI for validation"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "IR format version (semver)"
+    },
+    "source": {
+      "$ref": "#/definitions/SourceInfo"
+    },
+    "module": {
+      "$ref": "#/definitions/Module"
+    },
+    "types": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/TypeDef"
+      },
+      "description": "Type definitions referenced in the module"
+    },
+    "evidence_constraints": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/EvidenceConstraint"
+      },
+      "description": "Evidence level requirements and violations"
+    },
+    "evidence_flow": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/EvidenceFlowAnalysis"
+      },
+      "description": "Evidence flow analysis per function"
+    },
+    "metadata": {
+      "$ref": "#/definitions/Metadata"
+    }
+  },
+  "definitions": {
+    "SourceInfo": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Source file path"
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "SHA-256 hash of source content"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Compilation timestamp"
+        }
+      }
+    },
+    "Module": {
+      "type": "object",
+      "required": ["name", "items"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Module name"
+        },
+        "imports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Import"
+          }
+        },
+        "exports": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Exported item names"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Item"
+          }
+        }
+      }
+    },
+    "Import": {
+      "type": "object",
+      "required": ["path", "items"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Import path (e.g., 'std::collections')"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Imported items or ['*'] for glob"
+        }
+      }
+    },
+    "Item": {
+      "oneOf": [
+        { "$ref": "#/definitions/FunctionItem" },
+        { "$ref": "#/definitions/StructItem" },
+        { "$ref": "#/definitions/EnumItem" },
+        { "$ref": "#/definitions/TraitItem" },
+        { "$ref": "#/definitions/ImplItem" },
+        { "$ref": "#/definitions/ConstItem" },
+        { "$ref": "#/definitions/StaticItem" },
+        { "$ref": "#/definitions/TypeAliasItem" }
+      ]
+    },
+    "FunctionItem": {
+      "type": "object",
+      "required": ["kind", "name", "params", "body"],
+      "properties": {
+        "kind": { "const": "function" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "visibility": {
+          "type": "string",
+          "enum": ["public", "private", "crate"],
+          "default": "private"
+        },
+        "generics": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/GenericParam" }
+        },
+        "params": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/FunctionParam" }
+        },
+        "return_type": { "$ref": "#/definitions/Type" },
+        "async": { "type": "boolean", "default": false },
+        "body": { "$ref": "#/definitions/Expr" },
+        "attributes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "span": { "$ref": "#/definitions/Span" }
+      }
+    },
+    "FunctionParam": {
+      "type": "object",
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "$ref": "#/definitions/Type" },
+        "evidence": { "$ref": "#/definitions/EvidenceLevel" },
+        "default": { "$ref": "#/definitions/Expr" }
+      }
+    },
+    "GenericParam": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "bounds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "default": { "$ref": "#/definitions/Type" }
+      }
+    },
+    "StructItem": {
+      "type": "object",
+      "required": ["kind", "name", "fields"],
+      "properties": {
+        "kind": { "const": "struct" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["public", "private", "crate"] },
+        "generics": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/GenericParam" }
+        },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/StructField" }
+        },
+        "span": { "$ref": "#/definitions/Span" }
+      }
+    },
+    "StructField": {
+      "type": "object",
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "$ref": "#/definitions/Type" },
+        "visibility": { "type": "string", "enum": ["public", "private", "crate"] },
+        "default": { "$ref": "#/definitions/Expr" }
+      }
+    },
+    "EnumItem": {
+      "type": "object",
+      "required": ["kind", "name", "variants"],
+      "properties": {
+        "kind": { "const": "enum" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["public", "private", "crate"] },
+        "generics": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/GenericParam" }
+        },
+        "variants": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/EnumVariant" }
+        },
+        "span": { "$ref": "#/definitions/Span" }
+      }
+    },
+    "EnumVariant": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "fields": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "array",
+              "items": { "$ref": "#/definitions/Type" }
+            },
+            {
+              "type": "array",
+              "items": { "$ref": "#/definitions/StructField" }
+            }
+          ]
+        },
+        "discriminant": { "type": "integer" }
+      }
+    },
+    "TraitItem": {
+      "type": "object",
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": { "const": "trait" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["public", "private", "crate"] },
+        "generics": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/GenericParam" }
+        },
+        "supertraits": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "methods": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/TraitMethod" }
+        },
+        "span": { "$ref": "#/definitions/Span" }
+      }
+    },
+    "TraitMethod": {
+      "type": "object",
+      "required": ["name", "params"],
+      "properties": {
+        "name": { "type": "string" },
+        "params": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/FunctionParam" }
+        },
+        "return_type": { "$ref": "#/definitions/Type" },
+        "default_body": { "$ref": "#/definitions/Expr" }
+      }
+    },
+    "ImplItem": {
+      "type": "object",
+      "required": ["kind", "target"],
+      "properties": {
+        "kind": { "const": "impl" },
+        "id": { "type": "string" },
+        "trait": { "type": "string" },
+        "target": { "$ref": "#/definitions/Type" },
+        "generics": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/GenericParam" }
+        },
+        "methods": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/FunctionItem" }
+        },
+        "span": { "$ref": "#/definitions/Span" }
+      }
+    },
+    "ConstItem": {
+      "type": "object",
+      "required": ["kind", "name", "type", "value"],
+      "properties": {
+        "kind": { "const": "const" },
+        "name": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["public", "private", "crate"] },
+        "type": { "$ref": "#/definitions/Type" },
+        "value": { "$ref": "#/definitions/Expr" },
+        "span": { "$ref": "#/definitions/Span" }
+      }
+    },
+    "StaticItem": {
+      "type": "object",
+      "required": ["kind", "name", "type", "value"],
+      "properties": {
+        "kind": { "const": "static" },
+        "name": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["public", "private", "crate"] },
+        "mutable": { "type": "boolean", "default": false },
+        "type": { "$ref": "#/definitions/Type" },
+        "value": { "$ref": "#/definitions/Expr" },
+        "span": { "$ref": "#/definitions/Span" }
+      }
+    },
+    "TypeAliasItem": {
+      "type": "object",
+      "required": ["kind", "name", "target"],
+      "properties": {
+        "kind": { "const": "type_alias" },
+        "name": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["public", "private", "crate"] },
+        "generics": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/GenericParam" }
+        },
+        "target": { "$ref": "#/definitions/Type" },
+        "span": { "$ref": "#/definitions/Span" }
+      }
+    },
+    "EvidenceLevel": {
+      "type": "string",
+      "enum": ["known", "uncertain", "reported", "paradox"],
+      "description": "Evidence lattice level: known(!) < uncertain(?) < reported(~) < paradox(‽)"
+    },
+    "Type": {
+      "oneOf": [
+        { "$ref": "#/definitions/PrimitiveType" },
+        { "$ref": "#/definitions/ArrayType" },
+        { "$ref": "#/definitions/SliceType" },
+        { "$ref": "#/definitions/TupleType" },
+        { "$ref": "#/definitions/EvidentialType" },
+        { "$ref": "#/definitions/FunctionType" },
+        { "$ref": "#/definitions/PathType" },
+        { "$ref": "#/definitions/RefType" },
+        { "$ref": "#/definitions/PtrType" },
+        { "$ref": "#/definitions/OptionType" },
+        { "$ref": "#/definitions/ResultType" },
+        { "$ref": "#/definitions/GenericType" },
+        { "$ref": "#/definitions/SimdType" },
+        { "$ref": "#/definitions/AtomicType" },
+        { "$ref": "#/definitions/NeverType" },
+        { "$ref": "#/definitions/UnitType" }
+      ]
+    },
+    "PrimitiveType": {
+      "type": "object",
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": { "const": "primitive" },
+        "name": {
+          "type": "string",
+          "enum": ["bool", "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32", "f64", "char", "str", "unit"]
+        }
+      }
+    },
+    "ArrayType": {
+      "type": "object",
+      "required": ["kind", "element"],
+      "properties": {
+        "kind": { "const": "array" },
+        "element": { "$ref": "#/definitions/Type" },
+        "size": { "type": ["integer", "null"] }
+      }
+    },
+    "SliceType": {
+      "type": "object",
+      "required": ["kind", "element"],
+      "properties": {
+        "kind": { "const": "slice" },
+        "element": { "$ref": "#/definitions/Type" }
+      }
+    },
+    "TupleType": {
+      "type": "object",
+      "required": ["kind", "elements"],
+      "properties": {
+        "kind": { "const": "tuple" },
+        "elements": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Type" }
+        }
+      }
+    },
+    "EvidentialType": {
+      "type": "object",
+      "required": ["kind", "inner", "evidence"],
+      "properties": {
+        "kind": { "const": "evidential" },
+        "inner": { "$ref": "#/definitions/Type" },
+        "evidence": { "$ref": "#/definitions/EvidenceLevel" },
+        "source": { "$ref": "#/definitions/EvidenceSource" }
+      }
+    },
+    "EvidenceSource": {
+      "type": "object",
+      "properties": {
+        "origin": { "type": "string" },
+        "url": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "validator": { "type": "string" }
+      }
+    },
+    "FunctionType": {
+      "type": "object",
+      "required": ["kind", "params", "return"],
+      "properties": {
+        "kind": { "const": "function" },
+        "params": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Type" }
+        },
+        "return": { "$ref": "#/definitions/Type" },
+        "async": { "type": "boolean", "default": false }
+      }
+    },
+    "PathType": {
+      "type": "object",
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": { "const": "path" },
+        "name": { "type": "string" },
+        "args": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Type" }
+        }
+      }
+    },
+    "RefType": {
+      "type": "object",
+      "required": ["kind", "inner"],
+      "properties": {
+        "kind": { "const": "ref" },
+        "mutable": { "type": "boolean", "default": false },
+        "inner": { "$ref": "#/definitions/Type" }
+      }
+    },
+    "PtrType": {
+      "type": "object",
+      "required": ["kind", "inner"],
+      "properties": {
+        "kind": { "const": "ptr" },
+        "mutable": { "type": "boolean", "default": false },
+        "inner": { "$ref": "#/definitions/Type" }
+      }
+    },
+    "OptionType": {
+      "type": "object",
+      "required": ["kind", "inner"],
+      "properties": {
+        "kind": { "const": "option" },
+        "inner": { "$ref": "#/definitions/Type" }
+      }
+    },
+    "ResultType": {
+      "type": "object",
+      "required": ["kind", "ok", "err"],
+      "properties": {
+        "kind": { "const": "result" },
+        "ok": { "$ref": "#/definitions/Type" },
+        "err": { "$ref": "#/definitions/Type" }
+      }
+    },
+    "GenericType": {
+      "type": "object",
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": { "const": "generic" },
+        "name": { "type": "string" },
+        "bounds": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "SimdType": {
+      "type": "object",
+      "required": ["kind", "element", "lanes"],
+      "properties": {
+        "kind": { "const": "simd" },
+        "element": { "$ref": "#/definitions/Type" },
+        "lanes": { "type": "integer", "enum": [2, 4, 8, 16, 32, 64] }
+      }
+    },
+    "AtomicType": {
+      "type": "object",
+      "required": ["kind", "inner"],
+      "properties": {
+        "kind": { "const": "atomic" },
+        "inner": { "$ref": "#/definitions/Type" }
+      }
+    },
+    "NeverType": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "const": "never" }
+      }
+    },
+    "UnitType": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "const": "unit" }
+      }
+    },
+    "TypeDef": {
+      "oneOf": [
+        { "$ref": "#/definitions/StructItem" },
+        { "$ref": "#/definitions/EnumItem" },
+        { "$ref": "#/definitions/TypeAliasItem" }
+      ]
+    },
+    "Expr": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string" },
+        "id": { "type": "string" },
+        "type": { "$ref": "#/definitions/Type" },
+        "evidence": { "$ref": "#/definitions/EvidenceLevel" },
+        "span": { "$ref": "#/definitions/Span" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "literal" } } },
+          "then": { "$ref": "#/definitions/LiteralExpr" }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "path" } } },
+          "then": { "$ref": "#/definitions/PathExpr" }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "binary" } } },
+          "then": { "$ref": "#/definitions/BinaryExpr" }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "unary" } } },
+          "then": { "$ref": "#/definitions/UnaryExpr" }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "call" } } },
+          "then": { "$ref": "#/definitions/CallExpr" }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "method_call" } } },
+          "then": { "$ref": "#/definitions/MethodCallExpr" }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "pipeline" } } },
+          "then": { "$ref": "#/definitions/PipelineExpr" }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "closure" } } },
+          "then": { "$ref": "#/definitions/ClosureExpr" }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "if" } } },
+          "then": { "$ref": "#/definitions/IfExpr" }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "match" } } },
+          "then": { "$ref": "#/definitions/MatchExpr" }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "block" } } },
+          "then": { "$ref": "#/definitions/BlockExpr" }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "protocol" } } },
+          "then": { "$ref": "#/definitions/ProtocolExpr" }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "incorporation" } } },
+          "then": { "$ref": "#/definitions/IncorporationExpr" }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "affective" } } },
+          "then": { "$ref": "#/definitions/AffectiveExpr" }
+        }
+      ]
+    },
+    "LiteralExpr": {
+      "type": "object",
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": { "const": "literal" },
+        "value": {
+          "oneOf": [
+            { "type": "object", "properties": { "int": { "type": "integer" } }, "required": ["int"] },
+            { "type": "object", "properties": { "float": { "type": "number" } }, "required": ["float"] },
+            { "type": "object", "properties": { "string": { "type": "string" } }, "required": ["string"] },
+            { "type": "object", "properties": { "bool": { "type": "boolean" } }, "required": ["bool"] },
+            { "type": "object", "properties": { "char": { "type": "string", "maxLength": 1 } }, "required": ["char"] },
+            { "type": "object", "properties": { "null": { "const": true } }, "required": ["null"] }
+          ]
+        }
+      }
+    },
+    "PathExpr": {
+      "type": "object",
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": { "const": "path" },
+        "name": { "type": "string" },
+        "segments": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "BinaryExpr": {
+      "type": "object",
+      "required": ["kind", "op", "left", "right"],
+      "properties": {
+        "kind": { "const": "binary" },
+        "op": {
+          "type": "string",
+          "enum": [
+            "+", "-", "*", "/", "%", "**",
+            "==", "!=", "<", "<=", ">", ">=",
+            "&&", "||",
+            "&", "|", "^", "<<", ">>",
+            "∪", "∩", "∖", "⊂", "⊆", "⊃", "⊇",
+            "⊔", "⊓",
+            "∘", "⊗", "⊕",
+            "⋈"
+          ]
+        },
+        "left": { "$ref": "#/definitions/Expr" },
+        "right": { "$ref": "#/definitions/Expr" }
+      }
+    },
+    "UnaryExpr": {
+      "type": "object",
+      "required": ["kind", "op", "expr"],
+      "properties": {
+        "kind": { "const": "unary" },
+        "op": {
+          "type": "string",
+          "enum": ["-", "!", "~", "*", "&", "&mut", "¬", "√", "∛"]
+        },
+        "expr": { "$ref": "#/definitions/Expr" }
+      }
+    },
+    "CallExpr": {
+      "type": "object",
+      "required": ["kind", "func", "args"],
+      "properties": {
+        "kind": { "const": "call" },
+        "func": { "$ref": "#/definitions/Expr" },
+        "args": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Expr" }
+        },
+        "type_args": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Type" }
+        }
+      }
+    },
+    "MethodCallExpr": {
+      "type": "object",
+      "required": ["kind", "receiver", "method", "args"],
+      "properties": {
+        "kind": { "const": "method_call" },
+        "receiver": { "$ref": "#/definitions/Expr" },
+        "method": { "type": "string" },
+        "args": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Expr" }
+        },
+        "type_args": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Type" }
+        }
+      }
+    },
+    "PipelineExpr": {
+      "type": "object",
+      "required": ["kind", "source", "stages"],
+      "properties": {
+        "kind": { "const": "pipeline" },
+        "source": { "$ref": "#/definitions/Expr" },
+        "stages": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/PipelineStage" }
+        }
+      }
+    },
+    "PipelineStage": {
+      "type": "object",
+      "required": ["op"],
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "transform", "filter", "sort", "reduce",
+            "sum", "product", "first", "last", "middle", "choice", "nth", "next",
+            "call", "identity",
+            "parallel", "gpu",
+            "fork",
+            "await",
+            "validate",
+            "protocol", "protocol_config",
+            "send", "recv", "stream", "connect", "close",
+            "header", "body", "timeout", "retry"
+          ]
+        },
+        "id": { "type": "string" },
+        "symbol": {
+          "type": "string",
+          "enum": ["τ", "φ", "σ", "ρ", "λ", "Σ", "Π", "α", "ω", "μ", "χ", "ν", "ξ", "∥", "⊛", "⇒", "⇐", "≋", "⊸", "⊗", "⏱"]
+        },
+        "evidence_in": { "$ref": "#/definitions/EvidenceLevel" },
+        "evidence_out": { "$ref": "#/definitions/EvidenceLevel" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "op": { "const": "transform" } } },
+          "then": {
+            "properties": {
+              "mapper": { "$ref": "#/definitions/Expr" }
+            },
+            "required": ["mapper"]
+          }
+        },
+        {
+          "if": { "properties": { "op": { "const": "filter" } } },
+          "then": {
+            "properties": {
+              "predicate": { "$ref": "#/definitions/Expr" }
+            },
+            "required": ["predicate"]
+          }
+        },
+        {
+          "if": { "properties": { "op": { "const": "sort" } } },
+          "then": {
+            "properties": {
+              "key": { "$ref": "#/definitions/Expr" },
+              "descending": { "type": "boolean", "default": false },
+              "stable": { "type": "boolean", "default": true }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "op": { "const": "reduce" } } },
+          "then": {
+            "properties": {
+              "reducer": { "$ref": "#/definitions/Expr" },
+              "initial": { "$ref": "#/definitions/Expr" }
+            },
+            "required": ["reducer"]
+          }
+        },
+        {
+          "if": { "properties": { "op": { "const": "call" } } },
+          "then": {
+            "properties": {
+              "fn": { "type": "string" },
+              "args": { "type": "array", "items": { "$ref": "#/definitions/Expr" } }
+            },
+            "required": ["fn"]
+          }
+        },
+        {
+          "if": { "properties": { "op": { "const": "fork" } } },
+          "then": {
+            "properties": {
+              "branches": {
+                "type": "array",
+                "items": { "$ref": "#/definitions/PipelineBranch" }
+              },
+              "join_strategy": {
+                "type": "string",
+                "enum": ["tuple", "array", "struct", "first", "race"]
+              }
+            },
+            "required": ["branches"]
+          }
+        },
+        {
+          "if": { "properties": { "op": { "const": "parallel" } } },
+          "then": {
+            "properties": {
+              "inner_op": { "$ref": "#/definitions/PipelineStage" },
+              "thread_pool": { "type": "string" },
+              "chunk_size": { "type": ["integer", "null"] }
+            },
+            "required": ["inner_op"]
+          }
+        },
+        {
+          "if": { "properties": { "op": { "const": "gpu" } } },
+          "then": {
+            "properties": {
+              "inner_op": { "$ref": "#/definitions/PipelineStage" },
+              "workgroup_size": {
+                "type": "array",
+                "items": { "type": "integer" },
+                "minItems": 1,
+                "maxItems": 3
+              },
+              "shader_hint": { "type": "string" }
+            },
+            "required": ["inner_op"]
+          }
+        },
+        {
+          "if": { "properties": { "op": { "const": "nth" } } },
+          "then": {
+            "properties": {
+              "index": { "$ref": "#/definitions/Expr" }
+            },
+            "required": ["index"]
+          }
+        },
+        {
+          "if": { "properties": { "op": { "const": "validate" } } },
+          "then": {
+            "properties": {
+              "schema": { "type": "string" },
+              "promote_evidence": { "$ref": "#/definitions/EvidenceLevel" }
+            },
+            "required": ["schema"]
+          }
+        },
+        {
+          "if": { "properties": { "op": { "const": "timeout" } } },
+          "then": {
+            "properties": {
+              "ms": { "type": "integer" }
+            },
+            "required": ["ms"]
+          }
+        },
+        {
+          "if": { "properties": { "op": { "const": "retry" } } },
+          "then": {
+            "properties": {
+              "count": { "type": "integer" },
+              "strategy": {
+                "type": "string",
+                "enum": ["fixed", "linear", "exponential"]
+              }
+            },
+            "required": ["count"]
+          }
+        }
+      ]
+    },
+    "PipelineBranch": {
+      "type": "object",
+      "required": ["stages"],
+      "properties": {
+        "name": { "type": "string" },
+        "stages": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/PipelineStage" }
+        },
+        "type": { "$ref": "#/definitions/Type" }
+      }
+    },
+    "ClosureExpr": {
+      "type": "object",
+      "required": ["kind", "params", "body"],
+      "properties": {
+        "kind": { "const": "closure" },
+        "params": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "type": { "$ref": "#/definitions/Type" }
+            }
+          }
+        },
+        "body": { "$ref": "#/definitions/Expr" },
+        "captures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "capture_mode"],
+            "properties": {
+              "name": { "type": "string" },
+              "capture_mode": {
+                "type": "string",
+                "enum": ["value", "ref", "mut_ref", "move"]
+              }
+            }
+          }
+        },
+        "return_type": { "$ref": "#/definitions/Type" }
+      }
+    },
+    "IfExpr": {
+      "type": "object",
+      "required": ["kind", "condition", "then_branch"],
+      "properties": {
+        "kind": { "const": "if" },
+        "condition": { "$ref": "#/definitions/Expr" },
+        "then_branch": { "$ref": "#/definitions/Expr" },
+        "else_branch": { "$ref": "#/definitions/Expr" }
+      }
+    },
+    "MatchExpr": {
+      "type": "object",
+      "required": ["kind", "scrutinee", "arms"],
+      "properties": {
+        "kind": { "const": "match" },
+        "scrutinee": { "$ref": "#/definitions/Expr" },
+        "arms": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/MatchArm" }
+        }
+      }
+    },
+    "MatchArm": {
+      "type": "object",
+      "required": ["pattern", "body"],
+      "properties": {
+        "pattern": { "$ref": "#/definitions/Pattern" },
+        "guard": { "$ref": "#/definitions/Expr" },
+        "body": { "$ref": "#/definitions/Expr" }
+      }
+    },
+    "Pattern": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["wildcard", "binding", "literal", "tuple", "struct", "variant", "slice", "or", "range"]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "binding" } } },
+          "then": {
+            "properties": {
+              "name": { "type": "string" },
+              "mutable": { "type": "boolean", "default": false }
+            },
+            "required": ["name"]
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "variant" } } },
+          "then": {
+            "properties": {
+              "enum": { "type": "string" },
+              "variant": { "type": "string" },
+              "bindings": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            },
+            "required": ["enum", "variant"]
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "struct" } } },
+          "then": {
+            "properties": {
+              "struct_name": { "type": "string" },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "pattern": { "$ref": "#/definitions/Pattern" }
+                  }
+                }
+              }
+            },
+            "required": ["struct_name"]
+          }
+        }
+      ]
+    },
+    "BlockExpr": {
+      "type": "object",
+      "required": ["kind", "statements"],
+      "properties": {
+        "kind": { "const": "block" },
+        "statements": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Statement" }
+        },
+        "tail_expr": { "$ref": "#/definitions/Expr" },
+        "evidence_out": { "$ref": "#/definitions/EvidenceLevel" }
+      }
+    },
+    "Statement": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["let", "expr", "return", "break", "continue"]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "let" } } },
+          "then": {
+            "properties": {
+              "pattern": { "$ref": "#/definitions/Pattern" },
+              "type": { "$ref": "#/definitions/Type" },
+              "value": { "$ref": "#/definitions/Expr" },
+              "evidence": { "$ref": "#/definitions/EvidenceLevel" }
+            },
+            "required": ["pattern"]
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "expr" } } },
+          "then": {
+            "properties": {
+              "expr": { "$ref": "#/definitions/Expr" }
+            },
+            "required": ["expr"]
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "return" } } },
+          "then": {
+            "properties": {
+              "value": { "$ref": "#/definitions/Expr" }
+            }
+          }
+        }
+      ]
+    },
+    "ProtocolExpr": {
+      "type": "object",
+      "required": ["kind", "protocol", "operation"],
+      "properties": {
+        "kind": { "const": "protocol" },
+        "protocol": {
+          "type": "string",
+          "enum": ["http", "grpc", "websocket", "kafka", "amqp", "graphql"]
+        },
+        "operation": { "type": "string" },
+        "config": { "$ref": "#/definitions/ProtocolConfig" }
+      }
+    },
+    "ProtocolConfig": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
+        },
+        "url": { "$ref": "#/definitions/Expr" },
+        "headers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "value": { "$ref": "#/definitions/Expr" }
+            }
+          }
+        },
+        "body": { "$ref": "#/definitions/Expr" },
+        "timeout": {
+          "type": "object",
+          "properties": {
+            "connect": { "type": "integer" },
+            "read": { "type": "integer" },
+            "total": { "type": "integer" }
+          }
+        },
+        "retry": {
+          "type": "object",
+          "properties": {
+            "max_attempts": { "type": "integer" },
+            "backoff": {
+              "type": "string",
+              "enum": ["fixed", "linear", "exponential"]
+            }
+          }
+        },
+        "service": { "$ref": "#/definitions/Expr" },
+        "message": { "$ref": "#/definitions/Expr" },
+        "metadata": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string" },
+              "value": { "$ref": "#/definitions/Expr" }
+            }
+          }
+        },
+        "topic": { "$ref": "#/definitions/Expr" },
+        "key": { "$ref": "#/definitions/Expr" },
+        "payload": { "$ref": "#/definitions/Expr" },
+        "partition": { "type": ["integer", "null"] },
+        "protocols": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "IncorporationExpr": {
+      "type": "object",
+      "required": ["kind", "segments"],
+      "properties": {
+        "kind": { "const": "incorporation" },
+        "segments": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/IncorporationSegment" }
+        }
+      }
+    },
+    "IncorporationSegment": {
+      "type": "object",
+      "required": ["role", "value"],
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["noun", "verb", "aspect"]
+        },
+        "value": {
+          "oneOf": [
+            { "type": "string" },
+            { "$ref": "#/definitions/Expr" }
+          ]
+        },
+        "args": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Expr" }
+        }
+      }
+    },
+    "AffectiveExpr": {
+      "type": "object",
+      "required": ["kind", "inner", "affect"],
+      "properties": {
+        "kind": { "const": "affective" },
+        "inner": { "$ref": "#/definitions/Expr" },
+        "affect": { "$ref": "#/definitions/AffectiveMarkers" }
+      }
+    },
+    "AffectiveMarkers": {
+      "type": "object",
+      "properties": {
+        "sentiment": {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "enum": ["positive", "negative", "neutral"] },
+            "symbol": { "type": "string", "enum": ["⊕", "⊖", "⊜"] }
+          }
+        },
+        "intensity": {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "enum": ["low", "medium", "high", "max"] },
+            "symbol": { "type": "string", "enum": ["↓", "→", "↑", "⇈"] }
+          }
+        },
+        "emotion": {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "enum": ["joy", "sadness", "anger", "fear", "surprise", "love"] },
+            "symbol": { "type": "string", "enum": ["☺", "☹", "⚡", "❄", "✦", "♡"] }
+          }
+        },
+        "confidence": {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "enum": ["low", "medium", "high"] },
+            "symbol": { "type": "string", "enum": ["○", "◎", "◉"] }
+          }
+        },
+        "formality": {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string", "enum": ["formal", "informal"] },
+            "symbol": { "type": "string", "enum": ["♔", "♟"] }
+          }
+        },
+        "sarcasm": { "type": "boolean", "default": false }
+      }
+    },
+    "EvidenceConstraint": {
+      "type": "object",
+      "required": ["location", "required", "actual"],
+      "properties": {
+        "location": {
+          "type": "object",
+          "properties": {
+            "fn": { "type": "string" },
+            "param": { "type": "integer" },
+            "stage": { "type": "string" },
+            "expr_id": { "type": "string" }
+          }
+        },
+        "required": { "$ref": "#/definitions/EvidenceLevel" },
+        "actual": { "$ref": "#/definitions/EvidenceLevel" },
+        "resolution": {
+          "type": "string",
+          "enum": ["validation_required", "promotion_allowed", "incompatible", "ok"]
+        },
+        "suggested_validator": { "type": "string" }
+      }
+    },
+    "EvidenceFlowAnalysis": {
+      "type": "object",
+      "properties": {
+        "entry_evidence": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/EvidenceLevel" }
+        },
+        "stage_evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stage": { "type": "string" },
+              "in": { "$ref": "#/definitions/EvidenceLevel" },
+              "out": { "$ref": "#/definitions/EvidenceLevel" },
+              "op": { "type": "string" }
+            }
+          }
+        },
+        "exit_evidence": { "$ref": "#/definitions/EvidenceLevel" },
+        "evidence_promotions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "location": { "type": "string" },
+              "from": { "$ref": "#/definitions/EvidenceLevel" },
+              "to": { "$ref": "#/definitions/EvidenceLevel" },
+              "validator": { "type": "string" }
+            }
+          }
+        },
+        "evidence_demotions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "location": { "type": "string" },
+              "from": { "$ref": "#/definitions/EvidenceLevel" },
+              "to": { "$ref": "#/definitions/EvidenceLevel" },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "Span": {
+      "type": "object",
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 },
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 1 },
+        "end_line": { "type": "integer", "minimum": 1 },
+        "end_column": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "Metadata": {
+      "type": "object",
+      "properties": {
+        "optimization_level": {
+          "type": "string",
+          "enum": ["O0", "O1", "O2", "O3", "Os"]
+        },
+        "target": { "type": "string" },
+        "features": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "debug_info": { "type": "boolean" }
+      }
+    }
+  }
+}
