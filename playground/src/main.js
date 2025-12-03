@@ -180,43 +180,133 @@ fn main() {
 }`
 };
 
+// Configuration - can be overridden via environment or URL params
+const API_BASE = new URLSearchParams(window.location.search).get('api') ||
+                 (window.location.hostname === 'localhost' ? 'http://localhost:8080' : '');
+
 // Sigil runtime interface
 class SigilRuntime {
   constructor() {
     this.ready = false;
-    this.wasmModule = null;
+    this.useBackend = false;
+    this.apiBase = API_BASE;
   }
 
   async init() {
-    // Try to load WASM module
-    try {
-      // In production, this would load the actual WASM module
-      // For now, we'll use a mock or server-side execution
-      this.ready = true;
-      return true;
-    } catch (e) {
-      console.error('Failed to load Sigil WASM:', e);
-      this.ready = true; // Still mark as ready, will use mock
-      return false;
+    // Try to connect to backend API
+    if (this.apiBase) {
+      try {
+        const response = await fetch(`${this.apiBase}/health`, {
+          method: 'GET',
+          timeout: 2000,
+        });
+        if (response.ok) {
+          const health = await response.json();
+          console.log('Connected to Sigil backend:', health);
+          this.useBackend = true;
+          this.ready = true;
+          return true;
+        }
+      } catch (e) {
+        console.log('Backend not available, using mock mode:', e.message);
+      }
     }
+
+    // Fall back to mock mode
+    this.useBackend = false;
+    this.ready = true;
+    return true;
   }
 
-  async run(code) {
+  async run(code, backend = 'interpreter') {
     if (!this.ready) await this.init();
 
-    // Mock execution for demonstration
-    // In production, this calls into WASM or a backend API
+    if (this.useBackend) {
+      return this.backendRun(code, backend);
+    }
     return this.mockRun(code);
   }
 
   async check(code) {
     if (!this.ready) await this.init();
+
+    if (this.useBackend) {
+      return this.backendCheck(code);
+    }
     return this.mockCheck(code);
   }
 
   async getIR(code) {
     if (!this.ready) await this.init();
+
+    if (this.useBackend) {
+      return this.backendIR(code);
+    }
     return this.mockIR(code);
+  }
+
+  // Backend API implementations
+  async backendRun(code, backend = 'interpreter') {
+    try {
+      const response = await fetch(`${this.apiBase}/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, backend }),
+      });
+      const result = await response.json();
+      return {
+        success: result.success,
+        output: result.output || '',
+        errors: result.error ? [result.error.message] : [],
+        time: result.execution_time_ms || 0,
+      };
+    } catch (e) {
+      return {
+        success: false,
+        output: '',
+        errors: [`Backend error: ${e.message}`],
+        time: 0,
+      };
+    }
+  }
+
+  async backendCheck(code) {
+    try {
+      const response = await fetch(`${this.apiBase}/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      const result = await response.json();
+      return {
+        success: result.success,
+        errors: result.errors?.map(e => e.message) || [],
+        warnings: result.warnings?.map(w => w.message) || [],
+      };
+    } catch (e) {
+      return {
+        success: false,
+        errors: [`Backend error: ${e.message}`],
+        warnings: [],
+      };
+    }
+  }
+
+  async backendIR(code) {
+    try {
+      const response = await fetch(`${this.apiBase}/ir`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        return result.ir;
+      }
+      throw new Error(result.error?.message || 'Failed to generate IR');
+    } catch (e) {
+      throw e;
+    }
   }
 
   // Mock implementations for demo
