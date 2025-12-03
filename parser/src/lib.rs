@@ -8,6 +8,7 @@
 //! - JIT compiler using Cranelift for native performance
 //! - Comprehensive optimization passes (O0-O3)
 //! - Rich diagnostic reporting with colored output
+//! - AI-facing IR for tooling and agent integration
 
 pub mod lexer;
 pub mod ast;
@@ -19,6 +20,8 @@ pub mod stdlib;
 pub mod optimize;
 pub mod diagnostic;
 pub mod ffi;
+pub mod ir;
+pub mod lower;
 
 #[cfg(feature = "jit")]
 pub mod codegen;
@@ -38,6 +41,8 @@ pub use typeck::{TypeChecker, Type, TypeError, EvidenceLevel};
 pub use stdlib::register_stdlib;
 pub use optimize::{Optimizer, OptLevel, OptStats, optimize};
 pub use diagnostic::{Diagnostic, DiagnosticBuilder, Diagnostics, Severity, FixSuggestion};
+pub use ir::{IrModule, IrFunction, IrOperation, IrType, IrEvidence, IrDumpOptions};
+pub use lower::lower_source_file;
 
 #[cfg(feature = "jit")]
 pub use codegen::JitCompiler;

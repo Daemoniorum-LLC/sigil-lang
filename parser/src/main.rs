@@ -2,6 +2,7 @@
 
 use sigil_parser::{Parser, Interpreter, register_stdlib, Lexer, Token, Diagnostics, Diagnostic};
 use sigil_parser::span::Span;
+use sigil_parser::lower::lower_source_file;
 #[cfg(feature = "jit")]
 use sigil_parser::JitCompiler;
 #[cfg(feature = "llvm")]
@@ -40,6 +41,7 @@ fn main() -> ExitCode {
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
         eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO)");
         eprintln!("  check <file>    Type-check and validate (for AI agents: --format=json)");
+        eprintln!("  dump-ir <file>  Dump AI-facing IR as JSON (for agents/tooling)");
         eprintln!("  parse <file>    Parse and check a Sigil file");
         eprintln!("  lex <file>      Tokenize a Sigil file");
         eprintln!("  repl            Start interactive REPL");
@@ -49,6 +51,11 @@ fn main() -> ExitCode {
         eprintln!("  --format=compact    Output diagnostics as single-line JSON");
         eprintln!("  --quiet             Exit code only, no output (for fast validation)");
         eprintln!("  --apply-suggestions Auto-apply fix suggestions (alias: --fix)");
+        eprintln!();
+        eprintln!("AI IR Options (for 'dump-ir' command):");
+        eprintln!("  --pretty            Pretty-print JSON output (default)");
+        eprintln!("  --compact           Single-line JSON output");
+        eprintln!("  -o <file>           Write IR to file instead of stdout");
         return ExitCode::from(1);
     }
 
@@ -129,6 +136,24 @@ fn main() -> ExitCode {
             let quiet = args.iter().any(|a| a == "--quiet");
             let apply_fixes = args.iter().any(|a| a == "--apply-suggestions" || a == "--fix");
             check_file(&args[2], format, quiet, apply_fixes)
+        }
+        "dump-ir" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing file argument");
+                eprintln!("Usage: sigil dump-ir <file.sigil> [--pretty|--compact] [-o output.json]");
+                return ExitCode::from(1);
+            }
+            let pretty = !args.iter().any(|a| a == "--compact");
+            let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
+                if pos + 1 < args.len() {
+                    Some(args[pos + 1].clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            dump_ir_file(&args[2], pretty, output.as_deref())
         }
         "parse" => {
             if args.len() < 3 {
@@ -613,6 +638,64 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) 
     } else {
         ExitCode::SUCCESS
     }
+}
+
+/// Dump the AI-facing IR to JSON.
+///
+/// This is the primary interface for AI agents and tooling to inspect
+/// Sigil programs in a structured, semantically-rich format.
+///
+/// The IR includes:
+/// - Function definitions with typed parameters
+/// - Pipeline operations (morphemes, transformations, forks)
+/// - Evidentiality annotations throughout
+/// - The evidentiality lattice structure
+fn dump_ir_file(path: &str, pretty: bool, output: Option<&str>) -> ExitCode {
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Parse the source
+    let mut parser = Parser::new(&source);
+    let ast = match parser.parse_file() {
+        Ok(ast) => ast,
+        Err(e) => {
+            eprintln!("Parse error in '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Lower AST to IR
+    let ir = lower_source_file(path, &ast);
+
+    // Serialize to JSON
+    let json = match ir.to_json(pretty) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!("Error serializing IR: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Output
+    match output {
+        Some(output_path) => {
+            if let Err(e) = fs::write(output_path, &json) {
+                eprintln!("Error writing to '{}': {}", output_path, e);
+                return ExitCode::from(1);
+            }
+            eprintln!("IR written to: {}", output_path);
+        }
+        None => {
+            println!("{}", json);
+        }
+    }
+
+    ExitCode::SUCCESS
 }
 
 fn parse_file(path: &str) -> ExitCode {
