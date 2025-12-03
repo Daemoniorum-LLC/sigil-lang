@@ -2299,6 +2299,138 @@ impl Interpreter {
                 // Set retry policy on the request
                 self.protocol_set_retry(value, &retry_count, retry_strategy.as_ref())
             }
+
+            // ==========================================
+            // Evidence Promotion Operations
+            // ==========================================
+            PipeOp::Validate {
+                predicate,
+                target_evidence,
+            } => {
+                // |validate!{predicate} - validate and promote evidence
+                // Execute the predicate with the current value
+                let predicate_result = match predicate.as_ref() {
+                    Expr::Closure { params, body, .. } => {
+                        if let Some(param) = params.first() {
+                            let param_name = match &param.pattern {
+                                Pattern::Ident { name, .. } => name.name.clone(),
+                                _ => "it".to_string(),
+                            };
+                            self.environment
+                                .borrow_mut()
+                                .define(param_name, value.clone());
+                        }
+                        self.evaluate(body)?
+                    }
+                    _ => self.evaluate(predicate)?,
+                };
+
+                // Check if validation passed
+                match predicate_result {
+                    Value::Bool(true) => {
+                        // Validation passed: promote evidence
+                        let target_ev = match target_evidence {
+                            Evidentiality::Known => Evidence::Known,
+                            Evidentiality::Uncertain => Evidence::Uncertain,
+                            Evidentiality::Reported => Evidence::Reported,
+                            Evidentiality::Paradox => Evidence::Paradox,
+                        };
+                        let inner = match value {
+                            Value::Evidential { value: v, .. } => *v,
+                            v => v,
+                        };
+                        Ok(Value::Evidential {
+                            value: Box::new(inner),
+                            evidence: target_ev,
+                        })
+                    }
+                    Value::Bool(false) => Err(RuntimeError::new(
+                        "validation failed: predicate returned false",
+                    )),
+                    _ => Err(RuntimeError::new("validation predicate must return bool")),
+                }
+            }
+
+            PipeOp::Assume {
+                reason,
+                target_evidence,
+            } => {
+                // |assume!("reason") - explicitly assume evidence (with audit trail)
+                let reason_str: Rc<String> = if let Some(r) = reason {
+                    match self.evaluate(r)? {
+                        Value::String(s) => s,
+                        _ => Rc::new("<no reason>".to_string()),
+                    }
+                } else {
+                    Rc::new("<no reason>".to_string())
+                };
+
+                // Log the assumption for audit purposes
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "[AUDIT] Evidence assumption: {} - reason: {}",
+                    match target_evidence {
+                        Evidentiality::Known => "!",
+                        Evidentiality::Uncertain => "?",
+                        Evidentiality::Reported => "~",
+                        Evidentiality::Paradox => "‽",
+                    },
+                    reason_str
+                );
+
+                let target_ev = match target_evidence {
+                    Evidentiality::Known => Evidence::Known,
+                    Evidentiality::Uncertain => Evidence::Uncertain,
+                    Evidentiality::Reported => Evidence::Reported,
+                    Evidentiality::Paradox => Evidence::Paradox,
+                };
+
+                let inner = match value {
+                    Value::Evidential { value: v, .. } => *v,
+                    v => v,
+                };
+
+                Ok(Value::Evidential {
+                    value: Box::new(inner),
+                    evidence: target_ev,
+                })
+            }
+
+            PipeOp::AssertEvidence(expected) => {
+                // |assert_evidence!{!} - assert evidence level
+                let actual_evidence = match &value {
+                    Value::Evidential { evidence, .. } => evidence.clone(),
+                    _ => Evidence::Known,
+                };
+
+                let expected_ev = match expected {
+                    Evidentiality::Known => Evidence::Known,
+                    Evidentiality::Uncertain => Evidence::Uncertain,
+                    Evidentiality::Reported => Evidence::Reported,
+                    Evidentiality::Paradox => Evidence::Paradox,
+                };
+
+                // Check if actual satisfies expected
+                let satisfies = match (&actual_evidence, &expected_ev) {
+                    (Evidence::Known, _) => true,
+                    (
+                        Evidence::Uncertain,
+                        Evidence::Uncertain | Evidence::Reported | Evidence::Paradox,
+                    ) => true,
+                    (Evidence::Reported, Evidence::Reported | Evidence::Paradox) => true,
+                    (Evidence::Paradox, Evidence::Paradox) => true,
+                    _ => false,
+                };
+
+                if satisfies {
+                    Ok(value)
+                } else {
+                    Err(RuntimeError::new(format!(
+                        "evidence assertion failed: expected {:?}, found {:?}",
+                        expected_ev, actual_evidence
+                    )))
+                }
+            }
         }
     }
 

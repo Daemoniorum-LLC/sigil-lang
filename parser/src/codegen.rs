@@ -1775,6 +1775,49 @@ pub mod jit {
                                 )?
                             }
                         }
+
+                        // Evidence promotion operations
+                        PipeOp::Validate {
+                            predicate,
+                            target_evidence: _,
+                        } => {
+                            let pred_val = compile_expr(
+                                module, functions, extern_fns, builder, scope, predicate,
+                            )?;
+                            compile_call(
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
+                                "sigil_validate",
+                                &[result, pred_val],
+                            )?
+                        }
+
+                        PipeOp::Assume {
+                            reason,
+                            target_evidence: _,
+                        } => {
+                            let reason_val = if let Some(r) = reason {
+                                compile_expr(module, functions, extern_fns, builder, scope, r)?
+                            } else {
+                                builder.ins().iconst(types::I64, 0)
+                            };
+                            compile_call(
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
+                                "sigil_assume",
+                                &[result, reason_val],
+                            )?
+                        }
+
+                        PipeOp::AssertEvidence(_) => {
+                            // At codegen time, evidence assertions are already checked by typeck
+                            // Just return the value unchanged
+                            result
+                        }
                     };
                 }
 

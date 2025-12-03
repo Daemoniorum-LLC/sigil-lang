@@ -1199,6 +1199,33 @@ pub enum PipeOp {
         count: Box<Expr>,
         strategy: Option<Box<Expr>>,
     },
+
+    // ==========================================
+    // Evidence Promotion Operations
+    // ==========================================
+    /// Validate operation: `|validate!{predicate}` - promote evidence with validation
+    /// Takes a predicate function that validates the data.
+    /// If validation passes: ~ → ! (reported → known)
+    /// If validation fails: returns an error
+    /// Example: `data~|validate!{x => x.id > 0 && x.name.len > 0}`
+    Validate {
+        predicate: Box<Expr>,
+        target_evidence: Evidentiality,
+    },
+
+    /// Assume operation: `|assume!` or `|assume!("reason")` - explicit trust promotion
+    /// Escape hatch that promotes evidence with an audit trail.
+    /// Always logs the assumption for security review.
+    /// Example: `external_data~|assume!("trusted legacy system")`
+    Assume {
+        reason: Option<Box<Expr>>,
+        target_evidence: Evidentiality,
+    },
+
+    /// Assert evidence: `|assert_evidence!{expected}` - verify evidence level at compile time
+    /// Fails compilation if actual evidence doesn't match expected.
+    /// Example: `data|assert_evidence!{!}` - assert data is known
+    AssertEvidence(Evidentiality),
 }
 
 /// Incorporation segment.
