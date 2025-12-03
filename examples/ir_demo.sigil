@@ -1,0 +1,68 @@
+// Example demonstrating the AI-facing IR with pipelines and morphemes
+
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+struct Result {
+    value: i64,
+    success: bool,
+}
+
+// Simple function with pipeline
+fn double_all(nums: [i64]) -> [i64] {
+    nums|τ{_ * 2}
+}
+
+// Filter and sort
+fn process_positive(nums: [i64]) -> [i64] {
+    nums
+        |φ{_ > 0}
+        |σ
+        |τ{_ + 1}
+}
+
+// Reduce to sum
+fn sum_all(nums: [i64]) -> i64 {
+    nums|ρ{a + _}
+}
+
+// Access morphemes
+fn get_first(nums: [i64]) -> i64 {
+    nums|α
+}
+
+fn get_last(nums: [i64]) -> i64 {
+    nums|ω
+}
+
+// Function with evidentiality markers
+fn compute_known(x: i64) -> i64 {
+    x * 2 + 1
+}
+
+// Conditional
+fn abs_value(x: i64) -> i64 {
+    if x < 0 {
+        -x
+    } else {
+        x
+    }
+}
+
+// Binary operations
+fn math_ops(a: i64, b: i64) -> i64 {
+    let sum = a + b;
+    let diff = a - b;
+    let prod = a * b;
+    sum + diff + prod
+}
+
+// Main function
+fn main() -> i64 {
+    let nums = [1, 2, 3, 4, 5];
+    let doubled = double_all(nums);
+    let summed = sum_all(doubled);
+    summed
+}
