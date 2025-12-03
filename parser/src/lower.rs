@@ -1123,7 +1123,26 @@ fn pipe_op_evidence(op: &ast::PipeOp) -> IrEvidence {
         | ast::PipeOp::Stream(_)
         | ast::PipeOp::Connect(_)
         | ast::PipeOp::Close => IrEvidence::Reported,
+
+        // Evidence promotion operations change evidence level
+        ast::PipeOp::Validate {
+            target_evidence, ..
+        } => ast_evidence_to_ir(*target_evidence),
+        ast::PipeOp::Assume {
+            target_evidence, ..
+        } => ast_evidence_to_ir(*target_evidence),
+        ast::PipeOp::AssertEvidence(_) => IrEvidence::Known, // Assertion doesn't change evidence
+
         _ => IrEvidence::Known,
+    }
+}
+
+fn ast_evidence_to_ir(ev: ast::Evidentiality) -> IrEvidence {
+    match ev {
+        ast::Evidentiality::Known => IrEvidence::Known,
+        ast::Evidentiality::Uncertain => IrEvidence::Uncertain,
+        ast::Evidentiality::Reported => IrEvidence::Reported,
+        ast::Evidentiality::Paradox => IrEvidence::Paradox,
     }
 }
 
