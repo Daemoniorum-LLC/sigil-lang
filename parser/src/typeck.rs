@@ -1839,6 +1839,56 @@ impl TypeChecker {
                 // Return the same type (this is just an assertion)
                 return input.clone();
             }
+
+            // ==========================================
+            // Scope Functions (Kotlin-inspired)
+            // ==========================================
+
+            // Also: execute side effect, return original value unchanged
+            // T -> T (side effect executed but value preserved)
+            PipeOp::Also(_) => {
+                // The closure is executed for side effects only
+                // Return type is same as input, evidence preserved
+                return input.clone();
+            }
+
+            // Apply: mutate value in place, return modified value
+            // T -> T (value may be mutated)
+            PipeOp::Apply(_) => {
+                // The closure can mutate the value
+                // Return type is same as input, evidence preserved
+                return input.clone();
+            }
+
+            // TakeIf: return Some(value) if predicate true, None otherwise
+            // T -> Option<T>
+            PipeOp::TakeIf(_) => {
+                // Returns Option wrapping the input type
+                // Evidence is preserved in the inner type
+                return Type::Named {
+                    name: "Option".to_string(),
+                    generics: vec![input.clone()],
+                };
+            }
+
+            // TakeUnless: return Some(value) if predicate false, None otherwise
+            // T -> Option<T>
+            PipeOp::TakeUnless(_) => {
+                // Returns Option wrapping the input type
+                // Evidence is preserved in the inner type
+                return Type::Named {
+                    name: "Option".to_string(),
+                    generics: vec![input.clone()],
+                };
+            }
+
+            // Let: transform value (alias for Transform/tau)
+            // T -> U
+            PipeOp::Let(func) => {
+                // Same as Transform - applies function and returns result
+                let _ = self.infer_expr(func);
+                self.fresh_var() // Result type depends on function
+            }
         };
 
         // Preserve evidence through pipe

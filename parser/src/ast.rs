@@ -1226,6 +1226,34 @@ pub enum PipeOp {
     /// Fails compilation if actual evidence doesn't match expected.
     /// Example: `data|assert_evidence!{!}` - assert data is known
     AssertEvidence(Evidentiality),
+
+    // ==========================================
+    // Scope Functions (Kotlin-inspired)
+    // ==========================================
+    /// Also: `|also{f}` - execute side effect, return original value unchanged
+    /// Like Kotlin's `also` - useful for logging/debugging in pipelines
+    /// Example: `data|also{println}|process` - logs data, then processes it
+    Also(Box<Expr>),
+
+    /// Apply: `|apply{block}` - mutate value in place, return modified value
+    /// Like Kotlin's `apply` - useful for configuration/setup
+    /// Example: `config|apply{.timeout = 5000; .retries = 3}`
+    Apply(Box<Expr>),
+
+    /// TakeIf: `|take_if{predicate}` - return Some(value) if predicate true, None otherwise
+    /// Like Kotlin's `takeIf` - useful for conditional pipelines
+    /// Example: `user|take_if{.age >= 18}` - returns Option<User>
+    TakeIf(Box<Expr>),
+
+    /// TakeUnless: `|take_unless{predicate}` - return Some(value) if predicate false
+    /// Like Kotlin's `takeUnless` - inverse of take_if
+    /// Example: `item|take_unless{.is_deleted}` - returns Option<Item>
+    TakeUnless(Box<Expr>),
+
+    /// Let: `|let{f}` - transform value, like map but reads better for single values
+    /// Like Kotlin's `let` - essentially an alias for transform
+    /// Example: `name|let{.to_uppercase}` - transforms the name
+    Let(Box<Expr>),
 }
 
 /// Incorporation segment.

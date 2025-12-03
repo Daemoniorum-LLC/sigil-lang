@@ -1,0 +1,177 @@
+//! Scope Functions
+//! Kotlin-inspired utilities for cleaner data pipelines.
+//!
+//! These functions enable side effects, conditional processing,
+//! and transformations without breaking pipeline flow.
+
+// ==========================================
+// |also - Execute side effect, return original
+// ==========================================
+// Perfect for logging/debugging in the middle of pipelines
+
+fn demonstrate_also() {
+    // Debug pipeline without modifying flow
+    let result = fetch_data()
+        |also{x => println("Fetched: {}", x)}
+        |process
+        |also{x => println("Processed: {}", x)}
+        |validate!{is_valid}
+
+    // Log intermediate state in LLM pipeline
+    let response = prompt
+        |also{p => log_prompt(p)}
+        |send_to_llm
+        |also{r => log_response(r)}
+        |parse_json
+}
+
+// ==========================================
+// |apply - Mutate value, return modified
+// ==========================================
+// Perfect for configuration/setup
+
+fn demonstrate_apply() {
+    // Configure an object fluently
+    let config = Config·new()
+        |apply{c =>
+            c.timeout = 5000
+            c.max_retries = 3
+            c.base_url = "https://api.example.com"
+        }
+
+    // Build HTTP request
+    let request = HttpRequest·new("GET", "/users")
+        |apply{r =>
+            r.header("Authorization", "Bearer " + token)
+            r.header("Content-Type", "application/json")
+        }
+}
+
+// ==========================================
+// |take_if - Return Some if predicate true
+// ==========================================
+// Perfect for conditional processing
+
+fn demonstrate_take_if() {
+    // Only process valid users
+    let maybe_user = user
+        |take_if{u => u.age >= 18}  // Returns Option<User>
+
+    // Chain with match for conditional flow
+    match user|take_if{.is_active} {
+        Some(u) => process_active_user(u),
+        None => skip(),
+    }
+
+    // Filter in pipelines
+    let valid_items = items
+        |filter{i => i.is_valid}
+        |map{i => i|take_if{.price > 0}}
+        |filter{opt => opt.is_some}
+}
+
+// ==========================================
+// |take_unless - Return Some if predicate false
+// ==========================================
+// Inverse of take_if, for exclusion patterns
+
+fn demonstrate_take_unless() {
+    // Exclude deleted items
+    let active = item|take_unless{.is_deleted}
+
+    // Exclude error states
+    let success = result|take_unless{.has_error}
+}
+
+// ==========================================
+// |let - Transform value (alias for map)
+// ==========================================
+// Reads better for single-value transformations
+
+fn demonstrate_let() {
+    // Transform a single value
+    let upper = name|let{.to_uppercase}
+
+    // Chain transformations
+    let formatted = raw_input
+        |let{.trim}
+        |let{.to_lowercase}
+        |let{s => s + "@example.com"}
+}
+
+// ==========================================
+// Combined Usage: LLM Pipeline with Debugging
+// ==========================================
+
+async fn llm_pipeline(query: str!) -> Response~ {
+    // Build prompt with logging at each step
+    let prompt = query
+        |let{sanitize}
+        |also{println("Sanitized query: {}")}
+        |let{q => build_prompt(q, context)}
+        |also{p => log_tokens(p)}
+
+    // Send to LLM with retry, log response
+    let response = prompt
+        |send_to_llm
+        |also{r => audit_log("llm_response", r)}
+        |take_if{r => r.finish_reason == "stop"}
+
+    // Handle potential None from take_if
+    match response {
+        Some(r) => r,
+        None => error_response("LLM did not complete"),
+    }
+}
+
+// ==========================================
+// Combined Usage: Configuration Builder
+// ==========================================
+
+fn create_client(env: str!) -> Client! {
+    let base_config = ClientConfig·new()
+        |apply{c =>
+            c.timeout = 30000
+            c.retry_count = 3
+        }
+
+    // Environment-specific configuration
+    let config = base_config
+        |let{c => if env == "prod" {
+            c|apply{.tls_enabled = true}
+        } else {
+            c
+        }}
+        |also{c => println("Config: {}", c)}
+
+    Client·from_config(config)
+}
+
+// ==========================================
+// Evidence Integration
+// ==========================================
+
+fn process_external_data(data: Data~) -> Data! {
+    // Log incoming external data
+    data
+        |also{d => audit_log("received_external", d)}
+        |validate!{is_schema_valid}
+        |also{d => audit_log("validated", d)}
+        |let{normalize}
+        |also{d => audit_log("normalized", d)}
+}
+
+fn main() {
+    // Simple pipeline with debugging
+    let x = 42
+        |also{println}
+        |let{x => x * 2}
+        |also{println}
+
+    // Conditional processing
+    let maybe = 10
+        |take_if{x => x > 5}
+
+    println("Result: {}", x)
+    println("Maybe: {:?}", maybe)
+}
