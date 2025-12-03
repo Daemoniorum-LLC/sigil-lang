@@ -149,6 +149,9 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_agent_memory(interp);
     register_agent_planning(interp);
     register_agent_vectors(interp);
+    // Phase 19: Multi-Agent Coordination and Reasoning
+    register_agent_swarm(interp);
+    register_agent_reasoning(interp);
 }
 
 // Helper to define a builtin
@@ -20905,6 +20908,849 @@ fn register_agent_vectors(interp: &mut Interpreter) {
             .collect();
 
         Ok(Value::Array(Rc::new(RefCell::new(results))))
+    });
+}
+
+// ============================================================================
+// MULTI-AGENT COORDINATION - Swarm behaviors and agent communication
+// ============================================================================
+
+/// Agent registry for multi-agent coordination
+thread_local! {
+    static AGENT_REGISTRY: RefCell<HashMap<String, AgentInfo>> = RefCell::new(HashMap::new());
+    static AGENT_MESSAGES: RefCell<HashMap<String, Vec<AgentMessage>>> = RefCell::new(HashMap::new());
+}
+
+#[derive(Clone)]
+struct AgentInfo {
+    id: String,
+    agent_type: String,
+    state: HashMap<String, Value>,
+    capabilities: Vec<String>,
+    created_at: u64,
+}
+
+#[derive(Clone)]
+struct AgentMessage {
+    from: String,
+    to: String,
+    msg_type: String,
+    content: Value,
+    timestamp: u64,
+}
+
+fn register_agent_swarm(interp: &mut Interpreter) {
+    // swarm_create_agent - Create a new agent in the swarm
+    define(interp, "swarm_create_agent", Some(2), |_, args| {
+        let agent_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("swarm_create_agent requires string id")),
+        };
+
+        let agent_type = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("swarm_create_agent requires string type")),
+        };
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let agent = AgentInfo {
+            id: agent_id.clone(),
+            agent_type,
+            state: HashMap::new(),
+            capabilities: Vec::new(),
+            created_at: now,
+        };
+
+        AGENT_REGISTRY.with(|registry| {
+            registry.borrow_mut().insert(agent_id.clone(), agent);
+        });
+
+        AGENT_MESSAGES.with(|messages| {
+            messages.borrow_mut().insert(agent_id.clone(), Vec::new());
+        });
+
+        let mut result = HashMap::new();
+        result.insert("id".to_string(), Value::String(Rc::new(agent_id)));
+        result.insert("created_at".to_string(), Value::Int(now as i64));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // swarm_add_capability - Add a capability to an agent
+    define(interp, "swarm_add_capability", Some(2), |_, args| {
+        let agent_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_add_capability requires agent")),
+        };
+
+        let capability = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("capability must be string")),
+        };
+
+        AGENT_REGISTRY.with(|registry| {
+            if let Some(agent) = registry.borrow_mut().get_mut(&agent_id) {
+                if !agent.capabilities.contains(&capability) {
+                    agent.capabilities.push(capability);
+                }
+                Ok(Value::Bool(true))
+            } else {
+                Err(RuntimeError::new(format!("Agent '{}' not found", agent_id)))
+            }
+        })
+    });
+
+    // swarm_send_message - Send a message from one agent to another
+    define(interp, "swarm_send_message", Some(4), |_, args| {
+        let from_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid sender agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_send_message requires sender agent")),
+        };
+
+        let to_id = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid receiver agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_send_message requires receiver agent")),
+        };
+
+        let msg_type = match &args[2] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("message type must be string")),
+        };
+
+        let content = args[3].clone();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let message = AgentMessage {
+            from: from_id.clone(),
+            to: to_id.clone(),
+            msg_type,
+            content,
+            timestamp: now,
+        };
+
+        AGENT_MESSAGES.with(|messages| {
+            if let Some(queue) = messages.borrow_mut().get_mut(&to_id) {
+                queue.push(message);
+                Ok(Value::Bool(true))
+            } else {
+                Err(RuntimeError::new(format!("Agent '{}' not found", to_id)))
+            }
+        })
+    });
+
+    // swarm_receive_messages - Get messages for an agent
+    define(interp, "swarm_receive_messages", Some(1), |_, args| {
+        let agent_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_receive_messages requires agent")),
+        };
+
+        AGENT_MESSAGES.with(|messages| {
+            if let Some(queue) = messages.borrow_mut().get_mut(&agent_id) {
+                let msgs: Vec<Value> = queue.drain(..).map(|m| {
+                    let mut msg_map = HashMap::new();
+                    msg_map.insert("from".to_string(), Value::String(Rc::new(m.from)));
+                    msg_map.insert("to".to_string(), Value::String(Rc::new(m.to)));
+                    msg_map.insert("type".to_string(), Value::String(Rc::new(m.msg_type)));
+                    msg_map.insert("content".to_string(), m.content);
+                    msg_map.insert("timestamp".to_string(), Value::Int(m.timestamp as i64));
+                    Value::Map(Rc::new(RefCell::new(msg_map)))
+                }).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(msgs))))
+            } else {
+                Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))))
+            }
+        })
+    });
+
+    // swarm_broadcast - Broadcast message to all agents
+    define(interp, "swarm_broadcast", Some(3), |_, args| {
+        let from_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid sender agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_broadcast requires sender agent")),
+        };
+
+        let msg_type = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("message type must be string")),
+        };
+
+        let content = args[2].clone();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        // Get all agent IDs except sender
+        let agent_ids: Vec<String> = AGENT_REGISTRY.with(|registry| {
+            registry.borrow().keys()
+                .filter(|id| *id != &from_id)
+                .cloned()
+                .collect()
+        });
+
+        let mut count = 0;
+        AGENT_MESSAGES.with(|messages| {
+            let mut msgs = messages.borrow_mut();
+            for to_id in agent_ids {
+                if let Some(queue) = msgs.get_mut(&to_id) {
+                    queue.push(AgentMessage {
+                        from: from_id.clone(),
+                        to: to_id,
+                        msg_type: msg_type.clone(),
+                        content: content.clone(),
+                        timestamp: now,
+                    });
+                    count += 1;
+                }
+            }
+        });
+
+        Ok(Value::Int(count))
+    });
+
+    // swarm_find_agents - Find agents by capability
+    define(interp, "swarm_find_agents", Some(1), |_, args| {
+        let capability = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("swarm_find_agents requires capability string")),
+        };
+
+        let agents: Vec<Value> = AGENT_REGISTRY.with(|registry| {
+            registry.borrow().values()
+                .filter(|agent| agent.capabilities.contains(&capability))
+                .map(|agent| {
+                    let mut info = HashMap::new();
+                    info.insert("id".to_string(), Value::String(Rc::new(agent.id.clone())));
+                    info.insert("type".to_string(), Value::String(Rc::new(agent.agent_type.clone())));
+                    info.insert("capabilities".to_string(), Value::Array(Rc::new(RefCell::new(
+                        agent.capabilities.iter().map(|c| Value::String(Rc::new(c.clone()))).collect()
+                    ))));
+                    Value::Map(Rc::new(RefCell::new(info)))
+                })
+                .collect()
+        });
+
+        Ok(Value::Array(Rc::new(RefCell::new(agents))))
+    });
+
+    // swarm_list_agents - List all agents
+    define(interp, "swarm_list_agents", Some(0), |_, _args| {
+        let agents: Vec<Value> = AGENT_REGISTRY.with(|registry| {
+            registry.borrow().values().map(|agent| {
+                let mut info = HashMap::new();
+                info.insert("id".to_string(), Value::String(Rc::new(agent.id.clone())));
+                info.insert("type".to_string(), Value::String(Rc::new(agent.agent_type.clone())));
+                info.insert("capabilities".to_string(), Value::Array(Rc::new(RefCell::new(
+                    agent.capabilities.iter().map(|c| Value::String(Rc::new(c.clone()))).collect()
+                ))));
+                info.insert("created_at".to_string(), Value::Int(agent.created_at as i64));
+                Value::Map(Rc::new(RefCell::new(info)))
+            }).collect()
+        });
+        Ok(Value::Array(Rc::new(RefCell::new(agents))))
+    });
+
+    // swarm_set_state - Set agent state
+    define(interp, "swarm_set_state", Some(3), |_, args| {
+        let agent_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_set_state requires agent")),
+        };
+
+        let key = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("key must be string")),
+        };
+
+        let value = args[2].clone();
+
+        AGENT_REGISTRY.with(|registry| {
+            if let Some(agent) = registry.borrow_mut().get_mut(&agent_id) {
+                agent.state.insert(key, value);
+                Ok(Value::Bool(true))
+            } else {
+                Err(RuntimeError::new(format!("Agent '{}' not found", agent_id)))
+            }
+        })
+    });
+
+    // swarm_get_state - Get agent state
+    define(interp, "swarm_get_state", Some(2), |_, args| {
+        let agent_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_get_state requires agent")),
+        };
+
+        let key = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("key must be string")),
+        };
+
+        AGENT_REGISTRY.with(|registry| {
+            if let Some(agent) = registry.borrow().get(&agent_id) {
+                Ok(agent.state.get(&key).cloned().unwrap_or(Value::Null))
+            } else {
+                Ok(Value::Null)
+            }
+        })
+    });
+
+    // swarm_remove_agent - Remove an agent from the swarm
+    define(interp, "swarm_remove_agent", Some(1), |_, args| {
+        let agent_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_remove_agent requires agent")),
+        };
+
+        let removed = AGENT_REGISTRY.with(|registry| {
+            registry.borrow_mut().remove(&agent_id).is_some()
+        });
+
+        AGENT_MESSAGES.with(|messages| {
+            messages.borrow_mut().remove(&agent_id);
+        });
+
+        Ok(Value::Bool(removed))
+    });
+
+    // swarm_consensus - Simple majority voting
+    define(interp, "swarm_consensus", Some(2), |_, args| {
+        let topic = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("topic must be string")),
+        };
+
+        let votes = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("votes must be array")),
+        };
+
+        // Count votes
+        let mut vote_counts: HashMap<String, i64> = HashMap::new();
+        for vote in votes.iter() {
+            let vote_str = match vote {
+                Value::String(s) => s.as_str().to_string(),
+                Value::Bool(b) => b.to_string(),
+                Value::Int(n) => n.to_string(),
+                _ => continue,
+            };
+            *vote_counts.entry(vote_str).or_insert(0) += 1;
+        }
+
+        // Find winner
+        let total = votes.len() as i64;
+        let (winner, count) = vote_counts.iter()
+            .max_by_key(|(_, &count)| count)
+            .map(|(k, &v)| (k.clone(), v))
+            .unwrap_or_default();
+
+        let mut result = HashMap::new();
+        result.insert("topic".to_string(), Value::String(Rc::new(topic)));
+        result.insert("winner".to_string(), Value::String(Rc::new(winner)));
+        result.insert("votes".to_string(), Value::Int(count));
+        result.insert("total".to_string(), Value::Int(total));
+        result.insert("majority".to_string(), Value::Bool(count > total / 2));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+}
+
+// ============================================================================
+// REASONING PRIMITIVES - Constraint satisfaction and logical inference
+// ============================================================================
+
+fn register_agent_reasoning(interp: &mut Interpreter) {
+    // reason_constraint - Create a constraint
+    define(interp, "reason_constraint", Some(3), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("constraint name must be string")),
+        };
+
+        let constraint_type = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("constraint type must be string")),
+        };
+
+        let params = args[2].clone();
+
+        let mut constraint = HashMap::new();
+        constraint.insert("name".to_string(), Value::String(Rc::new(name)));
+        constraint.insert("type".to_string(), Value::String(Rc::new(constraint_type)));
+        constraint.insert("params".to_string(), params);
+        constraint.insert("satisfied".to_string(), Value::Bool(false));
+
+        Ok(Value::Map(Rc::new(RefCell::new(constraint))))
+    });
+
+    // reason_check_constraint - Check if a constraint is satisfied
+    define(interp, "reason_check_constraint", Some(2), |_, args| {
+        let constraint = match &args[0] {
+            Value::Map(m) => m.borrow().clone(),
+            _ => return Err(RuntimeError::new("reason_check_constraint requires constraint")),
+        };
+
+        let context = match &args[1] {
+            Value::Map(m) => m.borrow().clone(),
+            _ => return Err(RuntimeError::new("reason_check_constraint requires context")),
+        };
+
+        let constraint_type = constraint.get("type")
+            .and_then(|v| if let Value::String(s) = v { Some(s.as_str()) } else { None })
+            .unwrap_or("unknown");
+
+        let params = constraint.get("params").cloned().unwrap_or(Value::Null);
+
+        let satisfied = match constraint_type {
+            "equals" => {
+                if let Value::Map(p) = &params {
+                    let p = p.borrow();
+                    let var_name = p.get("var")
+                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        .unwrap_or_default();
+                    let expected = p.get("value").cloned().unwrap_or(Value::Null);
+                    let actual = context.get(&var_name).cloned().unwrap_or(Value::Null);
+                    values_equal_simple(&actual, &expected)
+                } else {
+                    false
+                }
+            }
+            "not_null" => {
+                if let Value::Map(p) = &params {
+                    let p = p.borrow();
+                    let var_name = p.get("var")
+                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        .unwrap_or_default();
+                    !matches!(context.get(&var_name), None | Some(Value::Null))
+                } else {
+                    false
+                }
+            }
+            "range" => {
+                if let Value::Map(p) = &params {
+                    let p = p.borrow();
+                    let var_name = p.get("var")
+                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        .unwrap_or_default();
+                    let min = p.get("min")
+                        .and_then(|v| match v { Value::Int(n) => Some(*n as f64), Value::Float(f) => Some(*f), _ => None })
+                        .unwrap_or(f64::NEG_INFINITY);
+                    let max = p.get("max")
+                        .and_then(|v| match v { Value::Int(n) => Some(*n as f64), Value::Float(f) => Some(*f), _ => None })
+                        .unwrap_or(f64::INFINITY);
+                    let actual = context.get(&var_name)
+                        .and_then(|v| match v { Value::Int(n) => Some(*n as f64), Value::Float(f) => Some(*f), _ => None })
+                        .unwrap_or(0.0);
+                    actual >= min && actual <= max
+                } else {
+                    false
+                }
+            }
+            "contains" => {
+                if let Value::Map(p) = &params {
+                    let p = p.borrow();
+                    let var_name = p.get("var")
+                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        .unwrap_or_default();
+                    let needle = p.get("value")
+                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        .unwrap_or_default();
+                    let actual = context.get(&var_name)
+                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        .unwrap_or_default();
+                    actual.contains(&needle)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
+
+        let mut result = HashMap::new();
+        result.insert("satisfied".to_string(), Value::Bool(satisfied));
+        result.insert("constraint".to_string(), Value::Map(Rc::new(RefCell::new(constraint))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // reason_check_all - Check if all constraints are satisfied
+    define(interp, "reason_check_all", Some(2), |interp, args| {
+        let constraints = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("reason_check_all requires constraints array")),
+        };
+
+        let context = args[1].clone();
+
+        let mut all_satisfied = true;
+        let mut results: Vec<Value> = Vec::new();
+
+        for constraint in constraints.iter() {
+            // Call reason_check_constraint for each
+            if let Value::Map(c) = constraint {
+                let c_type = c.borrow().get("type")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_ref().clone()) } else { None })
+                    .unwrap_or_else(|| "unknown".to_string());
+                let params = c.borrow().get("params").cloned().unwrap_or(Value::Null);
+
+                let ctx = match &context {
+                    Value::Map(m) => m.borrow().clone(),
+                    _ => HashMap::new(),
+                };
+
+                let satisfied = match c_type.as_str() {
+                    "equals" => {
+                        if let Value::Map(p) = &params {
+                            let p = p.borrow();
+                            let var_name = p.get("var")
+                                .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                                .unwrap_or_default();
+                            let expected = p.get("value").cloned().unwrap_or(Value::Null);
+                            let actual = ctx.get(&var_name).cloned().unwrap_or(Value::Null);
+                            values_equal_simple(&actual, &expected)
+                        } else {
+                            false
+                        }
+                    }
+                    "not_null" => {
+                        if let Value::Map(p) = &params {
+                            let p = p.borrow();
+                            let var_name = p.get("var")
+                                .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                                .unwrap_or_default();
+                            !matches!(ctx.get(&var_name), None | Some(Value::Null))
+                        } else {
+                            false
+                        }
+                    }
+                    _ => true, // Unknown constraints pass by default
+                };
+
+                if !satisfied {
+                    all_satisfied = false;
+                }
+
+                let mut r = HashMap::new();
+                r.insert("constraint".to_string(), constraint.clone());
+                r.insert("satisfied".to_string(), Value::Bool(satisfied));
+                results.push(Value::Map(Rc::new(RefCell::new(r))));
+            }
+        }
+
+        let _ = interp; // Silence unused warning
+
+        let mut result = HashMap::new();
+        result.insert("all_satisfied".to_string(), Value::Bool(all_satisfied));
+        result.insert("results".to_string(), Value::Array(Rc::new(RefCell::new(results))));
+        result.insert("total".to_string(), Value::Int(constraints.len() as i64));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // reason_implies - Create an implication (if A then B)
+    define(interp, "reason_implies", Some(2), |_, args| {
+        let antecedent = args[0].clone();
+        let consequent = args[1].clone();
+
+        let mut implication = HashMap::new();
+        implication.insert("type".to_string(), Value::String(Rc::new("implication".to_string())));
+        implication.insert("if".to_string(), antecedent);
+        implication.insert("then".to_string(), consequent);
+
+        Ok(Value::Map(Rc::new(RefCell::new(implication))))
+    });
+
+    // reason_and - Logical AND of multiple conditions
+    define(interp, "reason_and", None, |_, args| {
+        let conditions: Vec<Value> = args.into_iter().collect();
+
+        let mut conjunction = HashMap::new();
+        conjunction.insert("type".to_string(), Value::String(Rc::new("and".to_string())));
+        conjunction.insert("conditions".to_string(), Value::Array(Rc::new(RefCell::new(conditions))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(conjunction))))
+    });
+
+    // reason_or - Logical OR of multiple conditions
+    define(interp, "reason_or", None, |_, args| {
+        let conditions: Vec<Value> = args.into_iter().collect();
+
+        let mut disjunction = HashMap::new();
+        disjunction.insert("type".to_string(), Value::String(Rc::new("or".to_string())));
+        disjunction.insert("conditions".to_string(), Value::Array(Rc::new(RefCell::new(conditions))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(disjunction))))
+    });
+
+    // reason_not - Logical NOT
+    define(interp, "reason_not", Some(1), |_, args| {
+        let condition = args[0].clone();
+
+        let mut negation = HashMap::new();
+        negation.insert("type".to_string(), Value::String(Rc::new("not".to_string())));
+        negation.insert("condition".to_string(), condition);
+
+        Ok(Value::Map(Rc::new(RefCell::new(negation))))
+    });
+
+    // reason_evaluate - Evaluate a logical expression
+    define(interp, "reason_evaluate", Some(2), |_, args| {
+        let expr = match &args[0] {
+            Value::Map(m) => m.borrow().clone(),
+            Value::Bool(b) => return Ok(Value::Bool(*b)),
+            _ => return Err(RuntimeError::new("reason_evaluate requires expression")),
+        };
+
+        let context = match &args[1] {
+            Value::Map(m) => m.borrow().clone(),
+            _ => HashMap::new(),
+        };
+
+        fn eval_expr(expr: &HashMap<String, Value>, ctx: &HashMap<String, Value>) -> bool {
+            let expr_type = expr.get("type")
+                .and_then(|v| if let Value::String(s) = v { Some(s.as_str()) } else { None })
+                .unwrap_or("unknown");
+
+            match expr_type {
+                "and" => {
+                    if let Some(Value::Array(conditions)) = expr.get("conditions") {
+                        conditions.borrow().iter().all(|c| {
+                            if let Value::Map(m) = c {
+                                eval_expr(&m.borrow(), ctx)
+                            } else if let Value::Bool(b) = c {
+                                *b
+                            } else {
+                                false
+                            }
+                        })
+                    } else {
+                        false
+                    }
+                }
+                "or" => {
+                    if let Some(Value::Array(conditions)) = expr.get("conditions") {
+                        conditions.borrow().iter().any(|c| {
+                            if let Value::Map(m) = c {
+                                eval_expr(&m.borrow(), ctx)
+                            } else if let Value::Bool(b) = c {
+                                *b
+                            } else {
+                                false
+                            }
+                        })
+                    } else {
+                        false
+                    }
+                }
+                "not" => {
+                    if let Some(condition) = expr.get("condition") {
+                        if let Value::Map(m) = condition {
+                            !eval_expr(&m.borrow(), ctx)
+                        } else if let Value::Bool(b) = condition {
+                            !b
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
+                "implication" => {
+                    let antecedent = if let Some(a) = expr.get("if") {
+                        if let Value::Map(m) = a {
+                            eval_expr(&m.borrow(), ctx)
+                        } else if let Value::Bool(b) = a {
+                            *b
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    let consequent = if let Some(c) = expr.get("then") {
+                        if let Value::Map(m) = c {
+                            eval_expr(&m.borrow(), ctx)
+                        } else if let Value::Bool(b) = c {
+                            *b
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    // A implies B is equivalent to (not A) or B
+                    !antecedent || consequent
+                }
+                _ => false,
+            }
+        }
+
+        Ok(Value::Bool(eval_expr(&expr, &context)))
+    });
+
+    // reason_proof - Create a proof step
+    define(interp, "reason_proof", Some(3), |_, args| {
+        let step = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("proof step must be string")),
+        };
+
+        let justification = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("justification must be string")),
+        };
+
+        let conclusion = args[2].clone();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let mut proof = HashMap::new();
+        proof.insert("step".to_string(), Value::String(Rc::new(step)));
+        proof.insert("justification".to_string(), Value::String(Rc::new(justification)));
+        proof.insert("conclusion".to_string(), conclusion);
+        proof.insert("timestamp".to_string(), Value::Int(now as i64));
+
+        Ok(Value::Map(Rc::new(RefCell::new(proof))))
+    });
+
+    // reason_chain - Chain proof steps together
+    define(interp, "reason_chain", None, |_, args| {
+        let steps: Vec<Value> = args.into_iter().collect();
+
+        let mut chain = HashMap::new();
+        chain.insert("type".to_string(), Value::String(Rc::new("proof_chain".to_string())));
+        chain.insert("steps".to_string(), Value::Array(Rc::new(RefCell::new(steps.clone()))));
+        chain.insert("length".to_string(), Value::Int(steps.len() as i64));
+
+        // Get final conclusion
+        let final_conclusion = steps.last()
+            .and_then(|s| if let Value::Map(m) = s { m.borrow().get("conclusion").cloned() } else { None })
+            .unwrap_or(Value::Null);
+        chain.insert("final_conclusion".to_string(), final_conclusion);
+
+        Ok(Value::Map(Rc::new(RefCell::new(chain))))
+    });
+
+    // reason_hypothesis - Create a hypothesis with evidence requirements
+    define(interp, "reason_hypothesis", Some(2), |_, args| {
+        let claim = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("hypothesis claim must be string")),
+        };
+
+        let required_evidence = match &args[1] {
+            Value::Array(arr) => arr.clone(),
+            _ => return Err(RuntimeError::new("required evidence must be array")),
+        };
+
+        let mut hypothesis = HashMap::new();
+        hypothesis.insert("claim".to_string(), Value::String(Rc::new(claim)));
+        hypothesis.insert("required_evidence".to_string(), Value::Array(required_evidence));
+        hypothesis.insert("status".to_string(), Value::String(Rc::new("unverified".to_string())));
+        hypothesis.insert("confidence".to_string(), Value::Float(0.0));
+
+        Ok(Value::Map(Rc::new(RefCell::new(hypothesis))))
+    });
+
+    // reason_verify_hypothesis - Verify a hypothesis against evidence
+    define(interp, "reason_verify_hypothesis", Some(2), |_, args| {
+        let hypothesis = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("reason_verify_hypothesis requires hypothesis")),
+        };
+
+        let evidence = match &args[1] {
+            Value::Map(m) => m.borrow().clone(),
+            _ => return Err(RuntimeError::new("reason_verify_hypothesis requires evidence map")),
+        };
+
+        let required = hypothesis.borrow().get("required_evidence")
+            .and_then(|v| if let Value::Array(arr) = v { Some(arr.borrow().clone()) } else { None })
+            .unwrap_or_default();
+
+        let mut found = 0;
+        for req in required.iter() {
+            if let Value::String(key) = req {
+                if evidence.contains_key(key.as_str()) {
+                    found += 1;
+                }
+            }
+        }
+
+        let total = required.len();
+        let confidence = if total > 0 { found as f64 / total as f64 } else { 0.0 };
+        let verified = found == total && total > 0;
+
+        {
+            let mut h = hypothesis.borrow_mut();
+            h.insert("confidence".to_string(), Value::Float(confidence));
+            h.insert("status".to_string(), Value::String(Rc::new(
+                if verified { "verified".to_string() } else { "unverified".to_string() }
+            )));
+        }
+
+        let mut result = HashMap::new();
+        result.insert("verified".to_string(), Value::Bool(verified));
+        result.insert("confidence".to_string(), Value::Float(confidence));
+        result.insert("found".to_string(), Value::Int(found as i64));
+        result.insert("required".to_string(), Value::Int(total as i64));
+        result.insert("hypothesis".to_string(), Value::Map(hypothesis));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
 }
 
