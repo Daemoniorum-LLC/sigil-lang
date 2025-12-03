@@ -3383,7 +3383,7 @@ mod tests {
 
     #[test]
     fn test_parse_async_function() {
-        let source = "async fn fetch(url: str) -> Response~ { return http·get(url)|await; }";
+        let source = "async fn fetch(url: str) -> Response~ { return client·get(url)|await; }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);

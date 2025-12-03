@@ -22684,10 +22684,10 @@ mod tests {
         // fn name·ing should parse with progressive aspect
         use crate::parser::Parser;
         use crate::ast::Aspect;
-        let mut parser = Parser::new("fn stream·ing() { return 42; }");
+        let mut parser = Parser::new("fn process·ing() { return 42; }");
         let file = parser.parse_file().unwrap();
         if let crate::ast::Item::Function(f) = &file.items[0].node {
-            assert_eq!(f.name.name, "stream");
+            assert_eq!(f.name.name, "process");
             assert_eq!(f.aspect, Some(Aspect::Progressive));
         } else {
             panic!("Expected function item");
