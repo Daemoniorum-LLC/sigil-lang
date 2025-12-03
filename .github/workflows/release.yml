@@ -206,4 +206,4 @@ jobs:
           git config user.email "actions@github.com"
           git add homebrew/Formula/sigil.rb
           git commit -m "chore(homebrew): Update formula to v${{ steps.release.outputs.version }}" || exit 0
-          git push
+          git push origin HEAD:main
