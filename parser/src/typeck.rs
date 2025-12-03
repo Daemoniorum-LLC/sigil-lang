@@ -132,6 +132,29 @@ impl EvidenceLevel {
             EvidenceLevel::Paradox => "‽",
         }
     }
+
+    /// Human-readable name
+    pub fn name(&self) -> &'static str {
+        match self {
+            EvidenceLevel::Known => "known",
+            EvidenceLevel::Uncertain => "uncertain",
+            EvidenceLevel::Reported => "reported",
+            EvidenceLevel::Paradox => "paradox",
+        }
+    }
+
+    /// Check if this evidence level can satisfy a required level.
+    ///
+    /// Evidence is covariant: you can pass more certain data where less certain is expected.
+    /// Known (!) can satisfy any requirement.
+    /// Reported (~) can only satisfy Reported or Paradox requirements.
+    ///
+    /// Returns true if `self` (actual) can be used where `required` is expected.
+    pub fn satisfies(self, required: Self) -> bool {
+        // More certain evidence (lower in lattice) can satisfy less certain requirements
+        // Known <= Uncertain <= Reported <= Paradox
+        self <= required
+    }
 }
 
 /// Type variable for inference
@@ -276,24 +299,178 @@ impl TypeChecker {
     }
 
     fn register_builtins(&mut self) {
-        // Built-in functions
-        self.functions.insert("print".to_string(), Type::Function {
-            params: vec![Type::Str], // variadic in practice
-            return_type: Box::new(Type::Unit),
+        // Helper to create a function type
+        let func = |params: Vec<Type>, ret: Type| Type::Function {
+            params,
+            return_type: Box::new(ret),
             is_async: false,
-        });
+        };
 
-        self.functions.insert("len".to_string(), Type::Function {
-            params: vec![Type::Var(TypeVar(0))], // generic
-            return_type: Box::new(Type::Int(IntSize::USize)),
-            is_async: false,
-        });
+        // Type variable for generic functions
+        let any = Type::Var(TypeVar(9999)); // Use high number to avoid conflicts
 
-        self.functions.insert("type_of".to_string(), Type::Function {
-            params: vec![Type::Var(TypeVar(0))],
-            return_type: Box::new(Type::Str),
-            is_async: false,
-        });
+        // ===================
+        // Core I/O
+        // ===================
+        // print accepts any type (polymorphic)
+        self.functions.insert("print".to_string(), func(vec![any.clone()], Type::Unit));
+        self.functions.insert("println".to_string(), func(vec![any.clone()], Type::Unit));
+        self.functions.insert("input".to_string(), func(vec![], Type::Str));
+        self.functions.insert("input_line".to_string(), func(vec![], Type::Str));
+
+        // ===================
+        // Type inspection
+        // ===================
+        self.functions.insert("type_of".to_string(), func(vec![any.clone()], Type::Str));
+        self.functions.insert("len".to_string(), func(vec![any.clone()], Type::Int(IntSize::USize)));
+
+        // ===================
+        // String functions
+        // ===================
+        self.functions.insert("str".to_string(), func(vec![any.clone()], Type::Str));
+        self.functions.insert("upper".to_string(), func(vec![Type::Str], Type::Str));
+        self.functions.insert("lower".to_string(), func(vec![Type::Str], Type::Str));
+        self.functions.insert("trim".to_string(), func(vec![Type::Str], Type::Str));
+        self.functions.insert("split".to_string(), func(
+            vec![Type::Str, Type::Str],
+            Type::Array { element: Box::new(Type::Str), size: None }
+        ));
+        self.functions.insert("join".to_string(), func(
+            vec![Type::Array { element: Box::new(Type::Str), size: None }, Type::Str],
+            Type::Str
+        ));
+        self.functions.insert("contains".to_string(), func(vec![Type::Str, Type::Str], Type::Bool));
+        self.functions.insert("starts_with".to_string(), func(vec![Type::Str, Type::Str], Type::Bool));
+        self.functions.insert("ends_with".to_string(), func(vec![Type::Str, Type::Str], Type::Bool));
+        self.functions.insert("replace".to_string(), func(vec![Type::Str, Type::Str, Type::Str], Type::Str));
+        self.functions.insert("char_at".to_string(), func(vec![Type::Str, Type::Int(IntSize::I64)], Type::Str));
+        self.functions.insert("substring".to_string(), func(
+            vec![Type::Str, Type::Int(IntSize::I64), Type::Int(IntSize::I64)],
+            Type::Str
+        ));
+
+        // ===================
+        // Math functions
+        // ===================
+        let f64_ty = Type::Float(FloatSize::F64);
+        let i64_ty = Type::Int(IntSize::I64);
+
+        self.functions.insert("abs".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("sqrt".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("sin".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("cos".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("tan".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("floor".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("ceil".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("round".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("pow".to_string(), func(vec![f64_ty.clone(), f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("log".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("exp".to_string(), func(vec![f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("min".to_string(), func(vec![any.clone(), any.clone()], any.clone()));
+        self.functions.insert("max".to_string(), func(vec![any.clone(), any.clone()], any.clone()));
+
+        // ===================
+        // Array/Collection functions
+        // ===================
+        self.functions.insert("sum".to_string(), func(vec![any.clone()], f64_ty.clone()));
+        self.functions.insert("avg".to_string(), func(vec![any.clone()], f64_ty.clone()));
+        self.functions.insert("push".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("pop".to_string(), func(vec![any.clone()], any.clone()));
+        self.functions.insert("first".to_string(), func(vec![any.clone()], any.clone()));
+        self.functions.insert("last".to_string(), func(vec![any.clone()], any.clone()));
+        self.functions.insert("reverse".to_string(), func(vec![any.clone()], any.clone()));
+        self.functions.insert("sort".to_string(), func(vec![any.clone()], any.clone()));
+        self.functions.insert("range".to_string(), func(
+            vec![i64_ty.clone(), i64_ty.clone()],
+            Type::Array { element: Box::new(i64_ty.clone()), size: None }
+        ));
+
+        // ===================
+        // Assertions (for testing)
+        // ===================
+        self.functions.insert("assert".to_string(), func(vec![Type::Bool], Type::Unit));
+        self.functions.insert("assert_eq".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("assert_ne".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("assert_lt".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("assert_le".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("assert_gt".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("assert_ge".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("assert_true".to_string(), func(vec![Type::Bool], Type::Unit));
+        self.functions.insert("assert_false".to_string(), func(vec![Type::Bool], Type::Unit));
+        self.functions.insert("assert_null".to_string(), func(vec![any.clone()], Type::Unit));
+        self.functions.insert("assert_not_null".to_string(), func(vec![any.clone()], Type::Unit));
+        self.functions.insert("assert_contains".to_string(), func(vec![any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("assert_len".to_string(), func(vec![any.clone(), i64_ty.clone()], Type::Unit));
+
+        // ===================
+        // Random
+        // ===================
+        self.functions.insert("random".to_string(), func(vec![], f64_ty.clone()));
+        self.functions.insert("random_int".to_string(), func(vec![i64_ty.clone(), i64_ty.clone()], i64_ty.clone()));
+        self.functions.insert("shuffle".to_string(), func(vec![any.clone()], any.clone()));
+
+        // ===================
+        // Time
+        // ===================
+        self.functions.insert("now".to_string(), func(vec![], f64_ty.clone()));
+        self.functions.insert("sleep".to_string(), func(vec![f64_ty.clone()], Type::Unit));
+
+        // ===================
+        // Conversion
+        // ===================
+        self.functions.insert("int".to_string(), func(vec![any.clone()], i64_ty.clone()));
+        self.functions.insert("float".to_string(), func(vec![any.clone()], f64_ty.clone()));
+        self.functions.insert("bool".to_string(), func(vec![any.clone()], Type::Bool));
+
+        // ===================
+        // Error handling
+        // ===================
+        self.functions.insert("panic".to_string(), func(vec![Type::Str], Type::Never));
+        self.functions.insert("todo".to_string(), func(vec![], Type::Never));
+        self.functions.insert("unreachable".to_string(), func(vec![], Type::Never));
+
+        // ===================
+        // Evidentiality functions
+        // ===================
+        // Create known evidence (!)
+        self.functions.insert("known".to_string(), func(vec![any.clone()], Type::Evidential {
+            inner: Box::new(any.clone()),
+            evidence: EvidenceLevel::Known,
+        }));
+        // Create uncertain evidence (?)
+        self.functions.insert("uncertain".to_string(), func(vec![any.clone()], Type::Evidential {
+            inner: Box::new(any.clone()),
+            evidence: EvidenceLevel::Uncertain,
+        }));
+        // Create reported evidence (~)
+        self.functions.insert("reported".to_string(), func(vec![any.clone()], Type::Evidential {
+            inner: Box::new(any.clone()),
+            evidence: EvidenceLevel::Reported,
+        }));
+        // Get evidence level as string
+        self.functions.insert("evidence_of".to_string(), func(vec![any.clone()], Type::Str));
+        // Validate reported -> uncertain
+        self.functions.insert("validate".to_string(), func(vec![any.clone()], Type::Evidential {
+            inner: Box::new(any.clone()),
+            evidence: EvidenceLevel::Uncertain,
+        }));
+        // Verify uncertain -> known
+        self.functions.insert("verify".to_string(), func(vec![any.clone()], Type::Evidential {
+            inner: Box::new(any.clone()),
+            evidence: EvidenceLevel::Known,
+        }));
+
+        // ===================
+        // Poly-cultural math (cycles, music theory)
+        // ===================
+        // MIDI note to frequency (A4 = 440Hz)
+        self.functions.insert("freq".to_string(), func(vec![i64_ty.clone()], f64_ty.clone()));
+        // Octave calculation (12-tone equal temperament)
+        self.functions.insert("octave".to_string(), func(vec![i64_ty.clone()], i64_ty.clone()));
+        // Note within octave (0-11)
+        self.functions.insert("pitch_class".to_string(), func(vec![i64_ty.clone()], i64_ty.clone()));
+        // Modular arithmetic (cycles)
+        self.functions.insert("mod_cycle".to_string(), func(vec![i64_ty.clone(), i64_ty.clone()], i64_ty.clone()));
     }
 
     /// Fresh type variable
@@ -301,6 +478,54 @@ impl TypeChecker {
         let var = TypeVar(self.next_var);
         self.next_var += 1;
         Type::Var(var)
+    }
+
+    /// Freshen a type by replacing all type variables with fresh ones
+    /// This is used for polymorphic built-in functions
+    fn freshen(&mut self, ty: &Type) -> Type {
+        let mut mapping = std::collections::HashMap::new();
+        self.freshen_inner(ty, &mut mapping)
+    }
+
+    fn freshen_inner(&mut self, ty: &Type, mapping: &mut std::collections::HashMap<u32, Type>) -> Type {
+        match ty {
+            Type::Var(TypeVar(id)) => {
+                if let Some(fresh) = mapping.get(id) {
+                    fresh.clone()
+                } else {
+                    let fresh = self.fresh_var();
+                    mapping.insert(*id, fresh.clone());
+                    fresh
+                }
+            }
+            Type::Array { element, size } => Type::Array {
+                element: Box::new(self.freshen_inner(element, mapping)),
+                size: *size,
+            },
+            Type::Slice(inner) => Type::Slice(Box::new(self.freshen_inner(inner, mapping))),
+            Type::Ref { mutable, inner } => Type::Ref {
+                mutable: *mutable,
+                inner: Box::new(self.freshen_inner(inner, mapping)),
+            },
+            Type::Tuple(elems) => Type::Tuple(
+                elems.iter().map(|e| self.freshen_inner(e, mapping)).collect()
+            ),
+            Type::Function { params, return_type, is_async } => Type::Function {
+                params: params.iter().map(|p| self.freshen_inner(p, mapping)).collect(),
+                return_type: Box::new(self.freshen_inner(return_type, mapping)),
+                is_async: *is_async,
+            },
+            Type::Evidential { inner, evidence } => Type::Evidential {
+                inner: Box::new(self.freshen_inner(inner, mapping)),
+                evidence: *evidence,
+            },
+            Type::Named { name, generics } => Type::Named {
+                name: name.clone(),
+                generics: generics.iter().map(|g| self.freshen_inner(g, mapping)).collect(),
+            },
+            // Primitive types don't contain type variables
+            _ => ty.clone(),
+        }
     }
 
     /// Push a new scope
@@ -320,6 +545,72 @@ impl TypeChecker {
     /// Record an error
     fn error(&mut self, err: TypeError) {
         self.errors.push(err);
+    }
+
+    /// Check if actual evidence can satisfy expected evidence requirement.
+    /// Returns Ok(()) if compatible, Err with helpful message if not.
+    fn check_evidence(
+        &mut self,
+        expected: EvidenceLevel,
+        actual: EvidenceLevel,
+        context: &str,
+    ) -> bool {
+        if actual.satisfies(expected) {
+            true
+        } else {
+            let mut err = TypeError::new(format!(
+                "evidence mismatch {}: expected {} ({}), found {} ({})",
+                context,
+                expected.name(),
+                expected.symbol(),
+                actual.name(),
+                actual.symbol(),
+            ));
+
+            // Add helpful notes based on the specific mismatch
+            match (expected, actual) {
+                (EvidenceLevel::Known, EvidenceLevel::Reported) => {
+                    err = err.with_note(
+                        "reported data (~) cannot be used where known data (!) is required"
+                    );
+                    err = err.with_note(
+                        "help: use |validate!{...} to verify and promote evidence level"
+                    );
+                }
+                (EvidenceLevel::Known, EvidenceLevel::Uncertain) => {
+                    err = err.with_note(
+                        "uncertain data (?) cannot be used where known data (!) is required"
+                    );
+                    err = err.with_note(
+                        "help: use pattern matching or unwrap to handle the uncertainty"
+                    );
+                }
+                (EvidenceLevel::Uncertain, EvidenceLevel::Reported) => {
+                    err = err.with_note(
+                        "reported data (~) cannot be used where uncertain data (?) is required"
+                    );
+                    err = err.with_note(
+                        "help: use |validate?{...} to verify external data"
+                    );
+                }
+                _ => {
+                    err = err.with_note(format!(
+                        "evidence lattice: known (!) < uncertain (?) < reported (~) < paradox (‽)"
+                    ));
+                }
+            }
+
+            self.error(err);
+            false
+        }
+    }
+
+    /// Extract evidence level from a type, defaulting to Known
+    fn get_evidence(&self, ty: &Type) -> EvidenceLevel {
+        match ty {
+            Type::Evidential { evidence, .. } => *evidence,
+            _ => EvidenceLevel::Known,
+        }
     }
 
     /// Check a source file
@@ -494,12 +785,22 @@ impl TypeChecker {
                 .map(|t| self.convert_type(t))
                 .unwrap_or(Type::Unit);
 
+            // Check structural type compatibility
             if !self.unify(&expected_return, &body_type) {
                 self.error(TypeError::new(format!(
                     "return type mismatch in '{}': expected {:?}, found {:?}",
                     func.name.name, expected_return, body_type
                 )).with_span(func.name.span));
             }
+
+            // Check evidence compatibility for return
+            let expected_evidence = self.get_evidence(&expected_return);
+            let actual_evidence = self.get_evidence(&body_type);
+            self.check_evidence(
+                expected_evidence,
+                actual_evidence,
+                &format!("in return type of '{}'", func.name.name),
+            );
         }
 
         self.pop_scope();
@@ -582,8 +883,9 @@ impl TypeChecker {
                     if let Some((ty, _)) = self.env.borrow().lookup(name) {
                         return ty;
                     }
-                    if let Some(ty) = self.functions.get(name) {
-                        return ty.clone();
+                    if let Some(ty) = self.functions.get(name).cloned() {
+                        // Freshen polymorphic types to get fresh type variables
+                        return self.freshen(&ty);
                     }
                 }
                 self.error(TypeError::new(format!("undefined: {:?}", path)));
@@ -616,13 +918,27 @@ impl TypeChecker {
                         )));
                     }
 
-                    // Check argument types
-                    for (param, arg) in params.iter().zip(arg_types.iter()) {
+                    // Check argument types and evidence levels
+                    for (i, (param, arg)) in params.iter().zip(arg_types.iter()).enumerate() {
+                        // First check structural type compatibility
                         if !self.unify(param, arg) {
                             self.error(TypeError::new(format!(
                                 "argument type mismatch: expected {:?}, found {:?}",
                                 param, arg
                             )));
+                        }
+
+                        // Check evidence compatibility only for non-polymorphic parameters.
+                        // Type variables (used in polymorphic functions like print, len, etc.)
+                        // accept arguments of any evidence level.
+                        if !matches!(param, Type::Var(_)) {
+                            let expected_evidence = self.get_evidence(param);
+                            let actual_evidence = self.get_evidence(arg);
+                            self.check_evidence(
+                                expected_evidence,
+                                actual_evidence,
+                                &format!("in argument {}", i + 1),
+                            );
                         }
                     }
 
@@ -894,9 +1210,11 @@ impl TypeChecker {
             // Method call
             PipeOp::Method { name, args: _ } => {
                 // Look up method
-                if let Some(fn_ty) = self.functions.get(&name.name) {
-                    if let Type::Function { return_type, .. } = fn_ty {
-                        *return_type.clone()
+                if let Some(fn_ty) = self.functions.get(&name.name).cloned() {
+                    // Freshen to get fresh type variables for polymorphic functions
+                    let fresh_ty = self.freshen(&fn_ty);
+                    if let Type::Function { return_type, .. } = fresh_ty {
+                        *return_type
                     } else {
                         Type::Error
                     }

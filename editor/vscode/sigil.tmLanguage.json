@@ -234,6 +234,14 @@
           "match": "Π"
         },
         {
+          "name": "support.function.morpheme.first.sigil",
+          "match": "[αΑ]"
+        },
+        {
+          "name": "support.function.morpheme.last.sigil",
+          "match": "[ωΩ]"
+        },
+        {
           "name": "support.function.morpheme.await.sigil",
           "match": "⌛"
         },

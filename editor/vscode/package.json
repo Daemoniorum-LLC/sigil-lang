@@ -36,6 +36,12 @@
         "path": "./sigil.tmLanguage.json"
       }
     ],
+    "snippets": [
+      {
+        "language": "sigil",
+        "path": "./snippets/sigil.json"
+      }
+    ],
     "configuration": {
       "type": "object",
       "title": "Sigil",

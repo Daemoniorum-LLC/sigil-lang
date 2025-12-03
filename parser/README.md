@@ -26,75 +26,22 @@ Sigil offers flexible performance tiers from instant iteration to production-opt
 
 Sigil's LLVM backend can automatically transform recursive algorithms into tail-recursive form, producing code **faster than hand-written Rust** for certain patterns.
 
-## Installation
-
-### Via Cargo (Recommended)
-
-```bash
-cargo install sigil-parser
-```
-
-### Via Homebrew (macOS/Linux)
-
-```bash
-brew tap daemoniorum/sigil https://github.com/Daemoniorum-LLC/sigil-lang
-brew install sigil
-```
-
-### Via npm (MCP Server for AI)
-
-```bash
-npm install -g @daemoniorum/sigil-mcp
-```
-
-### JVM / Kotlin Multiplatform
-
-For JVM, Android, iOS, and other Kotlin targets:
-
-```kotlin
-// build.gradle.kts
-repositories {
-    maven("https://jitpack.io")
-}
-
-dependencies {
-    implementation("com.github.Daemoniorum-LLC.sigil-lang:sigil-kmp:0.1.0")
-}
-```
-
-Or via Maven Central (once published):
-
-```kotlin
-dependencies {
-    implementation("com.daemoniorum:sigil-kmp:0.1.0")
-}
-```
-
-### From Source
-
-```bash
-git clone https://github.com/Daemoniorum-LLC/sigil-lang.git
-cd sigil-lang/parser
-cargo build --release
-```
-
 ## Quick Start
 
 ```bash
-# Run a program
-sigil run hello.sigil
+# Clone and build
+git clone https://github.com/Daemoniorum-LLC/sigil-lang.git
+cd sigil-lang/parser
+cargo build --release
 
-# Type check
-sigil check hello.sigil
+# Run interpreted (for development)
+./target/release/sigil run hello.sigil
 
-# Interactive REPL
-sigil repl
+# Run with Cranelift JIT (fast)
+./target/release/sigil jit program.sigil
 
-# JIT compile (faster)
-sigil jit program.sigil
-
-# Native compile (fastest)
-sigil compile program.sigil -o program
+# Compile to native binary (fastest)
+./target/release/sigil compile program.sigil -o program
 ./program
 ```
 

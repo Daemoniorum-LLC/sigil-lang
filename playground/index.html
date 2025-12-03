@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sigil Playground</title>
+  <meta name="description" content="Write, run, and share Sigil code in your browser">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <style>
+    :root {
+      --bg-primary: #1a1a2e;
+      --bg-secondary: #16213e;
+      --bg-tertiary: #0f0f1a;
+      --text-primary: #e4e4e7;
+      --text-secondary: #a1a1aa;
+      --accent: #8b5cf6;
+      --accent-hover: #7c3aed;
+      --success: #22c55e;
+      --error: #ef4444;
+      --warning: #f59e0b;
+      --border: #27272a;
+      --known: #22c55e;
+      --uncertain: #f59e0b;
+      --reported: #3b82f6;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: var(--bg-secondary);
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .logo-icon {
+      font-size: 1.5rem;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    select, button {
+      font-family: inherit;
+      font-size: 0.875rem;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      border: 1px solid var(--border);
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    select:hover, button:hover {
+      border-color: var(--accent);
+    }
+
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    button.primary:hover {
+      background: var(--accent-hover);
+    }
+
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
+    }
+
+    .panel {
+      background: var(--bg-primary);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-header {
+      background: var(--bg-secondary);
+      padding: 0.5rem 1rem;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-content {
+      flex: 1;
+      overflow: auto;
+    }
+
+    #editor {
+      height: 100%;
+    }
+
+    .cm-editor {
+      height: 100%;
+      font-size: 14px;
+    }
+
+    .cm-scroller {
+      font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace !important;
+    }
+
+    #output {
+      padding: 1rem;
+      font-size: 14px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .output-line {
+      margin-bottom: 0.25rem;
+    }
+
+    .output-error {
+      color: var(--error);
+    }
+
+    .output-success {
+      color: var(--success);
+    }
+
+    .toolbar {
+      background: var(--bg-secondary);
+      padding: 0.5rem 1rem;
+      display: flex;
+      gap: 0.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .evidence-legend {
+      background: var(--bg-secondary);
+      padding: 0.5rem 1rem;
+      display: flex;
+      gap: 1.5rem;
+      font-size: 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .evidence-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .evidence-marker {
+      width: 1rem;
+      height: 1rem;
+      border-radius: 0.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 0.7rem;
+    }
+
+    .evidence-known { background: var(--known); color: white; }
+    .evidence-uncertain { background: var(--uncertain); color: white; }
+    .evidence-reported { background: var(--reported); color: white; }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-secondary);
+    }
+
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 0.5rem;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 768px) {
+      main {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr 1fr;
+      }
+    }
+
+    /* CodeMirror theme overrides */
+    .cm-editor .cm-content {
+      caret-color: var(--accent);
+    }
+
+    .cm-editor .cm-cursor {
+      border-left-color: var(--accent);
+    }
+
+    .cm-editor.cm-focused .cm-selectionBackground,
+    .cm-editor .cm-selectionBackground {
+      background: rgba(139, 92, 246, 0.3);
+    }
+
+    .cm-editor .cm-activeLine {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .cm-editor .cm-gutters {
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      color: var(--text-secondary);
+    }
+
+    /* Sigil-specific syntax highlighting */
+    .cm-morpheme { color: #c084fc; font-weight: bold; }
+    .cm-evidence-known { color: var(--known); }
+    .cm-evidence-uncertain { color: var(--uncertain); }
+    .cm-evidence-reported { color: var(--reported); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <span class="logo-icon">⛤</span>
+      <span>Sigil Playground</span>
+    </div>
+    <div class="header-actions">
+      <select id="examples">
+        <option value="">Load Example...</option>
+        <optgroup label="Getting Started">
+          <option value="hello">Hello World</option>
+          <option value="pipes">Morpheme Pipelines</option>
+        </optgroup>
+        <optgroup label="Evidentiality">
+          <option value="evidence">Evidence Chain</option>
+        </optgroup>
+        <optgroup label="Advanced">
+          <option value="pipeline">Data Pipeline</option>
+        </optgroup>
+      </select>
+      <button id="share">Share</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="panel">
+      <div class="panel-header">
+        <span>Editor</span>
+        <span id="status"></span>
+      </div>
+      <div class="panel-content">
+        <div id="editor"></div>
+      </div>
+      <div class="toolbar">
+        <button class="primary" id="run">▶ Run</button>
+        <button id="check">Check</button>
+        <button id="format">Format</button>
+        <button id="ir">IR</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span>Output</span>
+        <button id="clear-output" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">Clear</button>
+      </div>
+      <div class="panel-content">
+        <div id="output">
+          <div class="loading">
+            <div class="spinner"></div>
+            <span>Loading Sigil runtime...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div class="evidence-legend">
+    <div class="evidence-item">
+      <div class="evidence-marker evidence-known">!</div>
+      <span>Known - verified/computed</span>
+    </div>
+    <div class="evidence-item">
+      <div class="evidence-marker evidence-uncertain">?</div>
+      <span>Uncertain - validated</span>
+    </div>
+    <div class="evidence-item">
+      <div class="evidence-marker evidence-reported">~</div>
+      <span>Reported - external data</span>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

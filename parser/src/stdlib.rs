@@ -42,7 +42,7 @@
 //!   - N-grams and shingles for similarity
 //!   - Fuzzy matching utilities
 
-use crate::interpreter::{Interpreter, Value, Evidence, RuntimeError, BuiltInFn, ChannelInner, ActorInner};
+use crate::interpreter::{Interpreter, Value, Evidence, RuntimeError, BuiltInFn, ChannelInner, ActorInner, Function};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -143,6 +143,15 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_color(interp);
     // Phase 17: Protocol support - HTTP, gRPC, WebSocket, Kafka, AMQP, GraphQL
     register_protocol(interp);
+    // Phase 18: AI Agent infrastructure - Tools, LLM, Planning, Memory, Vectors
+    register_agent_tools(interp);
+    register_agent_llm(interp);
+    register_agent_memory(interp);
+    register_agent_planning(interp);
+    register_agent_vectors(interp);
+    // Phase 19: Multi-Agent Coordination and Reasoning
+    register_agent_swarm(interp);
+    register_agent_reasoning(interp);
 }
 
 // Helper to define a builtin
@@ -19214,6 +19223,2534 @@ fn register_protocol(interp: &mut Interpreter) {
         }
         map.insert("params".to_string(), Value::Map(Rc::new(RefCell::new(params))));
         Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+}
+
+// ============================================================================
+// PHASE 18: AI AGENT INFRASTRUCTURE
+// ============================================================================
+// Tools for building AI agents with:
+// - Tool registry for introspectable function definitions
+// - LLM client for model calls (OpenAI, Claude, local)
+// - Agent memory for context and session persistence
+// - Planning framework for state machines and goal tracking
+// - Vector operations for embeddings and similarity search
+
+/// Global tool registry for agent introspection
+thread_local! {
+    static TOOL_REGISTRY: RefCell<HashMap<String, ToolDefinition>> = RefCell::new(HashMap::new());
+    static AGENT_MEMORY: RefCell<HashMap<String, AgentSession>> = RefCell::new(HashMap::new());
+    static STATE_MACHINES: RefCell<HashMap<String, StateMachine>> = RefCell::new(HashMap::new());
+}
+
+/// Tool definition for LLM function calling
+#[derive(Clone)]
+struct ToolDefinition {
+    name: String,
+    description: String,
+    parameters: Vec<ToolParameter>,
+    returns: String,
+    evidence_in: Evidence,
+    evidence_out: Evidence,
+    handler: Option<Rc<Function>>,
+}
+
+#[derive(Clone)]
+struct ToolParameter {
+    name: String,
+    param_type: String,
+    description: String,
+    required: bool,
+    evidence: Evidence,
+}
+
+/// Agent session for memory persistence
+#[derive(Clone)]
+struct AgentSession {
+    id: String,
+    context: HashMap<String, Value>,
+    history: Vec<(String, String)>, // (role, content)
+    created_at: u64,
+    last_accessed: u64,
+}
+
+/// State machine for planning
+#[derive(Clone)]
+struct StateMachine {
+    name: String,
+    current_state: String,
+    states: Vec<String>,
+    transitions: HashMap<String, Vec<(String, String)>>, // from -> [(to, condition)]
+    history: Vec<(String, u64)>, // (state, timestamp)
+}
+
+// ============================================================================
+// TOOL REGISTRY - Introspectable function definitions for LLM tool_choice
+// ============================================================================
+
+fn register_agent_tools(interp: &mut Interpreter) {
+    // tool_define - Define a tool with metadata for LLM introspection
+    // tool_define(name, description, params, returns, handler?)
+    define(interp, "tool_define", None, |_interp, args| {
+        if args.len() < 4 {
+            return Err(RuntimeError::new("tool_define requires at least 4 arguments: name, description, params, returns"));
+        }
+
+        let name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("tool name must be a string")),
+        };
+
+        let description = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("tool description must be a string")),
+        };
+
+        // Parse parameters array
+        let params = match &args[2] {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                let mut params = Vec::new();
+                for param in arr.iter() {
+                    if let Value::Map(map) = param {
+                        let map = map.borrow();
+                        let param_name = map.get("name")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                            .unwrap_or_default();
+                        let param_type = map.get("type")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                            .unwrap_or_else(|| "any".to_string());
+                        let param_desc = map.get("description")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                            .unwrap_or_default();
+                        let required = map.get("required")
+                            .and_then(|v| if let Value::Bool(b) = v { Some(*b) } else { None })
+                            .unwrap_or(true);
+                        let evidence_str = map.get("evidence")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.as_str()) } else { None })
+                            .unwrap_or("~");
+                        let evidence = match evidence_str {
+                            "!" => Evidence::Known,
+                            "?" => Evidence::Uncertain,
+                            "~" => Evidence::Reported,
+                            "‽" => Evidence::Paradox,
+                            _ => Evidence::Reported,
+                        };
+                        params.push(ToolParameter {
+                            name: param_name,
+                            param_type,
+                            description: param_desc,
+                            required,
+                            evidence,
+                        });
+                    }
+                }
+                params
+            }
+            _ => Vec::new(),
+        };
+
+        let returns = match &args[3] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => "any".to_string(),
+        };
+
+        let handler = if args.len() > 4 {
+            match &args[4] {
+                Value::Function(f) => Some(f.clone()),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        let tool = ToolDefinition {
+            name: name.clone(),
+            description,
+            parameters: params,
+            returns,
+            evidence_in: Evidence::Reported,
+            evidence_out: Evidence::Reported,
+            handler,
+        };
+
+        TOOL_REGISTRY.with(|registry| {
+            registry.borrow_mut().insert(name.clone(), tool);
+        });
+
+        Ok(Value::String(Rc::new(name)))
+    });
+
+    // tool_list - List all registered tools
+    define(interp, "tool_list", Some(0), |_, _args| {
+        let tools: Vec<Value> = TOOL_REGISTRY.with(|registry| {
+            registry.borrow().keys()
+                .map(|k| Value::String(Rc::new(k.clone())))
+                .collect()
+        });
+        Ok(Value::Array(Rc::new(RefCell::new(tools))))
+    });
+
+    // tool_get - Get tool definition by name
+    define(interp, "tool_get", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("tool_get requires string name")),
+        };
+
+        TOOL_REGISTRY.with(|registry| {
+            if let Some(tool) = registry.borrow().get(&name) {
+                let mut map = HashMap::new();
+                map.insert("name".to_string(), Value::String(Rc::new(tool.name.clone())));
+                map.insert("description".to_string(), Value::String(Rc::new(tool.description.clone())));
+                map.insert("returns".to_string(), Value::String(Rc::new(tool.returns.clone())));
+
+                let params: Vec<Value> = tool.parameters.iter().map(|p| {
+                    let mut pmap = HashMap::new();
+                    pmap.insert("name".to_string(), Value::String(Rc::new(p.name.clone())));
+                    pmap.insert("type".to_string(), Value::String(Rc::new(p.param_type.clone())));
+                    pmap.insert("description".to_string(), Value::String(Rc::new(p.description.clone())));
+                    pmap.insert("required".to_string(), Value::Bool(p.required));
+                    Value::Map(Rc::new(RefCell::new(pmap)))
+                }).collect();
+                map.insert("parameters".to_string(), Value::Array(Rc::new(RefCell::new(params))));
+
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            } else {
+                Ok(Value::Null)
+            }
+        })
+    });
+
+    // tool_schema - Generate OpenAI/Claude compatible tool schema
+    define(interp, "tool_schema", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("tool_schema requires string name")),
+        };
+
+        TOOL_REGISTRY.with(|registry| {
+            if let Some(tool) = registry.borrow().get(&name) {
+                // Generate OpenAI function calling schema
+                let mut schema = HashMap::new();
+                schema.insert("type".to_string(), Value::String(Rc::new("function".to_string())));
+
+                let mut function = HashMap::new();
+                function.insert("name".to_string(), Value::String(Rc::new(tool.name.clone())));
+                function.insert("description".to_string(), Value::String(Rc::new(tool.description.clone())));
+
+                // Build parameters schema (JSON Schema format)
+                let mut params_schema = HashMap::new();
+                params_schema.insert("type".to_string(), Value::String(Rc::new("object".to_string())));
+
+                let mut properties = HashMap::new();
+                let mut required: Vec<Value> = Vec::new();
+
+                for param in &tool.parameters {
+                    let mut prop = HashMap::new();
+                    let json_type = match param.param_type.as_str() {
+                        "int" | "i64" | "i32" => "integer",
+                        "float" | "f64" | "f32" => "number",
+                        "bool" => "boolean",
+                        "string" | "str" => "string",
+                        "array" | "list" => "array",
+                        "map" | "object" => "object",
+                        _ => "string",
+                    };
+                    prop.insert("type".to_string(), Value::String(Rc::new(json_type.to_string())));
+                    prop.insert("description".to_string(), Value::String(Rc::new(param.description.clone())));
+                    properties.insert(param.name.clone(), Value::Map(Rc::new(RefCell::new(prop))));
+
+                    if param.required {
+                        required.push(Value::String(Rc::new(param.name.clone())));
+                    }
+                }
+
+                params_schema.insert("properties".to_string(), Value::Map(Rc::new(RefCell::new(properties))));
+                params_schema.insert("required".to_string(), Value::Array(Rc::new(RefCell::new(required))));
+
+                function.insert("parameters".to_string(), Value::Map(Rc::new(RefCell::new(params_schema))));
+                schema.insert("function".to_string(), Value::Map(Rc::new(RefCell::new(function))));
+
+                Ok(Value::Map(Rc::new(RefCell::new(schema))))
+            } else {
+                Err(RuntimeError::new(format!("Tool '{}' not found", name)))
+            }
+        })
+    });
+
+    // tool_schemas_all - Get all tool schemas for LLM
+    define(interp, "tool_schemas_all", Some(0), |_, _args| {
+        let schemas: Vec<Value> = TOOL_REGISTRY.with(|registry| {
+            registry.borrow().values().map(|tool| {
+                let mut schema = HashMap::new();
+                schema.insert("type".to_string(), Value::String(Rc::new("function".to_string())));
+
+                let mut function = HashMap::new();
+                function.insert("name".to_string(), Value::String(Rc::new(tool.name.clone())));
+                function.insert("description".to_string(), Value::String(Rc::new(tool.description.clone())));
+
+                let mut params_schema = HashMap::new();
+                params_schema.insert("type".to_string(), Value::String(Rc::new("object".to_string())));
+
+                let mut properties = HashMap::new();
+                let mut required: Vec<Value> = Vec::new();
+
+                for param in &tool.parameters {
+                    let mut prop = HashMap::new();
+                    let json_type = match param.param_type.as_str() {
+                        "int" | "i64" | "i32" => "integer",
+                        "float" | "f64" | "f32" => "number",
+                        "bool" => "boolean",
+                        _ => "string",
+                    };
+                    prop.insert("type".to_string(), Value::String(Rc::new(json_type.to_string())));
+                    prop.insert("description".to_string(), Value::String(Rc::new(param.description.clone())));
+                    properties.insert(param.name.clone(), Value::Map(Rc::new(RefCell::new(prop))));
+                    if param.required {
+                        required.push(Value::String(Rc::new(param.name.clone())));
+                    }
+                }
+
+                params_schema.insert("properties".to_string(), Value::Map(Rc::new(RefCell::new(properties))));
+                params_schema.insert("required".to_string(), Value::Array(Rc::new(RefCell::new(required))));
+                function.insert("parameters".to_string(), Value::Map(Rc::new(RefCell::new(params_schema))));
+                schema.insert("function".to_string(), Value::Map(Rc::new(RefCell::new(function))));
+
+                Value::Map(Rc::new(RefCell::new(schema)))
+            }).collect()
+        });
+        Ok(Value::Array(Rc::new(RefCell::new(schemas))))
+    });
+
+    // tool_call - Execute a registered tool by name
+    define(interp, "tool_call", None, |interp, args| {
+        if args.is_empty() {
+            return Err(RuntimeError::new("tool_call requires at least tool name"));
+        }
+
+        let name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("tool_call first argument must be tool name")),
+        };
+
+        let tool_args: Vec<Value> = args.into_iter().skip(1).collect();
+
+        TOOL_REGISTRY.with(|registry| {
+            if let Some(tool) = registry.borrow().get(&name) {
+                if let Some(handler) = &tool.handler {
+                    // Execute the handler function
+                    let result = interp.call_function(handler.as_ref(), tool_args)?;
+                    // Wrap result with reported evidence (external call)
+                    Ok(Value::Evidential {
+                        value: Box::new(result),
+                        evidence: Evidence::Reported,
+                    })
+                } else {
+                    Err(RuntimeError::new(format!("Tool '{}' has no handler", name)))
+                }
+            } else {
+                Err(RuntimeError::new(format!("Tool '{}' not found", name)))
+            }
+        })
+    });
+
+    // tool_remove - Remove a tool from registry
+    define(interp, "tool_remove", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("tool_remove requires string name")),
+        };
+
+        TOOL_REGISTRY.with(|registry| {
+            let removed = registry.borrow_mut().remove(&name).is_some();
+            Ok(Value::Bool(removed))
+        })
+    });
+
+    // tool_clear - Clear all registered tools
+    define(interp, "tool_clear", Some(0), |_, _args| {
+        TOOL_REGISTRY.with(|registry| {
+            registry.borrow_mut().clear();
+        });
+        Ok(Value::Null)
+    });
+}
+
+// ============================================================================
+// LLM CLIENT - AI model interaction with evidentiality
+// ============================================================================
+
+fn register_agent_llm(interp: &mut Interpreter) {
+    // llm_message - Create a chat message
+    define(interp, "llm_message", Some(2), |_, args| {
+        let role = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("llm_message role must be string")),
+        };
+        let content = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("llm_message content must be string")),
+        };
+
+        let mut map = HashMap::new();
+        map.insert("role".to_string(), Value::String(Rc::new(role)));
+        map.insert("content".to_string(), Value::String(Rc::new(content)));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // llm_messages - Create a messages array
+    define(interp, "llm_messages", None, |_, args| {
+        let messages: Vec<Value> = args.into_iter().collect();
+        Ok(Value::Array(Rc::new(RefCell::new(messages))))
+    });
+
+    // llm_request - Build an LLM API request (returns reported~ since it's external)
+    define(interp, "llm_request", None, |_, args| {
+        if args.is_empty() {
+            return Err(RuntimeError::new("llm_request requires provider"));
+        }
+
+        let provider = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("provider must be string")),
+        };
+
+        let mut request = HashMap::new();
+        request.insert("provider".to_string(), Value::String(Rc::new(provider.clone())));
+
+        // Default models per provider
+        let default_model = match provider.as_str() {
+            "openai" => "gpt-4-turbo-preview",
+            "anthropic" | "claude" => "claude-3-opus-20240229",
+            "google" | "gemini" => "gemini-pro",
+            "mistral" => "mistral-large-latest",
+            "ollama" | "local" => "llama2",
+            _ => "gpt-4",
+        };
+        request.insert("model".to_string(), Value::String(Rc::new(default_model.to_string())));
+
+        // Parse optional arguments
+        for (i, arg) in args.iter().enumerate().skip(1) {
+            if let Value::Map(map) = arg {
+                let map = map.borrow();
+                for (k, v) in map.iter() {
+                    request.insert(k.clone(), v.clone());
+                }
+            } else if i == 1 {
+                // Second arg is model
+                if let Value::String(s) = arg {
+                    request.insert("model".to_string(), Value::String(s.clone()));
+                }
+            }
+        }
+
+        // Default values
+        if !request.contains_key("temperature") {
+            request.insert("temperature".to_string(), Value::Float(0.7));
+        }
+        if !request.contains_key("max_tokens") {
+            request.insert("max_tokens".to_string(), Value::Int(4096));
+        }
+
+        Ok(Value::Map(Rc::new(RefCell::new(request))))
+    });
+
+    // llm_with_tools - Add tools to a request
+    define(interp, "llm_with_tools", Some(2), |_, args| {
+        let request = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("llm_with_tools first arg must be request map")),
+        };
+
+        let tools = match &args[1] {
+            Value::Array(arr) => arr.clone(),
+            _ => return Err(RuntimeError::new("llm_with_tools second arg must be tools array")),
+        };
+
+        request.borrow_mut().insert("tools".to_string(), Value::Array(tools));
+        request.borrow_mut().insert("tool_choice".to_string(), Value::String(Rc::new("auto".to_string())));
+
+        Ok(Value::Map(request))
+    });
+
+    // llm_with_system - Add system prompt to request
+    define(interp, "llm_with_system", Some(2), |_, args| {
+        let request = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("llm_with_system first arg must be request map")),
+        };
+
+        let system = match &args[1] {
+            Value::String(s) => s.clone(),
+            _ => return Err(RuntimeError::new("llm_with_system second arg must be string")),
+        };
+
+        request.borrow_mut().insert("system".to_string(), Value::String(system));
+        Ok(Value::Map(request))
+    });
+
+    // llm_with_messages - Add messages to request
+    define(interp, "llm_with_messages", Some(2), |_, args| {
+        let request = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("llm_with_messages first arg must be request map")),
+        };
+
+        let messages = match &args[1] {
+            Value::Array(arr) => arr.clone(),
+            _ => return Err(RuntimeError::new("llm_with_messages second arg must be messages array")),
+        };
+
+        request.borrow_mut().insert("messages".to_string(), Value::Array(messages));
+        Ok(Value::Map(request))
+    });
+
+    // llm_send - Send request (simulated - returns reported~ data)
+    // In production, this would make actual HTTP calls
+    define(interp, "llm_send", Some(1), |_, args| {
+        let request = match &args[0] {
+            Value::Map(m) => m.borrow().clone(),
+            _ => return Err(RuntimeError::new("llm_send requires request map")),
+        };
+
+        let provider = request.get("provider")
+            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+            .unwrap_or_else(|| "unknown".to_string());
+
+        let model = request.get("model")
+            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+            .unwrap_or_else(|| "unknown".to_string());
+
+        // Build response structure (simulated)
+        let mut response = HashMap::new();
+        response.insert("id".to_string(), Value::String(Rc::new(format!("msg_{}", Uuid::new_v4()))));
+        response.insert("provider".to_string(), Value::String(Rc::new(provider)));
+        response.insert("model".to_string(), Value::String(Rc::new(model)));
+        response.insert("created".to_string(), Value::Int(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64
+        ));
+
+        // Check if this would be a tool call
+        if request.contains_key("tools") {
+            response.insert("type".to_string(), Value::String(Rc::new("tool_use".to_string())));
+            response.insert("tool_name".to_string(), Value::String(Rc::new("pending".to_string())));
+            response.insert("tool_input".to_string(), Value::Map(Rc::new(RefCell::new(HashMap::new()))));
+        } else {
+            response.insert("type".to_string(), Value::String(Rc::new("text".to_string())));
+            response.insert("content".to_string(), Value::String(Rc::new(
+                "[LLM Response - Connect to actual API for real responses]".to_string()
+            )));
+        }
+
+        // Usage stats (simulated)
+        let mut usage = HashMap::new();
+        usage.insert("input_tokens".to_string(), Value::Int(0));
+        usage.insert("output_tokens".to_string(), Value::Int(0));
+        response.insert("usage".to_string(), Value::Map(Rc::new(RefCell::new(usage))));
+
+        // Return as reported evidence (external data)
+        Ok(Value::Evidential {
+            value: Box::new(Value::Map(Rc::new(RefCell::new(response)))),
+            evidence: Evidence::Reported,
+        })
+    });
+
+    // llm_parse_tool_call - Parse tool call from LLM response
+    define(interp, "llm_parse_tool_call", Some(1), |_, args| {
+        let response = match &args[0] {
+            Value::Map(m) => m.borrow().clone(),
+            Value::Evidential { value, .. } => {
+                if let Value::Map(m) = value.as_ref() {
+                    m.borrow().clone()
+                } else {
+                    return Err(RuntimeError::new("llm_parse_tool_call requires map response"));
+                }
+            }
+            _ => return Err(RuntimeError::new("llm_parse_tool_call requires response map")),
+        };
+
+        let resp_type = response.get("type")
+            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+            .unwrap_or_default();
+
+        if resp_type == "tool_use" {
+            let tool_name = response.get("tool_name")
+                .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                .unwrap_or_default();
+
+            let tool_input = response.get("tool_input").cloned().unwrap_or(Value::Null);
+
+            let mut result = HashMap::new();
+            result.insert("is_tool_call".to_string(), Value::Bool(true));
+            result.insert("tool_name".to_string(), Value::String(Rc::new(tool_name)));
+            result.insert("tool_input".to_string(), tool_input);
+            Ok(Value::Map(Rc::new(RefCell::new(result))))
+        } else {
+            let mut result = HashMap::new();
+            result.insert("is_tool_call".to_string(), Value::Bool(false));
+            result.insert("content".to_string(), response.get("content").cloned().unwrap_or(Value::Null));
+            Ok(Value::Map(Rc::new(RefCell::new(result))))
+        }
+    });
+
+    // llm_extract - Extract structured data (returns uncertain? - needs validation)
+    define(interp, "llm_extract", Some(2), |_, args| {
+        let _response = match &args[0] {
+            Value::Map(m) => m.borrow().clone(),
+            Value::Evidential { value, .. } => {
+                if let Value::Map(m) = value.as_ref() {
+                    m.borrow().clone()
+                } else {
+                    return Err(RuntimeError::new("llm_extract requires response"));
+                }
+            }
+            _ => return Err(RuntimeError::new("llm_extract requires response")),
+        };
+
+        let _schema = match &args[1] {
+            Value::Map(m) => m.borrow().clone(),
+            _ => return Err(RuntimeError::new("llm_extract requires schema map")),
+        };
+
+        // In production, this would parse the LLM output against the schema
+        // For now, return uncertain evidence since extraction may fail
+        let mut result = HashMap::new();
+        result.insert("success".to_string(), Value::Bool(true));
+        result.insert("data".to_string(), Value::Null);
+        result.insert("errors".to_string(), Value::Array(Rc::new(RefCell::new(Vec::new()))));
+
+        Ok(Value::Evidential {
+            value: Box::new(Value::Map(Rc::new(RefCell::new(result)))),
+            evidence: Evidence::Uncertain,
+        })
+    });
+
+    // prompt_template - Create a prompt template with variable substitution
+    define(interp, "prompt_template", Some(1), |_, args| {
+        let template = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("prompt_template requires string")),
+        };
+
+        // Parse template to extract variable names
+        let mut variables = Vec::new();
+        let mut in_var = false;
+        let mut var_name = String::new();
+
+        for c in template.chars() {
+            match c {
+                '{' if !in_var => {
+                    in_var = true;
+                    var_name.clear();
+                }
+                '}' if in_var => {
+                    if !var_name.is_empty() {
+                        variables.push(Value::String(Rc::new(var_name.clone())));
+                    }
+                    in_var = false;
+                }
+                _ if in_var => {
+                    var_name.push(c);
+                }
+                _ => {}
+            }
+        }
+
+        let mut result = HashMap::new();
+        result.insert("template".to_string(), Value::String(Rc::new(template)));
+        result.insert("variables".to_string(), Value::Array(Rc::new(RefCell::new(variables))));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // prompt_render - Render a template with values
+    define(interp, "prompt_render", Some(2), |_, args| {
+        let template_obj = match &args[0] {
+            Value::Map(m) => m.borrow().clone(),
+            Value::String(s) => {
+                let mut m = HashMap::new();
+                m.insert("template".to_string(), Value::String(s.clone()));
+                m
+            }
+            _ => return Err(RuntimeError::new("prompt_render requires template")),
+        };
+
+        let values = match &args[1] {
+            Value::Map(m) => m.borrow().clone(),
+            _ => return Err(RuntimeError::new("prompt_render requires values map")),
+        };
+
+        let template = template_obj.get("template")
+            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+            .unwrap_or_default();
+
+        let mut result = template;
+        for (key, value) in values.iter() {
+            let value_str = match value {
+                Value::String(s) => s.as_str().to_string(),
+                Value::Int(n) => n.to_string(),
+                Value::Float(f) => f.to_string(),
+                Value::Bool(b) => b.to_string(),
+                _ => format!("{}", value),
+            };
+            result = result.replace(&format!("{{{}}}", key), &value_str);
+        }
+
+        Ok(Value::String(Rc::new(result)))
+    });
+}
+
+// ============================================================================
+// AGENT MEMORY - Session and context persistence
+// ============================================================================
+
+fn register_agent_memory(interp: &mut Interpreter) {
+    // memory_session - Create or get a session
+    define(interp, "memory_session", Some(1), |_, args| {
+        let session_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("memory_session requires string id")),
+        };
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        AGENT_MEMORY.with(|memory| {
+            let mut mem = memory.borrow_mut();
+            if !mem.contains_key(&session_id) {
+                mem.insert(session_id.clone(), AgentSession {
+                    id: session_id.clone(),
+                    context: HashMap::new(),
+                    history: Vec::new(),
+                    created_at: now,
+                    last_accessed: now,
+                });
+            } else if let Some(session) = mem.get_mut(&session_id) {
+                session.last_accessed = now;
+            }
+        });
+
+        let mut result = HashMap::new();
+        result.insert("id".to_string(), Value::String(Rc::new(session_id)));
+        result.insert("created_at".to_string(), Value::Int(now as i64));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // memory_set - Store a value in session context
+    define(interp, "memory_set", Some(3), |_, args| {
+        let session_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid session"))?
+            }
+            _ => return Err(RuntimeError::new("memory_set requires session")),
+        };
+
+        let key = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("memory_set key must be string")),
+        };
+
+        let value = args[2].clone();
+
+        AGENT_MEMORY.with(|memory| {
+            if let Some(session) = memory.borrow_mut().get_mut(&session_id) {
+                session.context.insert(key, value);
+                session.last_accessed = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                Ok(Value::Bool(true))
+            } else {
+                Err(RuntimeError::new(format!("Session '{}' not found", session_id)))
+            }
+        })
+    });
+
+    // memory_get - Retrieve a value from session context
+    define(interp, "memory_get", Some(2), |_, args| {
+        let session_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid session"))?
+            }
+            _ => return Err(RuntimeError::new("memory_get requires session")),
+        };
+
+        let key = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("memory_get key must be string")),
+        };
+
+        AGENT_MEMORY.with(|memory| {
+            if let Some(session) = memory.borrow().get(&session_id) {
+                Ok(session.context.get(&key).cloned().unwrap_or(Value::Null))
+            } else {
+                Ok(Value::Null)
+            }
+        })
+    });
+
+    // memory_history_add - Add to conversation history
+    define(interp, "memory_history_add", Some(3), |_, args| {
+        let session_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid session"))?
+            }
+            _ => return Err(RuntimeError::new("memory_history_add requires session")),
+        };
+
+        let role = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("role must be string")),
+        };
+
+        let content = match &args[2] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("content must be string")),
+        };
+
+        AGENT_MEMORY.with(|memory| {
+            if let Some(session) = memory.borrow_mut().get_mut(&session_id) {
+                session.history.push((role, content));
+                session.last_accessed = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                Ok(Value::Int(session.history.len() as i64))
+            } else {
+                Err(RuntimeError::new(format!("Session '{}' not found", session_id)))
+            }
+        })
+    });
+
+    // memory_history_get - Get conversation history
+    define(interp, "memory_history_get", None, |_, args| {
+        if args.is_empty() {
+            return Err(RuntimeError::new("memory_history_get requires session"));
+        }
+
+        let session_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid session"))?
+            }
+            _ => return Err(RuntimeError::new("memory_history_get requires session")),
+        };
+
+        let limit = if args.len() > 1 {
+            match &args[1] {
+                Value::Int(n) => Some(*n as usize),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        AGENT_MEMORY.with(|memory| {
+            if let Some(session) = memory.borrow().get(&session_id) {
+                let history: Vec<Value> = session.history.iter()
+                    .rev()
+                    .take(limit.unwrap_or(usize::MAX))
+                    .rev()
+                    .map(|(role, content)| {
+                        let mut msg = HashMap::new();
+                        msg.insert("role".to_string(), Value::String(Rc::new(role.clone())));
+                        msg.insert("content".to_string(), Value::String(Rc::new(content.clone())));
+                        Value::Map(Rc::new(RefCell::new(msg)))
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(history))))
+            } else {
+                Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))))
+            }
+        })
+    });
+
+    // memory_context_all - Get all context for a session
+    define(interp, "memory_context_all", Some(1), |_, args| {
+        let session_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid session"))?
+            }
+            _ => return Err(RuntimeError::new("memory_context_all requires session")),
+        };
+
+        AGENT_MEMORY.with(|memory| {
+            if let Some(session) = memory.borrow().get(&session_id) {
+                let context: HashMap<String, Value> = session.context.clone();
+                Ok(Value::Map(Rc::new(RefCell::new(context))))
+            } else {
+                Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
+            }
+        })
+    });
+
+    // memory_clear - Clear session data
+    define(interp, "memory_clear", Some(1), |_, args| {
+        let session_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid session"))?
+            }
+            _ => return Err(RuntimeError::new("memory_clear requires session")),
+        };
+
+        AGENT_MEMORY.with(|memory| {
+            let removed = memory.borrow_mut().remove(&session_id).is_some();
+            Ok(Value::Bool(removed))
+        })
+    });
+
+    // memory_sessions_list - List all active sessions
+    define(interp, "memory_sessions_list", Some(0), |_, _args| {
+        let sessions: Vec<Value> = AGENT_MEMORY.with(|memory| {
+            memory.borrow().values().map(|session| {
+                let mut info = HashMap::new();
+                info.insert("id".to_string(), Value::String(Rc::new(session.id.clone())));
+                info.insert("created_at".to_string(), Value::Int(session.created_at as i64));
+                info.insert("last_accessed".to_string(), Value::Int(session.last_accessed as i64));
+                info.insert("context_keys".to_string(), Value::Int(session.context.len() as i64));
+                info.insert("history_length".to_string(), Value::Int(session.history.len() as i64));
+                Value::Map(Rc::new(RefCell::new(info)))
+            }).collect()
+        });
+        Ok(Value::Array(Rc::new(RefCell::new(sessions))))
+    });
+}
+
+// ============================================================================
+// PLANNING FRAMEWORK - State machines and goal tracking
+// ============================================================================
+
+fn register_agent_planning(interp: &mut Interpreter) {
+    // plan_state_machine - Create a new state machine
+    define(interp, "plan_state_machine", Some(2), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("plan_state_machine name must be string")),
+        };
+
+        let states = match &args[1] {
+            Value::Array(arr) => {
+                arr.borrow().iter()
+                    .filter_map(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .collect::<Vec<_>>()
+            }
+            _ => return Err(RuntimeError::new("plan_state_machine states must be array")),
+        };
+
+        if states.is_empty() {
+            return Err(RuntimeError::new("State machine must have at least one state"));
+        }
+
+        let initial_state = states[0].clone();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let machine = StateMachine {
+            name: name.clone(),
+            current_state: initial_state.clone(),
+            states,
+            transitions: HashMap::new(),
+            history: vec![(initial_state, now)],
+        };
+
+        STATE_MACHINES.with(|machines| {
+            machines.borrow_mut().insert(name.clone(), machine);
+        });
+
+        let mut result = HashMap::new();
+        result.insert("name".to_string(), Value::String(Rc::new(name)));
+        result.insert("type".to_string(), Value::String(Rc::new("state_machine".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // plan_add_transition - Add a transition rule
+    define(interp, "plan_add_transition", Some(3), |_, args| {
+        let machine_name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("name")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid state machine"))?
+            }
+            _ => return Err(RuntimeError::new("plan_add_transition requires machine")),
+        };
+
+        let from_state = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("from_state must be string")),
+        };
+
+        let to_state = match &args[2] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("to_state must be string")),
+        };
+
+        STATE_MACHINES.with(|machines| {
+            if let Some(machine) = machines.borrow_mut().get_mut(&machine_name) {
+                // Validate states exist
+                if !machine.states.contains(&from_state) {
+                    return Err(RuntimeError::new(format!("State '{}' not in machine", from_state)));
+                }
+                if !machine.states.contains(&to_state) {
+                    return Err(RuntimeError::new(format!("State '{}' not in machine", to_state)));
+                }
+
+                machine.transitions
+                    .entry(from_state)
+                    .or_insert_with(Vec::new)
+                    .push((to_state, "".to_string()));
+
+                Ok(Value::Bool(true))
+            } else {
+                Err(RuntimeError::new(format!("State machine '{}' not found", machine_name)))
+            }
+        })
+    });
+
+    // plan_current_state - Get current state
+    define(interp, "plan_current_state", Some(1), |_, args| {
+        let machine_name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("name")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid state machine"))?
+            }
+            _ => return Err(RuntimeError::new("plan_current_state requires machine")),
+        };
+
+        STATE_MACHINES.with(|machines| {
+            if let Some(machine) = machines.borrow().get(&machine_name) {
+                Ok(Value::String(Rc::new(machine.current_state.clone())))
+            } else {
+                Err(RuntimeError::new(format!("State machine '{}' not found", machine_name)))
+            }
+        })
+    });
+
+    // plan_transition - Execute a state transition
+    define(interp, "plan_transition", Some(2), |_, args| {
+        let machine_name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("name")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid state machine"))?
+            }
+            _ => return Err(RuntimeError::new("plan_transition requires machine")),
+        };
+
+        let to_state = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("to_state must be string")),
+        };
+
+        STATE_MACHINES.with(|machines| {
+            if let Some(machine) = machines.borrow_mut().get_mut(&machine_name) {
+                let current = machine.current_state.clone();
+
+                // Check if transition is valid
+                let valid = machine.transitions.get(&current)
+                    .map(|transitions| transitions.iter().any(|(to, _)| to == &to_state))
+                    .unwrap_or(false);
+
+                if valid || machine.states.contains(&to_state) {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+
+                    machine.current_state = to_state.clone();
+                    machine.history.push((to_state.clone(), now));
+
+                    let mut result = HashMap::new();
+                    result.insert("success".to_string(), Value::Bool(true));
+                    result.insert("from".to_string(), Value::String(Rc::new(current)));
+                    result.insert("to".to_string(), Value::String(Rc::new(to_state)));
+                    Ok(Value::Map(Rc::new(RefCell::new(result))))
+                } else {
+                    let mut result = HashMap::new();
+                    result.insert("success".to_string(), Value::Bool(false));
+                    result.insert("error".to_string(), Value::String(Rc::new(
+                        format!("No valid transition from '{}' to '{}'", current, to_state)
+                    )));
+                    Ok(Value::Map(Rc::new(RefCell::new(result))))
+                }
+            } else {
+                Err(RuntimeError::new(format!("State machine '{}' not found", machine_name)))
+            }
+        })
+    });
+
+    // plan_can_transition - Check if a transition is valid
+    define(interp, "plan_can_transition", Some(2), |_, args| {
+        let machine_name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("name")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid state machine"))?
+            }
+            _ => return Err(RuntimeError::new("plan_can_transition requires machine")),
+        };
+
+        let to_state = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("to_state must be string")),
+        };
+
+        STATE_MACHINES.with(|machines| {
+            if let Some(machine) = machines.borrow().get(&machine_name) {
+                let current = &machine.current_state;
+                let can = machine.transitions.get(current)
+                    .map(|transitions| transitions.iter().any(|(to, _)| to == &to_state))
+                    .unwrap_or(false);
+                Ok(Value::Bool(can))
+            } else {
+                Ok(Value::Bool(false))
+            }
+        })
+    });
+
+    // plan_available_transitions - Get available transitions from current state
+    define(interp, "plan_available_transitions", Some(1), |_, args| {
+        let machine_name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("name")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid state machine"))?
+            }
+            _ => return Err(RuntimeError::new("plan_available_transitions requires machine")),
+        };
+
+        STATE_MACHINES.with(|machines| {
+            if let Some(machine) = machines.borrow().get(&machine_name) {
+                let current = &machine.current_state;
+                let available: Vec<Value> = machine.transitions.get(current)
+                    .map(|transitions| {
+                        transitions.iter()
+                            .map(|(to, _)| Value::String(Rc::new(to.clone())))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                Ok(Value::Array(Rc::new(RefCell::new(available))))
+            } else {
+                Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))))
+            }
+        })
+    });
+
+    // plan_history - Get state transition history
+    define(interp, "plan_history", Some(1), |_, args| {
+        let machine_name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("name")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid state machine"))?
+            }
+            _ => return Err(RuntimeError::new("plan_history requires machine")),
+        };
+
+        STATE_MACHINES.with(|machines| {
+            if let Some(machine) = machines.borrow().get(&machine_name) {
+                let history: Vec<Value> = machine.history.iter()
+                    .map(|(state, timestamp)| {
+                        let mut entry = HashMap::new();
+                        entry.insert("state".to_string(), Value::String(Rc::new(state.clone())));
+                        entry.insert("timestamp".to_string(), Value::Int(*timestamp as i64));
+                        Value::Map(Rc::new(RefCell::new(entry)))
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(history))))
+            } else {
+                Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))))
+            }
+        })
+    });
+
+    // plan_goal - Create a goal with success criteria
+    define(interp, "plan_goal", Some(2), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("plan_goal name must be string")),
+        };
+
+        let criteria = args[1].clone();
+
+        let mut goal = HashMap::new();
+        goal.insert("name".to_string(), Value::String(Rc::new(name)));
+        goal.insert("criteria".to_string(), criteria);
+        goal.insert("status".to_string(), Value::String(Rc::new("pending".to_string())));
+        goal.insert("progress".to_string(), Value::Float(0.0));
+        goal.insert("created_at".to_string(), Value::Int(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64
+        ));
+
+        Ok(Value::Map(Rc::new(RefCell::new(goal))))
+    });
+
+    // plan_subgoals - Break a goal into subgoals
+    define(interp, "plan_subgoals", Some(2), |_, args| {
+        let parent = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("plan_subgoals requires goal map")),
+        };
+
+        let subgoals = match &args[1] {
+            Value::Array(arr) => arr.clone(),
+            _ => return Err(RuntimeError::new("plan_subgoals requires subgoals array")),
+        };
+
+        parent.borrow_mut().insert("subgoals".to_string(), Value::Array(subgoals));
+        Ok(Value::Map(parent))
+    });
+
+    // plan_update_progress - Update goal progress
+    define(interp, "plan_update_progress", Some(2), |_, args| {
+        let goal = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("plan_update_progress requires goal map")),
+        };
+
+        let progress = match &args[1] {
+            Value::Float(f) => *f,
+            Value::Int(i) => *i as f64,
+            _ => return Err(RuntimeError::new("progress must be number")),
+        };
+
+        let progress = progress.clamp(0.0, 1.0);
+        goal.borrow_mut().insert("progress".to_string(), Value::Float(progress));
+
+        if progress >= 1.0 {
+            goal.borrow_mut().insert("status".to_string(), Value::String(Rc::new("completed".to_string())));
+        } else if progress > 0.0 {
+            goal.borrow_mut().insert("status".to_string(), Value::String(Rc::new("in_progress".to_string())));
+        }
+
+        Ok(Value::Map(goal))
+    });
+
+    // plan_check_goal - Check if goal criteria are met
+    define(interp, "plan_check_goal", Some(2), |_interp, args| {
+        let goal = match &args[0] {
+            Value::Map(m) => m.borrow().clone(),
+            _ => return Err(RuntimeError::new("plan_check_goal requires goal map")),
+        };
+
+        let context = match &args[1] {
+            Value::Map(m) => m.borrow().clone(),
+            _ => return Err(RuntimeError::new("plan_check_goal requires context map")),
+        };
+
+        // Simple criteria checking - in production, this would evaluate expressions
+        let _criteria = goal.get("criteria").cloned().unwrap_or(Value::Null);
+
+        // Check if all required context keys exist
+        let mut met = true;
+        let mut missing: Vec<String> = Vec::new();
+
+        if let Some(Value::Array(required)) = goal.get("required_context") {
+            for req in required.borrow().iter() {
+                if let Value::String(key) = req {
+                    if !context.contains_key(key.as_str()) {
+                        met = false;
+                        missing.push(key.as_str().to_string());
+                    }
+                }
+            }
+        }
+
+        let mut result = HashMap::new();
+        result.insert("met".to_string(), Value::Bool(met));
+        result.insert("missing".to_string(), Value::Array(Rc::new(RefCell::new(
+            missing.into_iter().map(|s| Value::String(Rc::new(s))).collect()
+        ))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+}
+
+// ============================================================================
+// VECTOR OPERATIONS - Embeddings and similarity search
+// ============================================================================
+
+fn register_agent_vectors(interp: &mut Interpreter) {
+    // vec_embedding - Create an embedding vector (simulated - returns uncertain?)
+    define(interp, "vec_embedding", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("vec_embedding requires string")),
+        };
+
+        // Simulated embedding - in production, call embedding API
+        // Creates a simple hash-based embedding for demo purposes
+        let mut embedding = Vec::new();
+        let dimension = 384; // Common embedding dimension
+
+        for i in 0..dimension {
+            let hash = text.bytes()
+                .enumerate()
+                .fold(0u64, |acc, (j, b)| {
+                    acc.wrapping_add((b as u64).wrapping_mul((i + j + 1) as u64))
+                });
+            let value = ((hash % 10000) as f64 / 10000.0) * 2.0 - 1.0; // Normalize to [-1, 1]
+            embedding.push(Value::Float(value));
+        }
+
+        let result = Value::Array(Rc::new(RefCell::new(embedding)));
+
+        // Return as uncertain since embeddings are probabilistic
+        Ok(Value::Evidential {
+            value: Box::new(result),
+            evidence: Evidence::Uncertain,
+        })
+    });
+
+    // vec_cosine_similarity - Compute cosine similarity between two vectors
+    define(interp, "vec_cosine_similarity", Some(2), |_, args| {
+        let vec_a = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            Value::Evidential { value, .. } => {
+                if let Value::Array(arr) = value.as_ref() {
+                    arr.borrow().clone()
+                } else {
+                    return Err(RuntimeError::new("vec_cosine_similarity requires arrays"));
+                }
+            }
+            _ => return Err(RuntimeError::new("vec_cosine_similarity requires arrays")),
+        };
+
+        let vec_b = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            Value::Evidential { value, .. } => {
+                if let Value::Array(arr) = value.as_ref() {
+                    arr.borrow().clone()
+                } else {
+                    return Err(RuntimeError::new("vec_cosine_similarity requires arrays"));
+                }
+            }
+            _ => return Err(RuntimeError::new("vec_cosine_similarity requires arrays")),
+        };
+
+        if vec_a.len() != vec_b.len() {
+            return Err(RuntimeError::new("Vectors must have same dimension"));
+        }
+
+        let mut dot = 0.0;
+        let mut mag_a = 0.0;
+        let mut mag_b = 0.0;
+
+        for (a, b) in vec_a.iter().zip(vec_b.iter()) {
+            let a_val = match a {
+                Value::Float(f) => *f,
+                Value::Int(i) => *i as f64,
+                _ => 0.0,
+            };
+            let b_val = match b {
+                Value::Float(f) => *f,
+                Value::Int(i) => *i as f64,
+                _ => 0.0,
+            };
+
+            dot += a_val * b_val;
+            mag_a += a_val * a_val;
+            mag_b += b_val * b_val;
+        }
+
+        let similarity = if mag_a > 0.0 && mag_b > 0.0 {
+            dot / (mag_a.sqrt() * mag_b.sqrt())
+        } else {
+            0.0
+        };
+
+        Ok(Value::Float(similarity))
+    });
+
+    // vec_euclidean_distance - Compute Euclidean distance
+    define(interp, "vec_euclidean_distance", Some(2), |_, args| {
+        let vec_a = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            Value::Evidential { value, .. } => {
+                if let Value::Array(arr) = value.as_ref() { arr.borrow().clone() } else {
+                    return Err(RuntimeError::new("vec_euclidean_distance requires arrays"));
+                }
+            }
+            _ => return Err(RuntimeError::new("vec_euclidean_distance requires arrays")),
+        };
+
+        let vec_b = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            Value::Evidential { value, .. } => {
+                if let Value::Array(arr) = value.as_ref() { arr.borrow().clone() } else {
+                    return Err(RuntimeError::new("vec_euclidean_distance requires arrays"));
+                }
+            }
+            _ => return Err(RuntimeError::new("vec_euclidean_distance requires arrays")),
+        };
+
+        if vec_a.len() != vec_b.len() {
+            return Err(RuntimeError::new("Vectors must have same dimension"));
+        }
+
+        let mut sum_sq = 0.0;
+        for (a, b) in vec_a.iter().zip(vec_b.iter()) {
+            let a_val = match a {
+                Value::Float(f) => *f,
+                Value::Int(i) => *i as f64,
+                _ => 0.0,
+            };
+            let b_val = match b {
+                Value::Float(f) => *f,
+                Value::Int(i) => *i as f64,
+                _ => 0.0,
+            };
+            let diff = a_val - b_val;
+            sum_sq += diff * diff;
+        }
+
+        Ok(Value::Float(sum_sq.sqrt()))
+    });
+
+    // vec_dot_product - Compute dot product
+    define(interp, "vec_dot_product", Some(2), |_, args| {
+        let vec_a = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("vec_dot_product requires arrays")),
+        };
+
+        let vec_b = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("vec_dot_product requires arrays")),
+        };
+
+        if vec_a.len() != vec_b.len() {
+            return Err(RuntimeError::new("Vectors must have same dimension"));
+        }
+
+        let mut dot = 0.0;
+        for (a, b) in vec_a.iter().zip(vec_b.iter()) {
+            let a_val = match a {
+                Value::Float(f) => *f,
+                Value::Int(i) => *i as f64,
+                _ => 0.0,
+            };
+            let b_val = match b {
+                Value::Float(f) => *f,
+                Value::Int(i) => *i as f64,
+                _ => 0.0,
+            };
+            dot += a_val * b_val;
+        }
+
+        Ok(Value::Float(dot))
+    });
+
+    // vec_normalize - Normalize a vector to unit length
+    define(interp, "vec_normalize", Some(1), |_, args| {
+        let vec = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("vec_normalize requires array")),
+        };
+
+        let mut mag = 0.0;
+        for v in vec.iter() {
+            let val = match v {
+                Value::Float(f) => *f,
+                Value::Int(i) => *i as f64,
+                _ => 0.0,
+            };
+            mag += val * val;
+        }
+        mag = mag.sqrt();
+
+        if mag == 0.0 {
+            return Ok(Value::Array(Rc::new(RefCell::new(vec))));
+        }
+
+        let normalized: Vec<Value> = vec.iter().map(|v| {
+            let val = match v {
+                Value::Float(f) => *f,
+                Value::Int(i) => *i as f64,
+                _ => 0.0,
+            };
+            Value::Float(val / mag)
+        }).collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(normalized))))
+    });
+
+    // vec_search - Find most similar vectors (k-nearest neighbors)
+    define(interp, "vec_search", Some(3), |_, args| {
+        let query = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            Value::Evidential { value, .. } => {
+                if let Value::Array(arr) = value.as_ref() { arr.borrow().clone() } else {
+                    return Err(RuntimeError::new("vec_search query must be array"));
+                }
+            }
+            _ => return Err(RuntimeError::new("vec_search query must be array")),
+        };
+
+        let corpus = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("vec_search corpus must be array of vectors")),
+        };
+
+        let k = match &args[2] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("vec_search k must be integer")),
+        };
+
+        // Compute similarities
+        let mut similarities: Vec<(usize, f64)> = Vec::new();
+
+        for (i, item) in corpus.iter().enumerate() {
+            let vec_b = match item {
+                Value::Array(arr) => arr.borrow().clone(),
+                Value::Map(m) => {
+                    // Support {vector: [...], metadata: {...}} format
+                    if let Some(Value::Array(arr)) = m.borrow().get("vector") {
+                        arr.borrow().clone()
+                    } else {
+                        continue;
+                    }
+                }
+                _ => continue,
+            };
+
+            if vec_b.len() != query.len() {
+                continue;
+            }
+
+            let mut dot = 0.0;
+            let mut mag_a = 0.0;
+            let mut mag_b = 0.0;
+
+            for (a, b) in query.iter().zip(vec_b.iter()) {
+                let a_val = match a {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => 0.0,
+                };
+                let b_val = match b {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => 0.0,
+                };
+                dot += a_val * b_val;
+                mag_a += a_val * a_val;
+                mag_b += b_val * b_val;
+            }
+
+            let similarity = if mag_a > 0.0 && mag_b > 0.0 {
+                dot / (mag_a.sqrt() * mag_b.sqrt())
+            } else {
+                0.0
+            };
+
+            similarities.push((i, similarity));
+        }
+
+        // Sort by similarity (descending)
+        similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Return top k
+        let results: Vec<Value> = similarities.iter()
+            .take(k)
+            .map(|(idx, sim)| {
+                let mut result = HashMap::new();
+                result.insert("index".to_string(), Value::Int(*idx as i64));
+                result.insert("similarity".to_string(), Value::Float(*sim));
+                result.insert("item".to_string(), corpus.get(*idx).cloned().unwrap_or(Value::Null));
+                Value::Map(Rc::new(RefCell::new(result)))
+            })
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(results))))
+    });
+
+    // vec_store - Create an in-memory vector store
+    define(interp, "vec_store", Some(0), |_, _args| {
+        let mut store = HashMap::new();
+        store.insert("vectors".to_string(), Value::Array(Rc::new(RefCell::new(Vec::new()))));
+        store.insert("metadata".to_string(), Value::Array(Rc::new(RefCell::new(Vec::new()))));
+        store.insert("count".to_string(), Value::Int(0));
+        Ok(Value::Map(Rc::new(RefCell::new(store))))
+    });
+
+    // vec_store_add - Add a vector with metadata to store
+    define(interp, "vec_store_add", Some(3), |_, args| {
+        let store = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("vec_store_add requires store")),
+        };
+
+        let vector = args[1].clone();
+        let metadata = args[2].clone();
+
+        let mut store_ref = store.borrow_mut();
+
+        if let Some(Value::Array(vectors)) = store_ref.get("vectors") {
+            vectors.borrow_mut().push(vector);
+        }
+        if let Some(Value::Array(metas)) = store_ref.get("metadata") {
+            metas.borrow_mut().push(metadata);
+        }
+
+        let new_count = store_ref.get("count")
+            .and_then(|v| if let Value::Int(n) = v { Some(*n) } else { None })
+            .unwrap_or(0) + 1;
+        store_ref.insert("count".to_string(), Value::Int(new_count));
+
+        Ok(Value::Int(new_count))
+    });
+
+    // vec_store_search - Search the vector store
+    define(interp, "vec_store_search", Some(3), |_, args| {
+        let store = match &args[0] {
+            Value::Map(m) => m.borrow().clone(),
+            _ => return Err(RuntimeError::new("vec_store_search requires store")),
+        };
+
+        let query = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            Value::Evidential { value, .. } => {
+                if let Value::Array(arr) = value.as_ref() { arr.borrow().clone() } else {
+                    return Err(RuntimeError::new("Query must be array"));
+                }
+            }
+            _ => return Err(RuntimeError::new("Query must be array")),
+        };
+
+        let k = match &args[2] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("k must be integer")),
+        };
+
+        let vectors = store.get("vectors")
+            .and_then(|v| if let Value::Array(arr) = v { Some(arr.borrow().clone()) } else { None })
+            .unwrap_or_default();
+
+        let metadata = store.get("metadata")
+            .and_then(|v| if let Value::Array(arr) = v { Some(arr.borrow().clone()) } else { None })
+            .unwrap_or_default();
+
+        let mut similarities: Vec<(usize, f64)> = Vec::new();
+
+        for (i, vec_val) in vectors.iter().enumerate() {
+            let vec_b = match vec_val {
+                Value::Array(arr) => arr.borrow().clone(),
+                Value::Evidential { value, .. } => {
+                    if let Value::Array(arr) = value.as_ref() { arr.borrow().clone() } else { continue; }
+                }
+                _ => continue,
+            };
+
+            if vec_b.len() != query.len() { continue; }
+
+            let mut dot = 0.0;
+            let mut mag_a = 0.0;
+            let mut mag_b = 0.0;
+
+            for (a, b) in query.iter().zip(vec_b.iter()) {
+                let a_val = match a { Value::Float(f) => *f, Value::Int(i) => *i as f64, _ => 0.0 };
+                let b_val = match b { Value::Float(f) => *f, Value::Int(i) => *i as f64, _ => 0.0 };
+                dot += a_val * b_val;
+                mag_a += a_val * a_val;
+                mag_b += b_val * b_val;
+            }
+
+            let sim = if mag_a > 0.0 && mag_b > 0.0 { dot / (mag_a.sqrt() * mag_b.sqrt()) } else { 0.0 };
+            similarities.push((i, sim));
+        }
+
+        similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let results: Vec<Value> = similarities.iter()
+            .take(k)
+            .map(|(idx, sim)| {
+                let mut result = HashMap::new();
+                result.insert("index".to_string(), Value::Int(*idx as i64));
+                result.insert("similarity".to_string(), Value::Float(*sim));
+                result.insert("vector".to_string(), vectors.get(*idx).cloned().unwrap_or(Value::Null));
+                result.insert("metadata".to_string(), metadata.get(*idx).cloned().unwrap_or(Value::Null));
+                Value::Map(Rc::new(RefCell::new(result)))
+            })
+            .collect();
+
+        Ok(Value::Array(Rc::new(RefCell::new(results))))
+    });
+}
+
+// ============================================================================
+// MULTI-AGENT COORDINATION - Swarm behaviors and agent communication
+// ============================================================================
+
+/// Agent registry for multi-agent coordination
+thread_local! {
+    static AGENT_REGISTRY: RefCell<HashMap<String, AgentInfo>> = RefCell::new(HashMap::new());
+    static AGENT_MESSAGES: RefCell<HashMap<String, Vec<AgentMessage>>> = RefCell::new(HashMap::new());
+}
+
+#[derive(Clone)]
+struct AgentInfo {
+    id: String,
+    agent_type: String,
+    state: HashMap<String, Value>,
+    capabilities: Vec<String>,
+    created_at: u64,
+}
+
+#[derive(Clone)]
+struct AgentMessage {
+    from: String,
+    to: String,
+    msg_type: String,
+    content: Value,
+    timestamp: u64,
+}
+
+fn register_agent_swarm(interp: &mut Interpreter) {
+    // swarm_create_agent - Create a new agent in the swarm
+    define(interp, "swarm_create_agent", Some(2), |_, args| {
+        let agent_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("swarm_create_agent requires string id")),
+        };
+
+        let agent_type = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("swarm_create_agent requires string type")),
+        };
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let agent = AgentInfo {
+            id: agent_id.clone(),
+            agent_type,
+            state: HashMap::new(),
+            capabilities: Vec::new(),
+            created_at: now,
+        };
+
+        AGENT_REGISTRY.with(|registry| {
+            registry.borrow_mut().insert(agent_id.clone(), agent);
+        });
+
+        AGENT_MESSAGES.with(|messages| {
+            messages.borrow_mut().insert(agent_id.clone(), Vec::new());
+        });
+
+        let mut result = HashMap::new();
+        result.insert("id".to_string(), Value::String(Rc::new(agent_id)));
+        result.insert("created_at".to_string(), Value::Int(now as i64));
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // swarm_add_capability - Add a capability to an agent
+    define(interp, "swarm_add_capability", Some(2), |_, args| {
+        let agent_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_add_capability requires agent")),
+        };
+
+        let capability = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("capability must be string")),
+        };
+
+        AGENT_REGISTRY.with(|registry| {
+            if let Some(agent) = registry.borrow_mut().get_mut(&agent_id) {
+                if !agent.capabilities.contains(&capability) {
+                    agent.capabilities.push(capability);
+                }
+                Ok(Value::Bool(true))
+            } else {
+                Err(RuntimeError::new(format!("Agent '{}' not found", agent_id)))
+            }
+        })
+    });
+
+    // swarm_send_message - Send a message from one agent to another
+    define(interp, "swarm_send_message", Some(4), |_, args| {
+        let from_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid sender agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_send_message requires sender agent")),
+        };
+
+        let to_id = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid receiver agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_send_message requires receiver agent")),
+        };
+
+        let msg_type = match &args[2] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("message type must be string")),
+        };
+
+        let content = args[3].clone();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let message = AgentMessage {
+            from: from_id.clone(),
+            to: to_id.clone(),
+            msg_type,
+            content,
+            timestamp: now,
+        };
+
+        AGENT_MESSAGES.with(|messages| {
+            if let Some(queue) = messages.borrow_mut().get_mut(&to_id) {
+                queue.push(message);
+                Ok(Value::Bool(true))
+            } else {
+                Err(RuntimeError::new(format!("Agent '{}' not found", to_id)))
+            }
+        })
+    });
+
+    // swarm_receive_messages - Get messages for an agent
+    define(interp, "swarm_receive_messages", Some(1), |_, args| {
+        let agent_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_receive_messages requires agent")),
+        };
+
+        AGENT_MESSAGES.with(|messages| {
+            if let Some(queue) = messages.borrow_mut().get_mut(&agent_id) {
+                let msgs: Vec<Value> = queue.drain(..).map(|m| {
+                    let mut msg_map = HashMap::new();
+                    msg_map.insert("from".to_string(), Value::String(Rc::new(m.from)));
+                    msg_map.insert("to".to_string(), Value::String(Rc::new(m.to)));
+                    msg_map.insert("type".to_string(), Value::String(Rc::new(m.msg_type)));
+                    msg_map.insert("content".to_string(), m.content);
+                    msg_map.insert("timestamp".to_string(), Value::Int(m.timestamp as i64));
+                    Value::Map(Rc::new(RefCell::new(msg_map)))
+                }).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(msgs))))
+            } else {
+                Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))))
+            }
+        })
+    });
+
+    // swarm_broadcast - Broadcast message to all agents
+    define(interp, "swarm_broadcast", Some(3), |_, args| {
+        let from_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid sender agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_broadcast requires sender agent")),
+        };
+
+        let msg_type = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("message type must be string")),
+        };
+
+        let content = args[2].clone();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        // Get all agent IDs except sender
+        let agent_ids: Vec<String> = AGENT_REGISTRY.with(|registry| {
+            registry.borrow().keys()
+                .filter(|id| *id != &from_id)
+                .cloned()
+                .collect()
+        });
+
+        let mut count = 0;
+        AGENT_MESSAGES.with(|messages| {
+            let mut msgs = messages.borrow_mut();
+            for to_id in agent_ids {
+                if let Some(queue) = msgs.get_mut(&to_id) {
+                    queue.push(AgentMessage {
+                        from: from_id.clone(),
+                        to: to_id,
+                        msg_type: msg_type.clone(),
+                        content: content.clone(),
+                        timestamp: now,
+                    });
+                    count += 1;
+                }
+            }
+        });
+
+        Ok(Value::Int(count))
+    });
+
+    // swarm_find_agents - Find agents by capability
+    define(interp, "swarm_find_agents", Some(1), |_, args| {
+        let capability = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("swarm_find_agents requires capability string")),
+        };
+
+        let agents: Vec<Value> = AGENT_REGISTRY.with(|registry| {
+            registry.borrow().values()
+                .filter(|agent| agent.capabilities.contains(&capability))
+                .map(|agent| {
+                    let mut info = HashMap::new();
+                    info.insert("id".to_string(), Value::String(Rc::new(agent.id.clone())));
+                    info.insert("type".to_string(), Value::String(Rc::new(agent.agent_type.clone())));
+                    info.insert("capabilities".to_string(), Value::Array(Rc::new(RefCell::new(
+                        agent.capabilities.iter().map(|c| Value::String(Rc::new(c.clone()))).collect()
+                    ))));
+                    Value::Map(Rc::new(RefCell::new(info)))
+                })
+                .collect()
+        });
+
+        Ok(Value::Array(Rc::new(RefCell::new(agents))))
+    });
+
+    // swarm_list_agents - List all agents
+    define(interp, "swarm_list_agents", Some(0), |_, _args| {
+        let agents: Vec<Value> = AGENT_REGISTRY.with(|registry| {
+            registry.borrow().values().map(|agent| {
+                let mut info = HashMap::new();
+                info.insert("id".to_string(), Value::String(Rc::new(agent.id.clone())));
+                info.insert("type".to_string(), Value::String(Rc::new(agent.agent_type.clone())));
+                info.insert("capabilities".to_string(), Value::Array(Rc::new(RefCell::new(
+                    agent.capabilities.iter().map(|c| Value::String(Rc::new(c.clone()))).collect()
+                ))));
+                info.insert("created_at".to_string(), Value::Int(agent.created_at as i64));
+                Value::Map(Rc::new(RefCell::new(info)))
+            }).collect()
+        });
+        Ok(Value::Array(Rc::new(RefCell::new(agents))))
+    });
+
+    // swarm_set_state - Set agent state
+    define(interp, "swarm_set_state", Some(3), |_, args| {
+        let agent_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_set_state requires agent")),
+        };
+
+        let key = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("key must be string")),
+        };
+
+        let value = args[2].clone();
+
+        AGENT_REGISTRY.with(|registry| {
+            if let Some(agent) = registry.borrow_mut().get_mut(&agent_id) {
+                agent.state.insert(key, value);
+                Ok(Value::Bool(true))
+            } else {
+                Err(RuntimeError::new(format!("Agent '{}' not found", agent_id)))
+            }
+        })
+    });
+
+    // swarm_get_state - Get agent state
+    define(interp, "swarm_get_state", Some(2), |_, args| {
+        let agent_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_get_state requires agent")),
+        };
+
+        let key = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("key must be string")),
+        };
+
+        AGENT_REGISTRY.with(|registry| {
+            if let Some(agent) = registry.borrow().get(&agent_id) {
+                Ok(agent.state.get(&key).cloned().unwrap_or(Value::Null))
+            } else {
+                Ok(Value::Null)
+            }
+        })
+    });
+
+    // swarm_remove_agent - Remove an agent from the swarm
+    define(interp, "swarm_remove_agent", Some(1), |_, args| {
+        let agent_id = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            Value::Map(m) => {
+                m.borrow().get("id")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                    .ok_or_else(|| RuntimeError::new("Invalid agent"))?
+            }
+            _ => return Err(RuntimeError::new("swarm_remove_agent requires agent")),
+        };
+
+        let removed = AGENT_REGISTRY.with(|registry| {
+            registry.borrow_mut().remove(&agent_id).is_some()
+        });
+
+        AGENT_MESSAGES.with(|messages| {
+            messages.borrow_mut().remove(&agent_id);
+        });
+
+        Ok(Value::Bool(removed))
+    });
+
+    // swarm_consensus - Simple majority voting
+    define(interp, "swarm_consensus", Some(2), |_, args| {
+        let topic = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("topic must be string")),
+        };
+
+        let votes = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("votes must be array")),
+        };
+
+        // Count votes
+        let mut vote_counts: HashMap<String, i64> = HashMap::new();
+        for vote in votes.iter() {
+            let vote_str = match vote {
+                Value::String(s) => s.as_str().to_string(),
+                Value::Bool(b) => b.to_string(),
+                Value::Int(n) => n.to_string(),
+                _ => continue,
+            };
+            *vote_counts.entry(vote_str).or_insert(0) += 1;
+        }
+
+        // Find winner
+        let total = votes.len() as i64;
+        let (winner, count) = vote_counts.iter()
+            .max_by_key(|(_, &count)| count)
+            .map(|(k, &v)| (k.clone(), v))
+            .unwrap_or_default();
+
+        let mut result = HashMap::new();
+        result.insert("topic".to_string(), Value::String(Rc::new(topic)));
+        result.insert("winner".to_string(), Value::String(Rc::new(winner)));
+        result.insert("votes".to_string(), Value::Int(count));
+        result.insert("total".to_string(), Value::Int(total));
+        result.insert("majority".to_string(), Value::Bool(count > total / 2));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+}
+
+// ============================================================================
+// REASONING PRIMITIVES - Constraint satisfaction and logical inference
+// ============================================================================
+
+fn register_agent_reasoning(interp: &mut Interpreter) {
+    // reason_constraint - Create a constraint
+    define(interp, "reason_constraint", Some(3), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("constraint name must be string")),
+        };
+
+        let constraint_type = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("constraint type must be string")),
+        };
+
+        let params = args[2].clone();
+
+        let mut constraint = HashMap::new();
+        constraint.insert("name".to_string(), Value::String(Rc::new(name)));
+        constraint.insert("type".to_string(), Value::String(Rc::new(constraint_type)));
+        constraint.insert("params".to_string(), params);
+        constraint.insert("satisfied".to_string(), Value::Bool(false));
+
+        Ok(Value::Map(Rc::new(RefCell::new(constraint))))
+    });
+
+    // reason_check_constraint - Check if a constraint is satisfied
+    define(interp, "reason_check_constraint", Some(2), |_, args| {
+        let constraint = match &args[0] {
+            Value::Map(m) => m.borrow().clone(),
+            _ => return Err(RuntimeError::new("reason_check_constraint requires constraint")),
+        };
+
+        let context = match &args[1] {
+            Value::Map(m) => m.borrow().clone(),
+            _ => return Err(RuntimeError::new("reason_check_constraint requires context")),
+        };
+
+        let constraint_type = constraint.get("type")
+            .and_then(|v| if let Value::String(s) = v { Some(s.as_str()) } else { None })
+            .unwrap_or("unknown");
+
+        let params = constraint.get("params").cloned().unwrap_or(Value::Null);
+
+        let satisfied = match constraint_type {
+            "equals" => {
+                if let Value::Map(p) = &params {
+                    let p = p.borrow();
+                    let var_name = p.get("var")
+                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        .unwrap_or_default();
+                    let expected = p.get("value").cloned().unwrap_or(Value::Null);
+                    let actual = context.get(&var_name).cloned().unwrap_or(Value::Null);
+                    values_equal_simple(&actual, &expected)
+                } else {
+                    false
+                }
+            }
+            "not_null" => {
+                if let Value::Map(p) = &params {
+                    let p = p.borrow();
+                    let var_name = p.get("var")
+                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        .unwrap_or_default();
+                    !matches!(context.get(&var_name), None | Some(Value::Null))
+                } else {
+                    false
+                }
+            }
+            "range" => {
+                if let Value::Map(p) = &params {
+                    let p = p.borrow();
+                    let var_name = p.get("var")
+                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        .unwrap_or_default();
+                    let min = p.get("min")
+                        .and_then(|v| match v { Value::Int(n) => Some(*n as f64), Value::Float(f) => Some(*f), _ => None })
+                        .unwrap_or(f64::NEG_INFINITY);
+                    let max = p.get("max")
+                        .and_then(|v| match v { Value::Int(n) => Some(*n as f64), Value::Float(f) => Some(*f), _ => None })
+                        .unwrap_or(f64::INFINITY);
+                    let actual = context.get(&var_name)
+                        .and_then(|v| match v { Value::Int(n) => Some(*n as f64), Value::Float(f) => Some(*f), _ => None })
+                        .unwrap_or(0.0);
+                    actual >= min && actual <= max
+                } else {
+                    false
+                }
+            }
+            "contains" => {
+                if let Value::Map(p) = &params {
+                    let p = p.borrow();
+                    let var_name = p.get("var")
+                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        .unwrap_or_default();
+                    let needle = p.get("value")
+                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        .unwrap_or_default();
+                    let actual = context.get(&var_name)
+                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                        .unwrap_or_default();
+                    actual.contains(&needle)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
+
+        let mut result = HashMap::new();
+        result.insert("satisfied".to_string(), Value::Bool(satisfied));
+        result.insert("constraint".to_string(), Value::Map(Rc::new(RefCell::new(constraint))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // reason_check_all - Check if all constraints are satisfied
+    define(interp, "reason_check_all", Some(2), |interp, args| {
+        let constraints = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("reason_check_all requires constraints array")),
+        };
+
+        let context = args[1].clone();
+
+        let mut all_satisfied = true;
+        let mut results: Vec<Value> = Vec::new();
+
+        for constraint in constraints.iter() {
+            // Call reason_check_constraint for each
+            if let Value::Map(c) = constraint {
+                let c_type = c.borrow().get("type")
+                    .and_then(|v| if let Value::String(s) = v { Some(s.as_ref().clone()) } else { None })
+                    .unwrap_or_else(|| "unknown".to_string());
+                let params = c.borrow().get("params").cloned().unwrap_or(Value::Null);
+
+                let ctx = match &context {
+                    Value::Map(m) => m.borrow().clone(),
+                    _ => HashMap::new(),
+                };
+
+                let satisfied = match c_type.as_str() {
+                    "equals" => {
+                        if let Value::Map(p) = &params {
+                            let p = p.borrow();
+                            let var_name = p.get("var")
+                                .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                                .unwrap_or_default();
+                            let expected = p.get("value").cloned().unwrap_or(Value::Null);
+                            let actual = ctx.get(&var_name).cloned().unwrap_or(Value::Null);
+                            values_equal_simple(&actual, &expected)
+                        } else {
+                            false
+                        }
+                    }
+                    "not_null" => {
+                        if let Value::Map(p) = &params {
+                            let p = p.borrow();
+                            let var_name = p.get("var")
+                                .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                                .unwrap_or_default();
+                            !matches!(ctx.get(&var_name), None | Some(Value::Null))
+                        } else {
+                            false
+                        }
+                    }
+                    _ => true, // Unknown constraints pass by default
+                };
+
+                if !satisfied {
+                    all_satisfied = false;
+                }
+
+                let mut r = HashMap::new();
+                r.insert("constraint".to_string(), constraint.clone());
+                r.insert("satisfied".to_string(), Value::Bool(satisfied));
+                results.push(Value::Map(Rc::new(RefCell::new(r))));
+            }
+        }
+
+        let _ = interp; // Silence unused warning
+
+        let mut result = HashMap::new();
+        result.insert("all_satisfied".to_string(), Value::Bool(all_satisfied));
+        result.insert("results".to_string(), Value::Array(Rc::new(RefCell::new(results))));
+        result.insert("total".to_string(), Value::Int(constraints.len() as i64));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
+    });
+
+    // reason_implies - Create an implication (if A then B)
+    define(interp, "reason_implies", Some(2), |_, args| {
+        let antecedent = args[0].clone();
+        let consequent = args[1].clone();
+
+        let mut implication = HashMap::new();
+        implication.insert("type".to_string(), Value::String(Rc::new("implication".to_string())));
+        implication.insert("if".to_string(), antecedent);
+        implication.insert("then".to_string(), consequent);
+
+        Ok(Value::Map(Rc::new(RefCell::new(implication))))
+    });
+
+    // reason_and - Logical AND of multiple conditions
+    define(interp, "reason_and", None, |_, args| {
+        let conditions: Vec<Value> = args.into_iter().collect();
+
+        let mut conjunction = HashMap::new();
+        conjunction.insert("type".to_string(), Value::String(Rc::new("and".to_string())));
+        conjunction.insert("conditions".to_string(), Value::Array(Rc::new(RefCell::new(conditions))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(conjunction))))
+    });
+
+    // reason_or - Logical OR of multiple conditions
+    define(interp, "reason_or", None, |_, args| {
+        let conditions: Vec<Value> = args.into_iter().collect();
+
+        let mut disjunction = HashMap::new();
+        disjunction.insert("type".to_string(), Value::String(Rc::new("or".to_string())));
+        disjunction.insert("conditions".to_string(), Value::Array(Rc::new(RefCell::new(conditions))));
+
+        Ok(Value::Map(Rc::new(RefCell::new(disjunction))))
+    });
+
+    // reason_not - Logical NOT
+    define(interp, "reason_not", Some(1), |_, args| {
+        let condition = args[0].clone();
+
+        let mut negation = HashMap::new();
+        negation.insert("type".to_string(), Value::String(Rc::new("not".to_string())));
+        negation.insert("condition".to_string(), condition);
+
+        Ok(Value::Map(Rc::new(RefCell::new(negation))))
+    });
+
+    // reason_evaluate - Evaluate a logical expression
+    define(interp, "reason_evaluate", Some(2), |_, args| {
+        let expr = match &args[0] {
+            Value::Map(m) => m.borrow().clone(),
+            Value::Bool(b) => return Ok(Value::Bool(*b)),
+            _ => return Err(RuntimeError::new("reason_evaluate requires expression")),
+        };
+
+        let context = match &args[1] {
+            Value::Map(m) => m.borrow().clone(),
+            _ => HashMap::new(),
+        };
+
+        fn eval_expr(expr: &HashMap<String, Value>, ctx: &HashMap<String, Value>) -> bool {
+            let expr_type = expr.get("type")
+                .and_then(|v| if let Value::String(s) = v { Some(s.as_str()) } else { None })
+                .unwrap_or("unknown");
+
+            match expr_type {
+                "and" => {
+                    if let Some(Value::Array(conditions)) = expr.get("conditions") {
+                        conditions.borrow().iter().all(|c| {
+                            if let Value::Map(m) = c {
+                                eval_expr(&m.borrow(), ctx)
+                            } else if let Value::Bool(b) = c {
+                                *b
+                            } else {
+                                false
+                            }
+                        })
+                    } else {
+                        false
+                    }
+                }
+                "or" => {
+                    if let Some(Value::Array(conditions)) = expr.get("conditions") {
+                        conditions.borrow().iter().any(|c| {
+                            if let Value::Map(m) = c {
+                                eval_expr(&m.borrow(), ctx)
+                            } else if let Value::Bool(b) = c {
+                                *b
+                            } else {
+                                false
+                            }
+                        })
+                    } else {
+                        false
+                    }
+                }
+                "not" => {
+                    if let Some(condition) = expr.get("condition") {
+                        if let Value::Map(m) = condition {
+                            !eval_expr(&m.borrow(), ctx)
+                        } else if let Value::Bool(b) = condition {
+                            !b
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
+                "implication" => {
+                    let antecedent = if let Some(a) = expr.get("if") {
+                        if let Value::Map(m) = a {
+                            eval_expr(&m.borrow(), ctx)
+                        } else if let Value::Bool(b) = a {
+                            *b
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    let consequent = if let Some(c) = expr.get("then") {
+                        if let Value::Map(m) = c {
+                            eval_expr(&m.borrow(), ctx)
+                        } else if let Value::Bool(b) = c {
+                            *b
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    // A implies B is equivalent to (not A) or B
+                    !antecedent || consequent
+                }
+                _ => false,
+            }
+        }
+
+        Ok(Value::Bool(eval_expr(&expr, &context)))
+    });
+
+    // reason_proof - Create a proof step
+    define(interp, "reason_proof", Some(3), |_, args| {
+        let step = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("proof step must be string")),
+        };
+
+        let justification = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("justification must be string")),
+        };
+
+        let conclusion = args[2].clone();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let mut proof = HashMap::new();
+        proof.insert("step".to_string(), Value::String(Rc::new(step)));
+        proof.insert("justification".to_string(), Value::String(Rc::new(justification)));
+        proof.insert("conclusion".to_string(), conclusion);
+        proof.insert("timestamp".to_string(), Value::Int(now as i64));
+
+        Ok(Value::Map(Rc::new(RefCell::new(proof))))
+    });
+
+    // reason_chain - Chain proof steps together
+    define(interp, "reason_chain", None, |_, args| {
+        let steps: Vec<Value> = args.into_iter().collect();
+
+        let mut chain = HashMap::new();
+        chain.insert("type".to_string(), Value::String(Rc::new("proof_chain".to_string())));
+        chain.insert("steps".to_string(), Value::Array(Rc::new(RefCell::new(steps.clone()))));
+        chain.insert("length".to_string(), Value::Int(steps.len() as i64));
+
+        // Get final conclusion
+        let final_conclusion = steps.last()
+            .and_then(|s| if let Value::Map(m) = s { m.borrow().get("conclusion").cloned() } else { None })
+            .unwrap_or(Value::Null);
+        chain.insert("final_conclusion".to_string(), final_conclusion);
+
+        Ok(Value::Map(Rc::new(RefCell::new(chain))))
+    });
+
+    // reason_hypothesis - Create a hypothesis with evidence requirements
+    define(interp, "reason_hypothesis", Some(2), |_, args| {
+        let claim = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("hypothesis claim must be string")),
+        };
+
+        let required_evidence = match &args[1] {
+            Value::Array(arr) => arr.clone(),
+            _ => return Err(RuntimeError::new("required evidence must be array")),
+        };
+
+        let mut hypothesis = HashMap::new();
+        hypothesis.insert("claim".to_string(), Value::String(Rc::new(claim)));
+        hypothesis.insert("required_evidence".to_string(), Value::Array(required_evidence));
+        hypothesis.insert("status".to_string(), Value::String(Rc::new("unverified".to_string())));
+        hypothesis.insert("confidence".to_string(), Value::Float(0.0));
+
+        Ok(Value::Map(Rc::new(RefCell::new(hypothesis))))
+    });
+
+    // reason_verify_hypothesis - Verify a hypothesis against evidence
+    define(interp, "reason_verify_hypothesis", Some(2), |_, args| {
+        let hypothesis = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("reason_verify_hypothesis requires hypothesis")),
+        };
+
+        let evidence = match &args[1] {
+            Value::Map(m) => m.borrow().clone(),
+            _ => return Err(RuntimeError::new("reason_verify_hypothesis requires evidence map")),
+        };
+
+        let required = hypothesis.borrow().get("required_evidence")
+            .and_then(|v| if let Value::Array(arr) = v { Some(arr.borrow().clone()) } else { None })
+            .unwrap_or_default();
+
+        let mut found = 0;
+        for req in required.iter() {
+            if let Value::String(key) = req {
+                if evidence.contains_key(key.as_str()) {
+                    found += 1;
+                }
+            }
+        }
+
+        let total = required.len();
+        let confidence = if total > 0 { found as f64 / total as f64 } else { 0.0 };
+        let verified = found == total && total > 0;
+
+        {
+            let mut h = hypothesis.borrow_mut();
+            h.insert("confidence".to_string(), Value::Float(confidence));
+            h.insert("status".to_string(), Value::String(Rc::new(
+                if verified { "verified".to_string() } else { "unverified".to_string() }
+            )));
+        }
+
+        let mut result = HashMap::new();
+        result.insert("verified".to_string(), Value::Bool(verified));
+        result.insert("confidence".to_string(), Value::Float(confidence));
+        result.insert("found".to_string(), Value::Int(found as i64));
+        result.insert("required".to_string(), Value::Int(total as i64));
+        result.insert("hypothesis".to_string(), Value::Map(hypothesis));
+
+        Ok(Value::Map(Rc::new(RefCell::new(result))))
     });
 }
 

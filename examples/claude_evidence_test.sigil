@@ -1,0 +1,19 @@
+// Testing evidentiality enforcement
+
+fn get_reported() -> i64~ {
+    // Simulating external data
+    42
+}
+
+fn requires_known(x: i64!) -> i64! {
+    x * 2
+}
+
+fn main() {
+    let reported_value = get_reported();
+
+    // This should fail - passing reported (~) where known (!) is required
+    let result = requires_known(reported_value);
+
+    return 0;
+}

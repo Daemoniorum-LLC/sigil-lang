@@ -2,6 +2,7 @@
 
 use sigil_parser::{Parser, Interpreter, register_stdlib, Lexer, Token, Diagnostics, Diagnostic};
 use sigil_parser::span::Span;
+use sigil_parser::typeck::TypeChecker;
 use sigil_parser::lower::lower_source_file;
 #[cfg(feature = "jit")]
 use sigil_parser::JitCompiler;
@@ -45,6 +46,12 @@ fn main() -> ExitCode {
         eprintln!("  parse <file>    Parse and check a Sigil file");
         eprintln!("  lex <file>      Tokenize a Sigil file");
         eprintln!("  repl            Start interactive REPL");
+        eprintln!();
+        eprintln!("Project Commands:");
+        eprintln!("  new <name>      Create a new Sigil project");
+        eprintln!("  init            Initialize a Sigil project in current directory");
+        eprintln!("  test            Run tests in the current project");
+        eprintln!("  build           Build the current project");
         eprintln!();
         eprintln!("AI Agent Options (for 'check' command):");
         eprintln!("  --format=json       Output diagnostics as JSON (pretty-printed)");
@@ -171,6 +178,23 @@ fn main() -> ExitCode {
         }
         "repl" => {
             repl()
+        }
+        "new" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing project name");
+                eprintln!("Usage: sigil new <project-name>");
+                return ExitCode::from(1);
+            }
+            new_project(&args[2])
+        }
+        "init" => {
+            init_project()
+        }
+        "test" => {
+            run_tests()
+        }
+        "build" => {
+            build_project()
         }
         _ => {
             // Treat as file if it ends with .sigil or .sg
@@ -530,9 +554,19 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) 
     let mut parser = Parser::new(&source);
 
     match parser.parse_file() {
-        Ok(_ast) => {
-            // TODO: Add semantic analysis / type checking here
-            // For now, just report successful parse
+        Ok(ast) => {
+            // Run type checker with evidence enforcement
+            let mut type_checker = TypeChecker::new();
+            if let Err(type_errors) = type_checker.check_file(&ast) {
+                for err in type_errors {
+                    let mut diag = Diagnostic::error(&err.message, err.span.unwrap_or(Span::default()))
+                        .with_code("E0003");
+                    for note in &err.notes {
+                        diag = diag.with_note(note);
+                    }
+                    diagnostics.add(diag);
+                }
+            }
         }
         Err(e) => {
             // Convert parse error to diagnostic
@@ -806,6 +840,10 @@ mod colors {
     pub const RESET: &str = "\x1b[0m";
     pub const BOLD: &str = "\x1b[1m";
     pub const DIM: &str = "\x1b[2m";
+
+    // Status colors
+    pub const GREEN: &str = "\x1b[38;5;114m";        // Green for success
+    pub const ERROR: &str = "\x1b[38;5;203m";        // Red for errors
 
     // Semantic colors for Sigil
     pub const KEYWORD: &str = "\x1b[38;5;198m";      // Magenta/pink for keywords
@@ -1082,6 +1120,465 @@ impl Highlighter for SigilHelper {
 }
 
 impl Validator for SigilHelper {}
+
+// =============================================================================
+// Project Management Commands
+// =============================================================================
+
+/// Default sigil.toml content for a new project
+fn default_manifest(name: &str) -> String {
+    format!(r#"[package]
+name = "{name}"
+version = "0.1.0"
+authors = []
+description = ""
+
+# Evidentiality configuration
+[evidentiality]
+# Require explicit evidence markers on function boundaries
+strict = false
+# Default evidence level for unmarked external data
+external_default = "reported"
+
+[dependencies]
+# Add dependencies here
+# example = {{ git = "https://github.com/user/example" }}
+
+[dev-dependencies]
+# Add test dependencies here
+
+[[bin]]
+name = "{name}"
+path = "src/main.sigil"
+"#)
+}
+
+/// Default main.sigil for a new project
+fn default_main(name: &str) -> String {
+    format!(r#"// {name} - A Sigil project
+//
+// Run with: sigil run src/main.sigil
+// Or: sigil build && ./{name}
+
+fn main() {{
+    print("Hello from {name}!");
+
+    // Sigil's evidentiality system tracks data provenance:
+    // - known (!)    : computed locally, verified
+    // - uncertain (?) : may be absent
+    // - reported (~)  : external source, untrusted
+    // - paradox (‽)   : trust boundary crossing
+
+    // Example pipeline using morphemes:
+    // τ (tau) = transform/map
+    // φ (phi) = filter
+    // σ (sigma) = sort
+    let data = [1, 2, 3, 4, 5];
+    let result = data
+        |τ{{_ * 2}}
+        |φ{{_ > 5}}
+        |σ;
+
+    print("Processed: ");
+    print(result);
+
+    return 0;
+}}
+"#)
+}
+
+/// Default test file for a new project
+fn default_test() -> String {
+    r#"// Tests for the project
+//
+// Run with: sigil test
+
+#[test]
+fn test_example() {
+    let result = 2 + 2;
+    assert_eq(result, 4);
+}
+
+#[test]
+fn test_morpheme_pipeline() {
+    let data = [1, 2, 3];
+    let doubled = data|τ{_ * 2};
+    assert_eq(doubled, [2, 4, 6]);
+}
+"#.to_string()
+}
+
+/// Create a new Sigil project in a new directory
+fn new_project(name: &str) -> ExitCode {
+    use std::path::Path;
+
+    let project_dir = Path::new(name);
+
+    // Check if directory already exists
+    if project_dir.exists() {
+        eprintln!("Error: directory '{}' already exists", name);
+        return ExitCode::from(1);
+    }
+
+    // Create directory structure
+    let src_dir = project_dir.join("src");
+    let tests_dir = project_dir.join("tests");
+
+    if let Err(e) = fs::create_dir_all(&src_dir) {
+        eprintln!("Error creating src directory: {}", e);
+        return ExitCode::from(1);
+    }
+
+    if let Err(e) = fs::create_dir_all(&tests_dir) {
+        eprintln!("Error creating tests directory: {}", e);
+        return ExitCode::from(1);
+    }
+
+    // Write sigil.toml
+    let manifest_path = project_dir.join("sigil.toml");
+    if let Err(e) = fs::write(&manifest_path, default_manifest(name)) {
+        eprintln!("Error writing sigil.toml: {}", e);
+        return ExitCode::from(1);
+    }
+
+    // Write src/main.sigil
+    let main_path = src_dir.join("main.sigil");
+    if let Err(e) = fs::write(&main_path, default_main(name)) {
+        eprintln!("Error writing src/main.sigil: {}", e);
+        return ExitCode::from(1);
+    }
+
+    // Write tests/test_main.sigil
+    let test_path = tests_dir.join("test_main.sigil");
+    if let Err(e) = fs::write(&test_path, default_test()) {
+        eprintln!("Error writing tests/test_main.sigil: {}", e);
+        return ExitCode::from(1);
+    }
+
+    // Write .gitignore
+    let gitignore_path = project_dir.join(".gitignore");
+    let gitignore_content = r#"# Build artifacts
+/target/
+*.o
+*.a
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+"#;
+    if let Err(e) = fs::write(&gitignore_path, gitignore_content) {
+        eprintln!("Error writing .gitignore: {}", e);
+        return ExitCode::from(1);
+    }
+
+    println!("✓ Created Sigil project '{}'", name);
+    println!();
+    println!("  {}sigil.toml{}       Project manifest", colors::DIM, colors::RESET);
+    println!("  {}src/main.sigil{} Entry point", colors::DIM, colors::RESET);
+    println!("  {}tests/{}          Test directory", colors::DIM, colors::RESET);
+    println!();
+    println!("Get started:");
+    println!("  cd {}", name);
+    println!("  sigil run src/main.sigil");
+    println!();
+    println!("Or build and run:");
+    println!("  sigil build");
+    println!("  ./{}", name);
+
+    ExitCode::SUCCESS
+}
+
+/// Initialize a Sigil project in the current directory
+fn init_project() -> ExitCode {
+    use std::path::Path;
+
+    let manifest_path = Path::new("sigil.toml");
+
+    // Check if already initialized
+    if manifest_path.exists() {
+        eprintln!("Error: sigil.toml already exists in this directory");
+        return ExitCode::from(1);
+    }
+
+    // Determine project name from current directory
+    let name = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "my_project".to_string());
+
+    // Create directories
+    let src_dir = Path::new("src");
+    let tests_dir = Path::new("tests");
+
+    if !src_dir.exists() {
+        if let Err(e) = fs::create_dir_all(src_dir) {
+            eprintln!("Error creating src directory: {}", e);
+            return ExitCode::from(1);
+        }
+    }
+
+    if !tests_dir.exists() {
+        if let Err(e) = fs::create_dir_all(tests_dir) {
+            eprintln!("Error creating tests directory: {}", e);
+            return ExitCode::from(1);
+        }
+    }
+
+    // Write sigil.toml
+    if let Err(e) = fs::write(manifest_path, default_manifest(&name)) {
+        eprintln!("Error writing sigil.toml: {}", e);
+        return ExitCode::from(1);
+    }
+
+    // Write src/main.sigil if it doesn't exist
+    let main_path = src_dir.join("main.sigil");
+    if !main_path.exists() {
+        if let Err(e) = fs::write(&main_path, default_main(&name)) {
+            eprintln!("Error writing src/main.sigil: {}", e);
+            return ExitCode::from(1);
+        }
+    }
+
+    println!("✓ Initialized Sigil project '{}'", name);
+    println!();
+    println!("Run your project:");
+    println!("  sigil run src/main.sigil");
+
+    ExitCode::SUCCESS
+}
+
+/// Run tests in the current project
+fn run_tests() -> ExitCode {
+    use std::path::Path;
+
+    // Find test files in tests/ directory
+    let tests_dir = Path::new("tests");
+    let mut test_files = Vec::new();
+
+    if tests_dir.exists() {
+        if let Ok(entries) = fs::read_dir(tests_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map(|e| e == "sigil" || e == "sg").unwrap_or(false) {
+                    test_files.push(path);
+                }
+            }
+        }
+    }
+
+    if test_files.is_empty() {
+        println!("No test files found in tests/");
+        println!();
+        println!("Create a test file:");
+        println!("  tests/test_main.sigil");
+        println!();
+        println!("With test functions:");
+        println!("  #[test]");
+        println!("  fn test_something() {{");
+        println!("      assert_eq(1 + 1, 2);");
+        println!("  }}");
+        return ExitCode::SUCCESS;
+    }
+
+    println!("Running tests...");
+    println!();
+
+    let mut total_tests = 0;
+    let mut passed_tests = 0;
+    let mut failed_tests = 0;
+
+    for test_file in &test_files {
+        // Parse file
+        let source = match fs::read_to_string(test_file) {
+            Ok(s) => s,
+            Err(e) => {
+                println!("  {}✗{} {} - read error: {}",
+                    colors::ERROR, colors::RESET,
+                    test_file.display(), e);
+                failed_tests += 1;
+                total_tests += 1;
+                continue;
+            }
+        };
+
+        let mut parser = Parser::new(&source);
+        let ast = match parser.parse_file() {
+            Ok(ast) => ast,
+            Err(e) => {
+                println!("  {}✗{} {} - parse error: {}",
+                    colors::ERROR, colors::RESET,
+                    test_file.display(), e);
+                failed_tests += 1;
+                total_tests += 1;
+                continue;
+            }
+        };
+
+        // Type check
+        let mut type_checker = TypeChecker::new();
+        if let Err(errors) = type_checker.check_file(&ast) {
+            println!("  {}✗{} {} - type error:",
+                colors::ERROR, colors::RESET,
+                test_file.display());
+            for err in &errors {
+                println!("      {}", err.message);
+            }
+            failed_tests += 1;
+            total_tests += 1;
+            continue;
+        }
+
+        // Count test functions and run the file
+        let mut file_tests = 0;
+        for item in &ast.items {
+            if let sigil_parser::ast::Item::Function(func) = &item.node {
+                // Check the test flag in FunctionAttrs
+                if func.attrs.test {
+                    file_tests += 1;
+                }
+            }
+        }
+
+        if file_tests > 0 {
+            // Execute the test file
+            let mut interpreter = Interpreter::new();
+            register_stdlib(&mut interpreter);
+
+            match interpreter.execute(&ast) {
+                Ok(_) => {
+                    println!("  {}✓{} {} ({} tests)",
+                        colors::GREEN, colors::RESET,
+                        test_file.file_stem().unwrap_or_default().to_string_lossy(),
+                        file_tests);
+                    passed_tests += file_tests;
+                }
+                Err(e) => {
+                    println!("  {}✗{} {} - runtime error: {}",
+                        colors::ERROR, colors::RESET,
+                        test_file.file_stem().unwrap_or_default().to_string_lossy(),
+                        e);
+                    failed_tests += file_tests;
+                }
+            }
+            total_tests += file_tests;
+        }
+    }
+
+    println!();
+    if total_tests == 0 {
+        println!("No test functions found (functions with #[test] attribute)");
+        ExitCode::SUCCESS
+    } else if failed_tests == 0 {
+        println!("{}All {} tests passed!{}", colors::GREEN, total_tests, colors::RESET);
+        ExitCode::SUCCESS
+    } else {
+        println!("{}{} passed, {} failed{}",
+            colors::ERROR, passed_tests, failed_tests, colors::RESET);
+        ExitCode::from(1)
+    }
+}
+
+/// Build the current project
+fn build_project() -> ExitCode {
+    use std::path::Path;
+
+    // Check for sigil.toml
+    let manifest_path = Path::new("sigil.toml");
+    if !manifest_path.exists() {
+        eprintln!("Error: no sigil.toml found in current directory");
+        eprintln!("Run 'sigil init' to create a project, or 'sigil new <name>' for a new one.");
+        return ExitCode::from(1);
+    }
+
+    // Parse sigil.toml (simplified - just look for name and main file)
+    let manifest = match fs::read_to_string(manifest_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading sigil.toml: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Simple TOML parsing for name
+    let name = manifest.lines()
+        .find(|l| l.starts_with("name"))
+        .and_then(|l| l.split('=').nth(1))
+        .map(|s| s.trim().trim_matches('"'))
+        .unwrap_or("app");
+
+    // Find main file
+    let main_file = Path::new("src/main.sigil");
+    if !main_file.exists() {
+        eprintln!("Error: src/main.sigil not found");
+        return ExitCode::from(1);
+    }
+
+    println!("Building {}...", name);
+
+    // Create target directory
+    let target_dir = Path::new("target");
+    if !target_dir.exists() {
+        if let Err(e) = fs::create_dir_all(target_dir) {
+            eprintln!("Error creating target directory: {}", e);
+            return ExitCode::from(1);
+        }
+    }
+
+    // For now, just type-check the project
+    let source = match fs::read_to_string(main_file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading src/main.sigil: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Parse
+    let mut parser = Parser::new(&source);
+    let ast = match parser.parse_file() {
+        Ok(ast) => ast,
+        Err(e) => {
+            eprintln!("Parse error: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Type check
+    let mut type_checker = TypeChecker::new();
+    if let Err(errors) = type_checker.check_file(&ast) {
+        for err in errors {
+            eprintln!("Error: {}", err.message);
+            for note in &err.notes {
+                eprintln!("  note: {}", note);
+            }
+        }
+        return ExitCode::from(1);
+    }
+
+    // If LLVM is available, compile to native
+    #[cfg(feature = "llvm")]
+    {
+        let output_path = target_dir.join(name);
+        let output_str = output_path.to_string_lossy();
+        println!("Compiling to native executable...");
+        return compile_file(&main_file.to_string_lossy(), &output_str, false);
+    }
+
+    #[cfg(not(feature = "llvm"))]
+    {
+        println!("✓ Type check passed");
+        println!();
+        println!("Note: Native compilation requires LLVM support.");
+        println!("Run with: sigil run src/main.sigil");
+        ExitCode::SUCCESS
+    }
+}
 
 fn repl() -> ExitCode {
     println!("{}{}Sigil REPL v0.1.0{}", colors::BOLD, colors::MORPHEME, colors::RESET);
