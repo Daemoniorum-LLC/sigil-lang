@@ -3,6 +3,7 @@ plugins {
     kotlin("plugin.serialization") version "2.0.21"
     id("com.android.library") version "8.2.0"
     id("maven-publish")
+    id("signing")
 }
 
 group = "com.daemoniorum"
@@ -135,35 +136,81 @@ android {
     }
 }
 
-// Publishing configuration
-publishing {
-    publications {
-        create<MavenPublication>("maven") {
-            groupId = "com.daemoniorum"
-            artifactId = "sigil"
-            version = project.version.toString()
+// Create javadoc jar for Maven Central
+val javadocJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("javadoc")
+}
 
-            pom {
-                name.set("Sigil")
-                description.set("Polysynthetic programming language with epistemic types for AI")
+// Publishing configuration for Maven Central
+publishing {
+    publications.withType<MavenPublication> {
+        artifact(javadocJar)
+
+        pom {
+            name.set("Sigil")
+            description.set("Polysynthetic programming language with epistemic types for AI")
+            url.set("https://github.com/Daemoniorum-LLC/sigil-lang")
+
+            licenses {
+                license {
+                    name.set("Daemoniorum Source-Available License")
+                    url.set("https://github.com/Daemoniorum-LLC/sigil-lang/blob/main/LICENSE")
+                }
+            }
+
+            developers {
+                developer {
+                    id.set("lilith")
+                    name.set("Lilith Crook")
+                    email.set("lilith@daemoniorum.com")
+                    organization.set("Daemoniorum, LLC")
+                    organizationUrl.set("https://www.daemoniorum.com")
+                }
+            }
+
+            scm {
                 url.set("https://github.com/Daemoniorum-LLC/sigil-lang")
-                licenses {
-                    license {
-                        name.set("Daemoniorum Source-Available License")
-                        url.set("https://github.com/Daemoniorum-LLC/sigil-lang/blob/main/LICENSE")
-                    }
-                }
-                developers {
-                    developer {
-                        id.set("lilith")
-                        name.set("Lilith Crook")
-                        email.set("lilith@daemoniorum.com")
-                    }
-                }
-                scm {
-                    url.set("https://github.com/Daemoniorum-LLC/sigil-lang")
-                }
+                connection.set("scm:git:git://github.com/Daemoniorum-LLC/sigil-lang.git")
+                developerConnection.set("scm:git:ssh://github.com/Daemoniorum-LLC/sigil-lang.git")
             }
         }
     }
+
+    repositories {
+        maven {
+            name = "MavenCentral"
+            url = uri("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
+
+            credentials {
+                username = System.getenv("MAVEN_USERNAME") ?: project.findProperty("mavenCentralUsername") as String?
+                password = System.getenv("MAVEN_PASSWORD") ?: project.findProperty("mavenCentralPassword") as String?
+            }
+        }
+
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/Daemoniorum-LLC/sigil-lang")
+
+            credentials {
+                username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user") as String?
+                password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.token") as String?
+            }
+        }
+    }
+}
+
+// Signing for Maven Central
+signing {
+    val signingKey = System.getenv("GPG_SIGNING_KEY") ?: project.findProperty("signing.key") as String?
+    val signingPassword = System.getenv("GPG_SIGNING_PASSWORD") ?: project.findProperty("signing.password") as String?
+
+    if (signingKey != null && signingPassword != null) {
+        useInMemoryPgpKeys(signingKey, signingPassword)
+        sign(publishing.publications)
+    }
+}
+
+// Ensure signing happens before publishing
+tasks.withType<PublishToMavenRepository>().configureEach {
+    dependsOn(tasks.withType<Sign>())
 }
