@@ -1,5 +1,5 @@
 {
-  "name": "@sigil-lang/mcp-server",
+  "name": "@daemoniorum/sigil-mcp",
   "version": "0.1.0",
   "description": "MCP server for the Sigil programming language - enabling AI systems to write, run, and analyze Sigil code",
   "type": "module",
