@@ -15,6 +15,12 @@ The evidentiality system (`!` known, `?` uncertain, `~` reported) lets AI system
 
 ## Installation
 
+**From npm:**
+```bash
+npm install -g @daemoniorum/sigil-mcp
+```
+
+**From source:**
 ```bash
 cd tools/mcp-server
 npm install
