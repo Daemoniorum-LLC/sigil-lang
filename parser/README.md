@@ -35,27 +35,14 @@ Complete memory architecture for agents:
 - Better error messages
 - 330 tests (all passing)
 
-## Performance
+## Execution Backends
 
-Sigil offers flexible performance tiers from instant iteration to production-optimized binaries:
+Sigil provides multiple execution backends for different use cases:
 
-| Backend | Time | vs Interpreter | vs Rust |
-|---------|------|----------------|---------|
-| Interpreter | 39.4s | 1x | ~1,000x slower |
-| Cranelift JIT | 0.59s | 67x faster | 13x slower |
-| LLVM JIT | 0.62s | 64x faster | 14x slower |
-| **LLVM AOT** | **0.011s** | **3,582x faster** | **3.6x FASTER*** |
-
-\*Combined benchmark (fib + ackermann + tak) using iterative builtin optimizations. See [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md) for full details.
-
-### Individual Algorithm Performance
-
-| Algorithm | Rust | Sigil JIT | Ratio | Sigil LLVM AOT | Ratio |
-|-----------|------|-----------|-------|----------------|-------|
-| fib(35) recursive | 24ms | 68ms | 2.8x slower | 32ms | 1.3x slower |
-| fib(35) + accumulator | 25ms | - | - | <1ms | **25x FASTER** |
-
-Sigil's LLVM backend can automatically transform recursive algorithms into tail-recursive form, producing code **faster than hand-written Rust** for certain patterns.
+- **Interpreter** - Fast startup for development and scripting
+- **Cranelift JIT** - Quick compilation for interactive use
+- **LLVM JIT** - Optimized just-in-time execution
+- **LLVM AOT** - Ahead-of-time compilation to native binaries
 
 ## Quick Start
 
