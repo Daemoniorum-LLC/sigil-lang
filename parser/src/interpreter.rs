@@ -994,13 +994,23 @@ impl Interpreter {
                         InterpolationPart::Text(s) => result.push_str(s),
                         InterpolationPart::Expr(expr) => {
                             let value = self.evaluate(expr)?;
-                            // Track evidentiality - propagate the "worst" evidence level
+
+                            // Track explicit evidentiality
                             combined_evidence = Self::combine_evidence(
                                 combined_evidence,
                                 Self::extract_evidence(&value),
                             );
-                            // Use the unwrapped value for display
-                            let display_value = Self::unwrap_evidential(&value);
+
+                            // Track affect-derived evidentiality (sarcasm, confidence)
+                            if let Some(affect) = Self::extract_affect(&value) {
+                                combined_evidence = Self::combine_evidence(
+                                    combined_evidence,
+                                    Self::affect_to_evidence(affect),
+                                );
+                            }
+
+                            // Use the fully unwrapped value for display
+                            let display_value = Self::unwrap_value(&value);
                             result.push_str(&format!("{}", display_value));
                         }
                     }
@@ -3908,6 +3918,31 @@ impl Interpreter {
         }
     }
 
+    /// Extract affect from a value
+    fn extract_affect(value: &Value) -> Option<&RuntimeAffect> {
+        match value {
+            Value::Affective { affect, .. } => Some(affect),
+            _ => None,
+        }
+    }
+
+    /// Derive evidence from affect markers.
+    /// Sarcasm implies uncertainty (meaning is inverted).
+    /// Confidence directly maps to evidence levels.
+    fn affect_to_evidence(affect: &RuntimeAffect) -> Option<Evidence> {
+        // Sarcasm indicates the literal meaning shouldn't be trusted
+        if affect.sarcasm {
+            return Some(Evidence::Uncertain);
+        }
+
+        // Confidence maps directly to evidence
+        match affect.confidence {
+            Some(RuntimeConfidence::High) => Some(Evidence::Known),
+            Some(RuntimeConfidence::Low) => Some(Evidence::Uncertain),
+            Some(RuntimeConfidence::Medium) | None => None,
+        }
+    }
+
     /// Combine two evidence levels, returning the "worst" (most uncertain) one.
     /// Order: Known < Uncertain < Reported < Paradox
     fn combine_evidence(a: Option<Evidence>, b: Option<Evidence>) -> Option<Evidence> {
@@ -3930,6 +3965,23 @@ impl Interpreter {
     fn unwrap_evidential(value: &Value) -> &Value {
         match value {
             Value::Evidential { value: inner, .. } => Self::unwrap_evidential(inner),
+            _ => value,
+        }
+    }
+
+    /// Unwrap an affective value to get the inner value
+    fn unwrap_affective(value: &Value) -> &Value {
+        match value {
+            Value::Affective { value: inner, .. } => Self::unwrap_affective(inner),
+            _ => value,
+        }
+    }
+
+    /// Unwrap both evidential and affective wrappers
+    fn unwrap_value(value: &Value) -> &Value {
+        match value {
+            Value::Evidential { value: inner, .. } => Self::unwrap_value(inner),
+            Value::Affective { value: inner, .. } => Self::unwrap_value(inner),
             _ => value,
         }
     }
@@ -4151,4 +4203,5 @@ mod tests {
             Err(e) => panic!("Error: {:?}", e),
         }
     }
+
 }
