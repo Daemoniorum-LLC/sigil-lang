@@ -2230,10 +2230,16 @@ impl TypeChecker {
             TypeExpr::Evidential {
                 inner,
                 evidentiality,
-            } => Type::Evidential {
-                inner: Box::new(self.convert_type(inner)),
-                evidence: EvidenceLevel::from_ast(*evidentiality),
-            },
+                error_type,
+            } => {
+                // If error_type is specified, this is sugar for Result<T, E>
+                // For now, lower as evidential type; full expansion to Result comes later
+                let _ = error_type; // TODO: expand T?[E] to Result<T, E> with evidence
+                Type::Evidential {
+                    inner: Box::new(self.convert_type(inner)),
+                    evidence: EvidenceLevel::from_ast(*evidentiality),
+                }
+            }
 
             TypeExpr::Cycle { modulus: _ } => {
                 Type::Cycle { modulus: 12 } // Default, should evaluate

@@ -324,10 +324,16 @@ fn lower_type_expr(t: &ast::TypeExpr) -> IrType {
         ast::TypeExpr::Evidential {
             inner,
             evidentiality,
-        } => IrType::Evidential {
-            inner: Box::new(lower_type_expr(inner)),
-            evidence: lower_evidentiality(*evidentiality),
-        },
+            error_type,
+        } => {
+            // If error_type is specified (e.g., T?[Error]), this is Result sugar
+            // For now, we lower it as an evidential type; full Result expansion would happen later
+            let _ = error_type; // TODO: expand to Result<T, E> in type system
+            IrType::Evidential {
+                inner: Box::new(lower_type_expr(inner)),
+                evidence: lower_evidentiality(*evidentiality),
+            }
+        }
         ast::TypeExpr::Cycle { .. } => IrType::Cycle { modulus: 0 },
         ast::TypeExpr::Simd { element, lanes } => IrType::Simd {
             element: Box::new(lower_type_expr(element)),

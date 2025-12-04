@@ -592,10 +592,16 @@ pub enum TypeExpr {
         params: Vec<TypeExpr>,
         return_type: Option<Box<TypeExpr>>,
     },
-    /// With evidentiality: `T!`, `T?`, `T~`
+    /// With evidentiality: `T!`, `T?`, `T~`, or with error type: `T?[Error]`, `T![Error]`
+    /// The error type syntax is sugar for Result<T, Error> with evidentiality tracking:
+    /// - `T?[E]` means Result<T, E> with uncertain evidentiality
+    /// - `T![E]` means Result<T, E> with known/infallible path
+    /// - `T~[E]` means Result<T, E> from external/reported source
     Evidential {
         inner: Box<TypeExpr>,
         evidentiality: Evidentiality,
+        /// Optional error type for Result sugar: `T?[ErrorType]`
+        error_type: Option<Box<TypeExpr>>,
     },
     /// Cycle type: `Cycle<N>`
     Cycle { modulus: Box<Expr> },

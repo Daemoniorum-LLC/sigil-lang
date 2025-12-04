@@ -1429,11 +1429,21 @@ impl<'a> Parser<'a> {
     fn parse_type(&mut self) -> ParseResult<TypeExpr> {
         let base = self.parse_type_base()?;
 
-        // Check for evidentiality suffix
+        // Check for evidentiality suffix: T?, T!, T~, T?[Error], T![Error], T~[Error]
         if let Some(ev) = self.parse_evidentiality_opt() {
+            // Check for optional error type bracket: ?[ErrorType]
+            let error_type = if self.check(&Token::LBracket) {
+                self.advance(); // consume [
+                let err_ty = self.parse_type()?;
+                self.expect(Token::RBracket)?; // consume ]
+                Some(Box::new(err_ty))
+            } else {
+                None
+            };
             return Ok(TypeExpr::Evidential {
                 inner: Box::new(base),
                 evidentiality: ev,
+                error_type,
             });
         }
 
