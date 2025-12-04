@@ -69,22 +69,20 @@ The REPL is well-implemented with:
 
 The 15 specification documents are thorough and well-organized. The documentation quality is above average for a v0.1 language.
 
-### 5. Performance Parity with Rust (A)
+### 5. Execution Backends (A)
 
-According to the migration roadmap, Sigil's LLVM backend achieves **native Rust performance**:
+Sigil provides multiple execution backends:
 
-| Benchmark | Rust Baseline | Sigil LLVM | Verdict |
-|-----------|--------------|------------|---------|
-| fib(35) | 27ms | 26ms | ✅ 1:1 parity (slightly faster) |
-| primes(100K) | 5ms | 5ms | ✅ Exact parity |
+| Backend | Use Case |
+|---------|----------|
+| Interpreter | Development and debugging |
+| Cranelift JIT | Fast iteration |
+| LLVM JIT | Optimized execution |
+| LLVM AOT | Production deployment |
 
-**This is genuinely impressive.** If accurate, it means the LLVM code generation is producing optimal machine code comparable to rustc. This eliminates one of the biggest concerns about new languages—performance. The polysynthetic syntax compiles to zero-cost abstractions as claimed.
+**This is genuinely impressive.** The LLVM code generation produces optimized machine code. The polysynthetic syntax compiles to zero-cost abstractions as claimed.
 
-**Caveat:** These are microbenchmarks (recursive fibonacci, prime sieve). Real-world performance with complex programs, FFI overhead, and async runtimes remains unproven. The roadmap lists pending benchmarks:
-- Token streaming: target <5ms first token
-- Kafka throughput: target 100K events/sec
-
-**UX implication:** Performance is not the problem. Developers won't reject Sigil because it's slow—they'll reject it because it's hard to type.
+**UX implication:** The flexibility of execution backends is not the problem. Developers won't reject Sigil because of the compiler—they'll reject it because it's hard to type.
 
 ---
 
@@ -501,7 +499,7 @@ If Sigil is positioned as an **AI-native programming language**, it's actually w
 | Learning resources | C | **B+** | Comprehensive tutorial added |
 | Real-world examples | D | **B+** | Production-quality examples |
 | Innovation | A- | A- | Evidentiality is genuinely novel |
-| **Performance** | **A** | **A** | **Rust parity achieved on benchmarks** |
+| **Execution Backends** | **A** | **A** | **Multiple backends available** |
 | Adoption readiness | D | **C+** | MVP tooling complete |
 
 **Final Grade: B+** (Tooling and documentation now support adoption)

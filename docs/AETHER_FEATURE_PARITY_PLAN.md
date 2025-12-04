@@ -15,6 +15,8 @@ This document outlines a comprehensive migration plan to achieve **1:1 feature p
 **Estimated Timeline:** 12-18 months for full parity
 **Priority:** Physics and Graphics core systems first
 
+**Note:** This document contains technical implementation details and estimated timelines. Performance claims and benchmarks have been removed - see BENCHMARK_REPORT.md for detailed performance analysis.
+
 ---
 
 ## 1. Feature Domain Mapping

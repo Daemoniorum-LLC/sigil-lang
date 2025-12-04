@@ -104,7 +104,7 @@ let result = data
     |rho+             // Reduce: sum all
 ```
 
-Provides **43% code reduction** in real-world applications (measured in Infernum LLM inference engine port).
+Provides significant code reduction in real-world applications.
 
 ### Evidentiality Types
 
@@ -256,13 +256,13 @@ let unified = synesthesia("love", "indian")
 
 ## Compilation Modes
 
-| Command | Description | Performance |
-|---------|-------------|-------------|
+| Command | Description | Use Case |
+|---------|-------------|----------|
 | `sigil run file.sigil` | Interpreted | Development, debugging |
-| `sigil jit file.sigil` | Cranelift JIT | Fast iteration (2.8x Rust for fib35) |
-| `sigil llvm file.sigil` | LLVM JIT | Near-native (requires --features llvm) |
-| `sigil compile file.sigil -o out` | LLVM AOT | **Production** (1.3x Rust standard, 25x FASTER with accumulator) |
-| `sigil compile file.sigil -o out --lto` | LLVM AOT+LTO | **Maximum** optimization |
+| `sigil jit file.sigil` | Cranelift JIT | Fast iteration |
+| `sigil llvm file.sigil` | LLVM JIT | Optimized execution (requires --features llvm) |
+| `sigil compile file.sigil -o out` | LLVM AOT | Production deployment |
+| `sigil compile file.sigil -o out --lto` | LLVM AOT+LTO | Maximum optimization |
 
 ## Project Structure
 
