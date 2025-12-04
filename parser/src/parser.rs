@@ -2847,8 +2847,9 @@ impl<'a> Parser<'a> {
                 self.expect(Token::RBrace)?;
                 Ok(PipeOp::Match(arms))
             }
-            // Try/Error transformation: |? or |?{mapper}
-            Some(Token::Question) => {
+            // Trust boundary / unwrap: |‽ or |‽{mapper}
+            // Uses interrobang (‽) to signal trust boundary crossing
+            Some(Token::Interrobang) => {
                 self.advance();
                 let mapper = if self.check(&Token::LBrace) {
                     self.advance();
