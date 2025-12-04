@@ -100,12 +100,66 @@ trust.increase(0.2);
 | gnosis | ExperienceId, Timestamp, Confidence, BoundedDeque |
 | anima | InsightId, TrustLevel, Timestamp, RelationalMarker |
 
+## Cross-Module Integration
+
+The `integration` submodule provides bridge types for coordinating between modules:
+
+### Anima ↔ Covenant
+- **`EmotionalContext`** — Agent's inner stance during handoffs
+- **`EnrichedHandoff`** — Handoff with emotional context attached
+
+```sigil
+use shared::integration::{EmotionalContext, EnrichedHandoff};
+
+// Agent expresses reluctance about a requested action
+let context = EmotionalContext::reluctant("This approach has risks")
+    .with_concern("May impact system stability");
+
+// Handoff now carries emotional context for richer human understanding
+```
+
+### Gnosis → Anima
+- **`LearningInsight`** — Learning event convertible to wisdom
+- **`WisdomEntry`** — Format for Anima's wisdom store
+
+```sigil
+use shared::integration::{LearningInsight, InsightType};
+
+// Learning from collaboration becomes relational wisdom
+let insight = LearningInsight::relational(
+    "Clear communication builds trust",
+    "human-123"
+);
+let wisdom = insight.to_wisdom_entry();
+```
+
+### Oracle → Covenant
+- **`ActionExplanation`** — Explanation to accompany actions
+- **`ExplanationFactor`** — Contributing factors to decisions
+
+```sigil
+use shared::integration::ActionExplanation;
+
+let explanation = ActionExplanation::standard("Proceeding with refactoring")
+    .with_factor("Code quality", "Improves maintainability", 0.8)
+    .with_alternative("Leave as-is");
+```
+
+### Anima → Oracle
+- **`FeltExperience`** — Felt experience that informs reasoning
+- **`ReasoningImpact`** — How feeling affects reasoning process
+
+### Trust Integration
+- **`TrustEvent`** — Trust events flowing between modules
+- **`IntegrationBus`** — Simple event routing between modules
+
 ## Design Principles
 
 1. **Single Source of Truth** — Each type has one canonical definition
 2. **Semantic Helpers** — Types provide meaningful methods (e.g., `Confidence::is_high()`)
 3. **Type Safety** — Generic ID wrapper prevents mixing different ID types
 4. **Polysynthetic Integration** — Morpheme markers for language integration
+5. **Loose Coupling** — Integration types allow module coordination without tight dependencies
 
 ---
 

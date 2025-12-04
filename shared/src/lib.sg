@@ -17,6 +17,10 @@
 use std::collections::VecDeque;
 use std::hash::Hash;
 
+// Cross-module integration layer
+pub mod integration;
+pub use integration::*;
+
 // ============================================================================
 // TEMPORAL TYPES
 // ============================================================================
