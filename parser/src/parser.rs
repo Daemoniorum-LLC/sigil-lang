@@ -2821,6 +2821,32 @@ impl<'a> Parser<'a> {
 
                 Ok(PipeOp::Named { prefix, body })
             }
+            // Match morpheme: |match{ Pattern => expr, ... }
+            Some(Token::Match) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let mut arms = Vec::new();
+                while !self.check(&Token::RBrace) && !self.is_eof() {
+                    let pattern = self.parse_pattern()?;
+                    let guard = if self.consume_if(&Token::If) {
+                        Some(self.parse_condition()?)
+                    } else {
+                        None
+                    };
+                    self.expect(Token::FatArrow)?;
+                    let body = self.parse_expr()?;
+                    arms.push(MatchArm {
+                        pattern,
+                        guard,
+                        body,
+                    });
+                    if !self.consume_if(&Token::Comma) {
+                        break;
+                    }
+                }
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Match(arms))
+            }
             Some(Token::Ident(_)) => {
                 let name = self.parse_ident()?;
                 let args = if self.check(&Token::LParen) {

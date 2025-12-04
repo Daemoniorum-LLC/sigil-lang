@@ -1864,6 +1864,43 @@ impl Interpreter {
                 // ρ| or ρ_any - logical OR (any true)
                 self.any_values(value)
             }
+            PipeOp::Match(arms) => {
+                // |match{ Pattern => expr, ... } - pattern matching in pipe
+                for arm in arms {
+                    if self.pattern_matches(&arm.pattern, &value)? {
+                        // Create new scope for pattern bindings
+                        let prev_env = self.environment.clone();
+                        self.environment = Rc::new(RefCell::new(Environment::with_parent(
+                            prev_env.clone(),
+                        )));
+
+                        // Bind pattern variables
+                        self.bind_pattern(&arm.pattern, value.clone())?;
+
+                        // Also bind _ to the piped value for convenient access
+                        self.environment
+                            .borrow_mut()
+                            .define("_".to_string(), value.clone());
+
+                        // Check guard if present
+                        let guard_passes = if let Some(guard) = &arm.guard {
+                            matches!(self.evaluate(guard)?, Value::Bool(true))
+                        } else {
+                            true
+                        };
+
+                        if guard_passes {
+                            let result = self.evaluate(&arm.body)?;
+                            self.environment = prev_env;
+                            return Ok(result);
+                        }
+
+                        // Guard failed, restore environment and try next arm
+                        self.environment = prev_env;
+                    }
+                }
+                Err(RuntimeError::new("No pattern matched in pipe match"))
+            }
             PipeOp::Method { name, args } => {
                 let arg_values: Vec<Value> = args
                     .iter()

@@ -1086,6 +1086,11 @@ fn lower_pipe_op(ctx: &mut LoweringContext, op: &ast::PipeOp) -> IrPipelineStep 
             args: args.iter().map(|a| lower_expr(ctx, a)).collect(),
         },
         ast::PipeOp::Await => IrPipelineStep::Await,
+        ast::PipeOp::Match(_) => {
+            // Match in pipes is handled by interpreter; IR falls back to identity
+            // (proper implementation would lower to branching IR)
+            IrPipelineStep::Identity
+        }
         ast::PipeOp::Named { prefix, body } => {
             let fn_name = prefix
                 .iter()

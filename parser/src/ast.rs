@@ -1174,6 +1174,9 @@ pub enum PipeOp {
     Method { name: Ident, args: Vec<Expr> },
     /// Await
     Await,
+    /// Match morpheme: `|match{ Pattern => expr, ... }`
+    /// Applies pattern matching to the piped value
+    Match(Vec<MatchArm>),
     /// Named morpheme: `·map{f}`, `·flow{f}`
     Named {
         prefix: Vec<Ident>,

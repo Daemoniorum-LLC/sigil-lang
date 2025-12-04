@@ -1565,6 +1565,11 @@ pub mod jit {
                             // Await is a no-op in JIT context (sync execution)
                             result
                         }
+                        PipeOp::Match(_) => {
+                            // Match in pipes not supported in JIT - use interpreter
+                            // (proper implementation would emit branching code)
+                            result
+                        }
                         PipeOp::Named { prefix, body } => {
                             // Named morphemes like ·map{f} - try to call as function
                             if !prefix.is_empty() {

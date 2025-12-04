@@ -1681,6 +1681,23 @@ impl TypeChecker {
                 }
             }
 
+            // Match morpheme: |match{ Pattern => expr, ... }
+            PipeOp::Match(arms) => {
+                // All arms should return the same type
+                if arms.is_empty() {
+                    self.error(TypeError::new("match expression has no arms"));
+                    Type::Error
+                } else {
+                    // Infer type from first arm, other arms should match
+                    let result_type = self.infer_expr(&arms[0].body);
+                    for arm in arms.iter().skip(1) {
+                        let arm_type = self.infer_expr(&arm.body);
+                        self.unify(&result_type, &arm_type);
+                    }
+                    result_type
+                }
+            }
+
             // Method call
             PipeOp::Method { name, args: _ } => {
                 // Look up method
