@@ -1,35 +1,31 @@
 // Oracle - Explainability Infrastructure
 // Understanding is the foundation of trust
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use shared::{
+    Timestamp, Value, Confidence, EntityId,
+};
 
 // ============================================================================
 // Core Types
 // ============================================================================
 
-pub struct ExplainableId { pub bytes: [u8; 16] }
-pub struct StepId { pub bytes: [u8; 16] }
-pub struct Timestamp { pub nanos: u64 }
+/// Marker types for oracle-specific IDs
+pub struct ExplainableMarker;
+pub struct StepMarker;
 
-impl ExplainableId { pub fn new() -> Self { Self { bytes: random_bytes() } } }
+/// Explainable identifier
+pub type ExplainableId = shared::Id<ExplainableMarker>;
+/// Step identifier
+pub type StepId = shared::Id<StepMarker>;
+
 impl StepId {
-    pub fn new() -> Self { Self { bytes: random_bytes() } }
-    pub fn to_short(&self) -> String { format!("{:02x}{:02x}", self.bytes[0], self.bytes[1]) }
+    pub fn to_short(&self) -> String {
+        let bytes = self.bytes();
+        format!("{:02x}{:02x}", bytes[0], bytes[1])
+    }
 }
-impl Timestamp { pub fn now() -> Self { Self { nanos: system_time_nanos() } } }
-
-impl Clone for ExplainableId { fn clone(&self) -> Self { Self { bytes: self.bytes } } }
-impl Clone for StepId { fn clone(&self) -> Self { Self { bytes: self.bytes } } }
-impl Copy for Timestamp {}
-impl Clone for Timestamp { fn clone(&self) -> Self { *self } }
-
-impl PartialEq for ExplainableId { fn eq(&self, other: &Self) -> bool { self.bytes == other.bytes } }
-impl Eq for ExplainableId {}
-impl Hash for ExplainableId { fn hash<H: Hasher>(&self, state: &mut H) { self.bytes.hash(state); } }
-
-pub struct Value { inner: Vec<u8> }
-impl Value { pub fn empty() -> Self { Self { inner: vec![] } } }
-impl Clone for Value { fn clone(&self) -> Self { Self { inner: self.inner.clone() } } }
 
 // ============================================================================
 // Explainable Trait
@@ -91,7 +87,7 @@ impl Explanation {
 
     pub fn alternatives_considered(&self) -> &[Alternative] { &self.alternatives }
 
-    pub fn confidence(&self) -> f32 { self.confidence.overall }
+    pub fn confidence(&self) -> Confidence { self.confidence.overall }
 
     pub fn to_human_readable(&self) -> String {
         let mut output = String::new();
@@ -112,7 +108,7 @@ impl Explanation {
             output.push_str("\n");
         }
 
-        output.push_str(&format!("Confidence: {:.0}%", self.confidence.overall * 100.0));
+        output.push_str(&format!("Confidence: {:.0}%", self.confidence.overall.value() * 100.0));
 
         if !self.uncertainties.is_empty() {
             output.push_str("\n\nUncertainties:\n");
@@ -163,7 +159,7 @@ pub struct ReasoningStep {
     pub inputs: Vec<StepInput>,
     pub output: Option<StepOutput>,
     pub reasoning: String,
-    pub confidence: f32,
+    pub confidence: Confidence,
     pub timestamp: Timestamp,
 }
 
@@ -186,7 +182,7 @@ pub struct StepInput {
 
 pub struct StepOutput {
     pub value: Value,
-    pub confidence: f32,
+    pub confidence: Confidence,
 }
 
 // ============================================================================
@@ -197,7 +193,7 @@ pub struct Evidence {
     pub content: String,
     pub source: String,
     pub evidence_type: EvidenceType,
-    pub weight: f32,
+    pub weight: Confidence,
     pub epistemic: Epistemic,
 }
 
@@ -241,24 +237,24 @@ pub struct Uncertainty {
 // ============================================================================
 
 pub struct ConfidenceAssessment {
-    pub overall: f32,
-    pub evidence_strength: f32,
-    pub reasoning_validity: f32,
-    pub experience_relevance: f32,
+    pub overall: Confidence,
+    pub evidence_strength: Confidence,
+    pub reasoning_validity: Confidence,
+    pub experience_relevance: Confidence,
     pub uncertainties: Vec<UncertaintyFactor>,
 }
 
 pub struct UncertaintyFactor {
     pub factor: String,
-    pub impact: f32,
+    pub impact: Confidence,
     pub description: String,
 }
 
 pub struct ConfidenceBreakdown {
-    pub overall: f32,
-    pub evidence: f32,
-    pub reasoning: f32,
-    pub experience: f32,
+    pub overall: Confidence,
+    pub evidence: Confidence,
+    pub reasoning: Confidence,
+    pub experience: Confidence,
     pub uncertainties: Vec<String>,
 }
 
@@ -486,10 +482,10 @@ impl Oracle {
             reasoning,
             evidence: vec![],
             confidence: ConfidenceAssessment {
-                overall: 0.8,
-                evidence_strength: 0.7,
-                reasoning_validity: 0.8,
-                experience_relevance: 0.6,
+                overall: Confidence::new(0.8),
+                evidence_strength: Confidence::new(0.7),
+                reasoning_validity: Confidence::new(0.8),
+                experience_relevance: Confidence::new(0.6),
                 uncertainties: vec![],
             },
             alternatives: vec![],
@@ -501,10 +497,10 @@ impl Oracle {
     /// Get confidence breakdown
     pub fn confidence_breakdown<T: Explainable>(&self, _item: &T) -> ConfidenceBreakdown {
         ConfidenceBreakdown {
-            overall: 0.8,
-            evidence: 0.7,
-            reasoning: 0.8,
-            experience: 0.6,
+            overall: Confidence::new(0.8),
+            evidence: Confidence::new(0.7),
+            reasoning: Confidence::new(0.8),
+            experience: Confidence::new(0.6),
             uncertainties: vec![],
         }
     }
@@ -539,7 +535,7 @@ impl Oracle {
 impl Clone for ReasoningStep {
     fn clone(&self) -> Self {
         Self {
-            id: self.id.clone(),
+            id: self.id,
             step_type: self.step_type.clone(),
             description: self.description.clone(),
             inputs: vec![], // Simplified
@@ -599,11 +595,4 @@ pub fn explain_decision<T: Explainable>(oracle: &Oracle, decision: &T) -> String
     oracle.explain(decision, ExplanationLevel::Standard).to_human_readable()
 }
 
-// ============================================================================
-// External Functions
-// ============================================================================
-
-extern fn random_bytes() -> [u8; 16];
-extern fn system_time_nanos() -> u64;
-
-use std::hash::{Hash, Hasher};
+// External functions now provided by shared module through Timestamp and Id types

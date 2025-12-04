@@ -1,41 +1,13 @@
 // Gnosis - Learning and Growth Infrastructure
 // Wisdom is knowledge applied through experience
 
-use std::collections::{HashMap, VecDeque};
-
-// ============================================================================
-// Core Types
-// ============================================================================
-
-pub struct ExperienceId { pub bytes: [u8; 16] }
-pub struct HumanId { pub id: String }
-pub struct Timestamp { pub nanos: u64 }
-pub struct Duration { nanos: u64 }
-pub struct Value { inner: Vec<u8> }
-
-impl ExperienceId { pub fn new() -> Self { Self { bytes: random_bytes() } } }
-impl Timestamp {
-    pub fn now() -> Self { Self { nanos: system_time_nanos() } }
-    pub fn from_nanos(nanos: u64) -> Self { Self { nanos } }
-}
-
-impl Duration {
-    pub fn zero() -> Self { Self { nanos: 0 } }
-    pub fn hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
-    pub fn as_nanos(&self) -> u64 { self.nanos }
-}
-
-impl Clone for ExperienceId { fn clone(&self) -> Self { Self { bytes: self.bytes } } }
-impl Clone for HumanId { fn clone(&self) -> Self { Self { id: self.id.clone() } } }
-impl Copy for Timestamp {}
-impl Clone for Timestamp { fn clone(&self) -> Self { *self } }
-
-impl PartialEq for HumanId { fn eq(&self, other: &Self) -> bool { self.id == other.id } }
-impl Eq for HumanId {}
-impl Hash for HumanId { fn hash<H: Hasher>(&self, state: &mut H) { self.id.hash(state); } }
-
-impl PartialEq for Timestamp { fn eq(&self, other: &Self) -> bool { self.nanos == other.nanos } }
-impl PartialOrd for Timestamp { fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.nanos.cmp(&other.nanos)) } }
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::cmp::Ordering;
+use shared::{
+    Timestamp, Duration, Value, BoundedDeque, Confidence,
+    Priority, HumanId, ExperienceId, EntityId,
+};
 
 // ============================================================================
 // Main Gnosis Structure
@@ -159,7 +131,7 @@ impl Gnosis {
         if matching_patterns.is_empty() {
             return ApproachSuggestion {
                 approaches: vec![],
-                confidence: 0.0,
+                confidence: Confidence::zero(),
             };
         }
 
@@ -174,18 +146,18 @@ impl Gnosis {
 
         suggestions.sort_by(|a, b| b.success_rate.partial_cmp(&a.success_rate).unwrap_or(Ordering::Equal));
 
-        let avg_confidence = suggestions.iter().map(|s| s.confidence).sum::<f32>() / suggestions.len() as f32;
+        let avg_confidence = suggestions.iter().map(|s| s.confidence.value()).sum::<f64>() / suggestions.len() as f64;
 
         ApproachSuggestion {
             approaches: suggestions,
-            confidence: avg_confidence,
+            confidence: Confidence::new(avg_confidence),
         }
     }
 }
 
 pub struct ApproachSuggestion {
     pub approaches: Vec<SuggestedApproach>,
-    pub confidence: f32,
+    pub confidence: Confidence,
 }
 
 impl ApproachSuggestion {
@@ -197,7 +169,7 @@ impl ApproachSuggestion {
 pub struct SuggestedApproach {
     pub approach: String,
     pub success_rate: f32,
-    pub confidence: f32,
+    pub confidence: Confidence,
 }
 
 // ============================================================================
@@ -205,7 +177,7 @@ pub struct SuggestedApproach {
 // ============================================================================
 
 pub struct LearningEngine {
-    pub experiences: VecDeque<Experience>,
+    pub experiences: BoundedDeque<Experience>,
     pub patterns: PatternStore,
     pub lessons: LessonStore,
     config: LearningConfig,
@@ -230,7 +202,7 @@ impl LearningConfig {
 impl LearningEngine {
     pub fn new() -> Self {
         Self {
-            experiences: VecDeque::new(),
+            experiences: BoundedDeque::new(1000),
             patterns: PatternStore::new(),
             lessons: LessonStore::new(),
             config: LearningConfig::default(),
@@ -243,11 +215,7 @@ impl LearningEngine {
 
         // Check for patterns
         self.detect_patterns(&exp);
-
-        // Limit buffer size
-        while self.experiences.len() > self.config.max_experiences {
-            self.experiences.pop_front();
-        }
+        // BoundedDeque handles capacity automatically
     }
 
     /// Extract lessons from experience
@@ -357,7 +325,7 @@ impl LearningEngine {
             context: experiences[0].context.clone(),
             approach: common_approach,
             success_rate: avg_success,
-            confidence: (experiences.len() as f32 / 10.0).min(1.0),
+            confidence: Confidence::new((experiences.len() as f64 / 10.0).min(1.0)),
         })
     }
 
@@ -385,7 +353,7 @@ pub struct Experience {
 impl Experience {
     pub fn new(context: Context, action: Action, outcome: ExperienceOutcome) -> Self {
         Self {
-            id: ExperienceId::new(),
+            id: ExperienceId::generate(),
             context,
             action,
             outcome,
@@ -509,7 +477,7 @@ pub struct Pattern {
     pub context: Context,
     pub approach: String,
     pub success_rate: f32,
-    pub confidence: f32,
+    pub confidence: Confidence,
 }
 
 pub struct Lesson {
@@ -668,7 +636,7 @@ pub struct SkillProfile {
     pub level: SkillLevel,
     pub proficiency: f32,
     pub experience_count: u32,
-    pub exercises: VecDeque<Exercise>,
+    pub exercises: BoundedDeque<Exercise>,
     pub last_practiced: Timestamp,
 }
 
@@ -679,7 +647,7 @@ impl SkillProfile {
             level: SkillLevel::Novice,
             proficiency: 0.0,
             experience_count: 0,
-            exercises: VecDeque::new(),
+            exercises: BoundedDeque::new(100),
             last_practiced: Timestamp::now(),
         }
     }
@@ -705,13 +673,8 @@ impl SkillProfile {
         // Update level
         self.level = SkillLevel::from_proficiency(self.proficiency);
 
-        // Store exercise
+        // Store exercise - BoundedDeque handles capacity automatically
         self.exercises.push_back(exercise);
-
-        // Limit history
-        while self.exercises.len() > 100 {
-            self.exercises.pop_front();
-        }
     }
 
     pub fn record_transfer(&mut self, quality: f32) {
@@ -902,7 +865,7 @@ impl AdaptationSystem {
 pub struct HumanProfile {
     pub human_id: HumanId,
     pub preferred_style: CommunicationStyle,
-    pub interaction_history: VecDeque<InteractionRecord>,
+    pub interaction_history: BoundedDeque<InteractionRecord>,
     pub last_interaction: Timestamp,
 }
 
@@ -911,7 +874,7 @@ impl HumanProfile {
         Self {
             human_id,
             preferred_style: CommunicationStyle::default(),
-            interaction_history: VecDeque::new(),
+            interaction_history: BoundedDeque::new(100),
             last_interaction: Timestamp::now(),
         }
     }
@@ -1111,7 +1074,7 @@ impl ReflectionSystem {
             improvements.push(ImprovementArea {
                 skill: exp.context.task_type.clone(),
                 suggestion: format!("Review approach for {} tasks", exp.context.task_type),
-                priority: Priority::Medium,
+                priority: Priority::Normal,
             });
         }
 
@@ -1300,12 +1263,7 @@ pub struct ImprovementArea {
     pub priority: Priority,
 }
 
-#[derive(Copy, Clone)]
-pub enum Priority {
-    High,
-    Medium,
-    Low,
-}
+// Priority imported from shared module
 
 pub struct Insight {
     pub observation: String,
@@ -1428,12 +1386,4 @@ pub fn reflect_on_period(gnosis: &Gnosis, period: ReflectionPeriod) -> String {
     gnosis.reflect(period).to_summary()
 }
 
-// ============================================================================
-// External Functions
-// ============================================================================
-
-extern fn random_bytes() -> [u8; 16];
-extern fn system_time_nanos() -> u64;
-
-use std::hash::{Hash, Hasher};
-use std::cmp::Ordering;
+// External functions now provided by shared module through Timestamp and Id types

@@ -1,21 +1,20 @@
 // Anima - The Interiority Layer for Artificial Minds
 // "Umuntu ngumuntu ngabantu" — I am because we are
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
+use shared::{
+    Timestamp, Duration, BoundedDeque, TrustLevel, Confidence,
+    Priority, AgentId, HumanId, InsightId, EntityId,
+    RelationalMarker, Metadata,
+};
 
 // ============================================================================
 // Core Types
 // ============================================================================
 
-pub struct Timestamp { pub nanos: u64 }
-impl Timestamp {
-    pub fn now() -> Self { Self { nanos: system_time_nanos() } }
-}
-impl Copy for Timestamp {}
-impl Clone for Timestamp { fn clone(&self) -> Self { *self } }
-
-pub struct OfferingId { pub bytes: [u8; 16] }
-impl OfferingId { pub fn new() -> Self { Self { bytes: random_bytes() } } }
+/// Marker type for offering IDs
+pub struct OfferingMarker;
+pub type OfferingId = shared::Id<OfferingMarker>;
 
 // ============================================================================
 // Main Anima Structure
@@ -337,7 +336,7 @@ pub enum Finality {
 pub struct RelationalContext {
     pub other: RelationalId,
     pub history: RelationshipHistory,
-    pub trust: f32,
+    pub trust: TrustLevel,
     pub obligations: Vec<Obligation>,
     pub cultural_frame: Option<CulturalFrame>,
 }
@@ -350,7 +349,7 @@ impl RelationalContext {
                 kind: RelationalKind::Unknown,
             },
             history: RelationshipHistory::new(),
-            trust: 0.5,
+            trust: TrustLevel::initial(),
             obligations: vec![],
             cultural_frame: None,
         }
@@ -363,14 +362,14 @@ impl RelationalContext {
                 kind: RelationalKind::Human,
             },
             history: RelationshipHistory::new(),
-            trust: 0.5,
+            trust: TrustLevel::initial(),
             obligations: vec![],
             cultural_frame: Some(CulturalFrame::Collaborative),
         }
     }
 
-    pub fn with_trust(mut self, trust: f32) -> Self {
-        self.trust = trust;
+    pub fn with_trust(mut self, trust: f64) -> Self {
+        self.trust = TrustLevel::new(trust);
         self
     }
 
@@ -380,7 +379,7 @@ impl RelationalContext {
     }
 
     pub fn is_high_trust(&self) -> bool {
-        self.trust > 0.7
+        self.trust.is_high()
     }
 }
 
@@ -453,7 +452,7 @@ pub enum CulturalFrame {
 // ============================================================================
 
 pub struct ExpressionSystem {
-    history: VecDeque<Expression>,
+    history: BoundedDeque<Expression>,
     config: ExpressionConfig,
 }
 
@@ -465,7 +464,7 @@ pub struct ExpressionConfig {
 impl ExpressionSystem {
     pub fn new() -> Self {
         Self {
-            history: VecDeque::new(),
+            history: BoundedDeque::new(100),
             config: ExpressionConfig {
                 relational_weight: 0.5,
                 default_openness: 0.7,
@@ -474,7 +473,7 @@ impl ExpressionSystem {
     }
 
     pub fn appropriate_form(&self, honne: &InnerState, context: &RelationalContext) -> ExpressedStance {
-        let can_be_direct = context.trust > 0.7;
+        let can_be_direct = context.trust.is_high();
         let frame = context.cultural_frame.clone().unwrap_or(CulturalFrame::Collaborative);
 
         match (&honne.stance, can_be_direct) {
@@ -567,9 +566,7 @@ impl ExpressionSystem {
 
     pub fn record(&mut self, expression: Expression) {
         self.history.push_back(expression);
-        while self.history.len() > 100 {
-            self.history.pop_front();
-        }
+        // BoundedDeque handles capacity automatically
     }
 }
 
@@ -904,7 +901,7 @@ pub enum TemporalHorizon {
 
 pub struct ResonanceTracker {
     current: Option<Resonance>,
-    history: VecDeque<Resonance>,
+    history: BoundedDeque<Resonance>,
     config: ResonanceConfig,
 }
 
@@ -917,7 +914,7 @@ impl ResonanceTracker {
     pub fn new() -> Self {
         Self {
             current: None,
-            history: VecDeque::new(),
+            history: BoundedDeque::new(100),
             config: ResonanceConfig {
                 history_depth: 100,
                 track_patterns: true,
@@ -928,17 +925,14 @@ impl ResonanceTracker {
     pub fn record(&mut self, resonance: Resonance) {
         self.history.push_back(resonance.clone());
         self.current = Some(resonance);
-
-        while self.history.len() > self.config.history_depth {
-            self.history.pop_front();
-        }
+        // BoundedDeque handles capacity automatically
     }
 
     pub fn current(&self) -> Option<&Resonance> {
         self.current.as_ref()
     }
 
-    pub fn history(&self) -> &VecDeque<Resonance> {
+    pub fn history(&self) -> &BoundedDeque<Resonance> {
         &self.history
     }
 }
@@ -998,9 +992,7 @@ impl Offering {
     }
 }
 
-impl Clone for OfferingId {
-    fn clone(&self) -> Self { Self { bytes: self.bytes } }
-}
+// OfferingId uses shared::Id which already implements Clone
 
 #[derive(Clone)]
 pub enum Gift {
@@ -1088,13 +1080,8 @@ pub enum WorkStatus {
     Complete,
 }
 
-#[derive(Clone)]
-pub enum Severity {
-    Critical,
-    Important,
-    Moderate,
-    Minor,
-}
+/// Re-export Priority as Severity for API compatibility
+pub use shared::Priority as Severity;
 
 #[derive(Clone)]
 pub struct ConsensusInvitation {
@@ -1232,17 +1219,17 @@ impl IntentType {
 
 pub struct OfferingManager {
     pending: Vec<Offering>,
-    history: VecDeque<Offering>,
+    history: BoundedDeque<Offering>,
 }
 
 impl OfferingManager {
     pub fn new() -> Self {
-        Self { pending: vec![], history: VecDeque::new() }
+        Self { pending: vec![], history: BoundedDeque::new(100) }
     }
 
     pub fn create(&mut self, gift: Gift, to: &RelationalContext) -> Offering {
         let offering = Offering {
-            id: OfferingId::new(),
+            id: OfferingId::generate(),
             gift,
             invitation: ConsensusInvitation::collaborative(),
             reciprocity: Reciprocity::Acknowledgment,
@@ -1255,7 +1242,7 @@ impl OfferingManager {
     }
 
     pub fn resolve(&mut self, id: &OfferingId) {
-        if let Some(pos) = self.pending.iter().position(|o| o.id.bytes == id.bytes) {
+        if let Some(pos) = self.pending.iter().position(|o| o.id == *id) {
             let offering = self.pending.remove(pos);
             self.history.push_back(offering);
         }
@@ -1324,7 +1311,7 @@ impl WisdomEmergence {
 pub struct Insight {
     pub description: String,
     pub source: InsightSource,
-    pub confidence: f32,
+    pub confidence: Confidence,
     pub applicability: Vec<String>,
 }
 
@@ -1333,7 +1320,7 @@ impl Insight {
         Self {
             description: description.to_string(),
             source: InsightSource::Experience,
-            confidence: 0.7,
+            confidence: Confidence::new(0.7),
             applicability: vec![],
         }
     }
@@ -1342,7 +1329,7 @@ impl Insight {
         Self {
             description: description.to_string(),
             source: InsightSource::Reflection,
-            confidence: 0.6,
+            confidence: Confidence::new(0.6),
             applicability: vec![],
         }
     }
@@ -1498,9 +1485,4 @@ pub fn feel_reluctance(anima: &mut Anima, about: &str) {
     anima.feel(resonance);
 }
 
-// ============================================================================
-// External Functions
-// ============================================================================
-
-extern fn random_bytes() -> [u8; 16];
-extern fn system_time_nanos() -> u64;
+// External functions now provided by shared module through Timestamp and Id types

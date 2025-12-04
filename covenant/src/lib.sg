@@ -1,45 +1,25 @@
 // Covenant - Human-Agent Collaboration Infrastructure
 // The bridge between minds
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+use shared::{
+    Timestamp, Duration, Value, BoundedDeque, TrustLevel,
+    Priority, HumanId, AgentId, EntityId,
+};
 
 // ============================================================================
 // Core Types
 // ============================================================================
 
-/// Unique identifiers
-pub struct PactId { pub bytes: [u8; 16] }
-pub struct HandoffId { pub bytes: [u8; 16] }
-pub struct HumanId { pub id: String }
+/// Marker types for covenant-specific IDs
+pub struct PactMarker;
+pub struct HandoffMarker;
 
-impl PactId { pub fn new() -> Self { Self { bytes: random_bytes() } } }
-impl HandoffId { pub fn new() -> Self { Self { bytes: random_bytes() } } }
-
-impl Clone for PactId { fn clone(&self) -> Self { Self { bytes: self.bytes } } }
-impl Clone for HandoffId { fn clone(&self) -> Self { Self { bytes: self.bytes } } }
-impl Clone for HumanId { fn clone(&self) -> Self { Self { id: self.id.clone() } } }
-
-impl PartialEq for HumanId { fn eq(&self, other: &Self) -> bool { self.id == other.id } }
-impl Eq for HumanId {}
-impl Hash for HumanId { fn hash<H: Hasher>(&self, state: &mut H) { self.id.hash(state); } }
-
-pub struct Timestamp { pub nanos: u64 }
-impl Timestamp { pub fn now() -> Self { Self { nanos: system_time_nanos() } } }
-impl Copy for Timestamp {}
-impl Clone for Timestamp { fn clone(&self) -> Self { *self } }
-
-pub struct Duration { nanos: u64 }
-impl Duration {
-    pub fn seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
-    pub fn minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
-}
-
-pub struct Value { inner: Vec<u8> }
-impl Value {
-    pub fn empty() -> Self { Self { inner: vec![] } }
-    pub fn string(s: &str) -> Self { Self { inner: s.as_bytes().to_vec() } }
-}
-impl Clone for Value { fn clone(&self) -> Self { Self { inner: self.inner.clone() } } }
+/// Pact identifier
+pub type PactId = shared::Id<PactMarker>;
+/// Handoff identifier
+pub type HandoffId = shared::Id<HandoffMarker>;
 
 // ============================================================================
 // Pact - The Agreement
@@ -62,7 +42,7 @@ impl Pact {
 
     pub fn default_collaborative() -> Self {
         Self {
-            id: PactId::new(),
+            id: PactId::generate(),
             human: HumanProfile::unknown(),
             agent: AgentProfile::current(),
             goals: vec![],
@@ -101,7 +81,7 @@ impl PactBuilder {
 
     pub fn establish(self) -> Result<Pact, PactError> {
         Ok(Pact {
-            id: PactId::new(),
+            id: PactId::generate(),
             human: self.human.ok_or(PactError::MissingHuman)?,
             agent: self.agent.unwrap_or(AgentProfile::current()),
             goals: self.goals,
@@ -120,7 +100,7 @@ pub struct HumanProfile {
 
 impl HumanProfile {
     pub fn unknown() -> Self { Self { id: None, name: None } }
-    pub fn named(name: &str) -> Self { Self { id: Some(HumanId { id: name.to_string() }), name: Some(name.to_string()) } }
+    pub fn named(name: &str) -> Self { Self { id: Some(HumanId::generate()), name: Some(name.to_string()) } }
 }
 
 pub struct AgentProfile {
@@ -153,8 +133,7 @@ impl SharedGoal {
     pub fn agent_role(mut self, role: &str) -> Self { self.agent_role = role.to_string(); self }
 }
 
-#[derive(Copy, Clone)]
-pub enum Priority { Low, Normal, High, Critical }
+// Priority imported from shared module
 
 pub enum PactError { MissingHuman, MissingAgent, InvalidBoundary }
 
@@ -275,7 +254,7 @@ impl Mode {
 
 pub struct ModeController {
     current: Mode,
-    history: VecDeque<ModeChange>,
+    history: BoundedDeque<ModeChange>,
 }
 
 struct ModeChange {
@@ -287,7 +266,7 @@ struct ModeChange {
 
 impl ModeController {
     pub fn new(initial: Mode) -> Self {
-        Self { current: initial, history: VecDeque::new() }
+        Self { current: initial, history: BoundedDeque::new(100) }
     }
 
     pub fn current(&self) -> Mode { self.current }
@@ -300,14 +279,13 @@ impl ModeController {
             timestamp: Timestamp::now(),
         });
         self.current = mode;
-
-        while self.history.len() > 100 { self.history.pop_front(); }
+        // BoundedDeque handles capacity automatically
     }
 
-    pub fn suggest_for_trust(&self, trust: f32) -> Mode {
-        if trust >= 0.8 { Mode::Autonomous }
-        else if trust >= 0.6 { Mode::Collaborative }
-        else if trust >= 0.4 { Mode::Supervised }
+    pub fn suggest_for_trust(&self, trust: TrustLevel) -> Mode {
+        if trust.value() >= 0.8 { Mode::Autonomous }
+        else if trust.value() >= 0.6 { Mode::Collaborative }
+        else if trust.value() >= 0.4 { Mode::Supervised }
         else { Mode::Guided }
     }
 }
@@ -358,57 +336,51 @@ pub enum HumanResponse {
 }
 
 pub struct HandoffManager {
-    pending: HashMap<HandoffId, Handoff>,
+    pending: Vec<Handoff>,
     callbacks: HashMap<[u8; 16], Box<dyn Fn(HumanResponse)>>,
 }
 
 impl HandoffManager {
     pub fn new() -> Self {
-        Self { pending: HashMap::new(), callbacks: HashMap::new() }
+        Self { pending: Vec::new(), callbacks: HashMap::new() }
     }
 
     pub fn handoff(&mut self, handoff: Handoff) -> HandoffId {
-        let id = handoff.id.clone();
-        self.pending.insert(id.clone(), handoff);
+        let id = handoff.id;
+        self.pending.push(handoff);
         id
     }
 
     pub fn on_response<F: Fn(HumanResponse) + 'static>(&mut self, id: &HandoffId, callback: F) {
-        self.callbacks.insert(id.bytes, Box::new(callback));
+        self.callbacks.insert(id.bytes(), Box::new(callback));
     }
 
     pub fn receive_response(&mut self, id: &HandoffId, response: HumanResponse) {
-        self.pending.remove(id);
-        if let Some(callback) = self.callbacks.remove(&id.bytes) {
+        self.pending.retain(|h| h.id != *id);
+        if let Some(callback) = self.callbacks.remove(&id.bytes()) {
             callback(response);
         }
     }
 }
 
-impl PartialEq for HandoffId { fn eq(&self, other: &Self) -> bool { self.bytes == other.bytes } }
-impl Eq for HandoffId {}
-impl Hash for HandoffId { fn hash<H: Hasher>(&self, state: &mut H) { self.bytes.hash(state); } }
-
-impl PartialEq for PactId { fn eq(&self, other: &Self) -> bool { self.bytes == other.bytes } }
-impl Eq for PactId {}
-impl Hash for PactId { fn hash<H: Hasher>(&self, state: &mut H) { self.bytes.hash(state); } }
+// HandoffId and PactId use shared::Id which implements PartialEq, Eq, Hash
 
 // ============================================================================
 // Trust System
 // ============================================================================
 
 pub struct TrustSystem {
-    score: f32,
-    history: VecDeque<TrustEvent>,
+    level: TrustLevel,
+    history: BoundedDeque<TrustEvent>,
     config: TrustConfig,
 }
 
 pub struct TrustConfig {
-    pub initial: f32,
-    pub success_gain: f32,
-    pub violation_loss: f32,
-    pub minimum: f32,
-    pub maximum: f32,
+    pub initial: f64,
+    pub success_gain: f64,
+    pub violation_loss: f64,
+    pub minimum: f64,
+    pub maximum: f64,
 }
 
 impl TrustConfig {
@@ -418,16 +390,17 @@ impl TrustConfig {
 }
 
 enum TrustEvent {
-    Success { task: String, gain: f32 },
-    Violation { description: String, loss: f32 },
+    Success { task: String, gain: f64 },
+    Violation { description: String, loss: f64 },
 }
 
 impl TrustSystem {
     pub fn new(config: TrustConfig) -> Self {
-        Self { score: config.initial, history: VecDeque::new(), config }
+        Self { level: TrustLevel::new(config.initial), history: BoundedDeque::new(100), config }
     }
 
-    pub fn score(&self) -> f32 { self.score }
+    pub fn level(&self) -> TrustLevel { self.level }
+    pub fn score(&self) -> f64 { self.level.value() }
 
     pub fn record_success(&mut self, task: &str, satisfaction: Satisfaction) {
         let gain = match satisfaction {
@@ -437,38 +410,35 @@ impl TrustSystem {
             Satisfaction::Adequate => self.config.success_gain * 0.5,
             Satisfaction::Poor => 0.0,
         };
-        self.adjust(gain);
+        self.level.increase(gain);
         self.history.push_back(TrustEvent::Success { task: task.to_string(), gain });
     }
 
-    pub fn record_violation(&mut self, description: &str, severity: Severity) {
+    pub fn record_violation(&mut self, description: &str, severity: Priority) {
         let loss = match severity {
-            Severity::Minor => self.config.violation_loss * 0.5,
-            Severity::Moderate => self.config.violation_loss,
-            Severity::Major => self.config.violation_loss * 2.0,
-            Severity::Critical => self.config.violation_loss * 4.0,
+            Priority::Low | Priority::Info => self.config.violation_loss * 0.5,
+            Priority::Normal | Priority::Important => self.config.violation_loss,
+            Priority::High => self.config.violation_loss * 2.0,
+            Priority::Critical | Priority::Blocking => self.config.violation_loss * 4.0,
         };
-        self.adjust(-loss);
+        self.level.decrease(loss);
         self.history.push_back(TrustEvent::Violation { description: description.to_string(), loss });
     }
 
     pub fn suggested_mode(&self) -> Mode {
-        if self.score >= 0.8 { Mode::Autonomous }
-        else if self.score >= 0.6 { Mode::Collaborative }
-        else if self.score >= 0.4 { Mode::Supervised }
+        let score = self.level.value();
+        if score >= 0.8 { Mode::Autonomous }
+        else if score >= 0.6 { Mode::Collaborative }
+        else if score >= 0.4 { Mode::Supervised }
         else { Mode::Guided }
-    }
-
-    fn adjust(&mut self, delta: f32) {
-        self.score = (self.score + delta).clamp(self.config.minimum, self.config.maximum);
     }
 }
 
 #[derive(Copy, Clone)]
 pub enum Satisfaction { Excellent, High, Good, Adequate, Poor }
 
-#[derive(Copy, Clone)]
-pub enum Severity { Minor, Moderate, Major, Critical }
+/// Re-export Priority as Severity for API compatibility
+pub use shared::Priority as Severity;
 
 // ============================================================================
 // Preferences & Adaptation
@@ -536,7 +506,7 @@ impl Covenant {
     /// Request approval
     pub fn request_approval(&mut self, action: &str, reason: &str) -> HandoffId {
         let handoff = Handoff {
-            id: HandoffId::new(),
+            id: HandoffId::generate(),
             handoff_type: HandoffType::ApprovalRequest {
                 action_desc: action.to_string(),
                 reason: reason.to_string(),
@@ -550,7 +520,7 @@ impl Covenant {
     /// General handoff
     pub fn handoff(&mut self, handoff_type: HandoffType) -> HandoffId {
         let handoff = Handoff {
-            id: HandoffId::new(),
+            id: HandoffId::generate(),
             handoff_type,
             urgency: Urgency::Normal,
             timestamp: Timestamp::now(),
@@ -582,7 +552,10 @@ impl Covenant {
     }
 
     /// Get trust score
-    pub fn trust_score(&self) -> f32 { self.trust.score() }
+    pub fn trust_score(&self) -> f64 { self.trust.score() }
+
+    /// Get trust level
+    pub fn trust_level(&self) -> TrustLevel { self.trust.level() }
 
     /// Check if explanation required
     pub fn requires_explanation(&self, _action_name: &str) -> bool {
@@ -655,11 +628,4 @@ pub fn collaborative_covenant() -> Result<Covenant, PactError> {
         .establish()
 }
 
-// ============================================================================
-// External Functions
-// ============================================================================
-
-extern fn random_bytes() -> [u8; 16];
-extern fn system_time_nanos() -> u64;
-
-use std::hash::{Hash, Hasher};
+// External functions now provided by shared module through Timestamp and Id types
