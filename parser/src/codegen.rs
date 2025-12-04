@@ -1458,7 +1458,7 @@ pub mod jit {
                                 &[result, index],
                             )?
                         }
-                        // Sum operation (Σ morpheme)
+                        // General reduce with closure (ρ morpheme)
                         PipeOp::Reduce(_) => {
                             // For now, treat reduce as sum for numeric arrays
                             compile_call(
@@ -1470,6 +1470,69 @@ pub mod jit {
                                 &[result],
                             )?
                         }
+                        // Sum reduction (ρ+ morpheme)
+                        PipeOp::ReduceSum => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_array_sum",
+                            &[result],
+                        )?,
+                        // Product reduction (ρ* morpheme)
+                        PipeOp::ReduceProd => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_array_product",
+                            &[result],
+                        )?,
+                        // Min reduction (ρ_min morpheme)
+                        PipeOp::ReduceMin => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_array_min",
+                            &[result],
+                        )?,
+                        // Max reduction (ρ_max morpheme)
+                        PipeOp::ReduceMax => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_array_max",
+                            &[result],
+                        )?,
+                        // Concat reduction (ρ++ morpheme)
+                        PipeOp::ReduceConcat => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_array_concat",
+                            &[result],
+                        )?,
+                        // All reduction (ρ& morpheme)
+                        PipeOp::ReduceAll => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_array_all",
+                            &[result],
+                        )?,
+                        // Any reduction (ρ| morpheme)
+                        PipeOp::ReduceAny => compile_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            "sigil_array_any",
+                            &[result],
+                        )?,
                         // Sort operation (σ morpheme) - returns sorted array pointer
                         PipeOp::Sort(_) => compile_call(
                             module,

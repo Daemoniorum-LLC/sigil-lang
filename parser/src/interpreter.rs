@@ -1836,6 +1836,34 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("Reduce requires array")),
                 }
             }
+            PipeOp::ReduceSum => {
+                // ρ+ or ρ_sum - sum all elements
+                self.sum_values(value)
+            }
+            PipeOp::ReduceProd => {
+                // ρ* or ρ_prod - multiply all elements
+                self.product_values(value)
+            }
+            PipeOp::ReduceMin => {
+                // ρ_min - find minimum element
+                self.min_values(value)
+            }
+            PipeOp::ReduceMax => {
+                // ρ_max - find maximum element
+                self.max_values(value)
+            }
+            PipeOp::ReduceConcat => {
+                // ρ++ or ρ_cat - concatenate strings/arrays
+                self.concat_values(value)
+            }
+            PipeOp::ReduceAll => {
+                // ρ& or ρ_all - logical AND (all true)
+                self.all_values(value)
+            }
+            PipeOp::ReduceAny => {
+                // ρ| or ρ_any - logical OR (any true)
+                self.any_values(value)
+            }
             PipeOp::Method { name, args } => {
                 let arg_values: Vec<Value> = args
                     .iter()
@@ -2979,6 +3007,186 @@ impl Interpreter {
                 Ok(prod)
             }
             _ => Err(RuntimeError::new("product requires array")),
+        }
+    }
+
+    fn min_values(&self, value: Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                if arr.is_empty() {
+                    return Err(RuntimeError::new("Cannot find min of empty array"));
+                }
+                let mut min = arr[0].clone();
+                for item in arr.iter().skip(1) {
+                    min = match (&min, item) {
+                        (Value::Int(a), Value::Int(b)) => {
+                            if *b < *a {
+                                Value::Int(*b)
+                            } else {
+                                Value::Int(*a)
+                            }
+                        }
+                        (Value::Float(a), Value::Float(b)) => {
+                            if *b < *a {
+                                Value::Float(*b)
+                            } else {
+                                Value::Float(*a)
+                            }
+                        }
+                        (Value::Int(a), Value::Float(b)) => {
+                            let af = *a as f64;
+                            if *b < af {
+                                Value::Float(*b)
+                            } else {
+                                Value::Float(af)
+                            }
+                        }
+                        (Value::Float(a), Value::Int(b)) => {
+                            let bf = *b as f64;
+                            if bf < *a {
+                                Value::Float(bf)
+                            } else {
+                                Value::Float(*a)
+                            }
+                        }
+                        _ => return Err(RuntimeError::new("Cannot find min of non-numeric values")),
+                    };
+                }
+                Ok(min)
+            }
+            _ => Err(RuntimeError::new("min requires array")),
+        }
+    }
+
+    fn max_values(&self, value: Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                if arr.is_empty() {
+                    return Err(RuntimeError::new("Cannot find max of empty array"));
+                }
+                let mut max = arr[0].clone();
+                for item in arr.iter().skip(1) {
+                    max = match (&max, item) {
+                        (Value::Int(a), Value::Int(b)) => {
+                            if *b > *a {
+                                Value::Int(*b)
+                            } else {
+                                Value::Int(*a)
+                            }
+                        }
+                        (Value::Float(a), Value::Float(b)) => {
+                            if *b > *a {
+                                Value::Float(*b)
+                            } else {
+                                Value::Float(*a)
+                            }
+                        }
+                        (Value::Int(a), Value::Float(b)) => {
+                            let af = *a as f64;
+                            if *b > af {
+                                Value::Float(*b)
+                            } else {
+                                Value::Float(af)
+                            }
+                        }
+                        (Value::Float(a), Value::Int(b)) => {
+                            let bf = *b as f64;
+                            if bf > *a {
+                                Value::Float(bf)
+                            } else {
+                                Value::Float(*a)
+                            }
+                        }
+                        _ => return Err(RuntimeError::new("Cannot find max of non-numeric values")),
+                    };
+                }
+                Ok(max)
+            }
+            _ => Err(RuntimeError::new("max requires array")),
+        }
+    }
+
+    fn concat_values(&self, value: Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                if arr.is_empty() {
+                    return Ok(Value::String(Rc::new(String::new())));
+                }
+                // Determine if we're concatenating strings or arrays
+                match &arr[0] {
+                    Value::String(_) => {
+                        let mut result = String::new();
+                        for item in arr.iter() {
+                            if let Value::String(s) = item {
+                                result.push_str(s);
+                            } else {
+                                return Err(RuntimeError::new(
+                                    "concat requires all elements to be strings",
+                                ));
+                            }
+                        }
+                        Ok(Value::String(Rc::new(result)))
+                    }
+                    Value::Array(_) => {
+                        let mut result = Vec::new();
+                        for item in arr.iter() {
+                            if let Value::Array(inner) = item {
+                                result.extend(inner.borrow().iter().cloned());
+                            } else {
+                                return Err(RuntimeError::new(
+                                    "concat requires all elements to be arrays",
+                                ));
+                            }
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(result))))
+                    }
+                    _ => Err(RuntimeError::new("concat requires strings or arrays")),
+                }
+            }
+            _ => Err(RuntimeError::new("concat requires array")),
+        }
+    }
+
+    fn all_values(&self, value: Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                for item in arr.iter() {
+                    match item {
+                        Value::Bool(b) => {
+                            if !*b {
+                                return Ok(Value::Bool(false));
+                            }
+                        }
+                        _ => return Err(RuntimeError::new("all requires array of booleans")),
+                    }
+                }
+                Ok(Value::Bool(true))
+            }
+            _ => Err(RuntimeError::new("all requires array")),
+        }
+    }
+
+    fn any_values(&self, value: Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                for item in arr.iter() {
+                    match item {
+                        Value::Bool(b) => {
+                            if *b {
+                                return Ok(Value::Bool(true));
+                            }
+                        }
+                        _ => return Err(RuntimeError::new("any requires array of booleans")),
+                    }
+                }
+                Ok(Value::Bool(false))
+            }
+            _ => Err(RuntimeError::new("any requires array")),
         }
     }
 

@@ -1016,6 +1016,41 @@ fn lower_pipe_op(ctx: &mut LoweringContext, op: &ast::PipeOp) -> IrPipelineStep 
             symbol: "ρ".to_string(),
             body: Some(Box::new(lower_expr(ctx, body))),
         },
+        ast::PipeOp::ReduceSum => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Sum,
+            symbol: "ρ+".to_string(),
+            body: None,
+        },
+        ast::PipeOp::ReduceProd => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Product,
+            symbol: "ρ*".to_string(),
+            body: None,
+        },
+        ast::PipeOp::ReduceMin => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Min,
+            symbol: "ρ_min".to_string(),
+            body: None,
+        },
+        ast::PipeOp::ReduceMax => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Max,
+            symbol: "ρ_max".to_string(),
+            body: None,
+        },
+        ast::PipeOp::ReduceConcat => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Concat,
+            symbol: "ρ++".to_string(),
+            body: None,
+        },
+        ast::PipeOp::ReduceAll => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::All,
+            symbol: "ρ&".to_string(),
+            body: None,
+        },
+        ast::PipeOp::ReduceAny => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Any,
+            symbol: "ρ|".to_string(),
+            body: None,
+        },
         ast::PipeOp::First => IrPipelineStep::Morpheme {
             morpheme: MorphemeKind::First,
             symbol: "α".to_string(),

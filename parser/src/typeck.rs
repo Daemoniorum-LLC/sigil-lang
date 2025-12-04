@@ -1630,6 +1630,56 @@ impl TypeChecker {
                     Type::Error
                 }
             }
+            PipeOp::ReduceSum | PipeOp::ReduceProd | PipeOp::ReduceMin | PipeOp::ReduceMax => {
+                // Numeric reductions return the element type
+                if let Type::Array { element, .. } | Type::Slice(element) = inner {
+                    match element.as_ref() {
+                        Type::Int(_) | Type::Float(_) => *element,
+                        _ => {
+                            self.error(TypeError::new("numeric reduction requires numeric array"));
+                            Type::Error
+                        }
+                    }
+                } else {
+                    self.error(TypeError::new("reduction requires array or slice"));
+                    Type::Error
+                }
+            }
+            PipeOp::ReduceConcat => {
+                // Concat returns string or array depending on element type
+                if let Type::Array { element, .. } | Type::Slice(element) = inner {
+                    match element.as_ref() {
+                        Type::Str => Type::Str,
+                        Type::Array { .. } => *element,
+                        _ => {
+                            self.error(TypeError::new(
+                                "concat reduction requires array of strings or arrays",
+                            ));
+                            Type::Error
+                        }
+                    }
+                } else {
+                    self.error(TypeError::new("concat reduction requires array or slice"));
+                    Type::Error
+                }
+            }
+            PipeOp::ReduceAll | PipeOp::ReduceAny => {
+                // Boolean reductions return bool
+                if let Type::Array { element, .. } | Type::Slice(element) = inner {
+                    match element.as_ref() {
+                        Type::Bool => Type::Bool,
+                        _ => {
+                            self.error(TypeError::new(
+                                "boolean reduction requires array of booleans",
+                            ));
+                            Type::Error
+                        }
+                    }
+                } else {
+                    self.error(TypeError::new("boolean reduction requires array or slice"));
+                    Type::Error
+                }
+            }
 
             // Method call
             PipeOp::Method { name, args: _ } => {

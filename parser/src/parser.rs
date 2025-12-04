@@ -2676,10 +2676,64 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Rho) => {
                 self.advance();
-                self.expect(Token::LBrace)?;
-                let body = self.parse_expr()?;
-                self.expect(Token::RBrace)?;
-                Ok(PipeOp::Reduce(Box::new(body)))
+                // Check for reduction variants: ρ+, ρ*, ρ++, ρ&, ρ|, ρ_sum, ρ_prod, ρ_min, ρ_max, ρ_cat, ρ_all, ρ_any
+                match self.current_token() {
+                    Some(Token::Plus) => {
+                        self.advance();
+                        Ok(PipeOp::ReduceSum)
+                    }
+                    Some(Token::Star) => {
+                        self.advance();
+                        Ok(PipeOp::ReduceProd)
+                    }
+                    Some(Token::PlusPlus) => {
+                        self.advance();
+                        Ok(PipeOp::ReduceConcat)
+                    }
+                    Some(Token::Amp) => {
+                        self.advance();
+                        Ok(PipeOp::ReduceAll)
+                    }
+                    Some(Token::Pipe) => {
+                        self.advance();
+                        Ok(PipeOp::ReduceAny)
+                    }
+                    Some(Token::Underscore) => {
+                        self.advance();
+                        // Parse the variant name: _sum, _prod, _min, _max, _cat, _all, _any
+                        if let Some(Token::Ident(name)) = self.current_token().cloned() {
+                            self.advance();
+                            match name.as_str() {
+                                "sum" => Ok(PipeOp::ReduceSum),
+                                "prod" | "product" => Ok(PipeOp::ReduceProd),
+                                "min" => Ok(PipeOp::ReduceMin),
+                                "max" => Ok(PipeOp::ReduceMax),
+                                "cat" | "concat" => Ok(PipeOp::ReduceConcat),
+                                "all" => Ok(PipeOp::ReduceAll),
+                                "any" => Ok(PipeOp::ReduceAny),
+                                _ => Err(ParseError::Custom(format!(
+                                    "unknown reduction variant: ρ_{}",
+                                    name
+                                ))),
+                            }
+                        } else {
+                            Err(ParseError::Custom(
+                                "expected reduction variant name after ρ_".to_string(),
+                            ))
+                        }
+                    }
+                    Some(Token::LBrace) => {
+                        // General reduce with closure: ρ{acc, x => ...}
+                        self.advance();
+                        let body = self.parse_expr()?;
+                        self.expect(Token::RBrace)?;
+                        Ok(PipeOp::Reduce(Box::new(body)))
+                    }
+                    _ => Err(ParseError::Custom(
+                        "expected reduction variant (+, *, ++, &, |, _name) or {body} after ρ"
+                            .to_string(),
+                    )),
+                }
             }
             // New access morphemes
             Some(Token::Alpha) => {

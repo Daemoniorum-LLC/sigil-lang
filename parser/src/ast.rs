@@ -1136,6 +1136,20 @@ pub enum PipeOp {
     Sort(Option<Ident>),
     /// Reduce morpheme: `ρ{f}`
     Reduce(Box<Expr>),
+    /// Sum reduction: `ρ+` or `ρ_sum` - sum all elements
+    ReduceSum,
+    /// Product reduction: `ρ*` or `ρ_prod` - multiply all elements
+    ReduceProd,
+    /// Min reduction: `ρ_min` - find minimum element
+    ReduceMin,
+    /// Max reduction: `ρ_max` - find maximum element
+    ReduceMax,
+    /// Concat reduction: `ρ++` or `ρ_cat` - concatenate strings/arrays
+    ReduceConcat,
+    /// All reduction: `ρ&` or `ρ_all` - logical AND (all true)
+    ReduceAll,
+    /// Any reduction: `ρ|` or `ρ_any` - logical OR (any true)
+    ReduceAny,
     /// Middle morpheme: `μ` - get middle/median element
     Middle,
     /// Choice morpheme: `χ` - random element selection
