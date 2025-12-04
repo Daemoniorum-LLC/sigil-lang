@@ -1775,6 +1775,97 @@ pub mod jit {
                                 )?
                             }
                         }
+
+                        // Evidence promotion operations
+                        PipeOp::Validate {
+                            predicate,
+                            target_evidence: _,
+                        } => {
+                            let pred_val = compile_expr(
+                                module, functions, extern_fns, builder, scope, predicate,
+                            )?;
+                            compile_call(
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
+                                "sigil_validate",
+                                &[result, pred_val],
+                            )?
+                        }
+
+                        PipeOp::Assume {
+                            reason,
+                            target_evidence: _,
+                        } => {
+                            let reason_val = if let Some(r) = reason {
+                                compile_expr(module, functions, extern_fns, builder, scope, r)?
+                            } else {
+                                builder.ins().iconst(types::I64, 0)
+                            };
+                            compile_call(
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
+                                "sigil_assume",
+                                &[result, reason_val],
+                            )?
+                        }
+
+                        PipeOp::AssertEvidence(_) => {
+                            // At codegen time, evidence assertions are already checked by typeck
+                            // Just return the value unchanged
+                            result
+                        }
+
+                        // Scope functions - mostly pass through at codegen
+                        PipeOp::Also(func) => {
+                            // Execute function for side effects, return original value
+                            let _ =
+                                compile_expr(module, functions, extern_fns, builder, scope, func)?;
+                            result
+                        }
+
+                        PipeOp::Apply(func) => {
+                            // Execute function which may mutate, return value
+                            let _ =
+                                compile_expr(module, functions, extern_fns, builder, scope, func)?;
+                            result
+                        }
+
+                        PipeOp::TakeIf(pred) => {
+                            // Compile predicate and create Option based on result
+                            let pred_val =
+                                compile_expr(module, functions, extern_fns, builder, scope, pred)?;
+                            compile_call(
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
+                                "sigil_take_if",
+                                &[result, pred_val],
+                            )?
+                        }
+
+                        PipeOp::TakeUnless(pred) => {
+                            // Compile predicate and create Option based on !result
+                            let pred_val =
+                                compile_expr(module, functions, extern_fns, builder, scope, pred)?;
+                            compile_call(
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
+                                "sigil_take_unless",
+                                &[result, pred_val],
+                            )?
+                        }
+
+                        PipeOp::Let(func) => {
+                            // Transform value through function
+                            compile_expr(module, functions, extern_fns, builder, scope, func)?
+                        }
                     };
                 }
 

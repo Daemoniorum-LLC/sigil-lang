@@ -359,9 +359,9 @@ This repository was extracted from the persona-framework monorepo on **2025-12-0
 
 ## License
 
-MIT License - Daemoniorum, Inc.
+Dual-licensed under MIT and Apache 2.0.
 
-Copyright (c) 2025 Daemoniorum, Inc.
+Copyright (c) 2024-2025 Daemoniorum, LLC
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
