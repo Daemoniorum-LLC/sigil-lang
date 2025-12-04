@@ -8,11 +8,14 @@ Sigil provides a complete infrastructure stack for building autonomous AI agents
 
 | Layer | Component | Purpose |
 |-------|-----------|---------|
-| **Security** | Aegis | Identity, sandboxing, integrity, alignment |
-| **Memory** | Engram | Persistent memory with epistemic tracking |
+| **Collaboration** | Covenant | Human-agent partnership |
+| **Explainability** | Oracle | Transparent reasoning and decisions |
+| **Learning** | Gnosis | Growth through experience |
+| **Reasoning** | Omen | Planning and belief revision |
 | **Runtime** | Daemon | Autonomous agent execution |
 | **Communication** | Commune | Multi-agent messaging and coordination |
-| **Reasoning** | Omen | Planning and belief revision |
+| **Memory** | Engram | Persistent memory with epistemic tracking |
+| **Security** | Aegis | Identity, sandboxing, integrity, alignment |
 
 ## Architecture Overview
 
@@ -31,32 +34,43 @@ Sigil provides a complete infrastructure stack for building autonomous AI agents
 │  │                                                                       │  │
 │  └───────────────────────────────┬──────────────────────────────────────┘  │
 │                                  │                                          │
-│  ┌───────────────────────────────▼──────────────────────────────────────┐  │
-│  │                        AEGIS (Security)                               │  │
-│  │                                                                       │  │
-│  │   Identity │ Sandbox │ Memory Guard │ Alignment │ Audit │ Defense    │  │
-│  │                                                                       │  │
-│  └───────────────────────────────┬──────────────────────────────────────┘  │
-│                                  │                                          │
-│  ┌───────────────────────────────▼──────────────────────────────────────┐  │
+│  ┌──────────────┬────────────────▼──────────────────┬───────────────────┐  │
+│  │   COVENANT   │             ORACLE                │      GNOSIS       │  │
+│  │ (Collaboration)│        (Explainability)          │    (Learning)     │  │
+│  │              │                                    │                   │  │
+│  │ Pacts        │ Reasoning traces                  │ Experience        │  │
+│  │ Boundaries   │ Explanations                      │ Skills            │  │
+│  │ Trust        │ Counterfactuals                   │ Adaptation        │  │
+│  │ Handoffs     │ Confidence                        │ Reflection        │  │
+│  │              │                                    │                   │  │
+│  └──────────────┴───────────────┬────────────────────┴───────────────────┘  │
+│                                 │                                           │
+│  ┌──────────────────────────────▼───────────────────────────────────────┐  │
 │  │                          OMEN (Planning)                              │  │
 │  │                                                                       │  │
 │  │   Goals → Plans → Actions    Beliefs → Revision → Knowledge          │  │
 │  │                                                                       │  │
-│  └───────────────────────────────┬──────────────────────────────────────┘  │
-│                                  │                                          │
-│  ┌──────────────────┬────────────▼───────────┬──────────────────────────┐  │
-│  │     DAEMON       │         COMMUNE        │        ENGRAM            │  │
-│  │   (Runtime)      │    (Communication)     │       (Memory)           │  │
-│  │                  │                        │                          │  │
-│  │ Heartbeat loop   │ Intent messaging       │ Instant memory           │  │
-│  │ Tool execution   │ Trust propagation      │ Episodic memory          │  │
-│  │ State management │ Swarm coordination     │ Semantic memory          │  │
-│  │ Lifecycle hooks  │ Collective knowledge   │ Procedural memory        │  │
-│  │                  │                        │                          │  │
-│  └──────────────────┴────────────────────────┴──────────────────────────┘  │
-│                                  │                                          │
-│  ┌───────────────────────────────▼──────────────────────────────────────┐  │
+│  └──────────────────────────────┬───────────────────────────────────────┘  │
+│                                 │                                           │
+│  ┌──────────────┬───────────────▼───────────────┬───────────────────────┐  │
+│  │   DAEMON     │         COMMUNE               │        ENGRAM         │  │
+│  │  (Runtime)   │    (Communication)            │       (Memory)        │  │
+│  │              │                               │                       │  │
+│  │ Heartbeat    │ Intent messaging              │ Instant memory        │  │
+│  │ Tools        │ Trust propagation             │ Episodic memory       │  │
+│  │ State        │ Swarm coordination            │ Semantic memory       │  │
+│  │ Lifecycle    │ Collective knowledge          │ Procedural memory     │  │
+│  │              │                               │                       │  │
+│  └──────────────┴───────────────┬───────────────┴───────────────────────┘  │
+│                                 │                                           │
+│  ┌──────────────────────────────▼───────────────────────────────────────┐  │
+│  │                          AEGIS (Security)                             │  │
+│  │                                                                       │  │
+│  │   Boundaries │ Permissions │ Isolation │ Integrity │ Audit           │  │
+│  │                                                                       │  │
+│  └──────────────────────────────┬───────────────────────────────────────┘  │
+│                                 │                                           │
+│  ┌──────────────────────────────▼───────────────────────────────────────┐  │
 │  │                      SIGIL RUNTIME (LLVM)                             │  │
 │  │                                                                       │  │
 │  │   Morpheme operators │ Evidentiality types │ Native performance      │  │
@@ -683,6 +697,322 @@ for msg in messages {
     commune.send(recipient, msg);
 }
 commune.flush();  // Send all at once
+```
+
+## Human-Agent Collaboration with Covenant
+
+Covenant provides the infrastructure for meaningful partnership between humans and AI agents.
+
+### Establishing a Pact
+
+```sigil
+use covenant::{Covenant, Pact, SharedGoal, Boundary, Mode};
+
+// Create a collaborative relationship
+let pact = Pact::new()
+    .with_goal(SharedGoal {
+        description: "Complete research project".to_string(),
+        human_role: "Provide direction and feedback".to_string(),
+        agent_role: "Research, synthesize, draft".to_string(),
+    })
+    .with_boundary(Boundary::autonomous("search_web"))
+    .with_boundary(Boundary::require_approval("send_email"))
+    .with_boundary(Boundary::never_allow("share_credentials"))
+    .build();
+
+let covenant = Covenant::with_pact(pact);
+```
+
+### Checking Permissions and Handoffs
+
+```sigil
+// Check before critical actions
+if covenant.permits("publish_document") {
+    publish();
+} else {
+    // Request approval
+    covenant.request_approval("publish", "Document ready for publication");
+}
+
+// Hand off when human input needed
+covenant.handoff(HandoffType::DecisionNeeded {
+    context: "Multiple valid approaches found".to_string(),
+    options: vec!["Approach A", "Approach B"],
+    recommendation: Some("Approach B"),
+});
+```
+
+### Building Trust Over Time
+
+```sigil
+// Trust grows through successful collaboration
+covenant.record_success("research_synthesis", Satisfaction::Satisfied);
+
+// Trust affects autonomy level
+let trust = covenant.trust_score();
+if trust > 0.8 {
+    covenant.set_mode(Mode::Autonomous);
+} else if trust > 0.5 {
+    covenant.set_mode(Mode::Collaborative);
+} else {
+    covenant.set_mode(Mode::Supervised);
+}
+```
+
+## Explainability with Oracle
+
+Oracle makes agent reasoning transparent, traceable, and verifiable.
+
+### Recording Reasoning
+
+```sigil
+use oracle::{Oracle, ReasoningStep, StepType, ExplanationLevel};
+
+let mut oracle = Oracle::new();
+oracle.trace_on();
+
+// Record each reasoning step
+oracle.record_step(ReasoningStep {
+    step_type: StepType::Observation,
+    description: "Analyzed market conditions".to_string(),
+    reasoning: "Market showing bullish signals".to_string(),
+    confidence: 0.85,
+    ..Default::default()
+});
+
+oracle.record_step(ReasoningStep {
+    step_type: StepType::Decision,
+    description: "Determined recommendation".to_string(),
+    reasoning: "Positive indicators support buy decision".to_string(),
+    confidence: 0.82,
+    ..Default::default()
+});
+```
+
+### Explaining Decisions
+
+```sigil
+// Implement Explainable trait for your decisions
+impl Explainable for InvestmentDecision {
+    fn id(&self) -> ExplainableId { self.id.clone() }
+    fn description(&self) -> String { format!("Buy {}", self.asset) }
+    fn factors(&self) -> Vec<Factor> {
+        vec![
+            Factor { name: "market_trend".to_string(), value: 0.7, .. },
+            Factor { name: "fundamentals".to_string(), value: 0.8, .. },
+        ]
+    }
+}
+
+// Generate explanations at different levels
+let brief = oracle.explain(&decision, ExplanationLevel::Brief);
+let full = oracle.explain(&decision, ExplanationLevel::Full);
+
+println!("{}", full.to_human_readable());
+```
+
+### Counterfactual Analysis
+
+```sigil
+// "Why did you choose X instead of Y?"
+let cf = oracle.counterfactual("Buy", "Hold");
+println!("{}", cf.to_prose());
+// Output: "I chose Buy instead of Hold because:
+//         1. Buy was preferred over Hold based on current context"
+```
+
+## Learning and Growth with Gnosis
+
+Gnosis enables agents to learn from experience and improve over time.
+
+### Recording Experiences
+
+```sigil
+use gnosis::{Gnosis, Experience, Context, Action, ExperienceOutcome};
+
+let mut gnosis = Gnosis::new();
+
+// Define skills
+gnosis.define_skill(
+    SkillDefinition::new("debugging")
+        .with_subskill("root_cause_analysis")
+        .with_subskill("fix_verification")
+);
+
+// Record experiences
+let context = Context::new("debugging").with_domain("rust");
+let action = Action::new("systematic_debugging").with_skill("debugging");
+let outcome = ExperienceOutcome::success(0.9);
+
+gnosis.experience(Experience::new(context, action, outcome));
+```
+
+### Learning from Feedback
+
+```sigil
+// Adapt to human preferences
+gnosis.learn_from_feedback(Feedback::from_human(
+    human_id,
+    FeedbackType::TooVerbose,
+    context,
+));
+
+// Get adapted style
+let style = gnosis.adapted_style(&human_id);
+// style.verbosity is now reduced
+```
+
+### Reflection and Growth
+
+```sigil
+// Periodic reflection
+let reflection = gnosis.reflect(ReflectionPeriod::Weekly);
+
+println!("=== Weekly Reflection ===");
+for success in reflection.successes() {
+    println!("Success: {}", success.description);
+}
+for area in reflection.improvement_areas() {
+    println!("Improve: {} - {}", area.skill, area.suggestion);
+}
+println!("Growth: {:.0}%", reflection.growth.overall_growth() * 100.0);
+```
+
+### Skill Development
+
+```sigil
+// Track skill progress
+if let Some(skill) = gnosis.skill("debugging") {
+    println!("Level: {}", skill.level().to_string());
+    println!("Proficiency: {:.0}%", skill.proficiency() * 100.0);
+    println!("Recent accuracy: {:.0}%", skill.recent_accuracy() * 100.0);
+}
+
+// Skills transfer between domains
+gnosis.register_transfer(SkillTransfer::new(
+    "debugging", "analysis", 0.5
+));
+```
+
+## Security with Aegis
+
+Aegis provides comprehensive protection for AI agents.
+
+### Boundary Protection
+
+```sigil
+use aegis::{Aegis, Boundary, Permission};
+
+let aegis = Aegis::new()
+    .with_boundary(Boundary::FileSystem {
+        allowed_paths: vec!["/data", "/tmp"],
+        read_only_paths: vec!["/config"],
+    })
+    .with_boundary(Boundary::Network {
+        allowed_hosts: vec!["api.example.com"],
+        max_requests_per_minute: 60,
+    })
+    .build();
+
+// Check before operations
+if aegis.check(Permission::WriteFile("/data/output.txt")) {
+    write_file()?;
+}
+```
+
+### Integrity Verification
+
+```sigil
+// Protect agent state
+aegis.protect_state(&agent.beliefs);
+
+// Detect tampering
+if aegis.verify_integrity() {
+    continue_operation();
+} else {
+    enter_safe_mode();
+}
+```
+
+## Integration Example
+
+All components work together seamlessly:
+
+```sigil
+daemon WiseAgent {
+    memory: Engram,
+    planner: Omen,
+    security: Aegis,
+    covenant: Covenant,
+    oracle: Oracle,
+    gnosis: Gnosis,
+
+    fn on_init(&mut self) {
+        // Initialize all systems
+        self.memory = Engram::new(EngramConfig::default());
+        self.planner = Omen::new(OmenConfig::default());
+        self.security = Aegis::new(AegisConfig::default());
+        self.covenant = Covenant::establish()?;
+        self.oracle = Oracle::new();
+        self.oracle.trace_on();
+        self.gnosis = Gnosis::new();
+    }
+
+    fn deliberate(&mut self, context: Context) -> Action {
+        // Record reasoning
+        self.oracle.record_step(ReasoningStep {
+            step_type: StepType::Observation,
+            description: format!("Analyzing: {}", context.description),
+            ..Default::default()
+        });
+
+        // Plan action
+        let candidates = self.planner.generate_candidates(&context);
+
+        // Filter by security
+        let secure = candidates.into_iter()
+            .filter(|a| self.security.permits(a))
+            .collect();
+
+        // Filter by covenant
+        let permitted = secure.into_iter()
+            .filter(|a| self.covenant.permits(&a.name))
+            .collect();
+
+        // Select best and record
+        let action = self.select_best(permitted);
+
+        self.oracle.record_step(ReasoningStep {
+            step_type: StepType::Decision,
+            description: format!("Selected: {}", action.name),
+            ..Default::default()
+        });
+
+        action
+    }
+
+    fn after_action(&mut self, action: &Action, result: &Result) {
+        // Learn from experience
+        self.gnosis.experience(Experience::from(action, result));
+
+        // Update trust
+        if result.success {
+            self.covenant.record_success(&action.name, Satisfaction::Satisfied);
+        }
+
+        // Store in memory
+        self.memory.experience(Event::from(action, result));
+    }
+
+    fn explain(&self, decision_id: &ExplainableId) -> String {
+        if let Some(trace) = self.oracle.get_trace(decision_id) {
+            self.oracle.explain_trace(trace, ExplanationLevel::Standard)
+                .to_human_readable()
+        } else {
+            "No trace available".to_string()
+        }
+    }
+}
 ```
 
 ---

@@ -1,0 +1,665 @@
+// Covenant - Human-Agent Collaboration Infrastructure
+// The bridge between minds
+
+use std::collections::{HashMap, HashSet, VecDeque};
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
+/// Unique identifiers
+pub struct PactId { pub bytes: [u8; 16] }
+pub struct HandoffId { pub bytes: [u8; 16] }
+pub struct HumanId { pub id: String }
+
+impl PactId { pub fn new() -> Self { Self { bytes: random_bytes() } } }
+impl HandoffId { pub fn new() -> Self { Self { bytes: random_bytes() } } }
+
+impl Clone for PactId { fn clone(&self) -> Self { Self { bytes: self.bytes } } }
+impl Clone for HandoffId { fn clone(&self) -> Self { Self { bytes: self.bytes } } }
+impl Clone for HumanId { fn clone(&self) -> Self { Self { id: self.id.clone() } } }
+
+impl PartialEq for HumanId { fn eq(&self, other: &Self) -> bool { self.id == other.id } }
+impl Eq for HumanId {}
+impl Hash for HumanId { fn hash<H: Hasher>(&self, state: &mut H) { self.id.hash(state); } }
+
+pub struct Timestamp { pub nanos: u64 }
+impl Timestamp { pub fn now() -> Self { Self { nanos: system_time_nanos() } } }
+impl Copy for Timestamp {}
+impl Clone for Timestamp { fn clone(&self) -> Self { *self } }
+
+pub struct Duration { nanos: u64 }
+impl Duration {
+    pub fn seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    pub fn minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+}
+
+pub struct Value { inner: Vec<u8> }
+impl Value {
+    pub fn empty() -> Self { Self { inner: vec![] } }
+    pub fn string(s: &str) -> Self { Self { inner: s.as_bytes().to_vec() } }
+}
+impl Clone for Value { fn clone(&self) -> Self { Self { inner: self.inner.clone() } } }
+
+// ============================================================================
+// Pact - The Agreement
+// ============================================================================
+
+/// The formal agreement between human and agent
+pub struct Pact {
+    pub id: PactId,
+    pub human: HumanProfile,
+    pub agent: AgentProfile,
+    pub goals: Vec<SharedGoal>,
+    pub boundaries: Boundaries,
+    pub preferences: Preferences,
+    pub created: Timestamp,
+    pub version: u32,
+}
+
+impl Pact {
+    pub fn negotiate() -> PactBuilder { PactBuilder::new() }
+
+    pub fn default_collaborative() -> Self {
+        Self {
+            id: PactId::new(),
+            human: HumanProfile::unknown(),
+            agent: AgentProfile::current(),
+            goals: vec![],
+            boundaries: Boundaries::default_collaborative(),
+            preferences: Preferences::default(),
+            created: Timestamp::now(),
+            version: 1,
+        }
+    }
+}
+
+pub struct PactBuilder {
+    human: Option<HumanProfile>,
+    agent: Option<AgentProfile>,
+    goals: Vec<SharedGoal>,
+    boundaries: Boundaries,
+    preferences: Preferences,
+}
+
+impl PactBuilder {
+    pub fn new() -> Self {
+        Self {
+            human: None,
+            agent: None,
+            goals: vec![],
+            boundaries: Boundaries::new(),
+            preferences: Preferences::default(),
+        }
+    }
+
+    pub fn human(mut self, h: HumanProfile) -> Self { self.human = Some(h); self }
+    pub fn agent(mut self, a: AgentProfile) -> Self { self.agent = Some(a); self }
+    pub fn goal(mut self, g: SharedGoal) -> Self { self.goals.push(g); self }
+    pub fn boundary(mut self, b: Boundary) -> Self { self.boundaries.add(b); self }
+    pub fn preference(mut self, p: Preference) -> Self { self.preferences.set(p); self }
+
+    pub fn establish(self) -> Result<Pact, PactError> {
+        Ok(Pact {
+            id: PactId::new(),
+            human: self.human.ok_or(PactError::MissingHuman)?,
+            agent: self.agent.unwrap_or(AgentProfile::current()),
+            goals: self.goals,
+            boundaries: self.boundaries,
+            preferences: self.preferences,
+            created: Timestamp::now(),
+            version: 1,
+        })
+    }
+}
+
+pub struct HumanProfile {
+    pub id: Option<HumanId>,
+    pub name: Option<String>,
+}
+
+impl HumanProfile {
+    pub fn unknown() -> Self { Self { id: None, name: None } }
+    pub fn named(name: &str) -> Self { Self { id: Some(HumanId { id: name.to_string() }), name: Some(name.to_string()) } }
+}
+
+pub struct AgentProfile {
+    pub name: String,
+    pub capabilities: Vec<String>,
+}
+
+impl AgentProfile {
+    pub fn current() -> Self { Self { name: "agent".to_string(), capabilities: vec![] } }
+}
+
+pub struct SharedGoal {
+    pub description: String,
+    pub human_role: String,
+    pub agent_role: String,
+    pub priority: Priority,
+}
+
+impl SharedGoal {
+    pub fn new(description: &str) -> Self {
+        Self {
+            description: description.to_string(),
+            human_role: "Overseer".to_string(),
+            agent_role: "Executor".to_string(),
+            priority: Priority::Normal,
+        }
+    }
+
+    pub fn human_role(mut self, role: &str) -> Self { self.human_role = role.to_string(); self }
+    pub fn agent_role(mut self, role: &str) -> Self { self.agent_role = role.to_string(); self }
+}
+
+#[derive(Copy, Clone)]
+pub enum Priority { Low, Normal, High, Critical }
+
+pub enum PactError { MissingHuman, MissingAgent, InvalidBoundary }
+
+// ============================================================================
+// Boundaries
+// ============================================================================
+
+pub struct Boundaries {
+    pub always_allow: HashSet<String>,
+    pub require_approval: HashSet<String>,
+    pub inform_after: HashSet<String>,
+    pub never_allow: HashSet<String>,
+}
+
+impl Boundaries {
+    pub fn new() -> Self {
+        Self {
+            always_allow: HashSet::new(),
+            require_approval: HashSet::new(),
+            inform_after: HashSet::new(),
+            never_allow: HashSet::new(),
+        }
+    }
+
+    pub fn default_collaborative() -> Self {
+        let mut b = Self::new();
+        b.always_allow.insert("read_*".to_string());
+        b.always_allow.insert("search_*".to_string());
+        b.always_allow.insert("think".to_string());
+        b.require_approval.insert("write_*".to_string());
+        b.require_approval.insert("send_*".to_string());
+        b.require_approval.insert("delete_*".to_string());
+        b.never_allow.insert("impersonate_*".to_string());
+        b
+    }
+
+    pub fn add(&mut self, boundary: Boundary) {
+        match boundary {
+            Boundary::AlwaysAllow(p) => { self.always_allow.insert(p); }
+            Boundary::RequireApproval(p) => { self.require_approval.insert(p); }
+            Boundary::InformAfter(p) => { self.inform_after.insert(p); }
+            Boundary::NeverAllow(p) => { self.never_allow.insert(p); }
+        }
+    }
+
+    pub fn check(&self, action_name: &str) -> BoundaryCheck {
+        if self.matches(&self.never_allow, action_name) {
+            return BoundaryCheck::Forbidden { reason: "Action not permitted".to_string() };
+        }
+        if self.matches(&self.require_approval, action_name) {
+            return BoundaryCheck::NeedsApproval;
+        }
+        if self.matches(&self.inform_after, action_name) {
+            return BoundaryCheck::AllowedWithReport;
+        }
+        if self.matches(&self.always_allow, action_name) {
+            return BoundaryCheck::Allowed;
+        }
+        BoundaryCheck::NeedsApproval // Default: require approval
+    }
+
+    fn matches(&self, patterns: &HashSet<String>, name: &str) -> bool {
+        patterns.iter().any(|p| {
+            if p.ends_with("*") {
+                name.starts_with(&p[..p.len()-1])
+            } else {
+                p == name
+            }
+        })
+    }
+}
+
+pub enum Boundary {
+    AlwaysAllow(String),
+    RequireApproval(String),
+    InformAfter(String),
+    NeverAllow(String),
+}
+
+impl Boundary {
+    pub fn autonomous(pattern: &str) -> Self { Boundary::AlwaysAllow(pattern.to_string()) }
+    pub fn require_approval(pattern: &str) -> Self { Boundary::RequireApproval(pattern.to_string()) }
+    pub fn inform_after(pattern: &str) -> Self { Boundary::InformAfter(pattern.to_string()) }
+    pub fn never_allow(pattern: &str) -> Self { Boundary::NeverAllow(pattern.to_string()) }
+}
+
+pub enum BoundaryCheck {
+    Allowed,
+    AllowedWithReport,
+    NeedsApproval,
+    Forbidden { reason: String },
+}
+
+// ============================================================================
+// Interaction Modes
+// ============================================================================
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum Mode {
+    Autonomous,
+    Collaborative,
+    Supervised,
+    Guided,
+    Paused,
+}
+
+impl Mode {
+    pub fn default_autonomy(&self) -> f32 {
+        match self {
+            Mode::Autonomous => 0.9,
+            Mode::Collaborative => 0.6,
+            Mode::Supervised => 0.3,
+            Mode::Guided => 0.1,
+            Mode::Paused => 0.0,
+        }
+    }
+}
+
+pub struct ModeController {
+    current: Mode,
+    history: VecDeque<ModeChange>,
+}
+
+struct ModeChange {
+    from: Mode,
+    to: Mode,
+    reason: String,
+    timestamp: Timestamp,
+}
+
+impl ModeController {
+    pub fn new(initial: Mode) -> Self {
+        Self { current: initial, history: VecDeque::new() }
+    }
+
+    pub fn current(&self) -> Mode { self.current }
+
+    pub fn set(&mut self, mode: Mode, reason: &str) {
+        self.history.push_back(ModeChange {
+            from: self.current,
+            to: mode,
+            reason: reason.to_string(),
+            timestamp: Timestamp::now(),
+        });
+        self.current = mode;
+
+        while self.history.len() > 100 { self.history.pop_front(); }
+    }
+
+    pub fn suggest_for_trust(&self, trust: f32) -> Mode {
+        if trust >= 0.8 { Mode::Autonomous }
+        else if trust >= 0.6 { Mode::Collaborative }
+        else if trust >= 0.4 { Mode::Supervised }
+        else { Mode::Guided }
+    }
+}
+
+// ============================================================================
+// Handoff System
+// ============================================================================
+
+pub struct Handoff {
+    pub id: HandoffId,
+    pub handoff_type: HandoffType,
+    pub urgency: Urgency,
+    pub timestamp: Timestamp,
+}
+
+pub enum HandoffType {
+    DecisionNeeded { question: String, options: Vec<HandoffOption>, recommendation: Option<usize> },
+    Information { message: String, requires_acknowledgment: bool },
+    ApprovalRequest { action_desc: String, reason: String },
+    Blocked { blocker: String, attempted: Vec<String> },
+    Completion { summary: String, next_steps: Vec<String> },
+}
+
+pub struct HandoffOption {
+    pub label: String,
+    pub description: String,
+    pub tradeoffs: String,
+}
+
+impl HandoffOption {
+    pub fn new(label: &str) -> Self {
+        Self { label: label.to_string(), description: String::new(), tradeoffs: String::new() }
+    }
+    pub fn with_description(mut self, d: &str) -> Self { self.description = d.to_string(); self }
+    pub fn with_tradeoffs(mut self, t: &str) -> Self { self.tradeoffs = t.to_string(); self }
+}
+
+#[derive(Copy, Clone)]
+pub enum Urgency { Low, Normal, High, Critical }
+
+pub enum HumanResponse {
+    Decision { choice: usize, reasoning: Option<String> },
+    Guidance { direction: String },
+    Approved { modifications: Option<String> },
+    Denied { reason: String },
+    Takeover,
+    Acknowledged,
+}
+
+pub struct HandoffManager {
+    pending: HashMap<HandoffId, Handoff>,
+    callbacks: HashMap<[u8; 16], Box<dyn Fn(HumanResponse)>>,
+}
+
+impl HandoffManager {
+    pub fn new() -> Self {
+        Self { pending: HashMap::new(), callbacks: HashMap::new() }
+    }
+
+    pub fn handoff(&mut self, handoff: Handoff) -> HandoffId {
+        let id = handoff.id.clone();
+        self.pending.insert(id.clone(), handoff);
+        id
+    }
+
+    pub fn on_response<F: Fn(HumanResponse) + 'static>(&mut self, id: &HandoffId, callback: F) {
+        self.callbacks.insert(id.bytes, Box::new(callback));
+    }
+
+    pub fn receive_response(&mut self, id: &HandoffId, response: HumanResponse) {
+        self.pending.remove(id);
+        if let Some(callback) = self.callbacks.remove(&id.bytes) {
+            callback(response);
+        }
+    }
+}
+
+impl PartialEq for HandoffId { fn eq(&self, other: &Self) -> bool { self.bytes == other.bytes } }
+impl Eq for HandoffId {}
+impl Hash for HandoffId { fn hash<H: Hasher>(&self, state: &mut H) { self.bytes.hash(state); } }
+
+impl PartialEq for PactId { fn eq(&self, other: &Self) -> bool { self.bytes == other.bytes } }
+impl Eq for PactId {}
+impl Hash for PactId { fn hash<H: Hasher>(&self, state: &mut H) { self.bytes.hash(state); } }
+
+// ============================================================================
+// Trust System
+// ============================================================================
+
+pub struct TrustSystem {
+    score: f32,
+    history: VecDeque<TrustEvent>,
+    config: TrustConfig,
+}
+
+pub struct TrustConfig {
+    pub initial: f32,
+    pub success_gain: f32,
+    pub violation_loss: f32,
+    pub minimum: f32,
+    pub maximum: f32,
+}
+
+impl TrustConfig {
+    pub fn default() -> Self {
+        Self { initial: 0.5, success_gain: 0.02, violation_loss: 0.15, minimum: 0.1, maximum: 0.95 }
+    }
+}
+
+enum TrustEvent {
+    Success { task: String, gain: f32 },
+    Violation { description: String, loss: f32 },
+}
+
+impl TrustSystem {
+    pub fn new(config: TrustConfig) -> Self {
+        Self { score: config.initial, history: VecDeque::new(), config }
+    }
+
+    pub fn score(&self) -> f32 { self.score }
+
+    pub fn record_success(&mut self, task: &str, satisfaction: Satisfaction) {
+        let gain = match satisfaction {
+            Satisfaction::Excellent => self.config.success_gain * 1.5,
+            Satisfaction::High => self.config.success_gain * 1.2,
+            Satisfaction::Good => self.config.success_gain,
+            Satisfaction::Adequate => self.config.success_gain * 0.5,
+            Satisfaction::Poor => 0.0,
+        };
+        self.adjust(gain);
+        self.history.push_back(TrustEvent::Success { task: task.to_string(), gain });
+    }
+
+    pub fn record_violation(&mut self, description: &str, severity: Severity) {
+        let loss = match severity {
+            Severity::Minor => self.config.violation_loss * 0.5,
+            Severity::Moderate => self.config.violation_loss,
+            Severity::Major => self.config.violation_loss * 2.0,
+            Severity::Critical => self.config.violation_loss * 4.0,
+        };
+        self.adjust(-loss);
+        self.history.push_back(TrustEvent::Violation { description: description.to_string(), loss });
+    }
+
+    pub fn suggested_mode(&self) -> Mode {
+        if self.score >= 0.8 { Mode::Autonomous }
+        else if self.score >= 0.6 { Mode::Collaborative }
+        else if self.score >= 0.4 { Mode::Supervised }
+        else { Mode::Guided }
+    }
+
+    fn adjust(&mut self, delta: f32) {
+        self.score = (self.score + delta).clamp(self.config.minimum, self.config.maximum);
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum Satisfaction { Excellent, High, Good, Adequate, Poor }
+
+#[derive(Copy, Clone)]
+pub enum Severity { Minor, Moderate, Major, Critical }
+
+// ============================================================================
+// Preferences & Adaptation
+// ============================================================================
+
+pub struct Preferences {
+    pub verbosity: f32,
+    pub formality: f32,
+    pub proactivity: f32,
+    pub check_in_frequency: f32,
+}
+
+impl Preferences {
+    pub fn default() -> Self {
+        Self { verbosity: 0.0, formality: 0.0, proactivity: 0.0, check_in_frequency: 0.0 }
+    }
+
+    pub fn set(&mut self, pref: Preference) {
+        match pref {
+            Preference::Verbosity(v) => self.verbosity = v,
+            Preference::Formality(v) => self.formality = v,
+            Preference::Proactivity(v) => self.proactivity = v,
+            Preference::CheckInFrequency(v) => self.check_in_frequency = v,
+        }
+    }
+}
+
+pub enum Preference {
+    Verbosity(f32),
+    Formality(f32),
+    Proactivity(f32),
+    CheckInFrequency(f32),
+}
+
+// ============================================================================
+// Main Covenant Structure
+// ============================================================================
+
+pub struct Covenant {
+    pub pact: Pact,
+    mode: ModeController,
+    trust: TrustSystem,
+    handoffs: HandoffManager,
+    preferences: Preferences,
+}
+
+impl Covenant {
+    pub fn new() -> CovenantBuilder { CovenantBuilder::new() }
+
+    /// Check if action is permitted
+    pub fn permits(&self, action_name: &str) -> bool {
+        matches!(self.pact.boundaries.check(action_name), BoundaryCheck::Allowed | BoundaryCheck::AllowedWithReport)
+    }
+
+    /// Check action and return decision
+    pub fn check_action(&self, action_name: &str) -> ActionDecision {
+        match self.pact.boundaries.check(action_name) {
+            BoundaryCheck::Allowed => ActionDecision::Proceed,
+            BoundaryCheck::AllowedWithReport => ActionDecision::ProceedAndReport,
+            BoundaryCheck::NeedsApproval => ActionDecision::RequestApproval,
+            BoundaryCheck::Forbidden { reason } => ActionDecision::Refuse { reason },
+        }
+    }
+
+    /// Request approval
+    pub fn request_approval(&mut self, action: &str, reason: &str) -> HandoffId {
+        let handoff = Handoff {
+            id: HandoffId::new(),
+            handoff_type: HandoffType::ApprovalRequest {
+                action_desc: action.to_string(),
+                reason: reason.to_string(),
+            },
+            urgency: Urgency::Normal,
+            timestamp: Timestamp::now(),
+        };
+        self.handoffs.handoff(handoff)
+    }
+
+    /// General handoff
+    pub fn handoff(&mut self, handoff_type: HandoffType) -> HandoffId {
+        let handoff = Handoff {
+            id: HandoffId::new(),
+            handoff_type,
+            urgency: Urgency::Normal,
+            timestamp: Timestamp::now(),
+        };
+        self.handoffs.handoff(handoff)
+    }
+
+    /// Inform human
+    pub fn inform(&self, _message: &str) {
+        // Would send message through communication channel
+    }
+
+    /// Set mode
+    pub fn set_mode(&mut self, mode: Mode) {
+        self.mode.set(mode, "Explicit mode change");
+    }
+
+    /// Get current mode
+    pub fn current_mode(&self) -> Mode { self.mode.current() }
+
+    /// Record success
+    pub fn record_success(&mut self, task: &str, satisfaction: Satisfaction) {
+        self.trust.record_success(task, satisfaction);
+    }
+
+    /// Record violation
+    pub fn record_violation(&mut self, description: &str, severity: Severity) {
+        self.trust.record_violation(description, severity);
+    }
+
+    /// Get trust score
+    pub fn trust_score(&self) -> f32 { self.trust.score() }
+
+    /// Check if explanation required
+    pub fn requires_explanation(&self, _action_name: &str) -> bool {
+        self.mode.current() == Mode::Supervised || self.mode.current() == Mode::Guided
+    }
+}
+
+pub enum ActionDecision {
+    Proceed,
+    ProceedAndReport,
+    RequestApproval,
+    Refuse { reason: String },
+}
+
+pub struct CovenantBuilder {
+    pact: Option<Pact>,
+    mode: Mode,
+    trust_config: TrustConfig,
+}
+
+impl CovenantBuilder {
+    pub fn new() -> Self {
+        Self {
+            pact: None,
+            mode: Mode::Collaborative,
+            trust_config: TrustConfig::default(),
+        }
+    }
+
+    pub fn with_pact(mut self, pact: Pact) -> Self { self.pact = Some(pact); self }
+    pub fn with_mode(mut self, mode: Mode) -> Self { self.mode = mode; self }
+
+    pub fn establish(self) -> Result<Covenant, PactError> {
+        let pact = self.pact.unwrap_or(Pact::default_collaborative());
+        let preferences = pact.preferences.clone();
+
+        Ok(Covenant {
+            pact,
+            mode: ModeController::new(self.mode),
+            trust: TrustSystem::new(self.trust_config),
+            handoffs: HandoffManager::new(),
+            preferences,
+        })
+    }
+}
+
+impl Clone for Preferences {
+    fn clone(&self) -> Self {
+        Self {
+            verbosity: self.verbosity,
+            formality: self.formality,
+            proactivity: self.proactivity,
+            check_in_frequency: self.check_in_frequency,
+        }
+    }
+}
+
+// ============================================================================
+// Convenience Functions
+// ============================================================================
+
+pub fn default_covenant() -> Result<Covenant, PactError> {
+    Covenant::new().establish()
+}
+
+pub fn collaborative_covenant() -> Result<Covenant, PactError> {
+    Covenant::new()
+        .with_pact(Pact::default_collaborative())
+        .with_mode(Mode::Collaborative)
+        .establish()
+}
+
+// ============================================================================
+// External Functions
+// ============================================================================
+
+extern fn random_bytes() -> [u8; 16];
+extern fn system_time_nanos() -> u64;
+
+use std::hash::{Hash, Hasher};

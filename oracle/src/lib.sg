@@ -1,0 +1,609 @@
+// Oracle - Explainability Infrastructure
+// Understanding is the foundation of trust
+
+use std::collections::{HashMap, VecDeque};
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
+pub struct ExplainableId { pub bytes: [u8; 16] }
+pub struct StepId { pub bytes: [u8; 16] }
+pub struct Timestamp { pub nanos: u64 }
+
+impl ExplainableId { pub fn new() -> Self { Self { bytes: random_bytes() } } }
+impl StepId {
+    pub fn new() -> Self { Self { bytes: random_bytes() } }
+    pub fn to_short(&self) -> String { format!("{:02x}{:02x}", self.bytes[0], self.bytes[1]) }
+}
+impl Timestamp { pub fn now() -> Self { Self { nanos: system_time_nanos() } } }
+
+impl Clone for ExplainableId { fn clone(&self) -> Self { Self { bytes: self.bytes } } }
+impl Clone for StepId { fn clone(&self) -> Self { Self { bytes: self.bytes } } }
+impl Copy for Timestamp {}
+impl Clone for Timestamp { fn clone(&self) -> Self { *self } }
+
+impl PartialEq for ExplainableId { fn eq(&self, other: &Self) -> bool { self.bytes == other.bytes } }
+impl Eq for ExplainableId {}
+impl Hash for ExplainableId { fn hash<H: Hasher>(&self, state: &mut H) { self.bytes.hash(state); } }
+
+pub struct Value { inner: Vec<u8> }
+impl Value { pub fn empty() -> Self { Self { inner: vec![] } } }
+impl Clone for Value { fn clone(&self) -> Self { Self { inner: self.inner.clone() } } }
+
+// ============================================================================
+// Explainable Trait
+// ============================================================================
+
+pub trait Explainable {
+    fn id(&self) -> ExplainableId;
+    fn description(&self) -> String;
+    fn factors(&self) -> Vec<Factor>;
+}
+
+pub struct Factor {
+    pub name: String,
+    pub value: f32,
+    pub description: String,
+}
+
+impl Clone for Factor {
+    fn clone(&self) -> Self {
+        Self { name: self.name.clone(), value: self.value, description: self.description.clone() }
+    }
+}
+
+// ============================================================================
+// Explanation Level
+// ============================================================================
+
+#[derive(Copy, Clone)]
+pub enum ExplanationLevel {
+    Brief,
+    Standard,
+    Full,
+    Technical,
+}
+
+// ============================================================================
+// Explanation Structure
+// ============================================================================
+
+pub struct Explanation {
+    pub decision: String,
+    pub summary: String,
+    pub reasoning: ReasoningChain,
+    pub evidence: Vec<Evidence>,
+    pub confidence: ConfidenceAssessment,
+    pub alternatives: Vec<Alternative>,
+    pub uncertainties: Vec<Uncertainty>,
+    pub level: ExplanationLevel,
+}
+
+impl Explanation {
+    pub fn summary(&self) -> &str { &self.summary }
+
+    pub fn reasoning(&self) -> String {
+        self.reasoning.to_prose()
+    }
+
+    pub fn evidence(&self) -> &[Evidence] { &self.evidence }
+
+    pub fn alternatives_considered(&self) -> &[Alternative] { &self.alternatives }
+
+    pub fn confidence(&self) -> f32 { self.confidence.overall }
+
+    pub fn to_human_readable(&self) -> String {
+        let mut output = String::new();
+
+        output.push_str(&format!("{}\n\n", self.summary));
+
+        if self.level as u8 >= ExplanationLevel::Standard as u8 {
+            output.push_str("Reasoning:\n");
+            output.push_str(&self.reasoning.to_prose());
+            output.push_str("\n\n");
+        }
+
+        if self.level as u8 >= ExplanationLevel::Standard as u8 && !self.evidence.is_empty() {
+            output.push_str("Based on:\n");
+            for e in &self.evidence {
+                output.push_str(&format!("  - {} ({})\n", e.content, e.source));
+            }
+            output.push_str("\n");
+        }
+
+        output.push_str(&format!("Confidence: {:.0}%", self.confidence.overall * 100.0));
+
+        if !self.uncertainties.is_empty() {
+            output.push_str("\n\nUncertainties:\n");
+            for u in &self.uncertainties {
+                output.push_str(&format!("  - {}\n", u.description));
+            }
+        }
+
+        if self.level as u8 >= ExplanationLevel::Full as u8 && !self.alternatives.is_empty() {
+            output.push_str("\nAlternatives considered:\n");
+            for alt in &self.alternatives {
+                output.push_str(&format!("  - {}: {}\n", alt.option, alt.rejection_reason));
+            }
+        }
+
+        output
+    }
+}
+
+// ============================================================================
+// Reasoning Chain
+// ============================================================================
+
+pub struct ReasoningChain {
+    steps: Vec<ReasoningStep>,
+}
+
+impl ReasoningChain {
+    pub fn new() -> Self { Self { steps: vec![] } }
+
+    pub fn add(&mut self, step: ReasoningStep) { self.steps.push(step); }
+
+    pub fn steps(&self) -> &[ReasoningStep] { &self.steps }
+
+    pub fn to_prose(&self) -> String {
+        self.steps.iter()
+            .enumerate()
+            .map(|(i, s)| format!("{}. {}", i + 1, s.description))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+pub struct ReasoningStep {
+    pub id: StepId,
+    pub step_type: StepType,
+    pub description: String,
+    pub inputs: Vec<StepInput>,
+    pub output: Option<StepOutput>,
+    pub reasoning: String,
+    pub confidence: f32,
+    pub timestamp: Timestamp,
+}
+
+#[derive(Clone)]
+pub enum StepType {
+    Observation,
+    Retrieval,
+    Inference,
+    Evaluation,
+    Decision,
+    Planning,
+    Action,
+}
+
+pub struct StepInput {
+    pub name: String,
+    pub value: Value,
+    pub source: Option<String>,
+}
+
+pub struct StepOutput {
+    pub value: Value,
+    pub confidence: f32,
+}
+
+// ============================================================================
+// Evidence
+// ============================================================================
+
+pub struct Evidence {
+    pub content: String,
+    pub source: String,
+    pub evidence_type: EvidenceType,
+    pub weight: f32,
+    pub epistemic: Epistemic,
+}
+
+#[derive(Clone)]
+pub enum EvidenceType {
+    DirectObservation,
+    Memory,
+    Inference,
+    ExternalSource,
+    UserStatement,
+}
+
+#[derive(Copy, Clone)]
+pub enum Epistemic {
+    Certain,
+    HighConfidence,
+    MediumConfidence,
+    LowConfidence,
+    Uncertain,
+}
+
+// ============================================================================
+// Alternatives and Uncertainties
+// ============================================================================
+
+pub struct Alternative {
+    pub option: String,
+    pub description: String,
+    pub rejection_reason: String,
+    pub score: Option<f32>,
+}
+
+pub struct Uncertainty {
+    pub description: String,
+    pub affects: Vec<String>,
+    pub impact: String,
+}
+
+// ============================================================================
+// Confidence Assessment
+// ============================================================================
+
+pub struct ConfidenceAssessment {
+    pub overall: f32,
+    pub evidence_strength: f32,
+    pub reasoning_validity: f32,
+    pub experience_relevance: f32,
+    pub uncertainties: Vec<UncertaintyFactor>,
+}
+
+pub struct UncertaintyFactor {
+    pub factor: String,
+    pub impact: f32,
+    pub description: String,
+}
+
+pub struct ConfidenceBreakdown {
+    pub overall: f32,
+    pub evidence: f32,
+    pub reasoning: f32,
+    pub experience: f32,
+    pub uncertainties: Vec<String>,
+}
+
+// ============================================================================
+// Trace System
+// ============================================================================
+
+pub struct TraceCollector {
+    enabled: bool,
+    current: Option<Trace>,
+    traces: HashMap<ExplainableId, Trace>,
+}
+
+impl TraceCollector {
+    pub fn new() -> Self {
+        Self { enabled: false, current: None, traces: HashMap::new() }
+    }
+
+    pub fn enable(&mut self) {
+        self.enabled = true;
+        self.current = Some(Trace::new());
+    }
+
+    pub fn disable(&mut self) { self.enabled = false; }
+
+    pub fn record(&mut self, step: ReasoningStep) {
+        if self.enabled {
+            if let Some(ref mut trace) = self.current {
+                trace.add_step(step);
+            }
+        }
+    }
+
+    pub fn complete(&mut self, id: ExplainableId) {
+        if let Some(mut trace) = self.current.take() {
+            trace.complete();
+            self.traces.insert(id, trace);
+        }
+    }
+
+    pub fn get_trace(&self, id: &ExplainableId) -> Option<&Trace> {
+        self.traces.get(id)
+    }
+}
+
+pub struct Trace {
+    steps: Vec<ReasoningStep>,
+    causal_graph: CausalGraph,
+    started: Timestamp,
+    ended: Option<Timestamp>,
+}
+
+impl Trace {
+    pub fn new() -> Self {
+        Self {
+            steps: vec![],
+            causal_graph: CausalGraph::new(),
+            started: Timestamp::now(),
+            ended: None,
+        }
+    }
+
+    pub fn add_step(&mut self, step: ReasoningStep) {
+        self.causal_graph.add_node(&step);
+        if let Some(prev) = self.steps.last() {
+            self.causal_graph.add_edge(&prev.id, &step.id);
+        }
+        self.steps.push(step);
+    }
+
+    pub fn complete(&mut self) { self.ended = Some(Timestamp::now()); }
+
+    pub fn steps(&self) -> &[ReasoningStep] { &self.steps }
+}
+
+pub struct CausalGraph {
+    nodes: Vec<CausalNode>,
+    edges: Vec<(StepId, StepId)>,
+}
+
+struct CausalNode {
+    id: StepId,
+    description: String,
+}
+
+impl CausalGraph {
+    pub fn new() -> Self { Self { nodes: vec![], edges: vec![] } }
+
+    pub fn add_node(&mut self, step: &ReasoningStep) {
+        self.nodes.push(CausalNode {
+            id: step.id.clone(),
+            description: step.description.clone(),
+        });
+    }
+
+    pub fn add_edge(&mut self, from: &StepId, to: &StepId) {
+        self.edges.push((from.clone(), to.clone()));
+    }
+
+    pub fn to_dot(&self) -> String {
+        let mut output = String::from("digraph reasoning {\n");
+        for node in &self.nodes {
+            let short_desc = if node.description.len() > 30 {
+                format!("{}...", &node.description[..27])
+            } else {
+                node.description.clone()
+            };
+            output.push_str(&format!("  {} [label=\"{}\"];\n", node.id.to_short(), short_desc));
+        }
+        for (from, to) in &self.edges {
+            output.push_str(&format!("  {} -> {};\n", from.to_short(), to.to_short()));
+        }
+        output.push_str("}\n");
+        output
+    }
+
+    pub fn to_mermaid(&self) -> String {
+        let mut output = String::from("graph TD\n");
+        for node in &self.nodes {
+            let short_desc = if node.description.len() > 30 {
+                format!("{}...", &node.description[..27])
+            } else {
+                node.description.clone()
+            };
+            output.push_str(&format!("  {}[{}]\n", node.id.to_short(), short_desc));
+        }
+        for (from, to) in &self.edges {
+            output.push_str(&format!("  {} --> {}\n", from.to_short(), to.to_short()));
+        }
+        output
+    }
+}
+
+// ============================================================================
+// Counterfactual Engine
+// ============================================================================
+
+pub struct Counterfactual {
+    pub actual: String,
+    pub alternative: String,
+    pub reasons: Vec<String>,
+    pub decision_point: Option<String>,
+    pub projected_consequences: Vec<String>,
+}
+
+impl Counterfactual {
+    pub fn to_prose(&self) -> String {
+        let mut output = format!("I chose {} instead of {} because:\n", self.actual, self.alternative);
+        for (i, reason) in self.reasons.iter().enumerate() {
+            output.push_str(&format!("{}. {}\n", i + 1, reason));
+        }
+        if !self.projected_consequences.is_empty() {
+            output.push_str("\nIf the alternative had been chosen:\n");
+            for consequence in &self.projected_consequences {
+                output.push_str(&format!("  - {}\n", consequence));
+            }
+        }
+        output
+    }
+}
+
+// ============================================================================
+// Main Oracle Structure
+// ============================================================================
+
+pub struct Oracle {
+    trace: TraceCollector,
+    config: OracleConfig,
+}
+
+pub struct OracleConfig {
+    pub default_level: ExplanationLevel,
+    pub auto_explain: bool,
+    pub trace_enabled: bool,
+}
+
+impl OracleConfig {
+    pub fn default() -> Self {
+        Self {
+            default_level: ExplanationLevel::Standard,
+            auto_explain: false,
+            trace_enabled: false,
+        }
+    }
+}
+
+impl Oracle {
+    pub fn new() -> Self {
+        Self {
+            trace: TraceCollector::new(),
+            config: OracleConfig::default(),
+        }
+    }
+
+    /// Enable tracing
+    pub fn trace_on(&mut self) { self.trace.enable(); }
+
+    /// Disable tracing
+    pub fn trace_off(&mut self) { self.trace.disable(); }
+
+    /// Record a reasoning step
+    pub fn record_step(&mut self, step: ReasoningStep) {
+        self.trace.record(step);
+    }
+
+    /// Complete trace for an explainable
+    pub fn complete_trace(&mut self, id: ExplainableId) {
+        self.trace.complete(id);
+    }
+
+    /// Explain an explainable
+    pub fn explain<T: Explainable>(&self, item: &T, level: ExplanationLevel) -> Explanation {
+        let trace = self.trace.get_trace(&item.id());
+
+        // Build reasoning chain from trace
+        let reasoning = match trace {
+            Some(t) => ReasoningChain { steps: t.steps.clone() },
+            None => ReasoningChain::new(),
+        };
+
+        // Build explanation
+        Explanation {
+            decision: item.description(),
+            summary: format!("Decided: {}", item.description()),
+            reasoning,
+            evidence: vec![],
+            confidence: ConfidenceAssessment {
+                overall: 0.8,
+                evidence_strength: 0.7,
+                reasoning_validity: 0.8,
+                experience_relevance: 0.6,
+                uncertainties: vec![],
+            },
+            alternatives: vec![],
+            uncertainties: vec![],
+            level,
+        }
+    }
+
+    /// Get confidence breakdown
+    pub fn confidence_breakdown<T: Explainable>(&self, _item: &T) -> ConfidenceBreakdown {
+        ConfidenceBreakdown {
+            overall: 0.8,
+            evidence: 0.7,
+            reasoning: 0.8,
+            experience: 0.6,
+            uncertainties: vec![],
+        }
+    }
+
+    /// Analyze counterfactual
+    pub fn counterfactual(&self, actual: &str, alternative: &str) -> Counterfactual {
+        Counterfactual {
+            actual: actual.to_string(),
+            alternative: alternative.to_string(),
+            reasons: vec![format!("{} was preferred over {} based on current context", actual, alternative)],
+            decision_point: None,
+            projected_consequences: vec![],
+        }
+    }
+
+    /// Create interactive explainer
+    pub fn interactive_explainer<'a, T: Explainable>(&'a self, item: &'a T) -> InteractiveExplainer<'a, T> {
+        InteractiveExplainer::new(item, self)
+    }
+
+    /// Check if should explain
+    pub fn should_explain(&self) -> bool {
+        self.config.auto_explain
+    }
+
+    /// Get trace for visualization
+    pub fn get_trace(&self, id: &ExplainableId) -> Option<&Trace> {
+        self.trace.get_trace(id)
+    }
+}
+
+impl Clone for ReasoningStep {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            step_type: self.step_type.clone(),
+            description: self.description.clone(),
+            inputs: vec![], // Simplified
+            output: None,
+            reasoning: self.reasoning.clone(),
+            confidence: self.confidence,
+            timestamp: self.timestamp,
+        }
+    }
+}
+
+// ============================================================================
+// Interactive Explainer
+// ============================================================================
+
+pub struct InteractiveExplainer<'a, T: Explainable> {
+    item: &'a T,
+    oracle: &'a Oracle,
+    current_level: ExplanationLevel,
+}
+
+impl<'a, T: Explainable> InteractiveExplainer<'a, T> {
+    pub fn new(item: &'a T, oracle: &'a Oracle) -> Self {
+        Self { item, oracle, current_level: ExplanationLevel::Standard }
+    }
+
+    pub fn current_explanation(&self) -> Explanation {
+        self.oracle.explain(self.item, self.current_level)
+    }
+
+    pub fn drill_down(&mut self) -> Explanation {
+        self.current_level = match self.current_level {
+            ExplanationLevel::Brief => ExplanationLevel::Standard,
+            ExplanationLevel::Standard => ExplanationLevel::Full,
+            ExplanationLevel::Full => ExplanationLevel::Technical,
+            ExplanationLevel::Technical => ExplanationLevel::Technical,
+        };
+        self.current_explanation()
+    }
+
+    pub fn show_evidence(&self) -> Vec<Evidence> {
+        self.oracle.explain(self.item, ExplanationLevel::Full).evidence
+    }
+
+    pub fn explain_confidence(&self) -> ConfidenceBreakdown {
+        self.oracle.confidence_breakdown(self.item)
+    }
+}
+
+// ============================================================================
+// Convenience Functions
+// ============================================================================
+
+pub fn new_oracle() -> Oracle { Oracle::new() }
+
+pub fn explain_decision<T: Explainable>(oracle: &Oracle, decision: &T) -> String {
+    oracle.explain(decision, ExplanationLevel::Standard).to_human_readable()
+}
+
+// ============================================================================
+// External Functions
+// ============================================================================
+
+extern fn random_bytes() -> [u8; 16];
+extern fn system_time_nanos() -> u64;
+
+use std::hash::{Hash, Hasher};
