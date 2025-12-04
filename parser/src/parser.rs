@@ -3499,12 +3499,10 @@ impl<'a> Parser<'a> {
     /// E.g., `path` in `path·file·read` becomes IncorporationSegment { name: "path", args: None }
     fn expr_to_incorporation_segment(&self, expr: Expr) -> ParseResult<IncorporationSegment> {
         match expr {
-            Expr::Path(path) if path.segments.len() == 1 => {
-                Ok(IncorporationSegment {
-                    name: path.segments[0].ident.clone(),
-                    args: None,
-                })
-            }
+            Expr::Path(path) if path.segments.len() == 1 => Ok(IncorporationSegment {
+                name: path.segments[0].ident.clone(),
+                args: None,
+            }),
             Expr::Call { func, args } => {
                 if let Expr::Path(path) = *func {
                     if path.segments.len() == 1 {

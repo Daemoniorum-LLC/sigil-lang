@@ -2470,8 +2470,11 @@ fn register_evidence(interp: &mut Interpreter) {
     });
 
     // Convert affective value to evidential based on affect markers
-    define(interp, "affect_as_evidence", Some(1), |_, args| {
-        match &args[0] {
+    define(
+        interp,
+        "affect_as_evidence",
+        Some(1),
+        |_, args| match &args[0] {
             Value::Affective { value, affect } => {
                 let evidence = if affect.sarcasm {
                     Evidence::Uncertain
@@ -2488,20 +2491,23 @@ fn register_evidence(interp: &mut Interpreter) {
                 })
             }
             other => Ok(other.clone()),
-        }
-    });
+        },
+    );
 
     // Check if affective value implies uncertainty
-    define(interp, "is_affect_uncertain", Some(1), |_, args| {
-        match &args[0] {
+    define(
+        interp,
+        "is_affect_uncertain",
+        Some(1),
+        |_, args| match &args[0] {
             Value::Affective { affect, .. } => {
-                let uncertain = affect.sarcasm
-                    || matches!(affect.confidence, Some(RuntimeConfidence::Low));
+                let uncertain =
+                    affect.sarcasm || matches!(affect.confidence, Some(RuntimeConfidence::Low));
                 Ok(Value::Bool(uncertain))
             }
             _ => Ok(Value::Bool(false)),
-        }
-    });
+        },
+    );
 
     // Combine affect and evidence (wrap evidential in affect or vice versa)
     define(interp, "with_affect_evidence", Some(2), |_, args| {
@@ -27581,16 +27587,21 @@ mod tests {
     #[test]
     fn test_interpolation_sarcasm_implies_uncertainty() {
         // Sarcastic values should make the interpolated string uncertain
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let s = sarcastic("totally fine");
                 let msg = f"Status: {s}";
                 return msg;
             }
-        "#);
+        "#,
+        );
 
         match result {
-            Ok(Value::Evidential { evidence: Evidence::Uncertain, .. }) => (),
+            Ok(Value::Evidential {
+                evidence: Evidence::Uncertain,
+                ..
+            }) => (),
             Ok(other) => panic!("Expected Evidential Uncertain, got {:?}", other),
             Err(e) => panic!("Error: {:?}", e),
         }
@@ -27599,12 +27610,14 @@ mod tests {
     #[test]
     fn test_affect_to_evidence_function() {
         // Test the affect_to_evidence builtin function
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let s = sarcastic("sure");
                 return affect_to_evidence(s);
             }
-        "#);
+        "#,
+        );
 
         match result {
             Ok(Value::String(s)) => assert_eq!(*s, "uncertain"),
@@ -27616,16 +27629,21 @@ mod tests {
     #[test]
     fn test_affect_as_evidence_function() {
         // Test converting affective to evidential
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let s = sarcastic(42);
                 let ev = affect_as_evidence(s);
                 return ev;
             }
-        "#);
+        "#,
+        );
 
         match result {
-            Ok(Value::Evidential { evidence: Evidence::Uncertain, .. }) => (),
+            Ok(Value::Evidential {
+                evidence: Evidence::Uncertain,
+                ..
+            }) => (),
             Ok(other) => panic!("Expected Evidential Uncertain, got {:?}", other),
             Err(e) => panic!("Error: {:?}", e),
         }
@@ -27634,12 +27652,14 @@ mod tests {
     #[test]
     fn test_is_affect_uncertain() {
         // Test checking if affect implies uncertainty
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let s = sarcastic("yes");
                 return is_affect_uncertain(s);
             }
-        "#);
+        "#,
+        );
 
         assert!(matches!(result, Ok(Value::Bool(true))));
     }
@@ -27647,12 +27667,14 @@ mod tests {
     #[test]
     fn test_high_confidence_implies_known() {
         // High confidence should imply known evidence
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let v = high_confidence(42);
                 return affect_to_evidence(v);
             }
-        "#);
+        "#,
+        );
 
         match result {
             Ok(Value::String(s)) => assert_eq!(*s, "known"),
@@ -27664,12 +27686,14 @@ mod tests {
     #[test]
     fn test_low_confidence_implies_uncertain() {
         // Low confidence should imply uncertain evidence
-        let result = eval(r#"
+        let result = eval(
+            r#"
             fn main() {
                 let v = low_confidence(42);
                 return affect_to_evidence(v);
             }
-        "#);
+        "#,
+        );
 
         match result {
             Ok(Value::String(s)) => assert_eq!(*s, "uncertain"),

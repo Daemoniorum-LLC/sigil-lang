@@ -1295,7 +1295,6 @@ pub enum PipeOp {
     // ==========================================
     // Mathematical & APL-Inspired Operations
     // ==========================================
-
     /// All/ForAll: `|∀{p}` or `|all{p}` - check if ALL elements satisfy predicate
     /// Returns bool. Short-circuits on first false.
     /// Example: `numbers|∀{x => x > 0}` - are all positive?

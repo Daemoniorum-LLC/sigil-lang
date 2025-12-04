@@ -783,7 +783,10 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             evidence: IrEvidence::Known,
         },
 
-        ast::Expr::Await { expr: inner, evidentiality } => {
+        ast::Expr::Await {
+            expr: inner,
+            evidentiality,
+        } => {
             let inner_ir = lower_expr(ctx, inner);
             // Use the explicit evidentiality marker if provided, otherwise infer from inner
             let evidence = match evidentiality {

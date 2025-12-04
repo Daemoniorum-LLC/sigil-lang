@@ -892,7 +892,10 @@ impl Interpreter {
                 inclusive,
             } => self.eval_range(start, end, *inclusive),
             Expr::Assign { target, value } => self.eval_assign(target, value),
-            Expr::Await { expr: inner, evidentiality } => {
+            Expr::Await {
+                expr: inner,
+                evidentiality,
+            } => {
                 let value = self.evaluate(inner)?;
                 let awaited = self.await_value(value)?;
                 // Handle evidentiality marker semantics
@@ -1342,9 +1345,7 @@ impl Interpreter {
                 let inner = borrowed.get("0").or(borrowed.get("value")).cloned();
                 (false, true, false, inner)
             }
-            Value::Struct { name, .. } if name == "None" => {
-                (false, false, true, None)
-            }
+            Value::Struct { name, .. } if name == "None" => (false, false, true, None),
             _ => return Ok(value),
         };
 
@@ -1867,9 +1868,7 @@ impl Interpreter {
             self.environment
                 .borrow()
                 .get(&first.name.name)
-                .ok_or_else(|| {
-                    RuntimeError::new(format!("undefined: {}", first.name.name))
-                })?
+                .ok_or_else(|| RuntimeError::new(format!("undefined: {}", first.name.name)))?
         };
 
         // Process remaining segments as method-like calls
@@ -1910,9 +1909,7 @@ impl Interpreter {
             (Value::String(s), "lower") | (Value::String(s), "lowercase") => {
                 Ok(Value::String(Rc::new(s.to_lowercase())))
             }
-            (Value::String(s), "trim") => {
-                Ok(Value::String(Rc::new(s.trim().to_string())))
-            }
+            (Value::String(s), "trim") => Ok(Value::String(Rc::new(s.trim().to_string()))),
             (Value::String(s), "chars") => {
                 let chars: Vec<Value> = s
                     .chars()
@@ -1931,32 +1928,35 @@ impl Interpreter {
                 let bytes: Vec<Value> = s.bytes().map(|b| Value::Int(b as i64)).collect();
                 Ok(Value::Array(Rc::new(RefCell::new(bytes))))
             }
-            (Value::String(s), "parse_int") | (Value::String(s), "to_int") => {
-                s.parse::<i64>()
-                    .map(Value::Int)
-                    .map_err(|_| RuntimeError::new(format!("cannot parse '{}' as int", s)))
-            }
-            (Value::String(s), "parse_float") | (Value::String(s), "to_float") => {
-                s.parse::<f64>()
-                    .map(Value::Float)
-                    .map_err(|_| RuntimeError::new(format!("cannot parse '{}' as float", s)))
-            }
+            (Value::String(s), "parse_int") | (Value::String(s), "to_int") => s
+                .parse::<i64>()
+                .map(Value::Int)
+                .map_err(|_| RuntimeError::new(format!("cannot parse '{}' as int", s))),
+            (Value::String(s), "parse_float") | (Value::String(s), "to_float") => s
+                .parse::<f64>()
+                .map(Value::Float)
+                .map_err(|_| RuntimeError::new(format!("cannot parse '{}' as float", s))),
 
             // Array methods
             (Value::Array(arr), "len") => Ok(Value::Int(arr.borrow().len() as i64)),
-            (Value::Array(arr), "first") => {
-                arr.borrow().first().cloned().ok_or_else(|| RuntimeError::new("empty array"))
-            }
-            (Value::Array(arr), "last") => {
-                arr.borrow().last().cloned().ok_or_else(|| RuntimeError::new("empty array"))
-            }
+            (Value::Array(arr), "first") => arr
+                .borrow()
+                .first()
+                .cloned()
+                .ok_or_else(|| RuntimeError::new("empty array")),
+            (Value::Array(arr), "last") => arr
+                .borrow()
+                .last()
+                .cloned()
+                .ok_or_else(|| RuntimeError::new("empty array")),
             (Value::Array(arr), "reverse") | (Value::Array(arr), "rev") => {
                 let mut v = arr.borrow().clone();
                 v.reverse();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
             (Value::Array(arr), "join") => {
-                let sep = args.first()
+                let sep = args
+                    .first()
                     .map(|v| match v {
                         Value::String(s) => s.to_string(),
                         _ => "".to_string(),
@@ -1991,26 +1991,20 @@ impl Interpreter {
             (Value::Float(n), "to_string") | (Value::Float(n), "string") => {
                 Ok(Value::String(Rc::new(n.to_string())))
             }
-            (Value::Int(n), "to_float") | (Value::Int(n), "float") => {
-                Ok(Value::Float(*n as f64))
-            }
-            (Value::Float(n), "to_int") | (Value::Float(n), "int") => {
-                Ok(Value::Int(*n as i64))
-            }
+            (Value::Int(n), "to_float") | (Value::Int(n), "float") => Ok(Value::Float(*n as f64)),
+            (Value::Float(n), "to_int") | (Value::Float(n), "int") => Ok(Value::Int(*n as i64)),
 
             // Map/Struct field access
-            (Value::Map(map), field) => {
-                map.borrow()
-                    .get(field)
-                    .cloned()
-                    .ok_or_else(|| RuntimeError::new(format!("no field '{}' in map", field)))
-            }
-            (Value::Struct { fields, .. }, field) => {
-                fields.borrow()
-                    .get(field)
-                    .cloned()
-                    .ok_or_else(|| RuntimeError::new(format!("no field '{}' in struct", field)))
-            }
+            (Value::Map(map), field) => map
+                .borrow()
+                .get(field)
+                .cloned()
+                .ok_or_else(|| RuntimeError::new(format!("no field '{}' in map", field))),
+            (Value::Struct { fields, .. }, field) => fields
+                .borrow()
+                .get(field)
+                .cloned()
+                .ok_or_else(|| RuntimeError::new(format!("no field '{}' in struct", field))),
 
             // Try stdlib function with receiver as first arg
             _ => {
@@ -2163,9 +2157,8 @@ impl Interpreter {
                     if self.pattern_matches(&arm.pattern, &value)? {
                         // Create new scope for pattern bindings
                         let prev_env = self.environment.clone();
-                        self.environment = Rc::new(RefCell::new(Environment::with_parent(
-                            prev_env.clone(),
-                        )));
+                        self.environment =
+                            Rc::new(RefCell::new(Environment::with_parent(prev_env.clone())));
 
                         // Bind pattern variables
                         self.bind_pattern(&arm.pattern, value.clone())?;
@@ -2218,9 +2211,8 @@ impl Interpreter {
                         if let Some(mapper_expr) = mapper {
                             // Apply mapper to error
                             let prev_env = self.environment.clone();
-                            self.environment = Rc::new(RefCell::new(Environment::with_parent(
-                                prev_env.clone(),
-                            )));
+                            self.environment =
+                                Rc::new(RefCell::new(Environment::with_parent(prev_env.clone())));
                             self.environment
                                 .borrow_mut()
                                 .define("_".to_string(), err_val);
@@ -2232,7 +2224,9 @@ impl Interpreter {
                         }
                     }
                     // Handle Option-like values
-                    Value::Struct { name, fields } if name == "Some" || name.ends_with("::Some") => {
+                    Value::Struct { name, fields }
+                        if name == "Some" || name.ends_with("::Some") =>
+                    {
                         let fields = fields.borrow();
                         fields
                             .get("0")
@@ -2986,13 +2980,14 @@ impl Interpreter {
             // ==========================================
             // Mathematical & APL-Inspired Operations
             // ==========================================
-
             PipeOp::All(pred) => {
                 // |∀{p} - check if ALL elements satisfy predicate
                 match value {
                     Value::Array(arr) => {
                         for elem in arr.borrow().iter() {
-                            self.environment.borrow_mut().define("_".to_string(), elem.clone());
+                            self.environment
+                                .borrow_mut()
+                                .define("_".to_string(), elem.clone());
                             let result = self.evaluate(pred)?;
                             if !self.is_truthy(&result) {
                                 return Ok(Value::Bool(false));
@@ -3009,7 +3004,9 @@ impl Interpreter {
                 match value {
                     Value::Array(arr) => {
                         for elem in arr.borrow().iter() {
-                            self.environment.borrow_mut().define("_".to_string(), elem.clone());
+                            self.environment
+                                .borrow_mut()
+                                .define("_".to_string(), elem.clone());
                             let result = self.evaluate(pred)?;
                             if self.is_truthy(&result) {
                                 return Ok(Value::Bool(true));
@@ -3055,8 +3052,12 @@ impl Interpreter {
                         let mut results = vec![arr[0].clone()];
                         let mut acc = arr[0].clone();
                         for elem in arr.iter().skip(1) {
-                            self.environment.borrow_mut().define("acc".to_string(), acc.clone());
-                            self.environment.borrow_mut().define("_".to_string(), elem.clone());
+                            self.environment
+                                .borrow_mut()
+                                .define("acc".to_string(), acc.clone());
+                            self.environment
+                                .borrow_mut()
+                                .define("_".to_string(), elem.clone());
                             acc = self.evaluate(f)?;
                             results.push(acc.clone());
                         }
@@ -3138,7 +3139,8 @@ impl Interpreter {
                             _ => return Err(RuntimeError::new("Cycle count must be integer")),
                         };
                         let arr = arr.borrow();
-                        let cycled: Vec<Value> = arr.iter().cloned().cycle().take(arr.len() * n).collect();
+                        let cycled: Vec<Value> =
+                            arr.iter().cloned().cycle().take(arr.len() * n).collect();
                         Ok(Value::Array(Rc::new(RefCell::new(cycled))))
                     }
                     _ => Err(RuntimeError::new("Cycle requires array")),
@@ -3230,7 +3232,9 @@ impl Interpreter {
                             .borrow()
                             .iter()
                             .enumerate()
-                            .map(|(i, v)| Value::Tuple(Rc::new(vec![Value::Int(i as i64), v.clone()])))
+                            .map(|(i, v)| {
+                                Value::Tuple(Rc::new(vec![Value::Int(i as i64), v.clone()]))
+                            })
                             .collect();
                         Ok(Value::Array(Rc::new(RefCell::new(enumerated))))
                     }
@@ -3689,7 +3693,9 @@ impl Interpreter {
                                 Value::Float(*a)
                             }
                         }
-                        _ => return Err(RuntimeError::new("Cannot find min of non-numeric values")),
+                        _ => {
+                            return Err(RuntimeError::new("Cannot find min of non-numeric values"))
+                        }
                     };
                 }
                 Ok(min)
@@ -3738,7 +3744,9 @@ impl Interpreter {
                                 Value::Float(*a)
                             }
                         }
-                        _ => return Err(RuntimeError::new("Cannot find max of non-numeric values")),
+                        _ => {
+                            return Err(RuntimeError::new("Cannot find max of non-numeric values"))
+                        }
                     };
                 }
                 Ok(max)
@@ -3956,7 +3964,11 @@ impl Interpreter {
                     Evidence::Reported => 2,
                     Evidence::Paradox => 3,
                 };
-                if rank(a) >= rank(b) { Some(a) } else { Some(b) }
+                if rank(a) >= rank(b) {
+                    Some(a)
+                } else {
+                    Some(b)
+                }
             }
         }
     }
@@ -4154,7 +4166,10 @@ mod tests {
         "#);
 
         match result {
-            Ok(Value::Evidential { evidence: Evidence::Reported, value }) => {
+            Ok(Value::Evidential {
+                evidence: Evidence::Reported,
+                value,
+            }) => {
                 // The inner value should be a string
                 assert!(matches!(*value, Value::String(_)));
             }
@@ -4178,7 +4193,10 @@ mod tests {
         "#);
 
         match result {
-            Ok(Value::Evidential { evidence: Evidence::Uncertain, .. }) => (),
+            Ok(Value::Evidential {
+                evidence: Evidence::Uncertain,
+                ..
+            }) => (),
             Ok(other) => panic!("Expected Evidential Uncertain, got {:?}", other),
             Err(e) => panic!("Error: {:?}", e),
         }
@@ -4203,5 +4221,4 @@ mod tests {
             Err(e) => panic!("Error: {:?}", e),
         }
     }
-
 }
