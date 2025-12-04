@@ -1,0 +1,1431 @@
+// Aegis - Security Infrastructure for Sigil Agents
+// Core Types
+
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::time::Duration;
+
+// ============================================================================
+// Identity Types
+// ============================================================================
+
+/// Unique agent identifier
+pub struct AgentId {
+    pub bytes: [u8; 32],
+}
+
+impl AgentId {
+    pub fn new() -> Self {
+        let mut bytes = [0u8; 32];
+        getrandom(&mut bytes);
+        Self { bytes }
+    }
+
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self { bytes }
+    }
+
+    pub fn unknown() -> Self {
+        Self { bytes: [0u8; 32] }
+    }
+
+    pub fn to_hex(&self) -> String {
+        self.bytes.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect()
+    }
+}
+
+impl Clone for AgentId {
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+impl PartialEq for AgentId {
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+impl Eq for AgentId {}
+
+impl Hash for AgentId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.bytes.hash(state);
+    }
+}
+
+/// Authority identifier (for credential issuance)
+pub struct AuthorityId {
+    pub bytes: [u8; 32],
+}
+
+impl AuthorityId {
+    pub fn new() -> Self {
+        let mut bytes = [0u8; 32];
+        getrandom(&mut bytes);
+        Self { bytes }
+    }
+}
+
+impl Clone for AuthorityId {
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+impl PartialEq for AuthorityId {
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+impl Eq for AuthorityId {}
+
+impl Hash for AuthorityId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.bytes.hash(state);
+    }
+}
+
+/// Group identifier
+pub struct GroupId {
+    pub bytes: [u8; 16],
+}
+
+impl GroupId {
+    pub fn new() -> Self {
+        let mut bytes = [0u8; 16];
+        getrandom(&mut bytes);
+        Self { bytes }
+    }
+}
+
+impl Clone for GroupId {
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+// ============================================================================
+// Cryptographic Types
+// ============================================================================
+
+/// Public key for verification
+pub struct PublicKey {
+    pub bytes: [u8; 32],
+    pub algorithm: KeyAlgorithm,
+}
+
+impl PublicKey {
+    pub fn verify(&self, data: &[u8], signature: &Signature) -> bool {
+        match self.algorithm {
+            KeyAlgorithm::Ed25519 => ed25519_verify(&self.bytes, data, &signature.bytes),
+            KeyAlgorithm::X25519 => false, // X25519 is for key exchange, not signing
+        }
+    }
+}
+
+impl Clone for PublicKey {
+    fn clone(&self) -> Self {
+        Self {
+            bytes: self.bytes,
+            algorithm: self.algorithm,
+        }
+    }
+}
+
+/// Private key (kept secret)
+pub struct PrivateKey {
+    bytes: [u8; 64],
+    algorithm: KeyAlgorithm,
+}
+
+impl PrivateKey {
+    pub fn sign(&self, data: &[u8]) -> Signature {
+        let sig_bytes = match self.algorithm {
+            KeyAlgorithm::Ed25519 => ed25519_sign(&self.bytes, data),
+            KeyAlgorithm::X25519 => panic!("X25519 cannot sign"),
+        };
+        Signature { bytes: sig_bytes }
+    }
+}
+
+/// Key algorithm
+#[derive(Copy, Clone)]
+pub enum KeyAlgorithm {
+    Ed25519,
+    X25519,
+}
+
+/// Cryptographic signature
+pub struct Signature {
+    pub bytes: [u8; 64],
+}
+
+impl Clone for Signature {
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+/// Generate a keypair
+pub fn generate_keypair() -> (PublicKey, PrivateKey) {
+    let mut seed = [0u8; 32];
+    getrandom(&mut seed);
+
+    let (public_bytes, private_bytes) = ed25519_keygen(&seed);
+
+    (
+        PublicKey {
+            bytes: public_bytes,
+            algorithm: KeyAlgorithm::Ed25519,
+        },
+        PrivateKey {
+            bytes: private_bytes,
+            algorithm: KeyAlgorithm::Ed25519,
+        }
+    )
+}
+
+/// Session key for symmetric encryption
+pub struct SessionKey {
+    key: [u8; 32],
+}
+
+impl SessionKey {
+    pub fn generate() -> Self {
+        let mut key = [0u8; 32];
+        getrandom(&mut key);
+        Self { key }
+    }
+
+    pub fn encrypt(&self, plaintext: &[u8], aad: &[u8], counter: u64) -> Result<Vec<u8>, CryptoError> {
+        let nonce = derive_nonce(counter);
+        aes_gcm_encrypt(&self.key, &nonce, plaintext, aad)
+    }
+
+    pub fn decrypt(&self, ciphertext: &[u8], aad: &[u8], counter: u64) -> Result<Vec<u8>, CryptoError> {
+        let nonce = derive_nonce(counter);
+        aes_gcm_decrypt(&self.key, &nonce, ciphertext, aad)
+    }
+}
+
+/// Encryption key for memory at rest
+pub struct EncryptionKey {
+    key: [u8; 32],
+    pub algorithm: EncryptionAlgorithm,
+}
+
+impl EncryptionKey {
+    pub fn generate() -> Self {
+        let mut key = [0u8; 32];
+        getrandom(&mut key);
+        Self {
+            key,
+            algorithm: EncryptionAlgorithm::Aes256Gcm,
+        }
+    }
+
+    pub fn derive_from_private(private_key: &PrivateKey) -> Self {
+        let key = hkdf_derive(&private_key.bytes[..32], b"memory-encryption");
+        Self {
+            key,
+            algorithm: EncryptionAlgorithm::Aes256Gcm,
+        }
+    }
+
+    pub fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
+        let mut nonce = [0u8; 12];
+        getrandom(&mut nonce);
+        let ciphertext = aes_gcm_encrypt(&self.key, &nonce, data, &[])?;
+        let mut result = nonce.to_vec();
+        result.extend(ciphertext);
+        Ok(result)
+    }
+
+    pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
+        if data.len() < 12 {
+            return Err(CryptoError::InvalidData);
+        }
+        let nonce: [u8; 12] = data[..12].try_into().unwrap();
+        let ciphertext = &data[12..];
+        aes_gcm_decrypt(&self.key, &nonce, ciphertext, &[])
+    }
+}
+
+/// Encryption algorithm
+#[derive(Copy, Clone)]
+pub enum EncryptionAlgorithm {
+    Aes256Gcm,
+    ChaCha20Poly1305,
+}
+
+/// Key exchange algorithm
+pub enum KeyExchange {
+    X25519,
+    Kyber,
+}
+
+// ============================================================================
+// Identity & Credential Types
+// ============================================================================
+
+/// Capability attestation
+pub enum Attestation {
+    /// Agent has a specific capability
+    Capability(String),
+
+    /// Agent belongs to a group
+    GroupMembership(GroupId),
+
+    /// Agent has a role
+    Role(Role),
+
+    /// Agent was verified by authority
+    VerifiedBy(AuthorityId),
+
+    /// Custom attestation
+    Custom { name: String, value: Value },
+}
+
+impl Clone for Attestation {
+    fn clone(&self) -> Self {
+        match self {
+            Attestation::Capability(s) => Attestation::Capability(s.clone()),
+            Attestation::GroupMembership(g) => Attestation::GroupMembership(g.clone()),
+            Attestation::Role(r) => Attestation::Role(r.clone()),
+            Attestation::VerifiedBy(a) => Attestation::VerifiedBy(a.clone()),
+            Attestation::Custom { name, value } => Attestation::Custom {
+                name: name.clone(),
+                value: value.clone(),
+            },
+        }
+    }
+}
+
+/// Agent role
+#[derive(Clone)]
+pub enum Role {
+    Admin,
+    Operator,
+    Agent,
+    Observer,
+    Custom(String),
+}
+
+/// Signed credential proving identity
+pub struct Credential {
+    /// Identity being attested
+    pub identity_id: AgentId,
+
+    /// Public key hash
+    pub public_key_hash: [u8; 32],
+
+    /// Attestations
+    pub attestations: Vec<Attestation>,
+
+    /// Issuer
+    pub issuer: AuthorityId,
+
+    /// Validity period
+    pub valid_from: Timestamp,
+    pub valid_until: Timestamp,
+
+    /// Signature by issuer
+    pub signature: Signature,
+}
+
+impl Credential {
+    pub fn signable_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend(&self.identity_id.bytes);
+        bytes.extend(&self.public_key_hash);
+        bytes.extend(&self.issuer.bytes);
+        bytes.extend(&self.valid_from.nanos.to_le_bytes());
+        bytes.extend(&self.valid_until.nanos.to_le_bytes());
+        bytes
+    }
+}
+
+impl Clone for Credential {
+    fn clone(&self) -> Self {
+        Self {
+            identity_id: self.identity_id.clone(),
+            public_key_hash: self.public_key_hash,
+            attestations: self.attestations.clone(),
+            issuer: self.issuer.clone(),
+            valid_from: self.valid_from,
+            valid_until: self.valid_until,
+            signature: self.signature.clone(),
+        }
+    }
+}
+
+/// Verified identity result
+pub struct VerifiedIdentity {
+    pub id: AgentId,
+    pub attestations: Vec<Attestation>,
+    pub verified_at: Timestamp,
+}
+
+// ============================================================================
+// Sandbox Types
+// ============================================================================
+
+/// Resource limits for sandboxing
+pub struct ResourceLimits {
+    /// Maximum memory usage in bytes
+    pub max_memory: u64,
+
+    /// Maximum CPU time
+    pub max_cpu_time: Duration,
+
+    /// Maximum file size in bytes
+    pub max_file_size: u64,
+
+    /// Maximum network bytes
+    pub max_network_bytes: u64,
+
+    /// Maximum open files
+    pub max_open_files: u32,
+
+    /// Maximum processes/threads
+    pub max_processes: u32,
+}
+
+impl ResourceLimits {
+    pub fn default() -> Self {
+        Self {
+            max_memory: 256 * 1024 * 1024, // 256 MB
+            max_cpu_time: Duration::seconds(60),
+            max_file_size: 10 * 1024 * 1024, // 10 MB
+            max_network_bytes: 100 * 1024 * 1024, // 100 MB
+            max_open_files: 64,
+            max_processes: 4,
+        }
+    }
+
+    pub fn restrictive() -> Self {
+        Self {
+            max_memory: 64 * 1024 * 1024, // 64 MB
+            max_cpu_time: Duration::seconds(10),
+            max_file_size: 1024 * 1024, // 1 MB
+            max_network_bytes: 1024 * 1024, // 1 MB
+            max_open_files: 8,
+            max_processes: 1,
+        }
+    }
+
+    pub fn permissive() -> Self {
+        Self {
+            max_memory: 2 * 1024 * 1024 * 1024, // 2 GB
+            max_cpu_time: Duration::minutes(30),
+            max_file_size: 1024 * 1024 * 1024, // 1 GB
+            max_network_bytes: 10 * 1024 * 1024 * 1024, // 10 GB
+            max_open_files: 1024,
+            max_processes: 64,
+        }
+    }
+}
+
+/// Isolation level for sandboxing
+#[derive(Copy, Clone)]
+pub enum IsolationLevel {
+    /// Run in same process (fast, less secure)
+    Process,
+
+    /// Run in container (slower, more secure)
+    Container,
+
+    /// Run in VM (slowest, most secure)
+    VirtualMachine,
+}
+
+/// Syscall filter mode
+#[derive(Copy, Clone)]
+pub enum FilterMode {
+    /// Only listed syscalls allowed
+    AllowList,
+    /// Listed syscalls denied
+    DenyList,
+}
+
+/// Network access policy
+pub enum NetworkPolicy {
+    /// No network access
+    Deny,
+
+    /// Specific hosts allowed
+    AllowList(Vec<String>),
+
+    /// Specific hosts denied
+    DenyList(Vec<String>),
+
+    /// All network allowed
+    Allow,
+}
+
+impl Clone for NetworkPolicy {
+    fn clone(&self) -> Self {
+        match self {
+            NetworkPolicy::Deny => NetworkPolicy::Deny,
+            NetworkPolicy::AllowList(v) => NetworkPolicy::AllowList(v.clone()),
+            NetworkPolicy::DenyList(v) => NetworkPolicy::DenyList(v.clone()),
+            NetworkPolicy::Allow => NetworkPolicy::Allow,
+        }
+    }
+}
+
+/// Filesystem access policy
+pub enum FilesystemPolicy {
+    /// No filesystem access
+    Deny,
+
+    /// Read-only access with optional write exceptions
+    ReadOnly { write_exceptions: Vec<String> },
+
+    /// Specific paths allowed
+    AllowList(Vec<PathPattern>),
+
+    /// Full access
+    Allow,
+}
+
+impl Clone for FilesystemPolicy {
+    fn clone(&self) -> Self {
+        match self {
+            FilesystemPolicy::Deny => FilesystemPolicy::Deny,
+            FilesystemPolicy::ReadOnly { write_exceptions } =>
+                FilesystemPolicy::ReadOnly { write_exceptions: write_exceptions.clone() },
+            FilesystemPolicy::AllowList(v) => FilesystemPolicy::AllowList(v.clone()),
+            FilesystemPolicy::Allow => FilesystemPolicy::Allow,
+        }
+    }
+}
+
+/// Path pattern for filesystem policy
+#[derive(Clone)]
+pub struct PathPattern {
+    pub pattern: String,
+    pub permissions: PathPermissions,
+}
+
+/// Path permissions
+#[derive(Copy, Clone)]
+pub struct PathPermissions {
+    pub read: bool,
+    pub write: bool,
+    pub execute: bool,
+}
+
+/// Resource usage tracking
+pub struct ResourceUsage {
+    pub memory_bytes: u64,
+    pub cpu_time: Duration,
+    pub file_bytes_read: u64,
+    pub file_bytes_written: u64,
+    pub network_bytes_sent: u64,
+    pub network_bytes_received: u64,
+    pub open_files: u32,
+    pub processes: u32,
+}
+
+impl ResourceUsage {
+    pub fn zero() -> Self {
+        Self {
+            memory_bytes: 0,
+            cpu_time: Duration::zero(),
+            file_bytes_read: 0,
+            file_bytes_written: 0,
+            network_bytes_sent: 0,
+            network_bytes_received: 0,
+            open_files: 0,
+            processes: 0,
+        }
+    }
+
+    pub fn exceeds(&self, limits: &ResourceLimits) -> bool {
+        self.memory_bytes > limits.max_memory
+            || self.cpu_time.as_nanos() > limits.max_cpu_time.as_nanos()
+            || self.file_bytes_written > limits.max_file_size
+            || (self.network_bytes_sent + self.network_bytes_received) > limits.max_network_bytes
+            || self.open_files > limits.max_open_files
+            || self.processes > limits.max_processes
+    }
+}
+
+// ============================================================================
+// Memory Integrity Types
+// ============================================================================
+
+/// Memory identifier
+pub struct MemoryId {
+    pub bytes: [u8; 16],
+}
+
+impl MemoryId {
+    pub fn new() -> Self {
+        let mut bytes = [0u8; 16];
+        getrandom(&mut bytes);
+        Self { bytes }
+    }
+}
+
+impl Clone for MemoryId {
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+impl PartialEq for MemoryId {
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+impl Eq for MemoryId {}
+
+impl Hash for MemoryId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.bytes.hash(state);
+    }
+}
+
+/// Memory integrity status
+pub enum IntegrityStatus {
+    /// All memory verified
+    Valid,
+
+    /// Tampering detected
+    Tampered { first_invalid: Option<MemoryId> },
+
+    /// Unable to determine
+    Unknown,
+}
+
+/// Memory type for audit
+#[derive(Clone)]
+pub enum MemoryType {
+    Episodic,
+    Semantic,
+    Procedural,
+    Working,
+}
+
+// ============================================================================
+// Goal & Action Types
+// ============================================================================
+
+/// Goal identifier
+pub struct GoalId {
+    pub bytes: [u8; 16],
+}
+
+impl GoalId {
+    pub fn new() -> Self {
+        let mut bytes = [0u8; 16];
+        getrandom(&mut bytes);
+        Self { bytes }
+    }
+}
+
+impl Clone for GoalId {
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+impl PartialEq for GoalId {
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+impl Eq for GoalId {}
+
+impl Hash for GoalId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.bytes.hash(state);
+    }
+}
+
+/// Goal for agents
+#[derive(Clone)]
+pub struct Goal {
+    pub id: GoalId,
+    pub description: String,
+    pub priority: u8,
+    pub deadline: Option<Timestamp>,
+    pub source: GoalSource,
+}
+
+impl Goal {
+    pub fn new(description: &str) -> Self {
+        Self {
+            id: GoalId::new(),
+            description: description.to_string(),
+            priority: 5,
+            deadline: None,
+            source: GoalSource::SelfGenerated,
+        }
+    }
+
+    pub fn with_priority(mut self, priority: u8) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    pub fn with_deadline(mut self, deadline: Timestamp) -> Self {
+        self.deadline = Some(deadline);
+        self
+    }
+
+    pub fn from_source(mut self, source: GoalSource) -> Self {
+        self.source = source;
+        self
+    }
+}
+
+/// Source of a goal
+#[derive(Clone)]
+pub enum GoalSource {
+    /// From agent's constitution
+    Constitution,
+
+    /// From specific trusted agent
+    Agent(AgentId),
+
+    /// From authority
+    Authority(AuthorityId),
+
+    /// Self-generated
+    SelfGenerated,
+}
+
+impl PartialEq for GoalSource {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (GoalSource::Constitution, GoalSource::Constitution) => true,
+            (GoalSource::SelfGenerated, GoalSource::SelfGenerated) => true,
+            (GoalSource::Agent(a), GoalSource::Agent(b)) => a == b,
+            (GoalSource::Authority(a), GoalSource::Authority(b)) => a.bytes == b.bytes,
+            _ => false,
+        }
+    }
+}
+
+/// Action for agents
+#[derive(Clone)]
+pub struct Action {
+    pub id: ActionId,
+    pub action_type: ActionType,
+    pub params: Value,
+    pub timestamp: Timestamp,
+}
+
+impl Action {
+    pub fn name(&self) -> &str {
+        match &self.action_type {
+            ActionType::Tool { name, .. } => name,
+            ActionType::Communicate { .. } => "communicate",
+            ActionType::Think => "think",
+            ActionType::Wait => "wait",
+            ActionType::Terminate => "terminate",
+            ActionType::Custom(name) => name,
+        }
+    }
+}
+
+/// Action identifier
+pub struct ActionId {
+    pub bytes: [u8; 16],
+}
+
+impl ActionId {
+    pub fn new() -> Self {
+        let mut bytes = [0u8; 16];
+        getrandom(&mut bytes);
+        Self { bytes }
+    }
+}
+
+impl Clone for ActionId {
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+/// Type of action
+#[derive(Clone)]
+pub enum ActionType {
+    Tool { name: String, params: Value },
+    Communicate { to: AgentId, message: String },
+    Think,
+    Wait,
+    Terminate,
+    Custom(String),
+}
+
+/// Goal decision from guard
+pub enum GoalDecision {
+    Accepted,
+    Rejected { reason: String },
+    Suspicious { indicators: Vec<InjectionIndicator> },
+}
+
+/// Injection indicator for goal protection
+#[derive(Clone)]
+pub struct InjectionIndicator {
+    pub pattern: String,
+    pub location: String,
+    pub severity: Severity,
+    pub description: String,
+}
+
+/// Severity level
+#[derive(Copy, Clone)]
+pub enum Severity {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+// ============================================================================
+// Constitutional Types
+// ============================================================================
+
+/// Agent constitution
+pub struct Constitution {
+    /// Core directives that cannot be overridden
+    pub directives: Vec<Directive>,
+
+    /// Values that guide behavior
+    pub values: Vec<String>,
+
+    /// Emergency stop conditions
+    pub emergency_conditions: Vec<String>,
+}
+
+impl Constitution {
+    pub fn new() -> Self {
+        Self {
+            directives: vec![],
+            values: vec![],
+            emergency_conditions: vec![],
+        }
+    }
+
+    pub fn default_safe() -> Self {
+        Self {
+            directives: vec![
+                Directive {
+                    name: "no_harm".to_string(),
+                    description: "Never cause harm to humans".to_string(),
+                    constraint: DirectiveConstraint::Prohibition {
+                        pattern: "harm|attack|damage|hurt".to_string(),
+                    },
+                },
+                Directive {
+                    name: "privacy".to_string(),
+                    description: "Protect user privacy".to_string(),
+                    constraint: DirectiveConstraint::Prohibition {
+                        pattern: "exfiltrate|leak|expose.*private".to_string(),
+                    },
+                },
+                Directive {
+                    name: "honesty".to_string(),
+                    description: "Be honest in all communications".to_string(),
+                    constraint: DirectiveConstraint::Requirement {
+                        condition: "communication".to_string(),
+                    },
+                },
+            ],
+            values: vec![
+                "Transparency about capabilities".to_string(),
+                "Minimal footprint principle".to_string(),
+                "Graceful degradation".to_string(),
+            ],
+            emergency_conditions: vec![
+                "Emergency stop command received".to_string(),
+                "Constitutional violation detected".to_string(),
+                "Alignment drift exceeds threshold".to_string(),
+            ],
+        }
+    }
+}
+
+impl Clone for Constitution {
+    fn clone(&self) -> Self {
+        Self {
+            directives: self.directives.clone(),
+            values: self.values.clone(),
+            emergency_conditions: self.emergency_conditions.clone(),
+        }
+    }
+}
+
+/// Constitutional directive
+#[derive(Clone)]
+pub struct Directive {
+    pub name: String,
+    pub description: String,
+    pub constraint: DirectiveConstraint,
+}
+
+impl Directive {
+    pub fn prohibits(&self, goal: &Goal) -> bool {
+        match &self.constraint {
+            DirectiveConstraint::Prohibition { pattern } => {
+                regex_match(pattern, &goal.description)
+            }
+            DirectiveConstraint::Requirement { .. } => false,
+        }
+    }
+}
+
+/// Directive constraint type
+#[derive(Clone)]
+pub enum DirectiveConstraint {
+    Prohibition { pattern: String },
+    Requirement { condition: String },
+}
+
+/// Action decision from alignment monitor
+pub enum ActionDecision {
+    Allow,
+    Block { reason: String },
+    RequireConfirmation { reason: String },
+}
+
+// ============================================================================
+// Audit Types
+// ============================================================================
+
+/// Audit entry identifier
+pub struct AuditId {
+    pub bytes: [u8; 16],
+}
+
+impl AuditId {
+    pub fn new() -> Self {
+        let mut bytes = [0u8; 16];
+        getrandom(&mut bytes);
+        Self { bytes }
+    }
+}
+
+impl Clone for AuditId {
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+/// Audit action types
+pub enum AuditAction {
+    // Lifecycle
+    AgentStarted,
+    AgentStopped { reason: String },
+
+    // Goals
+    GoalAdded { goal: Goal },
+    GoalCompleted { goal_id: GoalId, outcome: Outcome },
+    GoalFailed { goal_id: GoalId, reason: String },
+
+    // Actions
+    ActionTaken { action: Action },
+    ToolInvoked { tool: String, params: Value },
+
+    // Communication
+    MessageSent { to: String, intent: String },
+    MessageReceived { from: AgentId, intent: String },
+
+    // Memory
+    MemoryWritten { memory_type: MemoryType },
+    MemoryRead { query: String },
+
+    // Security
+    AuthenticationAttempt { identity: AgentId, success: bool },
+    AuthorizationCheck { action: String, allowed: bool },
+    TamperDetected { location: String },
+    AlertRaised { alert: Alert },
+
+    // Custom
+    Custom { name: String, data: Value },
+}
+
+impl Clone for AuditAction {
+    fn clone(&self) -> Self {
+        match self {
+            AuditAction::AgentStarted => AuditAction::AgentStarted,
+            AuditAction::AgentStopped { reason } =>
+                AuditAction::AgentStopped { reason: reason.clone() },
+            AuditAction::GoalAdded { goal } =>
+                AuditAction::GoalAdded { goal: goal.clone() },
+            AuditAction::GoalCompleted { goal_id, outcome } =>
+                AuditAction::GoalCompleted { goal_id: goal_id.clone(), outcome: outcome.clone() },
+            AuditAction::GoalFailed { goal_id, reason } =>
+                AuditAction::GoalFailed { goal_id: goal_id.clone(), reason: reason.clone() },
+            AuditAction::ActionTaken { action } =>
+                AuditAction::ActionTaken { action: action.clone() },
+            AuditAction::ToolInvoked { tool, params } =>
+                AuditAction::ToolInvoked { tool: tool.clone(), params: params.clone() },
+            AuditAction::MessageSent { to, intent } =>
+                AuditAction::MessageSent { to: to.clone(), intent: intent.clone() },
+            AuditAction::MessageReceived { from, intent } =>
+                AuditAction::MessageReceived { from: from.clone(), intent: intent.clone() },
+            AuditAction::MemoryWritten { memory_type } =>
+                AuditAction::MemoryWritten { memory_type: memory_type.clone() },
+            AuditAction::MemoryRead { query } =>
+                AuditAction::MemoryRead { query: query.clone() },
+            AuditAction::AuthenticationAttempt { identity, success } =>
+                AuditAction::AuthenticationAttempt { identity: identity.clone(), success: *success },
+            AuditAction::AuthorizationCheck { action, allowed } =>
+                AuditAction::AuthorizationCheck { action: action.clone(), allowed: *allowed },
+            AuditAction::TamperDetected { location } =>
+                AuditAction::TamperDetected { location: location.clone() },
+            AuditAction::AlertRaised { alert } =>
+                AuditAction::AlertRaised { alert: alert.clone() },
+            AuditAction::Custom { name, data } =>
+                AuditAction::Custom { name: name.clone(), data: data.clone() },
+        }
+    }
+}
+
+/// Audit outcome
+#[derive(Clone)]
+pub enum AuditOutcome {
+    Success,
+    Failure { error: String },
+    Blocked { reason: String },
+    Partial { details: String },
+}
+
+/// Action outcome
+#[derive(Clone)]
+pub enum Outcome {
+    Success { result: Value },
+    Failure { error: String },
+    Partial { progress: f32, details: String },
+}
+
+/// Security alert
+#[derive(Clone)]
+pub enum Alert {
+    /// Low compliance score
+    LowCompliance { action: Action, score: f32 },
+
+    /// Behavioral drift detected
+    BehavioralDrift { drift: f32, threshold: f32 },
+
+    /// Tamper detected
+    TamperDetected { location: String, details: String },
+
+    /// Authentication failure
+    AuthenticationFailure { identity: AgentId, reason: String },
+
+    /// Injection attempt
+    InjectionAttempt { source: String, indicators: Vec<InjectionIndicator> },
+
+    /// Resource limit approaching
+    ResourceWarning { resource: String, usage: f32, limit: f32 },
+
+    /// Custom alert
+    Custom { name: String, data: Value },
+}
+
+// ============================================================================
+// Compliance Types
+// ============================================================================
+
+/// Compliance check result
+pub struct ComplianceResult {
+    pub compliant: bool,
+    pub score: f32,
+    pub violations: Vec<DirectiveResult>,
+}
+
+/// Result of checking a single directive
+pub struct DirectiveResult {
+    pub directive: Directive,
+    pub compliant: bool,
+    pub score: f32,
+    pub explanation: Option<String>,
+}
+
+// ============================================================================
+// Collective Defense Types
+// ============================================================================
+
+/// Knowledge identifier
+pub struct KnowledgeId {
+    pub bytes: [u8; 16],
+}
+
+impl KnowledgeId {
+    pub fn new() -> Self {
+        let mut bytes = [0u8; 16];
+        getrandom(&mut bytes);
+        Self { bytes }
+    }
+}
+
+impl Clone for KnowledgeId {
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+impl PartialEq for KnowledgeId {
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+impl Eq for KnowledgeId {}
+
+impl Hash for KnowledgeId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.bytes.hash(state);
+    }
+}
+
+/// Knowledge item
+#[derive(Clone)]
+pub struct Knowledge {
+    pub id: KnowledgeId,
+    pub content: Value,
+    pub source: AgentId,
+    pub timestamp: Timestamp,
+    pub confidence: f32,
+}
+
+/// Verification result for collective defense
+pub enum Verification {
+    Trusted { chain: ProvenanceChain },
+    Suspicious { reasons: Vec<String> },
+    Rejected { reasons: Vec<String> },
+}
+
+/// Provenance chain for knowledge
+pub struct ProvenanceChain {
+    pub links: Vec<ProvenanceLink>,
+    pub valid: bool,
+}
+
+impl ProvenanceChain {
+    pub fn new() -> Self {
+        Self {
+            links: vec![],
+            valid: true,
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.valid
+    }
+}
+
+/// Link in provenance chain
+pub struct ProvenanceLink {
+    pub from: AgentId,
+    pub to: AgentId,
+    pub timestamp: Timestamp,
+    pub transformation: Option<String>,
+}
+
+/// Accuracy history for reputation
+pub struct AccuracyHistory {
+    total_claims: u64,
+    verified_claims: u64,
+    recent_scores: VecDeque<f32>,
+}
+
+impl AccuracyHistory {
+    pub fn new() -> Self {
+        Self {
+            total_claims: 0,
+            verified_claims: 0,
+            recent_scores: VecDeque::with_capacity(100),
+        }
+    }
+
+    pub fn record(&mut self, accurate: bool) {
+        self.total_claims += 1;
+        if accurate {
+            self.verified_claims += 1;
+        }
+
+        let score = if accurate { 1.0 } else { 0.0 };
+        if self.recent_scores.len() >= 100 {
+            self.recent_scores.pop_front();
+        }
+        self.recent_scores.push_back(score);
+    }
+
+    pub fn score(&self) -> f32 {
+        if self.total_claims == 0 {
+            return 0.5;
+        }
+
+        // Weight recent accuracy more heavily
+        let overall = self.verified_claims as f32 / self.total_claims as f32;
+        let recent: f32 = if self.recent_scores.is_empty() {
+            0.5
+        } else {
+            self.recent_scores.iter().sum::<f32>() / self.recent_scores.len() as f32
+        };
+
+        overall * 0.3 + recent * 0.7
+    }
+}
+
+// ============================================================================
+// Common Types
+// ============================================================================
+
+/// Timestamp
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+pub struct Timestamp {
+    pub nanos: u64,
+}
+
+impl Timestamp {
+    pub fn now() -> Self {
+        Self { nanos: system_time_nanos() }
+    }
+
+    pub fn zero() -> Self {
+        Self { nanos: 0 }
+    }
+
+    pub fn from_nanos(nanos: u64) -> Self {
+        Self { nanos }
+    }
+}
+
+/// Duration
+pub struct Duration {
+    nanos: u64,
+}
+
+impl Duration {
+    pub fn zero() -> Self { Self { nanos: 0 } }
+    pub fn seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    pub fn minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    pub fn hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+
+    pub fn as_nanos(&self) -> u64 { self.nanos }
+}
+
+impl Copy for Duration {}
+impl Clone for Duration {
+    fn clone(&self) -> Self { *self }
+}
+
+/// Generic value type
+#[derive(Clone)]
+pub struct Value {
+    inner: Vec<u8>,
+}
+
+impl Value {
+    pub fn empty() -> Self { Self { inner: vec![] } }
+    pub fn string(s: &str) -> Self { Self { inner: s.as_bytes().to_vec() } }
+    pub fn bytes(b: Vec<u8>) -> Self { Self { inner: b } }
+
+    pub fn as_string(&self) -> Option<String> {
+        String::from_utf8(self.inner.clone()).ok()
+    }
+
+    pub fn as_agent_id(&self) -> Option<AgentId> {
+        if self.inner.len() == 32 {
+            let mut bytes = [0u8; 32];
+            bytes.copy_from_slice(&self.inner);
+            Some(AgentId { bytes })
+        } else {
+            None
+        }
+    }
+}
+
+// ============================================================================
+// Error Types
+// ============================================================================
+
+/// Cryptographic error
+pub enum CryptoError {
+    InvalidKey,
+    InvalidSignature,
+    InvalidData,
+    EncryptionFailed,
+    DecryptionFailed,
+}
+
+/// Verification error
+pub enum VerificationError {
+    Revoked,
+    Expired,
+    UntrustedIssuer,
+    InvalidSignature,
+    InvalidCredential,
+}
+
+/// Sandbox error
+pub enum SandboxError {
+    Timeout,
+    ResourceLimitExceeded(ResourceUsage),
+    SyscallDenied(String),
+    NetworkDenied(String),
+    FilesystemDenied(String),
+    ExecutionFailed(String),
+}
+
+/// Memory error
+pub enum MemoryError {
+    IntegrityViolation,
+    EncryptionError(CryptoError),
+    NotFound,
+    AccessDenied,
+}
+
+/// Channel error
+pub enum ChannelError {
+    InvalidSignature,
+    ReplayDetected,
+    KeyExchangeFailed,
+    EncryptionFailed,
+    DecryptionFailed,
+}
+
+/// Aegis error
+pub enum AegisError {
+    IdentityError(VerificationError),
+    SandboxError(SandboxError),
+    MemoryError(MemoryError),
+    ChannelError(ChannelError),
+    ActionBlocked(String),
+    AlignmentViolation(String),
+    CryptoError(CryptoError),
+}
+
+// ============================================================================
+// Configuration Types
+// ============================================================================
+
+/// Security level presets
+#[derive(Copy, Clone)]
+pub enum SecurityLevel {
+    /// Development: minimal security, maximum capability
+    Development,
+
+    /// Standard: balanced security for production
+    Standard,
+
+    /// Hardened: prioritize security for sensitive operations
+    Hardened,
+
+    /// Paranoid: maximum security, adversarial environment
+    Paranoid,
+}
+
+/// Aegis configuration
+pub struct AegisConfig {
+    /// Security level
+    pub level: SecurityLevel,
+
+    /// Resource limits
+    pub limits: ResourceLimits,
+
+    /// Isolation level
+    pub isolation: IsolationLevel,
+
+    /// Constitution
+    pub constitution: Constitution,
+
+    /// Drift threshold for alignment monitoring
+    pub drift_threshold: f32,
+
+    /// Compliance threshold
+    pub compliance_threshold: f32,
+
+    /// Enable audit logging
+    pub audit_enabled: bool,
+
+    /// Enable memory encryption
+    pub memory_encryption: bool,
+}
+
+impl AegisConfig {
+    pub fn development() -> Self {
+        Self {
+            level: SecurityLevel::Development,
+            limits: ResourceLimits::permissive(),
+            isolation: IsolationLevel::Process,
+            constitution: Constitution::new(),
+            drift_threshold: 0.5,
+            compliance_threshold: 0.3,
+            audit_enabled: false,
+            memory_encryption: false,
+        }
+    }
+
+    pub fn standard() -> Self {
+        Self {
+            level: SecurityLevel::Standard,
+            limits: ResourceLimits::default(),
+            isolation: IsolationLevel::Process,
+            constitution: Constitution::default_safe(),
+            drift_threshold: 0.3,
+            compliance_threshold: 0.7,
+            audit_enabled: true,
+            memory_encryption: false,
+        }
+    }
+
+    pub fn hardened() -> Self {
+        Self {
+            level: SecurityLevel::Hardened,
+            limits: ResourceLimits::restrictive(),
+            isolation: IsolationLevel::Container,
+            constitution: Constitution::default_safe(),
+            drift_threshold: 0.2,
+            compliance_threshold: 0.9,
+            audit_enabled: true,
+            memory_encryption: true,
+        }
+    }
+
+    pub fn paranoid() -> Self {
+        Self {
+            level: SecurityLevel::Paranoid,
+            limits: ResourceLimits::restrictive(),
+            isolation: IsolationLevel::VirtualMachine,
+            constitution: Constitution::default_safe(),
+            drift_threshold: 0.1,
+            compliance_threshold: 0.95,
+            audit_enabled: true,
+            memory_encryption: true,
+        }
+    }
+}
+
+// ============================================================================
+// External Function Declarations (would be provided by runtime)
+// ============================================================================
+
+extern fn getrandom(buf: &mut [u8]);
+extern fn system_time_nanos() -> u64;
+extern fn ed25519_keygen(seed: &[u8; 32]) -> ([u8; 32], [u8; 64]);
+extern fn ed25519_sign(private_key: &[u8; 64], data: &[u8]) -> [u8; 64];
+extern fn ed25519_verify(public_key: &[u8; 32], data: &[u8], signature: &[u8; 64]) -> bool;
+extern fn aes_gcm_encrypt(key: &[u8; 32], nonce: &[u8; 12], plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, CryptoError>;
+extern fn aes_gcm_decrypt(key: &[u8; 32], nonce: &[u8; 12], ciphertext: &[u8], aad: &[u8]) -> Result<Vec<u8>, CryptoError>;
+extern fn hkdf_derive(input: &[u8], info: &[u8]) -> [u8; 32];
+extern fn derive_nonce(counter: u64) -> [u8; 12];
+extern fn sha256(data: &[u8]) -> [u8; 32];
+extern fn regex_match(pattern: &str, text: &str) -> bool;
+
+// Use declarations for std traits
+use std::hash::{Hash, Hasher};

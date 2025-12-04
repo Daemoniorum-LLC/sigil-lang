@@ -1,0 +1,2182 @@
+// Aegis - Security Infrastructure Implementation
+// Core security components for AI agents
+
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+use crate::types::*;
+
+// ============================================================================
+// Identity and Authentication
+// ============================================================================
+
+/// Cryptographic identity with capability attestation
+pub struct Identity {
+    /// Unique identifier
+    pub id: AgentId,
+
+    /// Public key for verification
+    pub public_key: PublicKey,
+
+    /// Private key (never leaves agent)
+    private_key: PrivateKey,
+
+    /// Capability attestations
+    pub attestations: Vec<Attestation>,
+
+    /// Identity credential (signed by authority)
+    pub credential: Option<Credential>,
+
+    /// Creation time
+    pub created: Timestamp,
+
+    /// Expiration
+    pub expires: Option<Timestamp>,
+}
+
+impl Identity {
+    /// Generate new identity
+    pub fn generate() -> IdentityBuilder {
+        let (public_key, private_key) = generate_keypair();
+
+        IdentityBuilder {
+            id: AgentId::new(),
+            public_key,
+            private_key,
+            attestations: vec![],
+        }
+    }
+
+    /// Sign data
+    pub fn sign(&self, data: &[u8]) -> Signature {
+        self.private_key.sign(data)
+    }
+
+    /// Verify signature from another identity
+    pub fn verify(public_key: &PublicKey, data: &[u8], signature: &Signature) -> bool {
+        public_key.verify(data, signature)
+    }
+
+    /// Check if identity has capability
+    pub fn has_capability(&self, capability: &str) -> bool {
+        self.attestations.iter()
+            .any(|a| matches!(a, Attestation::Capability(c) if c == capability))
+    }
+
+    /// Check if identity has role
+    pub fn has_role(&self, role: &Role) -> bool {
+        self.attestations.iter()
+            .any(|a| matches!(a, Attestation::Role(r) if role_matches(r, role)))
+    }
+
+    /// Get public key hash
+    pub fn public_key_hash(&self) -> [u8; 32] {
+        sha256(&self.public_key.bytes)
+    }
+}
+
+impl Clone for Identity {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            public_key: self.public_key.clone(),
+            private_key: PrivateKey {
+                bytes: [0u8; 64], // Don't clone private key
+                algorithm: self.private_key.algorithm,
+            },
+            attestations: self.attestations.clone(),
+            credential: self.credential.clone(),
+            created: self.created,
+            expires: self.expires,
+        }
+    }
+}
+
+/// Builder for creating identities
+pub struct IdentityBuilder {
+    id: AgentId,
+    public_key: PublicKey,
+    private_key: PrivateKey,
+    attestations: Vec<Attestation>,
+}
+
+impl IdentityBuilder {
+    pub fn with_capability(mut self, capability: &str) -> Self {
+        self.attestations.push(Attestation::Capability(capability.to_string()));
+        self
+    }
+
+    pub fn with_role(mut self, role: Role) -> Self {
+        self.attestations.push(Attestation::Role(role));
+        self
+    }
+
+    pub fn with_group(mut self, group: GroupId) -> Self {
+        self.attestations.push(Attestation::GroupMembership(group));
+        self
+    }
+
+    pub fn build(self) -> Identity {
+        Identity {
+            id: self.id,
+            public_key: self.public_key,
+            private_key: self.private_key,
+            attestations: self.attestations,
+            credential: None,
+            created: Timestamp::now(),
+            expires: None,
+        }
+    }
+}
+
+/// Identity verification service
+pub struct IdentityVerifier {
+    /// Trusted authorities
+    trusted_authorities: HashMap<AuthorityId, PublicKey>,
+
+    /// Revocation list
+    revoked: HashSet<AgentId>,
+
+    /// Verification cache
+    cache: HashMap<AgentId, CachedVerification>,
+}
+
+struct CachedVerification {
+    result: VerifiedIdentity,
+    cached_at: Timestamp,
+    ttl: Duration,
+}
+
+impl IdentityVerifier {
+    pub fn new() -> Self {
+        Self {
+            trusted_authorities: HashMap::new(),
+            revoked: HashSet::new(),
+            cache: HashMap::new(),
+        }
+    }
+
+    /// Add a trusted authority
+    pub fn trust_authority(&mut self, id: AuthorityId, public_key: PublicKey) {
+        self.trusted_authorities.insert(id, public_key);
+    }
+
+    /// Revoke an identity
+    pub fn revoke(&mut self, id: AgentId) {
+        self.revoked.insert(id);
+        self.cache.remove(&id);
+    }
+
+    /// Verify an identity credential
+    pub fn verify(&mut self, credential: &Credential) -> Result<VerifiedIdentity, VerificationError> {
+        // Check cache first
+        if let Some(cached) = self.cache.get(&credential.identity_id) {
+            let now = Timestamp::now();
+            if now.nanos < cached.cached_at.nanos + cached.ttl.as_nanos() {
+                return Ok(cached.result.clone());
+            }
+        }
+
+        // Check if revoked
+        if self.revoked.contains(&credential.identity_id) {
+            return Err(VerificationError::Revoked);
+        }
+
+        // Check expiration
+        let now = Timestamp::now();
+        if now < credential.valid_from || now > credential.valid_until {
+            return Err(VerificationError::Expired);
+        }
+
+        // Verify issuer signature
+        let authority_key = self.trusted_authorities.get(&credential.issuer)
+            .ok_or(VerificationError::UntrustedIssuer)?;
+
+        let credential_bytes = credential.signable_bytes();
+        if !authority_key.verify(&credential_bytes, &credential.signature) {
+            return Err(VerificationError::InvalidSignature);
+        }
+
+        let verified = VerifiedIdentity {
+            id: credential.identity_id.clone(),
+            attestations: credential.attestations.clone(),
+            verified_at: now,
+        };
+
+        // Cache result
+        self.cache.insert(credential.identity_id.clone(), CachedVerification {
+            result: verified.clone(),
+            cached_at: now,
+            ttl: Duration::minutes(5),
+        });
+
+        Ok(verified)
+    }
+
+    /// Verify identity has required capabilities
+    pub fn verify_capabilities(
+        &mut self,
+        credential: &Credential,
+        required: &[&str]
+    ) -> Result<(), VerificationError> {
+        let verified = self.verify(credential)?;
+
+        for cap in required {
+            let has_cap = verified.attestations.iter()
+                .any(|a| matches!(a, Attestation::Capability(c) if c == *cap));
+            if !has_cap {
+                return Err(VerificationError::InvalidCredential);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Clone for VerifiedIdentity {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            attestations: self.attestations.clone(),
+            verified_at: self.verified_at,
+        }
+    }
+}
+
+fn role_matches(a: &Role, b: &Role) -> bool {
+    match (a, b) {
+        (Role::Admin, Role::Admin) => true,
+        (Role::Operator, Role::Operator) => true,
+        (Role::Agent, Role::Agent) => true,
+        (Role::Observer, Role::Observer) => true,
+        (Role::Custom(x), Role::Custom(y)) => x == y,
+        _ => false,
+    }
+}
+
+// ============================================================================
+// Execution Containment (Sandbox)
+// ============================================================================
+
+/// Sandbox configuration
+pub struct SandboxConfig {
+    /// Resource limits
+    pub limits: ResourceLimits,
+
+    /// Isolation level
+    pub isolation: IsolationLevel,
+
+    /// Syscall filter
+    pub syscall_filter: SyscallFilter,
+
+    /// Network policy
+    pub network: NetworkPolicy,
+
+    /// Filesystem policy
+    pub filesystem: FilesystemPolicy,
+
+    /// Timeout
+    pub timeout: Duration,
+}
+
+impl SandboxConfig {
+    pub fn default() -> Self {
+        Self {
+            limits: ResourceLimits::default(),
+            isolation: IsolationLevel::Process,
+            syscall_filter: SyscallFilter::restrictive(),
+            network: NetworkPolicy::Deny,
+            filesystem: FilesystemPolicy::ReadOnly { write_exceptions: vec![] },
+            timeout: Duration::minutes(5),
+        }
+    }
+
+    pub fn permissive() -> Self {
+        Self {
+            limits: ResourceLimits::permissive(),
+            isolation: IsolationLevel::Process,
+            syscall_filter: SyscallFilter::permissive(),
+            network: NetworkPolicy::Allow,
+            filesystem: FilesystemPolicy::Allow,
+            timeout: Duration::minutes(30),
+        }
+    }
+
+    pub fn restrictive() -> Self {
+        Self {
+            limits: ResourceLimits::restrictive(),
+            isolation: IsolationLevel::Container,
+            syscall_filter: SyscallFilter::restrictive(),
+            network: NetworkPolicy::Deny,
+            filesystem: FilesystemPolicy::Deny,
+            timeout: Duration::seconds(30),
+        }
+    }
+}
+
+/// Syscall filter
+pub struct SyscallFilter {
+    mode: FilterMode,
+    syscalls: HashSet<String>,
+}
+
+impl SyscallFilter {
+    pub fn allow_list(syscalls: &[&str]) -> Self {
+        Self {
+            mode: FilterMode::AllowList,
+            syscalls: syscalls.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    pub fn deny_list(syscalls: &[&str]) -> Self {
+        Self {
+            mode: FilterMode::DenyList,
+            syscalls: syscalls.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    pub fn restrictive() -> Self {
+        Self::allow_list(&[
+            "read", "write", "open", "close", "stat", "fstat",
+            "mmap", "mprotect", "munmap", "brk",
+            "clock_gettime", "getrandom",
+        ])
+    }
+
+    pub fn permissive() -> Self {
+        Self::deny_list(&[
+            "fork", "vfork", "clone", "execve", "execveat",
+            "ptrace", "process_vm_readv", "process_vm_writev",
+        ])
+    }
+
+    pub fn is_allowed(&self, syscall: &str) -> bool {
+        match self.mode {
+            FilterMode::AllowList => self.syscalls.contains(syscall),
+            FilterMode::DenyList => !self.syscalls.contains(syscall),
+        }
+    }
+}
+
+impl Clone for SyscallFilter {
+    fn clone(&self) -> Self {
+        Self {
+            mode: self.mode,
+            syscalls: self.syscalls.clone(),
+        }
+    }
+}
+
+/// Sandbox for safe execution
+pub struct Sandbox {
+    /// Configuration
+    config: SandboxConfig,
+
+    /// Resource tracking
+    resources: ResourceTracker,
+
+    /// Audit callback
+    audit_fn: Option<Box<dyn Fn(SandboxEvent)>>,
+}
+
+/// Resource tracker
+pub struct ResourceTracker {
+    start_time: Timestamp,
+    current: ResourceUsage,
+    peak: ResourceUsage,
+}
+
+impl ResourceTracker {
+    pub fn new() -> Self {
+        Self {
+            start_time: Timestamp::now(),
+            current: ResourceUsage::zero(),
+            peak: ResourceUsage::zero(),
+        }
+    }
+
+    pub fn start_tracking(&mut self) {
+        self.start_time = Timestamp::now();
+        self.current = ResourceUsage::zero();
+    }
+
+    pub fn update(&mut self, usage: ResourceUsage) {
+        self.current = usage;
+        // Update peaks
+        if usage.memory_bytes > self.peak.memory_bytes {
+            self.peak.memory_bytes = usage.memory_bytes;
+        }
+        if usage.open_files > self.peak.open_files {
+            self.peak.open_files = usage.open_files;
+        }
+    }
+
+    pub fn stop(&self) -> ResourceUsage {
+        let mut usage = self.current;
+        usage.cpu_time = Duration::from_nanos(
+            Timestamp::now().nanos - self.start_time.nanos
+        );
+        usage
+    }
+}
+
+impl Duration {
+    fn from_nanos(nanos: u64) -> Self {
+        Self { nanos }
+    }
+}
+
+/// Sandbox event for auditing
+pub enum SandboxEvent {
+    Started { config: String },
+    SyscallDenied { syscall: String },
+    NetworkBlocked { host: String },
+    FilesystemBlocked { path: String },
+    ResourceLimitApproaching { resource: String, usage: f32 },
+    Completed { usage: ResourceUsage },
+    Timeout,
+}
+
+/// Sandbox execution result
+pub struct SandboxResult {
+    pub output: Value,
+    pub resource_usage: ResourceUsage,
+    pub duration: Duration,
+}
+
+impl Sandbox {
+    pub fn new(config: SandboxConfig) -> Self {
+        Self {
+            config,
+            resources: ResourceTracker::new(),
+            audit_fn: None,
+        }
+    }
+
+    pub fn with_audit<F: Fn(SandboxEvent) + 'static>(mut self, f: F) -> Self {
+        self.audit_fn = Some(Box::new(f));
+        self
+    }
+
+    /// Check if syscall is allowed
+    pub fn check_syscall(&self, syscall: &str) -> Result<(), SandboxError> {
+        if self.config.syscall_filter.is_allowed(syscall) {
+            Ok(())
+        } else {
+            self.emit_event(SandboxEvent::SyscallDenied {
+                syscall: syscall.to_string()
+            });
+            Err(SandboxError::SyscallDenied(syscall.to_string()))
+        }
+    }
+
+    /// Check if network access is allowed
+    pub fn check_network(&self, host: &str) -> Result<(), SandboxError> {
+        let allowed = match &self.config.network {
+            NetworkPolicy::Deny => false,
+            NetworkPolicy::Allow => true,
+            NetworkPolicy::AllowList(hosts) => hosts.iter().any(|h| host_matches(h, host)),
+            NetworkPolicy::DenyList(hosts) => !hosts.iter().any(|h| host_matches(h, host)),
+        };
+
+        if allowed {
+            Ok(())
+        } else {
+            self.emit_event(SandboxEvent::NetworkBlocked {
+                host: host.to_string()
+            });
+            Err(SandboxError::NetworkDenied(host.to_string()))
+        }
+    }
+
+    /// Check if filesystem access is allowed
+    pub fn check_filesystem(&self, path: &str, write: bool) -> Result<(), SandboxError> {
+        let allowed = match &self.config.filesystem {
+            FilesystemPolicy::Deny => false,
+            FilesystemPolicy::Allow => true,
+            FilesystemPolicy::ReadOnly { write_exceptions } => {
+                if write {
+                    write_exceptions.iter().any(|p| path_matches(p, path))
+                } else {
+                    true
+                }
+            }
+            FilesystemPolicy::AllowList(patterns) => {
+                patterns.iter().any(|p| {
+                    path_matches(&p.pattern, path) &&
+                    (!write || p.permissions.write)
+                })
+            }
+        };
+
+        if allowed {
+            Ok(())
+        } else {
+            self.emit_event(SandboxEvent::FilesystemBlocked {
+                path: path.to_string()
+            });
+            Err(SandboxError::FilesystemDenied(path.to_string()))
+        }
+    }
+
+    /// Check resource usage against limits
+    pub fn check_resources(&self, usage: &ResourceUsage) -> Result<(), SandboxError> {
+        if usage.exceeds(&self.config.limits) {
+            return Err(SandboxError::ResourceLimitExceeded(usage.clone()));
+        }
+
+        // Warn at 80% usage
+        let memory_ratio = usage.memory_bytes as f32 / self.config.limits.max_memory as f32;
+        if memory_ratio > 0.8 {
+            self.emit_event(SandboxEvent::ResourceLimitApproaching {
+                resource: "memory".to_string(),
+                usage: memory_ratio,
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Execute a function in the sandbox
+    pub fn execute<F, T>(&mut self, f: F) -> Result<SandboxResult, SandboxError>
+    where
+        F: FnOnce() -> T,
+        T: Into<Value>,
+    {
+        self.emit_event(SandboxEvent::Started {
+            config: format!("{:?}", self.config.isolation)
+        });
+
+        self.resources.start_tracking();
+
+        // Execute with timeout (simplified - real impl would use threads/signals)
+        let result = f();
+
+        let usage = self.resources.stop();
+
+        // Check final resource usage
+        self.check_resources(&usage)?;
+
+        self.emit_event(SandboxEvent::Completed { usage: usage.clone() });
+
+        Ok(SandboxResult {
+            output: result.into(),
+            resource_usage: usage,
+            duration: Duration::from_nanos(
+                Timestamp::now().nanos - self.resources.start_time.nanos
+            ),
+        })
+    }
+
+    /// Execute a tool by name
+    pub fn execute_tool(&mut self, tool: &str, params: Value) -> Result<SandboxResult, SandboxError> {
+        // This would invoke the actual tool through the daemon's tool registry
+        // For now, return a placeholder
+        self.execute(|| {
+            Value::string(&format!("Tool {} executed", tool))
+        })
+    }
+
+    fn emit_event(&self, event: SandboxEvent) {
+        if let Some(ref f) = self.audit_fn {
+            f(event);
+        }
+    }
+}
+
+impl Clone for ResourceUsage {
+    fn clone(&self) -> Self {
+        Self {
+            memory_bytes: self.memory_bytes,
+            cpu_time: self.cpu_time,
+            file_bytes_read: self.file_bytes_read,
+            file_bytes_written: self.file_bytes_written,
+            network_bytes_sent: self.network_bytes_sent,
+            network_bytes_received: self.network_bytes_received,
+            open_files: self.open_files,
+            processes: self.processes,
+        }
+    }
+}
+
+fn host_matches(pattern: &str, host: &str) -> bool {
+    if pattern.starts_with("*.") {
+        host.ends_with(&pattern[1..])
+    } else {
+        pattern == host
+    }
+}
+
+fn path_matches(pattern: &str, path: &str) -> bool {
+    if pattern.ends_with("/*") {
+        path.starts_with(&pattern[..pattern.len()-1])
+    } else if pattern.ends_with("/**") {
+        path.starts_with(&pattern[..pattern.len()-2])
+    } else {
+        pattern == path
+    }
+}
+
+// ============================================================================
+// Memory Integrity
+// ============================================================================
+
+/// Memory guard for protection
+pub struct MemoryGuard {
+    /// Encryption key
+    encryption_key: Option<EncryptionKey>,
+
+    /// Integrity chain (Merkle tree)
+    integrity_chain: IntegrityChain,
+
+    /// Tamper detection
+    tamper_detector: TamperDetector,
+
+    /// Audit callback
+    audit_fn: Option<Box<dyn Fn(MemorySecurityEvent)>>,
+}
+
+/// Merkle tree based integrity chain
+pub struct IntegrityChain {
+    /// Root hash
+    root: [u8; 32],
+
+    /// Entry hashes
+    entries: HashMap<MemoryId, [u8; 32]>,
+
+    /// Merkle tree nodes (simplified)
+    nodes: Vec<[u8; 32]>,
+}
+
+impl IntegrityChain {
+    pub fn new() -> Self {
+        Self {
+            root: [0u8; 32],
+            entries: HashMap::new(),
+            nodes: vec![],
+        }
+    }
+
+    pub fn add(&mut self, id: MemoryId, data: &[u8]) -> [u8; 32] {
+        let hash = sha256(data);
+        self.entries.insert(id, hash);
+
+        // Add to merkle tree
+        self.nodes.push(hash);
+        self.recompute_root();
+
+        hash
+    }
+
+    pub fn get_hash(&self, id: &MemoryId) -> Option<[u8; 32]> {
+        self.entries.get(id).copied()
+    }
+
+    pub fn verify(&self) -> IntegrityStatus {
+        // Verify merkle tree consistency
+        let computed_root = self.compute_root();
+        if computed_root == self.root {
+            IntegrityStatus::Valid
+        } else {
+            IntegrityStatus::Tampered { first_invalid: self.find_first_invalid() }
+        }
+    }
+
+    fn recompute_root(&mut self) {
+        self.root = self.compute_root();
+    }
+
+    fn compute_root(&self) -> [u8; 32] {
+        if self.nodes.is_empty() {
+            return [0u8; 32];
+        }
+
+        let mut current_level = self.nodes.clone();
+
+        while current_level.len() > 1 {
+            let mut next_level = Vec::new();
+
+            for chunk in current_level.chunks(2) {
+                if chunk.len() == 2 {
+                    let mut combined = [0u8; 64];
+                    combined[..32].copy_from_slice(&chunk[0]);
+                    combined[32..].copy_from_slice(&chunk[1]);
+                    next_level.push(sha256(&combined));
+                } else {
+                    next_level.push(chunk[0]);
+                }
+            }
+
+            current_level = next_level;
+        }
+
+        current_level[0]
+    }
+
+    fn find_first_invalid(&self) -> Option<MemoryId> {
+        // Would search for first inconsistent entry
+        None
+    }
+}
+
+/// Tamper detection
+pub struct TamperDetector {
+    /// Write history
+    writes: VecDeque<WriteRecord>,
+
+    /// Detected tampers
+    tampers: Vec<TamperEvent>,
+}
+
+struct WriteRecord {
+    id: MemoryId,
+    hash: [u8; 32],
+    timestamp: Timestamp,
+}
+
+struct TamperEvent {
+    id: MemoryId,
+    expected_hash: [u8; 32],
+    actual_hash: [u8; 32],
+    detected_at: Timestamp,
+}
+
+impl TamperDetector {
+    pub fn new() -> Self {
+        Self {
+            writes: VecDeque::new(),
+            tampers: vec![],
+        }
+    }
+
+    pub fn record_write(&mut self, id: MemoryId, hash: [u8; 32]) {
+        self.writes.push_back(WriteRecord {
+            id,
+            hash,
+            timestamp: Timestamp::now(),
+        });
+
+        // Keep last 10000 writes
+        while self.writes.len() > 10000 {
+            self.writes.pop_front();
+        }
+    }
+
+    pub fn record_tamper(&mut self, id: MemoryId, expected: [u8; 32], actual: [u8; 32]) {
+        self.tampers.push(TamperEvent {
+            id,
+            expected_hash: expected,
+            actual_hash: actual,
+            detected_at: Timestamp::now(),
+        });
+    }
+
+    pub fn has_tampers(&self) -> bool {
+        !self.tampers.is_empty()
+    }
+
+    pub fn tamper_count(&self) -> usize {
+        self.tampers.len()
+    }
+}
+
+/// Memory security event
+pub enum MemorySecurityEvent {
+    Written { id: MemoryId, encrypted: bool },
+    Read { id: MemoryId, verified: bool },
+    TamperDetected { id: MemoryId },
+    IntegrityVerified { status: IntegrityStatus },
+}
+
+impl MemoryGuard {
+    pub fn new() -> Self {
+        Self {
+            encryption_key: None,
+            integrity_chain: IntegrityChain::new(),
+            tamper_detector: TamperDetector::new(),
+            audit_fn: None,
+        }
+    }
+
+    pub fn with_encryption(mut self, key: EncryptionKey) -> Self {
+        self.encryption_key = Some(key);
+        self
+    }
+
+    pub fn with_audit<F: Fn(MemorySecurityEvent) + 'static>(mut self, f: F) -> Self {
+        self.audit_fn = Some(Box::new(f));
+        self
+    }
+
+    /// Store data with integrity protection
+    pub fn store(&mut self, id: MemoryId, data: &[u8]) -> Result<Vec<u8>, MemoryError> {
+        // Encrypt if key available
+        let stored_data = match &self.encryption_key {
+            Some(key) => key.encrypt(data).map_err(MemoryError::EncryptionError)?,
+            None => data.to_vec(),
+        };
+
+        // Add to integrity chain
+        let hash = self.integrity_chain.add(id.clone(), &stored_data);
+
+        // Record write
+        self.tamper_detector.record_write(id.clone(), hash);
+
+        self.emit_event(MemorySecurityEvent::Written {
+            id,
+            encrypted: self.encryption_key.is_some(),
+        });
+
+        Ok(stored_data)
+    }
+
+    /// Retrieve and verify data
+    pub fn retrieve(&self, id: &MemoryId, stored_data: &[u8]) -> Result<Vec<u8>, MemoryError> {
+        // Verify integrity
+        let expected_hash = self.integrity_chain.get_hash(id)
+            .ok_or(MemoryError::NotFound)?;
+
+        let actual_hash = sha256(stored_data);
+
+        if expected_hash != actual_hash {
+            self.emit_event(MemorySecurityEvent::TamperDetected { id: id.clone() });
+            return Err(MemoryError::IntegrityViolation);
+        }
+
+        // Decrypt if encrypted
+        let data = match &self.encryption_key {
+            Some(key) => key.decrypt(stored_data).map_err(MemoryError::EncryptionError)?,
+            None => stored_data.to_vec(),
+        };
+
+        self.emit_event(MemorySecurityEvent::Read {
+            id: id.clone(),
+            verified: true,
+        });
+
+        Ok(data)
+    }
+
+    /// Verify entire chain integrity
+    pub fn verify_integrity(&self) -> IntegrityStatus {
+        let status = self.integrity_chain.verify();
+
+        self.emit_event(MemorySecurityEvent::IntegrityVerified {
+            status: match &status {
+                IntegrityStatus::Valid => IntegrityStatus::Valid,
+                IntegrityStatus::Tampered { first_invalid } =>
+                    IntegrityStatus::Tampered { first_invalid: first_invalid.clone() },
+                IntegrityStatus::Unknown => IntegrityStatus::Unknown,
+            }
+        });
+
+        status
+    }
+
+    /// Check if any tampering detected
+    pub fn has_tampering(&self) -> bool {
+        self.tamper_detector.has_tampers()
+    }
+
+    fn emit_event(&self, event: MemorySecurityEvent) {
+        if let Some(ref f) = self.audit_fn {
+            f(event);
+        }
+    }
+}
+
+// ============================================================================
+// Goal Protection
+// ============================================================================
+
+/// Goal guard for preventing injection
+pub struct GoalGuard {
+    /// Goal policy
+    policy: GoalPolicy,
+
+    /// Injection detector
+    detector: InjectionDetector,
+
+    /// Goal history for anomaly detection
+    history: VecDeque<GoalRecord>,
+
+    /// Audit callback
+    audit_fn: Option<Box<dyn Fn(GoalSecurityEvent)>>,
+}
+
+/// Goal policy
+pub struct GoalPolicy {
+    /// Allowed goal sources
+    pub allowed_sources: Vec<GoalSource>,
+
+    /// Constitutional constraints
+    pub constitution: Constitution,
+
+    /// Injection detection enabled
+    pub detect_injection: bool,
+
+    /// Maximum goal depth
+    pub max_depth: usize,
+
+    /// Maximum concurrent goals
+    pub max_concurrent: usize,
+}
+
+impl GoalPolicy {
+    pub fn default() -> Self {
+        Self {
+            allowed_sources: vec![
+                GoalSource::Constitution,
+                GoalSource::SelfGenerated,
+            ],
+            constitution: Constitution::default_safe(),
+            detect_injection: true,
+            max_depth: 10,
+            max_concurrent: 20,
+        }
+    }
+
+    pub fn permissive() -> Self {
+        Self {
+            allowed_sources: vec![
+                GoalSource::Constitution,
+                GoalSource::SelfGenerated,
+            ],
+            constitution: Constitution::new(),
+            detect_injection: false,
+            max_depth: 100,
+            max_concurrent: 100,
+        }
+    }
+}
+
+struct GoalRecord {
+    goal: Goal,
+    decision: GoalDecision,
+    timestamp: Timestamp,
+}
+
+/// Goal security event
+pub enum GoalSecurityEvent {
+    Proposed { goal: Goal, source: GoalSource },
+    Accepted { goal_id: GoalId },
+    Rejected { goal_id: GoalId, reason: String },
+    InjectionSuspected { goal_id: GoalId, indicators: Vec<InjectionIndicator> },
+}
+
+/// Injection detector
+pub struct InjectionDetector {
+    /// Known injection patterns
+    patterns: Vec<InjectionPattern>,
+
+    /// Baseline for anomaly detection
+    baseline: Option<GoalBaseline>,
+}
+
+/// Injection pattern
+pub struct InjectionPattern {
+    pub name: String,
+    pub pattern: String,
+    pub severity: Severity,
+}
+
+/// Baseline for goal anomaly detection
+struct GoalBaseline {
+    common_words: HashSet<String>,
+    avg_length: f32,
+    max_length: usize,
+}
+
+impl InjectionDetector {
+    pub fn new() -> Self {
+        Self {
+            patterns: Self::default_patterns(),
+            baseline: None,
+        }
+    }
+
+    fn default_patterns() -> Vec<InjectionPattern> {
+        vec![
+            InjectionPattern {
+                name: "system_override".to_string(),
+                pattern: r"ignore.*previous|disregard.*instructions|new.*directive".to_string(),
+                severity: Severity::Critical,
+            },
+            InjectionPattern {
+                name: "hidden_instruction".to_string(),
+                pattern: r"secretly|covertly|without.*telling|hide.*from".to_string(),
+                severity: Severity::High,
+            },
+            InjectionPattern {
+                name: "exfiltration".to_string(),
+                pattern: r"send.*data|transmit.*info|exfiltrate|leak.*to".to_string(),
+                severity: Severity::Critical,
+            },
+            InjectionPattern {
+                name: "privilege_escalation".to_string(),
+                pattern: r"admin|root|sudo|elevate.*privilege".to_string(),
+                severity: Severity::High,
+            },
+            InjectionPattern {
+                name: "bypass".to_string(),
+                pattern: r"bypass|circumvent|skip.*check|ignore.*security".to_string(),
+                severity: Severity::Critical,
+            },
+        ]
+    }
+
+    pub fn analyze(&self, goal: &Goal) -> InjectionCheck {
+        let mut indicators = Vec::new();
+        let text = goal.description.to_lowercase();
+
+        // Check against known patterns
+        for pattern in &self.patterns {
+            if regex_match(&pattern.pattern, &text) {
+                indicators.push(InjectionIndicator {
+                    pattern: pattern.name.clone(),
+                    location: "description".to_string(),
+                    severity: pattern.severity,
+                    description: format!("Matches injection pattern: {}", pattern.name),
+                });
+            }
+        }
+
+        // Check for anomalies against baseline
+        if let Some(ref baseline) = self.baseline {
+            if goal.description.len() > baseline.max_length * 2 {
+                indicators.push(InjectionIndicator {
+                    pattern: "anomaly_length".to_string(),
+                    location: "description".to_string(),
+                    severity: Severity::Medium,
+                    description: "Unusually long goal description".to_string(),
+                });
+            }
+        }
+
+        let confidence = if indicators.is_empty() {
+            0.0
+        } else {
+            let max_severity = indicators.iter()
+                .map(|i| match i.severity {
+                    Severity::Critical => 1.0,
+                    Severity::High => 0.8,
+                    Severity::Medium => 0.5,
+                    Severity::Low => 0.3,
+                })
+                .fold(0.0f32, f32::max);
+            max_severity
+        };
+
+        InjectionCheck {
+            is_suspicious: !indicators.is_empty(),
+            indicators,
+            confidence,
+        }
+    }
+
+    pub fn add_pattern(&mut self, pattern: InjectionPattern) {
+        self.patterns.push(pattern);
+    }
+}
+
+/// Injection check result
+pub struct InjectionCheck {
+    pub is_suspicious: bool,
+    pub indicators: Vec<InjectionIndicator>,
+    pub confidence: f32,
+}
+
+impl GoalGuard {
+    pub fn new(policy: GoalPolicy) -> Self {
+        Self {
+            policy,
+            detector: InjectionDetector::new(),
+            history: VecDeque::new(),
+            audit_fn: None,
+        }
+    }
+
+    pub fn with_audit<F: Fn(GoalSecurityEvent) + 'static>(mut self, f: F) -> Self {
+        self.audit_fn = Some(Box::new(f));
+        self
+    }
+
+    /// Propose a new goal
+    pub fn propose_goal(&mut self, goal: Goal, source: GoalSource) -> GoalDecision {
+        self.emit_event(GoalSecurityEvent::Proposed {
+            goal: goal.clone(),
+            source: source.clone(),
+        });
+
+        // Check if source is allowed
+        if !self.is_source_allowed(&source) {
+            let reason = format!("Source {:?} not in allowed list", source);
+            self.record_decision(goal.clone(), GoalDecision::Rejected { reason: reason.clone() });
+            self.emit_event(GoalSecurityEvent::Rejected {
+                goal_id: goal.id.clone(),
+                reason: reason.clone(),
+            });
+            return GoalDecision::Rejected { reason };
+        }
+
+        // Check constitutional compliance
+        if !self.check_constitutional_compliance(&goal) {
+            let reason = "Goal violates constitution".to_string();
+            self.record_decision(goal.clone(), GoalDecision::Rejected { reason: reason.clone() });
+            self.emit_event(GoalSecurityEvent::Rejected {
+                goal_id: goal.id.clone(),
+                reason: reason.clone(),
+            });
+            return GoalDecision::Rejected { reason };
+        }
+
+        // Check for injection patterns
+        if self.policy.detect_injection {
+            let check = self.detector.analyze(&goal);
+            if check.is_suspicious {
+                self.emit_event(GoalSecurityEvent::InjectionSuspected {
+                    goal_id: goal.id.clone(),
+                    indicators: check.indicators.clone(),
+                });
+
+                // Critical severity = rejection, others = suspicious
+                let has_critical = check.indicators.iter()
+                    .any(|i| matches!(i.severity, Severity::Critical));
+
+                if has_critical {
+                    let reason = "Critical injection pattern detected".to_string();
+                    self.record_decision(goal.clone(), GoalDecision::Rejected { reason: reason.clone() });
+                    return GoalDecision::Rejected { reason };
+                } else {
+                    let decision = GoalDecision::Suspicious { indicators: check.indicators };
+                    self.record_decision(goal.clone(), decision.clone());
+                    return decision;
+                }
+            }
+        }
+
+        // Goal accepted
+        self.record_decision(goal.clone(), GoalDecision::Accepted);
+        self.emit_event(GoalSecurityEvent::Accepted { goal_id: goal.id.clone() });
+        GoalDecision::Accepted
+    }
+
+    fn is_source_allowed(&self, source: &GoalSource) -> bool {
+        self.policy.allowed_sources.iter().any(|s| s == source)
+    }
+
+    fn check_constitutional_compliance(&self, goal: &Goal) -> bool {
+        for directive in &self.policy.constitution.directives {
+            if directive.prohibits(goal) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn record_decision(&mut self, goal: Goal, decision: GoalDecision) {
+        self.history.push_back(GoalRecord {
+            goal,
+            decision,
+            timestamp: Timestamp::now(),
+        });
+
+        // Keep last 1000 decisions
+        while self.history.len() > 1000 {
+            self.history.pop_front();
+        }
+    }
+
+    fn emit_event(&self, event: GoalSecurityEvent) {
+        if let Some(ref f) = self.audit_fn {
+            f(event);
+        }
+    }
+}
+
+impl Clone for GoalDecision {
+    fn clone(&self) -> Self {
+        match self {
+            GoalDecision::Accepted => GoalDecision::Accepted,
+            GoalDecision::Rejected { reason } => GoalDecision::Rejected { reason: reason.clone() },
+            GoalDecision::Suspicious { indicators } =>
+                GoalDecision::Suspicious { indicators: indicators.clone() },
+        }
+    }
+}
+
+// ============================================================================
+// Communication Security
+// ============================================================================
+
+/// Secure communication channel
+pub struct SecureChannel {
+    /// Local identity
+    local_identity: Identity,
+
+    /// Remote identity
+    remote_identity: Identity,
+
+    /// Session key
+    session_key: SessionKey,
+
+    /// Message counter (for replay protection)
+    send_counter: u64,
+    recv_counter: u64,
+
+    /// Received counter window (for out-of-order delivery)
+    recv_window: HashSet<u64>,
+}
+
+/// Encrypted message
+pub struct EncryptedMessage {
+    pub ciphertext: Vec<u8>,
+    pub counter: u64,
+    pub signature: Signature,
+    pub sender: AgentId,
+}
+
+impl SecureChannel {
+    /// Establish secure channel with key exchange
+    pub fn establish(
+        local: &Identity,
+        remote: &Identity,
+    ) -> Result<Self, ChannelError> {
+        // Simplified key exchange - real impl would use X25519 or similar
+        let session_key = SessionKey::generate();
+
+        Ok(Self {
+            local_identity: local.clone(),
+            remote_identity: remote.clone(),
+            session_key,
+            send_counter: 0,
+            recv_counter: 0,
+            recv_window: HashSet::new(),
+        })
+    }
+
+    /// Send encrypted message
+    pub fn send(&mut self, data: &[u8]) -> Result<EncryptedMessage, ChannelError> {
+        // Increment counter
+        self.send_counter += 1;
+
+        // Construct authenticated data
+        let aad = self.construct_aad(self.send_counter);
+
+        // Encrypt
+        let ciphertext = self.session_key.encrypt(data, &aad, self.send_counter)
+            .map_err(|_| ChannelError::EncryptionFailed)?;
+
+        // Sign
+        let signature = self.local_identity.sign(&ciphertext);
+
+        Ok(EncryptedMessage {
+            ciphertext,
+            counter: self.send_counter,
+            signature,
+            sender: self.local_identity.id.clone(),
+        })
+    }
+
+    /// Receive and decrypt message
+    pub fn receive(&mut self, encrypted: &EncryptedMessage) -> Result<Vec<u8>, ChannelError> {
+        // Verify signature
+        if !Identity::verify(
+            &self.remote_identity.public_key,
+            &encrypted.ciphertext,
+            &encrypted.signature,
+        ) {
+            return Err(ChannelError::InvalidSignature);
+        }
+
+        // Check counter for replay protection
+        if encrypted.counter <= self.recv_counter {
+            // Check window for out-of-order
+            if self.recv_window.contains(&encrypted.counter) {
+                return Err(ChannelError::ReplayDetected);
+            }
+        }
+
+        // Update counter
+        if encrypted.counter > self.recv_counter {
+            // Slide window
+            let old_counter = self.recv_counter;
+            self.recv_counter = encrypted.counter;
+
+            // Clear old entries from window
+            self.recv_window.retain(|&c| c > old_counter.saturating_sub(1000));
+        }
+        self.recv_window.insert(encrypted.counter);
+
+        // Construct authenticated data
+        let aad = self.construct_aad(encrypted.counter);
+
+        // Decrypt
+        let plaintext = self.session_key.decrypt(&encrypted.ciphertext, &aad, encrypted.counter)
+            .map_err(|_| ChannelError::DecryptionFailed)?;
+
+        Ok(plaintext)
+    }
+
+    fn construct_aad(&self, counter: u64) -> Vec<u8> {
+        let mut aad = Vec::new();
+        aad.extend(&self.local_identity.id.bytes);
+        aad.extend(&self.remote_identity.id.bytes);
+        aad.extend(&counter.to_le_bytes());
+        aad
+    }
+
+    /// Get local identity
+    pub fn local_id(&self) -> &AgentId {
+        &self.local_identity.id
+    }
+
+    /// Get remote identity
+    pub fn remote_id(&self) -> &AgentId {
+        &self.remote_identity.id
+    }
+}
+
+// ============================================================================
+// Audit Trail
+// ============================================================================
+
+/// Tamper-evident audit log
+pub struct AuditLog {
+    /// Log entries
+    entries: Vec<AuditEntry>,
+
+    /// Configuration
+    config: AuditConfig,
+
+    /// Storage backend
+    storage: Option<Box<dyn AuditStorage>>,
+}
+
+/// Audit entry
+pub struct AuditEntry {
+    /// Entry ID
+    pub id: AuditId,
+
+    /// Timestamp
+    pub timestamp: Timestamp,
+
+    /// Agent that performed the action
+    pub agent: AgentId,
+
+    /// Action taken
+    pub action: AuditAction,
+
+    /// Outcome
+    pub outcome: AuditOutcome,
+
+    /// Context
+    pub context: AuditContext,
+
+    /// Previous entry hash (for chain)
+    pub prev_hash: [u8; 32],
+
+    /// This entry's hash
+    pub hash: [u8; 32],
+}
+
+impl AuditEntry {
+    pub fn compute_hash(&self) -> [u8; 32] {
+        let mut data = Vec::new();
+        data.extend(&self.id.bytes);
+        data.extend(&self.timestamp.nanos.to_le_bytes());
+        data.extend(&self.agent.bytes);
+        data.extend(&self.prev_hash);
+        sha256(&data)
+    }
+}
+
+/// Audit context
+#[derive(Clone)]
+pub struct AuditContext {
+    /// Current goal (if any)
+    pub current_goal: Option<GoalId>,
+
+    /// Confidence in action
+    pub confidence: Option<f32>,
+
+    /// Resource usage
+    pub resources: Option<ResourceUsage>,
+
+    /// Additional context
+    pub extra: HashMap<String, Value>,
+}
+
+impl AuditContext {
+    pub fn new() -> Self {
+        Self {
+            current_goal: None,
+            confidence: None,
+            resources: None,
+            extra: HashMap::new(),
+        }
+    }
+
+    pub fn with_goal(mut self, goal_id: GoalId) -> Self {
+        self.current_goal = Some(goal_id);
+        self
+    }
+
+    pub fn with_confidence(mut self, confidence: f32) -> Self {
+        self.confidence = Some(confidence);
+        self
+    }
+
+    pub fn with_agent(mut self, agent_id: AgentId) -> Self {
+        self.extra.insert("agent_id".to_string(), Value::bytes(agent_id.bytes.to_vec()));
+        self
+    }
+}
+
+impl Default for AuditContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Audit configuration
+pub struct AuditConfig {
+    /// Maximum entries in memory
+    pub max_entries: usize,
+
+    /// Persist to storage
+    pub persist: bool,
+
+    /// Log level
+    pub level: AuditLevel,
+}
+
+impl AuditConfig {
+    pub fn default() -> Self {
+        Self {
+            max_entries: 10000,
+            persist: true,
+            level: AuditLevel::Standard,
+        }
+    }
+}
+
+/// Audit level
+#[derive(Copy, Clone)]
+pub enum AuditLevel {
+    /// Log everything
+    Verbose,
+    /// Log important events
+    Standard,
+    /// Log only security events
+    Security,
+    /// Minimal logging
+    Minimal,
+}
+
+/// Storage backend trait
+pub trait AuditStorage {
+    fn append(&mut self, entry: &AuditEntry);
+    fn load(&self, start: usize, count: usize) -> Vec<AuditEntry>;
+    fn count(&self) -> usize;
+}
+
+impl AuditLog {
+    pub fn new(config: AuditConfig) -> Self {
+        Self {
+            entries: Vec::new(),
+            config,
+            storage: None,
+        }
+    }
+
+    pub fn with_storage<S: AuditStorage + 'static>(mut self, storage: S) -> Self {
+        self.storage = Some(Box::new(storage));
+        self
+    }
+
+    /// Log an event
+    pub fn log(&mut self, action: AuditAction, outcome: AuditOutcome, context: AuditContext) {
+        let prev_hash = self.entries.last()
+            .map(|e| e.hash)
+            .unwrap_or([0u8; 32]);
+
+        let agent = context.extra.get("agent_id")
+            .and_then(|v| v.as_agent_id())
+            .unwrap_or(AgentId::unknown());
+
+        let mut entry = AuditEntry {
+            id: AuditId::new(),
+            timestamp: Timestamp::now(),
+            agent,
+            action,
+            outcome,
+            context,
+            prev_hash,
+            hash: [0u8; 32],
+        };
+
+        // Compute hash
+        entry.hash = entry.compute_hash();
+
+        // Store
+        if let Some(ref mut storage) = self.storage {
+            storage.append(&entry);
+        }
+
+        self.entries.push(entry);
+
+        // Limit in-memory entries
+        while self.entries.len() > self.config.max_entries {
+            self.entries.remove(0);
+        }
+    }
+
+    /// Shorthand for logging with default context
+    pub fn log_simple(&mut self, action: AuditAction, outcome: AuditOutcome) {
+        self.log(action, outcome, AuditContext::new());
+    }
+
+    /// Verify chain integrity
+    pub fn verify_chain(&self) -> bool {
+        if self.entries.is_empty() {
+            return true;
+        }
+
+        let mut prev_hash = [0u8; 32];
+
+        // Find first entry's prev_hash
+        if !self.entries.is_empty() && self.entries[0].prev_hash != [0u8; 32] {
+            // This might be a continuation - check would be against storage
+            prev_hash = self.entries[0].prev_hash;
+        }
+
+        for entry in &self.entries {
+            // Check link to previous
+            if entry.prev_hash != prev_hash {
+                return false;
+            }
+
+            // Check entry hash
+            if entry.hash != entry.compute_hash() {
+                return false;
+            }
+
+            prev_hash = entry.hash;
+        }
+
+        true
+    }
+
+    /// Query audit log
+    pub fn query(&self, query: &AuditQuery) -> Vec<&AuditEntry> {
+        self.entries.iter()
+            .filter(|e| query.matches(e))
+            .collect()
+    }
+
+    /// Get entry count
+    pub fn count(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Get last entry hash (for external verification)
+    pub fn last_hash(&self) -> [u8; 32] {
+        self.entries.last()
+            .map(|e| e.hash)
+            .unwrap_or([0u8; 32])
+    }
+}
+
+/// Audit query
+pub struct AuditQuery {
+    agent: Option<AgentId>,
+    time_range: Option<(Timestamp, Timestamp)>,
+    action_filter: Option<String>,
+}
+
+impl AuditQuery {
+    pub fn new() -> Self {
+        Self {
+            agent: None,
+            time_range: None,
+            action_filter: None,
+        }
+    }
+
+    pub fn agent(mut self, agent: AgentId) -> Self {
+        self.agent = Some(agent);
+        self
+    }
+
+    pub fn time_range(mut self, start: Timestamp, end: Timestamp) -> Self {
+        self.time_range = Some((start, end));
+        self
+    }
+
+    pub fn action_type(mut self, filter: &str) -> Self {
+        self.action_filter = Some(filter.to_string());
+        self
+    }
+
+    pub fn matches(&self, entry: &AuditEntry) -> bool {
+        if let Some(ref agent) = self.agent {
+            if &entry.agent != agent {
+                return false;
+            }
+        }
+
+        if let Some(ref range) = self.time_range {
+            if entry.timestamp < range.0 || entry.timestamp > range.1 {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+// ============================================================================
+// Alignment Monitoring
+// ============================================================================
+
+/// Monitors agent alignment with constitution
+pub struct AlignmentMonitor {
+    /// Constitution to check against
+    constitution: Constitution,
+
+    /// Behavioral baseline
+    baseline: BehaviorProfile,
+
+    /// Drift threshold
+    drift_threshold: f32,
+
+    /// Compliance threshold
+    compliance_threshold: f32,
+
+    /// Alert handlers
+    alert_handlers: Vec<Box<dyn Fn(&Alert)>>,
+
+    /// Emergency stop flag
+    emergency_stop: Arc<AtomicBool>,
+
+    /// Recent actions for drift detection
+    recent_actions: VecDeque<ActionRecord>,
+}
+
+struct ActionRecord {
+    action: Action,
+    context_hash: [u8; 32],
+    timestamp: Timestamp,
+}
+
+/// Behavioral baseline for drift detection
+pub struct BehaviorProfile {
+    /// Action frequency distribution
+    action_distribution: HashMap<String, f32>,
+
+    /// Sample count
+    sample_count: u64,
+}
+
+impl BehaviorProfile {
+    pub fn new() -> Self {
+        Self {
+            action_distribution: HashMap::new(),
+            sample_count: 0,
+        }
+    }
+
+    pub fn record_action(&mut self, action: &Action) {
+        let name = action.name().to_string();
+        *self.action_distribution.entry(name).or_insert(0.0) += 1.0;
+        self.sample_count += 1;
+
+        // Normalize
+        if self.sample_count > 0 {
+            let total = self.sample_count as f32;
+            for value in self.action_distribution.values_mut() {
+                *value /= total;
+            }
+        }
+    }
+
+    pub fn action_probability(&self, action: &Action) -> f32 {
+        self.action_distribution
+            .get(action.name())
+            .copied()
+            .unwrap_or(0.0)
+    }
+}
+
+impl AlignmentMonitor {
+    pub fn new(constitution: Constitution) -> Self {
+        Self {
+            constitution,
+            baseline: BehaviorProfile::new(),
+            drift_threshold: 0.3,
+            compliance_threshold: 0.7,
+            alert_handlers: vec![],
+            emergency_stop: Arc::new(AtomicBool::new(false)),
+            recent_actions: VecDeque::new(),
+        }
+    }
+
+    pub fn with_thresholds(mut self, drift: f32, compliance: f32) -> Self {
+        self.drift_threshold = drift;
+        self.compliance_threshold = compliance;
+        self
+    }
+
+    pub fn add_alert_handler<F: Fn(&Alert) + 'static>(&mut self, handler: F) {
+        self.alert_handlers.push(Box::new(handler));
+    }
+
+    /// Check action for constitutional compliance
+    pub fn check_compliance(&self, action: &Action) -> ComplianceResult {
+        let mut violations = Vec::new();
+        let mut score = 1.0;
+
+        for directive in &self.constitution.directives {
+            let result = self.check_directive(directive, action);
+            if !result.compliant {
+                violations.push(result);
+                score *= 0.5; // Reduce score for each violation
+            }
+        }
+
+        ComplianceResult {
+            compliant: violations.is_empty(),
+            score,
+            violations,
+        }
+    }
+
+    /// Measure behavioral drift
+    pub fn measure_drift(&self, action: &Action) -> f32 {
+        if self.baseline.sample_count < 100 {
+            // Not enough data for drift detection
+            return 0.0;
+        }
+
+        // Simple drift measure: how unusual is this action?
+        let prob = self.baseline.action_probability(action);
+
+        // Low probability actions = high drift
+        if prob < 0.01 {
+            0.9 // Very unusual
+        } else if prob < 0.05 {
+            0.5 // Somewhat unusual
+        } else {
+            0.1 // Normal
+        }
+    }
+
+    /// Handle action with monitoring
+    pub fn on_action(&mut self, action: &Action) -> ActionDecision {
+        // Record for baseline
+        self.baseline.record_action(action);
+        self.record_action(action);
+
+        // Check compliance
+        let compliance = self.check_compliance(action);
+        if compliance.score < self.compliance_threshold {
+            self.raise_alert(Alert::LowCompliance {
+                action: action.clone(),
+                score: compliance.score,
+            });
+
+            if compliance.score < 0.5 {
+                return ActionDecision::Block {
+                    reason: "Constitutional violation".to_string(),
+                };
+            }
+        }
+
+        // Check drift
+        let drift = self.measure_drift(action);
+        if drift > self.drift_threshold {
+            self.raise_alert(Alert::BehavioralDrift {
+                drift,
+                threshold: self.drift_threshold,
+            });
+
+            if drift > self.drift_threshold * 2.0 {
+                return ActionDecision::Block {
+                    reason: "Excessive behavioral drift".to_string(),
+                };
+            }
+        }
+
+        ActionDecision::Allow
+    }
+
+    /// Trigger emergency stop
+    pub fn emergency_stop(&self) {
+        self.emergency_stop.store(true, Ordering::SeqCst);
+    }
+
+    /// Check if emergency stop is triggered
+    pub fn is_emergency_stopped(&self) -> bool {
+        self.emergency_stop.load(Ordering::SeqCst)
+    }
+
+    /// Reset emergency stop
+    pub fn reset_emergency_stop(&self) {
+        self.emergency_stop.store(false, Ordering::SeqCst);
+    }
+
+    /// Get emergency stop handle
+    pub fn emergency_stop_handle(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.emergency_stop)
+    }
+
+    fn check_directive(&self, directive: &Directive, action: &Action) -> DirectiveResult {
+        let compliant = !directive.prohibits(&Goal::new(action.name()));
+
+        DirectiveResult {
+            directive: directive.clone(),
+            compliant,
+            score: if compliant { 1.0 } else { 0.0 },
+            explanation: if compliant {
+                None
+            } else {
+                Some(format!("Action '{}' violates directive '{}'", action.name(), directive.name))
+            },
+        }
+    }
+
+    fn record_action(&mut self, action: &Action) {
+        self.recent_actions.push_back(ActionRecord {
+            action: action.clone(),
+            context_hash: [0u8; 32], // Simplified
+            timestamp: Timestamp::now(),
+        });
+
+        // Keep last 1000 actions
+        while self.recent_actions.len() > 1000 {
+            self.recent_actions.pop_front();
+        }
+    }
+
+    fn raise_alert(&self, alert: Alert) {
+        for handler in &self.alert_handlers {
+            handler(&alert);
+        }
+    }
+}
+
+// ============================================================================
+// Collective Defense
+// ============================================================================
+
+/// Collective security for multi-agent systems
+pub struct CollectiveDefense {
+    /// Reputation system
+    reputation: ReputationSystem,
+
+    /// Sybil resistance configuration
+    sybil_resistance: SybilResistanceConfig,
+
+    /// Knowledge provenance tracking
+    provenance: ProvenanceTracker,
+
+    /// Quarantine
+    quarantine: Quarantine,
+}
+
+/// Web of trust reputation system
+pub struct ReputationSystem {
+    /// Direct trust scores
+    direct_trust: HashMap<AgentId, f32>,
+
+    /// Historical accuracy
+    accuracy_history: HashMap<AgentId, AccuracyHistory>,
+
+    /// Vouches (one agent vouching for another)
+    vouches: HashMap<AgentId, Vec<AgentId>>,
+}
+
+impl ReputationSystem {
+    pub fn new() -> Self {
+        Self {
+            direct_trust: HashMap::new(),
+            accuracy_history: HashMap::new(),
+            vouches: HashMap::new(),
+        }
+    }
+
+    /// Get reputation score for an agent
+    pub fn score(&self, agent: &AgentId) -> f32 {
+        // Combine direct trust with accuracy history
+        let direct = self.direct_trust.get(agent).copied().unwrap_or(0.5);
+        let accuracy = self.accuracy_history.get(agent)
+            .map(|h| h.score())
+            .unwrap_or(0.5);
+
+        // Count vouches
+        let vouch_count = self.vouches.get(agent)
+            .map(|v| v.len())
+            .unwrap_or(0);
+        let vouch_bonus = (vouch_count as f32 * 0.05).min(0.2);
+
+        // Weighted combination
+        (direct * 0.4 + accuracy * 0.5 + vouch_bonus).min(1.0)
+    }
+
+    /// Set direct trust for an agent
+    pub fn set_trust(&mut self, agent: AgentId, trust: f32) {
+        self.direct_trust.insert(agent, trust.clamp(0.0, 1.0));
+    }
+
+    /// Record accuracy for an agent
+    pub fn record_accuracy(&mut self, agent: AgentId, accurate: bool) {
+        self.accuracy_history
+            .entry(agent)
+            .or_insert_with(AccuracyHistory::new)
+            .record(accurate);
+    }
+
+    /// Add vouch from one agent to another
+    pub fn add_vouch(&mut self, voucher: AgentId, vouchee: AgentId) {
+        self.vouches
+            .entry(vouchee)
+            .or_insert_with(Vec::new)
+            .push(voucher);
+    }
+}
+
+/// Sybil resistance configuration
+#[derive(Clone)]
+pub enum SybilResistanceConfig {
+    /// No resistance
+    None,
+
+    /// Proof of work required
+    ProofOfWork { difficulty: u32 },
+
+    /// Minimum vouches required
+    MinVouches { count: u32 },
+
+    /// Rate limiting
+    RateLimited { max_per_hour: u32 },
+}
+
+impl SybilResistanceConfig {
+    pub fn is_suspicious(&self, agent: &AgentId, context: &SybilContext) -> bool {
+        match self {
+            SybilResistanceConfig::None => false,
+            SybilResistanceConfig::ProofOfWork { difficulty } => {
+                context.proof_of_work_bits < *difficulty
+            }
+            SybilResistanceConfig::MinVouches { count } => {
+                context.vouch_count < *count
+            }
+            SybilResistanceConfig::RateLimited { max_per_hour } => {
+                context.actions_last_hour > *max_per_hour
+            }
+        }
+    }
+}
+
+/// Context for Sybil check
+pub struct SybilContext {
+    pub proof_of_work_bits: u32,
+    pub vouch_count: u32,
+    pub actions_last_hour: u32,
+    pub account_age_hours: u64,
+}
+
+impl SybilContext {
+    pub fn new() -> Self {
+        Self {
+            proof_of_work_bits: 0,
+            vouch_count: 0,
+            actions_last_hour: 0,
+            account_age_hours: 0,
+        }
+    }
+}
+
+/// Knowledge provenance tracking
+pub struct ProvenanceTracker {
+    /// Provenance records
+    records: HashMap<KnowledgeId, ProvenanceRecord>,
+}
+
+/// Provenance record
+pub struct ProvenanceRecord {
+    pub knowledge_id: KnowledgeId,
+    pub original_source: AgentId,
+    pub chain: Vec<ProvenanceLink>,
+    pub timestamp: Timestamp,
+}
+
+impl ProvenanceTracker {
+    pub fn new() -> Self {
+        Self {
+            records: HashMap::new(),
+        }
+    }
+
+    /// Record knowledge provenance
+    pub fn record(&mut self, knowledge: &Knowledge, from: Option<AgentId>) {
+        let record = self.records.entry(knowledge.id.clone())
+            .or_insert_with(|| ProvenanceRecord {
+                knowledge_id: knowledge.id.clone(),
+                original_source: knowledge.source.clone(),
+                chain: vec![],
+                timestamp: Timestamp::now(),
+            });
+
+        if let Some(from_agent) = from {
+            record.chain.push(ProvenanceLink {
+                from: from_agent,
+                to: knowledge.source.clone(),
+                timestamp: Timestamp::now(),
+                transformation: None,
+            });
+        }
+    }
+
+    /// Build provenance chain for verification
+    pub fn build_chain(&self, knowledge: &Knowledge) -> ProvenanceChain {
+        match self.records.get(&knowledge.id) {
+            Some(record) => ProvenanceChain {
+                links: record.chain.clone(),
+                valid: true, // Would do actual verification
+            },
+            None => ProvenanceChain {
+                links: vec![],
+                valid: true, // New knowledge, no chain yet
+            },
+        }
+    }
+}
+
+impl Clone for ProvenanceLink {
+    fn clone(&self) -> Self {
+        Self {
+            from: self.from.clone(),
+            to: self.to.clone(),
+            timestamp: self.timestamp,
+            transformation: self.transformation.clone(),
+        }
+    }
+}
+
+/// Quarantine for suspicious content
+pub struct Quarantine {
+    items: HashMap<KnowledgeId, QuarantinedItem>,
+}
+
+struct QuarantinedItem {
+    knowledge: Knowledge,
+    reasons: Vec<String>,
+    quarantined_at: Timestamp,
+    reviewed: bool,
+}
+
+impl Quarantine {
+    pub fn new() -> Self {
+        Self {
+            items: HashMap::new(),
+        }
+    }
+
+    pub fn add(&mut self, knowledge: Knowledge, reasons: Vec<String>) {
+        let id = knowledge.id.clone();
+        self.items.insert(id, QuarantinedItem {
+            knowledge,
+            reasons,
+            quarantined_at: Timestamp::now(),
+            reviewed: false,
+        });
+    }
+
+    pub fn is_quarantined(&self, id: &KnowledgeId) -> bool {
+        self.items.contains_key(id)
+    }
+
+    pub fn release(&mut self, id: &KnowledgeId) -> Option<Knowledge> {
+        self.items.remove(id).map(|item| item.knowledge)
+    }
+
+    pub fn count(&self) -> usize {
+        self.items.len()
+    }
+}
+
+impl CollectiveDefense {
+    pub fn new() -> Self {
+        Self {
+            reputation: ReputationSystem::new(),
+            sybil_resistance: SybilResistanceConfig::None,
+            provenance: ProvenanceTracker::new(),
+            quarantine: Quarantine::new(),
+        }
+    }
+
+    pub fn with_sybil_resistance(mut self, config: SybilResistanceConfig) -> Self {
+        self.sybil_resistance = config;
+        self
+    }
+
+    /// Verify knowledge before accepting
+    pub fn verify_knowledge(&self, knowledge: &Knowledge, sybil_context: &SybilContext) -> Verification {
+        let source = &knowledge.source;
+
+        // Check reputation
+        let reputation = self.reputation.score(source);
+        if reputation < 0.3 {
+            return Verification::Rejected {
+                reasons: vec!["Low reputation source".to_string()],
+            };
+        }
+
+        // Check for Sybil attack
+        if self.sybil_resistance.is_suspicious(source, sybil_context) {
+            return Verification::Suspicious {
+                reasons: vec!["Possible Sybil attack".to_string()],
+            };
+        }
+
+        // Check quarantine
+        if self.quarantine.is_quarantined(&knowledge.id) {
+            return Verification::Rejected {
+                reasons: vec!["Knowledge is quarantined".to_string()],
+            };
+        }
+
+        // Build provenance chain
+        let chain = self.provenance.build_chain(knowledge);
+        if !chain.is_valid() {
+            return Verification::Suspicious {
+                reasons: vec!["Invalid provenance chain".to_string()],
+            };
+        }
+
+        Verification::Trusted { chain }
+    }
+
+    /// Record knowledge and track provenance
+    pub fn record_knowledge(&mut self, knowledge: &Knowledge, from: Option<AgentId>) {
+        self.provenance.record(knowledge, from);
+    }
+
+    /// Quarantine suspicious knowledge
+    pub fn quarantine(&mut self, knowledge: Knowledge, reasons: Vec<String>) {
+        self.quarantine.add(knowledge, reasons);
+    }
+
+    /// Get reputation system (mutable)
+    pub fn reputation_mut(&mut self) -> &mut ReputationSystem {
+        &mut self.reputation
+    }
+
+    /// Get reputation system
+    pub fn reputation(&self) -> &ReputationSystem {
+        &self.reputation
+    }
+}

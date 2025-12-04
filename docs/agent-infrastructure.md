@@ -8,6 +8,7 @@ Sigil provides a complete infrastructure stack for building autonomous AI agents
 
 | Layer | Component | Purpose |
 |-------|-----------|---------|
+| **Security** | Aegis | Identity, sandboxing, integrity, alignment |
 | **Memory** | Engram | Persistent memory with epistemic tracking |
 | **Runtime** | Daemon | Autonomous agent execution |
 | **Communication** | Commune | Multi-agent messaging and coordination |
@@ -27,6 +28,13 @@ Sigil provides a complete infrastructure stack for building autonomous AI agents
 │  │       fn on_message(&mut self, msg) { ... }                          │  │
 │  │       fn deliberate(&self, context) -> Action { ... }                │  │
 │  │   }                                                                   │  │
+│  │                                                                       │  │
+│  └───────────────────────────────┬──────────────────────────────────────┘  │
+│                                  │                                          │
+│  ┌───────────────────────────────▼──────────────────────────────────────┐  │
+│  │                        AEGIS (Security)                               │  │
+│  │                                                                       │  │
+│  │   Identity │ Sandbox │ Memory Guard │ Alignment │ Audit │ Defense    │  │
 │  │                                                                       │  │
 │  └───────────────────────────────┬──────────────────────────────────────┘  │
 │                                  │                                          │
@@ -79,8 +87,12 @@ use daemon::Daemon;
 use engram::Engram;
 use commune::Commune;
 use omen::Omen;
+use aegis::{Aegis, SecurityLevel};
 
 daemon HelloAgent {
+    // Security layer
+    aegis: Aegis,
+
     // Memory
     memory: Engram,
 
@@ -88,6 +100,9 @@ daemon HelloAgent {
     planner: Omen,
 
     fn on_init(&mut self) {
+        // Initialize security first
+        self.aegis = Aegis::with_level(SecurityLevel::Standard);
+
         // Initialize memory
         self.memory = Engram::new(EngramConfig::default());
 
@@ -95,12 +110,15 @@ daemon HelloAgent {
         self.planner = Omen::new(OmenConfig::default())
             .with_memory(&self.memory);
 
-        // Set initial goal
-        self.goals.push(Goal::new("Greet the user"));
+        // Set initial goal (verified by Aegis)
+        let goal = Goal::new("Greet the user");
+        if let GoalDecision::Accepted = self.aegis.propose_goal(goal.clone(), GoalSource::SelfGenerated) {
+            self.goals.push(goal);
+        }
     }
 
     fn on_message(&mut self, msg: Message) {
-        // Remember the message
+        // Remember the message (through memory guard)
         self.memory.experience(Event::message_received(msg.clone()));
 
         // Update planner beliefs
@@ -111,9 +129,11 @@ daemon HelloAgent {
             Goal::new("Respond to: " + msg.content)
         )?;
 
-        // Execute plan
+        // Execute plan (with security checks)
         for step in plan.steps {
-            self.execute(step.action)?;
+            if let ActionDecision::Allow = self.aegis.check_action(&step.action) {
+                self.execute(step.action)?;
+            }
         }
     }
 
