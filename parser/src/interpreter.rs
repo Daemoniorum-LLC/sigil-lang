@@ -985,18 +985,36 @@ impl Interpreter {
                 Ok(Value::Array(Rc::new(RefCell::new(arr))))
             }
             Literal::InterpolatedString { parts } => {
-                // Evaluate each part and concatenate
+                // Evaluate each part and concatenate, tracking evidentiality
                 let mut result = String::new();
+                let mut combined_evidence: Option<Evidence> = None;
+
                 for part in parts {
                     match part {
                         InterpolationPart::Text(s) => result.push_str(s),
                         InterpolationPart::Expr(expr) => {
                             let value = self.evaluate(expr)?;
-                            result.push_str(&format!("{}", value));
+                            // Track evidentiality - propagate the "worst" evidence level
+                            combined_evidence = Self::combine_evidence(
+                                combined_evidence,
+                                Self::extract_evidence(&value),
+                            );
+                            // Use the unwrapped value for display
+                            let display_value = Self::unwrap_evidential(&value);
+                            result.push_str(&format!("{}", display_value));
                         }
                     }
                 }
-                Ok(Value::String(Rc::new(result)))
+
+                // Wrap result with evidentiality if any interpolated values were evidential
+                let string_value = Value::String(Rc::new(result));
+                match combined_evidence {
+                    Some(evidence) => Ok(Value::Evidential {
+                        value: Box::new(string_value),
+                        evidence,
+                    }),
+                    None => Ok(string_value),
+                }
             }
             Literal::SigilStringSql(s) => {
                 // SQL sigil string - for now just return as string
@@ -3882,6 +3900,40 @@ impl Interpreter {
         })
     }
 
+    /// Extract evidentiality from a value (recursively unwraps Evidential wrapper)
+    fn extract_evidence(value: &Value) -> Option<Evidence> {
+        match value {
+            Value::Evidential { evidence, .. } => Some(*evidence),
+            _ => None,
+        }
+    }
+
+    /// Combine two evidence levels, returning the "worst" (most uncertain) one.
+    /// Order: Known < Uncertain < Reported < Paradox
+    fn combine_evidence(a: Option<Evidence>, b: Option<Evidence>) -> Option<Evidence> {
+        match (a, b) {
+            (None, None) => None,
+            (Some(e), None) | (None, Some(e)) => Some(e),
+            (Some(a), Some(b)) => {
+                let rank = |e: Evidence| match e {
+                    Evidence::Known => 0,
+                    Evidence::Uncertain => 1,
+                    Evidence::Reported => 2,
+                    Evidence::Paradox => 3,
+                };
+                if rank(a) >= rank(b) { Some(a) } else { Some(b) }
+            }
+        }
+    }
+
+    /// Unwrap an evidential value to get the inner value for display
+    fn unwrap_evidential(value: &Value) -> &Value {
+        match value {
+            Value::Evidential { value: inner, .. } => Self::unwrap_evidential(inner),
+            _ => value,
+        }
+    }
+
     fn eval_evidential(&mut self, expr: &Expr, ev: &Evidentiality) -> Result<Value, RuntimeError> {
         let value = self.evaluate(expr)?;
         let evidence = match ev {
@@ -4033,5 +4085,70 @@ mod tests {
     fn test_pipe_filter() {
         let result = run("fn main() { return [1, 2, 3, 4, 5]|φ{_ > 2}|sum; }");
         assert!(matches!(result, Ok(Value::Int(12)))); // 3 + 4 + 5
+    }
+
+    #[test]
+    fn test_interpolation_evidentiality_propagation() {
+        // Test that evidentiality propagates through string interpolation
+        // When an evidential value is interpolated, the result string should carry that evidentiality
+        let result = run(r#"
+            fn main() {
+                let rep = reported(42);
+
+                // Interpolating a reported value should make the string reported
+                let s = f"Value: {rep}";
+                return s;
+            }
+        "#);
+
+        match result {
+            Ok(Value::Evidential { evidence: Evidence::Reported, value }) => {
+                // The inner value should be a string
+                assert!(matches!(*value, Value::String(_)));
+            }
+            Ok(other) => panic!("Expected Evidential Reported, got {:?}", other),
+            Err(e) => panic!("Error: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_interpolation_worst_evidence_wins() {
+        // When multiple evidential values are interpolated, the worst evidence level wins
+        let result = run(r#"
+            fn main() {
+                let k = known(1);         // Known is best
+                let u = uncertain(2);     // Uncertain is worse
+
+                // Combining known and uncertain should yield uncertain
+                let s = f"{k} and {u}";
+                return s;
+            }
+        "#);
+
+        match result {
+            Ok(Value::Evidential { evidence: Evidence::Uncertain, .. }) => (),
+            Ok(other) => panic!("Expected Evidential Uncertain, got {:?}", other),
+            Err(e) => panic!("Error: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_interpolation_no_evidential_plain_string() {
+        // When no evidential values are interpolated, the result is a plain string
+        let result = run(r#"
+            fn main() {
+                let x = 42;
+                let s = f"Value: {x}";
+                return s;
+            }
+        "#);
+
+        match result {
+            Ok(Value::String(s)) => {
+                assert_eq!(*s, "Value: 42");
+            }
+            Ok(other) => panic!("Expected plain String, got {:?}", other),
+            Err(e) => panic!("Error: {:?}", e),
+        }
     }
 }
