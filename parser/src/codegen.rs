@@ -1570,6 +1570,10 @@ pub mod jit {
                             // (proper implementation would emit branching code)
                             result
                         }
+                        PipeOp::TryMap(_) => {
+                            // Try/error transformation not supported in JIT
+                            result
+                        }
                         PipeOp::Named { prefix, body } => {
                             // Named morphemes like ·map{f} - try to call as function
                             if !prefix.is_empty() {

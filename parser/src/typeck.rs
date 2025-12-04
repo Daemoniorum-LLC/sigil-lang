@@ -1698,6 +1698,14 @@ impl TypeChecker {
                 }
             }
 
+            // Try/Error transformation: |? or |?{mapper}
+            PipeOp::TryMap(_) => {
+                // Unwraps Result<T, E> to T or Option<T> to T
+                // For now, return a fresh type variable
+                // (proper implementation would extract inner type from Result/Option)
+                self.fresh_var()
+            }
+
             // Method call
             PipeOp::Method { name, args: _ } => {
                 // Look up method

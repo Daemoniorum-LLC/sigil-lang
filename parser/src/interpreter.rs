@@ -1901,6 +1901,60 @@ impl Interpreter {
                 }
                 Err(RuntimeError::new("No pattern matched in pipe match"))
             }
+            PipeOp::TryMap(mapper) => {
+                // |? or |?{mapper} - unwrap Result/Option or transform error
+                match &value {
+                    // Handle Result-like values (struct with ok/err fields)
+                    Value::Struct { name, fields } if name == "Ok" || name.ends_with("::Ok") => {
+                        // Extract the inner value from Ok
+                        let fields = fields.borrow();
+                        fields
+                            .get("0")
+                            .or_else(|| fields.get("value"))
+                            .cloned()
+                            .ok_or_else(|| RuntimeError::new("Ok variant has no value"))
+                    }
+                    Value::Struct { name, fields } if name == "Err" || name.ends_with("::Err") => {
+                        // Transform error if mapper provided, otherwise propagate
+                        let fields = fields.borrow();
+                        let err_val = fields
+                            .get("0")
+                            .or_else(|| fields.get("error"))
+                            .cloned()
+                            .unwrap_or(Value::Null);
+                        if let Some(mapper_expr) = mapper {
+                            // Apply mapper to error
+                            let prev_env = self.environment.clone();
+                            self.environment = Rc::new(RefCell::new(Environment::with_parent(
+                                prev_env.clone(),
+                            )));
+                            self.environment
+                                .borrow_mut()
+                                .define("_".to_string(), err_val);
+                            let mapped = self.evaluate(mapper_expr)?;
+                            self.environment = prev_env;
+                            Err(RuntimeError::new(format!("Error: {:?}", mapped)))
+                        } else {
+                            Err(RuntimeError::new(format!("Error: {:?}", err_val)))
+                        }
+                    }
+                    // Handle Option-like values
+                    Value::Struct { name, fields } if name == "Some" || name.ends_with("::Some") => {
+                        let fields = fields.borrow();
+                        fields
+                            .get("0")
+                            .or_else(|| fields.get("value"))
+                            .cloned()
+                            .ok_or_else(|| RuntimeError::new("Some variant has no value"))
+                    }
+                    Value::Struct { name, .. } if name == "None" || name.ends_with("::None") => {
+                        Err(RuntimeError::new("Unwrapped None value"))
+                    }
+                    Value::Null => Err(RuntimeError::new("Unwrapped null value")),
+                    // Pass through non-Result/Option values unchanged
+                    _ => Ok(value),
+                }
+            }
             PipeOp::Method { name, args } => {
                 let arg_values: Vec<Value> = args
                     .iter()

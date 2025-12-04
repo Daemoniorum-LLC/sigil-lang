@@ -1177,6 +1177,9 @@ pub enum PipeOp {
     /// Match morpheme: `|match{ Pattern => expr, ... }`
     /// Applies pattern matching to the piped value
     Match(Vec<MatchArm>),
+    /// Try/Error transformation morpheme: `|?` or `|?{mapper}`
+    /// Propagates errors or transforms them with an optional mapper
+    TryMap(Option<Box<Expr>>),
     /// Named morpheme: `·map{f}`, `·flow{f}`
     Named {
         prefix: Vec<Ident>,

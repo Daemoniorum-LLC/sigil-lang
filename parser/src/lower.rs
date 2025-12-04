@@ -1091,6 +1091,10 @@ fn lower_pipe_op(ctx: &mut LoweringContext, op: &ast::PipeOp) -> IrPipelineStep 
             // (proper implementation would lower to branching IR)
             IrPipelineStep::Identity
         }
+        ast::PipeOp::TryMap(_) => {
+            // Try/error transformation handled by interpreter
+            IrPipelineStep::Identity
+        }
         ast::PipeOp::Named { prefix, body } => {
             let fn_name = prefix
                 .iter()

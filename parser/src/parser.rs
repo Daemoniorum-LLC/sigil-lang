@@ -2847,6 +2847,19 @@ impl<'a> Parser<'a> {
                 self.expect(Token::RBrace)?;
                 Ok(PipeOp::Match(arms))
             }
+            // Try/Error transformation: |? or |?{mapper}
+            Some(Token::Question) => {
+                self.advance();
+                let mapper = if self.check(&Token::LBrace) {
+                    self.advance();
+                    let expr = self.parse_expr()?;
+                    self.expect(Token::RBrace)?;
+                    Some(Box::new(expr))
+                } else {
+                    None
+                };
+                Ok(PipeOp::TryMap(mapper))
+            }
             Some(Token::Ident(_)) => {
                 let name = self.parse_ident()?;
                 let args = if self.check(&Token::LParen) {
