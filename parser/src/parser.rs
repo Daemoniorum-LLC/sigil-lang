@@ -1257,9 +1257,11 @@ impl<'a> Parser<'a> {
                 let ty = self.parse_type()?;
 
                 // Optional default value
-                if self.consume_if(&Token::Eq) {
-                    let _ = self.parse_expr()?;
-                }
+                let default = if self.consume_if(&Token::Eq) {
+                    Some(self.parse_expr()?)
+                } else {
+                    None
+                };
 
                 if !self.check(&Token::RBrace) && !self.check(&Token::On) {
                     self.consume_if(&Token::Comma);
@@ -1269,6 +1271,7 @@ impl<'a> Parser<'a> {
                     visibility: vis,
                     name: field_name,
                     ty,
+                    default,
                 });
             }
         }
@@ -3480,10 +3483,17 @@ impl<'a> Parser<'a> {
             let name = self.parse_ident()?;
             self.expect(Token::Colon)?;
             let ty = self.parse_type()?;
+            // Parse optional default value: `field: Type = default_expr`
+            let default = if self.consume_if(&Token::Eq) {
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
             fields.push(FieldDef {
                 visibility,
                 name,
                 ty,
+                default,
             });
             if !self.consume_if(&Token::Comma) {
                 break;

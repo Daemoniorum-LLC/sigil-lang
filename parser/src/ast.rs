@@ -654,6 +654,8 @@ pub struct FieldDef {
     pub visibility: Visibility,
     pub name: Ident,
     pub ty: TypeExpr,
+    /// Default value for the field (e.g., `field: Type = default_expr`)
+    pub default: Option<Expr>,
 }
 
 /// Enum definition.
