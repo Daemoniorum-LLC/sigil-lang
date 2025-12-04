@@ -1630,6 +1630,81 @@ impl TypeChecker {
                     Type::Error
                 }
             }
+            PipeOp::ReduceSum | PipeOp::ReduceProd | PipeOp::ReduceMin | PipeOp::ReduceMax => {
+                // Numeric reductions return the element type
+                if let Type::Array { element, .. } | Type::Slice(element) = inner {
+                    match element.as_ref() {
+                        Type::Int(_) | Type::Float(_) => *element,
+                        _ => {
+                            self.error(TypeError::new("numeric reduction requires numeric array"));
+                            Type::Error
+                        }
+                    }
+                } else {
+                    self.error(TypeError::new("reduction requires array or slice"));
+                    Type::Error
+                }
+            }
+            PipeOp::ReduceConcat => {
+                // Concat returns string or array depending on element type
+                if let Type::Array { element, .. } | Type::Slice(element) = inner {
+                    match element.as_ref() {
+                        Type::Str => Type::Str,
+                        Type::Array { .. } => *element,
+                        _ => {
+                            self.error(TypeError::new(
+                                "concat reduction requires array of strings or arrays",
+                            ));
+                            Type::Error
+                        }
+                    }
+                } else {
+                    self.error(TypeError::new("concat reduction requires array or slice"));
+                    Type::Error
+                }
+            }
+            PipeOp::ReduceAll | PipeOp::ReduceAny => {
+                // Boolean reductions return bool
+                if let Type::Array { element, .. } | Type::Slice(element) = inner {
+                    match element.as_ref() {
+                        Type::Bool => Type::Bool,
+                        _ => {
+                            self.error(TypeError::new(
+                                "boolean reduction requires array of booleans",
+                            ));
+                            Type::Error
+                        }
+                    }
+                } else {
+                    self.error(TypeError::new("boolean reduction requires array or slice"));
+                    Type::Error
+                }
+            }
+
+            // Match morpheme: |match{ Pattern => expr, ... }
+            PipeOp::Match(arms) => {
+                // All arms should return the same type
+                if arms.is_empty() {
+                    self.error(TypeError::new("match expression has no arms"));
+                    Type::Error
+                } else {
+                    // Infer type from first arm, other arms should match
+                    let result_type = self.infer_expr(&arms[0].body);
+                    for arm in arms.iter().skip(1) {
+                        let arm_type = self.infer_expr(&arm.body);
+                        self.unify(&result_type, &arm_type);
+                    }
+                    result_type
+                }
+            }
+
+            // Try/Error transformation: |? or |?{mapper}
+            PipeOp::TryMap(_) => {
+                // Unwraps Result<T, E> to T or Option<T> to T
+                // For now, return a fresh type variable
+                // (proper implementation would extract inner type from Result/Option)
+                self.fresh_var()
+            }
 
             // Method call
             PipeOp::Method { name, args: _ } => {
@@ -1889,6 +1964,35 @@ impl TypeChecker {
                 let _ = self.infer_expr(func);
                 self.fresh_var() // Result type depends on function
             }
+
+            // Mathematical & APL-Inspired Operations
+            PipeOp::All(_) | PipeOp::Any(_) => Type::Bool,
+            PipeOp::Compose(f) => {
+                let _ = self.infer_expr(f);
+                self.fresh_var()
+            }
+            PipeOp::Zip(other) => {
+                let _ = self.infer_expr(other);
+                self.fresh_var() // Array of tuples
+            }
+            PipeOp::Scan(f) => {
+                let _ = self.infer_expr(f);
+                self.fresh_var() // Array of accumulated values
+            }
+            PipeOp::Diff => self.fresh_var(), // Array of differences
+            PipeOp::Gradient(var) => {
+                let _ = self.infer_expr(var);
+                self.fresh_var() // Gradient value
+            }
+            PipeOp::SortAsc | PipeOp::SortDesc | PipeOp::Reverse => {
+                inner.clone() // Same type, reordered
+            }
+            PipeOp::Cycle(n) | PipeOp::Windows(n) | PipeOp::Chunks(n) => {
+                let _ = self.infer_expr(n);
+                self.fresh_var() // Array type
+            }
+            PipeOp::Flatten | PipeOp::Unique => self.fresh_var(),
+            PipeOp::Enumerate => self.fresh_var(), // Array of (index, value) tuples
         };
 
         // Preserve evidence through pipe
@@ -2155,10 +2259,16 @@ impl TypeChecker {
             TypeExpr::Evidential {
                 inner,
                 evidentiality,
-            } => Type::Evidential {
-                inner: Box::new(self.convert_type(inner)),
-                evidence: EvidenceLevel::from_ast(*evidentiality),
-            },
+                error_type,
+            } => {
+                // If error_type is specified, this is sugar for Result<T, E>
+                // For now, lower as evidential type; full expansion to Result comes later
+                let _ = error_type; // TODO: expand T?[E] to Result<T, E> with evidence
+                Type::Evidential {
+                    inner: Box::new(self.convert_type(inner)),
+                    evidence: EvidenceLevel::from_ast(*evidentiality),
+                }
+            }
 
             TypeExpr::Cycle { modulus: _ } => {
                 Type::Cycle { modulus: 12 } // Default, should evaluate

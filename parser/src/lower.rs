@@ -324,10 +324,16 @@ fn lower_type_expr(t: &ast::TypeExpr) -> IrType {
         ast::TypeExpr::Evidential {
             inner,
             evidentiality,
-        } => IrType::Evidential {
-            inner: Box::new(lower_type_expr(inner)),
-            evidence: lower_evidentiality(*evidentiality),
-        },
+            error_type,
+        } => {
+            // If error_type is specified (e.g., T?[Error]), this is Result sugar
+            // For now, we lower it as an evidential type; full Result expansion would happen later
+            let _ = error_type; // TODO: expand to Result<T, E> in type system
+            IrType::Evidential {
+                inner: Box::new(lower_type_expr(inner)),
+                evidence: lower_evidentiality(*evidentiality),
+            }
+        }
         ast::TypeExpr::Cycle { .. } => IrType::Cycle { modulus: 0 },
         ast::TypeExpr::Simd { element, lanes } => IrType::Simd {
             element: Box::new(lower_type_expr(element)),
@@ -777,9 +783,16 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             evidence: IrEvidence::Known,
         },
 
-        ast::Expr::Await(inner) => {
+        ast::Expr::Await { expr: inner, evidentiality } => {
             let inner_ir = lower_expr(ctx, inner);
-            let evidence = get_operation_evidence(&inner_ir);
+            // Use the explicit evidentiality marker if provided, otherwise infer from inner
+            let evidence = match evidentiality {
+                Some(ast::Evidentiality::Known) => IrEvidence::Known,
+                Some(ast::Evidentiality::Uncertain) => IrEvidence::Uncertain,
+                Some(ast::Evidentiality::Reported) => IrEvidence::Reported,
+                Some(ast::Evidentiality::Paradox) => IrEvidence::Uncertain, // Trust boundary
+                None => get_operation_evidence(&inner_ir),
+            };
             IrOperation::Await {
                 expr: Box::new(inner_ir),
                 ty: IrType::Infer,
@@ -1016,6 +1029,41 @@ fn lower_pipe_op(ctx: &mut LoweringContext, op: &ast::PipeOp) -> IrPipelineStep 
             symbol: "ρ".to_string(),
             body: Some(Box::new(lower_expr(ctx, body))),
         },
+        ast::PipeOp::ReduceSum => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Sum,
+            symbol: "ρ+".to_string(),
+            body: None,
+        },
+        ast::PipeOp::ReduceProd => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Product,
+            symbol: "ρ*".to_string(),
+            body: None,
+        },
+        ast::PipeOp::ReduceMin => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Min,
+            symbol: "ρ_min".to_string(),
+            body: None,
+        },
+        ast::PipeOp::ReduceMax => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Max,
+            symbol: "ρ_max".to_string(),
+            body: None,
+        },
+        ast::PipeOp::ReduceConcat => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Concat,
+            symbol: "ρ++".to_string(),
+            body: None,
+        },
+        ast::PipeOp::ReduceAll => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::All,
+            symbol: "ρ&".to_string(),
+            body: None,
+        },
+        ast::PipeOp::ReduceAny => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Any,
+            symbol: "ρ|".to_string(),
+            body: None,
+        },
         ast::PipeOp::First => IrPipelineStep::Morpheme {
             morpheme: MorphemeKind::First,
             symbol: "α".to_string(),
@@ -1051,6 +1099,15 @@ fn lower_pipe_op(ctx: &mut LoweringContext, op: &ast::PipeOp) -> IrPipelineStep 
             args: args.iter().map(|a| lower_expr(ctx, a)).collect(),
         },
         ast::PipeOp::Await => IrPipelineStep::Await,
+        ast::PipeOp::Match(_) => {
+            // Match in pipes is handled by interpreter; IR falls back to identity
+            // (proper implementation would lower to branching IR)
+            IrPipelineStep::Identity
+        }
+        ast::PipeOp::TryMap(_) => {
+            // Try/error transformation handled by interpreter
+            IrPipelineStep::Identity
+        }
         ast::PipeOp::Named { prefix, body } => {
             let fn_name = prefix
                 .iter()

@@ -1257,9 +1257,11 @@ impl<'a> Parser<'a> {
                 let ty = self.parse_type()?;
 
                 // Optional default value
-                if self.consume_if(&Token::Eq) {
-                    let _ = self.parse_expr()?;
-                }
+                let default = if self.consume_if(&Token::Eq) {
+                    Some(self.parse_expr()?)
+                } else {
+                    None
+                };
 
                 if !self.check(&Token::RBrace) && !self.check(&Token::On) {
                     self.consume_if(&Token::Comma);
@@ -1269,6 +1271,7 @@ impl<'a> Parser<'a> {
                     visibility: vis,
                     name: field_name,
                     ty,
+                    default,
                 });
             }
         }
@@ -1426,11 +1429,21 @@ impl<'a> Parser<'a> {
     fn parse_type(&mut self) -> ParseResult<TypeExpr> {
         let base = self.parse_type_base()?;
 
-        // Check for evidentiality suffix
+        // Check for evidentiality suffix: T?, T!, T~, T?[Error], T![Error], T~[Error]
         if let Some(ev) = self.parse_evidentiality_opt() {
+            // Check for optional error type bracket: ?[ErrorType]
+            let error_type = if self.check(&Token::LBracket) {
+                self.advance(); // consume [
+                let err_ty = self.parse_type()?;
+                self.expect(Token::RBracket)?; // consume ]
+                Some(Box::new(err_ty))
+            } else {
+                None
+            };
             return Ok(TypeExpr::Evidential {
                 inner: Box::new(base),
                 evidentiality: ev,
+                error_type,
             });
         }
 
@@ -1770,7 +1783,52 @@ impl<'a> Parser<'a> {
                 }
                 Some(Token::Hourglass) => {
                     self.advance();
-                    expr = Expr::Await(Box::new(expr));
+                    // Check for optional evidentiality marker: ⌛? ⌛! ⌛~ ⌛‽
+                    let evidentiality = match self.current_token() {
+                        Some(Token::Question) => {
+                            self.advance();
+                            Some(Evidentiality::Uncertain)
+                        }
+                        Some(Token::Bang) => {
+                            self.advance();
+                            Some(Evidentiality::Known)
+                        }
+                        Some(Token::Tilde) => {
+                            self.advance();
+                            Some(Evidentiality::Reported)
+                        }
+                        Some(Token::Interrobang) => {
+                            self.advance();
+                            Some(Evidentiality::Paradox)
+                        }
+                        _ => None,
+                    };
+                    expr = Expr::Await {
+                        expr: Box::new(expr),
+                        evidentiality,
+                    };
+                }
+                // Incorporation: expr·verb·noun·action
+                // Polysynthetic noun incorporation using middle dot
+                Some(Token::MiddleDot) => {
+                    // Convert current expr to first segment, then parse chain
+                    let first_segment = self.expr_to_incorporation_segment(expr.clone())?;
+                    let mut segments = vec![first_segment];
+
+                    while self.consume_if(&Token::MiddleDot) {
+                        let name = self.parse_ident()?;
+                        let args = if self.check(&Token::LParen) {
+                            self.advance();
+                            let args = self.parse_expr_list()?;
+                            self.expect(Token::RParen)?;
+                            Some(args)
+                        } else {
+                            None
+                        };
+                        segments.push(IncorporationSegment { name, args });
+                    }
+
+                    expr = Expr::Incorporation { segments };
                 }
                 _ => break,
             }
@@ -2063,6 +2121,49 @@ impl<'a> Parser<'a> {
             Some(Token::Volatile) => self.parse_volatile_expr(),
             Some(Token::Simd) => self.parse_simd_expr(),
             Some(Token::Atomic) => self.parse_atomic_expr(),
+            // Implicit self field access: `.field` desugars to `self.field`
+            // This allows more concise method bodies:
+            //   fn increment(mut self) { .count += 1; }
+            // instead of:
+            //   fn increment(mut self) { self.count += 1; }
+            Some(Token::Dot) => {
+                let dot_span = self.current_span();
+                self.advance(); // consume .
+                match self.current_token() {
+                    Some(Token::Ident(name)) => {
+                        let field_name = name.clone();
+                        let field_span = self.current_span();
+                        self.advance();
+                        // Create `self.field` expression
+                        let self_expr = Expr::Path(TypePath {
+                            segments: vec![PathSegment {
+                                ident: Ident {
+                                    name: "self".to_string(),
+                                    evidentiality: None,
+                                    affect: None,
+                                    span: dot_span,
+                                },
+                                generics: None,
+                            }],
+                        });
+                        Ok(Expr::Field {
+                            expr: Box::new(self_expr),
+                            field: Ident {
+                                name: field_name,
+                                evidentiality: None,
+                                affect: None,
+                                span: field_span,
+                            },
+                        })
+                    }
+                    Some(token) => Err(ParseError::UnexpectedToken {
+                        expected: "identifier after '.' for implicit self field".to_string(),
+                        found: token.clone(),
+                        span: self.current_span(),
+                    }),
+                    None => Err(ParseError::UnexpectedEof),
+                }
+            }
             Some(token) => Err(ParseError::UnexpectedToken {
                 expected: "expression".to_string(),
                 found: token,
@@ -2676,10 +2777,64 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Rho) => {
                 self.advance();
-                self.expect(Token::LBrace)?;
-                let body = self.parse_expr()?;
-                self.expect(Token::RBrace)?;
-                Ok(PipeOp::Reduce(Box::new(body)))
+                // Check for reduction variants: ρ+, ρ*, ρ++, ρ&, ρ|, ρ_sum, ρ_prod, ρ_min, ρ_max, ρ_cat, ρ_all, ρ_any
+                match self.current_token() {
+                    Some(Token::Plus) => {
+                        self.advance();
+                        Ok(PipeOp::ReduceSum)
+                    }
+                    Some(Token::Star) => {
+                        self.advance();
+                        Ok(PipeOp::ReduceProd)
+                    }
+                    Some(Token::PlusPlus) => {
+                        self.advance();
+                        Ok(PipeOp::ReduceConcat)
+                    }
+                    Some(Token::Amp) => {
+                        self.advance();
+                        Ok(PipeOp::ReduceAll)
+                    }
+                    Some(Token::Pipe) => {
+                        self.advance();
+                        Ok(PipeOp::ReduceAny)
+                    }
+                    Some(Token::Underscore) => {
+                        self.advance();
+                        // Parse the variant name: _sum, _prod, _min, _max, _cat, _all, _any
+                        if let Some(Token::Ident(name)) = self.current_token().cloned() {
+                            self.advance();
+                            match name.as_str() {
+                                "sum" => Ok(PipeOp::ReduceSum),
+                                "prod" | "product" => Ok(PipeOp::ReduceProd),
+                                "min" => Ok(PipeOp::ReduceMin),
+                                "max" => Ok(PipeOp::ReduceMax),
+                                "cat" | "concat" => Ok(PipeOp::ReduceConcat),
+                                "all" => Ok(PipeOp::ReduceAll),
+                                "any" => Ok(PipeOp::ReduceAny),
+                                _ => Err(ParseError::Custom(format!(
+                                    "unknown reduction variant: ρ_{}",
+                                    name
+                                ))),
+                            }
+                        } else {
+                            Err(ParseError::Custom(
+                                "expected reduction variant name after ρ_".to_string(),
+                            ))
+                        }
+                    }
+                    Some(Token::LBrace) => {
+                        // General reduce with closure: ρ{acc, x => ...}
+                        self.advance();
+                        let body = self.parse_expr()?;
+                        self.expect(Token::RBrace)?;
+                        Ok(PipeOp::Reduce(Box::new(body)))
+                    }
+                    _ => Err(ParseError::Custom(
+                        "expected reduction variant (+, *, ++, &, |, _name) or {body} after ρ"
+                            .to_string(),
+                    )),
+                }
             }
             // New access morphemes
             Some(Token::Alpha) => {
@@ -2763,6 +2918,46 @@ impl<'a> Parser<'a> {
                 };
 
                 Ok(PipeOp::Named { prefix, body })
+            }
+            // Match morpheme: |match{ Pattern => expr, ... }
+            Some(Token::Match) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let mut arms = Vec::new();
+                while !self.check(&Token::RBrace) && !self.is_eof() {
+                    let pattern = self.parse_pattern()?;
+                    let guard = if self.consume_if(&Token::If) {
+                        Some(self.parse_condition()?)
+                    } else {
+                        None
+                    };
+                    self.expect(Token::FatArrow)?;
+                    let body = self.parse_expr()?;
+                    arms.push(MatchArm {
+                        pattern,
+                        guard,
+                        body,
+                    });
+                    if !self.consume_if(&Token::Comma) {
+                        break;
+                    }
+                }
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Match(arms))
+            }
+            // Trust boundary / unwrap: |‽ or |‽{mapper}
+            // Uses interrobang (‽) to signal trust boundary crossing
+            Some(Token::Interrobang) => {
+                self.advance();
+                let mapper = if self.check(&Token::LBrace) {
+                    self.advance();
+                    let expr = self.parse_expr()?;
+                    self.expect(Token::RBrace)?;
+                    Some(Box::new(expr))
+                } else {
+                    None
+                };
+                Ok(PipeOp::TryMap(mapper))
             }
             Some(Token::Ident(_)) => {
                 let name = self.parse_ident()?;
@@ -2872,6 +3067,133 @@ impl<'a> Parser<'a> {
                 let data = self.parse_expr()?;
                 self.expect(Token::RBrace)?;
                 Ok(PipeOp::Body(Box::new(data)))
+            }
+
+            // ==========================================
+            // Mathematical & APL-Inspired Operations
+            // ==========================================
+
+            // All/ForAll: |∀{p} or |all{p}
+            Some(Token::ForAll) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let pred = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::All(Box::new(pred)))
+            }
+
+            // Any/Exists: |∃{p} or |any{p}
+            Some(Token::Exists) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let pred = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Any(Box::new(pred)))
+            }
+
+            // Compose: |∘{f} or |compose{f}
+            Some(Token::Compose) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let f = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Compose(Box::new(f)))
+            }
+
+            // Zip/Join: |⋈{other} or |zip{other}
+            Some(Token::Bowtie) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let other = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Zip(Box::new(other)))
+            }
+
+            // Scan/Integral: |∫{f} or |scan{f}
+            Some(Token::Integral) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let f = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Scan(Box::new(f)))
+            }
+
+            // Diff/Derivative: |∂ or |diff
+            Some(Token::Partial) => {
+                self.advance();
+                Ok(PipeOp::Diff)
+            }
+
+            // Gradient: |∇{var} or |grad{var}
+            Some(Token::Nabla) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let var = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Gradient(Box::new(var)))
+            }
+
+            // Sort Ascending: |⍋ or |sort_asc
+            Some(Token::GradeUp) => {
+                self.advance();
+                Ok(PipeOp::SortAsc)
+            }
+
+            // Sort Descending: |⍒ or |sort_desc
+            Some(Token::GradeDown) => {
+                self.advance();
+                Ok(PipeOp::SortDesc)
+            }
+
+            // Reverse: |⌽ or |rev
+            Some(Token::Rotate) => {
+                self.advance();
+                Ok(PipeOp::Reverse)
+            }
+
+            // Cycle: |↻{n} or |cycle{n}
+            Some(Token::CycleArrow) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let n = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Cycle(Box::new(n)))
+            }
+
+            // Windows: |⌺{n} or |windows{n}
+            Some(Token::QuadDiamond) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let n = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Windows(Box::new(n)))
+            }
+
+            // Chunks: |⊞{n} or |chunks{n}
+            Some(Token::SquaredPlus) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let n = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Chunks(Box::new(n)))
+            }
+
+            // Flatten: |⋳ or |flatten
+            Some(Token::ElementSmallVerticalBar) => {
+                self.advance();
+                Ok(PipeOp::Flatten)
+            }
+
+            // Unique: |∪ or |unique
+            Some(Token::Union) => {
+                self.advance();
+                Ok(PipeOp::Unique)
+            }
+
+            // Enumerate: |⍳ or |enumerate
+            Some(Token::Iota) => {
+                self.advance();
+                Ok(PipeOp::Enumerate)
             }
 
             Some(token) => Err(ParseError::UnexpectedToken {
@@ -3173,6 +3495,35 @@ impl<'a> Parser<'a> {
 
     // === Helpers ===
 
+    /// Convert an expression to an IncorporationSegment for polysynthetic chains
+    /// E.g., `path` in `path·file·read` becomes IncorporationSegment { name: "path", args: None }
+    fn expr_to_incorporation_segment(&self, expr: Expr) -> ParseResult<IncorporationSegment> {
+        match expr {
+            Expr::Path(path) if path.segments.len() == 1 => {
+                Ok(IncorporationSegment {
+                    name: path.segments[0].ident.clone(),
+                    args: None,
+                })
+            }
+            Expr::Call { func, args } => {
+                if let Expr::Path(path) = *func {
+                    if path.segments.len() == 1 {
+                        return Ok(IncorporationSegment {
+                            name: path.segments[0].ident.clone(),
+                            args: Some(args),
+                        });
+                    }
+                }
+                Err(ParseError::Custom(
+                    "incorporation chain must start with identifier or call".to_string(),
+                ))
+            }
+            _ => Err(ParseError::Custom(
+                "incorporation chain must start with identifier".to_string(),
+            )),
+        }
+    }
+
     fn parse_ident(&mut self) -> ParseResult<Ident> {
         match self.current.take() {
             Some((Token::Ident(name), span)) => {
@@ -3426,10 +3777,17 @@ impl<'a> Parser<'a> {
             let name = self.parse_ident()?;
             self.expect(Token::Colon)?;
             let ty = self.parse_type()?;
+            // Parse optional default value: `field: Type = default_expr`
+            let default = if self.consume_if(&Token::Eq) {
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
             fields.push(FieldDef {
                 visibility,
                 name,
                 ty,
+                default,
             });
             if !self.consume_if(&Token::Comma) {
                 break;

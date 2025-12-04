@@ -876,6 +876,9 @@ impl Interpreter {
                 method,
                 args,
             } => self.eval_method_call(receiver, method, args),
+            // Polysynthetic incorporation: path·file·read·string
+            // Each segment is a method/function that transforms the value
+            Expr::Incorporation { segments } => self.eval_incorporation(segments),
             Expr::Pipe { expr, operations } => self.eval_pipe(expr, operations),
             Expr::Closure { params, body } => self.eval_closure(params, body),
             Expr::Struct { path, fields, rest } => self.eval_struct_literal(path, fields, rest),
@@ -889,9 +892,25 @@ impl Interpreter {
                 inclusive,
             } => self.eval_range(start, end, *inclusive),
             Expr::Assign { target, value } => self.eval_assign(target, value),
-            Expr::Await(inner) => {
+            Expr::Await { expr: inner, evidentiality } => {
                 let value = self.evaluate(inner)?;
-                self.await_value(value)
+                let awaited = self.await_value(value)?;
+                // Handle evidentiality marker semantics
+                match evidentiality {
+                    Some(Evidentiality::Uncertain) => {
+                        // ⌛? - propagate error like Try
+                        self.unwrap_result_or_option(awaited, true, false)
+                    }
+                    Some(Evidentiality::Known) => {
+                        // ⌛! - expect success, panic on error
+                        self.unwrap_result_or_option(awaited, true, true)
+                    }
+                    Some(Evidentiality::Reported) | Some(Evidentiality::Paradox) => {
+                        // ⌛~ or ⌛‽ - mark as external/reported, unwrap if Result/Option
+                        self.unwrap_result_or_option(awaited, false, false)
+                    }
+                    None => Ok(awaited),
+                }
             }
             _ => Err(RuntimeError::new(format!(
                 "Unsupported expression: {:?}",
@@ -966,18 +985,46 @@ impl Interpreter {
                 Ok(Value::Array(Rc::new(RefCell::new(arr))))
             }
             Literal::InterpolatedString { parts } => {
-                // Evaluate each part and concatenate
+                // Evaluate each part and concatenate, tracking evidentiality
                 let mut result = String::new();
+                let mut combined_evidence: Option<Evidence> = None;
+
                 for part in parts {
                     match part {
                         InterpolationPart::Text(s) => result.push_str(s),
                         InterpolationPart::Expr(expr) => {
                             let value = self.evaluate(expr)?;
-                            result.push_str(&format!("{}", value));
+
+                            // Track explicit evidentiality
+                            combined_evidence = Self::combine_evidence(
+                                combined_evidence,
+                                Self::extract_evidence(&value),
+                            );
+
+                            // Track affect-derived evidentiality (sarcasm, confidence)
+                            if let Some(affect) = Self::extract_affect(&value) {
+                                combined_evidence = Self::combine_evidence(
+                                    combined_evidence,
+                                    Self::affect_to_evidence(affect),
+                                );
+                            }
+
+                            // Use the fully unwrapped value for display
+                            let display_value = Self::unwrap_value(&value);
+                            result.push_str(&format!("{}", display_value));
                         }
                     }
                 }
-                Ok(Value::String(Rc::new(result)))
+
+                // Wrap result with evidentiality if any interpolated values were evidential
+                let string_value = Value::String(Rc::new(result));
+                match combined_evidence {
+                    Some(evidence) => Ok(Value::Evidential {
+                        value: Box::new(string_value),
+                        evidence,
+                    }),
+                    None => Ok(string_value),
+                }
             }
             Literal::SigilStringSql(s) => {
                 // SQL sigil string - for now just return as string
@@ -1271,6 +1318,57 @@ impl Interpreter {
             }
             // Non-futures return immediately
             other => Ok(other),
+        }
+    }
+
+    /// Unwrap a Result or Option value with configurable error handling
+    /// - propagate_errors: if true, return error on Err/None; if false, just unwrap
+    /// - panic_on_error: if true, panic instead of returning error
+    fn unwrap_result_or_option(
+        &self,
+        value: Value,
+        propagate_errors: bool,
+        panic_on_error: bool,
+    ) -> Result<Value, RuntimeError> {
+        // First, determine what kind of value we have and extract any inner value
+        let (is_ok_or_some, is_err, is_none, inner_val) = match &value {
+            Value::Struct { name, fields } if name == "Ok" || name == "Some" => {
+                let borrowed = fields.borrow();
+                let inner = borrowed.get("0").or(borrowed.get("value")).cloned();
+                (true, false, false, inner)
+            }
+            Value::Struct { name, fields } if name == "Err" => {
+                let borrowed = fields.borrow();
+                let inner = borrowed.get("0").or(borrowed.get("value")).cloned();
+                (false, true, false, inner)
+            }
+            Value::Struct { name, .. } if name == "None" => {
+                (false, false, true, None)
+            }
+            _ => return Ok(value),
+        };
+
+        if is_ok_or_some {
+            Ok(inner_val.unwrap_or(value))
+        } else if is_err {
+            let msg = format!("Error: {:?}", inner_val);
+            if panic_on_error {
+                panic!("{}", msg);
+            } else if propagate_errors {
+                Err(RuntimeError::new(msg))
+            } else {
+                Ok(inner_val.unwrap_or(value))
+            }
+        } else if is_none {
+            if panic_on_error {
+                panic!("Unwrapped None");
+            } else if propagate_errors {
+                Err(RuntimeError::new("Unwrapped None".to_string()))
+            } else {
+                Ok(value)
+            }
+        } else {
+            Ok(value)
         }
     }
 
@@ -1745,6 +1843,201 @@ impl Interpreter {
         }
     }
 
+    /// Evaluate polysynthetic incorporation: path·file·read·string
+    /// The first segment provides the initial value, subsequent segments are method-like transformations
+    fn eval_incorporation(
+        &mut self,
+        segments: &[IncorporationSegment],
+    ) -> Result<Value, RuntimeError> {
+        if segments.is_empty() {
+            return Err(RuntimeError::new("empty incorporation chain"));
+        }
+
+        // First segment: get initial value (variable lookup or function call)
+        let first = &segments[0];
+        let mut value = if let Some(args) = &first.args {
+            // First segment is a function call: func(args)·next·...
+            let arg_values: Vec<Value> = args
+                .iter()
+                .map(|a| self.evaluate(a))
+                .collect::<Result<_, _>>()?;
+            self.call_function_by_name(&first.name.name, arg_values)?
+        } else {
+            // First segment is a variable: var·next·...
+            self.environment
+                .borrow()
+                .get(&first.name.name)
+                .ok_or_else(|| {
+                    RuntimeError::new(format!("undefined: {}", first.name.name))
+                })?
+        };
+
+        // Process remaining segments as method-like calls
+        for segment in segments.iter().skip(1) {
+            let arg_values: Vec<Value> = segment
+                .args
+                .as_ref()
+                .map(|args| {
+                    args.iter()
+                        .map(|a| self.evaluate(a))
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+
+            // Try to call as a method on the value
+            value = self.call_incorporation_method(&value, &segment.name.name, arg_values)?;
+        }
+
+        Ok(value)
+    }
+
+    /// Call a method in an incorporation chain
+    /// This looks up the segment name as a method or stdlib function
+    fn call_incorporation_method(
+        &mut self,
+        receiver: &Value,
+        method_name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        // First try as a method on the receiver value
+        match (receiver, method_name) {
+            // String methods
+            (Value::String(s), "len") => Ok(Value::Int(s.len() as i64)),
+            (Value::String(s), "upper") | (Value::String(s), "uppercase") => {
+                Ok(Value::String(Rc::new(s.to_uppercase())))
+            }
+            (Value::String(s), "lower") | (Value::String(s), "lowercase") => {
+                Ok(Value::String(Rc::new(s.to_lowercase())))
+            }
+            (Value::String(s), "trim") => {
+                Ok(Value::String(Rc::new(s.trim().to_string())))
+            }
+            (Value::String(s), "chars") => {
+                let chars: Vec<Value> = s
+                    .chars()
+                    .map(|c| Value::String(Rc::new(c.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(chars))))
+            }
+            (Value::String(s), "lines") => {
+                let lines: Vec<Value> = s
+                    .lines()
+                    .map(|l| Value::String(Rc::new(l.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(lines))))
+            }
+            (Value::String(s), "bytes") => {
+                let bytes: Vec<Value> = s.bytes().map(|b| Value::Int(b as i64)).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(bytes))))
+            }
+            (Value::String(s), "parse_int") | (Value::String(s), "to_int") => {
+                s.parse::<i64>()
+                    .map(Value::Int)
+                    .map_err(|_| RuntimeError::new(format!("cannot parse '{}' as int", s)))
+            }
+            (Value::String(s), "parse_float") | (Value::String(s), "to_float") => {
+                s.parse::<f64>()
+                    .map(Value::Float)
+                    .map_err(|_| RuntimeError::new(format!("cannot parse '{}' as float", s)))
+            }
+
+            // Array methods
+            (Value::Array(arr), "len") => Ok(Value::Int(arr.borrow().len() as i64)),
+            (Value::Array(arr), "first") => {
+                arr.borrow().first().cloned().ok_or_else(|| RuntimeError::new("empty array"))
+            }
+            (Value::Array(arr), "last") => {
+                arr.borrow().last().cloned().ok_or_else(|| RuntimeError::new("empty array"))
+            }
+            (Value::Array(arr), "reverse") | (Value::Array(arr), "rev") => {
+                let mut v = arr.borrow().clone();
+                v.reverse();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "join") => {
+                let sep = args.first()
+                    .map(|v| match v {
+                        Value::String(s) => s.to_string(),
+                        _ => "".to_string(),
+                    })
+                    .unwrap_or_default();
+                let joined = arr
+                    .borrow()
+                    .iter()
+                    .map(|v| format!("{}", v))
+                    .collect::<Vec<_>>()
+                    .join(&sep);
+                Ok(Value::String(Rc::new(joined)))
+            }
+            (Value::Array(arr), "sum") => {
+                let mut sum = 0i64;
+                for v in arr.borrow().iter() {
+                    match v {
+                        Value::Int(i) => sum += i,
+                        Value::Float(f) => return Ok(Value::Float(sum as f64 + f)),
+                        _ => {}
+                    }
+                }
+                Ok(Value::Int(sum))
+            }
+
+            // Number methods
+            (Value::Int(n), "abs") => Ok(Value::Int(n.abs())),
+            (Value::Float(n), "abs") => Ok(Value::Float(n.abs())),
+            (Value::Int(n), "to_string") | (Value::Int(n), "string") => {
+                Ok(Value::String(Rc::new(n.to_string())))
+            }
+            (Value::Float(n), "to_string") | (Value::Float(n), "string") => {
+                Ok(Value::String(Rc::new(n.to_string())))
+            }
+            (Value::Int(n), "to_float") | (Value::Int(n), "float") => {
+                Ok(Value::Float(*n as f64))
+            }
+            (Value::Float(n), "to_int") | (Value::Float(n), "int") => {
+                Ok(Value::Int(*n as i64))
+            }
+
+            // Map/Struct field access
+            (Value::Map(map), field) => {
+                map.borrow()
+                    .get(field)
+                    .cloned()
+                    .ok_or_else(|| RuntimeError::new(format!("no field '{}' in map", field)))
+            }
+            (Value::Struct { fields, .. }, field) => {
+                fields.borrow()
+                    .get(field)
+                    .cloned()
+                    .ok_or_else(|| RuntimeError::new(format!("no field '{}' in struct", field)))
+            }
+
+            // Try stdlib function with receiver as first arg
+            _ => {
+                let mut all_args = vec![receiver.clone()];
+                all_args.extend(args);
+                self.call_function_by_name(method_name, all_args)
+            }
+        }
+    }
+
+    /// Call a function by name from the environment
+    fn call_function_by_name(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        // Get the function value from environment (clone to avoid borrow issues)
+        let func_value = self.environment.borrow().get(name);
+
+        match func_value {
+            Some(Value::Function(f)) => self.call_function(&f, args),
+            Some(Value::BuiltIn(b)) => self.call_builtin(&b, args),
+            Some(_) => Err(RuntimeError::new(format!("{} is not a function", name))),
+            None => Err(RuntimeError::new(format!("undefined function: {}", name))),
+        }
+    }
+
     fn eval_pipe(&mut self, expr: &Expr, operations: &[PipeOp]) -> Result<Value, RuntimeError> {
         let mut value = self.evaluate(expr)?;
 
@@ -1834,6 +2127,125 @@ impl Interpreter {
                         Ok(acc)
                     }
                     _ => Err(RuntimeError::new("Reduce requires array")),
+                }
+            }
+            PipeOp::ReduceSum => {
+                // ρ+ or ρ_sum - sum all elements
+                self.sum_values(value)
+            }
+            PipeOp::ReduceProd => {
+                // ρ* or ρ_prod - multiply all elements
+                self.product_values(value)
+            }
+            PipeOp::ReduceMin => {
+                // ρ_min - find minimum element
+                self.min_values(value)
+            }
+            PipeOp::ReduceMax => {
+                // ρ_max - find maximum element
+                self.max_values(value)
+            }
+            PipeOp::ReduceConcat => {
+                // ρ++ or ρ_cat - concatenate strings/arrays
+                self.concat_values(value)
+            }
+            PipeOp::ReduceAll => {
+                // ρ& or ρ_all - logical AND (all true)
+                self.all_values(value)
+            }
+            PipeOp::ReduceAny => {
+                // ρ| or ρ_any - logical OR (any true)
+                self.any_values(value)
+            }
+            PipeOp::Match(arms) => {
+                // |match{ Pattern => expr, ... } - pattern matching in pipe
+                for arm in arms {
+                    if self.pattern_matches(&arm.pattern, &value)? {
+                        // Create new scope for pattern bindings
+                        let prev_env = self.environment.clone();
+                        self.environment = Rc::new(RefCell::new(Environment::with_parent(
+                            prev_env.clone(),
+                        )));
+
+                        // Bind pattern variables
+                        self.bind_pattern(&arm.pattern, value.clone())?;
+
+                        // Also bind _ to the piped value for convenient access
+                        self.environment
+                            .borrow_mut()
+                            .define("_".to_string(), value.clone());
+
+                        // Check guard if present
+                        let guard_passes = if let Some(guard) = &arm.guard {
+                            matches!(self.evaluate(guard)?, Value::Bool(true))
+                        } else {
+                            true
+                        };
+
+                        if guard_passes {
+                            let result = self.evaluate(&arm.body)?;
+                            self.environment = prev_env;
+                            return Ok(result);
+                        }
+
+                        // Guard failed, restore environment and try next arm
+                        self.environment = prev_env;
+                    }
+                }
+                Err(RuntimeError::new("No pattern matched in pipe match"))
+            }
+            PipeOp::TryMap(mapper) => {
+                // |? or |?{mapper} - unwrap Result/Option or transform error
+                match &value {
+                    // Handle Result-like values (struct with ok/err fields)
+                    Value::Struct { name, fields } if name == "Ok" || name.ends_with("::Ok") => {
+                        // Extract the inner value from Ok
+                        let fields = fields.borrow();
+                        fields
+                            .get("0")
+                            .or_else(|| fields.get("value"))
+                            .cloned()
+                            .ok_or_else(|| RuntimeError::new("Ok variant has no value"))
+                    }
+                    Value::Struct { name, fields } if name == "Err" || name.ends_with("::Err") => {
+                        // Transform error if mapper provided, otherwise propagate
+                        let fields = fields.borrow();
+                        let err_val = fields
+                            .get("0")
+                            .or_else(|| fields.get("error"))
+                            .cloned()
+                            .unwrap_or(Value::Null);
+                        if let Some(mapper_expr) = mapper {
+                            // Apply mapper to error
+                            let prev_env = self.environment.clone();
+                            self.environment = Rc::new(RefCell::new(Environment::with_parent(
+                                prev_env.clone(),
+                            )));
+                            self.environment
+                                .borrow_mut()
+                                .define("_".to_string(), err_val);
+                            let mapped = self.evaluate(mapper_expr)?;
+                            self.environment = prev_env;
+                            Err(RuntimeError::new(format!("Error: {:?}", mapped)))
+                        } else {
+                            Err(RuntimeError::new(format!("Error: {:?}", err_val)))
+                        }
+                    }
+                    // Handle Option-like values
+                    Value::Struct { name, fields } if name == "Some" || name.ends_with("::Some") => {
+                        let fields = fields.borrow();
+                        fields
+                            .get("0")
+                            .or_else(|| fields.get("value"))
+                            .cloned()
+                            .ok_or_else(|| RuntimeError::new("Some variant has no value"))
+                    }
+                    Value::Struct { name, .. } if name == "None" || name.ends_with("::None") => {
+                        Err(RuntimeError::new("Unwrapped None value"))
+                    }
+                    Value::Null => Err(RuntimeError::new("Unwrapped null value")),
+                    // Pass through non-Result/Option values unchanged
+                    _ => Ok(value),
                 }
             }
             PipeOp::Method { name, args } => {
@@ -2570,6 +2982,261 @@ impl Interpreter {
                     _ => self.evaluate(func),
                 }
             }
+
+            // ==========================================
+            // Mathematical & APL-Inspired Operations
+            // ==========================================
+
+            PipeOp::All(pred) => {
+                // |∀{p} - check if ALL elements satisfy predicate
+                match value {
+                    Value::Array(arr) => {
+                        for elem in arr.borrow().iter() {
+                            self.environment.borrow_mut().define("_".to_string(), elem.clone());
+                            let result = self.evaluate(pred)?;
+                            if !self.is_truthy(&result) {
+                                return Ok(Value::Bool(false));
+                            }
+                        }
+                        Ok(Value::Bool(true))
+                    }
+                    _ => Err(RuntimeError::new("All requires array")),
+                }
+            }
+
+            PipeOp::Any(pred) => {
+                // |∃{p} - check if ANY element satisfies predicate
+                match value {
+                    Value::Array(arr) => {
+                        for elem in arr.borrow().iter() {
+                            self.environment.borrow_mut().define("_".to_string(), elem.clone());
+                            let result = self.evaluate(pred)?;
+                            if self.is_truthy(&result) {
+                                return Ok(Value::Bool(true));
+                            }
+                        }
+                        Ok(Value::Bool(false))
+                    }
+                    _ => Err(RuntimeError::new("Any requires array")),
+                }
+            }
+
+            PipeOp::Compose(f) => {
+                // |∘{f} - function composition / apply function
+                self.environment.borrow_mut().define("_".to_string(), value);
+                self.evaluate(f)
+            }
+
+            PipeOp::Zip(other_expr) => {
+                // |⋈{other} - zip with another collection
+                let other = self.evaluate(other_expr)?;
+                match (value, other) {
+                    (Value::Array(arr1), Value::Array(arr2)) => {
+                        let zipped: Vec<Value> = arr1
+                            .borrow()
+                            .iter()
+                            .zip(arr2.borrow().iter())
+                            .map(|(a, b)| Value::Tuple(Rc::new(vec![a.clone(), b.clone()])))
+                            .collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(zipped))))
+                    }
+                    _ => Err(RuntimeError::new("Zip requires two arrays")),
+                }
+            }
+
+            PipeOp::Scan(f) => {
+                // |∫{f} - cumulative fold (scan)
+                match value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        if arr.is_empty() {
+                            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                        }
+                        let mut results = vec![arr[0].clone()];
+                        let mut acc = arr[0].clone();
+                        for elem in arr.iter().skip(1) {
+                            self.environment.borrow_mut().define("acc".to_string(), acc.clone());
+                            self.environment.borrow_mut().define("_".to_string(), elem.clone());
+                            acc = self.evaluate(f)?;
+                            results.push(acc.clone());
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(results))))
+                    }
+                    _ => Err(RuntimeError::new("Scan requires array")),
+                }
+            }
+
+            PipeOp::Diff => {
+                // |∂ - differences between adjacent elements
+                match value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        if arr.len() < 2 {
+                            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                        }
+                        let mut diffs = Vec::new();
+                        for i in 1..arr.len() {
+                            let diff = self.subtract_values(&arr[i], &arr[i - 1])?;
+                            diffs.push(diff);
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(diffs))))
+                    }
+                    _ => Err(RuntimeError::new("Diff requires array")),
+                }
+            }
+
+            PipeOp::Gradient(var_expr) => {
+                // |∇{var} - automatic differentiation
+                // For now, just a placeholder - real autodiff requires tape recording
+                let _ = var_expr;
+                Ok(Value::Float(0.0)) // TODO: Implement real autodiff
+            }
+
+            PipeOp::SortAsc => {
+                // |⍋ - sort ascending
+                match value {
+                    Value::Array(arr) => {
+                        let mut v = arr.borrow().clone();
+                        v.sort_by(|a, b| self.compare_values(a, b, &None));
+                        Ok(Value::Array(Rc::new(RefCell::new(v))))
+                    }
+                    _ => Err(RuntimeError::new("SortAsc requires array")),
+                }
+            }
+
+            PipeOp::SortDesc => {
+                // |⍒ - sort descending
+                match value {
+                    Value::Array(arr) => {
+                        let mut v = arr.borrow().clone();
+                        v.sort_by(|a, b| self.compare_values(b, a, &None));
+                        Ok(Value::Array(Rc::new(RefCell::new(v))))
+                    }
+                    _ => Err(RuntimeError::new("SortDesc requires array")),
+                }
+            }
+
+            PipeOp::Reverse => {
+                // |⌽ - reverse collection
+                match value {
+                    Value::Array(arr) => {
+                        let mut v = arr.borrow().clone();
+                        v.reverse();
+                        Ok(Value::Array(Rc::new(RefCell::new(v))))
+                    }
+                    _ => Err(RuntimeError::new("Reverse requires array")),
+                }
+            }
+
+            PipeOp::Cycle(n_expr) => {
+                // |↻{n} - repeat collection n times
+                match value {
+                    Value::Array(arr) => {
+                        let n_val = self.evaluate(n_expr)?;
+                        let n = match n_val {
+                            Value::Int(i) => i as usize,
+                            _ => return Err(RuntimeError::new("Cycle count must be integer")),
+                        };
+                        let arr = arr.borrow();
+                        let cycled: Vec<Value> = arr.iter().cloned().cycle().take(arr.len() * n).collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(cycled))))
+                    }
+                    _ => Err(RuntimeError::new("Cycle requires array")),
+                }
+            }
+
+            PipeOp::Windows(n_expr) => {
+                // |⌺{n} - sliding windows
+                match value {
+                    Value::Array(arr) => {
+                        let n_val = self.evaluate(n_expr)?;
+                        let n = match n_val {
+                            Value::Int(i) => i as usize,
+                            _ => return Err(RuntimeError::new("Window size must be integer")),
+                        };
+                        let arr = arr.borrow();
+                        let windows: Vec<Value> = arr
+                            .windows(n)
+                            .map(|w| Value::Array(Rc::new(RefCell::new(w.to_vec()))))
+                            .collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(windows))))
+                    }
+                    _ => Err(RuntimeError::new("Windows requires array")),
+                }
+            }
+
+            PipeOp::Chunks(n_expr) => {
+                // |⊞{n} - split into chunks
+                match value {
+                    Value::Array(arr) => {
+                        let n_val = self.evaluate(n_expr)?;
+                        let n = match n_val {
+                            Value::Int(i) => i as usize,
+                            _ => return Err(RuntimeError::new("Chunk size must be integer")),
+                        };
+                        let arr = arr.borrow();
+                        let chunks: Vec<Value> = arr
+                            .chunks(n)
+                            .map(|c| Value::Array(Rc::new(RefCell::new(c.to_vec()))))
+                            .collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(chunks))))
+                    }
+                    _ => Err(RuntimeError::new("Chunks requires array")),
+                }
+            }
+
+            PipeOp::Flatten => {
+                // |⋳ - flatten nested collection
+                match value {
+                    Value::Array(arr) => {
+                        let mut flat = Vec::new();
+                        for elem in arr.borrow().iter() {
+                            match elem {
+                                Value::Array(inner) => {
+                                    flat.extend(inner.borrow().iter().cloned());
+                                }
+                                other => flat.push(other.clone()),
+                            }
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(flat))))
+                    }
+                    _ => Err(RuntimeError::new("Flatten requires array")),
+                }
+            }
+
+            PipeOp::Unique => {
+                // |∪ - remove duplicates
+                match value {
+                    Value::Array(arr) => {
+                        let mut seen = std::collections::HashSet::new();
+                        let mut unique = Vec::new();
+                        for elem in arr.borrow().iter() {
+                            let key = format!("{:?}", elem);
+                            if seen.insert(key) {
+                                unique.push(elem.clone());
+                            }
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(unique))))
+                    }
+                    _ => Err(RuntimeError::new("Unique requires array")),
+                }
+            }
+
+            PipeOp::Enumerate => {
+                // |⍳ - pair with indices
+                match value {
+                    Value::Array(arr) => {
+                        let enumerated: Vec<Value> = arr
+                            .borrow()
+                            .iter()
+                            .enumerate()
+                            .map(|(i, v)| Value::Tuple(Rc::new(vec![Value::Int(i as i64), v.clone()])))
+                            .collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(enumerated))))
+                    }
+                    _ => Err(RuntimeError::new("Enumerate requires array")),
+                }
+            }
         }
     }
 
@@ -2982,6 +3649,186 @@ impl Interpreter {
         }
     }
 
+    fn min_values(&self, value: Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                if arr.is_empty() {
+                    return Err(RuntimeError::new("Cannot find min of empty array"));
+                }
+                let mut min = arr[0].clone();
+                for item in arr.iter().skip(1) {
+                    min = match (&min, item) {
+                        (Value::Int(a), Value::Int(b)) => {
+                            if *b < *a {
+                                Value::Int(*b)
+                            } else {
+                                Value::Int(*a)
+                            }
+                        }
+                        (Value::Float(a), Value::Float(b)) => {
+                            if *b < *a {
+                                Value::Float(*b)
+                            } else {
+                                Value::Float(*a)
+                            }
+                        }
+                        (Value::Int(a), Value::Float(b)) => {
+                            let af = *a as f64;
+                            if *b < af {
+                                Value::Float(*b)
+                            } else {
+                                Value::Float(af)
+                            }
+                        }
+                        (Value::Float(a), Value::Int(b)) => {
+                            let bf = *b as f64;
+                            if bf < *a {
+                                Value::Float(bf)
+                            } else {
+                                Value::Float(*a)
+                            }
+                        }
+                        _ => return Err(RuntimeError::new("Cannot find min of non-numeric values")),
+                    };
+                }
+                Ok(min)
+            }
+            _ => Err(RuntimeError::new("min requires array")),
+        }
+    }
+
+    fn max_values(&self, value: Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                if arr.is_empty() {
+                    return Err(RuntimeError::new("Cannot find max of empty array"));
+                }
+                let mut max = arr[0].clone();
+                for item in arr.iter().skip(1) {
+                    max = match (&max, item) {
+                        (Value::Int(a), Value::Int(b)) => {
+                            if *b > *a {
+                                Value::Int(*b)
+                            } else {
+                                Value::Int(*a)
+                            }
+                        }
+                        (Value::Float(a), Value::Float(b)) => {
+                            if *b > *a {
+                                Value::Float(*b)
+                            } else {
+                                Value::Float(*a)
+                            }
+                        }
+                        (Value::Int(a), Value::Float(b)) => {
+                            let af = *a as f64;
+                            if *b > af {
+                                Value::Float(*b)
+                            } else {
+                                Value::Float(af)
+                            }
+                        }
+                        (Value::Float(a), Value::Int(b)) => {
+                            let bf = *b as f64;
+                            if bf > *a {
+                                Value::Float(bf)
+                            } else {
+                                Value::Float(*a)
+                            }
+                        }
+                        _ => return Err(RuntimeError::new("Cannot find max of non-numeric values")),
+                    };
+                }
+                Ok(max)
+            }
+            _ => Err(RuntimeError::new("max requires array")),
+        }
+    }
+
+    fn concat_values(&self, value: Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                if arr.is_empty() {
+                    return Ok(Value::String(Rc::new(String::new())));
+                }
+                // Determine if we're concatenating strings or arrays
+                match &arr[0] {
+                    Value::String(_) => {
+                        let mut result = String::new();
+                        for item in arr.iter() {
+                            if let Value::String(s) = item {
+                                result.push_str(s);
+                            } else {
+                                return Err(RuntimeError::new(
+                                    "concat requires all elements to be strings",
+                                ));
+                            }
+                        }
+                        Ok(Value::String(Rc::new(result)))
+                    }
+                    Value::Array(_) => {
+                        let mut result = Vec::new();
+                        for item in arr.iter() {
+                            if let Value::Array(inner) = item {
+                                result.extend(inner.borrow().iter().cloned());
+                            } else {
+                                return Err(RuntimeError::new(
+                                    "concat requires all elements to be arrays",
+                                ));
+                            }
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(result))))
+                    }
+                    _ => Err(RuntimeError::new("concat requires strings or arrays")),
+                }
+            }
+            _ => Err(RuntimeError::new("concat requires array")),
+        }
+    }
+
+    fn all_values(&self, value: Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                for item in arr.iter() {
+                    match item {
+                        Value::Bool(b) => {
+                            if !*b {
+                                return Ok(Value::Bool(false));
+                            }
+                        }
+                        _ => return Err(RuntimeError::new("all requires array of booleans")),
+                    }
+                }
+                Ok(Value::Bool(true))
+            }
+            _ => Err(RuntimeError::new("all requires array")),
+        }
+    }
+
+    fn any_values(&self, value: Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                for item in arr.iter() {
+                    match item {
+                        Value::Bool(b) => {
+                            if *b {
+                                return Ok(Value::Bool(true));
+                            }
+                        }
+                        _ => return Err(RuntimeError::new("any requires array of booleans")),
+                    }
+                }
+                Ok(Value::Bool(false))
+            }
+            _ => Err(RuntimeError::new("any requires array")),
+        }
+    }
+
     fn compare_values(&self, a: &Value, b: &Value, _field: &Option<Ident>) -> std::cmp::Ordering {
         // Simple comparison for now
         match (a, b) {
@@ -2991,6 +3838,20 @@ impl Interpreter {
             }
             (Value::String(a), Value::String(b)) => a.cmp(b),
             _ => std::cmp::Ordering::Equal,
+        }
+    }
+
+    /// Subtract two values (for diff operation)
+    fn subtract_values(&self, a: &Value, b: &Value) -> Result<Value, RuntimeError> {
+        match (a, b) {
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
+            (Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 - b)),
+            (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a - *b as f64)),
+            _ => Err(RuntimeError::new(format!(
+                "Cannot subtract {:?} from {:?}",
+                b, a
+            ))),
         }
     }
 
@@ -3047,6 +3908,82 @@ impl Interpreter {
             name,
             fields: Rc::new(RefCell::new(field_values)),
         })
+    }
+
+    /// Extract evidentiality from a value (recursively unwraps Evidential wrapper)
+    fn extract_evidence(value: &Value) -> Option<Evidence> {
+        match value {
+            Value::Evidential { evidence, .. } => Some(*evidence),
+            _ => None,
+        }
+    }
+
+    /// Extract affect from a value
+    fn extract_affect(value: &Value) -> Option<&RuntimeAffect> {
+        match value {
+            Value::Affective { affect, .. } => Some(affect),
+            _ => None,
+        }
+    }
+
+    /// Derive evidence from affect markers.
+    /// Sarcasm implies uncertainty (meaning is inverted).
+    /// Confidence directly maps to evidence levels.
+    fn affect_to_evidence(affect: &RuntimeAffect) -> Option<Evidence> {
+        // Sarcasm indicates the literal meaning shouldn't be trusted
+        if affect.sarcasm {
+            return Some(Evidence::Uncertain);
+        }
+
+        // Confidence maps directly to evidence
+        match affect.confidence {
+            Some(RuntimeConfidence::High) => Some(Evidence::Known),
+            Some(RuntimeConfidence::Low) => Some(Evidence::Uncertain),
+            Some(RuntimeConfidence::Medium) | None => None,
+        }
+    }
+
+    /// Combine two evidence levels, returning the "worst" (most uncertain) one.
+    /// Order: Known < Uncertain < Reported < Paradox
+    fn combine_evidence(a: Option<Evidence>, b: Option<Evidence>) -> Option<Evidence> {
+        match (a, b) {
+            (None, None) => None,
+            (Some(e), None) | (None, Some(e)) => Some(e),
+            (Some(a), Some(b)) => {
+                let rank = |e: Evidence| match e {
+                    Evidence::Known => 0,
+                    Evidence::Uncertain => 1,
+                    Evidence::Reported => 2,
+                    Evidence::Paradox => 3,
+                };
+                if rank(a) >= rank(b) { Some(a) } else { Some(b) }
+            }
+        }
+    }
+
+    /// Unwrap an evidential value to get the inner value for display
+    fn unwrap_evidential(value: &Value) -> &Value {
+        match value {
+            Value::Evidential { value: inner, .. } => Self::unwrap_evidential(inner),
+            _ => value,
+        }
+    }
+
+    /// Unwrap an affective value to get the inner value
+    fn unwrap_affective(value: &Value) -> &Value {
+        match value {
+            Value::Affective { value: inner, .. } => Self::unwrap_affective(inner),
+            _ => value,
+        }
+    }
+
+    /// Unwrap both evidential and affective wrappers
+    fn unwrap_value(value: &Value) -> &Value {
+        match value {
+            Value::Evidential { value: inner, .. } => Self::unwrap_value(inner),
+            Value::Affective { value: inner, .. } => Self::unwrap_value(inner),
+            _ => value,
+        }
     }
 
     fn eval_evidential(&mut self, expr: &Expr, ev: &Evidentiality) -> Result<Value, RuntimeError> {
@@ -3201,4 +4138,70 @@ mod tests {
         let result = run("fn main() { return [1, 2, 3, 4, 5]|φ{_ > 2}|sum; }");
         assert!(matches!(result, Ok(Value::Int(12)))); // 3 + 4 + 5
     }
+
+    #[test]
+    fn test_interpolation_evidentiality_propagation() {
+        // Test that evidentiality propagates through string interpolation
+        // When an evidential value is interpolated, the result string should carry that evidentiality
+        let result = run(r#"
+            fn main() {
+                let rep = reported(42);
+
+                // Interpolating a reported value should make the string reported
+                let s = f"Value: {rep}";
+                return s;
+            }
+        "#);
+
+        match result {
+            Ok(Value::Evidential { evidence: Evidence::Reported, value }) => {
+                // The inner value should be a string
+                assert!(matches!(*value, Value::String(_)));
+            }
+            Ok(other) => panic!("Expected Evidential Reported, got {:?}", other),
+            Err(e) => panic!("Error: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_interpolation_worst_evidence_wins() {
+        // When multiple evidential values are interpolated, the worst evidence level wins
+        let result = run(r#"
+            fn main() {
+                let k = known(1);         // Known is best
+                let u = uncertain(2);     // Uncertain is worse
+
+                // Combining known and uncertain should yield uncertain
+                let s = f"{k} and {u}";
+                return s;
+            }
+        "#);
+
+        match result {
+            Ok(Value::Evidential { evidence: Evidence::Uncertain, .. }) => (),
+            Ok(other) => panic!("Expected Evidential Uncertain, got {:?}", other),
+            Err(e) => panic!("Error: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_interpolation_no_evidential_plain_string() {
+        // When no evidential values are interpolated, the result is a plain string
+        let result = run(r#"
+            fn main() {
+                let x = 42;
+                let s = f"Value: {x}";
+                return s;
+            }
+        "#);
+
+        match result {
+            Ok(Value::String(s)) => {
+                assert_eq!(*s, "Value: 42");
+            }
+            Ok(other) => panic!("Expected plain String, got {:?}", other),
+            Err(e) => panic!("Error: {:?}", e),
+        }
+    }
+
 }
