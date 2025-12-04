@@ -1773,7 +1773,30 @@ impl<'a> Parser<'a> {
                 }
                 Some(Token::Hourglass) => {
                     self.advance();
-                    expr = Expr::Await(Box::new(expr));
+                    // Check for optional evidentiality marker: ⌛? ⌛! ⌛~ ⌛‽
+                    let evidentiality = match self.current_token() {
+                        Some(Token::Question) => {
+                            self.advance();
+                            Some(Evidentiality::Uncertain)
+                        }
+                        Some(Token::Bang) => {
+                            self.advance();
+                            Some(Evidentiality::Known)
+                        }
+                        Some(Token::Tilde) => {
+                            self.advance();
+                            Some(Evidentiality::Reported)
+                        }
+                        Some(Token::Interrobang) => {
+                            self.advance();
+                            Some(Evidentiality::Paradox)
+                        }
+                        _ => None,
+                    };
+                    expr = Expr::Await {
+                        expr: Box::new(expr),
+                        evidentiality,
+                    };
                 }
                 _ => break,
             }

@@ -907,8 +907,16 @@ pub enum Expr {
         params: Vec<ClosureParam>,
         body: Box<Expr>,
     },
-    /// Await: `expr|await` or `expr⌛`
-    Await(Box<Expr>),
+    /// Await with optional evidentiality: `expr⌛` or `expr⌛?` or `expr⌛!` or `expr⌛~`
+    /// The evidentiality marker specifies how to handle the awaited result:
+    /// - `⌛?` - await and propagate error (uncertain)
+    /// - `⌛!` - await, expect success (known/infallible)
+    /// - `⌛~` - await external/reported source
+    /// - `⌛‽` - await with trust boundary crossing
+    Await {
+        expr: Box<Expr>,
+        evidentiality: Option<Evidentiality>,
+    },
     /// Try: `expr?`
     Try(Box<Expr>),
     /// Return

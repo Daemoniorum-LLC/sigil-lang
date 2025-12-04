@@ -777,9 +777,16 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             evidence: IrEvidence::Known,
         },
 
-        ast::Expr::Await(inner) => {
+        ast::Expr::Await { expr: inner, evidentiality } => {
             let inner_ir = lower_expr(ctx, inner);
-            let evidence = get_operation_evidence(&inner_ir);
+            // Use the explicit evidentiality marker if provided, otherwise infer from inner
+            let evidence = match evidentiality {
+                Some(ast::Evidentiality::Known) => IrEvidence::Known,
+                Some(ast::Evidentiality::Uncertain) => IrEvidence::Uncertain,
+                Some(ast::Evidentiality::Reported) => IrEvidence::Reported,
+                Some(ast::Evidentiality::Paradox) => IrEvidence::Uncertain, // Trust boundary
+                None => get_operation_evidence(&inner_ir),
+            };
             IrOperation::Await {
                 expr: Box::new(inner_ir),
                 ty: IrType::Infer,

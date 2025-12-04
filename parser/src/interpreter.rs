@@ -889,9 +889,25 @@ impl Interpreter {
                 inclusive,
             } => self.eval_range(start, end, *inclusive),
             Expr::Assign { target, value } => self.eval_assign(target, value),
-            Expr::Await(inner) => {
+            Expr::Await { expr: inner, evidentiality } => {
                 let value = self.evaluate(inner)?;
-                self.await_value(value)
+                let awaited = self.await_value(value)?;
+                // Handle evidentiality marker semantics
+                match evidentiality {
+                    Some(Evidentiality::Uncertain) => {
+                        // ⌛? - propagate error like Try
+                        self.unwrap_result_or_option(awaited, true, false)
+                    }
+                    Some(Evidentiality::Known) => {
+                        // ⌛! - expect success, panic on error
+                        self.unwrap_result_or_option(awaited, true, true)
+                    }
+                    Some(Evidentiality::Reported) | Some(Evidentiality::Paradox) => {
+                        // ⌛~ or ⌛‽ - mark as external/reported, unwrap if Result/Option
+                        self.unwrap_result_or_option(awaited, false, false)
+                    }
+                    None => Ok(awaited),
+                }
             }
             _ => Err(RuntimeError::new(format!(
                 "Unsupported expression: {:?}",
@@ -1271,6 +1287,57 @@ impl Interpreter {
             }
             // Non-futures return immediately
             other => Ok(other),
+        }
+    }
+
+    /// Unwrap a Result or Option value with configurable error handling
+    /// - propagate_errors: if true, return error on Err/None; if false, just unwrap
+    /// - panic_on_error: if true, panic instead of returning error
+    fn unwrap_result_or_option(
+        &self,
+        value: Value,
+        propagate_errors: bool,
+        panic_on_error: bool,
+    ) -> Result<Value, RuntimeError> {
+        // First, determine what kind of value we have and extract any inner value
+        let (is_ok_or_some, is_err, is_none, inner_val) = match &value {
+            Value::Struct { name, fields } if name == "Ok" || name == "Some" => {
+                let borrowed = fields.borrow();
+                let inner = borrowed.get("0").or(borrowed.get("value")).cloned();
+                (true, false, false, inner)
+            }
+            Value::Struct { name, fields } if name == "Err" => {
+                let borrowed = fields.borrow();
+                let inner = borrowed.get("0").or(borrowed.get("value")).cloned();
+                (false, true, false, inner)
+            }
+            Value::Struct { name, .. } if name == "None" => {
+                (false, false, true, None)
+            }
+            _ => return Ok(value),
+        };
+
+        if is_ok_or_some {
+            Ok(inner_val.unwrap_or(value))
+        } else if is_err {
+            let msg = format!("Error: {:?}", inner_val);
+            if panic_on_error {
+                panic!("{}", msg);
+            } else if propagate_errors {
+                Err(RuntimeError::new(msg))
+            } else {
+                Ok(inner_val.unwrap_or(value))
+            }
+        } else if is_none {
+            if panic_on_error {
+                panic!("Unwrapped None");
+            } else if propagate_errors {
+                Err(RuntimeError::new("Unwrapped None".to_string()))
+            } else {
+                Ok(value)
+            }
+        } else {
+            Ok(value)
         }
     }
 
