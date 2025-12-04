@@ -876,6 +876,9 @@ impl Interpreter {
                 method,
                 args,
             } => self.eval_method_call(receiver, method, args),
+            // Polysynthetic incorporation: path·file·read·string
+            // Each segment is a method/function that transforms the value
+            Expr::Incorporation { segments } => self.eval_incorporation(segments),
             Expr::Pipe { expr, operations } => self.eval_pipe(expr, operations),
             Expr::Closure { params, body } => self.eval_closure(params, body),
             Expr::Struct { path, fields, rest } => self.eval_struct_literal(path, fields, rest),
@@ -1809,6 +1812,201 @@ impl Interpreter {
                 "Unknown method: {}",
                 method.name
             ))),
+        }
+    }
+
+    /// Evaluate polysynthetic incorporation: path·file·read·string
+    /// The first segment provides the initial value, subsequent segments are method-like transformations
+    fn eval_incorporation(
+        &mut self,
+        segments: &[IncorporationSegment],
+    ) -> Result<Value, RuntimeError> {
+        if segments.is_empty() {
+            return Err(RuntimeError::new("empty incorporation chain"));
+        }
+
+        // First segment: get initial value (variable lookup or function call)
+        let first = &segments[0];
+        let mut value = if let Some(args) = &first.args {
+            // First segment is a function call: func(args)·next·...
+            let arg_values: Vec<Value> = args
+                .iter()
+                .map(|a| self.evaluate(a))
+                .collect::<Result<_, _>>()?;
+            self.call_function_by_name(&first.name.name, arg_values)?
+        } else {
+            // First segment is a variable: var·next·...
+            self.environment
+                .borrow()
+                .get(&first.name.name)
+                .ok_or_else(|| {
+                    RuntimeError::new(format!("undefined: {}", first.name.name))
+                })?
+        };
+
+        // Process remaining segments as method-like calls
+        for segment in segments.iter().skip(1) {
+            let arg_values: Vec<Value> = segment
+                .args
+                .as_ref()
+                .map(|args| {
+                    args.iter()
+                        .map(|a| self.evaluate(a))
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+
+            // Try to call as a method on the value
+            value = self.call_incorporation_method(&value, &segment.name.name, arg_values)?;
+        }
+
+        Ok(value)
+    }
+
+    /// Call a method in an incorporation chain
+    /// This looks up the segment name as a method or stdlib function
+    fn call_incorporation_method(
+        &mut self,
+        receiver: &Value,
+        method_name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        // First try as a method on the receiver value
+        match (receiver, method_name) {
+            // String methods
+            (Value::String(s), "len") => Ok(Value::Int(s.len() as i64)),
+            (Value::String(s), "upper") | (Value::String(s), "uppercase") => {
+                Ok(Value::String(Rc::new(s.to_uppercase())))
+            }
+            (Value::String(s), "lower") | (Value::String(s), "lowercase") => {
+                Ok(Value::String(Rc::new(s.to_lowercase())))
+            }
+            (Value::String(s), "trim") => {
+                Ok(Value::String(Rc::new(s.trim().to_string())))
+            }
+            (Value::String(s), "chars") => {
+                let chars: Vec<Value> = s
+                    .chars()
+                    .map(|c| Value::String(Rc::new(c.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(chars))))
+            }
+            (Value::String(s), "lines") => {
+                let lines: Vec<Value> = s
+                    .lines()
+                    .map(|l| Value::String(Rc::new(l.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(lines))))
+            }
+            (Value::String(s), "bytes") => {
+                let bytes: Vec<Value> = s.bytes().map(|b| Value::Int(b as i64)).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(bytes))))
+            }
+            (Value::String(s), "parse_int") | (Value::String(s), "to_int") => {
+                s.parse::<i64>()
+                    .map(Value::Int)
+                    .map_err(|_| RuntimeError::new(format!("cannot parse '{}' as int", s)))
+            }
+            (Value::String(s), "parse_float") | (Value::String(s), "to_float") => {
+                s.parse::<f64>()
+                    .map(Value::Float)
+                    .map_err(|_| RuntimeError::new(format!("cannot parse '{}' as float", s)))
+            }
+
+            // Array methods
+            (Value::Array(arr), "len") => Ok(Value::Int(arr.borrow().len() as i64)),
+            (Value::Array(arr), "first") => {
+                arr.borrow().first().cloned().ok_or_else(|| RuntimeError::new("empty array"))
+            }
+            (Value::Array(arr), "last") => {
+                arr.borrow().last().cloned().ok_or_else(|| RuntimeError::new("empty array"))
+            }
+            (Value::Array(arr), "reverse") | (Value::Array(arr), "rev") => {
+                let mut v = arr.borrow().clone();
+                v.reverse();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "join") => {
+                let sep = args.first()
+                    .map(|v| match v {
+                        Value::String(s) => s.to_string(),
+                        _ => "".to_string(),
+                    })
+                    .unwrap_or_default();
+                let joined = arr
+                    .borrow()
+                    .iter()
+                    .map(|v| format!("{}", v))
+                    .collect::<Vec<_>>()
+                    .join(&sep);
+                Ok(Value::String(Rc::new(joined)))
+            }
+            (Value::Array(arr), "sum") => {
+                let mut sum = 0i64;
+                for v in arr.borrow().iter() {
+                    match v {
+                        Value::Int(i) => sum += i,
+                        Value::Float(f) => return Ok(Value::Float(sum as f64 + f)),
+                        _ => {}
+                    }
+                }
+                Ok(Value::Int(sum))
+            }
+
+            // Number methods
+            (Value::Int(n), "abs") => Ok(Value::Int(n.abs())),
+            (Value::Float(n), "abs") => Ok(Value::Float(n.abs())),
+            (Value::Int(n), "to_string") | (Value::Int(n), "string") => {
+                Ok(Value::String(Rc::new(n.to_string())))
+            }
+            (Value::Float(n), "to_string") | (Value::Float(n), "string") => {
+                Ok(Value::String(Rc::new(n.to_string())))
+            }
+            (Value::Int(n), "to_float") | (Value::Int(n), "float") => {
+                Ok(Value::Float(*n as f64))
+            }
+            (Value::Float(n), "to_int") | (Value::Float(n), "int") => {
+                Ok(Value::Int(*n as i64))
+            }
+
+            // Map/Struct field access
+            (Value::Map(map), field) => {
+                map.borrow()
+                    .get(field)
+                    .cloned()
+                    .ok_or_else(|| RuntimeError::new(format!("no field '{}' in map", field)))
+            }
+            (Value::Struct { fields, .. }, field) => {
+                fields.borrow()
+                    .get(field)
+                    .cloned()
+                    .ok_or_else(|| RuntimeError::new(format!("no field '{}' in struct", field)))
+            }
+
+            // Try stdlib function with receiver as first arg
+            _ => {
+                let mut all_args = vec![receiver.clone()];
+                all_args.extend(args);
+                self.call_function_by_name(method_name, all_args)
+            }
+        }
+    }
+
+    /// Call a function by name from the environment
+    fn call_function_by_name(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        // Get the function value from environment (clone to avoid borrow issues)
+        let func_value = self.environment.borrow().get(name);
+
+        match func_value {
+            Some(Value::Function(f)) => self.call_function(&f, args),
+            Some(Value::BuiltIn(b)) => self.call_builtin(&b, args),
+            Some(_) => Err(RuntimeError::new(format!("{} is not a function", name))),
+            None => Err(RuntimeError::new(format!("undefined function: {}", name))),
         }
     }
 

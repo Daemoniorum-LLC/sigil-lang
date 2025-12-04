@@ -1808,6 +1808,28 @@ impl<'a> Parser<'a> {
                         evidentiality,
                     };
                 }
+                // Incorporation: expr·verb·noun·action
+                // Polysynthetic noun incorporation using middle dot
+                Some(Token::MiddleDot) => {
+                    // Convert current expr to first segment, then parse chain
+                    let first_segment = self.expr_to_incorporation_segment(expr.clone())?;
+                    let mut segments = vec![first_segment];
+
+                    while self.consume_if(&Token::MiddleDot) {
+                        let name = self.parse_ident()?;
+                        let args = if self.check(&Token::LParen) {
+                            self.advance();
+                            let args = self.parse_expr_list()?;
+                            self.expect(Token::RParen)?;
+                            Some(args)
+                        } else {
+                            None
+                        };
+                        segments.push(IncorporationSegment { name, args });
+                    }
+
+                    expr = Expr::Incorporation { segments };
+                }
                 _ => break,
             }
         }
@@ -3472,6 +3494,35 @@ impl<'a> Parser<'a> {
     }
 
     // === Helpers ===
+
+    /// Convert an expression to an IncorporationSegment for polysynthetic chains
+    /// E.g., `path` in `path·file·read` becomes IncorporationSegment { name: "path", args: None }
+    fn expr_to_incorporation_segment(&self, expr: Expr) -> ParseResult<IncorporationSegment> {
+        match expr {
+            Expr::Path(path) if path.segments.len() == 1 => {
+                Ok(IncorporationSegment {
+                    name: path.segments[0].ident.clone(),
+                    args: None,
+                })
+            }
+            Expr::Call { func, args } => {
+                if let Expr::Path(path) = *func {
+                    if path.segments.len() == 1 {
+                        return Ok(IncorporationSegment {
+                            name: path.segments[0].ident.clone(),
+                            args: Some(args),
+                        });
+                    }
+                }
+                Err(ParseError::Custom(
+                    "incorporation chain must start with identifier or call".to_string(),
+                ))
+            }
+            _ => Err(ParseError::Custom(
+                "incorporation chain must start with identifier".to_string(),
+            )),
+        }
+    }
 
     fn parse_ident(&mut self) -> ParseResult<Ident> {
         match self.current.take() {
