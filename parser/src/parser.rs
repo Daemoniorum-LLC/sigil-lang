@@ -3047,6 +3047,133 @@ impl<'a> Parser<'a> {
                 Ok(PipeOp::Body(Box::new(data)))
             }
 
+            // ==========================================
+            // Mathematical & APL-Inspired Operations
+            // ==========================================
+
+            // All/ForAll: |∀{p} or |all{p}
+            Some(Token::ForAll) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let pred = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::All(Box::new(pred)))
+            }
+
+            // Any/Exists: |∃{p} or |any{p}
+            Some(Token::Exists) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let pred = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Any(Box::new(pred)))
+            }
+
+            // Compose: |∘{f} or |compose{f}
+            Some(Token::Compose) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let f = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Compose(Box::new(f)))
+            }
+
+            // Zip/Join: |⋈{other} or |zip{other}
+            Some(Token::Bowtie) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let other = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Zip(Box::new(other)))
+            }
+
+            // Scan/Integral: |∫{f} or |scan{f}
+            Some(Token::Integral) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let f = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Scan(Box::new(f)))
+            }
+
+            // Diff/Derivative: |∂ or |diff
+            Some(Token::Partial) => {
+                self.advance();
+                Ok(PipeOp::Diff)
+            }
+
+            // Gradient: |∇{var} or |grad{var}
+            Some(Token::Nabla) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let var = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Gradient(Box::new(var)))
+            }
+
+            // Sort Ascending: |⍋ or |sort_asc
+            Some(Token::GradeUp) => {
+                self.advance();
+                Ok(PipeOp::SortAsc)
+            }
+
+            // Sort Descending: |⍒ or |sort_desc
+            Some(Token::GradeDown) => {
+                self.advance();
+                Ok(PipeOp::SortDesc)
+            }
+
+            // Reverse: |⌽ or |rev
+            Some(Token::Rotate) => {
+                self.advance();
+                Ok(PipeOp::Reverse)
+            }
+
+            // Cycle: |↻{n} or |cycle{n}
+            Some(Token::CycleArrow) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let n = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Cycle(Box::new(n)))
+            }
+
+            // Windows: |⌺{n} or |windows{n}
+            Some(Token::QuadDiamond) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let n = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Windows(Box::new(n)))
+            }
+
+            // Chunks: |⊞{n} or |chunks{n}
+            Some(Token::SquaredPlus) => {
+                self.advance();
+                self.expect(Token::LBrace)?;
+                let n = self.parse_expr()?;
+                self.expect(Token::RBrace)?;
+                Ok(PipeOp::Chunks(Box::new(n)))
+            }
+
+            // Flatten: |⋳ or |flatten
+            Some(Token::ElementSmallVerticalBar) => {
+                self.advance();
+                Ok(PipeOp::Flatten)
+            }
+
+            // Unique: |∪ or |unique
+            Some(Token::Union) => {
+                self.advance();
+                Ok(PipeOp::Unique)
+            }
+
+            // Enumerate: |⍳ or |enumerate
+            Some(Token::Iota) => {
+                self.advance();
+                Ok(PipeOp::Enumerate)
+            }
+
             Some(token) => Err(ParseError::UnexpectedToken {
                 expected: "pipe operation".to_string(),
                 found: token.clone(),

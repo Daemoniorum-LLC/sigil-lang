@@ -1938,6 +1938,28 @@ pub mod jit {
                             // Transform value through function
                             compile_expr(module, functions, extern_fns, builder, scope, func)?
                         }
+
+                        // Mathematical & APL-Inspired Operations
+                        // These are complex and need interpreter fallback for now
+                        PipeOp::All(_)
+                        | PipeOp::Any(_)
+                        | PipeOp::Compose(_)
+                        | PipeOp::Zip(_)
+                        | PipeOp::Scan(_)
+                        | PipeOp::Diff
+                        | PipeOp::Gradient(_)
+                        | PipeOp::SortAsc
+                        | PipeOp::SortDesc
+                        | PipeOp::Reverse
+                        | PipeOp::Cycle(_)
+                        | PipeOp::Windows(_)
+                        | PipeOp::Chunks(_)
+                        | PipeOp::Flatten
+                        | PipeOp::Unique
+                        | PipeOp::Enumerate => {
+                            // Fallback to interpreter for these complex operations
+                            result
+                        }
                     };
                 }
 

@@ -1291,6 +1291,81 @@ pub enum PipeOp {
     /// Like Kotlin's `let` - essentially an alias for transform
     /// Example: `name|let{.to_uppercase}` - transforms the name
     Let(Box<Expr>),
+
+    // ==========================================
+    // Mathematical & APL-Inspired Operations
+    // ==========================================
+
+    /// All/ForAll: `|∀{p}` or `|all{p}` - check if ALL elements satisfy predicate
+    /// Returns bool. Short-circuits on first false.
+    /// Example: `numbers|∀{x => x > 0}` - are all positive?
+    All(Box<Expr>),
+
+    /// Any/Exists: `|∃{p}` or `|any{p}` - check if ANY element satisfies predicate
+    /// Returns bool. Short-circuits on first true.
+    /// Example: `items|∃{.is_valid}` - is any valid?
+    Any(Box<Expr>),
+
+    /// Compose: `|∘{f}` or `|compose{f}` - function composition
+    /// Creates a new function that applies f after the current transformation.
+    /// Example: `parse|∘{validate}|∘{save}` - compose three functions
+    Compose(Box<Expr>),
+
+    /// Zip/Join: `|⋈{other}` or `|zip{other}` - combine with another collection
+    /// Pairs elements from two collections into tuples.
+    /// Example: `names|⋈{ages}` -> [(name1, age1), (name2, age2), ...]
+    Zip(Box<Expr>),
+
+    /// Scan/Integral: `|∫{f}` or `|scan{f}` - cumulative fold (like Haskell's scanl)
+    /// Returns all intermediate accumulator values.
+    /// Example: `[1,2,3]|∫{+}` -> [1, 3, 6] (running sum)
+    Scan(Box<Expr>),
+
+    /// Diff/Derivative: `|∂` or `|diff` - differences between adjacent elements
+    /// Returns a collection of deltas.
+    /// Example: `[1, 4, 6, 10]|∂` -> [3, 2, 4]
+    Diff,
+
+    /// Gradient: `|∇{var}` or `|grad{var}` - automatic differentiation
+    /// Computes gradient of expression with respect to variable.
+    /// Example: `loss|∇{weights}` - gradient for backprop
+    Gradient(Box<Expr>),
+
+    /// Sort Ascending: `|⍋` or `|sort_asc` - APL grade-up
+    /// Sorts in ascending order (same as σ but more explicit)
+    SortAsc,
+
+    /// Sort Descending: `|⍒` or `|sort_desc` - APL grade-down
+    /// Sorts in descending order
+    SortDesc,
+
+    /// Reverse: `|⌽` or `|rev` - APL rotate/reverse
+    /// Reverses the collection
+    Reverse,
+
+    /// Cycle: `|↻{n}` or `|cycle{n}` - repeat collection n times
+    /// Example: `[1,2]|↻{3}` -> [1,2,1,2,1,2]
+    Cycle(Box<Expr>),
+
+    /// Windows: `|⌺{n}` or `|windows{n}` - sliding window
+    /// Example: `[1,2,3,4]|⌺{2}` -> [[1,2], [2,3], [3,4]]
+    Windows(Box<Expr>),
+
+    /// Chunks: `|⊞{n}` or `|chunks{n}` - split into chunks
+    /// Example: `[1,2,3,4]|⊞{2}` -> [[1,2], [3,4]]
+    Chunks(Box<Expr>),
+
+    /// Flatten: `|⋳` or `|flatten` - flatten nested collection
+    /// Example: `[[1,2], [3,4]]|⋳` -> [1,2,3,4]
+    Flatten,
+
+    /// Unique: `|∪` or `|unique` - remove duplicates (set union with self)
+    /// Example: `[1,2,2,3,3,3]|∪` -> [1,2,3]
+    Unique,
+
+    /// Enumerate: `|⍳` or `|enumerate` - APL iota, pair with indices
+    /// Example: `["a","b","c"]|⍳` -> [(0,"a"), (1,"b"), (2,"c")]
+    Enumerate,
 }
 
 /// Incorporation segment.

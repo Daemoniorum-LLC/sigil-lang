@@ -416,6 +416,31 @@ pub enum Token {
     #[token("∛")]
     Cbrt, // Cube root
 
+    #[token("∇")]
+    Nabla, // Gradient (U+2207)
+
+    // === APL-Inspired Symbols ===
+    #[token("⍋")]
+    GradeUp, // Sort ascending (U+234B)
+
+    #[token("⍒")]
+    GradeDown, // Sort descending (U+2352)
+
+    #[token("⌽")]
+    Rotate, // Reverse/rotate (U+233D)
+
+    #[token("↻")]
+    CycleArrow, // Cycle/repeat (U+21BB)
+
+    #[token("⌺")]
+    QuadDiamond, // Windows/stencil (U+233A)
+
+    #[token("⊞")]
+    SquaredPlus, // Chunks (U+229E)
+
+    #[token("⍳")]
+    Iota, // Enumerate/index (U+2373)
+
     // === Category Theory ===
     #[token("∘")]
     Compose, // Function composition

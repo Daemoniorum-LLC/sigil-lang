@@ -2756,6 +2756,261 @@ impl Interpreter {
                     _ => self.evaluate(func),
                 }
             }
+
+            // ==========================================
+            // Mathematical & APL-Inspired Operations
+            // ==========================================
+
+            PipeOp::All(pred) => {
+                // |∀{p} - check if ALL elements satisfy predicate
+                match value {
+                    Value::Array(arr) => {
+                        for elem in arr.borrow().iter() {
+                            self.environment.borrow_mut().define("_".to_string(), elem.clone());
+                            let result = self.evaluate(pred)?;
+                            if !self.is_truthy(&result) {
+                                return Ok(Value::Bool(false));
+                            }
+                        }
+                        Ok(Value::Bool(true))
+                    }
+                    _ => Err(RuntimeError::new("All requires array")),
+                }
+            }
+
+            PipeOp::Any(pred) => {
+                // |∃{p} - check if ANY element satisfies predicate
+                match value {
+                    Value::Array(arr) => {
+                        for elem in arr.borrow().iter() {
+                            self.environment.borrow_mut().define("_".to_string(), elem.clone());
+                            let result = self.evaluate(pred)?;
+                            if self.is_truthy(&result) {
+                                return Ok(Value::Bool(true));
+                            }
+                        }
+                        Ok(Value::Bool(false))
+                    }
+                    _ => Err(RuntimeError::new("Any requires array")),
+                }
+            }
+
+            PipeOp::Compose(f) => {
+                // |∘{f} - function composition / apply function
+                self.environment.borrow_mut().define("_".to_string(), value);
+                self.evaluate(f)
+            }
+
+            PipeOp::Zip(other_expr) => {
+                // |⋈{other} - zip with another collection
+                let other = self.evaluate(other_expr)?;
+                match (value, other) {
+                    (Value::Array(arr1), Value::Array(arr2)) => {
+                        let zipped: Vec<Value> = arr1
+                            .borrow()
+                            .iter()
+                            .zip(arr2.borrow().iter())
+                            .map(|(a, b)| Value::Tuple(Rc::new(vec![a.clone(), b.clone()])))
+                            .collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(zipped))))
+                    }
+                    _ => Err(RuntimeError::new("Zip requires two arrays")),
+                }
+            }
+
+            PipeOp::Scan(f) => {
+                // |∫{f} - cumulative fold (scan)
+                match value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        if arr.is_empty() {
+                            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                        }
+                        let mut results = vec![arr[0].clone()];
+                        let mut acc = arr[0].clone();
+                        for elem in arr.iter().skip(1) {
+                            self.environment.borrow_mut().define("acc".to_string(), acc.clone());
+                            self.environment.borrow_mut().define("_".to_string(), elem.clone());
+                            acc = self.evaluate(f)?;
+                            results.push(acc.clone());
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(results))))
+                    }
+                    _ => Err(RuntimeError::new("Scan requires array")),
+                }
+            }
+
+            PipeOp::Diff => {
+                // |∂ - differences between adjacent elements
+                match value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        if arr.len() < 2 {
+                            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                        }
+                        let mut diffs = Vec::new();
+                        for i in 1..arr.len() {
+                            let diff = self.subtract_values(&arr[i], &arr[i - 1])?;
+                            diffs.push(diff);
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(diffs))))
+                    }
+                    _ => Err(RuntimeError::new("Diff requires array")),
+                }
+            }
+
+            PipeOp::Gradient(var_expr) => {
+                // |∇{var} - automatic differentiation
+                // For now, just a placeholder - real autodiff requires tape recording
+                let _ = var_expr;
+                Ok(Value::Float(0.0)) // TODO: Implement real autodiff
+            }
+
+            PipeOp::SortAsc => {
+                // |⍋ - sort ascending
+                match value {
+                    Value::Array(arr) => {
+                        let mut v = arr.borrow().clone();
+                        v.sort_by(|a, b| self.compare_values(a, b, &None));
+                        Ok(Value::Array(Rc::new(RefCell::new(v))))
+                    }
+                    _ => Err(RuntimeError::new("SortAsc requires array")),
+                }
+            }
+
+            PipeOp::SortDesc => {
+                // |⍒ - sort descending
+                match value {
+                    Value::Array(arr) => {
+                        let mut v = arr.borrow().clone();
+                        v.sort_by(|a, b| self.compare_values(b, a, &None));
+                        Ok(Value::Array(Rc::new(RefCell::new(v))))
+                    }
+                    _ => Err(RuntimeError::new("SortDesc requires array")),
+                }
+            }
+
+            PipeOp::Reverse => {
+                // |⌽ - reverse collection
+                match value {
+                    Value::Array(arr) => {
+                        let mut v = arr.borrow().clone();
+                        v.reverse();
+                        Ok(Value::Array(Rc::new(RefCell::new(v))))
+                    }
+                    _ => Err(RuntimeError::new("Reverse requires array")),
+                }
+            }
+
+            PipeOp::Cycle(n_expr) => {
+                // |↻{n} - repeat collection n times
+                match value {
+                    Value::Array(arr) => {
+                        let n_val = self.evaluate(n_expr)?;
+                        let n = match n_val {
+                            Value::Int(i) => i as usize,
+                            _ => return Err(RuntimeError::new("Cycle count must be integer")),
+                        };
+                        let arr = arr.borrow();
+                        let cycled: Vec<Value> = arr.iter().cloned().cycle().take(arr.len() * n).collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(cycled))))
+                    }
+                    _ => Err(RuntimeError::new("Cycle requires array")),
+                }
+            }
+
+            PipeOp::Windows(n_expr) => {
+                // |⌺{n} - sliding windows
+                match value {
+                    Value::Array(arr) => {
+                        let n_val = self.evaluate(n_expr)?;
+                        let n = match n_val {
+                            Value::Int(i) => i as usize,
+                            _ => return Err(RuntimeError::new("Window size must be integer")),
+                        };
+                        let arr = arr.borrow();
+                        let windows: Vec<Value> = arr
+                            .windows(n)
+                            .map(|w| Value::Array(Rc::new(RefCell::new(w.to_vec()))))
+                            .collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(windows))))
+                    }
+                    _ => Err(RuntimeError::new("Windows requires array")),
+                }
+            }
+
+            PipeOp::Chunks(n_expr) => {
+                // |⊞{n} - split into chunks
+                match value {
+                    Value::Array(arr) => {
+                        let n_val = self.evaluate(n_expr)?;
+                        let n = match n_val {
+                            Value::Int(i) => i as usize,
+                            _ => return Err(RuntimeError::new("Chunk size must be integer")),
+                        };
+                        let arr = arr.borrow();
+                        let chunks: Vec<Value> = arr
+                            .chunks(n)
+                            .map(|c| Value::Array(Rc::new(RefCell::new(c.to_vec()))))
+                            .collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(chunks))))
+                    }
+                    _ => Err(RuntimeError::new("Chunks requires array")),
+                }
+            }
+
+            PipeOp::Flatten => {
+                // |⋳ - flatten nested collection
+                match value {
+                    Value::Array(arr) => {
+                        let mut flat = Vec::new();
+                        for elem in arr.borrow().iter() {
+                            match elem {
+                                Value::Array(inner) => {
+                                    flat.extend(inner.borrow().iter().cloned());
+                                }
+                                other => flat.push(other.clone()),
+                            }
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(flat))))
+                    }
+                    _ => Err(RuntimeError::new("Flatten requires array")),
+                }
+            }
+
+            PipeOp::Unique => {
+                // |∪ - remove duplicates
+                match value {
+                    Value::Array(arr) => {
+                        let mut seen = std::collections::HashSet::new();
+                        let mut unique = Vec::new();
+                        for elem in arr.borrow().iter() {
+                            let key = format!("{:?}", elem);
+                            if seen.insert(key) {
+                                unique.push(elem.clone());
+                            }
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(unique))))
+                    }
+                    _ => Err(RuntimeError::new("Unique requires array")),
+                }
+            }
+
+            PipeOp::Enumerate => {
+                // |⍳ - pair with indices
+                match value {
+                    Value::Array(arr) => {
+                        let enumerated: Vec<Value> = arr
+                            .borrow()
+                            .iter()
+                            .enumerate()
+                            .map(|(i, v)| Value::Tuple(Rc::new(vec![Value::Int(i as i64), v.clone()])))
+                            .collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(enumerated))))
+                    }
+                    _ => Err(RuntimeError::new("Enumerate requires array")),
+                }
+            }
         }
     }
 
@@ -3357,6 +3612,20 @@ impl Interpreter {
             }
             (Value::String(a), Value::String(b)) => a.cmp(b),
             _ => std::cmp::Ordering::Equal,
+        }
+    }
+
+    /// Subtract two values (for diff operation)
+    fn subtract_values(&self, a: &Value, b: &Value) -> Result<Value, RuntimeError> {
+        match (a, b) {
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
+            (Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 - b)),
+            (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a - *b as f64)),
+            _ => Err(RuntimeError::new(format!(
+                "Cannot subtract {:?} from {:?}",
+                b, a
+            ))),
         }
     }
 

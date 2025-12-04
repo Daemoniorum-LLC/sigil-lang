@@ -1964,6 +1964,35 @@ impl TypeChecker {
                 let _ = self.infer_expr(func);
                 self.fresh_var() // Result type depends on function
             }
+
+            // Mathematical & APL-Inspired Operations
+            PipeOp::All(_) | PipeOp::Any(_) => Type::Bool,
+            PipeOp::Compose(f) => {
+                let _ = self.infer_expr(f);
+                self.fresh_var()
+            }
+            PipeOp::Zip(other) => {
+                let _ = self.infer_expr(other);
+                self.fresh_var() // Array of tuples
+            }
+            PipeOp::Scan(f) => {
+                let _ = self.infer_expr(f);
+                self.fresh_var() // Array of accumulated values
+            }
+            PipeOp::Diff => self.fresh_var(), // Array of differences
+            PipeOp::Gradient(var) => {
+                let _ = self.infer_expr(var);
+                self.fresh_var() // Gradient value
+            }
+            PipeOp::SortAsc | PipeOp::SortDesc | PipeOp::Reverse => {
+                inner.clone() // Same type, reordered
+            }
+            PipeOp::Cycle(n) | PipeOp::Windows(n) | PipeOp::Chunks(n) => {
+                let _ = self.infer_expr(n);
+                self.fresh_var() // Array type
+            }
+            PipeOp::Flatten | PipeOp::Unique => self.fresh_var(),
+            PipeOp::Enumerate => self.fresh_var(), // Array of (index, value) tuples
         };
 
         // Preserve evidence through pipe
