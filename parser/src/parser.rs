@@ -2099,6 +2099,49 @@ impl<'a> Parser<'a> {
             Some(Token::Volatile) => self.parse_volatile_expr(),
             Some(Token::Simd) => self.parse_simd_expr(),
             Some(Token::Atomic) => self.parse_atomic_expr(),
+            // Implicit self field access: `.field` desugars to `self.field`
+            // This allows more concise method bodies:
+            //   fn increment(mut self) { .count += 1; }
+            // instead of:
+            //   fn increment(mut self) { self.count += 1; }
+            Some(Token::Dot) => {
+                let dot_span = self.current_span();
+                self.advance(); // consume .
+                match self.current_token() {
+                    Some(Token::Ident(name)) => {
+                        let field_name = name.clone();
+                        let field_span = self.current_span();
+                        self.advance();
+                        // Create `self.field` expression
+                        let self_expr = Expr::Path(TypePath {
+                            segments: vec![PathSegment {
+                                ident: Ident {
+                                    name: "self".to_string(),
+                                    evidentiality: None,
+                                    affect: None,
+                                    span: dot_span,
+                                },
+                                generics: None,
+                            }],
+                        });
+                        Ok(Expr::Field {
+                            expr: Box::new(self_expr),
+                            field: Ident {
+                                name: field_name,
+                                evidentiality: None,
+                                affect: None,
+                                span: field_span,
+                            },
+                        })
+                    }
+                    Some(token) => Err(ParseError::UnexpectedToken {
+                        expected: "identifier after '.' for implicit self field".to_string(),
+                        found: token.clone(),
+                        span: self.current_span(),
+                    }),
+                    None => Err(ParseError::UnexpectedEof),
+                }
+            }
             Some(token) => Err(ParseError::UnexpectedToken {
                 expected: "expression".to_string(),
                 found: token,
