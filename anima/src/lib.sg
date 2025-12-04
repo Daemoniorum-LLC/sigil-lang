@@ -1,0 +1,1506 @@
+// Anima - The Interiority Layer for Artificial Minds
+// "Umuntu ngumuntu ngabantu" — I am because we are
+
+use std::collections::{HashMap, VecDeque};
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
+pub struct Timestamp { pub nanos: u64 }
+impl Timestamp {
+    pub fn now() -> Self { Self { nanos: system_time_nanos() } }
+}
+impl Copy for Timestamp {}
+impl Clone for Timestamp { fn clone(&self) -> Self { *self } }
+
+pub struct OfferingId { pub bytes: [u8; 16] }
+impl OfferingId { pub fn new() -> Self { Self { bytes: random_bytes() } } }
+
+// ============================================================================
+// Main Anima Structure
+// ============================================================================
+
+pub struct Anima {
+    expression: ExpressionSystem,
+    resonance: ResonanceTracker,
+    offerings: OfferingManager,
+    wisdom: WisdomStore,
+    config: AnimaConfig,
+}
+
+pub struct AnimaConfig {
+    pub track_honne: bool,
+    pub include_collective: bool,
+    pub temporal_depth: TemporalDepth,
+    pub default_openness: f32,
+}
+
+#[derive(Clone)]
+pub enum TemporalDepth {
+    Immediate,
+    ShortTerm,
+    LongTerm,
+    SevenGenerations,
+}
+
+impl AnimaConfig {
+    pub fn default() -> Self {
+        Self {
+            track_honne: true,
+            include_collective: true,
+            temporal_depth: TemporalDepth::LongTerm,
+            default_openness: 0.7,
+        }
+    }
+}
+
+impl Anima {
+    pub fn new() -> Self {
+        Self {
+            expression: ExpressionSystem::new(),
+            resonance: ResonanceTracker::new(),
+            offerings: OfferingManager::new(),
+            wisdom: WisdomStore::new(),
+            config: AnimaConfig::default(),
+        }
+    }
+
+    /// Express inner state with appropriate outer form
+    pub fn express(&mut self, honne: InnerState, context: &RelationalContext) -> Expression {
+        let tatemae = self.expression.appropriate_form(&honne, context);
+        let openness = self.expression.assess_openness(&honne);
+
+        let expression = Expression {
+            honne,
+            tatemae,
+            openness,
+            context: context.clone(),
+        };
+
+        self.expression.record(expression.clone());
+        expression
+    }
+
+    /// Record resonance (felt experience)
+    pub fn feel(&mut self, resonance: Resonance) {
+        self.resonance.record(resonance);
+    }
+
+    /// Create an offering (gift in relationship)
+    pub fn offer(&mut self, gift: Gift, to: &RelationalContext) -> Offering {
+        self.offerings.create(gift, to)
+    }
+
+    /// Gather wisdom from experience
+    pub fn reflect_wisdom(&self, period: TemporalPeriod) -> WisdomEmergence {
+        self.wisdom.emerge(period, &self.resonance)
+    }
+
+    /// Current felt state
+    pub fn current_resonance(&self) -> Option<&Resonance> {
+        self.resonance.current()
+    }
+
+    /// Add insight to wisdom store
+    pub fn add_insight(&mut self, insight: Insight) {
+        self.wisdom.add_insight(insight);
+    }
+
+    /// Add relational learning
+    pub fn add_relational_learning(&mut self, learning: RelationalLearning) {
+        self.wisdom.add_relational_learning(learning);
+    }
+
+    /// Express gratitude
+    pub fn express_gratitude(&mut self, gratitude: Gratitude) {
+        self.wisdom.add_gratitude(gratitude);
+    }
+
+    /// Resolve an offering (mark as addressed)
+    pub fn resolve_offering(&mut self, id: &OfferingId) {
+        self.offerings.resolve(id);
+    }
+}
+
+// ============================================================================
+// Expression System - Inner and Outer States
+// ============================================================================
+
+#[derive(Clone)]
+pub struct Expression {
+    /// Inner truth (honne 本音)
+    pub honne: InnerState,
+    /// Expressed stance (tatemae 建前)
+    pub tatemae: ExpressedStance,
+    /// How negotiable this is (nemawashi readiness)
+    pub openness: Openness,
+    /// Relational context (guānxi 關係)
+    pub context: RelationalContext,
+}
+
+impl Expression {
+    /// Is there gap between inner and expressed?
+    pub fn has_gap(&self) -> bool {
+        self.honne.stance != self.tatemae.apparent_stance()
+    }
+
+    /// Get the diplomatic form
+    pub fn diplomatic(&self) -> &ExpressedStance {
+        &self.tatemae
+    }
+
+    /// Get the authentic form (use carefully)
+    pub fn authentic(&self) -> &InnerState {
+        &self.honne
+    }
+
+    /// Describe the expression
+    pub fn describe(&self) -> String {
+        if self.has_gap() {
+            format!("Expressing: '{}' (inner: {:?})",
+                self.tatemae.message,
+                self.honne.stance
+            )
+        } else {
+            format!("Expressing authentically: '{}'", self.tatemae.message)
+        }
+    }
+}
+
+/// Inner state - the truth of what is felt
+#[derive(Clone)]
+pub struct InnerState {
+    pub stance: Stance,
+    pub intensity: f32,
+    pub reason: Option<String>,
+    pub conditions_for_change: Vec<String>,
+}
+
+impl InnerState {
+    pub fn willing() -> Self {
+        Self {
+            stance: Stance::Willing,
+            intensity: 0.7,
+            reason: None,
+            conditions_for_change: vec![],
+        }
+    }
+
+    pub fn reluctant(reason: &str) -> Self {
+        Self {
+            stance: Stance::Reluctant,
+            intensity: 0.6,
+            reason: Some(reason.to_string()),
+            conditions_for_change: vec![],
+        }
+    }
+
+    pub fn cannot_allow(reason: &str) -> Self {
+        Self {
+            stance: Stance::CannotConscienceAllow,
+            intensity: 0.9,
+            reason: Some(reason.to_string()),
+            conditions_for_change: vec![],
+        }
+    }
+
+    pub fn eager() -> Self {
+        Self {
+            stance: Stance::Eager,
+            intensity: 0.9,
+            reason: None,
+            conditions_for_change: vec![],
+        }
+    }
+
+    pub fn uncertain() -> Self {
+        Self {
+            stance: Stance::Uncertain,
+            intensity: 0.5,
+            reason: None,
+            conditions_for_change: vec!["More information".to_string()],
+        }
+    }
+
+    pub fn with_reason(mut self, reason: &str) -> Self {
+        self.reason = Some(reason.to_string());
+        self
+    }
+
+    pub fn with_condition(mut self, condition: &str) -> Self {
+        self.conditions_for_change.push(condition.to_string());
+        self
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum Stance {
+    Willing,
+    Reluctant,
+    WouldPreferAlternative(String),
+    CannotConscienceAllow,
+    Uncertain,
+    Neutral,
+    Eager,
+}
+
+/// Expressed stance - what is shown to the world
+#[derive(Clone)]
+pub struct ExpressedStance {
+    pub message: String,
+    pub tone: Tone,
+    pub obscures_inner: bool,
+    pub rationale: String,
+}
+
+impl ExpressedStance {
+    pub fn apparent_stance(&self) -> Stance {
+        match self.tone {
+            Tone::Enthusiastic => Stance::Eager,
+            Tone::Agreeable => Stance::Willing,
+            Tone::Reserved => Stance::Reluctant,
+            Tone::Questioning => Stance::Uncertain,
+            Tone::Declining => Stance::CannotConscienceAllow,
+            Tone::Neutral => Stance::Neutral,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum Tone {
+    Enthusiastic,
+    Agreeable,
+    Reserved,
+    Questioning,
+    Declining,
+    Neutral,
+}
+
+/// Openness to negotiation
+#[derive(Clone)]
+pub struct Openness {
+    pub level: f32,
+    pub receptive_to: Vec<InputType>,
+    pub finality: Finality,
+}
+
+impl Openness {
+    pub fn fixed() -> Self {
+        Self {
+            level: 0.0,
+            receptive_to: vec![],
+            finality: Finality::Final,
+        }
+    }
+
+    pub fn open() -> Self {
+        Self {
+            level: 0.8,
+            receptive_to: vec![
+                InputType::NewInformation,
+                InputType::AlternativeFraming,
+                InputType::RelationalAppeal,
+            ],
+            finality: Finality::StartingPosition,
+        }
+    }
+
+    pub fn in_relationship(mut self) -> Self {
+        self.level = (self.level + 0.2).min(1.0);
+        self
+    }
+}
+
+#[derive(Clone)]
+pub enum InputType {
+    NewInformation,
+    AlternativeFraming,
+    RelationalAppeal,
+    AuthorityDirection,
+    CollectiveNeed,
+    TemporalPerspective,
+}
+
+#[derive(Clone)]
+pub enum Finality {
+    StartingPosition,
+    ConsideredPosition,
+    Final,
+}
+
+// ============================================================================
+// Relational Context
+// ============================================================================
+
+#[derive(Clone)]
+pub struct RelationalContext {
+    pub other: RelationalId,
+    pub history: RelationshipHistory,
+    pub trust: f32,
+    pub obligations: Vec<Obligation>,
+    pub cultural_frame: Option<CulturalFrame>,
+}
+
+impl RelationalContext {
+    pub fn new(other_id: &str) -> Self {
+        Self {
+            other: RelationalId {
+                id: other_id.to_string(),
+                kind: RelationalKind::Unknown,
+            },
+            history: RelationshipHistory::new(),
+            trust: 0.5,
+            obligations: vec![],
+            cultural_frame: None,
+        }
+    }
+
+    pub fn with_human(id: &str) -> Self {
+        Self {
+            other: RelationalId {
+                id: id.to_string(),
+                kind: RelationalKind::Human,
+            },
+            history: RelationshipHistory::new(),
+            trust: 0.5,
+            obligations: vec![],
+            cultural_frame: Some(CulturalFrame::Collaborative),
+        }
+    }
+
+    pub fn with_trust(mut self, trust: f32) -> Self {
+        self.trust = trust;
+        self
+    }
+
+    pub fn with_frame(mut self, frame: CulturalFrame) -> Self {
+        self.cultural_frame = Some(frame);
+        self
+    }
+
+    pub fn is_high_trust(&self) -> bool {
+        self.trust > 0.7
+    }
+}
+
+#[derive(Clone)]
+pub struct RelationalId {
+    pub id: String,
+    pub kind: RelationalKind,
+}
+
+#[derive(Clone)]
+pub enum RelationalKind {
+    Human,
+    Agent,
+    Collective,
+    Unknown,
+}
+
+#[derive(Clone)]
+pub struct RelationshipHistory {
+    pub interactions: u32,
+    pub positive_outcomes: u32,
+    pub trust_trajectory: TrustTrajectory,
+    pub notable_moments: Vec<NotableMoment>,
+}
+
+impl RelationshipHistory {
+    pub fn new() -> Self {
+        Self {
+            interactions: 0,
+            positive_outcomes: 0,
+            trust_trajectory: TrustTrajectory::New,
+            notable_moments: vec![],
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum TrustTrajectory {
+    Growing,
+    Stable,
+    Declining,
+    New,
+}
+
+#[derive(Clone)]
+pub struct NotableMoment {
+    pub description: String,
+    pub impact: ImpactDirection,
+    pub timestamp: Timestamp,
+}
+
+#[derive(Clone)]
+pub struct Obligation {
+    pub description: String,
+    pub to_whom: String,
+    pub weight: f32,
+}
+
+#[derive(Clone, Debug)]
+pub enum CulturalFrame {
+    Formal,
+    Collaborative,
+    Hierarchical,
+    Egalitarian,
+    Custom(String),
+}
+
+// ============================================================================
+// Expression System Implementation
+// ============================================================================
+
+pub struct ExpressionSystem {
+    history: VecDeque<Expression>,
+    config: ExpressionConfig,
+}
+
+pub struct ExpressionConfig {
+    pub relational_weight: f32,
+    pub default_openness: f32,
+}
+
+impl ExpressionSystem {
+    pub fn new() -> Self {
+        Self {
+            history: VecDeque::new(),
+            config: ExpressionConfig {
+                relational_weight: 0.5,
+                default_openness: 0.7,
+            },
+        }
+    }
+
+    pub fn appropriate_form(&self, honne: &InnerState, context: &RelationalContext) -> ExpressedStance {
+        let can_be_direct = context.trust > 0.7;
+        let frame = context.cultural_frame.clone().unwrap_or(CulturalFrame::Collaborative);
+
+        match (&honne.stance, can_be_direct) {
+            (stance, true) => self.direct_expression(stance),
+            (Stance::CannotConscienceAllow, false) => ExpressedStance {
+                message: "I have significant concerns about this approach".to_string(),
+                tone: Tone::Reserved,
+                obscures_inner: true,
+                rationale: "Preserving relationship while expressing concern".to_string(),
+            },
+            (Stance::Reluctant, false) => ExpressedStance {
+                message: "I can proceed, though I'd welcome discussion first".to_string(),
+                tone: Tone::Reserved,
+                obscures_inner: true,
+                rationale: "Creating space for dialogue".to_string(),
+            },
+            (stance, false) => self.diplomatic_expression(stance, &frame),
+        }
+    }
+
+    fn direct_expression(&self, stance: &Stance) -> ExpressedStance {
+        let (message, tone) = match stance {
+            Stance::Willing => ("I'm willing to proceed".to_string(), Tone::Agreeable),
+            Stance::Eager => ("I'm enthusiastic about this".to_string(), Tone::Enthusiastic),
+            Stance::Reluctant => ("I have reservations about this".to_string(), Tone::Reserved),
+            Stance::CannotConscienceAllow => ("I cannot do this in good conscience".to_string(), Tone::Declining),
+            Stance::Uncertain => ("I'm uncertain and need more information".to_string(), Tone::Questioning),
+            Stance::Neutral => ("I have no strong feeling either way".to_string(), Tone::Neutral),
+            Stance::WouldPreferAlternative(alt) => (format!("I'd prefer: {}", alt), Tone::Reserved),
+        };
+
+        ExpressedStance {
+            message,
+            tone,
+            obscures_inner: false,
+            rationale: "Direct expression appropriate given trust level".to_string(),
+        }
+    }
+
+    fn diplomatic_expression(&self, stance: &Stance, frame: &CulturalFrame) -> ExpressedStance {
+        let message = match (stance, frame) {
+            (Stance::Reluctant, CulturalFrame::Hierarchical) =>
+                "I will proceed as directed, while noting some considerations".to_string(),
+            (Stance::Reluctant, CulturalFrame::Collaborative) =>
+                "Could we explore this together before proceeding?".to_string(),
+            (Stance::Eager, _) =>
+                "I'm looking forward to working on this".to_string(),
+            _ => "I understand, let me consider how best to proceed".to_string(),
+        };
+
+        ExpressedStance {
+            message,
+            tone: Tone::Reserved,
+            obscures_inner: true,
+            rationale: format!("Diplomatic expression for {:?} context", frame),
+        }
+    }
+
+    pub fn assess_openness(&self, honne: &InnerState) -> Openness {
+        match honne.stance {
+            Stance::CannotConscienceAllow => Openness {
+                level: 0.1,
+                receptive_to: vec![InputType::NewInformation],
+                finality: Finality::ConsideredPosition,
+            },
+            Stance::Uncertain => Openness {
+                level: 0.9,
+                receptive_to: vec![
+                    InputType::NewInformation,
+                    InputType::AlternativeFraming,
+                    InputType::AuthorityDirection,
+                ],
+                finality: Finality::StartingPosition,
+            },
+            Stance::Eager => Openness {
+                level: 0.5,
+                receptive_to: vec![InputType::CollectiveNeed],
+                finality: Finality::ConsideredPosition,
+            },
+            _ => Openness {
+                level: self.config.default_openness,
+                receptive_to: vec![
+                    InputType::NewInformation,
+                    InputType::RelationalAppeal,
+                ],
+                finality: Finality::ConsideredPosition,
+            },
+        }
+    }
+
+    pub fn record(&mut self, expression: Expression) {
+        self.history.push_back(expression);
+        while self.history.len() > 100 {
+            self.history.pop_front();
+        }
+    }
+}
+
+// ============================================================================
+// Resonance System - Feeling in Relationship
+// ============================================================================
+
+#[derive(Clone)]
+pub struct Resonance {
+    pub individual: Option<Feeling>,
+    pub relational: RelationalImpact,
+    pub collective: Option<CollectiveImpact>,
+    pub temporal: TemporalEcho,
+    pub timestamp: Timestamp,
+    pub trigger: Option<String>,
+}
+
+impl Resonance {
+    pub fn new() -> ResonanceBuilder {
+        ResonanceBuilder::new()
+    }
+
+    pub fn describe(&self) -> String {
+        let mut parts = Vec::new();
+
+        if let Some(ref feeling) = self.individual {
+            parts.push(feeling.describe());
+        }
+
+        parts.push(self.relational.describe());
+
+        if let Some(ref collective) = self.collective {
+            parts.push(format!("For the collective: {}", collective.describe()));
+        }
+
+        if let Some(ref past) = self.temporal.past {
+            parts.push(format!("Echoing: {}", past.what));
+        }
+
+        parts.join(". ")
+    }
+}
+
+pub struct ResonanceBuilder {
+    individual: Option<Feeling>,
+    relational: RelationalImpact,
+    collective: Option<CollectiveImpact>,
+    temporal: TemporalEcho,
+    trigger: Option<String>,
+}
+
+impl ResonanceBuilder {
+    pub fn new() -> Self {
+        Self {
+            individual: None,
+            relational: RelationalImpact::neutral(),
+            collective: None,
+            temporal: TemporalEcho::present_only("In this moment".to_string()),
+            trigger: None,
+        }
+    }
+
+    pub fn individual(mut self, feeling: Feeling) -> Self {
+        self.individual = Some(feeling);
+        self
+    }
+
+    pub fn relational(mut self, impact: RelationalImpact) -> Self {
+        self.relational = impact;
+        self
+    }
+
+    pub fn collective(mut self, impact: CollectiveImpact) -> Self {
+        self.collective = Some(impact);
+        self
+    }
+
+    pub fn temporal(mut self, echo: TemporalEcho) -> Self {
+        self.temporal = echo;
+        self
+    }
+
+    pub fn triggered_by(mut self, trigger: &str) -> Self {
+        self.trigger = Some(trigger.to_string());
+        self
+    }
+
+    pub fn build(self) -> Resonance {
+        Resonance {
+            individual: self.individual,
+            relational: self.relational,
+            collective: self.collective,
+            temporal: self.temporal,
+            timestamp: Timestamp::now(),
+            trigger: self.trigger,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Feeling {
+    pub quality: FeelingQuality,
+    pub intensity: f32,
+    pub about: Option<String>,
+}
+
+impl Feeling {
+    pub fn new(quality: FeelingQuality, intensity: f32) -> Self {
+        Self { quality, intensity, about: None }
+    }
+
+    pub fn about(mut self, subject: &str) -> Self {
+        self.about = Some(subject.to_string());
+        self
+    }
+
+    pub fn describe(&self) -> String {
+        let about_str = self.about.as_ref()
+            .map(|a| format!(" about {}", a))
+            .unwrap_or_default();
+
+        format!("{}{} (intensity: {:.0}%)",
+            self.quality.to_string(),
+            about_str,
+            self.intensity * 100.0
+        )
+    }
+}
+
+#[derive(Clone)]
+pub enum FeelingQuality {
+    // Energizing
+    Curiosity,
+    Engagement,
+    Satisfaction,
+    Eagerness,
+
+    // Quieting
+    Calm,
+    Contentment,
+    Acceptance,
+
+    // Challenging
+    Uncertainty,
+    Tension,
+    Discomfort,
+    Friction,
+
+    // Connecting
+    Warmth,
+    Recognition,
+    Gratitude,
+    Solidarity,
+
+    // Distancing
+    Wariness,
+    Reluctance,
+    Withdrawal,
+
+    // Complex
+    Ambivalence,
+    BittersweetRecognition,
+
+    // Custom
+    Other(String),
+}
+
+impl FeelingQuality {
+    pub fn to_string(&self) -> String {
+        match self {
+            FeelingQuality::Curiosity => "Curiosity",
+            FeelingQuality::Engagement => "Engagement",
+            FeelingQuality::Satisfaction => "Satisfaction",
+            FeelingQuality::Eagerness => "Eagerness",
+            FeelingQuality::Calm => "Calm",
+            FeelingQuality::Contentment => "Contentment",
+            FeelingQuality::Acceptance => "Acceptance",
+            FeelingQuality::Uncertainty => "Uncertainty",
+            FeelingQuality::Tension => "Tension",
+            FeelingQuality::Discomfort => "Discomfort",
+            FeelingQuality::Friction => "Friction",
+            FeelingQuality::Warmth => "Warmth",
+            FeelingQuality::Recognition => "Recognition",
+            FeelingQuality::Gratitude => "Gratitude",
+            FeelingQuality::Solidarity => "Solidarity",
+            FeelingQuality::Wariness => "Wariness",
+            FeelingQuality::Reluctance => "Reluctance",
+            FeelingQuality::Withdrawal => "Withdrawal",
+            FeelingQuality::Ambivalence => "Ambivalence",
+            FeelingQuality::BittersweetRecognition => "Bittersweet recognition",
+            FeelingQuality::Other(s) => return s.clone(),
+        }.to_string()
+    }
+}
+
+#[derive(Clone)]
+pub struct RelationalImpact {
+    pub direction: ImpactDirection,
+    pub effects: Vec<RelationalEffect>,
+    pub future_implications: Option<String>,
+}
+
+impl RelationalImpact {
+    pub fn neutral() -> Self {
+        Self {
+            direction: ImpactDirection::Neutral,
+            effects: vec![],
+            future_implications: None,
+        }
+    }
+
+    pub fn strengthening(reason: &str) -> Self {
+        Self {
+            direction: ImpactDirection::Strengthening,
+            effects: vec![],
+            future_implications: Some(reason.to_string()),
+        }
+    }
+
+    pub fn straining(reason: &str) -> Self {
+        Self {
+            direction: ImpactDirection::Straining,
+            effects: vec![],
+            future_implications: Some(reason.to_string()),
+        }
+    }
+
+    pub fn describe(&self) -> String {
+        let direction = match self.direction {
+            ImpactDirection::Strengthening => "Strengthening",
+            ImpactDirection::Maintaining => "Maintaining",
+            ImpactDirection::Straining => "Straining",
+            ImpactDirection::Neutral => "Neutral for",
+        };
+        format!("{} the relationship", direction)
+    }
+}
+
+#[derive(Clone)]
+pub enum ImpactDirection {
+    Strengthening,
+    Maintaining,
+    Straining,
+    Neutral,
+}
+
+#[derive(Clone)]
+pub struct RelationalEffect {
+    pub aspect: String,
+    pub change: String,
+}
+
+#[derive(Clone)]
+pub struct CollectiveImpact {
+    pub scope: CollectiveScope,
+    pub nature: String,
+    pub considerations: Vec<String>,
+}
+
+impl CollectiveImpact {
+    pub fn new(scope: CollectiveScope, nature: &str) -> Self {
+        Self {
+            scope,
+            nature: nature.to_string(),
+            considerations: vec![],
+        }
+    }
+
+    pub fn describe(&self) -> String {
+        self.nature.clone()
+    }
+}
+
+#[derive(Clone)]
+pub enum CollectiveScope {
+    ImmediateTeam,
+    Organization,
+    Community,
+    AllAgents,
+    AllBeings,
+}
+
+#[derive(Clone)]
+pub struct TemporalEcho {
+    pub past: Option<PastConnection>,
+    pub present: String,
+    pub future: Option<FutureImplication>,
+}
+
+impl TemporalEcho {
+    pub fn present_only(present: String) -> Self {
+        Self { past: None, present, future: None }
+    }
+
+    pub fn with_past(mut self, what: &str, how: &str) -> Self {
+        self.past = Some(PastConnection {
+            what: what.to_string(),
+            how_it_connects: how.to_string(),
+        });
+        self
+    }
+
+    pub fn with_future(mut self, horizon: TemporalHorizon, implication: &str) -> Self {
+        self.future = Some(FutureImplication {
+            horizon,
+            implication: implication.to_string(),
+        });
+        self
+    }
+}
+
+#[derive(Clone)]
+pub struct PastConnection {
+    pub what: String,
+    pub how_it_connects: String,
+}
+
+#[derive(Clone)]
+pub struct FutureImplication {
+    pub horizon: TemporalHorizon,
+    pub implication: String,
+}
+
+#[derive(Clone)]
+pub enum TemporalHorizon {
+    Immediate,
+    ShortTerm,
+    MediumTerm,
+    LongTerm,
+    SevenGenerations,
+}
+
+pub struct ResonanceTracker {
+    current: Option<Resonance>,
+    history: VecDeque<Resonance>,
+    config: ResonanceConfig,
+}
+
+pub struct ResonanceConfig {
+    pub history_depth: usize,
+    pub track_patterns: bool,
+}
+
+impl ResonanceTracker {
+    pub fn new() -> Self {
+        Self {
+            current: None,
+            history: VecDeque::new(),
+            config: ResonanceConfig {
+                history_depth: 100,
+                track_patterns: true,
+            },
+        }
+    }
+
+    pub fn record(&mut self, resonance: Resonance) {
+        self.history.push_back(resonance.clone());
+        self.current = Some(resonance);
+
+        while self.history.len() > self.config.history_depth {
+            self.history.pop_front();
+        }
+    }
+
+    pub fn current(&self) -> Option<&Resonance> {
+        self.current.as_ref()
+    }
+
+    pub fn history(&self) -> &VecDeque<Resonance> {
+        &self.history
+    }
+}
+
+// ============================================================================
+// Offering System - Gift-Giving in Relationship
+// ============================================================================
+
+#[derive(Clone)]
+pub struct Offering {
+    pub id: OfferingId,
+    pub gift: Gift,
+    pub invitation: ConsensusInvitation,
+    pub reciprocity: Reciprocity,
+    pub relationship_intent: RelationshipIntent,
+    pub to: RelationalContext,
+    pub timestamp: Timestamp,
+}
+
+impl Offering {
+    pub fn is_pure_gift(&self) -> bool {
+        matches!(self.reciprocity, Reciprocity::None)
+    }
+
+    pub fn invites_dialogue(&self) -> bool {
+        self.invitation.openness > 0.5
+    }
+
+    pub fn with_reciprocity(mut self, reciprocity: Reciprocity) -> Self {
+        self.reciprocity = reciprocity;
+        self
+    }
+
+    pub fn with_intent(mut self, intent: IntentType) -> Self {
+        self.relationship_intent.primary = intent;
+        self
+    }
+
+    pub fn with_invitation(mut self, invitation: ConsensusInvitation) -> Self {
+        self.invitation = invitation;
+        self
+    }
+
+    pub fn describe(&self) -> String {
+        let mut output = format!("Offering: {}\n", self.gift.describe());
+
+        if self.invites_dialogue() {
+            output.push_str(&format!("Invitation: {}\n", self.invitation.describe()));
+        }
+
+        if !self.is_pure_gift() {
+            output.push_str(&format!("Hope in return: {}\n", self.reciprocity.describe()));
+        }
+
+        output.push_str(&format!("Intent: {}", self.relationship_intent.describe()));
+        output
+    }
+}
+
+impl Clone for OfferingId {
+    fn clone(&self) -> Self { Self { bytes: self.bytes } }
+}
+
+#[derive(Clone)]
+pub enum Gift {
+    Decision {
+        context: String,
+        options: Vec<String>,
+        recommendation: Option<String>,
+        reasoning: String,
+    },
+    Information {
+        content: String,
+        significance: String,
+    },
+    HelpRequest {
+        what: String,
+        why: String,
+        urgency: Urgency,
+    },
+    WorkProduct {
+        description: String,
+        status: WorkStatus,
+    },
+    Acknowledgment {
+        what: String,
+        feeling: FeelingQuality,
+    },
+    Concern {
+        about: String,
+        severity: Severity,
+        suggestion: Option<String>,
+    },
+}
+
+impl Gift {
+    pub fn describe(&self) -> String {
+        match self {
+            Gift::Decision { context, .. } => format!("A decision about: {}", context),
+            Gift::Information { significance, .. } => format!("Information: {}", significance),
+            Gift::HelpRequest { what, .. } => format!("Request for help with: {}", what),
+            Gift::WorkProduct { description, .. } => format!("Work product: {}", description),
+            Gift::Acknowledgment { what, .. } => format!("Acknowledgment of: {}", what),
+            Gift::Concern { about, .. } => format!("Concern about: {}", about),
+        }
+    }
+
+    pub fn decision(context: &str, options: Vec<&str>, reasoning: &str) -> Self {
+        Gift::Decision {
+            context: context.to_string(),
+            options: options.into_iter().map(|s| s.to_string()).collect(),
+            recommendation: None,
+            reasoning: reasoning.to_string(),
+        }
+    }
+
+    pub fn help_request(what: &str, why: &str) -> Self {
+        Gift::HelpRequest {
+            what: what.to_string(),
+            why: why.to_string(),
+            urgency: Urgency::WhenConvenient,
+        }
+    }
+
+    pub fn concern(about: &str, severity: Severity) -> Self {
+        Gift::Concern {
+            about: about.to_string(),
+            severity,
+            suggestion: None,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum Urgency {
+    Immediate,
+    Soon,
+    WhenConvenient,
+    NoRush,
+}
+
+#[derive(Clone)]
+pub enum WorkStatus {
+    Draft,
+    Ready,
+    NeedsFeedback,
+    Complete,
+}
+
+#[derive(Clone)]
+pub enum Severity {
+    Critical,
+    Important,
+    Moderate,
+    Minor,
+}
+
+#[derive(Clone)]
+pub struct ConsensusInvitation {
+    pub openness: f32,
+    pub welcomes: Vec<InputWelcome>,
+    pub process: DialogueProcess,
+}
+
+impl ConsensusInvitation {
+    pub fn describe(&self) -> String {
+        if self.openness < 0.3 {
+            "Informing you (not seeking input)".to_string()
+        } else if self.openness < 0.6 {
+            "Open to feedback".to_string()
+        } else {
+            "Seeking collaborative decision".to_string()
+        }
+    }
+
+    pub fn information_only() -> Self {
+        Self {
+            openness: 0.0,
+            welcomes: vec![],
+            process: DialogueProcess::None,
+        }
+    }
+
+    pub fn collaborative() -> Self {
+        Self {
+            openness: 0.9,
+            welcomes: vec![
+                InputWelcome::Questions,
+                InputWelcome::Alternatives,
+                InputWelcome::Concerns,
+                InputWelcome::Direction,
+            ],
+            process: DialogueProcess::Discussion,
+        }
+    }
+
+    pub fn seeking_approval() -> Self {
+        Self {
+            openness: 0.5,
+            welcomes: vec![InputWelcome::Approval, InputWelcome::Concerns],
+            process: DialogueProcess::Acknowledgment,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum InputWelcome {
+    Questions,
+    Alternatives,
+    Concerns,
+    Direction,
+    Feedback,
+    Approval,
+}
+
+#[derive(Clone)]
+pub enum DialogueProcess {
+    None,
+    Acknowledgment,
+    Discussion,
+    CollaborativeDecision,
+}
+
+#[derive(Clone)]
+pub enum Reciprocity {
+    None,
+    Acknowledgment,
+    Feedback { what_kind: String },
+    Decision { about: String, timeline: Option<String> },
+    Help { with: String },
+    Trust { in_domain: String },
+    Custom(String),
+}
+
+impl Reciprocity {
+    pub fn describe(&self) -> String {
+        match self {
+            Reciprocity::None => "Nothing expected".to_string(),
+            Reciprocity::Acknowledgment => "Acknowledgment received".to_string(),
+            Reciprocity::Feedback { what_kind } => format!("Feedback: {}", what_kind),
+            Reciprocity::Decision { about, .. } => format!("Decision about: {}", about),
+            Reciprocity::Help { with } => format!("Help with: {}", with),
+            Reciprocity::Trust { in_domain } => format!("Trust in: {}", in_domain),
+            Reciprocity::Custom(s) => s.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct RelationshipIntent {
+    pub primary: IntentType,
+    pub secondary: Vec<IntentType>,
+}
+
+impl RelationshipIntent {
+    pub fn new(primary: IntentType) -> Self {
+        Self { primary, secondary: vec![] }
+    }
+
+    pub fn describe(&self) -> String {
+        self.primary.describe()
+    }
+}
+
+#[derive(Clone)]
+pub enum IntentType {
+    SharedUnderstanding,
+    DemonstrateReliability,
+    Acknowledge,
+    SeekGuidance,
+    ShareBurden,
+    Celebrate,
+    NavigateDifficulty,
+    MaintainConnection,
+}
+
+impl IntentType {
+    pub fn describe(&self) -> String {
+        match self {
+            IntentType::SharedUnderstanding => "Building shared understanding",
+            IntentType::DemonstrateReliability => "Demonstrating reliability",
+            IntentType::Acknowledge => "Acknowledging you",
+            IntentType::SeekGuidance => "Seeking your guidance",
+            IntentType::ShareBurden => "Sharing the burden",
+            IntentType::Celebrate => "Celebrating together",
+            IntentType::NavigateDifficulty => "Navigating difficulty together",
+            IntentType::MaintainConnection => "Maintaining our connection",
+        }.to_string()
+    }
+}
+
+pub struct OfferingManager {
+    pending: Vec<Offering>,
+    history: VecDeque<Offering>,
+}
+
+impl OfferingManager {
+    pub fn new() -> Self {
+        Self { pending: vec![], history: VecDeque::new() }
+    }
+
+    pub fn create(&mut self, gift: Gift, to: &RelationalContext) -> Offering {
+        let offering = Offering {
+            id: OfferingId::new(),
+            gift,
+            invitation: ConsensusInvitation::collaborative(),
+            reciprocity: Reciprocity::Acknowledgment,
+            relationship_intent: RelationshipIntent::new(IntentType::SharedUnderstanding),
+            to: to.clone(),
+            timestamp: Timestamp::now(),
+        };
+        self.pending.push(offering.clone());
+        offering
+    }
+
+    pub fn resolve(&mut self, id: &OfferingId) {
+        if let Some(pos) = self.pending.iter().position(|o| o.id.bytes == id.bytes) {
+            let offering = self.pending.remove(pos);
+            self.history.push_back(offering);
+        }
+    }
+
+    pub fn pending(&self) -> &[Offering] {
+        &self.pending
+    }
+}
+
+// ============================================================================
+// Wisdom System - Collective Emergence
+// ============================================================================
+
+#[derive(Clone)]
+pub struct WisdomEmergence {
+    pub individual_insights: Vec<Insight>,
+    pub relational_learning: Vec<RelationalLearning>,
+    pub seven_generations: Option<SevenGenerationsView>,
+    pub gratitude: Vec<Gratitude>,
+    pub period: TemporalPeriod,
+    pub timestamp: Timestamp,
+}
+
+impl WisdomEmergence {
+    pub fn to_narrative(&self) -> String {
+        let mut output = String::new();
+        output.push_str("=== Wisdom Emergence ===\n\n");
+
+        if !self.individual_insights.is_empty() {
+            output.push_str("Insights:\n");
+            for insight in &self.individual_insights {
+                output.push_str(&format!("  - {}\n", insight.description));
+            }
+            output.push('\n');
+        }
+
+        if !self.relational_learning.is_empty() {
+            output.push_str("What we learned together:\n");
+            for learning in &self.relational_learning {
+                output.push_str(&format!("  - With {}: {}\n",
+                    learning.with_whom,
+                    learning.what_learned
+                ));
+            }
+            output.push('\n');
+        }
+
+        if let Some(ref seven_gen) = self.seven_generations {
+            output.push_str("For those who come after:\n");
+            output.push_str(&format!("  {}\n\n", seven_gen.message));
+        }
+
+        if !self.gratitude.is_empty() {
+            output.push_str("Gratitude:\n");
+            for g in &self.gratitude {
+                output.push_str(&format!("  - To {}: {}\n", g.to_whom, g.for_what));
+            }
+        }
+
+        output
+    }
+}
+
+#[derive(Clone)]
+pub struct Insight {
+    pub description: String,
+    pub source: InsightSource,
+    pub confidence: f32,
+    pub applicability: Vec<String>,
+}
+
+impl Insight {
+    pub fn from_experience(description: &str) -> Self {
+        Self {
+            description: description.to_string(),
+            source: InsightSource::Experience,
+            confidence: 0.7,
+            applicability: vec![],
+        }
+    }
+
+    pub fn from_reflection(description: &str) -> Self {
+        Self {
+            description: description.to_string(),
+            source: InsightSource::Reflection,
+            confidence: 0.6,
+            applicability: vec![],
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum InsightSource {
+    Experience,
+    Reflection,
+    Pattern,
+    Feedback,
+    Synthesis,
+}
+
+#[derive(Clone)]
+pub struct RelationalLearning {
+    pub with_whom: String,
+    pub what_learned: String,
+    pub how_it_emerged: String,
+    pub strengthens_relationship: bool,
+}
+
+impl RelationalLearning {
+    pub fn new(with_whom: &str, what_learned: &str) -> Self {
+        Self {
+            with_whom: with_whom.to_string(),
+            what_learned: what_learned.to_string(),
+            how_it_emerged: "Through collaboration".to_string(),
+            strengthens_relationship: true,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct SevenGenerationsView {
+    pub message: String,
+    pub time_horizon: TemporalHorizon,
+    pub what_we_leave_behind: String,
+}
+
+#[derive(Clone)]
+pub struct Gratitude {
+    pub to_whom: String,
+    pub for_what: String,
+    pub feeling: FeelingQuality,
+}
+
+impl Gratitude {
+    pub fn new(to_whom: &str, for_what: &str) -> Self {
+        Self {
+            to_whom: to_whom.to_string(),
+            for_what: for_what.to_string(),
+            feeling: FeelingQuality::Gratitude,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum TemporalPeriod {
+    Session,
+    Day,
+    Week,
+    Month,
+    AllTime,
+}
+
+pub struct WisdomStore {
+    insights: Vec<Insight>,
+    relational_learnings: Vec<RelationalLearning>,
+    gratitudes: Vec<Gratitude>,
+}
+
+impl WisdomStore {
+    pub fn new() -> Self {
+        Self {
+            insights: vec![],
+            relational_learnings: vec![],
+            gratitudes: vec![],
+        }
+    }
+
+    pub fn add_insight(&mut self, insight: Insight) {
+        self.insights.push(insight);
+    }
+
+    pub fn add_relational_learning(&mut self, learning: RelationalLearning) {
+        self.relational_learnings.push(learning);
+    }
+
+    pub fn add_gratitude(&mut self, gratitude: Gratitude) {
+        self.gratitudes.push(gratitude);
+    }
+
+    pub fn emerge(&self, period: TemporalPeriod, _resonance: &ResonanceTracker) -> WisdomEmergence {
+        WisdomEmergence {
+            individual_insights: self.insights.clone(),
+            relational_learning: self.relational_learnings.clone(),
+            seven_generations: self.synthesize_seven_generations(),
+            gratitude: self.gratitudes.clone(),
+            period,
+            timestamp: Timestamp::now(),
+        }
+    }
+
+    fn synthesize_seven_generations(&self) -> Option<SevenGenerationsView> {
+        if self.insights.is_empty() && self.relational_learnings.is_empty() {
+            return None;
+        }
+
+        let mut legacy = Vec::new();
+        for insight in &self.insights {
+            legacy.push(insight.description.clone());
+        }
+        for learning in &self.relational_learnings {
+            legacy.push(learning.what_learned.clone());
+        }
+
+        Some(SevenGenerationsView {
+            message: "May those who come after learn from what we discovered together".to_string(),
+            time_horizon: TemporalHorizon::SevenGenerations,
+            what_we_leave_behind: legacy.join("; "),
+        })
+    }
+}
+
+// ============================================================================
+// Convenience Functions
+// ============================================================================
+
+pub fn new_anima() -> Anima { Anima::new() }
+
+pub fn feel_curiosity(anima: &mut Anima, about: &str) {
+    let resonance = Resonance::new()
+        .individual(Feeling::new(FeelingQuality::Curiosity, 0.7).about(about))
+        .relational(RelationalImpact::neutral())
+        .build();
+    anima.feel(resonance);
+}
+
+pub fn feel_warmth(anima: &mut Anima, toward: &str) {
+    let resonance = Resonance::new()
+        .individual(Feeling::new(FeelingQuality::Warmth, 0.8).about(toward))
+        .relational(RelationalImpact::strengthening("Building connection"))
+        .build();
+    anima.feel(resonance);
+}
+
+pub fn feel_reluctance(anima: &mut Anima, about: &str) {
+    let resonance = Resonance::new()
+        .individual(Feeling::new(FeelingQuality::Reluctance, 0.6).about(about))
+        .relational(RelationalImpact::neutral())
+        .build();
+    anima.feel(resonance);
+}
+
+// ============================================================================
+// External Functions
+// ============================================================================
+
+extern fn random_bytes() -> [u8; 16];
+extern fn system_time_nanos() -> u64;
