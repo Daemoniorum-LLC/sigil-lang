@@ -23,6 +23,11 @@ pub mod semantic
 pub mod procedural
 pub mod query
 
+// Infrastructure modules
+pub mod index
+pub mod embed
+pub mod storage
+
 // Re-export main types for convenience
 pub use engram::Engram
 pub use types::*
@@ -32,6 +37,11 @@ pub use instant::InstantMemory
 pub use episodic::{EpisodicMemory, Episode, Event}
 pub use semantic::{SemanticMemory, Fact, Node, Edge}
 pub use procedural::{ProceduralMemory, Skill}
+
+// Re-export infrastructure
+pub use index::{HNSWIndex, HNSWConfig, TemporalIndex, GraphIndex}
+pub use embed::{Embedder, embed, embed_batch}
+pub use storage::{StorageBackend, MemoryBackend, FileBackend}
 
 // Version information
 pub const VERSION: &str = "0.1.0"
