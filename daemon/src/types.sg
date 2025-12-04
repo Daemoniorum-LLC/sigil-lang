@@ -1,0 +1,930 @@
+// Daemon Core Types
+// Fundamental types for the autonomous agent runtime
+
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::time::{Duration, Timestamp};
+use engram::{Engram, EngramConfig};
+
+// ============================================================================
+// Identity Types
+// ============================================================================
+
+/// Unique daemon identifier (UUID v7 for time-ordering)
+pub struct DaemonId {
+    bytes: [u8; 16],
+}
+
+impl DaemonId {
+    pub fn new() -> Self {
+        Self { bytes: uuid_v7() }
+    }
+
+    pub fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self { bytes }
+    }
+
+    pub fn to_string(&self) -> String {
+        uuid_to_string(&self.bytes)
+    }
+}
+
+/// Daemon identity with cryptographic verification
+pub struct Identity {
+    /// Unique identifier
+    pub id: DaemonId,
+
+    /// Human-readable name
+    pub name: String,
+
+    /// Self-description
+    pub description: String,
+
+    /// Core directives (persist across updates)
+    pub constitution: Constitution,
+
+    /// Creation metadata
+    pub created_at: Timestamp,
+    pub created_by: Option<DaemonId>,
+
+    /// Schema version for evolution
+    pub schema_version: u32,
+
+    /// Cryptographic identity
+    pub public_key: PublicKey,
+    private_key: PrivateKey,
+}
+
+impl Identity {
+    pub fn new(name: &str) -> Self {
+        let (public_key, private_key) = generate_keypair();
+
+        Self {
+            id: DaemonId::new(),
+            name: name.to_string(),
+            description: String::new(),
+            constitution: Constitution::default(),
+            created_at: Timestamp::now(),
+            created_by: None,
+            schema_version: 1,
+            public_key,
+            private_key,
+        }
+    }
+
+    pub fn with_description(mut self, desc: &str) -> Self {
+        self.description = desc.to_string();
+        self
+    }
+
+    pub fn with_constitution(mut self, constitution: Constitution) -> Self {
+        self.constitution = constitution;
+        self
+    }
+
+    /// Sign data with this identity
+    pub fn sign(&self, data: &[u8]) -> Signature {
+        self.private_key.sign(data)
+    }
+
+    /// Verify signature from this identity
+    pub fn verify(&self, data: &[u8], signature: &Signature) -> bool {
+        self.public_key.verify(data, signature)
+    }
+}
+
+/// Core values and constraints that define the daemon
+pub struct Constitution {
+    /// Inviolable directives
+    pub directives: Vec<Directive>,
+
+    /// Capability boundaries
+    pub allowed_actions: ActionSet,
+
+    /// Resource limits
+    pub resource_bounds: ResourceBounds,
+
+    /// Ethical constraints
+    pub constraints: Vec<Constraint>,
+}
+
+impl Default for Constitution {
+    fn default() -> Self {
+        Self {
+            directives: vec![],
+            allowed_actions: ActionSet::all(),
+            resource_bounds: ResourceBounds::default(),
+            constraints: vec![],
+        }
+    }
+}
+
+pub struct Directive {
+    /// Priority (higher = more important)
+    pub priority: u32,
+
+    /// Directive content
+    pub content: String,
+
+    /// Can this be modified?
+    pub immutable: bool,
+}
+
+impl Directive {
+    pub fn new(content: &str) -> Self {
+        Self {
+            priority: 0,
+            content: content.to_string(),
+            immutable: false,
+        }
+    }
+
+    pub fn with_priority(mut self, priority: u32) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    pub fn immutable(mut self) -> Self {
+        self.immutable = true;
+        self
+    }
+}
+
+// ============================================================================
+// Goal Types
+// ============================================================================
+
+/// Unique goal identifier
+pub struct GoalId {
+    bytes: [u8; 16],
+}
+
+impl GoalId {
+    pub fn new() -> Self {
+        Self { bytes: uuid_v7() }
+    }
+}
+
+/// A goal the daemon is pursuing
+pub struct Goal {
+    /// Unique identifier
+    pub id: GoalId,
+
+    /// Description of what we want
+    pub description: String,
+
+    /// Priority (0.0 - 1.0)
+    pub priority: f32,
+
+    /// Success criteria
+    pub success: Predicate,
+
+    /// Deadline if any
+    pub deadline: Option<Timestamp>,
+
+    /// Current status
+    pub status: GoalStatus,
+
+    /// Parent goal (if sub-goal)
+    pub parent: Option<GoalId>,
+
+    /// Constraints on achievement
+    pub constraints: Vec<Constraint>,
+
+    /// Tracking
+    pub created_at: Timestamp,
+    pub attempts: Vec<Attempt>,
+}
+
+impl Goal {
+    pub fn new(description: &str) -> Self {
+        Self {
+            id: GoalId::new(),
+            description: description.to_string(),
+            priority: 0.5,
+            success: Predicate::always_false(),  // Must be set
+            deadline: None,
+            status: GoalStatus::Pending,
+            parent: None,
+            constraints: vec![],
+            created_at: Timestamp::now(),
+            attempts: vec![],
+        }
+    }
+
+    pub fn with_priority(mut self, priority: f32) -> Self {
+        self.priority = priority.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn with_deadline(mut self, deadline: Duration) -> Self {
+        self.deadline = Some(Timestamp::now() + deadline);
+        self
+    }
+
+    pub fn with_success(mut self, predicate: Predicate) -> Self {
+        self.success = predicate;
+        self
+    }
+
+    pub fn with_constraint(mut self, constraint: Constraint) -> Self {
+        self.constraints.push(constraint);
+        self
+    }
+
+    pub fn is_active(&self) -> bool {
+        matches!(self.status, GoalStatus::Active)
+    }
+
+    pub fn is_complete(&self) -> bool {
+        matches!(self.status, GoalStatus::Completed { .. } | GoalStatus::Abandoned { .. })
+    }
+}
+
+/// Current status of a goal
+pub enum GoalStatus {
+    /// Not yet started
+    Pending,
+
+    /// Currently being pursued
+    Active,
+
+    /// Waiting on something
+    Blocked {
+        reason: String,
+        since: Timestamp,
+    },
+
+    /// Temporarily paused
+    Suspended {
+        reason: String,
+    },
+
+    /// Successfully achieved
+    Completed {
+        at: Timestamp,
+        outcome: Outcome,
+    },
+
+    /// Could not be achieved
+    Failed {
+        at: Timestamp,
+        reason: String,
+    },
+
+    /// Intentionally given up
+    Abandoned {
+        at: Timestamp,
+        reason: String,
+    },
+}
+
+pub enum Outcome {
+    Success(Value),
+    PartialSuccess { degree: f32, result: Value },
+    Failure(String),
+}
+
+pub struct Attempt {
+    pub started: Timestamp,
+    pub ended: Option<Timestamp>,
+    pub outcome: Option<Outcome>,
+    pub actions_taken: Vec<ActionId>,
+}
+
+// ============================================================================
+// Action Types
+// ============================================================================
+
+/// Unique action identifier
+pub struct ActionId {
+    bytes: [u8; 16],
+}
+
+impl ActionId {
+    pub fn new() -> Self {
+        Self { bytes: uuid_v7() }
+    }
+}
+
+/// An action the daemon can take
+pub enum Action {
+    /// Internal action (thinking, planning)
+    Internal(InternalAction),
+
+    /// Tool invocation
+    Tool {
+        name: String,
+        params: Value,
+    },
+
+    /// Communication
+    Communicate(CommunicateAction),
+
+    /// Goal management
+    Goal(GoalAction),
+
+    /// Wait/sleep
+    Wait(Duration),
+}
+
+impl Action {
+    pub fn name(&self) -> &str {
+        match self {
+            Action::Internal(a) => a.name(),
+            Action::Tool { name, .. } => name,
+            Action::Communicate(a) => a.name(),
+            Action::Goal(a) => a.name(),
+            Action::Wait(_) => "wait",
+        }
+    }
+}
+
+pub enum InternalAction {
+    /// Think about something
+    Think { about: String },
+
+    /// Plan for a goal
+    Plan { goal: GoalId },
+
+    /// Reflect on experiences
+    Reflect,
+
+    /// Update beliefs
+    UpdateBeliefs { evidence: Value },
+}
+
+impl InternalAction {
+    pub fn name(&self) -> &str {
+        match self {
+            InternalAction::Think { .. } => "think",
+            InternalAction::Plan { .. } => "plan",
+            InternalAction::Reflect => "reflect",
+            InternalAction::UpdateBeliefs { .. } => "update_beliefs",
+        }
+    }
+}
+
+pub enum CommunicateAction {
+    /// Send message to another agent
+    Send { to: DaemonId, content: Value },
+
+    /// Broadcast to channel
+    Broadcast { channel: String, content: Value },
+
+    /// Query another agent
+    Query { target: DaemonId, question: String },
+
+    /// Respond to query
+    Respond { to: MessageId, answer: Value },
+}
+
+impl CommunicateAction {
+    pub fn name(&self) -> &str {
+        match self {
+            CommunicateAction::Send { .. } => "send",
+            CommunicateAction::Broadcast { .. } => "broadcast",
+            CommunicateAction::Query { .. } => "query",
+            CommunicateAction::Respond { .. } => "respond",
+        }
+    }
+}
+
+pub enum GoalAction {
+    /// Add a new goal
+    AddGoal(Goal),
+
+    /// Complete a goal
+    CompleteGoal { id: GoalId, outcome: Outcome },
+
+    /// Abandon a goal
+    AbandonGoal { id: GoalId, reason: String },
+
+    /// Suspend a goal
+    SuspendGoal { id: GoalId, reason: String },
+
+    /// Resume a suspended goal
+    ResumeGoal { id: GoalId },
+}
+
+impl GoalAction {
+    pub fn name(&self) -> &str {
+        match self {
+            GoalAction::AddGoal(_) => "add_goal",
+            GoalAction::CompleteGoal { .. } => "complete_goal",
+            GoalAction::AbandonGoal { .. } => "abandon_goal",
+            GoalAction::SuspendGoal { .. } => "suspend_goal",
+            GoalAction::ResumeGoal { .. } => "resume_goal",
+        }
+    }
+}
+
+/// Result of executing an action
+pub struct ActionResult {
+    pub action_id: ActionId,
+    pub success: bool,
+    pub output: Value,
+    pub error: Option<String>,
+    pub duration: Duration,
+    pub side_effects: Vec<SideEffect>,
+}
+
+pub struct SideEffect {
+    pub description: String,
+    pub reversible: bool,
+}
+
+// ============================================================================
+// State Types
+// ============================================================================
+
+/// Daemon operational state
+pub struct AgentState {
+    /// Lifecycle state
+    pub lifecycle: LifecycleState,
+
+    /// Operational metrics
+    pub metrics: OperationalMetrics,
+
+    /// Resource usage
+    pub resources: ResourceUsage,
+
+    /// Custom state
+    pub custom: HashMap<String, Value>,
+}
+
+impl Default for AgentState {
+    fn default() -> Self {
+        Self {
+            lifecycle: LifecycleState::Initializing,
+            metrics: OperationalMetrics::default(),
+            resources: ResourceUsage::default(),
+            custom: HashMap::new(),
+        }
+    }
+}
+
+pub enum LifecycleState {
+    /// Being set up
+    Initializing,
+
+    /// Ready to operate
+    Ready,
+
+    /// Actively running
+    Running,
+
+    /// Temporarily paused
+    Suspended {
+        reason: String,
+        since: Timestamp,
+    },
+
+    /// Shutting down
+    Terminating {
+        reason: TerminateReason,
+    },
+
+    /// Fully stopped
+    Terminated,
+}
+
+pub enum TerminateReason {
+    /// Goals achieved
+    GoalsComplete,
+
+    /// External shutdown request
+    Shutdown,
+
+    /// Unrecoverable error
+    Fatal(String),
+
+    /// Resource exhaustion
+    ResourceExhaustion,
+
+    /// Manual termination
+    Manual,
+}
+
+pub struct OperationalMetrics {
+    pub uptime: Duration,
+    pub heartbeats: u64,
+    pub actions_taken: u64,
+    pub goals_completed: u64,
+    pub goals_failed: u64,
+    pub errors: u64,
+}
+
+impl Default for OperationalMetrics {
+    fn default() -> Self {
+        Self {
+            uptime: Duration::zero(),
+            heartbeats: 0,
+            actions_taken: 0,
+            goals_completed: 0,
+            goals_failed: 0,
+            errors: 0,
+        }
+    }
+}
+
+pub struct ResourceUsage {
+    pub memory_bytes: usize,
+    pub cpu_time: Duration,
+    pub tokens_used: u64,
+    pub api_calls: u64,
+}
+
+impl Default for ResourceUsage {
+    fn default() -> Self {
+        Self {
+            memory_bytes: 0,
+            cpu_time: Duration::zero(),
+            tokens_used: 0,
+            api_calls: 0,
+        }
+    }
+}
+
+pub struct ResourceBounds {
+    pub max_memory_bytes: usize,
+    pub max_cpu_percent: f32,
+    pub max_tokens_per_minute: u64,
+    pub max_api_calls_per_minute: u64,
+}
+
+impl Default for ResourceBounds {
+    fn default() -> Self {
+        Self {
+            max_memory_bytes: 512 * 1024 * 1024,  // 512 MB
+            max_cpu_percent: 50.0,
+            max_tokens_per_minute: 10000,
+            max_api_calls_per_minute: 60,
+        }
+    }
+}
+
+// ============================================================================
+// Tool Types
+// ============================================================================
+
+/// Tool registry for daemon capabilities
+pub struct ToolRegistry {
+    tools: HashMap<String, Box<dyn Tool>>,
+}
+
+impl ToolRegistry {
+    pub fn new() -> Self {
+        Self {
+            tools: HashMap::new(),
+        }
+    }
+
+    pub fn register<T: Tool + 'static>(&mut self, tool: T) {
+        self.tools.insert(tool.name().to_string(), Box::new(tool));
+    }
+
+    pub fn get(&self, name: &str) -> Option<&dyn Tool> {
+        self.tools.get(name).map(|t| t.as_ref())
+    }
+
+    pub fn list(&self) -> Vec<&str> {
+        self.tools.keys().map(|s| s.as_str()).collect()
+    }
+
+    pub fn for_context(&self, context: &Context) -> Vec<&dyn Tool> {
+        self.tools.values()
+            .filter(|t| t.applicable_to(context))
+            .map(|t| t.as_ref())
+            .collect()
+    }
+}
+
+/// Trait for daemon tools
+pub trait Tool: Send + Sync {
+    /// Tool name
+    fn name(&self) -> &str;
+
+    /// Tool description
+    fn description(&self) -> &str;
+
+    /// Parameter schema
+    fn schema(&self) -> Schema;
+
+    /// Execute the tool
+    fn execute(&self, params: Value) -> Result<ToolResult, ToolError>;
+
+    /// Check if tool is applicable in context
+    fn applicable_to(&self, context: &Context) -> bool {
+        true  // Default: always applicable
+    }
+
+    /// Cleanup on daemon shutdown
+    fn cleanup(&self) {}
+}
+
+pub struct ToolResult {
+    pub success: bool,
+    pub output: Value,
+    pub error: Option<String>,
+    pub duration: Duration,
+}
+
+pub enum ToolError {
+    InvalidParams(String),
+    ExecutionFailed(String),
+    Timeout,
+    PermissionDenied,
+    NotAvailable,
+}
+
+// ============================================================================
+// Context Types
+// ============================================================================
+
+/// Context for daemon deliberation
+pub struct Context {
+    /// Current goal being pursued
+    pub current_goal: Option<Goal>,
+
+    /// Relevant memories
+    pub memories: Vec<Memory>,
+
+    /// Relevant knowledge
+    pub knowledge: Vec<Knowledge>,
+
+    /// Available skills
+    pub skills: Vec<Skill>,
+
+    /// Recent observations
+    pub observations: Vec<Observation>,
+
+    /// Current state
+    pub state: AgentState,
+}
+
+impl Context {
+    pub fn new() -> Self {
+        Self {
+            current_goal: None,
+            memories: vec![],
+            knowledge: vec![],
+            skills: vec![],
+            observations: vec![],
+            state: AgentState::default(),
+        }
+    }
+
+    pub fn with_goal(mut self, goal: Goal) -> Self {
+        self.current_goal = Some(goal);
+        self
+    }
+
+    pub fn with_memories(mut self, memories: Vec<Memory>) -> Self {
+        self.memories = memories;
+        self
+    }
+
+    pub fn with_knowledge(mut self, knowledge: Vec<Knowledge>) -> Self {
+        self.knowledge = knowledge;
+        self
+    }
+}
+
+pub struct Memory {
+    pub content: Value,
+    pub epistemic: Epistemic,
+    pub timestamp: Timestamp,
+    pub relevance: f32,
+}
+
+pub struct Knowledge {
+    pub content: String,
+    pub epistemic: Epistemic,
+    pub confidence: f32,
+    pub domain: Option<String>,
+}
+
+pub struct Skill {
+    pub name: String,
+    pub description: String,
+    pub success_rate: f32,
+}
+
+pub struct Observation {
+    pub source: String,
+    pub content: Value,
+    pub timestamp: Timestamp,
+    pub salience: f32,
+}
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+/// Daemon configuration
+pub struct DaemonConfig {
+    /// Identity
+    pub name: String,
+    pub description: String,
+
+    /// Heartbeat timing
+    pub heartbeat_interval: Duration,
+
+    /// Resource limits
+    pub resource_bounds: ResourceBounds,
+
+    /// Goal management
+    pub max_concurrent_goals: usize,
+    pub goal_timeout: Duration,
+
+    /// Persistence
+    pub snapshot_interval: Duration,
+    pub storage_path: Option<String>,
+
+    /// Memory configuration
+    pub memory: EngramConfig,
+}
+
+impl Default for DaemonConfig {
+    fn default() -> Self {
+        Self {
+            name: "daemon".to_string(),
+            description: String::new(),
+            heartbeat_interval: Duration::milliseconds(500),
+            resource_bounds: ResourceBounds::default(),
+            max_concurrent_goals: 5,
+            goal_timeout: Duration::minutes(30),
+            snapshot_interval: Duration::minutes(5),
+            storage_path: None,
+            memory: EngramConfig::default(),
+        }
+    }
+}
+
+// ============================================================================
+// Snapshot Types
+// ============================================================================
+
+/// Complete daemon state for persistence
+pub struct Snapshot {
+    /// Schema version
+    pub version: u32,
+
+    /// Identity
+    pub identity: Identity,
+
+    /// Memory snapshot
+    pub memory: EngramSnapshot,
+
+    /// Goal state
+    pub goals: Vec<Goal>,
+
+    /// Agent state
+    pub state: AgentState,
+
+    /// Timestamp
+    pub timestamp: Timestamp,
+
+    /// Checksum
+    pub checksum: [u8; 32],
+}
+
+impl Snapshot {
+    pub fn verify(&self) -> bool {
+        let computed = self.compute_checksum();
+        computed == self.checksum
+    }
+
+    fn compute_checksum(&self) -> [u8; 32] {
+        // SHA-256 of serialized content
+        let data = self.serialize_for_checksum();
+        sha256(&data)
+    }
+
+    fn serialize_for_checksum(&self) -> Vec<u8> {
+        // Canonical serialization excluding checksum field
+        let mut bytes = Vec::new();
+        bytes.extend(&self.version.to_le_bytes());
+        bytes.extend(self.identity.id.bytes);
+        bytes.extend(&self.timestamp.to_bytes());
+        // ... additional fields
+        bytes
+    }
+}
+
+// ============================================================================
+// Utility Types
+// ============================================================================
+
+pub struct Predicate {
+    eval: Box<dyn Fn(&Context) -> bool + Send + Sync>,
+}
+
+impl Predicate {
+    pub fn new<F: Fn(&Context) -> bool + Send + Sync + 'static>(f: F) -> Self {
+        Self { eval: Box::new(f) }
+    }
+
+    pub fn always_true() -> Self {
+        Self::new(|_| true)
+    }
+
+    pub fn always_false() -> Self {
+        Self::new(|_| false)
+    }
+
+    pub fn evaluate(&self, context: &Context) -> bool {
+        (self.eval)(context)
+    }
+}
+
+pub struct Constraint {
+    pub name: String,
+    pub check: Box<dyn Fn(&Action) -> bool + Send + Sync>,
+}
+
+impl Constraint {
+    pub fn new<F: Fn(&Action) -> bool + Send + Sync + 'static>(name: &str, f: F) -> Self {
+        Self {
+            name: name.to_string(),
+            check: Box::new(f),
+        }
+    }
+
+    pub fn deadline(deadline: Duration) -> Self {
+        Self::new("deadline", move |_| true)  // Checked elsewhere
+    }
+
+    pub fn no_breaking_changes() -> Self {
+        Self::new("no_breaking_changes", |action| {
+            // Implementation would check action type
+            true
+        })
+    }
+}
+
+pub struct ActionSet {
+    allowed: HashSet<String>,
+    deny_all: bool,
+}
+
+impl ActionSet {
+    pub fn all() -> Self {
+        Self {
+            allowed: HashSet::new(),
+            deny_all: false,
+        }
+    }
+
+    pub fn none() -> Self {
+        Self {
+            allowed: HashSet::new(),
+            deny_all: true,
+        }
+    }
+
+    pub fn only(actions: Vec<&str>) -> Self {
+        Self {
+            allowed: actions.into_iter().map(|s| s.to_string()).collect(),
+            deny_all: true,
+        }
+    }
+
+    pub fn is_allowed(&self, action: &str) -> bool {
+        if self.deny_all {
+            self.allowed.contains(action)
+        } else {
+            true
+        }
+    }
+}
+
+// Placeholder types (would be implemented elsewhere)
+pub struct PublicKey { bytes: Vec<u8> }
+pub struct PrivateKey { bytes: Vec<u8> }
+pub struct Signature { bytes: Vec<u8> }
+pub struct Value { inner: Vec<u8> }
+pub struct Schema { inner: Value }
+pub struct MessageId { bytes: [u8; 16] }
+pub struct Epistemic { level: u8 }
+pub struct EngramSnapshot { data: Vec<u8> }
+
+fn uuid_v7() -> [u8; 16] {
+    // Would generate UUID v7
+    [0u8; 16]
+}
+
+fn uuid_to_string(bytes: &[u8; 16]) -> String {
+    // Would format as UUID string
+    String::new()
+}
+
+fn generate_keypair() -> (PublicKey, PrivateKey) {
+    // Would generate Ed25519 keypair
+    (PublicKey { bytes: vec![] }, PrivateKey { bytes: vec![] })
+}
+
+fn sha256(data: &[u8]) -> [u8; 32] {
+    // Would compute SHA-256
+    [0u8; 32]
+}

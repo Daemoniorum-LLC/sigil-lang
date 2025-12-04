@@ -1,0 +1,467 @@
+// Complete Agent Example
+// Demonstrates Engram, Daemon, Commune, and Omen working together
+
+use daemon::{Daemon, DaemonConfig, Goal, Action};
+use engram::{Engram, EngramConfig, Query};
+use commune::{Commune, AgentId, Intent, Message};
+use omen::{Omen, OmenConfig, Belief, Plan};
+
+// ============================================================================
+// A Complete Research Agent
+// ============================================================================
+
+daemon ResearchAgent {
+    // Memory infrastructure
+    memory: Engram,
+
+    // Planning and reasoning
+    planner: Omen,
+
+    // Team reference
+    coordinator: Option<AgentId>,
+
+    fn on_init(&mut self) {
+        // Initialize memory with cognitive architecture
+        self.memory = Engram::new(EngramConfig {
+            instant: InstantConfig {
+                capacity_tokens: 8192,
+                decay_rate: 0.1,
+            },
+            episodic: EpisodicConfig {
+                max_episodes: 10000,
+                consolidation_threshold: 0.7,
+            },
+            semantic: SemanticConfig {
+                embedding_dim: 768,
+                similarity_threshold: 0.8,
+            },
+            procedural: ProceduralConfig {
+                skill_threshold: 3,
+            },
+        });
+
+        // Initialize planner with memory integration
+        self.planner = Omen::new(OmenConfig {
+            horizon: 10,
+            uncertainty_tolerance: 0.3,
+            revision_threshold: 0.2,
+        }).with_memory(self.memory.clone());
+
+        // Set initial beliefs
+        self.planner.believe(Belief::axiom("I am a research agent"));
+        self.planner.believe(Belief::axiom("My purpose is to find and analyze information"));
+
+        // Set initial goal
+        self.goals.push(Goal::new("Be ready to assist with research tasks")
+            .with_priority(0.5));
+
+        println!("ResearchAgent initialized and ready");
+    }
+
+    fn on_message(&mut self, msg: Message) {
+        // Experience the message (episodic memory)
+        self.memory.experience(Event::message_received(msg.clone()));
+
+        // Update instant memory with message content
+        self.memory.attend(&msg.content.to_string());
+
+        // Process based on intent
+        match msg.intent {
+            Intent::Delegate { task, .. } => {
+                self.handle_task_delegation(msg.from, task);
+            }
+
+            Intent::Query { question, context } => {
+                self.handle_query(msg.from, question, context);
+            }
+
+            Intent::Inform { topic, content } => {
+                // Learn the information
+                let epistemic = self.adjust_epistemic(msg.epistemic, msg.from);
+                self.memory.learn(Knowledge {
+                    content: content,
+                    topic: topic,
+                    epistemic: epistemic,
+                    confidence: msg.confidence,
+                });
+            }
+
+            _ => {
+                // Log unknown intent
+                self.memory.experience(Event::unknown_message(msg));
+            }
+        }
+    }
+
+    fn handle_task_delegation(&mut self, from: AgentId, task: Task) {
+        // Remember who delegated
+        self.coordinator = Some(from.clone());
+
+        // Create goal from task
+        let goal = Goal::new(&task.description)
+            .with_priority(0.9)
+            .with_deadline(task.deadline.unwrap_or(Duration::hours(1)));
+
+        // Plan to achieve the goal
+        match self.planner.plan(&goal) {
+            Ok(plan) => {
+                // Accept the task
+                commune.express(Intent::accept(msg.id, format!(
+                    "Accepted. Plan has {} steps, estimated {}% success rate",
+                    plan.steps.len(),
+                    plan.success_probability * 100.0
+                )));
+
+                // Add goal and start execution
+                self.goals.push(goal);
+                self.execute_plan(plan);
+            }
+            Err(e) => {
+                // Reject - can't plan for this
+                commune.express(Intent::reject(msg.id, format!(
+                    "Unable to plan for task: {:?}", e
+                )));
+            }
+        }
+    }
+
+    fn handle_query(&mut self, from: AgentId, question: String, context: Value) {
+        // Recall relevant information
+        let memories = self.memory.recall(Query::natural(&question)
+            .limit(10));
+
+        // Combine with semantic knowledge
+        let knowledge = self.memory.recall(Query::semantic(&question)
+            .min_confidence(0.7));
+
+        // Formulate response
+        let response = self.synthesize_answer(question, memories, knowledge);
+
+        // Send response with appropriate epistemic status
+        let epistemic = if knowledge.iter().any(|k| k.epistemic == Epistemic::Observed) {
+            Epistemic::Observed
+        } else {
+            Epistemic::Inferred
+        };
+
+        commune.express(Intent::respond(from, response))
+            .with_epistemic(epistemic, 0.8)
+            .execute();
+    }
+
+    fn execute_plan(&mut self, plan: Plan) {
+        for step in plan.steps {
+            // Check preconditions
+            let preconditions_met = self.planner.check_preconditions(&step);
+
+            if !preconditions_met {
+                // Replan
+                if let Some(goal) = self.goals.current() {
+                    match self.planner.replan(goal, &step) {
+                        Ok(new_plan) => {
+                            self.memory.experience(Event::replanned(step, new_plan.clone()));
+                            self.execute_plan(new_plan);
+                            return;
+                        }
+                        Err(e) => {
+                            self.report_failure(format!("Replanning failed: {:?}", e));
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // Execute the step
+            match self.execute(step.action.clone()) {
+                Ok(result) => {
+                    // Learn from success
+                    self.memory.learn(step.action.name(), result);
+                    self.planner.learn_from_execution(&Plan::single_step(step), PlanOutcome::Success);
+                }
+                Err(e) => {
+                    // Try contingency if available
+                    if let Some(contingency_id) = step.contingency {
+                        self.memory.experience(Event::using_contingency(step, contingency_id));
+                        // Would load and execute contingency plan
+                    } else {
+                        self.report_failure(format!("Step failed: {:?}", e));
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Plan completed successfully
+        self.report_success();
+    }
+
+    fn report_success(&mut self) {
+        if let Some(coordinator) = &self.coordinator {
+            // Recall what we accomplished
+            let summary = self.memory.recall(Query::recent()
+                .limit(5))
+                .iter()
+                .map(|m| m.summary())
+                .collect::<Vec<_>>()
+                .join("; ");
+
+            commune.express(Intent::report(
+                coordinator.clone(),
+                self.current_task_id(),
+                TaskStatus::Completed,
+                Value::string(&summary)
+            ));
+        }
+
+        // Complete the goal
+        if let Some(goal) = self.goals.current() {
+            self.goals.complete(goal.id.clone(), Outcome::Success(Value::empty()));
+        }
+    }
+
+    fn report_failure(&mut self, reason: String) {
+        if let Some(coordinator) = &self.coordinator {
+            commune.express(Intent::report(
+                coordinator.clone(),
+                self.current_task_id(),
+                TaskStatus::Failed,
+                Value::string(&reason)
+            ));
+        }
+
+        // Fail the goal
+        if let Some(goal) = self.goals.current() {
+            self.goals.fail(goal.id.clone(), reason);
+        }
+    }
+
+    fn adjust_epistemic(&self, source_epistemic: Epistemic, source: AgentId) -> Epistemic {
+        // Observed by sender becomes Reported to us
+        match source_epistemic {
+            Epistemic::Axiomatic => Epistemic::Reported,
+            Epistemic::Observed => Epistemic::Reported,
+            _ => source_epistemic,
+        }
+    }
+
+    fn synthesize_answer(&self, question: String, memories: Vec<Memory>, knowledge: Vec<Knowledge>) -> Value {
+        // Would use LLM or reasoning to synthesize
+        Value::string(&format!(
+            "Based on {} memories and {} knowledge items about '{}'...",
+            memories.len(),
+            knowledge.len(),
+            question
+        ))
+    }
+
+    fn current_task_id(&self) -> String {
+        self.goals.current()
+            .map(|g| g.id.to_string())
+            .unwrap_or_default()
+    }
+
+    fn deliberate(&self, context: Context) -> Action {
+        // Use planner to decide next action
+        if let Some(goal) = &context.current_goal {
+            if let Ok(plan) = self.planner.plan(goal) {
+                if let Some(step) = plan.steps.first() {
+                    return step.action.clone();
+                }
+            }
+        }
+
+        // Default: reflect and consolidate
+        Action::Internal(InternalAction::Reflect)
+    }
+}
+
+// ============================================================================
+// Coordinator Agent
+// ============================================================================
+
+daemon Coordinator {
+    memory: Engram,
+    team: Vec<AgentId>,
+    active_delegations: HashMap<TaskId, DelegationState>,
+
+    fn on_init(&mut self) {
+        self.memory = Engram::new(EngramConfig::default());
+        self.team = vec![];
+        self.active_delegations = HashMap::new();
+
+        self.goals.push(Goal::new("Coordinate team research efforts"));
+    }
+
+    fn register_agent(&mut self, agent: AgentId) {
+        self.team.push(agent.clone());
+        self.memory.learn(Knowledge {
+            content: Value::string("Team member registered"),
+            topic: "team".to_string(),
+            epistemic: Epistemic::Observed,
+            confidence: 1.0,
+        });
+    }
+
+    fn delegate_research(&mut self, topic: &str) {
+        // Find best agent for the task
+        let agent = self.select_agent_for(topic);
+
+        let task = Task {
+            id: TaskId::new(),
+            description: format!("Research: {}", topic),
+            params: Value::empty(),
+            deadline: Some(Duration::hours(2)),
+            estimated_load: 0.5,
+            required_capability: Some("research".to_string()),
+        };
+
+        // Track delegation
+        self.active_delegations.insert(task.id.clone(), DelegationState {
+            task: task.clone(),
+            agent: agent.clone(),
+            status: TaskStatus::Pending,
+            started: Timestamp::now(),
+        });
+
+        // Delegate
+        commune.express(Intent::delegate(agent, task))
+            .on_accept(|_| {
+                self.active_delegations.get_mut(&task.id)
+                    .map(|d| d.status = TaskStatus::InProgress);
+            })
+            .on_reject(|reason| {
+                // Try another agent
+                self.retry_delegation(task, reason);
+            });
+    }
+
+    fn select_agent_for(&self, topic: &str) -> AgentId {
+        // Would use trust scores and capabilities
+        self.team.first().cloned().unwrap_or(AgentId::new())
+    }
+
+    fn on_message(&mut self, msg: Message) {
+        match msg.intent {
+            Intent::Report { task_id, status, result } => {
+                // Update delegation state
+                if let Some(delegation) = self.active_delegations.get_mut(&task_id) {
+                    delegation.status = status.clone();
+
+                    // Update trust based on outcome
+                    let success = matches!(status, TaskStatus::Completed);
+                    commune.record_accuracy(msg.from, success);
+
+                    // Store result in memory
+                    if let Some(result) = result {
+                        self.memory.learn(Knowledge {
+                            content: result,
+                            topic: delegation.task.description.clone(),
+                            epistemic: Epistemic::Reported,
+                            confidence: commune.trust_score(msg.from),
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+// ============================================================================
+// Main: Set up the system
+// ============================================================================
+
+fn main() {
+    // Create the commune
+    let commune = Commune::new(CommuneConfig {
+        name: "research-team".to_string(),
+        topology: Topology::Mesh,
+        trust_model: TrustModelConfig {
+            default_trust: 0.7,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+
+    // Create coordinator
+    let coordinator = Coordinator::spawn(DaemonConfig {
+        name: "coordinator".to_string(),
+        ..Default::default()
+    });
+    commune.register(coordinator.id(), AgentInfo {
+        id: coordinator.id(),
+        name: "Coordinator".to_string(),
+        capabilities: vec!["coordination".to_string()],
+        status: AgentStatus::Online,
+    });
+
+    // Create research agents
+    let researcher1 = ResearchAgent::spawn(DaemonConfig {
+        name: "researcher-1".to_string(),
+        ..Default::default()
+    });
+    commune.register(researcher1.id(), AgentInfo {
+        id: researcher1.id(),
+        name: "Researcher 1".to_string(),
+        capabilities: vec!["research".to_string(), "analysis".to_string()],
+        status: AgentStatus::Online,
+    });
+
+    let researcher2 = ResearchAgent::spawn(DaemonConfig {
+        name: "researcher-2".to_string(),
+        ..Default::default()
+    });
+    commune.register(researcher2.id(), AgentInfo {
+        id: researcher2.id(),
+        name: "Researcher 2".to_string(),
+        capabilities: vec!["research".to_string(), "writing".to_string()],
+        status: AgentStatus::Online,
+    });
+
+    // Register team with coordinator
+    coordinator.register_agent(researcher1.id());
+    coordinator.register_agent(researcher2.id());
+
+    // Start a research task
+    coordinator.delegate_research("The future of AI agent systems");
+
+    // Run all daemons (would be concurrent in real implementation)
+    println!("Starting agent system...");
+    // coordinator.run();
+    // researcher1.run();
+    // researcher2.run();
+
+    println!("Agent system demonstration complete!");
+}
+
+// ============================================================================
+// Supporting Types
+// ============================================================================
+
+struct DelegationState {
+    task: Task,
+    agent: AgentId,
+    status: TaskStatus,
+    started: Timestamp,
+}
+
+struct TaskId {
+    bytes: [u8; 16],
+}
+
+impl TaskId {
+    fn new() -> Self {
+        Self { bytes: [0u8; 16] }
+    }
+
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+// Placeholder implementations
+impl Daemon {
+    fn id(&self) -> AgentId {
+        AgentId::new()
+    }
+}

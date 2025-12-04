@@ -1,0 +1,1203 @@
+// Commune Core Types
+// Multi-agent communication infrastructure
+
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::time::{Duration, Timestamp};
+
+// ============================================================================
+// Identity Types
+// ============================================================================
+
+/// Agent identifier
+pub struct AgentId {
+    bytes: [u8; 16],
+}
+
+impl AgentId {
+    pub fn new() -> Self {
+        Self { bytes: uuid_v7() }
+    }
+
+    pub fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self { bytes }
+    }
+}
+
+/// Message identifier
+pub struct MessageId {
+    bytes: [u8; 16],
+}
+
+impl MessageId {
+    pub fn new() -> Self {
+        Self { bytes: uuid_v7() }
+    }
+}
+
+/// Channel identifier
+pub struct ChannelId {
+    name: String,
+}
+
+impl ChannelId {
+    pub fn new(name: &str) -> Self {
+        Self { name: name.to_string() }
+    }
+}
+
+/// Swarm identifier
+pub struct SwarmId {
+    bytes: [u8; 16],
+}
+
+impl SwarmId {
+    pub fn new() -> Self {
+        Self { bytes: uuid_v7() }
+    }
+}
+
+/// Proposal identifier
+pub struct ProposalId {
+    bytes: [u8; 16],
+}
+
+impl ProposalId {
+    pub fn new() -> Self {
+        Self { bytes: uuid_v7() }
+    }
+}
+
+// ============================================================================
+// Message Types
+// ============================================================================
+
+/// Core message structure
+pub struct Message {
+    /// Unique identifier
+    pub id: MessageId,
+
+    /// Message header
+    pub header: MessageHeader,
+
+    /// Message payload
+    pub payload: Payload,
+
+    /// Cryptographic signature
+    pub signature: Signature,
+}
+
+impl Message {
+    pub fn new(from: AgentId, to: Recipient, intent: Intent) -> Self {
+        Self {
+            id: MessageId::new(),
+            header: MessageHeader {
+                from,
+                to,
+                intent,
+                epistemic: Epistemic::Observed,
+                confidence: 1.0,
+                timestamp: Timestamp::now(),
+                correlation_id: None,
+                reply_to: None,
+                ttl: None,
+                priority: Priority::Normal,
+                trace: None,
+            },
+            payload: Payload::Empty,
+            signature: Signature::empty(),
+        }
+    }
+
+    pub fn with_payload(mut self, payload: Payload) -> Self {
+        self.payload = payload;
+        self
+    }
+
+    pub fn with_epistemic(mut self, epistemic: Epistemic, confidence: f32) -> Self {
+        self.header.epistemic = epistemic;
+        self.header.confidence = confidence;
+        self
+    }
+
+    pub fn sign(&mut self, private_key: &PrivateKey) {
+        let data = self.signable_bytes();
+        self.signature = private_key.sign(&data);
+    }
+
+    pub fn verify(&self, public_key: &PublicKey) -> bool {
+        let data = self.signable_bytes();
+        public_key.verify(&data, &self.signature)
+    }
+
+    fn signable_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend(&self.id.bytes);
+        bytes.extend(&self.header.from.bytes);
+        bytes.extend(&self.header.timestamp.to_bytes());
+        bytes
+    }
+}
+
+pub struct MessageHeader {
+    /// Sender
+    pub from: AgentId,
+
+    /// Recipient(s)
+    pub to: Recipient,
+
+    /// Communicative intent
+    pub intent: Intent,
+
+    /// Epistemic status
+    pub epistemic: Epistemic,
+
+    /// Confidence level
+    pub confidence: f32,
+
+    /// Timestamp
+    pub timestamp: Timestamp,
+
+    /// Correlation for threading
+    pub correlation_id: Option<MessageId>,
+
+    /// Reply-to reference
+    pub reply_to: Option<MessageId>,
+
+    /// Time-to-live
+    pub ttl: Option<Duration>,
+
+    /// Priority
+    pub priority: Priority,
+
+    /// Trace context
+    pub trace: Option<TraceContext>,
+}
+
+/// Message recipient
+pub enum Recipient {
+    /// Single agent
+    Agent(AgentId),
+
+    /// Multiple agents
+    Agents(Vec<AgentId>),
+
+    /// Named channel
+    Channel(ChannelId),
+
+    /// All agents
+    Broadcast,
+
+    /// Swarm members
+    Swarm(SwarmId),
+}
+
+/// Message payload
+pub enum Payload {
+    /// Structured data
+    Data(Value),
+
+    /// Binary blob
+    Binary(Vec<u8>),
+
+    /// Reference to external data
+    Reference(String),
+
+    /// Streaming data
+    Stream(StreamId),
+
+    /// Empty
+    Empty,
+}
+
+pub enum Priority {
+    Critical,
+    High,
+    Normal,
+    Low,
+}
+
+pub struct TraceContext {
+    pub trace_id: [u8; 16],
+    pub span_id: [u8; 8],
+    pub parent_span: Option<[u8; 8]>,
+}
+
+pub struct StreamId {
+    bytes: [u8; 16],
+}
+
+// ============================================================================
+// Intent Types
+// ============================================================================
+
+/// Communicative intent
+pub enum Intent {
+    // === Assertives ===
+    /// Share factual information
+    Inform {
+        topic: String,
+        content: Value,
+    },
+
+    /// Report task status
+    Report {
+        task_id: String,
+        status: TaskStatus,
+        result: Option<Value>,
+    },
+
+    /// Confirm a statement
+    Confirm {
+        statement: MessageId,
+        agrees: bool,
+    },
+
+    /// Share knowledge
+    Share {
+        knowledge: Knowledge,
+    },
+
+    // === Directives ===
+    /// Request an action
+    Request {
+        action: String,
+        params: Value,
+        urgency: Urgency,
+    },
+
+    /// Delegate a task
+    Delegate {
+        task: Task,
+        constraints: Vec<String>,
+    },
+
+    /// Ask a question
+    Query {
+        question: String,
+        context: Value,
+    },
+
+    // === Commissives ===
+    /// Accept a request
+    Accept {
+        request: MessageId,
+        commitment: Option<String>,
+    },
+
+    /// Reject a request
+    Reject {
+        request: MessageId,
+        reason: String,
+        alternative: Option<String>,
+    },
+
+    /// Promise future action
+    Promise {
+        action: String,
+        deadline: Option<Timestamp>,
+    },
+
+    // === Declarations ===
+    /// Make an announcement
+    Announce {
+        topic: String,
+        content: Value,
+        importance: Importance,
+    },
+
+    /// Propose something
+    Propose {
+        proposal: Proposal,
+    },
+
+    /// Vote on a proposal
+    Vote {
+        proposal_id: ProposalId,
+        vote: VoteValue,
+        rationale: Option<String>,
+    },
+
+    // === Responses ===
+    /// Respond to a query
+    Respond {
+        to: MessageId,
+        answer: Value,
+    },
+
+    // === Meta ===
+    /// Acknowledge receipt
+    Ack {
+        message: MessageId,
+    },
+
+    /// Request retransmission
+    Nack {
+        message: MessageId,
+        reason: String,
+    },
+
+    /// Ping for presence
+    Ping,
+
+    /// Response to ping
+    Pong {
+        ping: MessageId,
+        load: f32,
+    },
+}
+
+impl Intent {
+    pub fn expects_response(&self) -> bool {
+        matches!(self,
+            Intent::Request { .. } |
+            Intent::Query { .. } |
+            Intent::Delegate { .. } |
+            Intent::Propose { .. } |
+            Intent::Ping
+        )
+    }
+
+    pub fn default_timeout(&self) -> Duration {
+        match self {
+            Intent::Ping => Duration::seconds(5),
+            Intent::Query { .. } => Duration::seconds(30),
+            Intent::Request { urgency, .. } => match urgency {
+                Urgency::Critical => Duration::seconds(10),
+                Urgency::High => Duration::seconds(30),
+                Urgency::Normal => Duration::minutes(5),
+                Urgency::Low => Duration::minutes(30),
+            },
+            Intent::Delegate { .. } => Duration::minutes(1),
+            _ => Duration::minutes(5),
+        }
+    }
+}
+
+pub enum Urgency {
+    Critical,
+    High,
+    Normal,
+    Low,
+}
+
+pub enum Importance {
+    Critical,
+    High,
+    Normal,
+    Low,
+}
+
+pub enum TaskStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+pub struct Task {
+    pub id: String,
+    pub description: String,
+    pub params: Value,
+    pub deadline: Option<Timestamp>,
+    pub estimated_load: f32,
+    pub required_capability: Option<String>,
+}
+
+pub struct Proposal {
+    pub id: ProposalId,
+    pub proposer: AgentId,
+    pub content: Value,
+    pub description: String,
+    pub deadline: Timestamp,
+}
+
+impl Proposal {
+    pub fn new(description: &str, content: Value, deadline: Duration) -> Self {
+        Self {
+            id: ProposalId::new(),
+            proposer: AgentId::new(),  // Would be set by sender
+            content,
+            description: description.to_string(),
+            deadline: Timestamp::now() + deadline,
+        }
+    }
+}
+
+pub enum VoteValue {
+    Approve,
+    Reject,
+    Abstain,
+    Block,  // Strong rejection
+}
+
+// ============================================================================
+// Epistemic Types
+// ============================================================================
+
+/// Epistemic status of information
+#[derive(Clone, Copy, PartialEq)]
+pub enum Epistemic {
+    /// Known to be true (axiomatic)
+    Axiomatic,
+
+    /// Directly observed
+    Observed,
+
+    /// Reported by another
+    Reported,
+
+    /// Inferred from other beliefs
+    Inferred,
+
+    /// Contested (conflicting reports)
+    Contested,
+
+    /// Unknown epistemic status
+    Unknown,
+}
+
+impl Epistemic {
+    pub fn rank(&self) -> u8 {
+        match self {
+            Epistemic::Axiomatic => 5,
+            Epistemic::Observed => 4,
+            Epistemic::Reported => 3,
+            Epistemic::Inferred => 2,
+            Epistemic::Contested => 1,
+            Epistemic::Unknown => 0,
+        }
+    }
+
+    pub fn confidence_factor(&self) -> f32 {
+        match self {
+            Epistemic::Axiomatic => 1.0,
+            Epistemic::Observed => 0.95,
+            Epistemic::Reported => 0.8,
+            Epistemic::Inferred => 0.6,
+            Epistemic::Contested => 0.3,
+            Epistemic::Unknown => 0.1,
+        }
+    }
+}
+
+pub struct Knowledge {
+    pub content: Value,
+    pub topic: String,
+    pub epistemic: Epistemic,
+    pub confidence: f32,
+    pub source: AgentId,
+}
+
+// ============================================================================
+// Trust Types
+// ============================================================================
+
+/// Trust profile for an agent
+pub struct TrustProfile {
+    /// Agent identity
+    pub agent: AgentId,
+
+    /// Base trust level
+    pub base_trust: f32,
+
+    /// Domain-specific trust
+    pub domain_trust: HashMap<String, f32>,
+
+    /// Accuracy tracking
+    pub accuracy: AccuracyTracker,
+
+    /// Vouches received
+    pub vouches: Vec<Vouch>,
+
+    /// Last interaction
+    pub last_seen: Timestamp,
+
+    /// Trust flags
+    pub flags: TrustFlags,
+}
+
+impl TrustProfile {
+    pub fn new(agent: AgentId, default_trust: f32) -> Self {
+        Self {
+            agent,
+            base_trust: default_trust,
+            domain_trust: HashMap::new(),
+            accuracy: AccuracyTracker::new(),
+            vouches: Vec::new(),
+            last_seen: Timestamp::now(),
+            flags: TrustFlags::default(),
+        }
+    }
+
+    pub fn recent_accuracy(&self) -> f32 {
+        self.accuracy.score
+    }
+
+    pub fn vouch_score(&self) -> f32 {
+        self.vouches.iter()
+            .map(|v| v.strength)
+            .sum::<f32>()
+            .min(0.2)  // Cap vouch bonus
+    }
+}
+
+pub struct AccuracyTracker {
+    /// Recent accuracy records
+    records: VecDeque<AccuracyRecord>,
+
+    /// Rolling accuracy score
+    pub score: f32,
+
+    /// Domain-specific accuracy
+    domain_scores: HashMap<String, f32>,
+}
+
+impl AccuracyTracker {
+    pub fn new() -> Self {
+        Self {
+            records: VecDeque::new(),
+            score: 1.0,
+            domain_scores: HashMap::new(),
+        }
+    }
+
+    pub fn record(&mut self, accurate: bool, domain: Option<String>) {
+        self.records.push_back(AccuracyRecord {
+            accurate,
+            domain: domain.clone(),
+            timestamp: Timestamp::now(),
+        });
+
+        // Keep only recent records
+        while self.records.len() > 100 {
+            self.records.pop_front();
+        }
+
+        // Update score
+        let total = self.records.len() as f32;
+        let correct = self.records.iter()
+            .filter(|r| r.accurate)
+            .count() as f32;
+        self.score = correct / total;
+
+        // Update domain score
+        if let Some(d) = domain {
+            let domain_records: Vec<_> = self.records.iter()
+                .filter(|r| r.domain.as_ref() == Some(&d))
+                .collect();
+
+            if !domain_records.is_empty() {
+                let domain_correct = domain_records.iter()
+                    .filter(|r| r.accurate)
+                    .count() as f32;
+                self.domain_scores.insert(d, domain_correct / domain_records.len() as f32);
+            }
+        }
+    }
+}
+
+pub struct AccuracyRecord {
+    pub accurate: bool,
+    pub domain: Option<String>,
+    pub timestamp: Timestamp,
+}
+
+pub struct Vouch {
+    /// Who is vouching
+    pub voucher: AgentId,
+
+    /// Domain of vouch
+    pub domain: Option<String>,
+
+    /// Strength of vouch
+    pub strength: f32,
+
+    /// When vouched
+    pub timestamp: Timestamp,
+}
+
+pub struct TrustFlags {
+    /// Is this agent verified?
+    pub verified: bool,
+
+    /// Is this agent blocked?
+    pub blocked: bool,
+
+    /// Is this a system agent?
+    pub system: bool,
+}
+
+impl Default for TrustFlags {
+    fn default() -> Self {
+        Self {
+            verified: false,
+            blocked: false,
+            system: false,
+        }
+    }
+}
+
+// ============================================================================
+// Channel Types
+// ============================================================================
+
+/// Communication channel
+pub struct Channel {
+    /// Channel identifier
+    pub id: ChannelId,
+
+    /// Channel name
+    pub name: String,
+
+    /// Channel type
+    pub channel_type: ChannelType,
+
+    /// Subscribers
+    pub subscribers: HashSet<AgentId>,
+
+    /// Message history
+    pub history: Option<MessageHistory>,
+
+    /// Access control
+    pub access: AccessControl,
+
+    /// Configuration
+    pub config: ChannelConfig,
+}
+
+impl Channel {
+    pub fn new(name: &str) -> Self {
+        Self {
+            id: ChannelId::new(name),
+            name: name.to_string(),
+            channel_type: ChannelType::PubSub,
+            subscribers: HashSet::new(),
+            history: None,
+            access: AccessControl::open(),
+            config: ChannelConfig::default(),
+        }
+    }
+
+    pub fn with_type(mut self, channel_type: ChannelType) -> Self {
+        self.channel_type = channel_type;
+        self
+    }
+
+    pub fn with_history(mut self, max_messages: usize) -> Self {
+        self.history = Some(MessageHistory::new(max_messages));
+        self
+    }
+
+    pub fn with_access(mut self, access: AccessControl) -> Self {
+        self.access = access;
+        self
+    }
+}
+
+pub enum ChannelType {
+    /// Standard pub-sub
+    PubSub,
+
+    /// Request-response
+    RequestResponse,
+
+    /// Streaming
+    Stream,
+
+    /// Broadcast only
+    Broadcast,
+}
+
+pub struct MessageHistory {
+    messages: VecDeque<Message>,
+    max_size: usize,
+}
+
+impl MessageHistory {
+    pub fn new(max_size: usize) -> Self {
+        Self {
+            messages: VecDeque::new(),
+            max_size,
+        }
+    }
+
+    pub fn push(&mut self, msg: Message) {
+        self.messages.push_back(msg);
+        while self.messages.len() > self.max_size {
+            self.messages.pop_front();
+        }
+    }
+
+    pub fn recent(&self, count: usize) -> Vec<&Message> {
+        self.messages.iter().rev().take(count).collect()
+    }
+}
+
+pub struct AccessControl {
+    /// Who can publish
+    pub publishers: Permission,
+
+    /// Who can subscribe
+    pub subscribers: Permission,
+
+    /// Admins
+    pub admins: HashSet<AgentId>,
+}
+
+impl AccessControl {
+    pub fn open() -> Self {
+        Self {
+            publishers: Permission::Open,
+            subscribers: Permission::Open,
+            admins: HashSet::new(),
+        }
+    }
+
+    pub fn restricted(admins: Vec<AgentId>) -> Self {
+        Self {
+            publishers: Permission::Allow(admins.iter().cloned().collect()),
+            subscribers: Permission::Open,
+            admins: admins.into_iter().collect(),
+        }
+    }
+
+    pub fn can_publish(&self, agent: &AgentId) -> bool {
+        self.publishers.allows(agent) || self.admins.contains(agent)
+    }
+
+    pub fn can_subscribe(&self, agent: &AgentId) -> bool {
+        self.subscribers.allows(agent) || self.admins.contains(agent)
+    }
+}
+
+pub enum Permission {
+    /// Anyone
+    Open,
+
+    /// Specific agents only
+    Allow(HashSet<AgentId>),
+
+    /// Anyone except these
+    Deny(HashSet<AgentId>),
+
+    /// Must have minimum trust
+    TrustThreshold(f32),
+}
+
+impl Permission {
+    pub fn allows(&self, agent: &AgentId) -> bool {
+        match self {
+            Permission::Open => true,
+            Permission::Allow(set) => set.contains(agent),
+            Permission::Deny(set) => !set.contains(agent),
+            Permission::TrustThreshold(_) => true,  // Would check trust
+        }
+    }
+}
+
+pub struct ChannelConfig {
+    /// Maximum message size
+    pub max_message_size: usize,
+
+    /// Message retention
+    pub retention: Duration,
+
+    /// Rate limit
+    pub rate_limit: Option<RateLimit>,
+}
+
+impl Default for ChannelConfig {
+    fn default() -> Self {
+        Self {
+            max_message_size: 1024 * 1024,  // 1 MB
+            retention: Duration::days(7),
+            rate_limit: None,
+        }
+    }
+}
+
+pub struct RateLimit {
+    pub messages_per_second: u32,
+    pub burst: u32,
+}
+
+// ============================================================================
+// Swarm Types
+// ============================================================================
+
+/// A swarm of coordinated agents
+pub struct Swarm {
+    pub id: SwarmId,
+    pub name: String,
+    pub members: HashSet<AgentId>,
+    pub state: SwarmState,
+    pub config: SwarmConfig,
+}
+
+impl Swarm {
+    pub fn new(name: &str) -> Self {
+        Self {
+            id: SwarmId::new(),
+            name: name.to_string(),
+            members: HashSet::new(),
+            state: SwarmState::default(),
+            config: SwarmConfig::default(),
+        }
+    }
+
+    pub fn add_member(&mut self, agent: AgentId) {
+        self.members.insert(agent.clone());
+        self.state.positions.insert(agent.clone(), Vector::zero());
+        self.state.velocities.insert(agent, Vector::zero());
+    }
+
+    pub fn remove_member(&mut self, agent: &AgentId) {
+        self.members.remove(agent);
+        self.state.positions.remove(agent);
+        self.state.velocities.remove(agent);
+    }
+}
+
+pub struct SwarmState {
+    /// Member positions in abstract space
+    pub positions: HashMap<AgentId, Vector>,
+
+    /// Member velocities
+    pub velocities: HashMap<AgentId, Vector>,
+
+    /// Shared goals
+    pub goals: Vec<SwarmGoal>,
+
+    /// Discoveries
+    pub discoveries: Vec<Discovery>,
+}
+
+impl Default for SwarmState {
+    fn default() -> Self {
+        Self {
+            positions: HashMap::new(),
+            velocities: HashMap::new(),
+            goals: Vec::new(),
+            discoveries: Vec::new(),
+        }
+    }
+}
+
+pub struct SwarmGoal {
+    pub description: String,
+    pub target: Vector,
+    pub priority: f32,
+}
+
+pub struct Discovery {
+    pub discoverer: AgentId,
+    pub content: Value,
+    pub location: Vector,
+    pub timestamp: Timestamp,
+}
+
+pub struct SwarmConfig {
+    pub max_members: usize,
+    pub max_velocity: f32,
+    pub communication_radius: f32,
+}
+
+impl Default for SwarmConfig {
+    fn default() -> Self {
+        Self {
+            max_members: 100,
+            max_velocity: 1.0,
+            communication_radius: 10.0,
+        }
+    }
+}
+
+/// Swarm behavior rules
+pub enum Behavior {
+    /// Maintain distance from neighbors
+    Separation { distance: f32, weight: f32 },
+
+    /// Align direction with neighbors
+    Alignment { weight: f32 },
+
+    /// Stay close to swarm center
+    Cohesion { weight: f32 },
+
+    /// Move toward goal
+    GoalSeeking { goal: Vector, weight: f32 },
+
+    /// Avoid obstacles
+    Avoidance { obstacles: Vec<Obstacle>, weight: f32 },
+
+    /// Follow gradient
+    Gradient { weight: f32 },
+}
+
+pub struct Obstacle {
+    pub position: Vector,
+    pub radius: f32,
+}
+
+// ============================================================================
+// Consensus Types
+// ============================================================================
+
+pub struct ProposalState {
+    pub proposal: Proposal,
+    pub votes: HashMap<AgentId, Vote>,
+    pub status: ProposalStatus,
+}
+
+pub struct Vote {
+    pub voter: AgentId,
+    pub value: VoteValue,
+    pub rationale: Option<String>,
+    pub timestamp: Timestamp,
+}
+
+pub enum ProposalStatus {
+    Open,
+    Achieved,
+    Rejected,
+    Blocked { by: AgentId, reason: String },
+    Expired,
+}
+
+pub struct ConsensusResult {
+    pub proposal: Proposal,
+    pub status: ProposalStatus,
+    pub votes: HashMap<AgentId, Vote>,
+    pub approval_rate: f32,
+}
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+pub struct CommuneConfig {
+    /// Network name
+    pub name: String,
+
+    /// Network topology
+    pub topology: Topology,
+
+    /// Trust model
+    pub trust_model: TrustModelConfig,
+
+    /// Message retention
+    pub message_retention: Duration,
+
+    /// Encryption
+    pub encryption: EncryptionConfig,
+
+    /// Rate limiting
+    pub rate_limit: Option<RateLimitConfig>,
+
+    /// Default timeout
+    pub default_timeout: Duration,
+
+    /// Maximum message size
+    pub max_message_size: usize,
+}
+
+impl Default for CommuneConfig {
+    fn default() -> Self {
+        Self {
+            name: "commune".to_string(),
+            topology: Topology::Mesh,
+            trust_model: TrustModelConfig::default(),
+            message_retention: Duration::days(7),
+            encryption: EncryptionConfig::default(),
+            rate_limit: None,
+            default_timeout: Duration::seconds(30),
+            max_message_size: 1024 * 1024,
+        }
+    }
+}
+
+pub enum Topology {
+    /// Fully connected
+    Mesh,
+
+    /// Star topology
+    Star { center: AgentId },
+
+    /// Hierarchical
+    Hierarchical,
+
+    /// Ring
+    Ring,
+}
+
+pub struct TrustModelConfig {
+    /// Initial trust for new agents
+    pub default_trust: f32,
+
+    /// Trust decay half-life
+    pub decay_halflife: Duration,
+
+    /// Minimum trust threshold
+    pub min_trust: f32,
+
+    /// Trust required for sensitive operations
+    pub sensitive_trust: f32,
+
+    /// Minimum trust to vouch for others
+    pub min_trust_to_vouch: f32,
+}
+
+impl Default for TrustModelConfig {
+    fn default() -> Self {
+        Self {
+            default_trust: 0.5,
+            decay_halflife: Duration::days(7),
+            min_trust: 0.1,
+            sensitive_trust: 0.8,
+            min_trust_to_vouch: 0.7,
+        }
+    }
+}
+
+pub struct EncryptionConfig {
+    pub enabled: bool,
+    pub algorithm: String,
+}
+
+impl Default for EncryptionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            algorithm: "AES-256-GCM".to_string(),
+        }
+    }
+}
+
+pub struct RateLimitConfig {
+    pub messages_per_minute: u32,
+    pub burst: u32,
+}
+
+// ============================================================================
+// Utility Types
+// ============================================================================
+
+pub struct Vector {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+impl Vector {
+    pub fn new(x: f32, y: f32, z: f32) -> Self {
+        Self { x, y, z }
+    }
+
+    pub fn zero() -> Self {
+        Self { x: 0.0, y: 0.0, z: 0.0 }
+    }
+
+    pub fn magnitude(&self) -> f32 {
+        (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
+    }
+
+    pub fn normalize(&self) -> Self {
+        let mag = self.magnitude();
+        if mag == 0.0 {
+            Self::zero()
+        } else {
+            Self {
+                x: self.x / mag,
+                y: self.y / mag,
+                z: self.z / mag,
+            }
+        }
+    }
+
+    pub fn clamp_magnitude(&self, max: f32) -> Self {
+        let mag = self.magnitude();
+        if mag > max {
+            self.normalize() * max
+        } else {
+            self.clone()
+        }
+    }
+}
+
+impl std::ops::Add for Vector {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            x: self.x + other.x,
+            y: self.y + other.y,
+            z: self.z + other.z,
+        }
+    }
+}
+
+impl std::ops::Sub for Vector {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        Self {
+            x: self.x - other.x,
+            y: self.y - other.y,
+            z: self.z - other.z,
+        }
+    }
+}
+
+impl std::ops::Mul<f32> for Vector {
+    type Output = Self;
+
+    fn mul(self, scalar: f32) -> Self {
+        Self {
+            x: self.x * scalar,
+            y: self.y * scalar,
+            z: self.z * scalar,
+        }
+    }
+}
+
+impl Clone for Vector {
+    fn clone(&self) -> Self {
+        Self { x: self.x, y: self.y, z: self.z }
+    }
+}
+
+// Placeholder types
+pub struct Value { inner: Vec<u8> }
+pub struct Signature { bytes: Vec<u8> }
+pub struct PublicKey { bytes: Vec<u8> }
+pub struct PrivateKey { bytes: Vec<u8> }
+
+impl Signature {
+    pub fn empty() -> Self { Self { bytes: vec![] } }
+}
+
+impl PrivateKey {
+    pub fn sign(&self, data: &[u8]) -> Signature {
+        Signature { bytes: vec![] }
+    }
+}
+
+impl PublicKey {
+    pub fn verify(&self, data: &[u8], sig: &Signature) -> bool {
+        true
+    }
+}
+
+impl Timestamp {
+    pub fn now() -> Self { Timestamp { nanos: 0 } }
+    pub fn to_bytes(&self) -> [u8; 8] { [0u8; 8] }
+}
+
+impl std::ops::Add<Duration> for Timestamp {
+    type Output = Self;
+    fn add(self, _duration: Duration) -> Self { self }
+}
+
+pub struct Timestamp { nanos: u64 }
+
+fn uuid_v7() -> [u8; 16] { [0u8; 16] }
