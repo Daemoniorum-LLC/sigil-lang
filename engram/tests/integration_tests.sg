@@ -1,0 +1,650 @@
+// Engram Integration Tests
+// Comprehensive tests for the memory system
+
+use engram::*
+
+mod types_tests {
+    use super::*
+
+    #[test]
+    fn test_epistemic_strength() {
+        assert_eq!(Epistemic::Axiomatic.strength(), 1.0);
+        assert!(Epistemic::Observed {
+            observer: "test".to_string(),
+            timestamp: Instant::now(),
+        }.strength() > 0.9);
+        assert!(Epistemic::Unknown.strength() == 0.0);
+    }
+
+    #[test]
+    fn test_epistemic_checks() {
+        let observed = Epistemic::Observed {
+            observer: "test".to_string(),
+            timestamp: Instant::now(),
+        };
+        assert!(observed.is_observed!());
+        assert!(observed.is_certain());
+        assert!(!observed.is_uncertain());
+
+        let reported = Epistemic::Reported {
+            source: Source::Unknown,
+            trust_level: 0.3,
+        };
+        assert!(reported.is_reported~());
+        assert!(!reported.is_observed!());
+    }
+
+    #[test]
+    fn test_vector_operations() {
+        let v1 = Vector::new(vec![1.0, 0.0, 0.0]);
+        let v2 = Vector::new(vec![0.0, 1.0, 0.0]);
+        let v3 = Vector::new(vec![1.0, 0.0, 0.0]);
+
+        // Orthogonal vectors have zero similarity
+        let sim_12 = v1.cosine_similarity(&v2);
+        assert!(sim_12.abs() < 0.01);
+
+        // Identical vectors have similarity 1
+        let sim_13 = v1.cosine_similarity(&v3);
+        assert!((sim_13 - 1.0).abs() < 0.01);
+
+        // Normalization
+        let unnorm = Vector::new(vec![3.0, 4.0, 0.0]);
+        let norm = unnorm.normalize();
+        let magnitude: f32 = norm.as_slice().iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!((magnitude - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_outcome_confidence() {
+        let success = Outcome::Success {
+            result: json!({}),
+            goal_alignment: 0.8,
+        };
+        assert_eq!(success.confidence(), 0.8);
+
+        let failure = Outcome::Failure {
+            error: "test".to_string(),
+            recoverable: true,
+            learned: None,
+        };
+        assert!(failure.confidence() < 0.5);
+
+        let partial = Outcome::Partial {
+            completed: vec!["a".to_string(), "b".to_string()],
+            remaining: vec!["c".to_string()],
+            blockers: vec![],
+        };
+        assert!((partial.confidence() - 0.666).abs() < 0.01);
+    }
+}
+
+mod instant_memory_tests {
+    use super::*;
+
+    #[test]
+    fn test_attend_and_active() {
+        let mut memory = InstantMemory::new(InstantConfig::default()).unwrap();
+
+        memory.attend("First item", 0.9).unwrap();
+        memory.attend("Second item", 0.5).unwrap();
+
+        let active = memory.active();
+        assert_eq!(active.len(), 2);
+
+        // Higher priority should come first
+        assert!(active[0].current_priority >= active[1].current_priority);
+    }
+
+    #[test]
+    fn test_token_capacity() {
+        let config = InstantConfig {
+            capacity: TokenCount(100),
+            ..InstantConfig::default()
+        };
+        let mut memory = InstantMemory::new(config).unwrap();
+
+        // Fill with items
+        for i in 0..10 {
+            memory.attend(format!("Item {}", i), 0.5).unwrap();
+        }
+
+        // Should have evicted some items to stay within capacity
+        let usage = memory.token_usage();
+        assert!(usage.used.0 <= usage.capacity.0);
+    }
+
+    #[test]
+    fn test_decay() {
+        let mut memory = InstantMemory::new(InstantConfig {
+            decay_rate: 0.5,  // High decay rate for testing
+            ..InstantConfig::default()
+        }).unwrap();
+
+        memory.attend("Test item", 1.0).unwrap();
+        let initial_priority = memory.active()[0].current_priority;
+
+        // Apply decay
+        memory.tick();
+
+        // Priority should decrease (but may stay same if tick is too fast)
+        let new_priority = memory.active()[0].current_priority;
+        assert!(new_priority <= initial_priority);
+    }
+
+    #[test]
+    fn test_refresh() {
+        let mut memory = InstantMemory::new(InstantConfig::default()).unwrap();
+
+        let id = memory.attend("Test item", 0.5).unwrap();
+
+        // Refresh with boost
+        memory.refresh(id.clone(), 0.3).unwrap();
+
+        let item = memory.get(id).unwrap();
+        assert!(item.current_priority > 0.5);
+    }
+
+    #[test]
+    fn test_dismiss() {
+        let mut memory = InstantMemory::new(InstantConfig::default()).unwrap();
+
+        let id = memory.attend("Test item", 0.5).unwrap();
+        assert!(memory.get(id.clone()).is_some());
+
+        memory.dismiss(id.clone()).unwrap();
+        assert!(memory.get(id).is_none());
+    }
+}
+
+mod episodic_memory_tests {
+    use super::*;
+
+    fn create_test_episode(goal: &str, outcome: Outcome) -> Episode {
+        Episode {
+            id: EpisodeId::new().unwrap(),
+            started_at: Instant::now(),
+            ended_at: Some(Instant::now() + Duration::from_secs(60)),
+            context: Context::with_goal(goal),
+            participants: vec![],
+            events: vec![
+                Event::user_message("test"),
+                Event::agent_response("test response"),
+            ],
+            outcome,
+            valence: 0.5,
+            significance: 0.5,
+            surprise: 0.0,
+            strength: 1.0,
+            access_count: 0,
+            last_accessed: Instant::now(),
+            consolidated: false,
+            caused_by: vec![],
+            leads_to: vec![],
+        }
+    }
+
+    #[test]
+    fn test_record_and_recall() {
+        let mut memory = EpisodicMemory::new(EpisodicConfig::default()).unwrap();
+
+        let episode = create_test_episode(
+            "test goal",
+            Outcome::Success { result: json!({}), goal_alignment: 1.0 }
+        );
+
+        memory.record(episode).unwrap();
+
+        let recalled = memory.recall_similar(&Context::with_goal("test"), 10);
+        assert!(recalled.len() > 0);
+    }
+
+    #[test]
+    fn test_decay() {
+        let mut memory = EpisodicMemory::new(EpisodicConfig {
+            decay_function: DecayFunction::Exponential { lambda: 0.5 },
+            ..EpisodicConfig::default()
+        }).unwrap();
+
+        let episode = create_test_episode(
+            "test",
+            Outcome::Success { result: json!({}), goal_alignment: 1.0 }
+        );
+        memory.record(episode).unwrap();
+
+        // Apply decay
+        memory.decay();
+
+        // Strength should have decreased
+        let episodes = memory.recall_at(Instant::now(), Duration::from_hours(1));
+        if !episodes.is_empty() {
+            assert!(episodes[0].strength < 1.0);
+        }
+    }
+
+    #[test]
+    fn test_temporal_recall() {
+        let mut memory = EpisodicMemory::new(EpisodicConfig::default()).unwrap();
+
+        // Record episodes at different times
+        let now = Instant::now();
+
+        let old_episode = Episode {
+            started_at: now - Duration::from_hours(2),
+            ..create_test_episode("old", Outcome::Success { result: json!({}), goal_alignment: 1.0 })
+        };
+
+        let new_episode = Episode {
+            started_at: now - Duration::from_mins(30),
+            ..create_test_episode("new", Outcome::Success { result: json!({}), goal_alignment: 1.0 })
+        };
+
+        memory.record(old_episode).unwrap();
+        memory.record(new_episode).unwrap();
+
+        // Recall recent only
+        let recent = memory.recall_at(now, Duration::from_hours(1));
+        assert!(recent.len() >= 1);
+    }
+}
+
+mod semantic_memory_tests {
+    use super::*;
+
+    #[test]
+    fn test_learn_and_query() {
+        let mut memory = SemanticMemory::new(SemanticConfig::default()).unwrap();
+
+        memory.learn(Fact::new("Rust")
+            .claim(Relation::IsA, "programming language")
+            .claim(Relation::HasProperty, "memory safe")
+            .observed()
+        ).unwrap();
+
+        let results = memory.query("programming language", 10);
+        assert!(results.len() > 0);
+        assert!(results[0].node.label == "Rust" || results[0].node.label == "programming language");
+    }
+
+    #[test]
+    fn test_graph_traversal() {
+        let mut memory = SemanticMemory::new(SemanticConfig::default()).unwrap();
+
+        memory.learn(Fact::new("Alice")
+            .claim(Relation::WorksFor, "Acme Corp")
+            .observed()
+        ).unwrap();
+
+        memory.learn(Fact::new("Acme Corp")
+            .claim(Relation::LocatedIn, "San Francisco")
+            .observed()
+        ).unwrap();
+
+        // Traverse: Alice -> Acme Corp -> San Francisco
+        let alice = memory.entity("Alice");
+        let results = memory.traverse(
+            alice.id.clone(),
+            GraphPath::new()
+                .follow(Relation::WorksFor)
+                .follow(Relation::LocatedIn)
+        );
+
+        assert!(results.len() >= 1);
+    }
+
+    #[test]
+    fn test_entity_creation() {
+        let mut memory = SemanticMemory::new(SemanticConfig::default()).unwrap();
+
+        // First access creates entity
+        let entity1 = memory.entity("TestEntity");
+        let id1 = entity1.id.clone();
+
+        // Second access returns same entity
+        let entity2 = memory.entity("TestEntity");
+        let id2 = entity2.id.clone();
+
+        assert_eq!(id1, id2);
+    }
+}
+
+mod procedural_memory_tests {
+    use super::*;
+    use super::episodic_memory_tests::create_test_episode;
+
+    #[test]
+    fn test_skill_learning() {
+        let mut memory = ProceduralMemory::new(ProceduralConfig {
+            min_episodes_for_skill: 2,
+            ..ProceduralConfig::default()
+        }).unwrap();
+
+        // Create similar successful episodes
+        let episodes = vec![
+            create_test_episode("search task", Outcome::Success { result: json!({}), goal_alignment: 1.0 }),
+            create_test_episode("search query", Outcome::Success { result: json!({}), goal_alignment: 1.0 }),
+            create_test_episode("search request", Outcome::Success { result: json!({}), goal_alignment: 1.0 }),
+        ];
+
+        let skill = memory.learn_from_episodes(episodes);
+        assert!(skill.is_some());
+    }
+
+    #[test]
+    fn test_skill_matching() {
+        let mut memory = ProceduralMemory::new(ProceduralConfig::default()).unwrap();
+
+        // Register a skill manually
+        let skill = Skill {
+            id: SkillId::new().unwrap(),
+            name: "search_skill".to_string(),
+            description: "Skill for searching".to_string(),
+            trigger: TriggerPattern {
+                keywords: vec!["search".to_string(), "find".to_string(), "query".to_string()],
+                weights: vec![1.0, 0.8, 0.6],
+                threshold: 0.5,
+            },
+            preconditions: vec![],
+            procedure: Procedure {
+                steps: vec![],
+                estimated_duration: None,
+            },
+            stats: SkillStats {
+                execution_count: 10,
+                success_count: 8,
+                failure_count: 2,
+                success_rate: 0.8,
+                avg_duration: Duration::from_secs(5),
+            },
+            refinements: vec![],
+            failure_modes: vec![],
+            source_episodes: vec![],
+            created_at: Instant::now(),
+            last_used: None,
+            enabled: true,
+        };
+
+        memory.register(skill);
+
+        // Match against context
+        let matches = memory.match_situation(&Context::with_goal("search for documents"));
+        assert!(matches.len() > 0);
+        assert!(matches[0].match_score > 0.5);
+    }
+
+    #[test]
+    fn test_feedback() {
+        let mut memory = ProceduralMemory::new(ProceduralConfig::default()).unwrap();
+
+        let skill_id = memory.register(Skill {
+            id: SkillId::new().unwrap(),
+            name: "test_skill".to_string(),
+            stats: SkillStats {
+                execution_count: 0,
+                success_count: 0,
+                failure_count: 0,
+                success_rate: 0.5,
+                avg_duration: Duration::zero(),
+            },
+            ..Default::default()
+        });
+
+        // Record successful feedback
+        memory.feedback(skill_id.clone(), create_test_episode(
+            "test",
+            Outcome::Success { result: json!({}), goal_alignment: 1.0 }
+        ));
+
+        let skill = memory.get(skill_id).unwrap();
+        assert!(skill.stats.success_rate > 0.5);
+        assert_eq!(skill.stats.execution_count, 1);
+    }
+}
+
+mod index_tests {
+    use super::*;
+    use engram::index::*;
+
+    #[test]
+    fn test_hnsw_basic() {
+        let mut index = HNSWIndex::new(HNSWConfig::default().with_dimensions(3));
+
+        // Insert vectors
+        for i in 0..10 {
+            let id = NodeId::from_bytes([i; 16]);
+            let vec = Vector::new(vec![i as f32, (i as f32) * 0.5, (10 - i) as f32]);
+            index.insert(id, vec);
+        }
+
+        assert_eq!(index.len(), 10);
+
+        // Search
+        let query = Vector::new(vec![5.0, 2.5, 5.0]);
+        let results = index.search(&query, 3);
+
+        assert_eq!(results.len(), 3);
+        // Results should be sorted by similarity (descending)
+        assert!(results[0].1 >= results[1].1);
+        assert!(results[1].1 >= results[2].1);
+    }
+
+    #[test]
+    fn test_temporal_index() {
+        let mut index = TemporalIndex::new();
+
+        let now = Instant::now();
+
+        index.insert(now - Duration::from_hours(2), "old");
+        index.insert(now - Duration::from_hours(1), "medium");
+        index.insert(now, "new");
+
+        // Range query
+        let results = index.range(now - Duration::from_hours(3), now + Duration::from_hours(1));
+        assert_eq!(results.len(), 3);
+
+        // Recent query
+        let recent = index.recent(2);
+        assert_eq!(recent.len(), 2);
+    }
+
+    #[test]
+    fn test_graph_index() {
+        let mut index = GraphIndex::new();
+
+        let a = NodeId::from_bytes([1; 16]);
+        let b = NodeId::from_bytes([2; 16]);
+        let c = NodeId::from_bytes([3; 16]);
+
+        index.add_edge(a.clone(), b.clone(), EdgeId::from_bytes([10; 16]), Relation::RelatedTo);
+        index.add_edge(b.clone(), c.clone(), EdgeId::from_bytes([11; 16]), Relation::RelatedTo);
+
+        // Test traversal
+        let neighbors = index.neighbors_out(&a);
+        assert_eq!(neighbors.len(), 1);
+
+        let reachable = index.bfs(&a, 2);
+        assert_eq!(reachable.len(), 3);
+
+        // Test paths
+        let paths = index.paths(&a, &c, 3);
+        assert_eq!(paths.len(), 1);
+    }
+}
+
+mod embed_tests {
+    use super::*;
+    use engram::embed::*;
+
+    #[test]
+    fn test_hash_embedder_determinism() {
+        let embedder = HashEmbedder::default();
+
+        let v1 = embedder.embed("hello world");
+        let v2 = embedder.embed("hello world");
+
+        assert_eq!(v1.as_slice(), v2.as_slice());
+    }
+
+    #[test]
+    fn test_semantic_hash_similarity() {
+        let embedder = SemanticHashEmbedder::default();
+
+        let v1 = embedder.embed("the quick brown fox");
+        let v2 = embedder.embed("the quick brown dog");
+        let v3 = embedder.embed("completely different text");
+
+        let sim_12 = v1.cosine_similarity(&v2);
+        let sim_13 = v1.cosine_similarity(&v3);
+
+        // Similar texts should have higher similarity
+        assert!(sim_12 > sim_13);
+    }
+
+    #[test]
+    fn test_embed_function() {
+        let v = embed("test text");
+        assert!(v.dimensions() > 0);
+
+        // Should be normalized
+        let norm: f32 = v.as_slice().iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!((norm - 1.0).abs() < 0.01);
+    }
+}
+
+mod storage_tests {
+    use super::*;
+    use engram::storage::*;
+
+    #[test]
+    fn test_memory_backend() {
+        let mut backend = MemoryBackend::new();
+
+        backend.put("key1", b"value1").unwrap();
+        assert!(backend.exists("key1"));
+
+        let value = backend.get("key1").unwrap();
+        assert_eq!(value, Some(b"value1".to_vec()));
+
+        backend.delete("key1").unwrap();
+        assert!(!backend.exists("key1"));
+    }
+
+    #[test]
+    fn test_memory_backend_prefix() {
+        let mut backend = MemoryBackend::new();
+
+        backend.put("users/1", b"alice").unwrap();
+        backend.put("users/2", b"bob").unwrap();
+        backend.put("posts/1", b"hello").unwrap();
+
+        let users = backend.list_prefix("users/").unwrap();
+        assert_eq!(users.len(), 2);
+
+        let posts = backend.list_prefix("posts/").unwrap();
+        assert_eq!(posts.len(), 1);
+    }
+}
+
+mod integration_tests {
+    use super::*;
+
+    #[test]
+    fn test_full_workflow() {
+        // Create Engram
+        let mut memory = engram::new().unwrap();
+
+        // Learn facts
+        memory.learn(Fact::new("Integration Test")
+            .claim(Relation::IsA, "test")
+            .observed()
+        ).unwrap();
+
+        // Record episode
+        memory.experience(Episode {
+            id: EpisodeId::new().unwrap(),
+            started_at: Instant::now(),
+            ended_at: Some(Instant::now()),
+            context: Context::with_goal("test workflow"),
+            participants: vec![],
+            events: vec![Event::agent_response("test")],
+            outcome: Outcome::Success { result: json!({}), goal_alignment: 1.0 },
+            ..Default::default()
+        }).unwrap();
+
+        // Attend to working memory
+        memory.attend("test context", 0.8).unwrap();
+
+        // Recall
+        let results = memory.recall("test");
+        assert!(results.memories.len() > 0);
+
+        // Build context
+        let context = memory.build_context(ContextConfig {
+            budget: TokenCount(1000),
+            include: vec![ContextSource::Instant, ContextSource::SemanticRelevant],
+            format: ContextFormat::Plain,
+            prioritize: ContextPriority::Relevance,
+            for_task: None,
+        });
+        assert!(context.items.len() > 0);
+
+        // Consolidate
+        let report = memory.consolidate();
+        assert!(report.duration > Duration::zero());
+
+        // Stats
+        let stats = memory.stats();
+        assert!(stats.recall_count > 0);
+        assert!(stats.facts_learned > 0);
+        assert!(stats.episodes_recorded > 0);
+    }
+
+    #[test]
+    fn test_gap_identification() {
+        let memory = engram::new().unwrap();
+
+        // Query for something we don't know about
+        let results = memory.recall("quantum entanglement in neural networks");
+
+        // Should identify gaps
+        assert!(results.gaps.len() > 0);
+    }
+
+    #[test]
+    fn test_evidentiality_filtering() {
+        let mut memory = engram::new().unwrap();
+
+        // Add facts with different evidentiality
+        memory.learn(Fact {
+            subject: "observed_fact",
+            claims: vec![],
+            epistemic: Epistemic::Observed {
+                observer: "test".to_string(),
+                timestamp: Instant::now(),
+            },
+            confidence: 1.0,
+            ..Default::default()
+        }).unwrap();
+
+        memory.learn(Fact {
+            subject: "reported_fact",
+            claims: vec![],
+            epistemic: Epistemic::Reported {
+                source: Source::Unknown,
+                trust_level: 0.5,
+            },
+            confidence: 0.5,
+            ..Default::default()
+        }).unwrap();
+
+        // Query with epistemic filter
+        let observed_only = memory.recall(
+            Query::new("fact")
+                .where_epistemic(EpistemicCheck::IsObserved)
+        );
+
+        let all_facts = memory.recall("fact");
+
+        assert!(observed_only.memories.len() < all_facts.memories.len());
+    }
+}

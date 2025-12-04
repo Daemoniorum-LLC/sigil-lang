@@ -1,0 +1,367 @@
+// Daemon - Autonomous Agent Runtime for Sigil
+// Public API
+
+pub mod types;
+pub mod daemon;
+
+// Re-export core types
+pub use types::{
+    // Identity
+    DaemonId,
+    Identity,
+    Constitution,
+    Directive,
+
+    // Goals
+    GoalId,
+    Goal,
+    GoalStatus,
+    Outcome,
+    Attempt,
+
+    // Actions
+    ActionId,
+    Action,
+    InternalAction,
+    CommunicateAction,
+    GoalAction,
+    ActionResult,
+    SideEffect,
+
+    // State
+    AgentState,
+    LifecycleState,
+    TerminateReason,
+    OperationalMetrics,
+    ResourceUsage,
+    ResourceBounds,
+
+    // Tools
+    ToolRegistry,
+    Tool,
+    ToolResult,
+    ToolError,
+
+    // Context
+    Context,
+    Memory,
+    Knowledge,
+    Skill,
+    Observation,
+
+    // Configuration
+    DaemonConfig,
+
+    // Persistence
+    Snapshot,
+
+    // Utilities
+    Predicate,
+    Constraint,
+    ActionSet,
+};
+
+pub use daemon::{
+    Daemon,
+    GoalStack,
+    HeartbeatEngine,
+    HeartbeatResult,
+    HeartbeatError,
+    DaemonError,
+};
+
+// ============================================================================
+// Convenience Functions
+// ============================================================================
+
+/// Create a new daemon with default configuration
+pub fn spawn(name: &str) -> Daemon {
+    let config = DaemonConfig {
+        name: name.to_string(),
+        ..Default::default()
+    };
+    Daemon::new(config)
+}
+
+/// Create a new daemon with custom configuration
+pub fn spawn_with_config(config: DaemonConfig) -> Daemon {
+    Daemon::new(config)
+}
+
+/// Restore a daemon from a snapshot file
+pub fn restore_from_file(path: &str) -> Result<Daemon, DaemonError> {
+    // Load snapshot from file
+    let data = std::fs::read(path)
+        .map_err(|e| DaemonError::ConfigurationError(e.to_string()))?;
+
+    let snapshot: Snapshot = deserialize(&data)
+        .map_err(|e| DaemonError::CorruptSnapshot)?;
+
+    Daemon::restore(snapshot)
+}
+
+/// Create a simple goal
+pub fn goal(description: &str) -> Goal {
+    Goal::new(description)
+}
+
+/// Create a directive
+pub fn directive(content: &str) -> Directive {
+    Directive::new(content)
+}
+
+// ============================================================================
+// Daemon Macro (for defining daemons declaratively)
+// ============================================================================
+
+/// Macro for defining daemons
+///
+/// # Example
+/// ```sigil
+/// daemon! {
+///     name: "my-agent",
+///     description: "An example agent",
+///
+///     on_init: |self| {
+///         self.goals.push(Goal::new("Initialize"));
+///     },
+///
+///     on_message: |self, msg| {
+///         self.memory.experience(Event::from(msg));
+///     },
+///
+///     deliberate: |self, context| -> Action {
+///         Action::Internal(InternalAction::Think {
+///             about: "What to do next".to_string()
+///         })
+///     }
+/// }
+/// ```
+#[macro_export]
+macro_rules! daemon {
+    (
+        name: $name:expr,
+        $( description: $desc:expr, )?
+        $( on_init: |$init_self:ident| $init_body:block, )?
+        $( on_ready: |$ready_self:ident| $ready_body:block, )?
+        $( on_message: |$msg_self:ident, $msg:ident| $msg_body:block, )?
+        $( deliberate: |$del_self:ident, $ctx:ident| -> Action $del_body:block )?
+    ) => {
+        {
+            let config = DaemonConfig {
+                name: $name.to_string(),
+                $( description: $desc.to_string(), )?
+                ..Default::default()
+            };
+
+            let mut daemon = Daemon::new(config);
+
+            // Custom initialization would be applied here
+            // In a real implementation, we'd generate a custom struct
+
+            daemon
+        }
+    };
+}
+
+// ============================================================================
+// Built-in Tools
+// ============================================================================
+
+/// File system tool
+pub struct FileSystemTool;
+
+impl Tool for FileSystemTool {
+    fn name(&self) -> &str { "filesystem" }
+
+    fn description(&self) -> &str {
+        "Read, write, and manipulate files"
+    }
+
+    fn schema(&self) -> Schema {
+        Schema::object()
+            .property("operation", Schema::enum_type(&["read", "write", "delete", "list"]))
+            .property("path", Schema::string())
+            .property("content", Schema::string().optional())
+    }
+
+    fn execute(&self, params: Value) -> Result<ToolResult, ToolError> {
+        let operation = params.get_str("operation")
+            .ok_or(ToolError::InvalidParams("Missing operation".to_string()))?;
+
+        let path = params.get_str("path")
+            .ok_or(ToolError::InvalidParams("Missing path".to_string()))?;
+
+        match operation {
+            "read" => {
+                match std::fs::read_to_string(path) {
+                    Ok(content) => Ok(ToolResult {
+                        success: true,
+                        output: Value::string(&content),
+                        error: None,
+                        duration: Duration::zero(),
+                    }),
+                    Err(e) => Ok(ToolResult {
+                        success: false,
+                        output: Value::empty(),
+                        error: Some(e.to_string()),
+                        duration: Duration::zero(),
+                    }),
+                }
+            }
+            "write" => {
+                let content = params.get_str("content")
+                    .ok_or(ToolError::InvalidParams("Missing content".to_string()))?;
+
+                match std::fs::write(path, content) {
+                    Ok(_) => Ok(ToolResult {
+                        success: true,
+                        output: Value::string("File written"),
+                        error: None,
+                        duration: Duration::zero(),
+                    }),
+                    Err(e) => Ok(ToolResult {
+                        success: false,
+                        output: Value::empty(),
+                        error: Some(e.to_string()),
+                        duration: Duration::zero(),
+                    }),
+                }
+            }
+            "list" => {
+                match std::fs::read_dir(path) {
+                    Ok(entries) => {
+                        let files: Vec<String> = entries
+                            .filter_map(|e| e.ok())
+                            .map(|e| e.path().to_string_lossy().to_string())
+                            .collect();
+
+                        Ok(ToolResult {
+                            success: true,
+                            output: Value::array(files),
+                            error: None,
+                            duration: Duration::zero(),
+                        })
+                    }
+                    Err(e) => Ok(ToolResult {
+                        success: false,
+                        output: Value::empty(),
+                        error: Some(e.to_string()),
+                        duration: Duration::zero(),
+                    }),
+                }
+            }
+            _ => Err(ToolError::InvalidParams(format!("Unknown operation: {}", operation))),
+        }
+    }
+}
+
+/// HTTP client tool
+pub struct HttpTool;
+
+impl Tool for HttpTool {
+    fn name(&self) -> &str { "http" }
+
+    fn description(&self) -> &str {
+        "Make HTTP requests"
+    }
+
+    fn schema(&self) -> Schema {
+        Schema::object()
+            .property("method", Schema::enum_type(&["GET", "POST", "PUT", "DELETE"]))
+            .property("url", Schema::string())
+            .property("headers", Schema::object().optional())
+            .property("body", Schema::string().optional())
+    }
+
+    fn execute(&self, params: Value) -> Result<ToolResult, ToolError> {
+        // Would use an HTTP client library
+        Ok(ToolResult {
+            success: true,
+            output: Value::string("HTTP response"),
+            error: None,
+            duration: Duration::zero(),
+        })
+    }
+}
+
+/// Shell execution tool
+pub struct ShellTool {
+    allowed_commands: Vec<String>,
+}
+
+impl ShellTool {
+    pub fn new() -> Self {
+        Self {
+            allowed_commands: vec![
+                "ls".to_string(),
+                "cat".to_string(),
+                "grep".to_string(),
+                "echo".to_string(),
+            ],
+        }
+    }
+
+    pub fn with_allowed(mut self, commands: Vec<&str>) -> Self {
+        self.allowed_commands = commands.iter().map(|s| s.to_string()).collect();
+        self
+    }
+}
+
+impl Tool for ShellTool {
+    fn name(&self) -> &str { "shell" }
+
+    fn description(&self) -> &str {
+        "Execute shell commands (restricted)"
+    }
+
+    fn schema(&self) -> Schema {
+        Schema::object()
+            .property("command", Schema::string())
+            .property("args", Schema::array(Schema::string()).optional())
+    }
+
+    fn execute(&self, params: Value) -> Result<ToolResult, ToolError> {
+        let command = params.get_str("command")
+            .ok_or(ToolError::InvalidParams("Missing command".to_string()))?;
+
+        // Check if command is allowed
+        if !self.allowed_commands.contains(&command.to_string()) {
+            return Err(ToolError::PermissionDenied);
+        }
+
+        // Would execute command
+        Ok(ToolResult {
+            success: true,
+            output: Value::string("Command output"),
+            error: None,
+            duration: Duration::zero(),
+        })
+    }
+}
+
+// ============================================================================
+// Helper implementations
+// ============================================================================
+
+fn deserialize<T>(data: &[u8]) -> Result<T, String> {
+    // Would use a serialization library
+    Err("Not implemented".to_string())
+}
+
+impl Schema {
+    pub fn object() -> Self { Schema { inner: Value::empty() } }
+    pub fn string() -> Self { Schema { inner: Value::empty() } }
+    pub fn enum_type(values: &[&str]) -> Self { Schema { inner: Value::empty() } }
+    pub fn array(inner: Schema) -> Self { Schema { inner: Value::empty() } }
+    pub fn property(self, name: &str, schema: Schema) -> Self { self }
+    pub fn optional(self) -> Self { self }
+}
+
+impl Value {
+    pub fn empty() -> Self { Value { inner: vec![] } }
+    pub fn string(s: &str) -> Self { Value { inner: s.as_bytes().to_vec() } }
+    pub fn duration(d: Duration) -> Self { Value::empty() }
+    pub fn array<T>(items: Vec<T>) -> Self { Value::empty() }
+    pub fn get_str(&self, key: &str) -> Option<&str> { None }
+}

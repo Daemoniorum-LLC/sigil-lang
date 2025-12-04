@@ -1,0 +1,830 @@
+// Daemon Core Implementation
+// The autonomous agent runtime
+
+use crate::types::*;
+use engram::{Engram, Query, Event};
+use std::time::{Duration, Timestamp};
+
+// ============================================================================
+// Daemon Struct
+// ============================================================================
+
+/// The core daemon - an autonomous agent instance
+pub struct Daemon {
+    /// Identity
+    pub identity: Identity,
+
+    /// Memory (Engram integration)
+    pub memory: Engram,
+
+    /// Goal stack
+    pub goals: GoalStack,
+
+    /// Tool registry
+    pub tools: ToolRegistry,
+
+    /// Current state
+    pub state: AgentState,
+
+    /// Configuration
+    config: DaemonConfig,
+
+    /// Heartbeat engine
+    heartbeat: HeartbeatEngine,
+
+    /// Should terminate flag
+    should_terminate: bool,
+
+    /// Termination reason
+    terminate_reason: Option<TerminateReason>,
+}
+
+impl Daemon {
+    /// Create a new daemon with configuration
+    pub fn new(config: DaemonConfig) -> Self {
+        let identity = Identity::new(&config.name)
+            .with_description(&config.description);
+
+        let memory = Engram::new(config.memory.clone());
+        let goals = GoalStack::new(config.max_concurrent_goals);
+        let tools = ToolRegistry::new();
+        let state = AgentState::default();
+        let heartbeat = HeartbeatEngine::new(config.heartbeat_interval);
+
+        Self {
+            identity,
+            memory,
+            goals,
+            tools,
+            state,
+            config,
+            heartbeat,
+            should_terminate: false,
+            terminate_reason: None,
+        }
+    }
+
+    /// Restore daemon from snapshot
+    pub fn restore(snapshot: Snapshot) -> Result<Self, DaemonError> {
+        // Verify snapshot integrity
+        if !snapshot.verify() {
+            return Err(DaemonError::CorruptSnapshot);
+        }
+
+        let config = DaemonConfig {
+            name: snapshot.identity.name.clone(),
+            description: snapshot.identity.description.clone(),
+            ..Default::default()
+        };
+
+        let mut daemon = Self::new(config);
+        daemon.identity = snapshot.identity;
+        daemon.memory = Engram::restore(snapshot.memory)?;
+        daemon.goals = GoalStack::from_goals(snapshot.goals);
+        daemon.state = snapshot.state;
+
+        // Record rebirth event
+        daemon.memory.experience(Event::rebirth(daemon.identity.id.clone()));
+
+        Ok(daemon)
+    }
+
+    /// Spawn and run the daemon
+    pub fn spawn(config: DaemonConfig) -> Self {
+        let daemon = Self::new(config);
+        daemon
+    }
+
+    /// Run the daemon's main loop
+    pub fn run(&mut self) {
+        // Initialize
+        self.on_init();
+        self.state.lifecycle = LifecycleState::Ready;
+        self.on_ready();
+        self.state.lifecycle = LifecycleState::Running;
+
+        // Main heartbeat loop
+        loop {
+            // Execute heartbeat
+            match self.heartbeat.beat(self) {
+                Ok(result) => {
+                    self.on_heartbeat_complete(result);
+                }
+                Err(e) => {
+                    self.on_heartbeat_error(e);
+                }
+            }
+
+            // Check for termination
+            if self.should_terminate {
+                break;
+            }
+
+            // Sleep until next heartbeat
+            self.heartbeat.wait_for_next();
+        }
+
+        // Terminate
+        self.on_terminate(self.terminate_reason.take().unwrap_or(TerminateReason::Manual));
+        self.state.lifecycle = LifecycleState::Terminated;
+    }
+
+    // ========================================================================
+    // Lifecycle Hooks
+    // ========================================================================
+
+    /// Called once at initialization
+    fn on_init(&mut self) {
+        // Subclasses override this
+    }
+
+    /// Called when daemon becomes ready
+    fn on_ready(&mut self) {
+        // Subclasses override this
+    }
+
+    /// Called after each heartbeat
+    fn on_heartbeat_complete(&mut self, result: HeartbeatResult) {
+        self.state.metrics.heartbeats += 1;
+        // Subclasses can override
+    }
+
+    /// Called when heartbeat has an error
+    fn on_heartbeat_error(&mut self, error: HeartbeatError) {
+        self.state.metrics.errors += 1;
+        self.memory.experience(Event::error(error.to_string()));
+    }
+
+    /// Called before termination
+    fn on_terminate(&mut self, reason: TerminateReason) {
+        // Save final snapshot
+        if let Ok(snapshot) = self.snapshot() {
+            self.save_snapshot(snapshot);
+        }
+
+        // Cleanup tools
+        for tool_name in self.tools.list() {
+            if let Some(tool) = self.tools.get(tool_name) {
+                tool.cleanup();
+            }
+        }
+
+        // Final memory flush
+        self.memory.flush();
+    }
+
+    // ========================================================================
+    // Core Operations
+    // ========================================================================
+
+    /// Perceive the environment
+    pub fn perceive(&mut self) -> Vec<Observation> {
+        // Collect observations from various sources
+        let mut observations = Vec::new();
+
+        // Time elapsed since last heartbeat
+        observations.push(Observation {
+            source: "system".to_string(),
+            content: Value::duration(self.heartbeat.last_beat.elapsed()),
+            timestamp: Timestamp::now(),
+            salience: 0.1,
+        });
+
+        // Would collect from registered perception sources
+        observations
+    }
+
+    /// Build context for deliberation
+    pub fn attend(&self) -> Result<Context, DaemonError> {
+        let current_goal = self.goals.current().cloned();
+
+        // Query memory for relevant information
+        let goal_context = current_goal.as_ref()
+            .map(|g| g.description.clone())
+            .unwrap_or_default();
+
+        // Get episodic memories of similar situations
+        let memories = self.memory.recall(
+            Query::similar_to(&goal_context)
+                .limit(10)
+        ).into_iter()
+        .map(|r| Memory {
+            content: r.content,
+            epistemic: r.epistemic,
+            timestamp: r.timestamp,
+            relevance: r.relevance,
+        })
+        .collect();
+
+        // Get semantic knowledge
+        let knowledge = self.memory.recall(
+            Query::relevant_to(&goal_context)
+                .from_semantic()
+                .limit(20)
+        ).into_iter()
+        .map(|r| Knowledge {
+            content: r.content.to_string(),
+            epistemic: r.epistemic,
+            confidence: r.confidence,
+            domain: r.domain,
+        })
+        .collect();
+
+        // Get applicable skills
+        let skills = self.memory.recall(
+            Query::skills_for(&goal_context)
+                .limit(5)
+        ).into_iter()
+        .map(|r| Skill {
+            name: r.name,
+            description: r.description,
+            success_rate: r.success_rate,
+        })
+        .collect();
+
+        Ok(Context {
+            current_goal,
+            memories,
+            knowledge,
+            skills,
+            observations: vec![],
+            state: self.state.clone(),
+        })
+    }
+
+    /// Decide what action to take
+    pub fn deliberate(&self, context: &Context) -> Result<Action, DaemonError> {
+        // Get current goal
+        let goal = context.current_goal.as_ref()
+            .ok_or(DaemonError::NoActiveGoal)?;
+
+        // Get relevant tools
+        let relevant_tools = self.tools.for_context(context);
+
+        // Use skills and knowledge to decide
+        // This is where more sophisticated reasoning would happen
+        // For now, simple heuristic
+
+        // If we have a skill for this, use it
+        if let Some(skill) = context.skills.first() {
+            return Ok(Action::Internal(InternalAction::Think {
+                about: format!("Applying skill: {}", skill.name),
+            }));
+        }
+
+        // If we have relevant tools, consider using them
+        if let Some(tool) = relevant_tools.first() {
+            return Ok(Action::Tool {
+                name: tool.name().to_string(),
+                params: Value::empty(),
+            });
+        }
+
+        // Default: think about the goal
+        Ok(Action::Internal(InternalAction::Think {
+            about: goal.description.clone(),
+        }))
+    }
+
+    /// Execute an action
+    pub fn execute(&mut self, action: Action) -> Result<ActionResult, DaemonError> {
+        let action_id = ActionId::new();
+        let start = Timestamp::now();
+
+        let result = match &action {
+            Action::Internal(internal) => {
+                self.execute_internal(internal)
+            }
+            Action::Tool { name, params } => {
+                self.execute_tool(name, params)
+            }
+            Action::Communicate(comm) => {
+                self.execute_communication(comm)
+            }
+            Action::Goal(goal_action) => {
+                self.execute_goal_action(goal_action)
+            }
+            Action::Wait(duration) => {
+                std::thread::sleep(*duration);
+                Ok(ActionResult {
+                    action_id: action_id.clone(),
+                    success: true,
+                    output: Value::empty(),
+                    error: None,
+                    duration: *duration,
+                    side_effects: vec![],
+                })
+            }
+        };
+
+        // Update metrics
+        self.state.metrics.actions_taken += 1;
+
+        // Record in memory
+        let outcome = result.as_ref().map(|r| r.success).unwrap_or(false);
+        self.memory.experience(Event::action_taken(action.name(), outcome));
+
+        result
+    }
+
+    fn execute_internal(&mut self, action: &InternalAction) -> Result<ActionResult, DaemonError> {
+        let action_id = ActionId::new();
+        let start = Timestamp::now();
+
+        match action {
+            InternalAction::Think { about } => {
+                // Record thought in instant memory
+                self.memory.attend(about);
+
+                Ok(ActionResult {
+                    action_id,
+                    success: true,
+                    output: Value::string(format!("Thought about: {}", about)),
+                    error: None,
+                    duration: start.elapsed(),
+                    side_effects: vec![],
+                })
+            }
+            InternalAction::Plan { goal } => {
+                // Would integrate with Omen here
+                Ok(ActionResult {
+                    action_id,
+                    success: true,
+                    output: Value::string("Plan generated"),
+                    error: None,
+                    duration: start.elapsed(),
+                    side_effects: vec![],
+                })
+            }
+            InternalAction::Reflect => {
+                // Consolidate recent experiences
+                self.memory.consolidate();
+
+                Ok(ActionResult {
+                    action_id,
+                    success: true,
+                    output: Value::string("Reflected on experiences"),
+                    error: None,
+                    duration: start.elapsed(),
+                    side_effects: vec![],
+                })
+            }
+            InternalAction::UpdateBeliefs { evidence } => {
+                // Would integrate with Omen belief system
+                Ok(ActionResult {
+                    action_id,
+                    success: true,
+                    output: Value::string("Beliefs updated"),
+                    error: None,
+                    duration: start.elapsed(),
+                    side_effects: vec![],
+                })
+            }
+        }
+    }
+
+    fn execute_tool(&mut self, name: &str, params: &Value) -> Result<ActionResult, DaemonError> {
+        let action_id = ActionId::new();
+        let start = Timestamp::now();
+
+        let tool = self.tools.get(name)
+            .ok_or(DaemonError::ToolNotFound(name.to_string()))?;
+
+        // Check capability
+        if !self.identity.constitution.allowed_actions.is_allowed(name) {
+            return Err(DaemonError::ActionNotAllowed(name.to_string()));
+        }
+
+        match tool.execute(params.clone()) {
+            Ok(result) => {
+                Ok(ActionResult {
+                    action_id,
+                    success: result.success,
+                    output: result.output,
+                    error: result.error,
+                    duration: start.elapsed(),
+                    side_effects: vec![],
+                })
+            }
+            Err(e) => {
+                Err(DaemonError::ToolExecutionFailed(format!("{:?}", e)))
+            }
+        }
+    }
+
+    fn execute_communication(&mut self, action: &CommunicateAction) -> Result<ActionResult, DaemonError> {
+        let action_id = ActionId::new();
+        let start = Timestamp::now();
+
+        // Would integrate with Commune here
+        Ok(ActionResult {
+            action_id,
+            success: true,
+            output: Value::string("Message sent"),
+            error: None,
+            duration: start.elapsed(),
+            side_effects: vec![],
+        })
+    }
+
+    fn execute_goal_action(&mut self, action: &GoalAction) -> Result<ActionResult, DaemonError> {
+        let action_id = ActionId::new();
+        let start = Timestamp::now();
+
+        match action {
+            GoalAction::AddGoal(goal) => {
+                self.goals.push(goal.clone());
+                Ok(ActionResult {
+                    action_id,
+                    success: true,
+                    output: Value::string(format!("Goal added: {}", goal.description)),
+                    error: None,
+                    duration: start.elapsed(),
+                    side_effects: vec![],
+                })
+            }
+            GoalAction::CompleteGoal { id, outcome } => {
+                self.goals.complete(id.clone(), outcome.clone());
+                self.state.metrics.goals_completed += 1;
+                Ok(ActionResult {
+                    action_id,
+                    success: true,
+                    output: Value::string("Goal completed"),
+                    error: None,
+                    duration: start.elapsed(),
+                    side_effects: vec![],
+                })
+            }
+            GoalAction::AbandonGoal { id, reason } => {
+                self.goals.abandon(id.clone(), reason.clone());
+                Ok(ActionResult {
+                    action_id,
+                    success: true,
+                    output: Value::string(format!("Goal abandoned: {}", reason)),
+                    error: None,
+                    duration: start.elapsed(),
+                    side_effects: vec![],
+                })
+            }
+            GoalAction::SuspendGoal { id, reason } => {
+                self.goals.suspend(id.clone(), reason.clone());
+                Ok(ActionResult {
+                    action_id,
+                    success: true,
+                    output: Value::string(format!("Goal suspended: {}", reason)),
+                    error: None,
+                    duration: start.elapsed(),
+                    side_effects: vec![],
+                })
+            }
+            GoalAction::ResumeGoal { id } => {
+                self.goals.resume(id.clone());
+                Ok(ActionResult {
+                    action_id,
+                    success: true,
+                    output: Value::string("Goal resumed"),
+                    error: None,
+                    duration: start.elapsed(),
+                    side_effects: vec![],
+                })
+            }
+        }
+    }
+
+    /// Learn from an action's result
+    pub fn learn(&mut self, action: &Action, result: &ActionResult) {
+        // Store as procedural memory if successful
+        if result.success {
+            self.memory.learn_from_success(action.name(), result);
+        } else if let Some(error) = &result.error {
+            self.memory.learn_from_failure(action.name(), error);
+        }
+    }
+
+    // ========================================================================
+    // Persistence
+    // ========================================================================
+
+    /// Create a snapshot of current state
+    pub fn snapshot(&self) -> Result<Snapshot, DaemonError> {
+        let memory_snapshot = self.memory.snapshot()?;
+
+        let mut snapshot = Snapshot {
+            version: 1,
+            identity: self.identity.clone(),
+            memory: memory_snapshot,
+            goals: self.goals.all().cloned().collect(),
+            state: self.state.clone(),
+            timestamp: Timestamp::now(),
+            checksum: [0u8; 32],
+        };
+
+        // Compute checksum
+        snapshot.checksum = snapshot.compute_checksum();
+
+        Ok(snapshot)
+    }
+
+    fn save_snapshot(&self, snapshot: Snapshot) {
+        if let Some(path) = &self.config.storage_path {
+            // Would save to filesystem
+        }
+    }
+
+    // ========================================================================
+    // Control
+    // ========================================================================
+
+    /// Request termination
+    pub fn terminate(&mut self, reason: TerminateReason) {
+        self.should_terminate = true;
+        self.terminate_reason = Some(reason);
+        self.state.lifecycle = LifecycleState::Terminating {
+            reason: self.terminate_reason.clone().unwrap(),
+        };
+    }
+
+    /// Check if should terminate
+    pub fn should_terminate(&self) -> bool {
+        self.should_terminate
+    }
+
+    /// Suspend the daemon
+    pub fn suspend(&mut self, reason: &str) {
+        self.state.lifecycle = LifecycleState::Suspended {
+            reason: reason.to_string(),
+            since: Timestamp::now(),
+        };
+    }
+
+    /// Resume from suspension
+    pub fn resume(&mut self) {
+        self.state.lifecycle = LifecycleState::Running;
+    }
+}
+
+// ============================================================================
+// Goal Stack
+// ============================================================================
+
+/// Manages daemon goals
+pub struct GoalStack {
+    /// Goals by ID
+    goals: HashMap<GoalId, Goal>,
+
+    /// Goal hierarchy (parent -> children)
+    hierarchy: HashMap<GoalId, Vec<GoalId>>,
+
+    /// Maximum concurrent goals
+    max_goals: usize,
+
+    /// Completed goals (for history)
+    history: Vec<Goal>,
+}
+
+impl GoalStack {
+    pub fn new(max_goals: usize) -> Self {
+        Self {
+            goals: HashMap::new(),
+            hierarchy: HashMap::new(),
+            max_goals,
+            history: Vec::new(),
+        }
+    }
+
+    pub fn from_goals(goals: Vec<Goal>) -> Self {
+        let mut stack = Self::new(10);
+        for goal in goals {
+            stack.push(goal);
+        }
+        stack
+    }
+
+    /// Get current highest-priority active goal
+    pub fn current(&self) -> Option<&Goal> {
+        self.goals.values()
+            .filter(|g| g.is_active())
+            .max_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap())
+    }
+
+    /// Push a new goal
+    pub fn push(&mut self, mut goal: Goal) {
+        // Activate if under limit
+        let active_count = self.goals.values()
+            .filter(|g| g.is_active())
+            .count();
+
+        if active_count < self.max_goals {
+            goal.status = GoalStatus::Active;
+        }
+
+        let id = goal.id.clone();
+
+        // Track hierarchy
+        if let Some(parent) = &goal.parent {
+            self.hierarchy.entry(parent.clone())
+                .or_default()
+                .push(id.clone());
+        }
+
+        self.goals.insert(id, goal);
+    }
+
+    /// Complete a goal
+    pub fn complete(&mut self, id: GoalId, outcome: Outcome) {
+        if let Some(goal) = self.goals.get_mut(&id) {
+            goal.status = GoalStatus::Completed {
+                at: Timestamp::now(),
+                outcome,
+            };
+
+            // Check if parent can be completed
+            if let Some(parent_id) = &goal.parent {
+                self.check_parent_completion(parent_id.clone());
+            }
+        }
+    }
+
+    /// Abandon a goal
+    pub fn abandon(&mut self, id: GoalId, reason: String) {
+        if let Some(goal) = self.goals.get_mut(&id) {
+            goal.status = GoalStatus::Abandoned {
+                at: Timestamp::now(),
+                reason,
+            };
+        }
+    }
+
+    /// Suspend a goal
+    pub fn suspend(&mut self, id: GoalId, reason: String) {
+        if let Some(goal) = self.goals.get_mut(&id) {
+            goal.status = GoalStatus::Suspended { reason };
+        }
+    }
+
+    /// Resume a goal
+    pub fn resume(&mut self, id: GoalId) {
+        if let Some(goal) = self.goals.get_mut(&id) {
+            if matches!(goal.status, GoalStatus::Suspended { .. }) {
+                goal.status = GoalStatus::Active;
+            }
+        }
+    }
+
+    /// Get all goals
+    pub fn all(&self) -> impl Iterator<Item = &Goal> {
+        self.goals.values()
+    }
+
+    fn check_parent_completion(&mut self, parent_id: GoalId) {
+        if let Some(children) = self.hierarchy.get(&parent_id) {
+            let all_complete = children.iter().all(|child_id| {
+                self.goals.get(child_id)
+                    .map(|g| g.is_complete())
+                    .unwrap_or(true)
+            });
+
+            if all_complete {
+                self.complete(parent_id, Outcome::Success(Value::empty()));
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Heartbeat Engine
+// ============================================================================
+
+/// Manages the daemon heartbeat cycle
+pub struct HeartbeatEngine {
+    /// Heartbeat interval
+    interval: Duration,
+
+    /// Last heartbeat time
+    pub last_beat: Timestamp,
+
+    /// Metrics
+    metrics: HeartbeatMetrics,
+}
+
+pub struct HeartbeatMetrics {
+    pub total_beats: u64,
+    pub total_duration: Duration,
+    pub avg_duration: Duration,
+}
+
+impl HeartbeatEngine {
+    pub fn new(interval: Duration) -> Self {
+        Self {
+            interval,
+            last_beat: Timestamp::now(),
+            metrics: HeartbeatMetrics {
+                total_beats: 0,
+                total_duration: Duration::zero(),
+                avg_duration: Duration::zero(),
+            },
+        }
+    }
+
+    /// Execute one heartbeat cycle
+    pub fn beat(&mut self, daemon: &mut Daemon) -> Result<HeartbeatResult, HeartbeatError> {
+        let start = Timestamp::now();
+
+        // Phase 1: Perceive
+        let observations = daemon.perceive();
+
+        // Phase 2: Remember
+        for obs in &observations {
+            daemon.memory.experience(Event::observation(obs.clone()));
+        }
+
+        // Phase 3: Reflect (build context)
+        let context = daemon.attend()?;
+
+        // Phase 4: Deliberate
+        let action = daemon.deliberate(&context)?;
+
+        // Phase 5: Act
+        let result = daemon.execute(action.clone())?;
+
+        // Phase 6: Learn
+        daemon.learn(&action, &result);
+
+        // Update metrics
+        let duration = start.elapsed();
+        self.metrics.total_beats += 1;
+        self.metrics.total_duration = self.metrics.total_duration + duration;
+        self.metrics.avg_duration = self.metrics.total_duration / self.metrics.total_beats as u32;
+
+        self.last_beat = Timestamp::now();
+
+        Ok(HeartbeatResult {
+            observations,
+            context,
+            action,
+            result,
+            duration,
+        })
+    }
+
+    /// Wait until next heartbeat should occur
+    pub fn wait_for_next(&self) {
+        let elapsed = self.last_beat.elapsed();
+        if elapsed < self.interval {
+            std::thread::sleep(self.interval - elapsed);
+        }
+    }
+}
+
+pub struct HeartbeatResult {
+    pub observations: Vec<Observation>,
+    pub context: Context,
+    pub action: Action,
+    pub result: ActionResult,
+    pub duration: Duration,
+}
+
+pub enum HeartbeatError {
+    PerceptionFailed(String),
+    ContextFailed(String),
+    DeliberationFailed(String),
+    ExecutionFailed(String),
+}
+
+impl From<DaemonError> for HeartbeatError {
+    fn from(e: DaemonError) -> Self {
+        match e {
+            DaemonError::NoActiveGoal => HeartbeatError::DeliberationFailed("No active goal".to_string()),
+            DaemonError::ToolNotFound(t) => HeartbeatError::ExecutionFailed(format!("Tool not found: {}", t)),
+            _ => HeartbeatError::ExecutionFailed(format!("{:?}", e)),
+        }
+    }
+}
+
+// ============================================================================
+// Errors
+// ============================================================================
+
+pub enum DaemonError {
+    CorruptSnapshot,
+    NoActiveGoal,
+    ToolNotFound(String),
+    ToolExecutionFailed(String),
+    ActionNotAllowed(String),
+    MemoryError(String),
+    ConfigurationError(String),
+}
+
+impl std::fmt::Debug for DaemonError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DaemonError::CorruptSnapshot => write!(f, "CorruptSnapshot"),
+            DaemonError::NoActiveGoal => write!(f, "NoActiveGoal"),
+            DaemonError::ToolNotFound(t) => write!(f, "ToolNotFound({})", t),
+            DaemonError::ToolExecutionFailed(e) => write!(f, "ToolExecutionFailed({})", e),
+            DaemonError::ActionNotAllowed(a) => write!(f, "ActionNotAllowed({})", a),
+            DaemonError::MemoryError(e) => write!(f, "MemoryError({})", e),
+            DaemonError::ConfigurationError(e) => write!(f, "ConfigurationError({})", e),
+        }
+    }
+}

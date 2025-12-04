@@ -1,0 +1,234 @@
+// Example: Making AI decisions explainable with Oracle
+// Demonstrates how to trace reasoning and explain decisions to humans
+
+use oracle::{
+    Oracle, ExplanationLevel, Explainable, ExplainableId, Factor,
+    ReasoningStep, StepType, StepInput, StepOutput, Value,
+    Timestamp, Evidence, EvidenceType, Epistemic,
+};
+
+// A decision that can be explained
+struct InvestmentRecommendation {
+    id: ExplainableId,
+    asset: String,
+    action: InvestmentAction,
+    confidence: f32,
+}
+
+enum InvestmentAction {
+    Buy,
+    Hold,
+    Sell,
+}
+
+impl Explainable for InvestmentRecommendation {
+    fn id(&self) -> ExplainableId {
+        self.id.clone()
+    }
+
+    fn description(&self) -> String {
+        let action = match self.action {
+            InvestmentAction::Buy => "Buy",
+            InvestmentAction::Hold => "Hold",
+            InvestmentAction::Sell => "Sell",
+        };
+        format!("{} {} (confidence: {:.0}%)", action, self.asset, self.confidence * 100.0)
+    }
+
+    fn factors(&self) -> Vec<Factor> {
+        vec![
+            Factor {
+                name: "market_trend".to_string(),
+                value: 0.7,
+                description: "Overall market showing positive momentum".to_string(),
+            },
+            Factor {
+                name: "fundamentals".to_string(),
+                value: 0.8,
+                description: "Strong financial metrics and growth".to_string(),
+            },
+            Factor {
+                name: "risk_level".to_string(),
+                value: 0.3,
+                description: "Moderate volatility within acceptable range".to_string(),
+            },
+        ]
+    }
+}
+
+// Decision-making process with full tracing
+struct InvestmentAdvisor {
+    oracle: Oracle,
+}
+
+impl InvestmentAdvisor {
+    fn new() -> Self {
+        let mut oracle = Oracle::new();
+        oracle.trace_on(); // Enable tracing for explainability
+        Self { oracle }
+    }
+
+    fn analyze(&mut self, asset: &str) -> InvestmentRecommendation {
+        let decision_id = ExplainableId::new();
+
+        // Step 1: Observe market conditions
+        self.oracle.record_step(ReasoningStep {
+            id: StepId::new(),
+            step_type: StepType::Observation,
+            description: "Analyzed current market conditions".to_string(),
+            inputs: vec![
+                StepInput {
+                    name: "market_index".to_string(),
+                    value: Value::empty(),
+                    source: Some("market_data_api".to_string()),
+                },
+            ],
+            output: Some(StepOutput {
+                value: Value::empty(),
+                confidence: 0.9,
+            }),
+            reasoning: "Market showing bullish signals with increasing volume".to_string(),
+            confidence: 0.85,
+            timestamp: Timestamp::now(),
+        });
+
+        // Step 2: Retrieve historical data
+        self.oracle.record_step(ReasoningStep {
+            id: StepId::new(),
+            step_type: StepType::Retrieval,
+            description: format!("Retrieved 5-year history for {}", asset),
+            inputs: vec![],
+            output: Some(StepOutput {
+                value: Value::empty(),
+                confidence: 1.0,
+            }),
+            reasoning: "Historical data shows consistent growth pattern".to_string(),
+            confidence: 0.95,
+            timestamp: Timestamp::now(),
+        });
+
+        // Step 3: Evaluate fundamentals
+        self.oracle.record_step(ReasoningStep {
+            id: StepId::new(),
+            step_type: StepType::Evaluation,
+            description: "Evaluated financial fundamentals".to_string(),
+            inputs: vec![],
+            output: Some(StepOutput {
+                value: Value::empty(),
+                confidence: 0.88,
+            }),
+            reasoning: "P/E ratio favorable, revenue growth exceeds sector average".to_string(),
+            confidence: 0.88,
+            timestamp: Timestamp::now(),
+        });
+
+        // Step 4: Make decision
+        self.oracle.record_step(ReasoningStep {
+            id: StepId::new(),
+            step_type: StepType::Decision,
+            description: "Determined recommendation based on analysis".to_string(),
+            inputs: vec![],
+            output: Some(StepOutput {
+                value: Value::empty(),
+                confidence: 0.82,
+            }),
+            reasoning: "Positive market, strong fundamentals, acceptable risk -> Buy".to_string(),
+            confidence: 0.82,
+            timestamp: Timestamp::now(),
+        });
+
+        // Complete trace
+        self.oracle.complete_trace(decision_id.clone());
+
+        InvestmentRecommendation {
+            id: decision_id,
+            asset: asset.to_string(),
+            action: InvestmentAction::Buy,
+            confidence: 0.82,
+        }
+    }
+
+    fn explain(&self, recommendation: &InvestmentRecommendation, level: ExplanationLevel) {
+        let explanation = self.oracle.explain(recommendation, level);
+        println!("{}", explanation.to_human_readable());
+    }
+
+    fn show_reasoning_graph(&self, recommendation: &InvestmentRecommendation) {
+        if let Some(trace) = self.oracle.get_trace(&recommendation.id()) {
+            // Could generate visualization
+            println!("Reasoning steps: {}", trace.steps().len());
+            for (i, step) in trace.steps().iter().enumerate() {
+                println!("  {}. {} (confidence: {:.0}%)",
+                    i + 1,
+                    step.description,
+                    step.confidence * 100.0
+                );
+            }
+        }
+    }
+
+    fn counterfactual_analysis(&self, recommendation: &InvestmentRecommendation) {
+        // Why this recommendation instead of alternatives?
+        let cf = self.oracle.counterfactual("Buy", "Hold");
+        println!("{}", cf.to_prose());
+
+        let cf2 = self.oracle.counterfactual("Buy", "Sell");
+        println!("{}", cf2.to_prose());
+    }
+
+    fn interactive_exploration(&self, recommendation: &InvestmentRecommendation) {
+        let mut explainer = self.oracle.interactive_explainer(recommendation);
+
+        // Start with standard level
+        println!("=== Initial Explanation ===");
+        let exp = explainer.current_explanation();
+        println!("{}", exp.to_human_readable());
+
+        // Drill down for more detail
+        println!("\n=== Detailed Explanation ===");
+        let detailed = explainer.drill_down();
+        println!("{}", detailed.to_human_readable());
+
+        // Show evidence
+        println!("\n=== Evidence ===");
+        for evidence in explainer.show_evidence() {
+            println!("  - {} ({}): {}", evidence.source, evidence.evidence_type, evidence.content);
+        }
+
+        // Explain confidence
+        println!("\n=== Confidence Breakdown ===");
+        let confidence = explainer.explain_confidence();
+        println!("  Overall: {:.0}%", confidence.overall * 100.0);
+        println!("  Evidence strength: {:.0}%", confidence.evidence * 100.0);
+        println!("  Reasoning validity: {:.0}%", confidence.reasoning * 100.0);
+    }
+}
+
+fn main() {
+    let mut advisor = InvestmentAdvisor::new();
+
+    // Make a decision with full tracing
+    let recommendation = advisor.analyze("ACME Corp");
+
+    // Explain at different levels
+    println!("=== Brief Explanation ===");
+    advisor.explain(&recommendation, ExplanationLevel::Brief);
+
+    println!("\n=== Standard Explanation ===");
+    advisor.explain(&recommendation, ExplanationLevel::Standard);
+
+    println!("\n=== Full Explanation ===");
+    advisor.explain(&recommendation, ExplanationLevel::Full);
+
+    // Show the reasoning graph
+    println!("\n=== Reasoning Chain ===");
+    advisor.show_reasoning_graph(&recommendation);
+
+    // Counterfactual analysis
+    println!("\n=== Why Not Alternatives? ===");
+    advisor.counterfactual_analysis(&recommendation);
+
+    // Interactive exploration
+    println!("\n=== Interactive Exploration ===");
+    advisor.interactive_exploration(&recommendation);
+}

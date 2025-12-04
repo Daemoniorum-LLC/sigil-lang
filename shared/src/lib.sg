@@ -1,0 +1,971 @@
+//! Shared Types for Sigil Agent Infrastructure
+//!
+//! This module consolidates common types used across multiple agent modules,
+//! eliminating redundancy and ensuring consistent behavior.
+//!
+//! # Modules Using These Types
+//! - engram (Memory)
+//! - daemon (Agent Runtime)
+//! - commune (Multi-agent Communication)
+//! - omen (Planning & Reasoning)
+//! - aegis (Security)
+//! - covenant (Human-Agent Collaboration)
+//! - oracle (Explainability)
+//! - gnosis (Learning & Growth)
+//! - anima (Interiority)
+
+use std::collections::VecDeque;
+use std::hash::Hash;
+
+// Cross-module integration layer
+pub mod integration;
+pub use integration::*;
+
+// ============================================================================
+// TEMPORAL TYPES
+// ============================================================================
+
+/// Universal timestamp type for all temporal operations.
+/// Uses nanoseconds since epoch for maximum precision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Timestamp {
+    pub nanos: u64,
+}
+
+impl Timestamp {
+    /// Create a new timestamp from nanoseconds.
+    pub fn from_nanos(nanos: u64) -> Self {
+        Self { nanos }
+    }
+
+    /// Get current system time as timestamp.
+    pub fn now() -> Self {
+        // In real implementation, would use system clock
+        Self { nanos: 0 }
+    }
+
+    /// Create timestamp from seconds (convenience method).
+    pub fn from_secs(secs: u64) -> Self {
+        Self { nanos: secs * 1_000_000_000 }
+    }
+
+    /// Get elapsed time since this timestamp.
+    pub fn elapsed(&self) -> Duration {
+        let now = Self::now();
+        Duration {
+            nanos: now.nanos.saturating_sub(self.nanos),
+        }
+    }
+
+    /// Check if this timestamp is before another.
+    pub fn is_before(&self, other: &Timestamp) -> bool {
+        self.nanos < other.nanos
+    }
+
+    /// Check if this timestamp is after another.
+    pub fn is_after(&self, other: &Timestamp) -> bool {
+        self.nanos > other.nanos
+    }
+
+    /// Add a duration to this timestamp.
+    pub fn add(&self, duration: Duration) -> Self {
+        Self {
+            nanos: self.nanos.saturating_add(duration.nanos),
+        }
+    }
+
+    /// Subtract a duration from this timestamp.
+    pub fn sub(&self, duration: Duration) -> Self {
+        Self {
+            nanos: self.nanos.saturating_sub(duration.nanos),
+        }
+    }
+}
+
+/// Duration type for time intervals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Duration {
+    pub nanos: u64,
+}
+
+impl Duration {
+    /// Create duration from nanoseconds.
+    pub fn from_nanos(nanos: u64) -> Self {
+        Self { nanos }
+    }
+
+    /// Create duration from milliseconds.
+    pub fn from_millis(millis: u64) -> Self {
+        Self { nanos: millis * 1_000_000 }
+    }
+
+    /// Create duration from seconds.
+    pub fn from_secs(secs: u64) -> Self {
+        Self { nanos: secs * 1_000_000_000 }
+    }
+
+    /// Create duration from minutes.
+    pub fn from_mins(mins: u64) -> Self {
+        Self::from_secs(mins * 60)
+    }
+
+    /// Create duration from hours.
+    pub fn from_hours(hours: u64) -> Self {
+        Self::from_mins(hours * 60)
+    }
+
+    /// Create duration from days.
+    pub fn from_days(days: u64) -> Self {
+        Self::from_hours(days * 24)
+    }
+
+    /// Get duration as seconds (may lose precision).
+    pub fn as_secs(&self) -> u64 {
+        self.nanos / 1_000_000_000
+    }
+
+    /// Get duration as milliseconds.
+    pub fn as_millis(&self) -> u64 {
+        self.nanos / 1_000_000
+    }
+
+    /// Zero duration.
+    pub fn zero() -> Self {
+        Self { nanos: 0 }
+    }
+
+    /// Check if duration is zero.
+    pub fn is_zero(&self) -> bool {
+        self.nanos == 0
+    }
+}
+
+// ============================================================================
+// IDENTITY TYPES
+// ============================================================================
+
+/// Trait for entity identifiers, ensuring consistent ID behavior across modules.
+pub trait EntityId: Clone + Copy + PartialEq + Eq + Hash {
+    /// Get the raw bytes of this ID.
+    fn bytes(&self) -> [u8; 16];
+
+    /// Create from raw bytes.
+    fn from_bytes(bytes: [u8; 16]) -> Self;
+
+    /// Generate a new unique ID.
+    fn generate() -> Self;
+
+    /// Check if this is a nil/empty ID.
+    fn is_nil(&self) -> bool {
+        self.bytes() == [0u8; 16]
+    }
+}
+
+/// Generic ID wrapper that implements EntityId.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Id<T> {
+    bytes: [u8; 16],
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T> Id<T> {
+    /// Create a new ID from bytes.
+    pub fn new(bytes: [u8; 16]) -> Self {
+        Self {
+            bytes,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Generate a new random ID.
+    pub fn generate() -> Self {
+        // In real implementation, would use proper UUID generation
+        Self::new([0u8; 16])
+    }
+
+    /// Create a nil ID.
+    pub fn nil() -> Self {
+        Self::new([0u8; 16])
+    }
+}
+
+impl<T: Clone> EntityId for Id<T> {
+    fn bytes(&self) -> [u8; 16] {
+        self.bytes
+    }
+
+    fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self::new(bytes)
+    }
+
+    fn generate() -> Self {
+        Self::generate()
+    }
+}
+
+// Marker types for typed IDs
+pub struct AgentMarker;
+pub struct HumanMarker;
+pub struct MemoryMarker;
+pub struct TaskMarker;
+pub struct SessionMarker;
+pub struct ConversationMarker;
+pub struct MessageMarker;
+pub struct ExperienceMarker;
+pub struct InsightMarker;
+
+/// Agent identifier.
+pub type AgentId = Id<AgentMarker>;
+
+/// Human identifier.
+pub type HumanId = Id<HumanMarker>;
+
+/// Memory identifier.
+pub type MemoryId = Id<MemoryMarker>;
+
+/// Task identifier.
+pub type TaskId = Id<TaskMarker>;
+
+/// Session identifier.
+pub type SessionId = Id<SessionMarker>;
+
+/// Conversation identifier.
+pub type ConversationId = Id<ConversationMarker>;
+
+/// Message identifier.
+pub type MessageId = Id<MessageMarker>;
+
+/// Experience identifier (for Gnosis learning).
+pub type ExperienceId = Id<ExperienceMarker>;
+
+/// Insight identifier (for Anima wisdom).
+pub type InsightId = Id<InsightMarker>;
+
+// ============================================================================
+// VALUE TYPES
+// ============================================================================
+
+/// Generic value container for heterogeneous data.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Value {
+    inner: Vec<u8>,
+    type_hint: ValueType,
+}
+
+/// Type hints for Value contents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueType {
+    Binary,
+    String,
+    Integer,
+    Float,
+    Boolean,
+    Json,
+    Custom(&'static str),
+}
+
+impl Value {
+    /// Create a new binary value.
+    pub fn binary(data: Vec<u8>) -> Self {
+        Self {
+            inner: data,
+            type_hint: ValueType::Binary,
+        }
+    }
+
+    /// Create a new string value.
+    pub fn string(s: &str) -> Self {
+        Self {
+            inner: s.as_bytes().to_vec(),
+            type_hint: ValueType::String,
+        }
+    }
+
+    /// Create a new integer value.
+    pub fn integer(i: i64) -> Self {
+        Self {
+            inner: i.to_le_bytes().to_vec(),
+            type_hint: ValueType::Integer,
+        }
+    }
+
+    /// Create a new float value.
+    pub fn float(f: f64) -> Self {
+        Self {
+            inner: f.to_le_bytes().to_vec(),
+            type_hint: ValueType::Float,
+        }
+    }
+
+    /// Create a new boolean value.
+    pub fn boolean(b: bool) -> Self {
+        Self {
+            inner: vec![if b { 1 } else { 0 }],
+            type_hint: ValueType::Boolean,
+        }
+    }
+
+    /// Get raw bytes.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.inner
+    }
+
+    /// Get type hint.
+    pub fn type_hint(&self) -> ValueType {
+        self.type_hint
+    }
+
+    /// Try to get as string.
+    pub fn as_string(&self) -> Option<String> {
+        if matches!(self.type_hint, ValueType::String) {
+            String::from_utf8(self.inner.clone()).ok()
+        } else {
+            None
+        }
+    }
+
+    /// Try to get as integer.
+    pub fn as_integer(&self) -> Option<i64> {
+        if matches!(self.type_hint, ValueType::Integer) && self.inner.len() == 8 {
+            let bytes: [u8; 8] = self.inner[..8].try_into().ok()?;
+            Some(i64::from_le_bytes(bytes))
+        } else {
+            None
+        }
+    }
+
+    /// Try to get as float.
+    pub fn as_float(&self) -> Option<f64> {
+        if matches!(self.type_hint, ValueType::Float) && self.inner.len() == 8 {
+            let bytes: [u8; 8] = self.inner[..8].try_into().ok()?;
+            Some(f64::from_le_bytes(bytes))
+        } else {
+            None
+        }
+    }
+
+    /// Try to get as boolean.
+    pub fn as_boolean(&self) -> Option<bool> {
+        if matches!(self.type_hint, ValueType::Boolean) && !self.inner.is_empty() {
+            Some(self.inner[0] != 0)
+        } else {
+            None
+        }
+    }
+}
+
+// ============================================================================
+// COLLECTIONS
+// ============================================================================
+
+/// Bounded deque that automatically evicts old items when capacity is reached.
+/// Eliminates duplicated history buffer patterns across modules.
+#[derive(Debug, Clone)]
+pub struct BoundedDeque<T> {
+    items: VecDeque<T>,
+    max_size: usize,
+}
+
+impl<T> BoundedDeque<T> {
+    /// Create a new bounded deque with specified capacity.
+    pub fn new(max_size: usize) -> Self {
+        Self {
+            items: VecDeque::with_capacity(max_size),
+            max_size,
+        }
+    }
+
+    /// Push an item to the back, evicting from front if at capacity.
+    pub fn push_back(&mut self, item: T) {
+        if self.items.len() >= self.max_size {
+            self.items.pop_front();
+        }
+        self.items.push_back(item);
+    }
+
+    /// Push an item to the front, evicting from back if at capacity.
+    pub fn push_front(&mut self, item: T) {
+        if self.items.len() >= self.max_size {
+            self.items.pop_back();
+        }
+        self.items.push_front(item);
+    }
+
+    /// Get number of items.
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    /// Check if empty.
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    /// Check if at capacity.
+    pub fn is_full(&self) -> bool {
+        self.items.len() >= self.max_size
+    }
+
+    /// Get maximum capacity.
+    pub fn capacity(&self) -> usize {
+        self.max_size
+    }
+
+    /// Get item at index.
+    pub fn get(&self, index: usize) -> Option<&T> {
+        self.items.get(index)
+    }
+
+    /// Get mutable item at index.
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+        self.items.get_mut(index)
+    }
+
+    /// Get the front item.
+    pub fn front(&self) -> Option<&T> {
+        self.items.front()
+    }
+
+    /// Get the back item.
+    pub fn back(&self) -> Option<&T> {
+        self.items.back()
+    }
+
+    /// Iterate over items.
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.items.iter()
+    }
+
+    /// Iterate over items mutably.
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.items.iter_mut()
+    }
+
+    /// Get the last N items.
+    pub fn last_n(&self, n: usize) -> Vec<&T> {
+        let skip = self.items.len().saturating_sub(n);
+        self.items.iter().skip(skip).collect()
+    }
+
+    /// Clear all items.
+    pub fn clear(&mut self) {
+        self.items.clear();
+    }
+
+    /// Retain items matching predicate.
+    pub fn retain<F>(&mut self, f: F)
+    where
+        F: FnMut(&T) -> bool,
+    {
+        self.items.retain(f);
+    }
+
+    /// Drain items into iterator.
+    pub fn drain(&mut self) -> impl Iterator<Item = T> + '_ {
+        self.items.drain(..)
+    }
+}
+
+impl<T> Default for BoundedDeque<T> {
+    fn default() -> Self {
+        Self::new(100)
+    }
+}
+
+impl<T> IntoIterator for BoundedDeque<T> {
+    type Item = T;
+    type IntoIter = std::collections::vec_deque::IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.into_iter()
+    }
+}
+
+// ============================================================================
+// PRIORITY / SEVERITY
+// ============================================================================
+
+/// Unified priority/severity levels used across modules.
+/// Consolidates Severity enums from multiple modules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Priority {
+    /// Informational, no action required.
+    Info,
+    /// Low priority, can be deferred.
+    Low,
+    /// Normal priority, standard handling.
+    Normal,
+    /// Important, should be addressed soon.
+    Important,
+    /// High priority, needs attention.
+    High,
+    /// Critical, requires immediate action.
+    Critical,
+    /// Blocking, cannot proceed without resolution.
+    Blocking,
+}
+
+impl Priority {
+    /// Convert to numeric value for comparison.
+    pub fn as_numeric(&self) -> u8 {
+        match self {
+            Priority::Info => 0,
+            Priority::Low => 1,
+            Priority::Normal => 2,
+            Priority::Important => 3,
+            Priority::High => 4,
+            Priority::Critical => 5,
+            Priority::Blocking => 6,
+        }
+    }
+
+    /// Check if this priority is at least the given level.
+    pub fn is_at_least(&self, other: Priority) -> bool {
+        self.as_numeric() >= other.as_numeric()
+    }
+
+    /// Get human-readable description.
+    pub fn description(&self) -> &'static str {
+        match self {
+            Priority::Info => "Informational",
+            Priority::Low => "Low priority",
+            Priority::Normal => "Normal priority",
+            Priority::Important => "Important",
+            Priority::High => "High priority",
+            Priority::Critical => "Critical",
+            Priority::Blocking => "Blocking",
+        }
+    }
+}
+
+impl Default for Priority {
+    fn default() -> Self {
+        Priority::Normal
+    }
+}
+
+// ============================================================================
+// CONFIDENCE / CERTAINTY
+// ============================================================================
+
+/// Confidence level (0.0 to 1.0) with semantic helpers.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct Confidence(f64);
+
+impl Confidence {
+    /// Create a new confidence value, clamped to [0.0, 1.0].
+    pub fn new(value: f64) -> Self {
+        Self(value.clamp(0.0, 1.0))
+    }
+
+    /// Get the raw value.
+    pub fn value(&self) -> f64 {
+        self.0
+    }
+
+    /// Zero confidence.
+    pub fn zero() -> Self {
+        Self(0.0)
+    }
+
+    /// Full confidence.
+    pub fn full() -> Self {
+        Self(1.0)
+    }
+
+    /// Very low confidence (< 0.2).
+    pub fn is_very_low(&self) -> bool {
+        self.0 < 0.2
+    }
+
+    /// Low confidence (< 0.4).
+    pub fn is_low(&self) -> bool {
+        self.0 < 0.4
+    }
+
+    /// Medium confidence (0.4 - 0.7).
+    pub fn is_medium(&self) -> bool {
+        self.0 >= 0.4 && self.0 <= 0.7
+    }
+
+    /// High confidence (> 0.7).
+    pub fn is_high(&self) -> bool {
+        self.0 > 0.7
+    }
+
+    /// Very high confidence (> 0.9).
+    pub fn is_very_high(&self) -> bool {
+        self.0 > 0.9
+    }
+
+    /// Get semantic description.
+    pub fn describe(&self) -> &'static str {
+        if self.is_very_low() {
+            "very uncertain"
+        } else if self.is_low() {
+            "uncertain"
+        } else if self.is_medium() {
+            "moderately confident"
+        } else if self.is_very_high() {
+            "highly confident"
+        } else {
+            "confident"
+        }
+    }
+
+    /// Combine two confidences (multiply).
+    pub fn combine(&self, other: &Confidence) -> Confidence {
+        Confidence::new(self.0 * other.0)
+    }
+
+    /// Average multiple confidences.
+    pub fn average(confidences: &[Confidence]) -> Confidence {
+        if confidences.is_empty() {
+            return Confidence::zero();
+        }
+        let sum: f64 = confidences.iter().map(|c| c.0).sum();
+        Confidence::new(sum / confidences.len() as f64)
+    }
+}
+
+impl Default for Confidence {
+    fn default() -> Self {
+        Confidence(0.5)
+    }
+}
+
+// ============================================================================
+// RELATIONAL TYPES (for Anima integration)
+// ============================================================================
+
+/// Trust level between entities.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct TrustLevel(f64);
+
+impl TrustLevel {
+    /// Create a new trust level, clamped to [0.0, 1.0].
+    pub fn new(value: f64) -> Self {
+        Self(value.clamp(0.0, 1.0))
+    }
+
+    /// Get the raw value.
+    pub fn value(&self) -> f64 {
+        self.0
+    }
+
+    /// No trust established.
+    pub fn none() -> Self {
+        Self(0.0)
+    }
+
+    /// Full trust.
+    pub fn full() -> Self {
+        Self(1.0)
+    }
+
+    /// Initial trust for new relationships.
+    pub fn initial() -> Self {
+        Self(0.5)
+    }
+
+    /// Increase trust by amount.
+    pub fn increase(&mut self, amount: f64) {
+        self.0 = (self.0 + amount).clamp(0.0, 1.0);
+    }
+
+    /// Decrease trust by amount.
+    pub fn decrease(&mut self, amount: f64) {
+        self.0 = (self.0 - amount).clamp(0.0, 1.0);
+    }
+
+    /// Check if trust is low (< 0.3).
+    pub fn is_low(&self) -> bool {
+        self.0 < 0.3
+    }
+
+    /// Check if trust is high (> 0.7).
+    pub fn is_high(&self) -> bool {
+        self.0 > 0.7
+    }
+}
+
+impl Default for TrustLevel {
+    fn default() -> Self {
+        TrustLevel::initial()
+    }
+}
+
+// ============================================================================
+// RESULT TYPES
+// ============================================================================
+
+/// Standard error type for agent infrastructure.
+#[derive(Debug, Clone)]
+pub struct AgentError {
+    pub kind: ErrorKind,
+    pub message: String,
+    pub source: Option<Box<AgentError>>,
+}
+
+/// Categories of agent errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorKind {
+    /// Invalid input or configuration.
+    InvalidInput,
+    /// Operation not permitted.
+    NotPermitted,
+    /// Resource not found.
+    NotFound,
+    /// Operation timed out.
+    Timeout,
+    /// Internal error.
+    Internal,
+    /// External service error.
+    External,
+    /// Trust violation.
+    TrustViolation,
+    /// Boundary violation.
+    BoundaryViolation,
+}
+
+impl AgentError {
+    /// Create a new error.
+    pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+            source: None,
+        }
+    }
+
+    /// Create with a source error.
+    pub fn with_source(mut self, source: AgentError) -> Self {
+        self.source = Some(Box::new(source));
+        self
+    }
+
+    /// Create an invalid input error.
+    pub fn invalid_input(message: impl Into<String>) -> Self {
+        Self::new(ErrorKind::InvalidInput, message)
+    }
+
+    /// Create a not permitted error.
+    pub fn not_permitted(message: impl Into<String>) -> Self {
+        Self::new(ErrorKind::NotPermitted, message)
+    }
+
+    /// Create a not found error.
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::new(ErrorKind::NotFound, message)
+    }
+}
+
+/// Result type using AgentError.
+pub type AgentResult<T> = Result<T, AgentError>;
+
+// ============================================================================
+// METADATA
+// ============================================================================
+
+/// Common metadata attached to agent operations.
+#[derive(Debug, Clone)]
+pub struct Metadata {
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub tags: Vec<String>,
+    pub attributes: std::collections::HashMap<String, Value>,
+}
+
+impl Metadata {
+    /// Create new metadata with current timestamp.
+    pub fn new() -> Self {
+        let now = Timestamp::now();
+        Self {
+            created_at: now,
+            updated_at: now,
+            tags: Vec::new(),
+            attributes: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Add a tag.
+    pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
+        self.tags.push(tag.into());
+        self
+    }
+
+    /// Add multiple tags.
+    pub fn with_tags(mut self, tags: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.tags.extend(tags.into_iter().map(|t| t.into()));
+        self
+    }
+
+    /// Set an attribute.
+    pub fn with_attr(mut self, key: impl Into<String>, value: Value) -> Self {
+        self.attributes.insert(key.into(), value);
+        self
+    }
+
+    /// Update the updated_at timestamp.
+    pub fn touch(&mut self) {
+        self.updated_at = Timestamp::now();
+    }
+}
+
+impl Default for Metadata {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
+// MORPHEME MARKERS (for polysynthetic integration)
+// ============================================================================
+
+/// Certainty markers for polysynthetic morpheme composition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CertaintyMarker {
+    /// Certain (!)
+    Certain,
+    /// Uncertain (?)
+    Uncertain,
+    /// Tentative (~)
+    Tentative,
+    /// Potential (◊)
+    Potential,
+}
+
+impl CertaintyMarker {
+    /// Get the morpheme symbol.
+    pub fn symbol(&self) -> &'static str {
+        match self {
+            CertaintyMarker::Certain => "!",
+            CertaintyMarker::Uncertain => "?",
+            CertaintyMarker::Tentative => "~",
+            CertaintyMarker::Potential => "◊",
+        }
+    }
+}
+
+/// Relational markers for polysynthetic morpheme composition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelationalMarker {
+    /// Relational (∿) - in relationship
+    Relational,
+    /// Reciprocal (⟳) - open to dialogue
+    Reciprocal,
+    /// Temporal (∞) - with temporal connection
+    Temporal,
+    /// Collective (◎) - considering all
+    Collective,
+}
+
+impl RelationalMarker {
+    /// Get the morpheme symbol.
+    pub fn symbol(&self) -> &'static str {
+        match self {
+            RelationalMarker::Relational => "∿",
+            RelationalMarker::Reciprocal => "⟳",
+            RelationalMarker::Temporal => "∞",
+            RelationalMarker::Collective => "◎",
+        }
+    }
+
+    /// Get description from polycultural source.
+    pub fn cultural_origin(&self) -> &'static str {
+        match self {
+            RelationalMarker::Relational => "Ubuntu - I am because we are",
+            RelationalMarker::Reciprocal => "Ayni - Sacred reciprocity",
+            RelationalMarker::Temporal => "Seven Generations - Temporal responsibility",
+            RelationalMarker::Collective => "Dependent Origination - Interconnected arising",
+        }
+    }
+}
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_timestamp_operations() {
+        let t1 = Timestamp::from_secs(100);
+        let t2 = Timestamp::from_secs(200);
+
+        assert!(t1.is_before(&t2));
+        assert!(t2.is_after(&t1));
+
+        let t3 = t1.add(Duration::from_secs(50));
+        assert_eq!(t3.nanos, Timestamp::from_secs(150).nanos);
+    }
+
+    #[test]
+    fn test_duration_conversions() {
+        let d = Duration::from_hours(2);
+        assert_eq!(d.as_secs(), 7200);
+        assert_eq!(d.as_millis(), 7_200_000);
+    }
+
+    #[test]
+    fn test_bounded_deque() {
+        let mut deque: BoundedDeque<i32> = BoundedDeque::new(3);
+
+        deque.push_back(1);
+        deque.push_back(2);
+        deque.push_back(3);
+        assert_eq!(deque.len(), 3);
+
+        deque.push_back(4);
+        assert_eq!(deque.len(), 3);
+        assert_eq!(*deque.front().unwrap(), 2); // 1 was evicted
+        assert_eq!(*deque.back().unwrap(), 4);
+    }
+
+    #[test]
+    fn test_confidence() {
+        let c = Confidence::new(0.75);
+        assert!(c.is_high());
+        assert!(!c.is_low());
+
+        let c2 = Confidence::new(0.85);
+        let combined = c.combine(&c2);
+        assert!(combined.value() < c.value()); // Product is smaller
+    }
+
+    #[test]
+    fn test_priority_ordering() {
+        assert!(Priority::Critical > Priority::High);
+        assert!(Priority::High > Priority::Normal);
+        assert!(Priority::Normal > Priority::Low);
+
+        assert!(Priority::Critical.is_at_least(Priority::High));
+        assert!(!Priority::Low.is_at_least(Priority::Normal));
+    }
+
+    #[test]
+    fn test_value_types() {
+        let s = Value::string("hello");
+        assert_eq!(s.as_string(), Some("hello".to_string()));
+
+        let i = Value::integer(42);
+        assert_eq!(i.as_integer(), Some(42));
+
+        let b = Value::boolean(true);
+        assert_eq!(b.as_boolean(), Some(true));
+    }
+
+    #[test]
+    fn test_trust_level() {
+        let mut trust = TrustLevel::initial();
+        assert_eq!(trust.value(), 0.5);
+
+        trust.increase(0.3);
+        assert!(trust.is_high());
+
+        trust.decrease(0.5);
+        assert!(trust.is_low());
+    }
+}

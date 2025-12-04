@@ -1,0 +1,767 @@
+// Engram - Main Entry Point
+// Memory Infrastructure for Artificial Minds
+
+module engram
+
+use engram::types::*
+use engram::instant::InstantMemory
+use engram::episodic::EpisodicMemory
+use engram::semantic::SemanticMemory
+use engram::procedural::ProceduralMemory
+use engram::config::EngramConfig
+use engram::query::{Query, RecallResult}
+
+// ============================================================================
+// Main Engram Structure
+// ============================================================================
+
+/// Engram - The primary interface for AI agent memory
+///
+/// Provides unified access to four memory systems:
+/// - Instant: Working memory (current context)
+/// - Episodic: Experience memory (what happened)
+/// - Semantic: Knowledge memory (what we know)
+/// - Procedural: Skill memory (how to do things)
+pub struct Engram {
+    // Memory systems
+    instant: InstantMemory,
+    episodic: EpisodicMemory,
+    semantic: SemanticMemory,
+    procedural: ProceduralMemory,
+
+    // Configuration
+    config: EngramConfig,
+
+    // Identity
+    agent_id: AgentId,
+    instance_id: InstanceId,
+
+    // Statistics
+    stats: EngramStats,
+
+    // Event handlers
+    event_handlers: Vec<fn(EngramEvent)>,
+}
+
+impl Engram {
+    // ========================================================================
+    // Construction
+    // ========================================================================
+
+    /// Create a new Engram instance with the specified configuration
+    pub fn new(config: EngramConfig) -> EngramResult<Self>! {
+        let agent_id = config.agent_id.clone()
+            .unwrap_or_else(|| generate_agent_id())
+
+        let instance_id = generate_instance_id()
+
+        let instant = InstantMemory::new(config.instant.clone())?
+        let episodic = EpisodicMemory::new(config.episodic.clone())?
+        let semantic = SemanticMemory::new(config.semantic.clone())?
+        let procedural = ProceduralMemory::new(config.procedural.clone())?
+
+        Ok(Self {
+            instant,
+            episodic,
+            semantic,
+            procedural,
+            config,
+            agent_id,
+            instance_id,
+            stats: EngramStats::new(),
+            event_handlers: vec![],
+        })
+    }
+
+    /// Create with default configuration
+    pub fn default() -> EngramResult<Self>! {
+        Self::new(EngramConfig::default())
+    }
+
+    // ========================================================================
+    // Core Operations
+    // ========================================================================
+
+    /// Primary recall interface - searches across all memory systems
+    ///
+    /// Returns results with uncertainty metadata, ranked by relevance.
+    /// Automatically identifies gaps in knowledge.
+    pub fn recall(query: impl Into<Query>) -> RecallResult~ {
+        let query = query.into()
+        let start = Instant::now()
+
+        // Search each memory system
+        let instant_results = self.instant.search(&query)
+        let episodic_results = self.episodic.recall_similar(&query.context(), query.limit())
+        let semantic_results = self.semantic.query(&query.text(), query.limit())
+        let skill_matches = self.procedural.match_situation(&query.context())
+
+        // Merge and rank results
+        let memories = self.merge_results(
+            instant_results,
+            episodic_results,
+            semantic_results,
+        )
+
+        // Compute confidence distribution
+        let confidence = ConfidenceDistribution::from_values(
+            memories.iter().map(|m| m.confidence).collect()
+        )
+
+        // Identify gaps
+        let gaps = self.identify_gaps(&query, &memories)
+
+        // Update statistics
+        self.stats.recall_count += 1
+        self.stats.total_recall_time += start.elapsed()
+
+        RecallResult {
+            memories,
+            total_found: memories.len(),
+            returned: memories.len().min(query.limit()),
+            confidence,
+            gaps,
+            skills: skill_matches,
+            query_metadata: QueryMetadata {
+                query: query.clone(),
+                duration: start.elapsed(),
+                sources_searched: vec![
+                    MemorySource::Instant,
+                    MemorySource::Episodic,
+                    MemorySource::Semantic,
+                ],
+            },
+        }
+    }
+
+    /// Add knowledge to semantic memory
+    pub fn learn(fact: Fact) -> EngramResult<Vec<EngramId>>! {
+        let ids = self.semantic.learn(fact.clone())?
+
+        // Bring into instant memory if significant
+        if fact.significance() > 0.5 {
+            self.instant.attend(
+                Content::Structured(fact.to_value()),
+                relevance: fact.significance(),
+            )?
+        }
+
+        // Emit event
+        self.emit(EngramEvent::EngramCreated {
+            ids: ids.clone(),
+            source: MemorySource::Semantic,
+        })
+
+        self.stats.facts_learned += 1
+        Ok(ids)
+    }
+
+    /// Record an experience to episodic memory
+    pub fn experience(episode: Episode) -> EngramResult<EpisodeId>! {
+        let id = self.episodic.record(episode.clone())?
+
+        // Bring summary into instant memory
+        self.instant.attend(
+            Content::Text(episode.summarize()),
+            relevance: episode.significance,
+        )?
+
+        // Check if this episode suggests a skill
+        self.maybe_extract_skill(&episode)
+
+        // Emit event
+        self.emit(EngramEvent::EpisodeCompleted {
+            id: id.clone(),
+            outcome: episode.outcome.clone(),
+        })
+
+        self.stats.episodes_recorded += 1
+        Ok(id)
+    }
+
+    /// Bring something into instant (working) memory
+    pub fn attend(content: impl Into<Content>, relevance: f64) -> EngramResult<ItemId>! {
+        self.instant.attend(content.into(), relevance)
+    }
+
+    /// Find applicable skills for the current situation
+    pub fn match_skills(context: &Context) -> Vec<SkillMatch> {
+        self.procedural.match_situation(context)
+    }
+
+    // ========================================================================
+    // Context Building
+    // ========================================================================
+
+    /// Build a context export suitable for LLM consumption
+    pub fn build_context(config: ContextConfig) -> ExportedContext {
+        let mut items = vec![]
+        let mut used_tokens = TokenCount::zero()
+
+        // Add instant memory first (highest priority)
+        if config.include.contains(&ContextSource::Instant) {
+            for item in self.instant.active() {
+                if used_tokens + item.tokens <= config.budget {
+                    items.push(ContextItem {
+                        content: item.content.to_string(),
+                        relevance: item.current_priority,
+                        source: MemorySource::Instant,
+                        tokens: item.tokens,
+                    })
+                    used_tokens = used_tokens + item.tokens
+                }
+            }
+        }
+
+        // Add relevant semantic knowledge
+        if config.include.contains(&ContextSource::SemanticRelevant) {
+            if let Some(task) = &config.for_task {
+                let results = self.semantic.query(task, limit: 20)
+                for result in results {
+                    let tokens = TokenCount::from_text(&result.node.to_string())
+                    if used_tokens + tokens <= config.budget {
+                        items.push(ContextItem {
+                            content: result.node.to_string(),
+                            relevance: result.relevance,
+                            source: MemorySource::Semantic,
+                            tokens,
+                        })
+                        used_tokens = used_tokens + tokens
+                    }
+                }
+            }
+        }
+
+        // Add recent episodes
+        if config.include.contains(&ContextSource::EpisodicRecent) {
+            let episodes = self.episodic.recall_at(Instant::now(), window: 1h)
+            for episode in episodes.take(5) {
+                let summary = episode.summarize()
+                let tokens = TokenCount::from_text(&summary)
+                if used_tokens + tokens <= config.budget {
+                    items.push(ContextItem {
+                        content: summary,
+                        relevance: episode.significance,
+                        source: MemorySource::Episodic,
+                        tokens,
+                    })
+                    used_tokens = used_tokens + tokens
+                }
+            }
+        }
+
+        // Sort by relevance and format
+        items.sort_by(|a, b| b.relevance.partial_cmp(&a.relevance).unwrap())
+
+        ExportedContext {
+            items,
+            total_tokens: used_tokens,
+            format: config.format,
+        }
+    }
+
+    // ========================================================================
+    // Lifecycle Operations
+    // ========================================================================
+
+    /// Trigger memory consolidation
+    pub fn consolidate() -> ConsolidationReport {
+        let start = Instant::now()
+
+        // Decay episodic memories
+        self.episodic.decay()
+
+        // Consolidate episodes to semantic/procedural
+        let episodic_report = self.episodic.consolidate()
+
+        // Update stats
+        self.stats.last_consolidation = Some(Instant::now())
+        self.stats.consolidation_count += 1
+
+        // Emit event
+        self.emit(EngramEvent::ConsolidationCompleted {
+            duration: start.elapsed(),
+            episodes_consolidated: episodic_report.consolidated_count,
+            skills_learned: episodic_report.skills_learned.len(),
+            facts_extracted: episodic_report.facts_extracted.len(),
+        })
+
+        ConsolidationReport {
+            duration: start.elapsed(),
+            episodic: episodic_report,
+        }
+    }
+
+    /// Archive memories matching predicate to cold storage
+    pub fn archive(predicate: fn(&Memory) -> bool) -> ArchiveReport {
+        let mut archived_count = 0
+
+        // Archive from episodic
+        archived_count += self.episodic.archive(predicate)
+
+        // Archive from semantic
+        archived_count += self.semantic.archive(predicate)
+
+        ArchiveReport {
+            archived_count,
+            timestamp: Instant::now(),
+        }
+    }
+
+    /// Synchronize with remote memory stores
+    pub fn sync(config: SyncConfig) -> EngramResult<SyncReport> {
+        self.emit(EngramEvent::SyncStarted {
+            scope: config.scope.clone(),
+        })
+
+        // Perform sync based on strategy
+        let report = match config.strategy {
+            SyncStrategy::CRDT => self.sync_crdt(config)?,
+            SyncStrategy::Consensus => self.sync_consensus(config)?,
+            SyncStrategy::Manual => {
+                return Err(EngramError::SyncFailed {
+                    reason: "Manual sync requires explicit operations".to_string(),
+                })
+            }
+        };
+
+        self.emit(EngramEvent::SyncCompleted {
+            report: report.clone(),
+        })
+
+        Ok(report)
+    }
+
+    // ========================================================================
+    // Direct Access
+    // ========================================================================
+
+    /// Direct access to instant memory
+    pub fn instant() -> &InstantMemory {
+        &self.instant
+    }
+
+    /// Direct access to instant memory (mutable)
+    pub fn instant_mut() -> &mut InstantMemory {
+        &mut self.instant
+    }
+
+    /// Direct access to episodic memory
+    pub fn episodic() -> &EpisodicMemory {
+        &self.episodic
+    }
+
+    /// Direct access to episodic memory (mutable)
+    pub fn episodic_mut() -> &mut EpisodicMemory {
+        &mut self.episodic
+    }
+
+    /// Direct access to semantic memory
+    pub fn semantic() -> &SemanticMemory {
+        &self.semantic
+    }
+
+    /// Direct access to semantic memory (mutable)
+    pub fn semantic_mut() -> &mut SemanticMemory {
+        &mut self.semantic
+    }
+
+    /// Direct access to procedural memory
+    pub fn procedural() -> &ProceduralMemory {
+        &self.procedural
+    }
+
+    /// Direct access to procedural memory (mutable)
+    pub fn procedural_mut() -> &mut ProceduralMemory {
+        &mut self.procedural
+    }
+
+    // ========================================================================
+    // Events
+    // ========================================================================
+
+    /// Subscribe to engram events
+    pub fn on_event(handler: fn(EngramEvent)) {
+        self.event_handlers.push(handler)
+    }
+
+    fn emit(event: EngramEvent) {
+        for handler in &self.event_handlers {
+            handler(event.clone())
+        }
+    }
+
+    // ========================================================================
+    // Statistics
+    // ========================================================================
+
+    /// Get current statistics
+    pub fn stats() -> &EngramStats {
+        &self.stats
+    }
+
+    /// Get memory usage information
+    pub fn memory_usage() -> MemoryUsage {
+        MemoryUsage {
+            instant: self.instant.usage(),
+            episodic: self.episodic.usage(),
+            semantic: self.semantic.usage(),
+            procedural: self.procedural.usage(),
+        }
+    }
+
+    // ========================================================================
+    // Internal Helpers
+    // ========================================================================
+
+    fn merge_results(
+        instant: Vec<Memory>,
+        episodic: Vec<Memory>,
+        semantic: Vec<Memory>,
+    ) -> Vec<Memory> {
+        let mut all = vec![]
+
+        all.extend(instant)
+        all.extend(episodic)
+        all.extend(semantic)
+
+        // Sort by combined score
+        all.sort_by(|a, b| {
+            let score_a = a.relevance * a.confidence
+            let score_b = b.relevance * b.confidence
+            score_b.partial_cmp(&score_a).unwrap()
+        })
+
+        // Deduplicate
+        let mut seen = HashSet::new()
+        all.retain(|m| seen.insert(m.id.clone()))
+
+        all
+    }
+
+    fn identify_gaps(query: &Query, results: &[Memory]) -> Vec<Gap> {
+        let mut gaps = vec![]
+
+        // Check overall confidence
+        let avg_confidence = if results.is_empty() {
+            0.0
+        } else {
+            results.iter().map(|m| m.confidence).sum::<f64>() / results.len() as f64
+        }
+
+        if avg_confidence < 0.5 {
+            gaps.push(Gap {
+                description: "Low overall confidence in results".to_string(),
+                query_aspect: "general".to_string(),
+                severity: 1.0 - avg_confidence,
+                suggested_actions: vec![
+                    SuggestedAction::AskUser {
+                        question: "Can you provide more context?".to_string(),
+                    },
+                ],
+            })
+        }
+
+        // Check if results are too few
+        if results.len() < 3 && !query.text().is_empty() {
+            gaps.push(Gap {
+                description: "Limited information found".to_string(),
+                query_aspect: query.text(),
+                severity: 0.7,
+                suggested_actions: vec![
+                    SuggestedAction::SearchExternal {
+                        query: query.text(),
+                    },
+                ],
+            })
+        }
+
+        // Check for contested beliefs
+        let contested = results.iter()
+            .filter(|m| m.epistemic.is_contested())
+            .count()
+
+        if contested > 0 {
+            gaps.push(Gap {
+                description: format!("{} contested beliefs in results", contested),
+                query_aspect: "reliability".to_string(),
+                severity: 0.5,
+                suggested_actions: vec![
+                    SuggestedAction::AskUser {
+                        question: "There are conflicting sources. Which do you trust?".to_string(),
+                    },
+                ],
+            })
+        }
+
+        gaps
+    }
+
+    fn maybe_extract_skill(episode: &Episode) {
+        // Only extract from successful episodes
+        if !episode.outcome.is_success() {
+            return
+        }
+
+        // Find similar past episodes
+        let similar = self.episodic.recall_similar(&episode.context, limit: 10)
+            |φ{_.outcome.is_success()}
+
+        // Need at least 3 similar successful episodes
+        if similar.len() >= 3 {
+            if let Some(skill) = self.procedural.learn_from_episodes(similar) {
+                self.emit(EngramEvent::SkillLearned {
+                    id: skill.id.clone(),
+                    from_episodes: similar.iter().map(|e| e.id.clone()).collect(),
+                })
+            }
+        }
+    }
+
+    fn sync_crdt(config: SyncConfig) -> EngramResult<SyncReport> {
+        // CRDT-based sync implementation
+        // TODO: Implement full CRDT sync
+        Ok(SyncReport {
+            strategy: SyncStrategy::CRDT,
+            scope: config.scope,
+            engrams_synced: 0,
+            conflicts_resolved: 0,
+            duration: Duration::zero(),
+        })
+    }
+
+    fn sync_consensus(config: SyncConfig) -> EngramResult<SyncReport> {
+        // Consensus-based sync implementation
+        // TODO: Implement consensus sync
+        Ok(SyncReport {
+            strategy: SyncStrategy::Consensus,
+            scope: config.scope,
+            engrams_synced: 0,
+            conflicts_resolved: 0,
+            duration: Duration::zero(),
+        })
+    }
+}
+
+// ============================================================================
+// Supporting Types
+// ============================================================================
+
+/// Statistics about Engram usage
+pub struct EngramStats {
+    pub recall_count: u64,
+    pub total_recall_time: Duration,
+    pub facts_learned: u64,
+    pub episodes_recorded: u64,
+    pub consolidation_count: u64,
+    pub last_consolidation: Option<Instant>,
+    pub created_at: Instant,
+}
+
+impl EngramStats {
+    fn new() -> Self {
+        Self {
+            recall_count: 0,
+            total_recall_time: Duration::zero(),
+            facts_learned: 0,
+            episodes_recorded: 0,
+            consolidation_count: 0,
+            last_consolidation: None,
+            created_at: Instant::now(),
+        }
+    }
+}
+
+/// Memory usage across all systems
+pub struct MemoryUsage {
+    pub instant: MemorySystemUsage,
+    pub episodic: MemorySystemUsage,
+    pub semantic: MemorySystemUsage,
+    pub procedural: MemorySystemUsage,
+}
+
+pub struct MemorySystemUsage {
+    pub item_count: usize,
+    pub bytes_used: usize,
+    pub capacity: Option<usize>,
+}
+
+/// Events emitted by Engram
+pub enum EngramEvent {
+    EngramCreated {
+        ids: Vec<EngramId>,
+        source: MemorySource,
+    },
+    EpisodeCompleted {
+        id: EpisodeId,
+        outcome: Outcome,
+    },
+    SkillLearned {
+        id: SkillId,
+        from_episodes: Vec<EpisodeId>,
+    },
+    ConsolidationCompleted {
+        duration: Duration,
+        episodes_consolidated: usize,
+        skills_learned: usize,
+        facts_extracted: usize,
+    },
+    SyncStarted {
+        scope: Scope,
+    },
+    SyncCompleted {
+        report: SyncReport,
+    },
+}
+
+/// Configuration for context building
+pub struct ContextConfig {
+    pub budget: TokenCount,
+    pub for_task: Option<String>,
+    pub include: Vec<ContextSource>,
+    pub format: ContextFormat,
+    pub prioritize: ContextPriority,
+}
+
+pub enum ContextSource {
+    Instant,
+    SemanticRelevant,
+    EpisodicRecent,
+    ProceduralApplicable,
+}
+
+pub enum ContextFormat {
+    Plain,
+    XML,
+    Markdown,
+    Structured,
+}
+
+pub enum ContextPriority {
+    Relevance,
+    Recency,
+    Confidence,
+    Mixed,
+}
+
+/// Exported context for LLM consumption
+pub struct ExportedContext {
+    pub items: Vec<ContextItem>,
+    pub total_tokens: TokenCount,
+    pub format: ContextFormat,
+}
+
+pub struct ContextItem {
+    pub content: String,
+    pub relevance: f64,
+    pub source: MemorySource,
+    pub tokens: TokenCount,
+}
+
+impl ExportedContext {
+    pub fn to_string() -> String {
+        match self.format {
+            ContextFormat::Plain => {
+                self.items.iter()
+                    .map(|i| i.content.clone())
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+            },
+            ContextFormat::XML => {
+                self.items.iter()
+                    .map(|i| format!(
+                        "<context relevance=\"{:.2}\" source=\"{:?}\">\n{}\n</context>",
+                        i.relevance, i.source, i.content
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            },
+            ContextFormat::Markdown => {
+                self.items.iter()
+                    .map(|i| format!(
+                        "### {} (relevance: {:.0}%)\n\n{}",
+                        format!("{:?}", i.source),
+                        i.relevance * 100.0,
+                        i.content
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("\n\n---\n\n")
+            },
+            ContextFormat::Structured => {
+                // JSON-like format
+                serde_json::to_string_pretty(&self.items).unwrap_or_default()
+            },
+        }
+    }
+}
+
+/// Sync configuration
+pub struct SyncConfig {
+    pub scope: Scope,
+    pub strategy: SyncStrategy,
+    pub conflict_resolution: ConflictResolution,
+    pub timeout: Duration,
+}
+
+pub enum SyncStrategy {
+    CRDT,
+    Consensus,
+    Manual,
+}
+
+pub enum ConflictResolution {
+    TakeLocal,
+    TakeRemote,
+    TakeNewest,
+    TakeHighestConfidence,
+    Merge,
+    Fork,
+}
+
+/// Sync operation report
+pub struct SyncReport {
+    pub strategy: SyncStrategy,
+    pub scope: Scope,
+    pub engrams_synced: usize,
+    pub conflicts_resolved: usize,
+    pub duration: Duration,
+}
+
+/// Consolidation report
+pub struct ConsolidationReport {
+    pub duration: Duration,
+    pub episodic: EpisodicConsolidationReport,
+}
+
+/// Archive operation report
+pub struct ArchiveReport {
+    pub archived_count: usize,
+    pub timestamp: Instant,
+}
+
+/// Gap in knowledge
+pub struct Gap {
+    pub description: String,
+    pub query_aspect: String,
+    pub severity: f64,
+    pub suggested_actions: Vec<SuggestedAction>,
+}
+
+pub enum SuggestedAction {
+    AskUser { question: String },
+    SearchExternal { query: String },
+    InvokeTool { tool: String, args: Value },
+    RecallDifferently { alternative: String },
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+fn generate_agent_id() -> AgentId {
+    format!("agent_{}", ulid::generate().unwrap())
+}
+
+fn generate_instance_id() -> InstanceId {
+    format!("inst_{}", ulid::generate().unwrap())
+}
