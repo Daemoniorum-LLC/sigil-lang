@@ -1,8 +1,22 @@
 # Sigil Programming Language
 
-A polysynthetic programming language with evidentiality types, morpheme operators, and native performance through LLVM.
+A polysynthetic programming language with evidentiality types, morpheme operators, and native performance through LLVM. Now with comprehensive **Agent Infrastructure** for building intelligent, self-aware systems.
 
 > Part of the [Persona Framework](https://github.com/Daemoniorum-LLC/persona-framework) ecosystem
+
+## 🆕 v0.2.0 - Agent Infrastructure Release
+
+This release introduces a complete suite of agent frameworks and memory systems:
+
+- **🛡️ Aegis** - Security & safety framework
+- **✨ Anima** - Soul & consciousness modeling
+- **🔗 Commune** - Multi-agent communication
+- **🤝 Covenant** - Collaborative protocols
+- **⚙️ Daemon** - Background processes
+- **🧠 Gnosis** - Knowledge & learning
+- **🔮 Omen** - Planning & prediction
+- **👁️ Oracle** - Explainable decisions
+- **💾 Engram** - Advanced memory system (episodic, semantic, procedural)
 
 ## Performance
 
