@@ -644,6 +644,8 @@ pub struct StructDef {
     pub visibility: Visibility,
     pub attrs: StructAttrs,
     pub name: Ident,
+    /// Type-level evidentiality marker: `struct Foo!`, `struct Bar~`, etc.
+    pub evidentiality: Option<Evidentiality>,
     pub generics: Option<Generics>,
     pub fields: StructFields,
 }
@@ -669,6 +671,8 @@ pub struct FieldDef {
 pub struct EnumDef {
     pub visibility: Visibility,
     pub name: Ident,
+    /// Type-level evidentiality marker: `enum Foo!`, `enum Bar~`, etc.
+    pub evidentiality: Option<Evidentiality>,
     pub generics: Option<Generics>,
     pub variants: Vec<EnumVariant>,
 }

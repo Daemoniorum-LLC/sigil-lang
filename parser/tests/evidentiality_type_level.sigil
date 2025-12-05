@@ -1,0 +1,35 @@
+struct UserInput~ {
+    username: str,
+    password: str,
+}
+
+struct ValidatedUser! {
+    username: str,
+    password_hash: str,
+}
+
+enum SafeValue! {
+    Int(i64),
+    Str(str),
+    Null,
+}
+
+enum ExternalMessage~ {
+    Text(str),
+    Binary([u8]),
+}
+
+struct RegularStruct {
+    x: i32,
+    y: i32,
+}
+
+enum RegularEnum {
+    A,
+    B,
+    C,
+}
+
+fn main() {
+    print("Test passed")
+}
