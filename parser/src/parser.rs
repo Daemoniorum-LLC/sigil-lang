@@ -899,6 +899,8 @@ impl<'a> Parser<'a> {
 
         self.expect(Token::Struct)?;
         let name = self.parse_ident()?;
+        // Parse optional type-level evidentiality marker: struct Foo!, struct Bar~, etc.
+        let evidentiality = self.parse_evidentiality_opt();
         let generics = self.parse_generics_opt()?;
 
         let fields = if self.check(&Token::LBrace) {
@@ -923,6 +925,7 @@ impl<'a> Parser<'a> {
             visibility,
             attrs,
             name,
+            evidentiality,
             generics,
             fields,
         })
@@ -954,6 +957,8 @@ impl<'a> Parser<'a> {
     fn parse_enum(&mut self, visibility: Visibility) -> ParseResult<EnumDef> {
         self.expect(Token::Enum)?;
         let name = self.parse_ident()?;
+        // Parse optional type-level evidentiality marker: enum Foo!, enum Bar~, etc.
+        let evidentiality = self.parse_evidentiality_opt();
         let generics = self.parse_generics_opt()?;
 
         self.expect(Token::LBrace)?;
@@ -969,6 +974,7 @@ impl<'a> Parser<'a> {
         Ok(EnumDef {
             visibility,
             name,
+            evidentiality,
             generics,
             variants,
         })
@@ -4469,6 +4475,125 @@ mod tests {
             assert_eq!(wc.predicates.len(), 1);
         } else {
             panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_with_type_level_evidentiality() {
+        // Test struct with reported evidentiality marker
+        let source = r#"
+            struct UserInput~ {
+                username: str,
+                password: str,
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Struct(s) = &file.items[0].node {
+            assert_eq!(s.name.name, "UserInput");
+            assert_eq!(s.evidentiality, Some(Evidentiality::Reported));
+        } else {
+            panic!("Expected struct");
+        }
+
+        // Test struct with known evidentiality marker
+        let source = r#"
+            struct ValidatedUser! {
+                username: str,
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Struct(s) = &file.items[0].node {
+            assert_eq!(s.name.name, "ValidatedUser");
+            assert_eq!(s.evidentiality, Some(Evidentiality::Known));
+        } else {
+            panic!("Expected struct");
+        }
+
+        // Test struct without evidentiality marker
+        let source = "struct RegularStruct { x: i32 }";
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Struct(s) = &file.items[0].node {
+            assert_eq!(s.name.name, "RegularStruct");
+            assert_eq!(s.evidentiality, None);
+        } else {
+            panic!("Expected struct");
+        }
+    }
+
+    #[test]
+    fn test_parse_enum_with_type_level_evidentiality() {
+        // Test enum with known evidentiality marker
+        let source = r#"
+            enum SafeValue! {
+                Int(i64),
+                Str(str),
+                Null,
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Enum(e) = &file.items[0].node {
+            assert_eq!(e.name.name, "SafeValue");
+            assert_eq!(e.evidentiality, Some(Evidentiality::Known));
+            assert_eq!(e.variants.len(), 3);
+        } else {
+            panic!("Expected enum");
+        }
+
+        // Test enum with reported evidentiality marker
+        let source = r#"
+            enum ExternalMessage~ {
+                Text(str),
+                Binary([u8]),
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Enum(e) = &file.items[0].node {
+            assert_eq!(e.name.name, "ExternalMessage");
+            assert_eq!(e.evidentiality, Some(Evidentiality::Reported));
+        } else {
+            panic!("Expected enum");
+        }
+
+        // Test enum without evidentiality marker
+        let source = "enum RegularEnum { A, B, C }";
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Enum(e) = &file.items[0].node {
+            assert_eq!(e.name.name, "RegularEnum");
+            assert_eq!(e.evidentiality, None);
+        } else {
+            panic!("Expected enum");
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_with_uncertain_evidentiality() {
+        let source = r#"
+            struct MaybeData? {
+                value: i32,
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Struct(s) = &file.items[0].node {
+            assert_eq!(s.name.name, "MaybeData");
+            assert_eq!(s.evidentiality, Some(Evidentiality::Uncertain));
+        } else {
+            panic!("Expected struct");
         }
     }
 }
