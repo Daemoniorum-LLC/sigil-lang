@@ -57,17 +57,12 @@ impl<'a> Parser<'a> {
 
         let mut items = Vec::new();
         while !self.is_eof() {
-            // Skip comments
-            while matches!(
-                self.current_token(),
-                Some(Token::LineComment(_) | Token::DocComment(_))
-            ) {
-                self.advance();
-            }
+            // Collect doc comments before the item
+            let doc_comment = self.collect_doc_comments();
             if self.is_eof() {
                 break;
             }
-            items.push(self.parse_item()?);
+            items.push(self.parse_item_with_doc(doc_comment)?);
         }
         Ok(SourceFile {
             attrs,
@@ -633,9 +628,43 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Collect doc comments and return them as a single string.
+    /// Multiple consecutive doc comments are joined with newlines.
+    /// Regular line comments are skipped.
+    fn collect_doc_comments(&mut self) -> Option<String> {
+        let mut doc_comments = Vec::new();
+
+        while let Some(token) = self.current_token() {
+            match token {
+                Token::DocComment(text) => {
+                    // Strip the //! prefix and any leading space
+                    let content = text.strip_prefix("//!").unwrap_or(text);
+                    let content = content.strip_prefix(' ').unwrap_or(content);
+                    doc_comments.push(content.to_string());
+                    self.advance();
+                }
+                Token::LineComment(_) => {
+                    // Skip regular line comments
+                    self.advance();
+                }
+                _ => break,
+            }
+        }
+
+        if doc_comments.is_empty() {
+            None
+        } else {
+            Some(doc_comments.join("\n"))
+        }
+    }
+
     // === Item parsing ===
 
     fn parse_item(&mut self) -> ParseResult<Spanned<Item>> {
+        self.parse_item_with_doc(None)
+    }
+
+    fn parse_item_with_doc(&mut self, doc_comment: Option<String>) -> ParseResult<Spanned<Item>> {
         let start_span = self.current_span();
 
         // Collect outer attributes (#[...])
@@ -648,28 +677,28 @@ impl<'a> Parser<'a> {
 
         let item = match self.current_token() {
             Some(Token::Fn) | Some(Token::Async) => {
-                Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
+                Item::Function(self.parse_function_with_doc(visibility, outer_attrs, doc_comment)?)
             }
             Some(Token::Struct) => {
-                Item::Struct(self.parse_struct_with_attrs(visibility, outer_attrs)?)
+                Item::Struct(self.parse_struct_with_doc(visibility, outer_attrs, doc_comment)?)
             }
-            Some(Token::Enum) => Item::Enum(self.parse_enum(visibility)?),
-            Some(Token::Trait) => Item::Trait(self.parse_trait(visibility)?),
-            Some(Token::Impl) => Item::Impl(self.parse_impl()?),
-            Some(Token::Type) => Item::TypeAlias(self.parse_type_alias(visibility)?),
+            Some(Token::Enum) => Item::Enum(self.parse_enum_with_doc(visibility, doc_comment)?),
+            Some(Token::Trait) => Item::Trait(self.parse_trait_with_doc(visibility, doc_comment)?),
+            Some(Token::Impl) => Item::Impl(self.parse_impl_with_doc(doc_comment)?),
+            Some(Token::Type) => Item::TypeAlias(self.parse_type_alias_with_doc(visibility, doc_comment)?),
             Some(Token::Mod) => Item::Module(self.parse_module(visibility)?),
             Some(Token::Use) => Item::Use(self.parse_use(visibility)?),
-            Some(Token::Const) => Item::Const(self.parse_const(visibility)?),
-            Some(Token::Static) => Item::Static(self.parse_static(visibility)?),
+            Some(Token::Const) => Item::Const(self.parse_const_with_doc(visibility, doc_comment)?),
+            Some(Token::Static) => Item::Static(self.parse_static_with_doc(visibility, doc_comment)?),
             Some(Token::Actor) => Item::Actor(self.parse_actor(visibility)?),
             Some(Token::Extern) => Item::ExternBlock(self.parse_extern_block()?),
             Some(Token::Naked) => {
                 // naked fn -> function with naked attribute
-                Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
+                Item::Function(self.parse_function_with_doc(visibility, outer_attrs, doc_comment)?)
             }
             Some(Token::Packed) => {
                 // packed struct -> struct with packed attribute
-                Item::Struct(self.parse_struct_with_attrs(visibility, outer_attrs)?)
+                Item::Struct(self.parse_struct_with_doc(visibility, outer_attrs, doc_comment)?)
             }
             Some(token) => {
                 return Err(ParseError::UnexpectedToken {
@@ -694,13 +723,22 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function(&mut self, visibility: Visibility) -> ParseResult<Function> {
-        self.parse_function_with_attrs(visibility, Vec::new())
+        self.parse_function_with_doc(visibility, Vec::new(), None)
     }
 
     fn parse_function_with_attrs(
         &mut self,
         visibility: Visibility,
         outer_attrs: Vec<Attribute>,
+    ) -> ParseResult<Function> {
+        self.parse_function_with_doc(visibility, outer_attrs, None)
+    }
+
+    fn parse_function_with_doc(
+        &mut self,
+        visibility: Visibility,
+        outer_attrs: Vec<Attribute>,
+        doc_comment: Option<String>,
     ) -> ParseResult<Function> {
         // Parse function attributes from outer attributes
         let mut attrs = self.process_function_attrs(&outer_attrs);
@@ -762,6 +800,7 @@ impl<'a> Parser<'a> {
             visibility,
             is_async,
             attrs,
+            doc_comment,
             name,
             aspect,
             generics,
@@ -844,6 +883,15 @@ impl<'a> Parser<'a> {
         visibility: Visibility,
         outer_attrs: Vec<Attribute>,
     ) -> ParseResult<StructDef> {
+        self.parse_struct_with_doc(visibility, outer_attrs, None)
+    }
+
+    fn parse_struct_with_doc(
+        &mut self,
+        visibility: Visibility,
+        outer_attrs: Vec<Attribute>,
+        doc_comment: Option<String>,
+    ) -> ParseResult<StructDef> {
         // Parse struct attributes
         let mut attrs = StructAttrs::default();
         attrs.outer_attrs = outer_attrs.clone();
@@ -924,6 +972,7 @@ impl<'a> Parser<'a> {
         Ok(StructDef {
             visibility,
             attrs,
+            doc_comment,
             name,
             evidentiality,
             generics,
@@ -955,6 +1004,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_enum(&mut self, visibility: Visibility) -> ParseResult<EnumDef> {
+        self.parse_enum_with_doc(visibility, None)
+    }
+
+    fn parse_enum_with_doc(&mut self, visibility: Visibility, doc_comment: Option<String>) -> ParseResult<EnumDef> {
         self.expect(Token::Enum)?;
         let name = self.parse_ident()?;
         // Parse optional type-level evidentiality marker: enum Foo!, enum Bar~, etc.
@@ -973,6 +1026,7 @@ impl<'a> Parser<'a> {
 
         Ok(EnumDef {
             visibility,
+            doc_comment,
             name,
             evidentiality,
             generics,
@@ -1011,6 +1065,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_trait(&mut self, visibility: Visibility) -> ParseResult<TraitDef> {
+        self.parse_trait_with_doc(visibility, None)
+    }
+
+    fn parse_trait_with_doc(&mut self, visibility: Visibility, doc_comment: Option<String>) -> ParseResult<TraitDef> {
         self.expect(Token::Trait)?;
         let name = self.parse_ident()?;
         let generics = self.parse_generics_opt()?;
@@ -1030,6 +1088,7 @@ impl<'a> Parser<'a> {
 
         Ok(TraitDef {
             visibility,
+            doc_comment,
             name,
             generics,
             supertraits,
@@ -1075,6 +1134,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_impl(&mut self) -> ParseResult<ImplBlock> {
+        self.parse_impl_with_doc(None)
+    }
+
+    fn parse_impl_with_doc(&mut self, doc_comment: Option<String>) -> ParseResult<ImplBlock> {
         self.expect(Token::Impl)?;
         let generics = self.parse_generics_opt()?;
 
@@ -1095,11 +1158,17 @@ impl<'a> Parser<'a> {
         self.expect(Token::LBrace)?;
         let mut items = Vec::new();
         while !self.check(&Token::RBrace) && !self.is_eof() {
-            items.push(self.parse_impl_item()?);
+            // Collect doc comments before each impl item
+            let item_doc = self.collect_doc_comments();
+            if self.check(&Token::RBrace) {
+                break;
+            }
+            items.push(self.parse_impl_item_with_doc(item_doc)?);
         }
         self.expect(Token::RBrace)?;
 
         Ok(ImplBlock {
+            doc_comment,
             generics,
             trait_,
             self_ty,
@@ -1108,14 +1177,18 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_impl_item(&mut self) -> ParseResult<ImplItem> {
+        self.parse_impl_item_with_doc(None)
+    }
+
+    fn parse_impl_item_with_doc(&mut self, doc_comment: Option<String>) -> ParseResult<ImplItem> {
         let visibility = self.parse_visibility()?;
 
         match self.current_token() {
             Some(Token::Fn) | Some(Token::Async) => {
-                Ok(ImplItem::Function(self.parse_function(visibility)?))
+                Ok(ImplItem::Function(self.parse_function_with_doc(visibility, Vec::new(), doc_comment)?))
             }
-            Some(Token::Type) => Ok(ImplItem::Type(self.parse_type_alias(visibility)?)),
-            Some(Token::Const) => Ok(ImplItem::Const(self.parse_const(visibility)?)),
+            Some(Token::Type) => Ok(ImplItem::Type(self.parse_type_alias_with_doc(visibility, doc_comment)?)),
+            Some(Token::Const) => Ok(ImplItem::Const(self.parse_const_with_doc(visibility, doc_comment)?)),
             Some(token) => Err(ParseError::UnexpectedToken {
                 expected: "impl item".to_string(),
                 found: token.clone(),
@@ -1126,6 +1199,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type_alias(&mut self, visibility: Visibility) -> ParseResult<TypeAlias> {
+        self.parse_type_alias_with_doc(visibility, None)
+    }
+
+    fn parse_type_alias_with_doc(&mut self, visibility: Visibility, doc_comment: Option<String>) -> ParseResult<TypeAlias> {
         self.expect(Token::Type)?;
         let name = self.parse_ident()?;
         let generics = self.parse_generics_opt()?;
@@ -1136,6 +1213,7 @@ impl<'a> Parser<'a> {
 
         Ok(TypeAlias {
             visibility,
+            doc_comment,
             name,
             generics,
             ty,
@@ -1215,6 +1293,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_const(&mut self, visibility: Visibility) -> ParseResult<ConstDef> {
+        self.parse_const_with_doc(visibility, None)
+    }
+
+    fn parse_const_with_doc(&mut self, visibility: Visibility, doc_comment: Option<String>) -> ParseResult<ConstDef> {
         self.expect(Token::Const)?;
         let name = self.parse_ident()?;
         self.expect(Token::Colon)?;
@@ -1226,6 +1308,7 @@ impl<'a> Parser<'a> {
 
         Ok(ConstDef {
             visibility,
+            doc_comment,
             name,
             ty,
             value,
@@ -1233,6 +1316,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_static(&mut self, visibility: Visibility) -> ParseResult<StaticDef> {
+        self.parse_static_with_doc(visibility, None)
+    }
+
+    fn parse_static_with_doc(&mut self, visibility: Visibility, doc_comment: Option<String>) -> ParseResult<StaticDef> {
         self.expect(Token::Static)?;
         let mutable = self.consume_if(&Token::Mut);
         let name = self.parse_ident()?;
@@ -1245,6 +1332,7 @@ impl<'a> Parser<'a> {
 
         Ok(StaticDef {
             visibility,
+            doc_comment,
             mutable,
             name,
             ty,
@@ -4594,6 +4682,212 @@ mod tests {
             assert_eq!(s.evidentiality, Some(Evidentiality::Uncertain));
         } else {
             panic!("Expected struct");
+        }
+    }
+
+    #[test]
+    fn test_parse_impl_block_with_doc_comment() {
+        let source = r#"
+            //! Implementation of Foo
+            impl Foo {
+                //! Creates a new Foo
+                fn new() -> Foo {
+                    Foo {}
+                }
+
+                //! Returns the value
+                fn get_value() -> i32 {
+                    42
+                }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Impl(impl_block) = &file.items[0].node {
+            assert_eq!(impl_block.doc_comment, Some("Implementation of Foo".to_string()));
+            assert_eq!(impl_block.items.len(), 2);
+
+            // Check first function has doc comment
+            if let ImplItem::Function(f) = &impl_block.items[0] {
+                assert_eq!(f.name.name, "new");
+                assert_eq!(f.doc_comment, Some("Creates a new Foo".to_string()));
+            } else {
+                panic!("Expected function");
+            }
+
+            // Check second function has doc comment
+            if let ImplItem::Function(f) = &impl_block.items[1] {
+                assert_eq!(f.name.name, "get_value");
+                assert_eq!(f.doc_comment, Some("Returns the value".to_string()));
+            } else {
+                panic!("Expected function");
+            }
+        } else {
+            panic!("Expected impl block");
+        }
+    }
+
+    #[test]
+    fn test_parse_impl_block_with_multi_line_doc_comment() {
+        let source = r#"
+            //! This is a multi-line
+            //! doc comment for the impl block
+            //! with three lines
+            impl Bar {
+                fn foo() {}
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Impl(impl_block) = &file.items[0].node {
+            let expected_doc = "This is a multi-line\ndoc comment for the impl block\nwith three lines";
+            assert_eq!(impl_block.doc_comment, Some(expected_doc.to_string()));
+        } else {
+            panic!("Expected impl block");
+        }
+    }
+
+    #[test]
+    fn test_parse_function_with_doc_comment() {
+        let source = r#"
+            //! This function computes the answer
+            fn answer() -> i32 {
+                42
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Function(f) = &file.items[0].node {
+            assert_eq!(f.name.name, "answer");
+            assert_eq!(f.doc_comment, Some("This function computes the answer".to_string()));
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_struct_with_doc_comment() {
+        let source = r#"
+            //! A point in 2D space
+            struct Point {
+                x: f64,
+                y: f64,
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Struct(s) = &file.items[0].node {
+            assert_eq!(s.name.name, "Point");
+            assert_eq!(s.doc_comment, Some("A point in 2D space".to_string()));
+        } else {
+            panic!("Expected struct");
+        }
+    }
+
+    #[test]
+    fn test_parse_enum_with_doc_comment() {
+        let source = r#"
+            //! Represents a color
+            enum Color {
+                Red,
+                Green,
+                Blue,
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Enum(e) = &file.items[0].node {
+            assert_eq!(e.name.name, "Color");
+            assert_eq!(e.doc_comment, Some("Represents a color".to_string()));
+        } else {
+            panic!("Expected enum");
+        }
+    }
+
+    #[test]
+    fn test_parse_trait_with_doc_comment() {
+        let source = r#"
+            //! A trait for things that can be displayed
+            trait Display {
+                fn display() -> str
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Trait(t) = &file.items[0].node {
+            assert_eq!(t.name.name, "Display");
+            assert_eq!(t.doc_comment, Some("A trait for things that can be displayed".to_string()));
+        } else {
+            panic!("Expected trait");
+        }
+    }
+
+    #[test]
+    fn test_parse_impl_with_trait_and_doc_comment() {
+        let source = r#"
+            //! Implementation of Display for Foo
+            impl Display for Foo {
+                fn display() -> str {
+                    "Foo"
+                }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Impl(impl_block) = &file.items[0].node {
+            assert_eq!(impl_block.doc_comment, Some("Implementation of Display for Foo".to_string()));
+            assert!(impl_block.trait_.is_some());
+        } else {
+            panic!("Expected impl block");
+        }
+    }
+
+    #[test]
+    fn test_parse_const_with_doc_comment() {
+        let source = r#"
+            //! The answer to life, the universe, and everything
+            const ANSWER: i32 = 42
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Const(c) = &file.items[0].node {
+            assert_eq!(c.name.name, "ANSWER");
+            assert_eq!(c.doc_comment, Some("The answer to life, the universe, and everything".to_string()));
+        } else {
+            panic!("Expected const");
+        }
+    }
+
+    #[test]
+    fn test_parse_impl_item_const_with_doc_comment() {
+        let source = r#"
+            impl Foo {
+                //! Default buffer size
+                const DEFAULT_SIZE: i32 = 1024
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Impl(impl_block) = &file.items[0].node {
+            assert_eq!(impl_block.items.len(), 1);
+            if let ImplItem::Const(c) = &impl_block.items[0] {
+                assert_eq!(c.name.name, "DEFAULT_SIZE");
+                assert_eq!(c.doc_comment, Some("Default buffer size".to_string()));
+            } else {
+                panic!("Expected const");
+            }
+        } else {
+            panic!("Expected impl block");
         }
     }
 }
