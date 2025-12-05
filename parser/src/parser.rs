@@ -753,7 +753,8 @@ impl<'a> Parser<'a> {
         let body = if self.check(&Token::LBrace) {
             Some(self.parse_block()?)
         } else {
-            self.expect(Token::Semi)?;
+            // Semicolons are optional for abstract functions (dialect compatibility)
+            self.consume_if(&Token::Semi);
             None
         };
 
@@ -909,10 +910,12 @@ impl<'a> Parser<'a> {
             self.expect(Token::LParen)?;
             let types = self.parse_type_list()?;
             self.expect(Token::RParen)?;
-            self.expect(Token::Semi)?;
+            // Semicolons are optional for tuple structs (dialect compatibility)
+            self.consume_if(&Token::Semi);
             StructFields::Tuple(types)
         } else {
-            self.expect(Token::Semi)?;
+            // Semicolons are optional for unit structs (dialect compatibility)
+            self.consume_if(&Token::Semi);
             StructFields::Unit
         };
 
@@ -1043,7 +1046,8 @@ impl<'a> Parser<'a> {
                 } else {
                     vec![]
                 };
-                self.expect(Token::Semi)?;
+                // Semicolons are optional for trait type items (dialect compatibility)
+                self.consume_if(&Token::Semi);
                 Ok(TraitItem::Type { name, bounds })
             }
             Some(Token::Const) => {
@@ -1051,7 +1055,8 @@ impl<'a> Parser<'a> {
                 let name = self.parse_ident()?;
                 self.expect(Token::Colon)?;
                 let ty = self.parse_type()?;
-                self.expect(Token::Semi)?;
+                // Semicolons are optional for trait const items (dialect compatibility)
+                self.consume_if(&Token::Semi);
                 Ok(TraitItem::Const { name, ty })
             }
             Some(token) => Err(ParseError::UnexpectedToken {
@@ -1120,7 +1125,8 @@ impl<'a> Parser<'a> {
         let generics = self.parse_generics_opt()?;
         self.expect(Token::Eq)?;
         let ty = self.parse_type()?;
-        self.expect(Token::Semi)?;
+        // Semicolons are optional for type aliases (dialect compatibility)
+        self.consume_if(&Token::Semi);
 
         Ok(TypeAlias {
             visibility,
@@ -1143,7 +1149,8 @@ impl<'a> Parser<'a> {
             self.expect(Token::RBrace)?;
             Some(items)
         } else {
-            self.expect(Token::Semi)?;
+            // Semicolons are optional for module declarations (dialect compatibility)
+            self.consume_if(&Token::Semi);
             None
         };
 
@@ -1157,7 +1164,8 @@ impl<'a> Parser<'a> {
     fn parse_use(&mut self, visibility: Visibility) -> ParseResult<UseDecl> {
         self.expect(Token::Use)?;
         let tree = self.parse_use_tree()?;
-        self.expect(Token::Semi)?;
+        // Semicolons are optional for use statements (dialect compatibility)
+        self.consume_if(&Token::Semi);
 
         Ok(UseDecl { visibility, tree })
     }
@@ -1207,7 +1215,8 @@ impl<'a> Parser<'a> {
         let ty = self.parse_type()?;
         self.expect(Token::Eq)?;
         let value = self.parse_expr()?;
-        self.expect(Token::Semi)?;
+        // Semicolons are optional for const definitions (dialect compatibility)
+        self.consume_if(&Token::Semi);
 
         Ok(ConstDef {
             visibility,
@@ -1225,7 +1234,8 @@ impl<'a> Parser<'a> {
         let ty = self.parse_type()?;
         self.expect(Token::Eq)?;
         let value = self.parse_expr()?;
-        self.expect(Token::Semi)?;
+        // Semicolons are optional for static definitions (dialect compatibility)
+        self.consume_if(&Token::Semi);
 
         Ok(StaticDef {
             visibility,
@@ -1371,8 +1381,8 @@ impl<'a> Parser<'a> {
             None
         };
 
-        // Extern functions end with semicolon, not a body
-        self.expect(Token::Semi)?;
+        // Semicolons are optional for extern functions (dialect compatibility)
+        self.consume_if(&Token::Semi);
 
         Ok(ExternFunction {
             visibility,
@@ -1390,7 +1400,8 @@ impl<'a> Parser<'a> {
         let name = self.parse_ident()?;
         self.expect(Token::Colon)?;
         let ty = self.parse_type()?;
-        self.expect(Token::Semi)?;
+        // Semicolons are optional for extern statics (dialect compatibility)
+        self.consume_if(&Token::Semi);
 
         Ok(ExternStatic {
             visibility,
@@ -3320,7 +3331,8 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        self.expect(Token::Semi)?;
+        // Semicolons are optional for let statements (dialect compatibility)
+        self.consume_if(&Token::Semi);
 
         Ok(Stmt::Let { pattern, ty, init })
     }
