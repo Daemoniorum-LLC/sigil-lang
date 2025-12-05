@@ -792,6 +792,7 @@ pub struct ActorDef {
     pub name: Ident,
     pub generics: Option<Generics>,
     pub state: Vec<FieldDef>,
+    pub methods: Vec<Function>,
     pub handlers: Vec<MessageHandler>,
 }
 
@@ -974,6 +975,11 @@ pub enum Expr {
     AddrOf { mutable: bool, expr: Box<Expr> },
     /// Cast: `expr as Type`
     Cast { expr: Box<Expr>, ty: TypeExpr },
+    /// Channel send: `channel <- value`
+    ChannelSend {
+        channel: Box<Expr>,
+        value: Box<Expr>,
+    },
 
     /// Inline assembly: `asm!("instruction", ...)`
     InlineAsm(InlineAsm),
