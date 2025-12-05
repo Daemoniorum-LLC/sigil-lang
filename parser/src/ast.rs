@@ -416,6 +416,8 @@ pub struct Function {
     pub visibility: Visibility,
     pub is_async: bool,
     pub attrs: FunctionAttrs,
+    /// Documentation comment: `//! This function does X`
+    pub doc_comment: Option<String>,
     pub name: Ident,
     pub aspect: Option<Aspect>, // Verb aspect: ·ing, ·ed, ·able, ·ive
     pub generics: Option<Generics>,
@@ -643,6 +645,8 @@ pub enum StructRepr {
 pub struct StructDef {
     pub visibility: Visibility,
     pub attrs: StructAttrs,
+    /// Documentation comment: `//! This struct represents X`
+    pub doc_comment: Option<String>,
     pub name: Ident,
     /// Type-level evidentiality marker: `struct Foo!`, `struct Bar~`, etc.
     pub evidentiality: Option<Evidentiality>,
@@ -670,6 +674,8 @@ pub struct FieldDef {
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumDef {
     pub visibility: Visibility,
+    /// Documentation comment: `//! This enum represents X`
+    pub doc_comment: Option<String>,
     pub name: Ident,
     /// Type-level evidentiality marker: `enum Foo!`, `enum Bar~`, etc.
     pub evidentiality: Option<Evidentiality>,
@@ -688,6 +694,8 @@ pub struct EnumVariant {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraitDef {
     pub visibility: Visibility,
+    /// Documentation comment: `//! This trait defines X`
+    pub doc_comment: Option<String>,
     pub name: Ident,
     pub generics: Option<Generics>,
     pub supertraits: Vec<TypeExpr>,
@@ -704,6 +712,8 @@ pub enum TraitItem {
 /// Impl block.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImplBlock {
+    /// Documentation comment: `//! Implementation of X for Y`
+    pub doc_comment: Option<String>,
     pub generics: Option<Generics>,
     pub trait_: Option<TypePath>,
     pub self_ty: TypeExpr,
@@ -721,6 +731,8 @@ pub enum ImplItem {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeAlias {
     pub visibility: Visibility,
+    /// Documentation comment: `//! This type alias represents X`
+    pub doc_comment: Option<String>,
     pub name: Ident,
     pub generics: Option<Generics>,
     pub ty: TypeExpr,
@@ -754,6 +766,8 @@ pub enum UseTree {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstDef {
     pub visibility: Visibility,
+    /// Documentation comment: `//! This constant represents X`
+    pub doc_comment: Option<String>,
     pub name: Ident,
     pub ty: TypeExpr,
     pub value: Expr,
@@ -763,6 +777,8 @@ pub struct ConstDef {
 #[derive(Debug, Clone, PartialEq)]
 pub struct StaticDef {
     pub visibility: Visibility,
+    /// Documentation comment: `//! This static variable represents X`
+    pub doc_comment: Option<String>,
     pub mutable: bool,
     pub name: Ident,
     pub ty: TypeExpr,

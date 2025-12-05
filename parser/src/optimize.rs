@@ -422,6 +422,7 @@ impl Optimizer {
             visibility: Visibility::default(),
             is_async: false,
             attrs: FunctionAttrs::default(),
+            doc_comment: None,
             name: Ident {
                 name: name.to_string(),
                 evidentiality: None,
@@ -497,6 +498,7 @@ impl Optimizer {
             visibility: original.visibility,
             is_async: original.is_async,
             attrs: original.attrs.clone(),
+            doc_comment: original.doc_comment.clone(),
             name: Ident {
                 name: name.to_string(),
                 evidentiality: None,
@@ -556,6 +558,7 @@ impl Optimizer {
             visibility: Visibility::default(),
             is_async: func.is_async,
             attrs: func.attrs.clone(),
+            doc_comment: func.doc_comment.clone(),
             name: Ident {
                 name: impl_name.clone(),
                 evidentiality: None,
@@ -601,6 +604,7 @@ impl Optimizer {
             visibility: Visibility::default(),
             is_async: false,
             attrs: FunctionAttrs::default(),
+            doc_comment: None,
             name: Ident {
                 name: init_name.clone(),
                 evidentiality: None,
@@ -869,6 +873,7 @@ impl Optimizer {
             visibility: original.visibility,
             is_async: original.is_async,
             attrs: original.attrs.clone(),
+            doc_comment: original.doc_comment.clone(),
             name: original.name.clone(),
             aspect: original.aspect,
             generics: original.generics.clone(),
@@ -1001,6 +1006,7 @@ impl Optimizer {
             visibility: func.visibility.clone(),
             is_async: func.is_async,
             attrs: func.attrs.clone(),
+            doc_comment: func.doc_comment.clone(),
             name: func.name.clone(),
             aspect: func.aspect,
             generics: func.generics.clone(),
