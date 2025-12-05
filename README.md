@@ -349,14 +349,6 @@ cargo test --release    # Optimized test run
 - libzstd-dev
 - libpolly-18-dev
 
-## Extraction Details
-
-This repository was extracted from the persona-framework monorepo on **2025-12-02** to enable independent development and versioning.
-
-- **Commits Preserved:** 142
-- **First Commit:** fbc6ec9 - This first. (2025-09-29 09:54:55 -0600)
-- **Latest Commit:** 6c2a363 - perf(sigil): Add iterative ackermann/tak builtins - SIGIL BEATS RUST! (2025-12-01 23:16:16 +0000)
-
 ## License
 
 Dual-licensed under MIT and Apache 2.0.
