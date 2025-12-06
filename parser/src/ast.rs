@@ -308,6 +308,7 @@ pub enum Item {
     Function(Function),
     Struct(StructDef),
     Enum(EnumDef),
+    Bitflags(BitflagsDef),
     Trait(TraitDef),
     Impl(ImplBlock),
     TypeAlias(TypeAlias),
@@ -685,9 +686,32 @@ pub struct EnumDef {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumVariant {
+    /// Documentation comment: `//! This variant represents X`
+    pub doc_comment: Option<String>,
     pub name: Ident,
     pub fields: StructFields,
     pub discriminant: Option<Expr>,
+}
+
+/// Bitflags definition: `bitflags Flags: u32 { FLAG_A = 0x01, FLAG_B = 0x02 }`
+#[derive(Debug, Clone, PartialEq)]
+pub struct BitflagsDef {
+    pub visibility: Visibility,
+    /// Documentation comment
+    pub doc_comment: Option<String>,
+    pub name: Ident,
+    /// The underlying integer type (e.g., u32, u64)
+    pub repr_type: TypeExpr,
+    /// The flag constants
+    pub flags: Vec<BitflagItem>,
+}
+
+/// A single bitflag constant
+#[derive(Debug, Clone, PartialEq)]
+pub struct BitflagItem {
+    pub doc_comment: Option<String>,
+    pub name: Ident,
+    pub value: Expr,
 }
 
 /// Trait definition.
@@ -705,8 +729,16 @@ pub struct TraitDef {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TraitItem {
     Function(Function),
-    Type { name: Ident, bounds: Vec<TypeExpr> },
-    Const { name: Ident, ty: TypeExpr },
+    Type {
+        doc_comment: Option<String>,
+        name: Ident,
+        bounds: Vec<TypeExpr>,
+    },
+    Const {
+        doc_comment: Option<String>,
+        name: Ident,
+        ty: TypeExpr,
+    },
 }
 
 /// Impl block.
@@ -886,10 +918,11 @@ pub enum Expr {
     Morpheme { kind: MorphemeKind, body: Box<Expr> },
     /// Function call
     Call { func: Box<Expr>, args: Vec<Expr> },
-    /// Method call
+    /// Method call with optional turbofish syntax: `receiver.method::<T>(args)`
     MethodCall {
         receiver: Box<Expr>,
         method: Ident,
+        turbofish: Option<Vec<TypeExpr>>,
         args: Vec<Expr>,
     },
     /// Field access

@@ -875,6 +875,7 @@ impl Interpreter {
                 receiver,
                 method,
                 args,
+                ..
             } => self.eval_method_call(receiver, method, args),
             // Polysynthetic incorporation: path·file·read·string
             // Each segment is a method/function that transforms the value

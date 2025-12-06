@@ -820,6 +820,9 @@ fn print_item_summary(item: &sigil_parser::Item) {
         Item::ExternBlock(e) => {
             println!("  extern \"{}\" ({} items)", e.abi, e.items.len());
         }
+        Item::Bitflags(b) => {
+            println!("  bitflags {} ({} flags)", b.name.name, b.flags.len());
+        }
     }
 }
 
