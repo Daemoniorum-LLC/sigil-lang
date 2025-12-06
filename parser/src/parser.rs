@@ -1068,10 +1068,20 @@ impl<'a> Parser<'a> {
         self.expect(Token::LBrace)?;
         let mut variants = Vec::new();
         while !self.check(&Token::RBrace) && !self.is_eof() {
-            // Collect doc comments before each variant
+            // Parse outer attributes before the variant: #[deprecated]
+            let mut attrs = Vec::new();
+            while self.check(&Token::Hash) {
+                attrs.push(self.parse_outer_attribute()?);
+            }
+            // Collect doc comments before each variant (also skips regular comments)
             let variant_doc = self.collect_doc_comments();
-            variants.push(self.parse_enum_variant(variant_doc)?);
-            if !self.consume_if(&Token::Comma) {
+            // Check again for RBrace in case we only had trailing comments/attrs
+            if self.check(&Token::RBrace) {
+                break;
+            }
+            variants.push(self.parse_enum_variant(attrs, variant_doc)?);
+            // Accept either comma or semicolon as variant separator (Rust compatibility)
+            if !self.consume_if(&Token::Comma) && !self.consume_if(&Token::Semi) {
                 break;
             }
         }
@@ -1087,7 +1097,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_enum_variant(&mut self, doc_comment: Option<String>) -> ParseResult<EnumVariant> {
+    fn parse_enum_variant(&mut self, attrs: Vec<Attribute>, doc_comment: Option<String>) -> ParseResult<EnumVariant> {
         let name = self.parse_ident()?;
 
         let fields = if self.check(&Token::LBrace) {
@@ -1111,6 +1121,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(EnumVariant {
+            attrs,
             doc_comment,
             name,
             fields,
@@ -1366,17 +1377,17 @@ impl<'a> Parser<'a> {
             return Ok(UseTree::Glob);
         }
 
+        // Sigil uses explicit imports, one per line
+        // Grouped imports like `use path::{A, B}` are not supported
         if self.check(&Token::LBrace) {
-            self.expect(Token::LBrace)?;
-            let mut trees = Vec::new();
-            while !self.check(&Token::RBrace) {
-                trees.push(self.parse_use_tree()?);
-                if !self.consume_if(&Token::Comma) {
-                    break;
-                }
-            }
-            self.expect(Token::RBrace)?;
-            return Ok(UseTree::Group(trees));
+            return Err(ParseError::Custom(
+                "Sigil uses explicit imports, one per line\n\n\
+                 Write each import on its own line:\n    \
+                 use path::ItemA;\n    \
+                 use path::ItemB;\n\n\
+                 Why: Each import is a declaration of incorporation.\n     \
+                 Explicit naming honors the dependency relationship.".to_string()
+            ));
         }
 
         // Handle special path keywords: super, crate, Self
@@ -1439,26 +1450,19 @@ impl<'a> Parser<'a> {
                     span,
                 })
             }
-            // Handle keywords that can appear in paths
-            Some((Token::Atomic, span)) => {
-                self.current = self.lexer.next_token();
-                Ok(Ident {
-                    name: "atomic".to_string(),
-                    evidentiality: None,
-                    affect: None,
-                    span,
-                })
-            }
-            Some((Token::Stream, span)) => {
-                self.current = self.lexer.next_token();
-                Ok(Ident {
-                    name: "Stream".to_string(),
-                    evidentiality: None,
-                    affect: None,
-                    span,
-                })
-            }
             Some((Token::Ident(name), span)) => {
+                self.current = self.lexer.next_token();
+                let affect = self.parse_affect_opt();
+                Ok(Ident {
+                    name,
+                    evidentiality: None,
+                    affect,
+                    span,
+                })
+            }
+            // Handle contextual keywords that can appear in use paths
+            Some((ref token, span)) if Self::token_as_contextual_ident(token).is_some() => {
+                let name = Self::token_as_contextual_ident(token).unwrap().to_string();
                 self.current = self.lexer.next_token();
                 let affect = self.parse_affect_opt();
                 Ok(Ident {
@@ -1575,6 +1579,7 @@ impl<'a> Parser<'a> {
                 self.skip_comments();
 
                 state.push(FieldDef {
+                    attrs: Vec::new(),
                     visibility: vis,
                     doc_comment: None,
                     name: field_name,
@@ -1885,6 +1890,21 @@ impl<'a> Parser<'a> {
         segments.push(self.parse_path_segment()?);
 
         while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+            // Check for turbofish syntax: ::< becomes generics on the previous segment
+            if !self.is_in_condition() && self.check(&Token::Lt) {
+                self.advance(); // consume <
+                let types = self.parse_type_list()?;
+                self.expect_gt()?;
+                // Add generics to the last segment
+                if let Some(last) = segments.last_mut() {
+                    last.generics = Some(types);
+                }
+                // Check if path continues after turbofish
+                if self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+                    segments.push(self.parse_path_segment()?);
+                }
+                continue;
+            }
             segments.push(self.parse_path_segment()?);
         }
 
@@ -1932,26 +1952,6 @@ impl<'a> Parser<'a> {
                     span,
                 })
             }
-            // Allow Stream as a type name (for dyn Stream<Item=T> etc.)
-            Some((Token::Stream, span)) => {
-                self.current = self.lexer.next_token();
-                Ok(Ident {
-                    name: "Stream".to_string(),
-                    evidentiality: None,
-                    affect: None,
-                    span,
-                })
-            }
-            // Allow atomic as a type/module name (for std::sync::atomic::AtomicU64)
-            Some((Token::Atomic, span)) => {
-                self.current = self.lexer.next_token();
-                Ok(Ident {
-                    name: "atomic".to_string(),
-                    evidentiality: None,
-                    affect: None,
-                    span,
-                })
-            }
             // Allow other keywords that might appear in paths
             Some((Token::Crate, span)) => {
                 self.current = self.lexer.next_token();
@@ -1981,6 +1981,18 @@ impl<'a> Parser<'a> {
                 })
             }
             Some((Token::Ident(name), span)) => {
+                self.current = self.lexer.next_token();
+                let affect = self.parse_affect_opt();
+                Ok(Ident {
+                    name,
+                    evidentiality: None,
+                    affect,
+                    span,
+                })
+            }
+            // Handle contextual keywords that can be used as type identifiers
+            Some((ref token, span)) if Self::token_as_contextual_ident(token).is_some() => {
+                let name = Self::token_as_contextual_ident(token).unwrap().to_string();
                 self.current = self.lexer.next_token();
                 let affect = self.parse_affect_opt();
                 Ok(Ident {
@@ -2661,6 +2673,32 @@ impl<'a> Parser<'a> {
                         generics: None,
                     }],
                 }))
+            }
+            Some(Token::SelfUpper) => {
+                // Self as type constructor: Self { x: 0 } in impl blocks
+                let span = self.current_span();
+                self.advance();
+                let path = TypePath {
+                    segments: vec![PathSegment {
+                        ident: Ident {
+                            name: "Self".to_string(),
+                            evidentiality: None,
+                            affect: None,
+                            span,
+                        },
+                        generics: None,
+                    }],
+                };
+
+                // Check for struct literal: Self { ... }
+                if self.check(&Token::LBrace) && !self.is_in_condition() {
+                    self.advance();
+                    let (fields, rest) = self.parse_struct_fields()?;
+                    self.expect(Token::RBrace)?;
+                    Ok(Expr::Struct { path, fields, rest })
+                } else {
+                    Ok(Expr::Path(path))
+                }
             }
             Some(Token::Ident(_)) => {
                 let path = self.parse_type_path()?;
@@ -4188,6 +4226,23 @@ impl<'a> Parser<'a> {
                     })
                 }
             }
+            // Handle contextual keywords as identifier patterns
+            Some(ref token) if Self::token_as_contextual_ident(token).is_some() => {
+                let name_str = Self::token_as_contextual_ident(token).unwrap().to_string();
+                let span = self.current_span();
+                self.advance();
+                let evidentiality = self.parse_evidentiality_opt();
+                Ok(Pattern::Ident {
+                    mutable: false,
+                    name: Ident {
+                        name: name_str,
+                        evidentiality: None,
+                        affect: None,
+                        span,
+                    },
+                    evidentiality,
+                })
+            }
             Some(token) => Err(ParseError::UnexpectedToken {
                 expected: "pattern".to_string(),
                 found: token,
@@ -4267,11 +4322,60 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Check if a token can be used as a contextual identifier.
+    /// These are protocol/domain keywords that should be valid as identifiers
+    /// when not in their specific keyword position.
+    fn token_as_contextual_ident(token: &Token) -> Option<&'static str> {
+        match token {
+            // Protocol keywords (valid as type names, variable names, etc.)
+            Token::Stream => Some("stream"),
+            Token::Body => Some("body"),
+            Token::Header => Some("header"),
+            Token::Timeout => Some("timeout"),
+            Token::Connect => Some("connect"),
+            Token::Close => Some("close"),
+            Token::Send => Some("send"),
+            Token::Recv => Some("recv"),
+            Token::Retry => Some("retry"),
+            // Protocol type identifiers
+            Token::Http => Some("http"),
+            Token::Https => Some("https"),
+            Token::Ws => Some("ws"),
+            Token::Wss => Some("wss"),
+            Token::Grpc => Some("grpc"),
+            Token::Kafka => Some("kafka"),
+            Token::Amqp => Some("amqp"),
+            Token::GraphQL => Some("graphql"),
+            // Other contextual keywords
+            Token::Scope => Some("scope"),
+            Token::Asm => Some("asm"),
+            Token::Const => Some("const"),
+            Token::Volatile => Some("volatile"),
+            Token::Naked => Some("naked"),
+            Token::Packed => Some("packed"),
+            Token::Simd => Some("simd"),
+            Token::Atomic => Some("atomic"),
+            _ => None,
+        }
+    }
+
     fn parse_ident(&mut self) -> ParseResult<Ident> {
         match self.current.take() {
             Some((Token::Ident(name), span)) => {
                 self.current = self.lexer.next_token();
                 // Parse optional affective markers after identifier
+                let affect = self.parse_affect_opt();
+                Ok(Ident {
+                    name,
+                    evidentiality: None,
+                    affect,
+                    span,
+                })
+            }
+            // Handle contextual keywords that can be used as identifiers
+            Some((ref token, span)) if Self::token_as_contextual_ident(token).is_some() => {
+                let name = Self::token_as_contextual_ident(token).unwrap().to_string();
+                self.current = self.lexer.next_token();
                 let affect = self.parse_affect_opt();
                 Ok(Ident {
                     name,
@@ -4550,7 +4654,12 @@ impl<'a> Parser<'a> {
     fn parse_field_defs(&mut self) -> ParseResult<Vec<FieldDef>> {
         let mut fields = Vec::new();
         while !self.check(&Token::RBrace) && !self.is_eof() {
-            // Collect doc comments before the field
+            // Parse outer attributes before the field: #[serde(skip)]
+            let mut attrs = Vec::new();
+            while self.check(&Token::Hash) {
+                attrs.push(self.parse_outer_attribute()?);
+            }
+            // Collect doc comments before the field (also skips regular comments)
             let doc_comment = self.collect_doc_comments();
             if self.check(&Token::RBrace) {
                 break;
@@ -4566,13 +4675,15 @@ impl<'a> Parser<'a> {
                 None
             };
             fields.push(FieldDef {
+                attrs,
                 visibility,
                 doc_comment,
                 name,
                 ty,
                 default,
             });
-            if !self.consume_if(&Token::Comma) {
+            // Accept either comma or semicolon as field separator (Rust compatibility)
+            if !self.consume_if(&Token::Comma) && !self.consume_if(&Token::Semi) {
                 break;
             }
         }
@@ -5727,5 +5838,269 @@ mod tests {
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 2);
+    }
+
+    #[test]
+    fn test_contextual_keywords_as_identifiers() {
+        // REQ-1: Contextual keywords should be usable as type names and identifiers
+        // Stream as type name
+        let source = r#"struct StreamReader { stream: stream }"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Timeout as enum variant
+        let source = r#"enum Error { timeout, NetworkError }"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Kafka as identifier
+        let source = r#"fn connect() { let kafka = create_client(); }"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // asm in use path
+        let source = r#"use platform::asm;"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // scope as field name
+        let source = r#"struct Config { scope: str, timeout: i32 }"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_slice_type_syntax() {
+        // REQ-2: [T] should parse as slice type
+        let source = r#"fn process(data: [u8]) -> [u8] { data }"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Slice in struct field
+        let source = r#"struct Buffer { data: [u8] }"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_self_in_expressions() {
+        // REQ-6: Self should work as struct constructor
+        let source = r#"
+            struct Point { x: i32, y: i32 }
+            impl Point {
+                fn origin() -> Self {
+                    Self { x: 0, y: 0 }
+                }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 2);
+
+        // Self as return type and expression
+        let source = r#"
+            impl Counter {
+                fn new() -> Self { Self { count: 0 } }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_grouped_imports_rejected_with_helpful_message() {
+        // REQ-11: Grouped imports should be rejected with a teaching error message
+        let source = r#"use std::collections::{HashMap, HashSet};"#;
+        let mut parser = Parser::new(source);
+        let result = parser.parse_file();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{}", err);
+        assert!(err_msg.contains("explicit imports"));
+        assert!(err_msg.contains("one per line"));
+
+        // Single import should still work
+        let source = r#"use std::collections::HashMap;"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_semicolons_in_struct_and_enum() {
+        // REQ-4: Semicolons should work as field separators
+        let source = r#"
+            struct Config {
+                name: str;
+                value: i32;
+                enabled: bool
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Mixed separators
+        let source = r#"
+            struct Mixed {
+                a: i32,
+                b: i32;
+                c: i32
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Enum with semicolons
+        let source = r#"
+            enum Status {
+                Active;
+                Inactive;
+                Pending
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_comments_in_struct_and_enum() {
+        // REQ-5: Comments should be allowed in struct/enum bodies
+        let source = r#"
+            struct Config {
+                // Database configuration
+                host: str,
+                port: i32,  // Default: 5432
+                // Connection settings
+                timeout: i32
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Enum with comments
+        let source = r#"
+            enum Error {
+                // Network errors
+                Timeout,
+                ConnectionFailed,
+                // Data errors
+                InvalidFormat
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_trailing_comma_in_enum() {
+        // REQ-10: Trailing commas should work in enums
+        let source = r#"
+            enum Direction {
+                North,
+                South,
+                East,
+                West,
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_attributes_on_fields_and_variants() {
+        // REQ-9: Attributes on struct fields
+        let source = r#"
+            struct Config {
+                #[serde(skip)]
+                internal: i32,
+                #[deprecated]
+                old_field: str,
+                normal_field: bool
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Attributes on enum variants
+        let source = r#"
+            enum Status {
+                #[deprecated]
+                OldActive,
+                #[default]
+                Active,
+                Inactive
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_generic_impl_blocks() {
+        // REQ-3: Generic impl blocks
+        let source = r#"
+            impl<T> Container<T> {
+                fn new() -> Self { Self { data: [] } }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Generic impl with trait
+        let source = r#"
+            impl<T: Clone> Clone for Container<T> {
+                fn clone(self) -> Self { Self { data: self.data } }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_logical_or_operator() {
+        // REQ-8: || should work as logical OR
+        let source = r#"fn check() { let result = a || b; }"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Chained logical operators
+        let source = r#"fn check() { let x = a || b && c; }"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_turbofish_syntax() {
+        // REQ-12: Turbofish ::<> syntax for generic type hints
+        let source = r#"fn main() { let x = Vec::<i32>::new(); }"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Turbofish on function call
+        let source = r#"fn main() { let x = parse::<i32>(s); }"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
     }
 }
