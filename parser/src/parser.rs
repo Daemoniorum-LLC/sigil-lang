@@ -31,6 +31,8 @@ pub struct Parser<'a> {
     current: Option<(Token, Span)>,
     /// Tracks whether we're parsing a condition (if/while/for) where < is comparison not generics
     in_condition: bool,
+    /// When we split `>>` (Shr) into two `>` tokens for generic parsing, this holds the remaining `>`
+    pending_gt: Option<Span>,
 }
 
 impl<'a> Parser<'a> {
@@ -41,6 +43,7 @@ impl<'a> Parser<'a> {
             lexer,
             current,
             in_condition: false,
+            pending_gt: None,
         }
     }
 
@@ -598,6 +601,44 @@ impl<'a> Parser<'a> {
             }),
             None => Err(ParseError::UnexpectedEof),
         }
+    }
+
+    /// Expect a `>` token, handling the case where `>>` (Shr) needs to be split into two `>` tokens.
+    /// This is needed for parsing nested generics like `Vec<Option<T>>`.
+    fn expect_gt(&mut self) -> ParseResult<Span> {
+        // First check if we have a pending > from a previous >> split
+        if let Some(span) = self.pending_gt.take() {
+            return Ok(span);
+        }
+
+        match &self.current {
+            Some((Token::Gt, span)) => {
+                let span = *span;
+                self.advance();
+                Ok(span)
+            }
+            Some((Token::Shr, span)) => {
+                // Split >> into two > tokens
+                // Use the first half of the span for the first >, store second half as pending
+                let span = *span;
+                // Advance past the >> token
+                self.advance();
+                // Store a pending > with the same span (slightly imprecise but functional)
+                self.pending_gt = Some(span);
+                Ok(span)
+            }
+            Some((token, span)) => Err(ParseError::UnexpectedToken {
+                expected: "Gt".to_string(),
+                found: token.clone(),
+                span: *span,
+            }),
+            None => Err(ParseError::UnexpectedEof),
+        }
+    }
+
+    /// Check for `>`, also considering if we have a pending > from >> split
+    fn check_gt(&self) -> bool {
+        self.pending_gt.is_some() || matches!(&self.current, Some((Token::Gt | Token::Shr, _)))
     }
 
     fn check(&self, expected: &Token) -> bool {
@@ -1346,13 +1387,27 @@ impl<'a> Parser<'a> {
         let generics = self.parse_generics_opt()?;
 
         self.expect(Token::LBrace)?;
+        self.skip_comments();
 
         let mut state = Vec::new();
         let mut handlers = Vec::new();
+        let mut methods = Vec::new();
 
         while !self.check(&Token::RBrace) && !self.is_eof() {
+            self.skip_comments();
+            if self.check(&Token::RBrace) {
+                break;
+            }
+
             if self.check(&Token::On) {
                 handlers.push(self.parse_message_handler()?);
+            } else if self.check(&Token::Fn) || self.check(&Token::Async) {
+                // Parse method
+                methods.push(self.parse_function_with_doc(
+                    Visibility::Private,
+                    Vec::new(),
+                    None,
+                )?);
             } else {
                 // Parse state field
                 let vis = self.parse_visibility()?;
@@ -1367,9 +1422,10 @@ impl<'a> Parser<'a> {
                     None
                 };
 
-                if !self.check(&Token::RBrace) && !self.check(&Token::On) {
+                if !self.check(&Token::RBrace) && !self.check(&Token::On) && !self.check(&Token::Fn) {
                     self.consume_if(&Token::Comma);
                 }
+                self.skip_comments();
 
                 state.push(FieldDef {
                     visibility: vis,
@@ -1387,6 +1443,7 @@ impl<'a> Parser<'a> {
             name,
             generics,
             state,
+            methods,
             handlers,
         })
     }
@@ -1509,9 +1566,21 @@ impl<'a> Parser<'a> {
         self.expect(Token::On)?;
         let message = self.parse_ident()?;
 
-        self.expect(Token::LParen)?;
-        let params = self.parse_params()?;
-        self.expect(Token::RParen)?;
+        // Parameters are optional for parameterless handlers: `on Reset { ... }`
+        let params = if self.consume_if(&Token::LParen) {
+            let params = self.parse_params()?;
+            self.expect(Token::RParen)?;
+            params
+        } else if self.check(&Token::LBrace) {
+            // Parameterless handler with direct body
+            Vec::new()
+        } else {
+            // Pattern-based handler: `on Message { from, text } { ... }`
+            Vec::new()
+        };
+
+        // Note: Pattern destructuring in message handlers (e.g., `on Message { from, text } { ... }`)
+        // is not yet implemented - it requires more complex lookahead parsing
 
         let return_type = if self.consume_if(&Token::Arrow) {
             Some(self.parse_type()?)
@@ -1643,7 +1712,7 @@ impl<'a> Parser<'a> {
                     }
                     _ => return Err(ParseError::Custom("expected lane count".to_string())),
                 };
-                self.expect(Token::Gt)?;
+                self.expect_gt()?;
                 Ok(TypeExpr::Simd {
                     element: Box::new(element),
                     lanes,
@@ -1653,7 +1722,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.expect(Token::Lt)?;
                 let inner = self.parse_type()?;
-                self.expect(Token::Gt)?;
+                self.expect_gt()?;
                 Ok(TypeExpr::Atomic(Box::new(inner)))
             }
             _ => {
@@ -1667,7 +1736,10 @@ impl<'a> Parser<'a> {
         let mut segments = Vec::new();
         segments.push(self.parse_path_segment()?);
 
-        while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+        while self.consume_if(&Token::ColonColon)
+            || self.consume_if(&Token::MiddleDot)
+            || self.consume_if(&Token::Dot)
+        {
             segments.push(self.parse_path_segment()?);
         }
 
@@ -1680,7 +1752,7 @@ impl<'a> Parser<'a> {
         // Don't parse generics in condition context (< is comparison, not generics)
         let generics = if !self.is_in_condition() && self.consume_if(&Token::Lt) {
             let types = self.parse_type_list()?;
-            self.expect(Token::Gt)?;
+            self.expect_gt()?; // Use expect_gt to handle >> in nested generics
             Some(types)
         } else {
             None
@@ -1691,12 +1763,13 @@ impl<'a> Parser<'a> {
 
     fn parse_type_list(&mut self) -> ParseResult<Vec<TypeExpr>> {
         let mut types = Vec::new();
-        if !self.check(&Token::RParen) && !self.check(&Token::RBracket) && !self.check(&Token::Gt) {
+        // Use check_gt() to handle pending > from >> split
+        if !self.check(&Token::RParen) && !self.check(&Token::RBracket) && !self.check_gt() {
             types.push(self.parse_type()?);
             while self.consume_if(&Token::Comma) {
                 if self.check(&Token::RParen)
                     || self.check(&Token::RBracket)
-                    || self.check(&Token::Gt)
+                    || self.check_gt()
                 {
                     break;
                 }
@@ -1725,6 +1798,38 @@ impl<'a> Parser<'a> {
             let value = self.parse_expr()?;
             return Ok(Expr::Assign {
                 target: Box::new(lhs),
+                value: Box::new(value),
+            });
+        }
+
+        // Check for compound assignment: expr += value, expr -= value, etc.
+        // Desugar to: expr = expr + value
+        let compound_op = match self.current_token() {
+            Some(Token::PlusEq) => Some(BinOp::Add),
+            Some(Token::MinusEq) => Some(BinOp::Sub),
+            Some(Token::StarEq) => Some(BinOp::Mul),
+            Some(Token::SlashEq) => Some(BinOp::Div),
+            _ => None,
+        };
+
+        if let Some(op) = compound_op {
+            self.advance();
+            let rhs = self.parse_expr()?;
+            return Ok(Expr::Assign {
+                target: Box::new(lhs.clone()),
+                value: Box::new(Expr::Binary {
+                    left: Box::new(lhs),
+                    op,
+                    right: Box::new(rhs),
+                }),
+            });
+        }
+
+        // Check for channel send: channel <- value
+        if self.consume_if(&Token::LeftArrow) {
+            let value = self.parse_expr()?;
+            return Ok(Expr::ChannelSend {
+                channel: Box::new(lhs),
                 value: Box::new(value),
             });
         }
@@ -1934,6 +2039,15 @@ impl<'a> Parser<'a> {
                     }
 
                     expr = Expr::Incorporation { segments };
+                }
+                // Type cast: expr as Type
+                Some(Token::As) => {
+                    self.advance();
+                    let ty = self.parse_type()?;
+                    expr = Expr::Cast {
+                        expr: Box::new(expr),
+                        ty,
+                    };
                 }
                 _ => break,
             }
@@ -2447,7 +2561,7 @@ impl<'a> Parser<'a> {
                 // Optional type parameter <T>
                 let ty = if self.consume_if(&Token::Lt) {
                     let t = self.parse_type()?;
-                    self.expect(Token::Gt)?;
+                    self.expect_gt()?;
                     Some(t)
                 } else {
                     None
@@ -2468,7 +2582,7 @@ impl<'a> Parser<'a> {
                 // Optional type parameter <T>
                 let ty = if self.consume_if(&Token::Lt) {
                     let t = self.parse_type()?;
-                    self.expect(Token::Gt)?;
+                    self.expect_gt()?;
                     Some(t)
                 } else {
                     None
@@ -3369,6 +3483,30 @@ impl<'a> Parser<'a> {
             });
         }
 
+        // Try to detect tuple pattern closure: `{(x, y) => ...}`
+        // We need to parse the tuple pattern and check for => after
+        if self.check(&Token::LParen) {
+            // Save position to potentially backtrack
+            // Parse the pattern and check if followed by =>
+            let pattern = self.parse_pattern()?;
+            if self.consume_if(&Token::FatArrow) {
+                self.skip_comments();
+                let body = self.parse_expr()?;
+                self.skip_comments();
+                self.expect(Token::RBrace)?;
+                return Ok(Expr::Closure {
+                    params: vec![ClosureParam { pattern, ty: None }],
+                    body: Box::new(body),
+                });
+            } else {
+                // Not a closure, need to handle the pattern as an expression
+                // This is tricky - for now, return an error for unsupported syntax
+                return Err(ParseError::Custom(
+                    "expected => after pattern in closure".to_string(),
+                ));
+            }
+        }
+
         // Parse as block
         let mut stmts = Vec::new();
         let mut final_expr = None;
@@ -3499,11 +3637,28 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Mut) => {
                 self.advance();
-                let name = self.parse_ident()?;
+                // Handle both `mut ident` and `mut self`
+                let name = self.parse_ident_or_self()?;
                 let evidentiality = self.parse_evidentiality_opt();
                 Ok(Pattern::Ident {
                     mutable: true,
                     name,
+                    evidentiality,
+                })
+            }
+            Some(Token::SelfLower) => {
+                // Handle `self` as a pattern (method receiver)
+                let span = self.current_span();
+                self.advance();
+                let evidentiality = self.parse_evidentiality_opt();
+                Ok(Pattern::Ident {
+                    mutable: false,
+                    name: Ident {
+                        name: "self".to_string(),
+                        evidentiality: None,
+                        affect: None,
+                        span,
+                    },
                     evidentiality,
                 })
             }
@@ -3645,6 +3800,40 @@ impl<'a> Parser<'a> {
                 self.current = Some((token.clone(), span));
                 Err(ParseError::UnexpectedToken {
                     expected: "identifier".to_string(),
+                    found: token,
+                    span,
+                })
+            }
+            None => Err(ParseError::UnexpectedEof),
+        }
+    }
+
+    /// Parse an identifier or the `self` keyword (for method receivers).
+    fn parse_ident_or_self(&mut self) -> ParseResult<Ident> {
+        match self.current.take() {
+            Some((Token::Ident(name), span)) => {
+                self.current = self.lexer.next_token();
+                let affect = self.parse_affect_opt();
+                Ok(Ident {
+                    name,
+                    evidentiality: None,
+                    affect,
+                    span,
+                })
+            }
+            Some((Token::SelfLower, span)) => {
+                self.current = self.lexer.next_token();
+                Ok(Ident {
+                    name: "self".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
+            }
+            Some((token, span)) => {
+                self.current = Some((token.clone(), span));
+                Err(ParseError::UnexpectedToken {
+                    expected: "identifier or self".to_string(),
                     found: token,
                     span,
                 })
@@ -3828,7 +4017,7 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
-        self.expect(Token::Gt)?;
+        self.expect_gt()?;
 
         Ok(Some(Generics { params }))
     }
@@ -4889,5 +5078,74 @@ mod tests {
         } else {
             panic!("Expected impl block");
         }
+    }
+
+    #[test]
+    fn test_parse_self_parameter() {
+        let source = r#"
+            impl Counter {
+                fn get(self) -> i64 {
+                    self.value
+                }
+
+                fn increment(mut self) {
+                    self.value += 1
+                }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+
+        if let Item::Impl(impl_block) = &file.items[0].node {
+            assert_eq!(impl_block.items.len(), 2);
+            // Check first method has `self` param
+            if let ImplItem::Function(f) = &impl_block.items[0] {
+                assert_eq!(f.name.name, "get");
+                assert_eq!(f.params.len(), 1);
+                if let Pattern::Ident { name, mutable, .. } = &f.params[0].pattern {
+                    assert_eq!(name.name, "self");
+                    assert!(!mutable);
+                } else {
+                    panic!("Expected ident pattern");
+                }
+            }
+            // Check second method has `mut self` param
+            if let ImplItem::Function(f) = &impl_block.items[1] {
+                assert_eq!(f.name.name, "increment");
+                assert_eq!(f.params.len(), 1);
+                if let Pattern::Ident { name, mutable, .. } = &f.params[0].pattern {
+                    assert_eq!(name.name, "self");
+                    assert!(mutable);
+                } else {
+                    panic!("Expected ident pattern");
+                }
+            }
+        } else {
+            panic!("Expected impl block");
+        }
+    }
+
+    #[test]
+    fn test_parse_type_path_with_dot() {
+        let source = r#"
+            fn foo() {
+                let x: time.Duration = time.Duration.from_secs(5)
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_nested_generics() {
+        let source = r#"
+            fn foo() {
+                let x: Option<Option<i32>> = None
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
     }
 }
