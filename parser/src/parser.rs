@@ -684,6 +684,13 @@ impl<'a> Parser<'a> {
                     doc_comments.push(content.to_string());
                     self.advance();
                 }
+                Token::OuterDocComment(text) => {
+                    // Strip the /// prefix and any leading space
+                    let content = text.strip_prefix("///").unwrap_or(text);
+                    let content = content.strip_prefix(' ').unwrap_or(content);
+                    doc_comments.push(content.to_string());
+                    self.advance();
+                }
                 Token::LineComment(_) => {
                     // Skip regular line comments
                     self.advance();
@@ -1432,6 +1439,25 @@ impl<'a> Parser<'a> {
                     span,
                 })
             }
+            // Handle keywords that can appear in paths
+            Some((Token::Atomic, span)) => {
+                self.current = self.lexer.next_token();
+                Ok(Ident {
+                    name: "atomic".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
+            }
+            Some((Token::Stream, span)) => {
+                self.current = self.lexer.next_token();
+                Ok(Ident {
+                    name: "Stream".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
+            }
             Some((Token::Ident(name), span)) => {
                 self.current = self.lexer.next_token();
                 let affect = self.parse_affect_opt();
@@ -1550,6 +1576,7 @@ impl<'a> Parser<'a> {
 
                 state.push(FieldDef {
                     visibility: vis,
+                    doc_comment: None,
                     name: field_name,
                     ty,
                     default,
@@ -1893,7 +1920,7 @@ impl<'a> Parser<'a> {
         Ok(PathSegment { ident, generics })
     }
 
-    /// Parse an identifier that can appear in type position (includes Self, Stream).
+    /// Parse an identifier that can appear in type position (includes Self, Stream, atomic, etc.).
     fn parse_type_ident(&mut self) -> ParseResult<Ident> {
         match self.current.take() {
             Some((Token::SelfUpper, span)) => {
@@ -1910,6 +1937,44 @@ impl<'a> Parser<'a> {
                 self.current = self.lexer.next_token();
                 Ok(Ident {
                     name: "Stream".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
+            }
+            // Allow atomic as a type/module name (for std::sync::atomic::AtomicU64)
+            Some((Token::Atomic, span)) => {
+                self.current = self.lexer.next_token();
+                Ok(Ident {
+                    name: "atomic".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
+            }
+            // Allow other keywords that might appear in paths
+            Some((Token::Crate, span)) => {
+                self.current = self.lexer.next_token();
+                Ok(Ident {
+                    name: "crate".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
+            }
+            Some((Token::Super, span)) => {
+                self.current = self.lexer.next_token();
+                Ok(Ident {
+                    name: "super".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
+            }
+            Some((Token::SelfLower, span)) => {
+                self.current = self.lexer.next_token();
+                Ok(Ident {
+                    name: "self".to_string(),
                     evidentiality: None,
                     affect: None,
                     span,
@@ -2480,12 +2545,26 @@ impl<'a> Parser<'a> {
             }
             Some(Token::While) => {
                 self.advance();
-                let condition = self.parse_condition()?;
-                let body = self.parse_block()?;
-                Ok(Expr::While {
-                    condition: Box::new(condition),
-                    body,
-                })
+                // Check for `while let` pattern matching
+                if self.check(&Token::Let) {
+                    self.advance();
+                    let pattern = self.parse_pattern()?;
+                    self.expect(Token::Eq)?;
+                    let expr = self.parse_condition()?;
+                    let body = self.parse_block()?;
+                    Ok(Expr::WhileLet {
+                        pattern,
+                        expr: Box::new(expr),
+                        body,
+                    })
+                } else {
+                    let condition = self.parse_condition()?;
+                    let body = self.parse_block()?;
+                    Ok(Expr::While {
+                        condition: Box::new(condition),
+                        body,
+                    })
+                }
             }
             Some(Token::For) => {
                 self.advance();
@@ -2600,6 +2679,12 @@ impl<'a> Parser<'a> {
             Some(Token::Volatile) => self.parse_volatile_expr(),
             Some(Token::Simd) => self.parse_simd_expr(),
             Some(Token::Atomic) => self.parse_atomic_expr(),
+            Some(Token::Unsafe) => {
+                // unsafe { ... } block
+                self.advance();
+                let block = self.parse_block()?;
+                Ok(Expr::Unsafe(block))
+            }
             // Implicit self field access: `.field` or `.0` desugars to `self.field` or `self.0`
             // This allows more concise method bodies:
             //   fn increment(mut self) { .count += 1; }
@@ -2648,6 +2733,10 @@ impl<'a> Parser<'a> {
                     },
                 })
             }
+            Some(Token::Pipe) | Some(Token::OrOr) => {
+                // Rust-style closure: |x| x + 1  or  || expr  or  |x, y| x + y
+                self.parse_rust_closure()
+            }
             Some(token) => Err(ParseError::UnexpectedToken {
                 expected: "expression".to_string(),
                 found: token,
@@ -2655,6 +2744,51 @@ impl<'a> Parser<'a> {
             }),
             None => Err(ParseError::UnexpectedEof),
         }
+    }
+
+    /// Parse Rust-style closure: `|x| x + 1`, `|| expr`, `|x, y| x + y`, `|x: i32| -> i32 { x + 1 }`
+    fn parse_rust_closure(&mut self) -> ParseResult<Expr> {
+        let mut params = Vec::new();
+
+        // Handle || (empty params) vs | (start of params)
+        if self.consume_if(&Token::OrOr) {
+            // Empty parameter list: || expr
+        } else {
+            self.expect(Token::Pipe)?;
+            // Parse parameters until closing |
+            while !self.check(&Token::Pipe) {
+                let pattern = self.parse_pattern()?;
+                let ty = if self.consume_if(&Token::Colon) {
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
+                params.push(ClosureParam { pattern, ty });
+                if !self.consume_if(&Token::Comma) {
+                    break;
+                }
+            }
+            self.expect(Token::Pipe)?;
+        }
+
+        // Parse optional return type: -> Type
+        let _return_ty = if self.consume_if(&Token::Arrow) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+
+        // Parse body - can be a block or a single expression
+        let body = if self.check(&Token::LBrace) {
+            self.parse_block_or_closure()?
+        } else {
+            self.parse_expr()?
+        };
+
+        Ok(Expr::Closure {
+            params,
+            body: Box::new(body),
+        })
     }
 
     /// Parse inline assembly: `asm!("template", ...)`
@@ -3836,6 +3970,12 @@ impl<'a> Parser<'a> {
 
     fn parse_if_expr(&mut self) -> ParseResult<Expr> {
         self.expect(Token::If)?;
+
+        // Check for `if let` pattern matching
+        if self.check(&Token::Let) {
+            return self.parse_if_let_expr();
+        }
+
         let condition = self.parse_condition()?;
         let then_branch = self.parse_block()?;
         let else_branch = if self.consume_if(&Token::Else) {
@@ -3850,6 +3990,34 @@ impl<'a> Parser<'a> {
 
         Ok(Expr::If {
             condition: Box::new(condition),
+            then_branch,
+            else_branch,
+        })
+    }
+
+    /// Parse `if let Pattern = expr { ... } else { ... }`
+    fn parse_if_let_expr(&mut self) -> ParseResult<Expr> {
+        self.expect(Token::Let)?;
+        let pattern = self.parse_pattern()?;
+        self.expect(Token::Eq)?;
+
+        // Parse the expression to match against (using condition context to avoid struct literal ambiguity)
+        let expr = self.parse_condition()?;
+        let then_branch = self.parse_block()?;
+
+        let else_branch = if self.consume_if(&Token::Else) {
+            if self.check(&Token::If) {
+                Some(Box::new(self.parse_if_expr()?))
+            } else {
+                Some(Box::new(Expr::Block(self.parse_block()?)))
+            }
+        } else {
+            None
+        };
+
+        Ok(Expr::IfLet {
+            pattern,
+            expr: Box::new(expr),
             then_branch,
             else_branch,
         })
@@ -3961,13 +4129,64 @@ impl<'a> Parser<'a> {
                 Ok(Pattern::Literal(lit))
             }
             Some(Token::Ident(_)) => {
-                let name = self.parse_ident()?;
-                let evidentiality = self.parse_evidentiality_opt();
-                Ok(Pattern::Ident {
-                    mutable: false,
-                    name,
-                    evidentiality,
-                })
+                // Could be simple ident, tuple struct like Some(x), or struct like Point { x, y }
+                let path = self.parse_type_path()?;
+
+                if self.check(&Token::LParen) {
+                    // Tuple struct pattern: Some(x), Ok(value), Err(e)
+                    self.advance();
+                    let mut fields = Vec::new();
+                    while !self.check(&Token::RParen) {
+                        fields.push(self.parse_pattern()?);
+                        if !self.consume_if(&Token::Comma) {
+                            break;
+                        }
+                    }
+                    self.expect(Token::RParen)?;
+                    Ok(Pattern::TupleStruct { path, fields })
+                } else if self.check(&Token::LBrace) {
+                    // Struct pattern: Point { x, y, .. }
+                    self.advance();
+                    let mut fields = Vec::new();
+                    let mut rest = false;
+                    while !self.check(&Token::RBrace) {
+                        if self.check(&Token::DotDot) {
+                            self.advance();
+                            rest = true;
+                            break;
+                        }
+                        let field_name = self.parse_ident()?;
+                        let pattern = if self.consume_if(&Token::Colon) {
+                            Some(self.parse_pattern()?)
+                        } else {
+                            None
+                        };
+                        fields.push(FieldPattern {
+                            name: field_name,
+                            pattern,
+                        });
+                        if !self.consume_if(&Token::Comma) {
+                            break;
+                        }
+                    }
+                    self.expect(Token::RBrace)?;
+                    Ok(Pattern::Struct { path, fields, rest })
+                } else if path.segments.len() == 1 && path.segments[0].generics.is_none() {
+                    // Simple identifier pattern
+                    let name = path.segments.into_iter().next().unwrap().ident;
+                    let evidentiality = self.parse_evidentiality_opt();
+                    Ok(Pattern::Ident {
+                        mutable: false,
+                        name,
+                        evidentiality,
+                    })
+                } else {
+                    // Path pattern (e.g., Enum::Variant)
+                    Ok(Pattern::TupleStruct {
+                        path,
+                        fields: vec![],
+                    })
+                }
             }
             Some(token) => Err(ParseError::UnexpectedToken {
                 expected: "pattern".to_string(),
@@ -4331,6 +4550,11 @@ impl<'a> Parser<'a> {
     fn parse_field_defs(&mut self) -> ParseResult<Vec<FieldDef>> {
         let mut fields = Vec::new();
         while !self.check(&Token::RBrace) && !self.is_eof() {
+            // Collect doc comments before the field
+            let doc_comment = self.collect_doc_comments();
+            if self.check(&Token::RBrace) {
+                break;
+            }
             let visibility = self.parse_visibility()?;
             let name = self.parse_ident()?;
             self.expect(Token::Colon)?;
@@ -4343,6 +4567,7 @@ impl<'a> Parser<'a> {
             };
             fields.push(FieldDef {
                 visibility,
+                doc_comment,
                 name,
                 ty,
                 default,

@@ -665,6 +665,8 @@ pub enum StructFields {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldDef {
     pub visibility: Visibility,
+    /// Documentation comment: `/// This field represents X`
+    pub doc_comment: Option<String>,
     pub name: Ident,
     pub ty: TypeExpr,
     /// Default value for the field (e.g., `field: Type = default_expr`)
@@ -956,6 +958,19 @@ pub enum Expr {
     Loop(Block),
     /// While loop
     While { condition: Box<Expr>, body: Block },
+    /// While let pattern matching: `while let Some(x) = iter.next() { ... }`
+    WhileLet {
+        pattern: Pattern,
+        expr: Box<Expr>,
+        body: Block,
+    },
+    /// If let pattern matching: `if let Some(x) = value { ... }`
+    IfLet {
+        pattern: Pattern,
+        expr: Box<Expr>,
+        then_branch: Block,
+        else_branch: Option<Box<Expr>>,
+    },
     /// For loop
     For {
         pattern: Pattern,
