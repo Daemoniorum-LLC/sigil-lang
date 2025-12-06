@@ -1890,6 +1890,21 @@ impl<'a> Parser<'a> {
         segments.push(self.parse_path_segment()?);
 
         while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+            // Check for turbofish syntax: ::< becomes generics on the previous segment
+            if !self.is_in_condition() && self.check(&Token::Lt) {
+                self.advance(); // consume <
+                let types = self.parse_type_list()?;
+                self.expect_gt()?;
+                // Add generics to the last segment
+                if let Some(last) = segments.last_mut() {
+                    last.generics = Some(types);
+                }
+                // Check if path continues after turbofish
+                if self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+                    segments.push(self.parse_path_segment()?);
+                }
+                continue;
+            }
             segments.push(self.parse_path_segment()?);
         }
 
@@ -6031,6 +6046,59 @@ mod tests {
                 Inactive
             }
         "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_generic_impl_blocks() {
+        // REQ-3: Generic impl blocks
+        let source = r#"
+            impl<T> Container<T> {
+                fn new() -> Self { Self { data: [] } }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Generic impl with trait
+        let source = r#"
+            impl<T: Clone> Clone for Container<T> {
+                fn clone(self) -> Self { Self { data: self.data } }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_logical_or_operator() {
+        // REQ-8: || should work as logical OR
+        let source = r#"fn check() { let result = a || b; }"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Chained logical operators
+        let source = r#"fn check() { let x = a || b && c; }"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_turbofish_syntax() {
+        // REQ-12: Turbofish ::<> syntax for generic type hints
+        let source = r#"fn main() { let x = Vec::<i32>::new(); }"#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Turbofish on function call
+        let source = r#"fn main() { let x = parse::<i32>(s); }"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
