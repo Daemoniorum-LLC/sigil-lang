@@ -150,8 +150,13 @@ pub enum Token {
     #[regex(r"//[^\n]*", |lex| lex.slice().to_string())]
     LineComment(String),
 
+    /// Inner doc comment: `//! This is a doc comment`
     #[regex(r"//![^\n]*", |lex| lex.slice().to_string())]
     DocComment(String),
+
+    /// Outer doc comment: `/// This is a doc comment` (for fields, variants, etc.)
+    #[regex(r"///[^\n]*", priority = 3, callback = |lex| lex.slice().to_string())]
+    OuterDocComment(String),
 
     // === Keywords ===
     #[token("fn")]
