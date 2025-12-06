@@ -1736,11 +1736,22 @@ impl<'a> Parser<'a> {
         let mut segments = Vec::new();
         segments.push(self.parse_path_segment()?);
 
-        while self.consume_if(&Token::ColonColon)
-            || self.consume_if(&Token::MiddleDot)
-            || self.consume_if(&Token::Dot)
-        {
+        while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
             segments.push(self.parse_path_segment()?);
+        }
+
+        // Handle dot as path separator only when followed by an identifier (not a number)
+        // This allows `module.Type` syntax while preserving `.0` for tuple field access
+        while self.check(&Token::Dot) {
+            // Peek ahead to see if next token is an identifier
+            if let Some(next) = self.peek_next() {
+                if matches!(next, Token::Ident(_)) {
+                    self.advance(); // consume the dot
+                    segments.push(self.parse_path_segment()?);
+                    continue;
+                }
+            }
+            break;
         }
 
         Ok(TypePath { segments })
@@ -1960,7 +1971,66 @@ impl<'a> Parser<'a> {
                 }
                 Some(Token::Dot) => {
                     self.advance();
-                    let field = self.parse_ident()?;
+                    // Support both identifier fields (expr.field) and numeric tuple fields (expr.0, expr.1)
+                    // Also handle FloatLit tokens like "0.1" which the lexer produces for chained access like .0.1
+                    let field = match self.current_token().cloned() {
+                        Some(Token::IntLit(n)) => {
+                            let span = self.current_span();
+                            self.advance();
+                            Ident {
+                                name: n,
+                                evidentiality: None,
+                                affect: None,
+                                span,
+                            }
+                        }
+                        Some(Token::FloatLit(f)) => {
+                            // Handle cases like ".0.1" where lexer produces "0.1" as a float
+                            // Split into first integer part as field, then handle remaining parts
+                            let span = self.current_span();
+                            self.advance();
+                            if let Some(dot_pos) = f.find('.') {
+                                let first_part = &f[..dot_pos];
+                                let rest = &f[dot_pos + 1..];
+                                // Create field access for first part
+                                let field_ident = Ident {
+                                    name: first_part.to_string(),
+                                    evidentiality: None,
+                                    affect: None,
+                                    span,
+                                };
+                                // Build the first field access
+                                expr = Expr::Field {
+                                    expr: Box::new(expr),
+                                    field: field_ident,
+                                };
+                                // Now create field access for remaining parts (may have more dots)
+                                for part in rest.split('.') {
+                                    if !part.is_empty() {
+                                        expr = Expr::Field {
+                                            expr: Box::new(expr),
+                                            field: Ident {
+                                                name: part.to_string(),
+                                                evidentiality: None,
+                                                affect: None,
+                                                span,
+                                            },
+                                        };
+                                    }
+                                }
+                                continue; // Already built the Field expr, continue to next iteration
+                            } else {
+                                // No dot in float literal (shouldn't happen but handle gracefully)
+                                Ident {
+                                    name: f,
+                                    evidentiality: None,
+                                    affect: None,
+                                    span,
+                                }
+                            }
+                        }
+                        _ => self.parse_ident()?,
+                    };
                     if self.check(&Token::LParen) {
                         self.advance();
                         let args = self.parse_expr_list()?;
@@ -2340,48 +2410,53 @@ impl<'a> Parser<'a> {
             Some(Token::Volatile) => self.parse_volatile_expr(),
             Some(Token::Simd) => self.parse_simd_expr(),
             Some(Token::Atomic) => self.parse_atomic_expr(),
-            // Implicit self field access: `.field` desugars to `self.field`
+            // Implicit self field access: `.field` or `.0` desugars to `self.field` or `self.0`
             // This allows more concise method bodies:
             //   fn increment(mut self) { .count += 1; }
+            //   fn get_first(self) -> T { .0 }
             // instead of:
             //   fn increment(mut self) { self.count += 1; }
+            //   fn get_first(self) -> T { self.0 }
             Some(Token::Dot) => {
                 let dot_span = self.current_span();
                 self.advance(); // consume .
-                match self.current_token() {
-                    Some(Token::Ident(name)) => {
-                        let field_name = name.clone();
-                        let field_span = self.current_span();
-                        self.advance();
-                        // Create `self.field` expression
-                        let self_expr = Expr::Path(TypePath {
-                            segments: vec![PathSegment {
-                                ident: Ident {
-                                    name: "self".to_string(),
-                                    evidentiality: None,
-                                    affect: None,
-                                    span: dot_span,
-                                },
-                                generics: None,
-                            }],
-                        });
-                        Ok(Expr::Field {
-                            expr: Box::new(self_expr),
-                            field: Ident {
-                                name: field_name,
-                                evidentiality: None,
-                                affect: None,
-                                span: field_span,
-                            },
+                // Support both identifier fields (.field) and numeric tuple fields (.0, .1)
+                let field_name = match self.current_token() {
+                    Some(Token::Ident(name)) => name.clone(),
+                    Some(Token::IntLit(n)) => n.clone(),
+                    Some(token) => {
+                        return Err(ParseError::UnexpectedToken {
+                            expected: "identifier or number after '.' for implicit self field"
+                                .to_string(),
+                            found: token.clone(),
+                            span: self.current_span(),
                         })
                     }
-                    Some(token) => Err(ParseError::UnexpectedToken {
-                        expected: "identifier after '.' for implicit self field".to_string(),
-                        found: token.clone(),
-                        span: self.current_span(),
-                    }),
-                    None => Err(ParseError::UnexpectedEof),
-                }
+                    None => return Err(ParseError::UnexpectedEof),
+                };
+                let field_span = self.current_span();
+                self.advance();
+                // Create `self.field` or `self.0` expression
+                let self_expr = Expr::Path(TypePath {
+                    segments: vec![PathSegment {
+                        ident: Ident {
+                            name: "self".to_string(),
+                            evidentiality: None,
+                            affect: None,
+                            span: dot_span,
+                        },
+                        generics: None,
+                    }],
+                });
+                Ok(Expr::Field {
+                    expr: Box::new(self_expr),
+                    field: Ident {
+                        name: field_name,
+                        evidentiality: None,
+                        affect: None,
+                        span: field_span,
+                    },
+                })
             }
             Some(token) => Err(ParseError::UnexpectedToken {
                 expected: "expression".to_string(),
@@ -5147,5 +5222,95 @@ mod tests {
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_tuple_field_access() {
+        // Basic tuple field access: tuple.0, tuple.1
+        let source = r#"
+            fn main() {
+                let pair = make_pair();
+                let first = pair.0;
+                let second = pair.1;
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Verify the parsed structure
+        if let Item::Function(func) = &file.items[0].node {
+            assert_eq!(func.name.name, "main");
+        } else {
+            panic!("Expected function");
+        }
+    }
+
+    #[test]
+    fn test_parse_nested_tuple_field_access() {
+        // Nested tuple field access: tuple.0.1
+        let source = r#"
+            fn main() {
+                let nested = get_nested();
+                let inner = nested.0.1;
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_tuple_field_compound_assignment() {
+        // Tuple field access with compound assignment: counts.0 += 1
+        let source = r#"
+            fn update_counts(counts: (i32, i32)) {
+                let first = counts.0;
+                let second = counts.1;
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_tuple_field_in_expression() {
+        // Tuple field access in arithmetic expressions
+        let source = r#"
+            fn sum_pair(pair: (i32, i32)) -> i32 {
+                return pair.0 + pair.1;
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_tuple_field_chained() {
+        // Chained tuple field access
+        let source = r#"
+            fn main() {
+                let x = data.0.1.2;
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_implicit_self_tuple_field() {
+        // Implicit self with tuple field: .0 desugars to self.0
+        let source = r#"
+            struct Wrapper(i32);
+            impl Wrapper {
+                fn get(self) -> i32 { .0 }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 2);
     }
 }
