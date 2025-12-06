@@ -1068,13 +1068,18 @@ impl<'a> Parser<'a> {
         self.expect(Token::LBrace)?;
         let mut variants = Vec::new();
         while !self.check(&Token::RBrace) && !self.is_eof() {
+            // Parse outer attributes before the variant: #[deprecated]
+            let mut attrs = Vec::new();
+            while self.check(&Token::Hash) {
+                attrs.push(self.parse_outer_attribute()?);
+            }
             // Collect doc comments before each variant (also skips regular comments)
             let variant_doc = self.collect_doc_comments();
-            // Check again for RBrace in case we only had trailing comments
+            // Check again for RBrace in case we only had trailing comments/attrs
             if self.check(&Token::RBrace) {
                 break;
             }
-            variants.push(self.parse_enum_variant(variant_doc)?);
+            variants.push(self.parse_enum_variant(attrs, variant_doc)?);
             // Accept either comma or semicolon as variant separator (Rust compatibility)
             if !self.consume_if(&Token::Comma) && !self.consume_if(&Token::Semi) {
                 break;
@@ -1092,7 +1097,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_enum_variant(&mut self, doc_comment: Option<String>) -> ParseResult<EnumVariant> {
+    fn parse_enum_variant(&mut self, attrs: Vec<Attribute>, doc_comment: Option<String>) -> ParseResult<EnumVariant> {
         let name = self.parse_ident()?;
 
         let fields = if self.check(&Token::LBrace) {
@@ -1116,6 +1121,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(EnumVariant {
+            attrs,
             doc_comment,
             name,
             fields,
@@ -1573,6 +1579,7 @@ impl<'a> Parser<'a> {
                 self.skip_comments();
 
                 state.push(FieldDef {
+                    attrs: Vec::new(),
                     visibility: vis,
                     doc_comment: None,
                     name: field_name,
@@ -4632,6 +4639,11 @@ impl<'a> Parser<'a> {
     fn parse_field_defs(&mut self) -> ParseResult<Vec<FieldDef>> {
         let mut fields = Vec::new();
         while !self.check(&Token::RBrace) && !self.is_eof() {
+            // Parse outer attributes before the field: #[serde(skip)]
+            let mut attrs = Vec::new();
+            while self.check(&Token::Hash) {
+                attrs.push(self.parse_outer_attribute()?);
+            }
             // Collect doc comments before the field (also skips regular comments)
             let doc_comment = self.collect_doc_comments();
             if self.check(&Token::RBrace) {
@@ -4648,6 +4660,7 @@ impl<'a> Parser<'a> {
                 None
             };
             fields.push(FieldDef {
+                attrs,
                 visibility,
                 doc_comment,
                 name,
@@ -5985,6 +5998,37 @@ mod tests {
                 South,
                 East,
                 West,
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_attributes_on_fields_and_variants() {
+        // REQ-9: Attributes on struct fields
+        let source = r#"
+            struct Config {
+                #[serde(skip)]
+                internal: i32,
+                #[deprecated]
+                old_field: str,
+                normal_field: bool
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Attributes on enum variants
+        let source = r#"
+            enum Status {
+                #[deprecated]
+                OldActive,
+                #[default]
+                Active,
+                Inactive
             }
         "#;
         let mut parser = Parser::new(source);

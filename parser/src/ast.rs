@@ -664,6 +664,8 @@ pub enum StructFields {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldDef {
+    /// Outer attributes: `#[serde(skip)]`
+    pub attrs: Vec<Attribute>,
     pub visibility: Visibility,
     /// Documentation comment: `/// This field represents X`
     pub doc_comment: Option<String>,
@@ -688,6 +690,8 @@ pub struct EnumDef {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumVariant {
+    /// Outer attributes: `#[deprecated]`
+    pub attrs: Vec<Attribute>,
     /// Documentation comment: `//! This variant represents X`
     pub doc_comment: Option<String>,
     pub name: Ident,
