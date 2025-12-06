@@ -79,7 +79,7 @@ impl<'a> Parser<'a> {
         self.expect(Token::HashBang)?;
         self.expect(Token::LBracket)?;
 
-        let name = self.parse_ident()?;
+        let name = self.parse_attr_name()?;
         let args = self.parse_attr_args()?;
 
         self.expect(Token::RBracket)?;
@@ -724,6 +724,9 @@ impl<'a> Parser<'a> {
                 Item::Struct(self.parse_struct_with_doc(visibility, outer_attrs, doc_comment)?)
             }
             Some(Token::Enum) => Item::Enum(self.parse_enum_with_doc(visibility, doc_comment)?),
+            Some(Token::Bitflags) => {
+                Item::Bitflags(self.parse_bitflags_with_doc(visibility, doc_comment)?)
+            }
             Some(Token::Trait) => Item::Trait(self.parse_trait_with_doc(visibility, doc_comment)?),
             Some(Token::Impl) => Item::Impl(self.parse_impl_with_doc(doc_comment)?),
             Some(Token::Type) => Item::TypeAlias(self.parse_type_alias_with_doc(visibility, doc_comment)?),
@@ -1058,7 +1061,9 @@ impl<'a> Parser<'a> {
         self.expect(Token::LBrace)?;
         let mut variants = Vec::new();
         while !self.check(&Token::RBrace) && !self.is_eof() {
-            variants.push(self.parse_enum_variant()?);
+            // Collect doc comments before each variant
+            let variant_doc = self.collect_doc_comments();
+            variants.push(self.parse_enum_variant(variant_doc)?);
             if !self.consume_if(&Token::Comma) {
                 break;
             }
@@ -1075,7 +1080,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_enum_variant(&mut self) -> ParseResult<EnumVariant> {
+    fn parse_enum_variant(&mut self, doc_comment: Option<String>) -> ParseResult<EnumVariant> {
         let name = self.parse_ident()?;
 
         let fields = if self.check(&Token::LBrace) {
@@ -1099,9 +1104,53 @@ impl<'a> Parser<'a> {
         };
 
         Ok(EnumVariant {
+            doc_comment,
             name,
             fields,
             discriminant,
+        })
+    }
+
+    /// Parse a bitflags definition: `bitflags Flags: u32 { FLAG_A = 0x01, FLAG_B = 0x02 }`
+    fn parse_bitflags_with_doc(
+        &mut self,
+        visibility: Visibility,
+        doc_comment: Option<String>,
+    ) -> ParseResult<BitflagsDef> {
+        self.expect(Token::Bitflags)?;
+        let name = self.parse_ident()?;
+        self.expect(Token::Colon)?;
+        let repr_type = self.parse_type()?;
+
+        self.expect(Token::LBrace)?;
+        let mut flags = Vec::new();
+        while !self.check(&Token::RBrace) && !self.is_eof() {
+            // Collect doc comments before each flag
+            let flag_doc = self.collect_doc_comments();
+            flags.push(self.parse_bitflag_item(flag_doc)?);
+            if !self.consume_if(&Token::Comma) {
+                break;
+            }
+        }
+        self.expect(Token::RBrace)?;
+
+        Ok(BitflagsDef {
+            visibility,
+            doc_comment,
+            name,
+            repr_type,
+            flags,
+        })
+    }
+
+    fn parse_bitflag_item(&mut self, doc_comment: Option<String>) -> ParseResult<BitflagItem> {
+        let name = self.parse_ident()?;
+        self.expect(Token::Eq)?;
+        let value = self.parse_expr()?;
+        Ok(BitflagItem {
+            doc_comment,
+            name,
+            value,
         })
     }
 
@@ -1123,7 +1172,9 @@ impl<'a> Parser<'a> {
         self.expect(Token::LBrace)?;
         let mut items = Vec::new();
         while !self.check(&Token::RBrace) && !self.is_eof() {
-            items.push(self.parse_trait_item()?);
+            // Collect doc comments before each trait item
+            let item_doc = self.collect_doc_comments();
+            items.push(self.parse_trait_item(item_doc)?);
         }
         self.expect(Token::RBrace)?;
 
@@ -1137,12 +1188,12 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_trait_item(&mut self) -> ParseResult<TraitItem> {
+    fn parse_trait_item(&mut self, doc_comment: Option<String>) -> ParseResult<TraitItem> {
         let visibility = self.parse_visibility()?;
 
         match self.current_token() {
             Some(Token::Fn) | Some(Token::Async) => {
-                Ok(TraitItem::Function(self.parse_function(visibility)?))
+                Ok(TraitItem::Function(self.parse_function_with_doc(visibility, vec![], doc_comment)?))
             }
             Some(Token::Type) => {
                 self.advance();
@@ -1154,7 +1205,11 @@ impl<'a> Parser<'a> {
                 };
                 // Semicolons are optional for trait type items (dialect compatibility)
                 self.consume_if(&Token::Semi);
-                Ok(TraitItem::Type { name, bounds })
+                Ok(TraitItem::Type {
+                    doc_comment,
+                    name,
+                    bounds,
+                })
             }
             Some(Token::Const) => {
                 self.advance();
@@ -1163,7 +1218,11 @@ impl<'a> Parser<'a> {
                 let ty = self.parse_type()?;
                 // Semicolons are optional for trait const items (dialect compatibility)
                 self.consume_if(&Token::Semi);
-                Ok(TraitItem::Const { name, ty })
+                Ok(TraitItem::Const {
+                    doc_comment,
+                    name,
+                    ty,
+                })
             }
             Some(token) => Err(ParseError::UnexpectedToken {
                 expected: "trait item".to_string(),
@@ -1313,7 +1372,8 @@ impl<'a> Parser<'a> {
             return Ok(UseTree::Group(trees));
         }
 
-        let name = self.parse_ident()?;
+        // Handle special path keywords: super, crate, Self
+        let name = self.parse_use_path_segment()?;
 
         // Check for path continuation with · or ::
         if self.consume_if(&Token::MiddleDot) || self.consume_if(&Token::ColonColon) {
@@ -1331,6 +1391,67 @@ impl<'a> Parser<'a> {
         }
 
         Ok(UseTree::Name(name))
+    }
+
+    /// Parse a use path segment, handling special keywords like super, crate, Self.
+    fn parse_use_path_segment(&mut self) -> ParseResult<Ident> {
+        match self.current.take() {
+            Some((Token::Super, span)) => {
+                self.current = self.lexer.next_token();
+                Ok(Ident {
+                    name: "super".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
+            }
+            Some((Token::Crate, span)) => {
+                self.current = self.lexer.next_token();
+                Ok(Ident {
+                    name: "crate".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
+            }
+            Some((Token::SelfLower, span)) => {
+                self.current = self.lexer.next_token();
+                Ok(Ident {
+                    name: "self".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
+            }
+            Some((Token::SelfUpper, span)) => {
+                self.current = self.lexer.next_token();
+                Ok(Ident {
+                    name: "Self".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
+            }
+            Some((Token::Ident(name), span)) => {
+                self.current = self.lexer.next_token();
+                let affect = self.parse_affect_opt();
+                Ok(Ident {
+                    name,
+                    evidentiality: None,
+                    affect,
+                    span,
+                })
+            }
+            Some((token, span)) => {
+                self.current = Some((token.clone(), span));
+                Err(ParseError::UnexpectedToken {
+                    expected: "identifier, super, crate, or self".to_string(),
+                    found: token,
+                    span,
+                })
+            }
+            None => Err(ParseError::UnexpectedEof),
+        }
     }
 
     fn parse_const(&mut self, visibility: Visibility) -> ParseResult<ConstDef> {
@@ -1758,7 +1879,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_path_segment(&mut self) -> ParseResult<PathSegment> {
-        let ident = self.parse_ident()?;
+        let ident = self.parse_type_ident()?;
 
         // Don't parse generics in condition context (< is comparison, not generics)
         let generics = if !self.is_in_condition() && self.consume_if(&Token::Lt) {
@@ -1770,6 +1891,50 @@ impl<'a> Parser<'a> {
         };
 
         Ok(PathSegment { ident, generics })
+    }
+
+    /// Parse an identifier that can appear in type position (includes Self, Stream).
+    fn parse_type_ident(&mut self) -> ParseResult<Ident> {
+        match self.current.take() {
+            Some((Token::SelfUpper, span)) => {
+                self.current = self.lexer.next_token();
+                Ok(Ident {
+                    name: "Self".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
+            }
+            // Allow Stream as a type name (for dyn Stream<Item=T> etc.)
+            Some((Token::Stream, span)) => {
+                self.current = self.lexer.next_token();
+                Ok(Ident {
+                    name: "Stream".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span,
+                })
+            }
+            Some((Token::Ident(name), span)) => {
+                self.current = self.lexer.next_token();
+                let affect = self.parse_affect_opt();
+                Ok(Ident {
+                    name,
+                    evidentiality: None,
+                    affect,
+                    span,
+                })
+            }
+            Some((token, span)) => {
+                self.current = Some((token.clone(), span));
+                Err(ParseError::UnexpectedToken {
+                    expected: "type identifier".to_string(),
+                    found: token,
+                    span,
+                })
+            }
+            None => Err(ParseError::UnexpectedEof),
+        }
     }
 
     fn parse_type_list(&mut self) -> ParseResult<Vec<TypeExpr>> {
@@ -2031,6 +2196,22 @@ impl<'a> Parser<'a> {
                         }
                         _ => self.parse_ident()?,
                     };
+                    // Check for turbofish syntax: method::<T, U>(args)
+                    let turbofish = if self.check(&Token::ColonColon) {
+                        // Peek ahead to see if this is turbofish (::< pattern)
+                        if let Some(Token::Lt) = self.peek_next() {
+                            self.advance(); // consume ::
+                            self.advance(); // consume <
+                            let types = self.parse_type_list()?;
+                            self.expect_gt()?;
+                            Some(types)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
                     if self.check(&Token::LParen) {
                         self.advance();
                         let args = self.parse_expr_list()?;
@@ -2038,7 +2219,16 @@ impl<'a> Parser<'a> {
                         expr = Expr::MethodCall {
                             receiver: Box::new(expr),
                             method: field,
+                            turbofish,
                             args,
+                        };
+                    } else if turbofish.is_some() {
+                        // Had turbofish but no call - still treat as method call with empty args
+                        expr = Expr::MethodCall {
+                            receiver: Box::new(expr),
+                            method: field,
+                            turbofish,
+                            args: vec![],
                         };
                     } else {
                         expr = Expr::Field {

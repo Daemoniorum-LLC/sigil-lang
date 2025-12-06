@@ -256,6 +256,8 @@ pub enum Token {
     Derive,
     #[token("on")]
     On,
+    #[token("bitflags")]
+    Bitflags,
 
     // Boolean literals
     #[token("true")]

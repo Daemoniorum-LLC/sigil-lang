@@ -127,7 +127,8 @@ fn lower_item(ctx: &mut LoweringContext, module: &mut IrModule, item: &ast::Item
         ast::Item::Static(_)
         | ast::Item::Actor(_)
         | ast::Item::Use(_)
-        | ast::Item::ExternBlock(_) => {
+        | ast::Item::ExternBlock(_)
+        | ast::Item::Bitflags(_) => {
             // TODO: Handle these items
         }
     }
@@ -550,6 +551,7 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             receiver,
             method,
             args,
+            ..
         } => {
             let receiver_ir = lower_expr(ctx, receiver);
             let args_ir: Vec<IrOperation> = args.iter().map(|a| lower_expr(ctx, a)).collect();
