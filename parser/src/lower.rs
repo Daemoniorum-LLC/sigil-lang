@@ -372,7 +372,7 @@ fn lower_block(ctx: &mut LoweringContext, block: &ast::Block) -> IrOperation {
 
 fn lower_stmt(ctx: &mut LoweringContext, stmt: &ast::Stmt) -> Option<IrOperation> {
     match stmt {
-        ast::Stmt::Let { pattern, ty, init } => {
+        ast::Stmt::Let { pattern, ty, init, .. } => {
             let ir_pattern = lower_pattern(ctx, pattern);
             let type_annotation = ty.as_ref().map(lower_type_expr);
             let init_expr = init

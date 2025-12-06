@@ -1157,7 +1157,7 @@ impl TypeChecker {
     /// Check a statement and return its type (Never if it diverges)
     fn check_stmt(&mut self, stmt: &Stmt) -> Type {
         match stmt {
-            Stmt::Let { pattern, ty, init } => {
+            Stmt::Let { pattern, ty, init, .. } => {
                 let declared_ty = ty.as_ref().map(|t| self.convert_type(t));
                 let init_ty = init.as_ref().map(|e| self.infer_expr(e));
 

@@ -660,6 +660,7 @@ impl Optimizer {
 
         // let __cache = sigil_memo_new(65536);
         stmts.push(Stmt::Let {
+            attrs: Vec::new(),
             pattern: Pattern::Ident {
                 mutable: false,
                 name: cache_var.clone(),
@@ -713,6 +714,7 @@ impl Optimizer {
         }
 
         stmts.push(Stmt::Let {
+            attrs: Vec::new(),
             pattern: Pattern::Ident {
                 mutable: false,
                 name: cached_var.clone(),
@@ -787,6 +789,7 @@ impl Optimizer {
         }
 
         stmts.push(Stmt::Let {
+            attrs: Vec::new(),
             pattern: Pattern::Ident {
                 mutable: false,
                 name: result_var.clone(),
@@ -1037,8 +1040,9 @@ impl Optimizer {
     fn pass_constant_fold_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
             Stmt::Let {
-                pattern, ty, init, ..
+                attrs, pattern, ty, init,
             } => Stmt::Let {
+                attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_constant_fold_expr(e)),
@@ -1242,8 +1246,9 @@ impl Optimizer {
     fn pass_strength_reduce_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
             Stmt::Let {
-                pattern, ty, init, ..
+                attrs, pattern, ty, init,
             } => Stmt::Let {
+                attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_strength_reduce_expr(e)),
@@ -1459,8 +1464,9 @@ impl Optimizer {
     fn pass_dead_code_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
             Stmt::Let {
-                pattern, ty, init, ..
+                attrs, pattern, ty, init,
             } => Stmt::Let {
+                attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_dead_code_expr(e)),
@@ -1541,8 +1547,9 @@ impl Optimizer {
     fn pass_simplify_branches_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
             Stmt::Let {
-                pattern, ty, init, ..
+                attrs, pattern, ty, init,
             } => Stmt::Let {
+                attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_simplify_branches_expr(e)),
@@ -1749,7 +1756,7 @@ impl Optimizer {
 
     fn substitute_params_in_stmt(&self, stmt: &Stmt, param_map: &HashMap<String, Expr>) -> Stmt {
         match stmt {
-            Stmt::Let { pattern, ty, init } => Stmt::Let {
+            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init
@@ -1843,7 +1850,7 @@ impl Optimizer {
 
     fn pass_inline_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
-            Stmt::Let { pattern, ty, init } => Stmt::Let {
+            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_inline_expr(e)),
@@ -1942,7 +1949,7 @@ impl Optimizer {
 
     fn pass_loop_unroll_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
-            Stmt::Let { pattern, ty, init } => Stmt::Let {
+            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_loop_unroll_expr(e)),
@@ -2128,7 +2135,7 @@ impl Optimizer {
 
     fn substitute_loop_var_in_stmt(&self, stmt: &Stmt, var_name: &str, value: i64) -> Stmt {
         match stmt {
-            Stmt::Let { pattern, ty, init } => Stmt::Let {
+            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init
@@ -2223,7 +2230,7 @@ impl Optimizer {
 
     fn pass_licm_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
-            Stmt::Let { pattern, ty, init } => Stmt::Let {
+            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_licm_expr(e)),
@@ -2505,7 +2512,7 @@ impl Optimizer {
         subs: &HashMap<String, String>,
     ) -> Stmt {
         match stmt {
-            Stmt::Let { pattern, ty, init } => Stmt::Let {
+            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init
@@ -2682,7 +2689,7 @@ impl Optimizer {
 
     fn pass_cse_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
-            Stmt::Let { pattern, ty, init } => Stmt::Let {
+            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_cse_expr(e)),
@@ -3056,7 +3063,7 @@ fn replace_in_block(block: &Block, target: &Expr, var_name: &str) -> Block {
         .stmts
         .iter()
         .map(|stmt| match stmt {
-            Stmt::Let { pattern, ty, init } => Stmt::Let {
+            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| replace_in_expr(e, target, var_name)),
@@ -3078,6 +3085,7 @@ fn replace_in_block(block: &Block, target: &Expr, var_name: &str) -> Block {
 /// Create a let statement for a CSE variable
 fn make_cse_let(var_name: &str, expr: Expr) -> Stmt {
     Stmt::Let {
+        attrs: Vec::new(),
         pattern: Pattern::Ident {
             mutable: false,
             name: Ident {
@@ -3212,6 +3220,7 @@ mod tests {
         let block = Block {
             stmts: vec![
                 Stmt::Let {
+                    attrs: Vec::new(),
                     pattern: Pattern::Ident {
                         mutable: false,
                         name: Ident {
@@ -3226,6 +3235,7 @@ mod tests {
                     init: Some(a_plus_b.clone()),
                 },
                 Stmt::Let {
+                    attrs: Vec::new(),
                     pattern: Pattern::Ident {
                         mutable: false,
                         name: Ident {
@@ -3268,6 +3278,7 @@ mod tests {
         let block = Block {
             stmts: vec![
                 Stmt::Let {
+                    attrs: Vec::new(),
                     pattern: Pattern::Ident {
                         mutable: false,
                         name: Ident {
@@ -3282,6 +3293,7 @@ mod tests {
                     init: Some(add(var("a"), var("b"))),
                 },
                 Stmt::Let {
+                    attrs: Vec::new(),
                     pattern: Pattern::Ident {
                         mutable: false,
                         name: Ident {

@@ -3581,6 +3581,14 @@ impl<'a> Parser<'a> {
                 self.expect(Token::LBrace)?;
                 let mut arms = Vec::new();
                 while !self.check(&Token::RBrace) && !self.is_eof() {
+                    // Parse attributes before the match arm
+                    let mut attrs = Vec::new();
+                    while self.check(&Token::Hash) {
+                        attrs.push(self.parse_outer_attribute()?);
+                    }
+                    if self.check(&Token::RBrace) {
+                        break;
+                    }
                     let pattern = self.parse_pattern()?;
                     let guard = if self.consume_if(&Token::If) {
                         Some(self.parse_condition()?)
@@ -3590,6 +3598,7 @@ impl<'a> Parser<'a> {
                     self.expect(Token::FatArrow)?;
                     let body = self.parse_expr()?;
                     arms.push(MatchArm {
+                        attrs,
                         pattern,
                         guard,
                         body,
@@ -3954,11 +3963,17 @@ impl<'a> Parser<'a> {
                 break;
             }
 
+            // Parse attributes that may precede let statements
+            let mut attrs = Vec::new();
+            while self.check(&Token::Hash) {
+                attrs.push(self.parse_outer_attribute()?);
+            }
+
             if self.is_item_start() {
                 let item = self.parse_item()?;
                 stmts.push(Stmt::Item(Box::new(item.node)));
             } else if self.check(&Token::Let) {
-                stmts.push(self.parse_let_stmt()?);
+                stmts.push(self.parse_let_stmt_with_attrs(attrs)?);
             } else {
                 let expr = self.parse_expr()?;
                 self.skip_comments();
@@ -3988,6 +4003,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_let_stmt(&mut self) -> ParseResult<Stmt> {
+        self.parse_let_stmt_with_attrs(Vec::new())
+    }
+
+    fn parse_let_stmt_with_attrs(&mut self, attrs: Vec<Attribute>) -> ParseResult<Stmt> {
         self.expect(Token::Let)?;
         let pattern = self.parse_pattern()?;
         let ty = if self.consume_if(&Token::Colon) {
@@ -4003,7 +4022,7 @@ impl<'a> Parser<'a> {
         // Semicolons are optional for let statements (dialect compatibility)
         self.consume_if(&Token::Semi);
 
-        Ok(Stmt::Let { pattern, ty, init })
+        Ok(Stmt::Let { attrs, pattern, ty, init })
     }
 
     fn parse_if_expr(&mut self) -> ParseResult<Expr> {
@@ -4063,11 +4082,21 @@ impl<'a> Parser<'a> {
 
     fn parse_match_expr(&mut self) -> ParseResult<Expr> {
         self.expect(Token::Match)?;
-        let expr = self.parse_expr()?;
+        // Use parse_condition to avoid struct literal ambiguity (match x { ... } vs match x { field: ... })
+        let expr = self.parse_condition()?;
         self.expect(Token::LBrace)?;
 
         let mut arms = Vec::new();
         while !self.check(&Token::RBrace) && !self.is_eof() {
+            // Parse attributes before the match arm: #[cold] pattern => body
+            let mut attrs = Vec::new();
+            while self.check(&Token::Hash) {
+                attrs.push(self.parse_outer_attribute()?);
+            }
+            // Check for RBrace in case we had trailing attributes only
+            if self.check(&Token::RBrace) {
+                break;
+            }
             let pattern = self.parse_pattern()?;
             let guard = if self.consume_if(&Token::If) {
                 Some(self.parse_condition()?)
@@ -4077,6 +4106,7 @@ impl<'a> Parser<'a> {
             self.expect(Token::FatArrow)?;
             let body = self.parse_expr()?;
             arms.push(MatchArm {
+                attrs,
                 pattern,
                 guard,
                 body,
@@ -6044,6 +6074,69 @@ mod tests {
                 #[default]
                 Active,
                 Inactive
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_attributes_on_match_arms() {
+        // REQ-9: Attributes on match arms
+        let source = r#"
+            fn handle(x: i32) -> i32 {
+                match x {
+                    #[cold]
+                    0 => 0,
+                    #[likely]
+                    1 => 1,
+                    _ => x
+                }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Match with multiple attributes on arm
+        let source = r#"
+            fn check(val: i32) {
+                match val {
+                    #[cold]
+                    #[deprecated]
+                    42 => println("special"),
+                    _ => println("normal")
+                }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+    }
+
+    #[test]
+    fn test_attributes_on_let_bindings() {
+        // REQ-9: Attributes on let bindings
+        let source = r#"
+            fn main() {
+                #[allow(unused)]
+                let x = 42;
+                #[deprecated]
+                let y: i32 = 10;
+                let z = x + y;
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        // Multiple attributes on let binding
+        let source = r#"
+            fn test() {
+                #[allow(unused)]
+                #[cfg(debug)]
+                let debug_val = "debug mode";
             }
         "#;
         let mut parser = Parser::new(source);

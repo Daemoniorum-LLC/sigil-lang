@@ -853,6 +853,7 @@ pub struct Block {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Let {
+        attrs: Vec<Attribute>,
         pattern: Pattern,
         ty: Option<TypeExpr>,
         init: Option<Expr>,
@@ -1658,6 +1659,7 @@ pub struct FieldInit {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchArm {
+    pub attrs: Vec<Attribute>,
     pub pattern: Pattern,
     pub guard: Option<Expr>,
     pub body: Expr,
