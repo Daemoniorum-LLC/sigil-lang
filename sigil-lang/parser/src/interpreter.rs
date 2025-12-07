@@ -1452,6 +1452,11 @@ impl Interpreter {
             // Let expression (for if-let, while-let patterns): returns bool for pattern match
             Expr::Let { pattern, value } => {
                 let val = self.evaluate(value)?;
+                // For simple identifier patterns, null means "no match" (optional unwrapping semantics)
+                // This implements: if let x = optional_value { ... } where null means "None"
+                if matches!(val, Value::Null) && matches!(pattern, Pattern::Ident { .. }) {
+                    return Ok(Value::Bool(false));
+                }
                 // Check if pattern matches and bind if so
                 if self.pattern_matches(pattern, &val)? {
                     self.bind_pattern(pattern, val)?;
@@ -2088,7 +2093,9 @@ impl Interpreter {
             (UnaryOp::Not, Value::Int(n)) => Ok(Value::Int(!n)),
             (UnaryOp::Ref, val) => Ok(Value::Ref(Rc::new(RefCell::new(val)))),
             (UnaryOp::Deref, Value::Ref(r)) => Ok(r.borrow().clone()),
-            _ => Err(RuntimeError::new("Invalid unary operation")),
+            // Deref on non-Ref is identity (Box::new returns value directly in interpreter)
+            (UnaryOp::Deref, val) => Ok(val),
+            (op, val) => Err(RuntimeError::new(format!("Invalid unary operation: {:?} on {:?}", op, val))),
         }
     }
 
@@ -2502,9 +2509,18 @@ impl Interpreter {
                 }
                 Err(RuntimeError::new("No matching Or pattern"))
             }
-            Pattern::Struct { fields, rest, .. } => {
+            Pattern::Struct { path, fields, rest } => {
                 // Struct destructuring pattern: let Config { input_files, mode, .. } = config;
-                if let Value::Struct { fields: struct_fields, .. } = &value {
+                // Handle Value::Struct with named fields
+                if let Value::Struct { name, fields: struct_fields } = &value {
+                    // Check that struct name matches pattern path
+                    let pattern_name = path.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("::");
+                    if pattern_name != *name {
+                        return Err(RuntimeError::new(format!(
+                            "Pattern {} doesn't match struct {}",
+                            pattern_name, name
+                        )));
+                    }
                     let struct_fields_ref = struct_fields.borrow();
                     for field_pat in fields {
                         if let Some(field_val) = struct_fields_ref.get(&field_pat.name.name) {
@@ -2605,6 +2621,15 @@ impl Interpreter {
             }
         }
 
+        // Debug: show what we're trying to match
+        eprintln!("[DEBUG match] No pattern matched for value: {:?}", value);
+        eprintln!("[DEBUG match] Available patterns ({}):", arms.len());
+        for (i, arm) in arms.iter().take(5).enumerate() {
+            eprintln!("[DEBUG match]   {}: {:?}", i, arm.pattern);
+        }
+        if arms.len() > 5 {
+            eprintln!("[DEBUG match]   ... and {} more", arms.len() - 5);
+        }
         Err(RuntimeError::new("No matching pattern"))
     }
 
@@ -2706,8 +2731,13 @@ impl Interpreter {
                 }
                 Ok(false)
             }
-            // Struct patterns
-            (Pattern::Struct { fields, rest, .. }, Value::Struct { fields: struct_fields, .. }) => {
+            // Struct patterns - must check that the path matches the struct name
+            (Pattern::Struct { path, fields, rest }, Value::Struct { name: struct_name, fields: struct_fields }) => {
+                // Check if struct name matches the pattern path
+                let pattern_name = path.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("::");
+                if pattern_name != *struct_name {
+                    return Ok(false);
+                }
                 let struct_fields_ref = struct_fields.borrow();
                 for field_pat in fields {
                     if let Some(field_val) = struct_fields_ref.get(&field_pat.name.name) {
@@ -2980,7 +3010,14 @@ impl Interpreter {
     }
 
     fn eval_field(&mut self, expr: &Expr, field: &Ident) -> Result<Value, RuntimeError> {
-        let value = self.evaluate(expr)?;
+        let raw_value = self.evaluate(expr)?;
+        // Unwrap evidential/affective wrappers for field access
+        let value = match &raw_value {
+            Value::Evidential { value: inner, .. } => (**inner).clone(),
+            Value::Affective { value: inner, .. } => (**inner).clone(),
+            Value::Ref(r) => r.borrow().clone(),
+            v => v.clone(),
+        };
         match value {
             Value::Struct { name: struct_name, fields } => fields
                 .borrow()
@@ -2997,7 +3034,22 @@ impl Interpreter {
                     .cloned()
                     .ok_or_else(|| RuntimeError::new("Tuple index out of bounds"))
             }
-            _ => Err(RuntimeError::new("Cannot access field on non-struct")),
+            // Variant with tuple fields - access by index
+            Value::Variant { enum_name, variant_name, fields: Some(f) } => {
+                let idx: usize = field
+                    .name
+                    .parse()
+                    .map_err(|_| RuntimeError::new(format!(
+                        "Cannot access named field '{}' on variant {}::{}",
+                        field.name, enum_name, variant_name
+                    )))?;
+                f.get(idx)
+                    .cloned()
+                    .ok_or_else(|| RuntimeError::new(format!(
+                        "Variant field index {} out of bounds", idx
+                    )))
+            }
+            _ => Err(RuntimeError::new(format!("Cannot access field '{}' on {}", field.name, value.type_name()))),
         }
     }
 
@@ -3306,6 +3358,25 @@ impl Interpreter {
                     Err(RuntimeError::new("push on ref requires ref to string"))
                 }
             }
+            // Ref<String> push_str - append string to ref string
+            (Value::Ref(r), "push_str") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("push_str expects 1 argument"));
+                }
+                let arg = Self::unwrap_to_inner(&arg_values[0]);
+                let mut inner = r.borrow_mut();
+                if let Value::String(s) = &*inner {
+                    let mut new_str = s.to_string();
+                    match arg {
+                        Value::String(cs) => new_str.push_str(cs),
+                        v => new_str.push_str(&format!("{:?}", v)),
+                    }
+                    *inner = Value::String(Rc::new(new_str));
+                    Ok(Value::Null)
+                } else {
+                    Err(RuntimeError::new("push_str on ref requires ref to string"))
+                }
+            }
             (Value::Ref(r), "len") => {
                 let inner = r.borrow();
                 if let Value::String(s) = &*inner {
@@ -3349,6 +3420,36 @@ impl Interpreter {
                         let result = self.call_function(&f, all_args);
 
                         // Restore previous self type
+                        self.current_self_type = prev_self_type;
+                        result
+                    } else {
+                        Err(RuntimeError::new(format!(
+                            "{} is not a function",
+                            qualified_name
+                        )))
+                    }
+                } else {
+                    Err(RuntimeError::new(format!(
+                        "Unknown method: {} (tried {})",
+                        method_name, qualified_name
+                    )))
+                }
+            }
+            // Try to find method on enum variants
+            (Value::Variant { enum_name, .. }, method_name) => {
+                // Look up EnumName·method in globals
+                let qualified_name = format!("{}·{}", enum_name, method_name);
+
+                let func_opt = self.globals.borrow().get(&qualified_name).map(|v| v.clone());
+                if let Some(func_val) = func_opt {
+                    if let Value::Function(f) = func_val {
+                        let prev_self_type = self.current_self_type.take();
+                        self.current_self_type = Some(enum_name.clone());
+
+                        let mut all_args = vec![recv.clone()];
+                        all_args.extend(arg_values);
+                        let result = self.call_function(&f, all_args);
+
                         self.current_self_type = prev_self_type;
                         result
                     } else {
