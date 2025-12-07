@@ -137,30 +137,43 @@ This conversion is part of the Jormungandr research initiative. Notes from the c
 - Evidentiality lattice operations (join/meet) are simple to express
 - Enum variants with associated data are clean
 
+## Bootstrap Gap Analysis
+
+**Discovered during Phase 4c testing**: The self-hosted compiler uses **full Sigil syntax**, including features not yet implemented in the Rust compiler:
+
+| Feature | Self-Hosted | Rust Compiler |
+|---------|-------------|---------------|
+| Evidentiality markers (`!`, `?`, `~`, `‽`) | Yes | Not yet |
+| Struct definitions with doc comments | Yes | Partial |
+| Generic types `<T>` | Yes | Partial |
+| `impl` blocks | Yes | Partial |
+| Morpheme operators (`τ`, `φ`, etc.) | Yes | Yes |
+| Pipe chains (`\|`) | Yes | Yes |
+
+This is **expected** in bootstrapping. The self-hosted compiler demonstrates the full language specification; now the Rust compiler needs enhancement to close the gap.
+
 ## Next Steps to Fixed Point
 
-To achieve the fixed point (Phase 4c), the following is needed:
+### Phase 5: Close the Bootstrap Gap
 
-1. **Compile self-hosted with Rust compiler**:
-   ```bash
-   # Use sigil-lang/parser/ to compile self-hosted/src/*.sg
-   cargo run --manifest-path sigil-lang/parser/Cargo.toml -- \
-       compile self-hosted/src/driver.sg -o compiler.c
-   ```
+**Option A: Enhance Rust Compiler** (Recommended)
+- Add evidentiality markers to lexer/parser
+- Add struct field doc comments
+- Add full generic type support
+- Add impl blocks for methods
 
-2. **Build native compiler**:
-   ```bash
-   cc -o sigil-native compiler.c
-   ```
+**Option B: Bootstrap Subset**
+- Create `*.sg.bootstrap` versions using current Rust syntax
+- Use these to bootstrap, then upgrade
 
-3. **Self-compile**:
-   ```bash
-   ./sigil-native compile self-hosted/src/driver.sg -o compiler2.c
-   ```
+### Phase 6: Verify Fixed Point
 
-4. **Verify fixed point**:
-   ```bash
-   diff compiler.c compiler2.c && echo "FIXED POINT ACHIEVED!"
-   ```
+```bash
+# Once Rust compiler supports full syntax:
+sigil compile self-hosted/src/driver.sg -o compiler.c
+cc -o sigil-native compiler.c
+./sigil-native compile self-hosted/src/driver.sg -o compiler2.c
+diff compiler.c compiler2.c && echo "FIXED POINT ACHIEVED!"
+```
 
 When `compiler.c` equals `compiler2.c`, Jormungandr is complete.
