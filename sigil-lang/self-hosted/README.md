@@ -2,17 +2,17 @@
 
 This directory contains the Sigil compiler written in Sigil itself - the **Jormungandr bootstrap**.
 
-## Status: Phase 4 - Frontend Implementation (COMPLETE!)
+## Status: Phase 5 - Type Checking (COMPLETE!)
 
 | File | Lines | Status | Description |
 |------|-------|--------|-------------|
 | `src/span.sg` | ~140 | ✅ Complete | Source span tracking |
 | `src/token.sg` | ~450 | ✅ Complete | Token definitions |
 | `src/ast.sg` | ~1200 | ✅ Complete | AST node definitions |
-| `src/lib.sg` | ~60 | ✅ Complete | Module exports |
+| `src/lib.sg` | ~70 | ✅ Complete | Module exports |
 | `src/lexer.sg` | ~750 | ✅ Complete | Hand-written tokenization |
 | `src/parser.sg` | ~2100 | ✅ Complete | Recursive descent parser |
-| `src/typeck.sg` | - | 🔲 Pending | Type checking |
+| `src/typeck.sg` | ~1800 | ✅ Complete | Type checking with evidentiality |
 | `src/ir.sg` | - | 🔲 Pending | Intermediate representation |
 | `src/lower.sg` | - | 🔲 Pending | AST → IR lowering |
 
@@ -27,6 +27,7 @@ This is a direct conversion of `sigil-lang/parser/src/` from Rust to Sigil:
 | `ast.rs` | `ast.sg` | 1,592 | All AST node types |
 | `lexer.rs` (Lexer struct) | `lexer.sg` | ~500 | Hand-written (no logos) |
 | `parser.rs` | `parser.sg` | 4,462 | Full recursive descent parser |
+| `typeck.rs` | `typeck.sg` | 2,560 | Bidirectional inference + evidentiality |
 
 ## Key Differences from Rust Version
 
@@ -51,7 +52,7 @@ This is a direct conversion of `sigil-lang/parser/src/` from Rust to Sigil:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Phase 1: Rust Compiler                                       │
+│ Phase 1: Rust Compiler ✅                                    │
 │ sigil-lang/parser/ compiles Sigil source files              │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -60,7 +61,9 @@ This is a direct conversion of `sigil-lang/parser/src/` from Rust to Sigil:
 │ Phase 2: Self-Hosted Core (CURRENT)                          │
 │ Write compiler data structures in Sigil                      │
 │ - span.sg, token.sg, ast.sg ✅                               │
-│ - lexer.sg, parser.sg, typeck.sg, ir.sg 🔲                   │
+│ - lexer.sg, parser.sg ✅                                     │
+│ - typeck.sg ✅                                               │
+│ - ir.sg, lower.sg 🔲                                         │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼

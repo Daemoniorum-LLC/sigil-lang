@@ -13,13 +13,13 @@
 //!
 //! ## Status
 //!
-//! Phase 4: Frontend implementation (COMPLETE!)
+//! Phase 5: Type Checking (COMPLETE!)
 //! - [x] span.sg - Source span tracking
 //! - [x] token.sg - Token definitions
 //! - [x] ast.sg - AST node definitions
 //! - [x] lexer.sg - Tokenization
 //! - [x] parser.sg - Recursive descent parser
-//! - [ ] typeck.sg - Type checking
+//! - [x] typeck.sg - Type checking with evidentiality
 //! - [ ] ir.sg - Intermediate representation
 //! - [ ] lower.sg - AST to IR lowering
 //!
@@ -46,6 +46,7 @@ pub mod token;
 pub mod ast;
 pub mod lexer;
 pub mod parser;
+pub mod typeck;
 
 // Re-exports for convenience
 pub use span::{Span, Spanned};
@@ -53,6 +54,7 @@ pub use token::{Token, SpannedToken};
 pub use ast::*;
 pub use lexer::Lexer;
 pub use parser::{Parser, ParseError, ParseResult};
+pub use typeck::{TypeChecker, Type, TypeError, EvidenceLevel};
 
 /// Compiler version
 pub const VERSION: !&str = "0.1.0-bootstrap";
