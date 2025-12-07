@@ -875,6 +875,7 @@ impl Interpreter {
                 receiver,
                 method,
                 args,
+                ..
             } => self.eval_method_call(receiver, method, args),
             // Polysynthetic incorporation: path·file·read·string
             // Each segment is a method/function that transforms the value
@@ -1040,6 +1041,7 @@ impl Interpreter {
                 Ok(Value::String(Rc::new(s.clone())))
             }
             Literal::Char(c) => Ok(Value::Char(*c)),
+            Literal::ByteChar(b) => Ok(Value::Int(*b as i64)),
             Literal::Bool(b) => Ok(Value::Bool(*b)),
             Literal::Null => Ok(Value::Null),
             Literal::Empty => Ok(Value::Empty),
@@ -1521,6 +1523,13 @@ impl Interpreter {
                         None => Value::Null,
                     };
                     self.bind_pattern(pattern, value)?;
+                }
+                Stmt::LetElse { pattern, init, else_branch, .. } => {
+                    let value = self.evaluate(init)?;
+                    // Try to bind pattern, if it fails, execute else branch
+                    if self.bind_pattern(pattern, value.clone()).is_err() {
+                        return self.evaluate(else_branch);
+                    }
                 }
                 Stmt::Expr(expr) => {
                     result = self.evaluate(expr)?;

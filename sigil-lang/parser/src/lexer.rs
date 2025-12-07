@@ -7,6 +7,7 @@ use logos::Logos;
 
 /// Process escape sequences in a string literal.
 /// Converts \n, \t, \r, \\, \", \', \0, \xNN, \u{NNNN} to their actual characters.
+/// Also handles line continuation: \<newline><whitespace> is stripped entirely.
 fn process_escape_sequences(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
@@ -14,6 +15,16 @@ fn process_escape_sequences(s: &str) -> String {
     while let Some(c) = chars.next() {
         if c == '\\' {
             match chars.next() {
+                Some('\n') => {
+                    // Line continuation: skip newline and any leading whitespace
+                    while let Some(&c) = chars.peek() {
+                        if c == ' ' || c == '\t' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                }
                 Some('n') => result.push('\n'),
                 Some('t') => result.push('\t'),
                 Some('r') => result.push('\r'),
@@ -139,6 +150,30 @@ fn process_char_escape(s: &str) -> char {
         },
         Some(c) => c,
         None => '?',
+    }
+}
+
+/// Process escape sequences in a byte character literal (b'x').
+fn process_byte_char_escape(s: &str) -> u8 {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some('\\') => match chars.next() {
+            Some('n') => b'\n',
+            Some('t') => b'\t',
+            Some('r') => b'\r',
+            Some('\\') => b'\\',
+            Some('"') => b'"',
+            Some('\'') => b'\'',
+            Some('0') => b'\0',
+            Some('x') => {
+                let hex: String = chars.take(2).collect();
+                u8::from_str_radix(&hex, 16).unwrap_or(b'?')
+            }
+            Some(c) => c as u8,
+            None => b'?',
+        },
+        Some(c) => c as u8,
+        None => b'?',
     }
 }
 
@@ -591,6 +626,10 @@ pub enum Token {
     Amp,
     #[token("^")]
     Caret,
+    #[token("<<=")]
+    ShlEq,
+    #[token(">>=")]
+    ShrEq,
     #[token("<<")]
     Shl,
     #[token(">>")]
@@ -733,8 +772,8 @@ pub enum Token {
     #[regex(r"0z[0-9a-bA-B_]+", |lex| lex.slice().to_string())]
     DuodecimalLit(String),
 
-    // Float: 123.456 or 1.23e10
-    #[regex(r"[0-9][0-9_]*\.[0-9][0-9_]*([eE][+-]?[0-9_]+)?", |lex| lex.slice().to_string())]
+    // Float: 123.456 or 1.23e10 or 1e-15 (with or without decimal point if exponent present)
+    #[regex(r"[0-9][0-9_]*\.[0-9][0-9_]*([eE][+-]?[0-9_]+)?|[0-9][0-9_]*[eE][+-]?[0-9_]+", |lex| lex.slice().to_string())]
     FloatLit(String),
 
     // Integer: 123
@@ -743,7 +782,8 @@ pub enum Token {
 
     // === Strings ===
     // Regular string with escape sequence processing
-    #[regex(r#""([^"\\]|\\.)*""#, |lex| {
+    // Note: \\(.|\n) handles both regular escapes and line continuation (\ at end of line)
+    #[regex(r#""([^"\\]|\\(.|\n))*""#, |lex| {
         let s = lex.slice();
         let inner = &s[1..s.len()-1];
         process_escape_sequences(inner)
@@ -791,12 +831,22 @@ pub enum Token {
     SigilStringRoute(String),
 
     // Char literal with escape sequence processing
-    #[regex(r"'([^'\\]|\\.)'", |lex| {
+    // Matches: single char, hex escape \xNN, unicode escape \u{N...}, or simple escape \c
+    #[regex(r"'([^'\\]|\\x[0-9a-fA-F]{2}|\\u\{[0-9a-fA-F]{1,6}\}|\\.)'", |lex| {
         let s = lex.slice();
         let inner = &s[1..s.len()-1];
         process_char_escape(inner)
     })]
     CharLit(char),
+
+    // Byte char literal (b'x' or b'\n')
+    #[regex(r"b'([^'\\]|\\x[0-9a-fA-F]{2}|\\.)'", |lex| {
+        let s = lex.slice();
+        // Extract the character between b' and '
+        let inner = &s[2..s.len()-1];
+        process_byte_char_escape(inner)
+    })]
+    ByteCharLit(u8),
 
     // Raw string (no escape processing)
     #[regex(r#"r"[^"]*""#, |lex| {
@@ -987,22 +1037,20 @@ impl Token {
 /// Lexer wrapping Logos for Sigil.
 pub struct Lexer<'a> {
     inner: logos::Lexer<'a, Token>,
-    peeked: Option<Option<(Token, Span)>>,
+    /// Buffer for lookahead tokens (supports multi-token peek)
+    buffer: Vec<Option<(Token, Span)>>,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
         Self {
             inner: Token::lexer(source),
-            peeked: None,
+            buffer: Vec::new(),
         }
     }
 
-    pub fn next_token(&mut self) -> Option<(Token, Span)> {
-        if let Some(peeked) = self.peeked.take() {
-            return peeked;
-        }
-
+    /// Read the next token from the underlying logos lexer
+    fn read_next(&mut self) -> Option<(Token, Span)> {
         match self.inner.next() {
             Some(Ok(token)) => {
                 let span = self.inner.span();
@@ -1010,17 +1058,33 @@ impl<'a> Lexer<'a> {
             }
             Some(Err(_)) => {
                 // Skip invalid tokens and try next
-                self.next_token()
+                self.read_next()
             }
             None => None,
         }
     }
 
-    pub fn peek(&mut self) -> Option<&(Token, Span)> {
-        if self.peeked.is_none() {
-            self.peeked = Some(self.next_token());
+    pub fn next_token(&mut self) -> Option<(Token, Span)> {
+        if !self.buffer.is_empty() {
+            // Return from buffer (front = next token)
+            // Each buffer element is Option<(Token, Span)> where None = EOF
+            return self.buffer.remove(0);
         }
-        self.peeked.as_ref().and_then(|p| p.as_ref())
+        self.read_next()
+    }
+
+    pub fn peek(&mut self) -> Option<&(Token, Span)> {
+        self.peek_n(0)
+    }
+
+    /// Peek n tokens ahead (0 = next token, 1 = token after that, etc.)
+    pub fn peek_n(&mut self, n: usize) -> Option<&(Token, Span)> {
+        // Fill buffer up to position n
+        while self.buffer.len() <= n {
+            let token = self.read_next();
+            self.buffer.push(token);
+        }
+        self.buffer.get(n).and_then(|opt| opt.as_ref())
     }
 
     pub fn span(&self) -> Span {

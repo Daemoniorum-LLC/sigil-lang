@@ -1197,6 +1197,23 @@ impl TypeChecker {
                 }
                 Type::Unit
             }
+            Stmt::LetElse { pattern, ty, init, else_branch } => {
+                // Type check let-else similar to let
+                let declared_ty = ty.as_ref().map(|t| self.convert_type(t));
+                let init_ty = self.infer_expr(init);
+                // Infer evidence before moving init_ty
+                let evidence = pattern
+                    .evidentiality()
+                    .map(EvidenceLevel::from_ast)
+                    .unwrap_or_else(|| self.get_evidence(&init_ty));
+                let final_ty = declared_ty.unwrap_or(init_ty);
+                // Check else branch
+                self.infer_expr(else_branch);
+                if let Some(name) = pattern.binding_name() {
+                    self.env.borrow_mut().define(name, final_ty, evidence);
+                }
+                Type::Unit
+            }
             Stmt::Expr(e) | Stmt::Semi(e) => self.infer_expr(e),
             Stmt::Item(item) => {
                 self.check_item(item);
@@ -1480,6 +1497,7 @@ impl TypeChecker {
             Literal::Float { .. } => Type::Float(FloatSize::F64),
             Literal::Bool(_) => Type::Bool,
             Literal::Char(_) => Type::Char,
+            Literal::ByteChar(_) => Type::Int(IntSize::U8),
             Literal::String(_) => Type::Str,
             Literal::MultiLineString(_) => Type::Str,
             Literal::RawString(_) => Type::Str,

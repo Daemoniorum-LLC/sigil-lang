@@ -798,6 +798,13 @@ pub enum Stmt {
         ty: Option<TypeExpr>,
         init: Option<Expr>,
     },
+    /// Let-else statement: `let PATTERN = EXPR else { ... }`
+    LetElse {
+        pattern: Pattern,
+        ty: Option<TypeExpr>,
+        init: Expr,
+        else_branch: Box<Expr>,
+    },
     Expr(Expr),
     Semi(Expr),
     Item(Box<Item>),
@@ -871,6 +878,8 @@ pub enum Expr {
     MethodCall {
         receiver: Box<Expr>,
         method: Ident,
+        /// Turbofish type arguments: `method::<T, U>(args)`
+        type_args: Option<Vec<TypeExpr>>,
         args: Vec<Expr>,
     },
     /// Field access
@@ -1546,6 +1555,8 @@ pub enum Literal {
     /// Route sigil string (ρ"...")
     SigilStringRoute(String),
     Char(char),
+    /// Byte character literal (b'x')
+    ByteChar(u8),
     Bool(bool),
     Null, // null
     /// Special mathematical constants
