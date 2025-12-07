@@ -1,0 +1,170 @@
+//! Evidence Inference System
+//! Automatic inference of evidentiality levels from data flow.
+//!
+//! Key Features:
+//! - Evidence is inferred from initializers when not explicitly annotated
+//! - Control flow (if/else, match) joins evidence from branches
+//! - Binary operations propagate evidence through the lattice
+//! - Public functions warn if return evidence is not annotated
+//! - Explicit promotion via |validate! and |assume!
+
+// ==========================================
+// 1. AUTOMATIC EVIDENCE INFERENCE
+// ==========================================
+
+// Without explicit annotation, evidence is inferred from initialization
+fn demonstrate_inference() {
+    // Explicitly known - the ! annotation is honored
+    let known_value: i64! = 42
+
+    // Reported from network - the ~ annotation carries through
+    let network_data: str~ = "from_external_source"
+
+    // Inference: x inherits ~ from network_data
+    let x = network_data.len  // x is now i64~
+
+    // Inference: y inherits ! from known_value
+    let y = known_value + 1   // y is now i64!
+
+    // Binary ops join evidence: ~ + ! = ~
+    let combined = x + y      // combined is i64~
+}
+
+// ==========================================
+// 2. CONTROL FLOW EVIDENCE JOINING
+// ==========================================
+
+fn if_else_evidence_join(condition: bool!) -> i64 {
+    let known: i64! = 1
+    let reported: i64~ = 2
+
+    // Result evidence is join of both branches: ! ⊔ ~ = ~
+    // The returned value has ~ evidence
+    let result = if condition {
+        known   // ! evidence
+    } else {
+        reported  // ~ evidence
+    }
+
+    result  // inferred as i64~
+}
+
+// Match expressions also join evidence from all arms
+fn match_evidence_join(variant: i64!) -> str {
+    let known: str! = "known"
+    let uncertain: str? = "uncertain"
+
+    match variant {
+        1 => known,       // ! evidence
+        2 => uncertain,   // ? evidence
+        _ => known,       // ! evidence
+    }
+    // Result has ? evidence (join of !, ?, !)
+}
+
+// ==========================================
+// 3. EVIDENCE PROMOTION OPERATIONS
+// ==========================================
+
+struct User {
+    id: u64,
+    name: str,
+    email: str,
+}
+
+// |validate!{predicate} - Promote evidence with validation
+// Reported (~) -> Known (!) if validation passes
+fn validate_user(user: User~) -> User! {
+    // The predicate checks invariants
+    // If true: ~ -> !, if false: runtime error
+    user|validate!{u =>
+        u.id > 0 &&
+        u.name.len > 0 &&
+        u.email.contains("@")
+    }
+}
+
+// |assume!("reason") - Explicit trust with audit trail
+// Dangerous but sometimes necessary - always logged
+fn trust_legacy_system(data: str~) -> str! {
+    // This is an escape hatch for trusted sources
+    // The reason is recorded for security audits
+    data|assume!("Data from trusted internal legacy system")
+}
+
+// |assert_evidence! - Compile-time evidence verification
+fn ensure_known(data: i64) {
+    // Fails compilation if data doesn't have ! evidence
+    data|assert_evidence!{!}
+}
+
+// ==========================================
+// 4. FUNCTION RETURN EVIDENCE INFERENCE
+// ==========================================
+
+// Private functions can have inferred return evidence
+fn private_network_call() -> str {
+    // Evidence is inferred as ~ from the body
+    // (assuming http_get returns ~)
+    "simulated_network_response"
+}
+
+// Public functions should have explicit evidence annotations
+// This will warn at compile time if not annotated
+pub fn public_api(input: str!) -> str~ {
+    // Public APIs are module boundaries - evidence should be explicit
+    input
+}
+
+// ==========================================
+// 5. PARAMETER EVIDENCE INFERENCE
+// ==========================================
+
+// Parameters infer evidence from their type annotation
+fn process_data(
+    known: i64!,      // Explicit: must be known
+    reported: str~,   // Explicit: accepts reported
+    inferred: bool,   // Defaults to ! (known)
+) {
+    // known and inferred have ! evidence
+    // reported has ~ evidence
+}
+
+// ==========================================
+// 6. PRACTICAL EXAMPLES
+// ==========================================
+
+// Network API client with evidence tracking
+async fn fetch_user(id: u64!) -> User~ {
+    // Network operations automatically return ~ evidence
+    // let response~ = http_get("/users/{id}")
+    // response~|json_parse~
+
+    User { id: id, name: "example", email: "test@example.com" }
+}
+
+// Complete flow: fetch, validate, use
+async fn safe_user_flow(id: u64!) -> str! {
+    // Step 1: Fetch (returns ~)
+    let user = fetch_user(id).await
+
+    // Step 2: Validate (~ -> !)
+    let validated = user|validate!{u =>
+        u.id == id && u.email.contains("@")
+    }
+
+    // Step 3: Use safely (now !)
+    validated.name
+}
+
+fn main() {
+    // Inference reduces annotation burden
+    let x = 42           // Inferred as i64!
+    let y: i64~ = 10     // Explicitly ~
+
+    // Operations propagate evidence
+    let z = x + y        // z is i64~ (! ⊔ ~ = ~)
+
+    // Control flow joins evidence
+    let result = if true { x } else { y }  // i64~
+}

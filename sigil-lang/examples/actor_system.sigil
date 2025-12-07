@@ -1,0 +1,310 @@
+//! Actor System Example
+//!
+//! Demonstrates Sigil's actor model for concurrent programming
+//! with message passing and state isolation.
+
+use std::time
+use std::sync
+
+/// Messages for the rate limiter actor.
+enum RateLimitMsg {
+    Request(str, channel<bool>),
+    GetStats(channel<RateLimitStats>),
+    Reset,
+}
+
+/// Rate limit statistics.
+struct RateLimitStats {
+    total_requests: i64,
+    allowed_requests: i64,
+    denied_requests: i64,
+    window_start: time.Instant,
+}
+
+/// A token bucket rate limiter actor.
+actor RateLimiter {
+    capacity: i64,
+    tokens: f64,
+    refill_rate: f64,  // tokens per second
+    last_refill: time.Instant,
+    stats: RateLimitStats,
+
+    fn new(capacity: i64, refill_rate: f64) -> RateLimiter {
+        let now = time.Instant.now()
+        RateLimiter {
+            capacity,
+            tokens: capacity as f64,
+            refill_rate,
+            last_refill: now,
+            stats: RateLimitStats {
+                total_requests: 0,
+                allowed_requests: 0,
+                denied_requests: 0,
+                window_start: now,
+            },
+        }
+    }
+
+    fn refill_tokens(mut self) {
+        let now = time.Instant.now()
+        let elapsed = now.duration_since(self.last_refill).as_secs_f64()
+        self.tokens = min(
+            self.capacity as f64,
+            self.tokens + (elapsed * self.refill_rate)
+        )
+        self.last_refill = now
+    }
+
+    on Request(client_id: str, reply: channel<bool>) {
+        self.refill_tokens()
+        self.stats.total_requests += 1
+
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0
+            self.stats.allowed_requests += 1
+            reply <- true
+        } else {
+            self.stats.denied_requests += 1
+            reply <- false
+        }
+    }
+
+    on GetStats(reply: channel<RateLimitStats>) {
+        reply <- self.stats
+    }
+
+    on Reset {
+        self.tokens = self.capacity as f64
+        self.stats = RateLimitStats {
+            total_requests: 0,
+            allowed_requests: 0,
+            denied_requests: 0,
+            window_start: time.Instant.now(),
+        }
+    }
+}
+
+/// Messages for the cache actor.
+enum CacheMsg<K, V> {
+    Get(K, channel<Option<V>>),
+    Set(K, V, Option<time.Duration>),
+    Delete(K),
+    Clear,
+    Stats(channel<CacheStats>),
+}
+
+struct CacheEntry<V> {
+    value: V,
+    expires_at: Option<time.Instant>,
+}
+
+struct CacheStats {
+    hits: i64,
+    misses: i64,
+    size: i64,
+}
+
+/// A TTL-aware cache actor.
+actor Cache<K: Hash + Eq, V: Clone> {
+    entries: Map<K, CacheEntry<V>>,
+    stats: CacheStats,
+
+    fn new() -> Cache<K, V> {
+        Cache {
+            entries: Map.new(),
+            stats: CacheStats { hits: 0, misses: 0, size: 0 },
+        }
+    }
+
+    fn cleanup_expired(mut self) {
+        let now = time.Instant.now()
+        let expired_keys = self.entries
+            |phi{(_, entry) => entry.expires_at
+                |tau{exp => exp < now}
+                |unwrap_or(false)}
+            |tau{(k, _) => k}
+            |collect
+
+        for key in expired_keys {
+            self.entries.remove(key)
+        }
+        self.stats.size = self.entries|len as i64
+    }
+
+    on Get(key: K, reply: channel<Option<V>>) {
+        self.cleanup_expired()
+
+        match self.entries.get(key) {
+            Some(entry) => {
+                // Check if expired
+                let is_valid = entry.expires_at
+                    |tau{exp => exp > time.Instant.now()}
+                    |unwrap_or(true)
+
+                if is_valid {
+                    self.stats.hits += 1
+                    reply <- Some(entry.value.clone())
+                } else {
+                    self.entries.remove(key)
+                    self.stats.misses += 1
+                    reply <- None
+                }
+            }
+            None => {
+                self.stats.misses += 1
+                reply <- None
+            }
+        }
+    }
+
+    on Set(key: K, value: V, ttl: Option<time.Duration>) {
+        let expires_at = ttl|tau{d => time.Instant.now() + d}
+        self.entries.insert(key, CacheEntry { value, expires_at })
+        self.stats.size = self.entries|len as i64
+    }
+
+    on Delete(key: K) {
+        self.entries.remove(key)
+        self.stats.size = self.entries|len as i64
+    }
+
+    on Clear {
+        self.entries.clear()
+        self.stats.size = 0
+    }
+
+    on Stats(reply: channel<CacheStats>) {
+        reply <- self.stats
+    }
+}
+
+/// A worker pool for parallel task execution.
+actor WorkerPool<T, R> {
+    workers: [Worker<T, R>],
+    pending: Queue<(T, channel<R>)>,
+    available: Queue<Worker<T, R>>,
+
+    fn new(size: i32, task_fn: fn(T) -> R) -> WorkerPool<T, R> {
+        let workers = (0..size)
+            |tau{_ => spawn Worker.new(task_fn)}
+            |collect
+
+        WorkerPool {
+            workers: workers.clone(),
+            pending: Queue.new(),
+            available: Queue.from_iter(workers),
+        }
+    }
+
+    on Submit(task: T, reply: channel<R>) {
+        match self.available.pop() {
+            Some(worker) => {
+                // Worker available, dispatch immediately
+                worker <- Execute(task, reply, self)
+            }
+            None => {
+                // Queue for later
+                self.pending.push((task, reply))
+            }
+        }
+    }
+
+    on WorkerDone(worker: Worker<T, R>) {
+        match self.pending.pop() {
+            Some((task, reply)) => {
+                worker <- Execute(task, reply, self)
+            }
+            None => {
+                self.available.push(worker)
+            }
+        }
+    }
+}
+
+actor Worker<T, R> {
+    task_fn: fn(T) -> R,
+
+    fn new(task_fn: fn(T) -> R) -> Worker<T, R> {
+        Worker { task_fn }
+    }
+
+    on Execute(task: T, reply: channel<R>, pool: WorkerPool<T, R>) {
+        let result = (self.task_fn)(task)
+        reply <- result
+        pool <- WorkerDone(self)
+    }
+}
+
+/// Example: Concurrent web scraper.
+async fn scrape_urls(urls: [str]) -> [Result<Page, Error>] {
+    // Create a worker pool with 10 concurrent workers
+    let pool = spawn WorkerPool.new(10, fetch_and_parse)
+
+    // Rate limiter: 100 requests per second
+    let limiter = spawn RateLimiter.new(100, 100.0)
+
+    // Cache for already-seen URLs
+    let cache: Cache<str, Page> = spawn Cache.new()
+
+    // Process all URLs
+    let results = urls
+        |tau{url => async {
+            // Check cache first
+            let (cached_reply, cached_rx) = channel.new()
+            cache <- Get(url.clone(), cached_reply)
+
+            match cached_rx|await {
+                Some(page) => Ok(page),
+                None => {
+                    // Check rate limit
+                    let (limit_reply, limit_rx) = channel.new()
+                    limiter <- Request(url.clone(), limit_reply)
+
+                    if !limit_rx|await {
+                        return Err(Error.RateLimited)
+                    }
+
+                    // Submit to worker pool
+                    let (work_reply, work_rx) = channel.new()
+                    pool <- Submit(url.clone(), work_reply)
+                    let result = work_rx|await
+
+                    // Cache successful results
+                    if let Ok(page) = &result {
+                        cache <- Set(url, page.clone(), Some(time.Duration.minutes(5)))
+                    }
+
+                    result
+                }
+            }
+        }}
+        |await_all
+
+    // Get final stats
+    let (stats_reply, stats_rx) = channel.new()
+    limiter <- GetStats(stats_reply)
+    let rate_stats = stats_rx|await
+
+    println("Rate limiter stats: {} allowed, {} denied",
+        rate_stats.allowed_requests,
+        rate_stats.denied_requests)
+
+    results
+}
+
+fn main() {
+    let urls = [
+        "https://example.com/page1",
+        "https://example.com/page2",
+        "https://example.com/page3",
+        // ... more URLs
+    ]
+
+    let results = scrape_urls(urls)|await
+
+    let (successes, failures) = results|partition_results
+
+    println("Scraped {} pages successfully, {} failed",
+        successes|len,
+        failures|len)
+}

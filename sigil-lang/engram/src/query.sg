@@ -1,0 +1,442 @@
+// Query Module
+// Anamnesis query language implementation
+
+module engram::query
+
+use engram::types::*
+use engram::episodic::Context
+use engram::procedural::SkillMatch
+
+// ============================================================================
+// Query Structure
+// ============================================================================
+
+/// A query against Engram memory
+pub struct Query {
+    /// Query text for semantic search
+    text: Option<String>,
+
+    /// Entity to start from (for graph queries)
+    entity: Option<String>,
+
+    /// Filters to apply
+    filters: Vec<Filter>,
+
+    /// Temporal constraints
+    temporal: Option<TemporalConstraint>,
+
+    /// Result limit
+    limit: usize,
+
+    /// Result offset
+    offset: usize,
+
+    /// Include gap analysis
+    include_gaps: bool,
+
+    /// Query hints
+    hints: Vec<QueryHint>,
+
+    /// Context for skill matching
+    context: Option<Context>,
+}
+
+impl Query {
+    /// Create a new semantic query
+    pub fn new(text: &str) -> Self {
+        Self {
+            text: Some(text.to_string()),
+            entity: None,
+            filters: vec![],
+            temporal: None,
+            limit: 10,
+            offset: 0,
+            include_gaps: true,
+            hints: vec![],
+            context: None,
+        }
+    }
+
+    /// Create an entity-based query
+    pub fn entity(label: &str) -> Self {
+        Self {
+            text: None,
+            entity: Some(label.to_string()),
+            filters: vec![],
+            temporal: None,
+            limit: 10,
+            offset: 0,
+            include_gaps: false,
+            hints: vec![],
+            context: None,
+        }
+    }
+
+    // ========================================================================
+    // Builder Methods
+    // ========================================================================
+
+    /// Add a filter
+    pub fn where_(mut self, filter: Filter) -> Self {
+        self.filters.push(filter)
+        self
+    }
+
+    /// Filter by confidence
+    pub fn where_confidence(self, op: Comparator, value: f64) -> Self {
+        self.where_(Filter::Confidence { op, value })
+    }
+
+    /// Filter by epistemic status
+    pub fn where_epistemic(self, check: EpistemicCheck) -> Self {
+        self.where_(Filter::Epistemic(check))
+    }
+
+    /// Add temporal constraint
+    pub fn during(mut self, range: TimeRange) -> Self {
+        self.temporal = Some(TemporalConstraint::During(range))
+        self
+    }
+
+    /// Before a time point
+    pub fn before(mut self, point: TimePoint) -> Self {
+        self.temporal = Some(TemporalConstraint::Before(point))
+        self
+    }
+
+    /// After a time point
+    pub fn after(mut self, point: TimePoint) -> Self {
+        self.temporal = Some(TemporalConstraint::After(point))
+        self
+    }
+
+    /// Set result limit
+    pub fn limit(mut self, n: usize) -> Self {
+        self.limit = n
+        self
+    }
+
+    /// Set result offset
+    pub fn offset(mut self, n: usize) -> Self {
+        self.offset = n
+        self
+    }
+
+    /// Alias for limit
+    pub fn top(self, n: usize) -> Self {
+        self.limit(n)
+    }
+
+    /// Enable gap analysis
+    pub fn with_gap_analysis(mut self) -> Self {
+        self.include_gaps = true
+        self
+    }
+
+    /// Add a query hint
+    pub fn hint(mut self, hint: QueryHint) -> Self {
+        self.hints.push(hint)
+        self
+    }
+
+    /// Set context for skill matching
+    pub fn with_context(mut self, context: Context) -> Self {
+        self.context = Some(context)
+        self
+    }
+
+    // ========================================================================
+    // Accessors
+    // ========================================================================
+
+    pub fn text() -> String {
+        self.text.clone().unwrap_or_default()
+    }
+
+    pub fn limit() -> usize {
+        self.limit
+    }
+
+    pub fn context() -> Context {
+        self.context.clone().unwrap_or_else(|| Context::new())
+    }
+
+    pub fn has_temporal() -> bool {
+        self.temporal.is_some()
+    }
+
+    pub fn temporal_bounds() -> Option<(Instant, Instant)> {
+        self.temporal.as_ref().map(|t| t.to_bounds())
+    }
+}
+
+impl From<&str> for Query {
+    fn from(s: &str) -> Self {
+        Query::new(s)
+    }
+}
+
+impl From<String> for Query {
+    fn from(s: String) -> Self {
+        Query::new(&s)
+    }
+}
+
+// ============================================================================
+// Filters
+// ============================================================================
+
+/// Filter for query results
+pub enum Filter {
+    /// Filter by confidence level
+    Confidence {
+        op: Comparator,
+        value: f64,
+    },
+
+    /// Filter by epistemic status
+    Epistemic(EpistemicCheck),
+
+    /// Filter by source
+    Source(MemorySource),
+
+    /// Filter by field value
+    Field {
+        path: String,
+        op: Comparator,
+        value: Value,
+    },
+
+    /// Custom predicate
+    Custom {
+        name: String,
+        predicate: fn(&Memory) -> bool,
+    },
+}
+
+impl Filter {
+    pub fn matches(memory: &Memory) -> bool {
+        match self {
+            Filter::Confidence { op, value } => {
+                op.compare(memory.confidence, *value)
+            },
+            Filter::Epistemic(check) => {
+                check.matches(&memory.epistemic)
+            },
+            Filter::Source(source) => {
+                std::mem::discriminant(&memory.source) == std::mem::discriminant(source)
+            },
+            Filter::Field { path, op, value } => {
+                // Simplified field access
+                true
+            },
+            Filter::Custom { predicate, .. } => {
+                predicate(memory)
+            },
+        }
+    }
+}
+
+pub enum Comparator {
+    Eq,
+    Ne,
+    Gt,
+    Lt,
+    Gte,
+    Lte,
+}
+
+impl Comparator {
+    pub fn compare(a: f64, b: f64) -> bool {
+        match self {
+            Comparator::Eq => (a - b).abs() < 0.0001,
+            Comparator::Ne => (a - b).abs() >= 0.0001,
+            Comparator::Gt => a > b,
+            Comparator::Lt => a < b,
+            Comparator::Gte => a >= b,
+            Comparator::Lte => a <= b,
+        }
+    }
+}
+
+pub enum EpistemicCheck {
+    IsObserved,
+    IsReported,
+    IsInferred,
+    IsContested,
+    IsCertain,
+    IsUncertain,
+}
+
+impl EpistemicCheck {
+    pub fn matches(epistemic: &Epistemic) -> bool {
+        match self {
+            EpistemicCheck::IsObserved => epistemic.is_observed!(),
+            EpistemicCheck::IsReported => epistemic.is_reported~(),
+            EpistemicCheck::IsInferred => epistemic.is_inferred~(),
+            EpistemicCheck::IsContested => epistemic.is_contested(),
+            EpistemicCheck::IsCertain => epistemic.is_certain(),
+            EpistemicCheck::IsUncertain => epistemic.is_uncertain(),
+        }
+    }
+}
+
+// ============================================================================
+// Temporal Constraints
+// ============================================================================
+
+pub enum TemporalConstraint {
+    During(TimeRange),
+    Before(TimePoint),
+    After(TimePoint),
+    At(TimePoint),
+    Between(TimePoint, TimePoint),
+}
+
+impl TemporalConstraint {
+    pub fn to_bounds() -> (Instant, Instant) {
+        match self {
+            TemporalConstraint::During(range) => range.to_bounds(),
+            TemporalConstraint::Before(point) => (Instant::EPOCH, point.to_instant()),
+            TemporalConstraint::After(point) => (point.to_instant(), Instant::now()),
+            TemporalConstraint::At(point) => {
+                let t = point.to_instant()
+                (t - 1s, t + 1s)
+            },
+            TemporalConstraint::Between(start, end) => {
+                (start.to_instant(), end.to_instant())
+            },
+        }
+    }
+}
+
+impl TimePoint {
+    pub fn to_instant() -> Instant {
+        match self {
+            TimePoint::Now => Instant::now(),
+            TimePoint::Absolute(t) => t,
+            TimePoint::Relative { amount, direction } => {
+                match direction {
+                    TimeDirection::Ago => Instant::now() - amount,
+                    TimeDirection::FromNow => Instant::now() + amount,
+                }
+            },
+        }
+    }
+}
+
+// ============================================================================
+// Query Hints
+// ============================================================================
+
+pub enum QueryHint {
+    /// Prefer a specific index
+    Index(IndexType),
+
+    /// Maximum candidates to consider
+    MaxCandidates(usize),
+
+    /// Query timeout
+    Timeout(Duration),
+
+    /// Allow approximate results
+    Approximate(bool),
+
+    /// Disable caching
+    NoCache,
+}
+
+pub enum IndexType {
+    Vector,
+    Graph,
+    Temporal,
+    FullText,
+}
+
+// ============================================================================
+// Query Results
+// ============================================================================
+
+/// Result of a recall query
+pub struct RecallResult {
+    /// Retrieved memories
+    pub memories: Vec<Memory>,
+
+    /// Total matching (before limit)
+    pub total_found: usize,
+
+    /// Actually returned
+    pub returned: usize,
+
+    /// Confidence distribution
+    pub confidence: ConfidenceDistribution,
+
+    /// Identified knowledge gaps
+    pub gaps: Vec<Gap>,
+
+    /// Matching skills (if context provided)
+    pub skills: Vec<SkillMatch>,
+
+    /// Query metadata
+    pub query_metadata: QueryMetadata,
+}
+
+impl RecallResult {
+    pub fn is_empty() -> bool {
+        self.memories.is_empty()
+    }
+
+    pub fn has_gaps() -> bool {
+        !self.gaps.is_empty()
+    }
+
+    pub fn high_confidence() -> Vec<&Memory> {
+        self.memories.iter()
+            .filter(|m| m.confidence > 0.8)
+            .collect()
+    }
+
+    pub fn by_source(source: MemorySource) -> Vec<&Memory> {
+        self.memories.iter()
+            .filter(|m| std::mem::discriminant(&m.source) == std::mem::discriminant(&source))
+            .collect()
+    }
+}
+
+/// A retrieved memory
+pub struct Memory {
+    pub id: EngramId,
+    pub content: Value,
+    pub relevance: f64,
+    pub confidence: f64,
+    pub epistemic: Epistemic,
+    pub source: MemorySource,
+    pub timestamp: Instant,
+    pub access_path: Option<Vec<EngramId>>,
+}
+
+/// Metadata about the query execution
+pub struct QueryMetadata {
+    pub query: Query,
+    pub duration: Duration,
+    pub sources_searched: Vec<MemorySource>,
+}
+
+// ============================================================================
+// Gap Types
+// ============================================================================
+
+/// A gap in knowledge
+pub struct Gap {
+    pub description: String,
+    pub query_aspect: String,
+    pub severity: f64,
+    pub suggested_actions: Vec<SuggestedAction>,
+}
+
+pub enum SuggestedAction {
+    AskUser { question: String },
+    SearchExternal { query: String },
+    InvokeTool { tool: String, args: Value },
+    RecallDifferently { alternative: String },
+}

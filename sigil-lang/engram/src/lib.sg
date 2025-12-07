@@ -1,0 +1,97 @@
+// Engram - Memory Infrastructure for Artificial Minds
+//
+// A cognitive memory system designed from first principles for AI agents.
+//
+// Engram provides four interconnected memory systems:
+// - Instant Memory: Working memory (current context)
+// - Episodic Memory: Experience memory (what happened)
+// - Semantic Memory: Knowledge memory (what we know)
+// - Procedural Memory: Skill memory (how to do things)
+//
+// Each memory type is designed around how artificial minds actually work,
+// with first-class support for uncertainty, time, and distributed identity.
+
+module engram
+
+// Core modules
+pub mod types
+pub mod config
+pub mod engram
+pub mod instant
+pub mod episodic
+pub mod semantic
+pub mod procedural
+pub mod query
+
+// Infrastructure modules
+pub mod index
+pub mod embed
+pub mod storage
+
+// Re-export main types for convenience
+pub use engram::Engram
+pub use types::*
+pub use config::EngramConfig
+pub use query::{Query, RecallResult}
+pub use instant::InstantMemory
+pub use episodic::{EpisodicMemory, Episode, Event}
+pub use semantic::{SemanticMemory, Fact, Node, Edge}
+pub use procedural::{ProceduralMemory, Skill}
+
+// Re-export infrastructure
+pub use index::{HNSWIndex, HNSWConfig, TemporalIndex, GraphIndex}
+pub use embed::{Embedder, embed, embed_batch}
+pub use storage::{StorageBackend, MemoryBackend, FileBackend}
+
+// Version information
+pub const VERSION: &str = "0.1.0"
+pub const NAME: &str = "Engram"
+pub const DESCRIPTION: &str = "Memory Infrastructure for Artificial Minds"
+
+/// Quick start with default configuration
+///
+/// # Example
+/// ```sigil
+/// use engram
+///
+/// let memory = engram::new()!
+///
+/// // Learn something
+/// memory.learn(Fact {
+///     subject: "Sigil",
+///     claims: [(:is_a, "programming language")],
+///     epistemic: Observed!,
+///     confidence: 1.0,
+/// })!
+///
+/// // Recall
+/// let results = memory.recall("programming languages")
+/// ```
+pub fn new() -> EngramResult<Engram>! {
+    Engram::new(EngramConfig::default())
+}
+
+/// Create with custom configuration
+pub fn with_config(config: EngramConfig) -> EngramResult<Engram>! {
+    Engram::new(config)
+}
+
+/// Create for high-memory agents (large context windows)
+pub fn high_memory() -> EngramResult<Engram>! {
+    Engram::new(EngramConfig::high_memory())
+}
+
+/// Create for low-memory environments
+pub fn low_memory() -> EngramResult<Engram>! {
+    Engram::new(EngramConfig::low_memory())
+}
+
+/// Create for distributed multi-agent deployments
+pub fn distributed() -> EngramResult<Engram>! {
+    Engram::new(EngramConfig::distributed())
+}
+
+/// Create ephemeral (no persistence)
+pub fn ephemeral() -> EngramResult<Engram>! {
+    Engram::new(EngramConfig::ephemeral())
+}

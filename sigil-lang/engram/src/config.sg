@@ -1,0 +1,641 @@
+// Engram Configuration
+// Configuration types for all memory subsystems
+
+module engram::config
+
+use engram::types::*
+
+// ============================================================================
+// Main Configuration
+// ============================================================================
+
+/// Complete configuration for an Engram instance
+pub struct EngramConfig {
+    /// Agent identity (auto-generated if not provided)
+    pub agent_id: Option<AgentId>,
+
+    /// Instant memory configuration
+    pub instant: InstantConfig,
+
+    /// Episodic memory configuration
+    pub episodic: EpisodicConfig,
+
+    /// Semantic memory configuration
+    pub semantic: SemanticConfig,
+
+    /// Procedural memory configuration
+    pub procedural: ProceduralConfig,
+
+    /// Vector index configuration
+    pub vector: VectorConfig,
+
+    /// Storage configuration
+    pub storage: StorageConfig,
+
+    /// Embedding configuration
+    pub embedding: EmbeddingConfig,
+
+    /// Distribution configuration
+    pub distribution: DistributionConfig,
+
+    /// Background process configuration
+    pub consolidation: ConsolidationConfig,
+}
+
+impl EngramConfig {
+    /// Default configuration suitable for most use cases
+    pub fn default() -> Self {
+        Self {
+            agent_id: None,
+            instant: InstantConfig::default(),
+            episodic: EpisodicConfig::default(),
+            semantic: SemanticConfig::default(),
+            procedural: ProceduralConfig::default(),
+            vector: VectorConfig::default(),
+            storage: StorageConfig::default(),
+            embedding: EmbeddingConfig::default(),
+            distribution: DistributionConfig::default(),
+            consolidation: ConsolidationConfig::default(),
+        }
+    }
+
+    /// Configuration for agents with large context windows
+    pub fn high_memory() -> Self {
+        Self {
+            instant: InstantConfig {
+                capacity: TokenCount(128000),
+                ..InstantConfig::default()
+            },
+            ..Self::default()
+        }
+    }
+
+    /// Configuration for resource-constrained environments
+    pub fn low_memory() -> Self {
+        Self {
+            instant: InstantConfig {
+                capacity: TokenCount(2000),
+                compression_strategy: CompressionStrategy::Aggressive,
+                ..InstantConfig::default()
+            },
+            episodic: EpisodicConfig {
+                max_active_episodes: 1000,
+                ..EpisodicConfig::default()
+            },
+            ..Self::default()
+        }
+    }
+
+    /// Configuration for multi-agent deployments
+    pub fn distributed() -> Self {
+        Self {
+            distribution: DistributionConfig {
+                enabled: true,
+                scope_defaults: ScopeDefaults::agent_shared(),
+                sync: SyncSettings {
+                    strategy: SyncStrategy::CRDT,
+                    interval: Duration::from_secs(60),
+                    on_change: true,
+                },
+                ..DistributionConfig::default()
+            },
+            ..Self::default()
+        }
+    }
+
+    /// Configuration with no persistence (memory only)
+    pub fn ephemeral() -> Self {
+        Self {
+            storage: StorageConfig {
+                backend: StorageBackend::Memory,
+                ..StorageConfig::default()
+            },
+            ..Self::default()
+        }
+    }
+}
+
+// ============================================================================
+// Instant Memory Configuration
+// ============================================================================
+
+/// Configuration for instant (working) memory
+pub struct InstantConfig {
+    /// Maximum token capacity
+    pub capacity: TokenCount,
+
+    /// Decay rate per tick (0.0 - 1.0)
+    pub decay_rate: f64,
+
+    /// Threshold below which items are evicted
+    pub eviction_threshold: f64,
+
+    /// Strategy for handling capacity overflow
+    pub compression_strategy: CompressionStrategy,
+
+    /// Token counter implementation
+    pub token_counter: TokenCounterType,
+}
+
+impl InstantConfig {
+    pub fn default() -> Self {
+        Self {
+            capacity: TokenCount(8000),
+            decay_rate: 0.05,
+            eviction_threshold: 0.1,
+            compression_strategy: CompressionStrategy::EvictLowest,
+            token_counter: TokenCounterType::Approximate,
+        }
+    }
+}
+
+pub enum CompressionStrategy {
+    /// Simply evict the lowest priority item
+    EvictLowest,
+
+    /// Compress lowest priority items
+    Compress { target_ratio: f64 },
+
+    /// Summarize batches of low-priority items
+    SummarizeBatch { batch_size: usize, target_tokens: TokenCount },
+
+    /// Aggressive compression for constrained environments
+    Aggressive,
+}
+
+pub enum TokenCounterType {
+    /// Fast approximation (~4 chars per token)
+    Approximate,
+
+    /// Use tiktoken for accurate counting
+    Tiktoken { model: String },
+
+    /// Custom counter function
+    Custom { counter: fn(&str) -> usize },
+}
+
+// ============================================================================
+// Episodic Memory Configuration
+// ============================================================================
+
+/// Configuration for episodic memory
+pub struct EpisodicConfig {
+    /// Decay function for memory strength
+    pub decay_function: DecayFunction,
+
+    /// Strength threshold for consolidation eligibility
+    pub consolidation_threshold: f64,
+
+    /// Interval between consolidation runs
+    pub consolidation_interval: Duration,
+
+    /// Maximum number of active (non-archived) episodes
+    pub max_active_episodes: usize,
+
+    /// Minimum significance to prevent automatic archival
+    pub min_significance_to_keep: f64,
+}
+
+impl EpisodicConfig {
+    pub fn default() -> Self {
+        Self {
+            decay_function: DecayFunction::Exponential { lambda: 0.1 },
+            consolidation_threshold: 0.3,
+            consolidation_interval: Duration::from_hours(6),
+            max_active_episodes: 10000,
+            min_significance_to_keep: 0.1,
+        }
+    }
+}
+
+pub enum DecayFunction {
+    /// Exponential decay: strength *= e^(-λt)
+    Exponential { lambda: f64 },
+
+    /// Linear decay: strength -= rate * t
+    Linear { rate: f64 },
+
+    /// Power law decay: strength *= t^(-α)
+    PowerLaw { alpha: f64 },
+
+    /// No decay
+    None,
+}
+
+impl DecayFunction {
+    pub fn apply(strength: f64, elapsed_hours: f64) -> f64 {
+        match self {
+            DecayFunction::Exponential { lambda } => {
+                strength * (-lambda * elapsed_hours).exp()
+            },
+            DecayFunction::Linear { rate } => {
+                (strength - rate * elapsed_hours).max(0.0)
+            },
+            DecayFunction::PowerLaw { alpha } => {
+                strength * (1.0 + elapsed_hours).powf(-alpha)
+            },
+            DecayFunction::None => strength,
+        }
+    }
+}
+
+// ============================================================================
+// Semantic Memory Configuration
+// ============================================================================
+
+/// Configuration for semantic memory
+pub struct SemanticConfig {
+    /// Maximum number of nodes (None for unlimited)
+    pub max_nodes: Option<usize>,
+
+    /// Maximum edges per node
+    pub max_edges_per_node: usize,
+
+    /// Strategy for handling belief conflicts
+    pub belief_conflict_strategy: ConflictStrategy,
+
+    /// Threshold for automatic linking of similar nodes
+    pub auto_link_threshold: f64,
+}
+
+impl SemanticConfig {
+    pub fn default() -> Self {
+        Self {
+            max_nodes: None,
+            max_edges_per_node: 100,
+            belief_conflict_strategy: ConflictStrategy::MarkContested,
+            auto_link_threshold: 0.8,
+        }
+    }
+}
+
+pub enum ConflictStrategy {
+    /// Keep newest version
+    TakeNewest,
+
+    /// Keep highest confidence version
+    TakeHighestConfidence,
+
+    /// Mark as contested, keep both
+    MarkContested,
+
+    /// Attempt to merge
+    Merge,
+
+    /// Custom resolution function
+    Custom { resolver: fn(old: &Node, new: &Node) -> Node },
+}
+
+// ============================================================================
+// Procedural Memory Configuration
+// ============================================================================
+
+/// Configuration for procedural memory
+pub struct ProceduralConfig {
+    /// Minimum episodes needed to extract a skill
+    pub min_episodes_for_skill: usize,
+
+    /// Minimum success rate for skill retention
+    pub skill_success_threshold: f64,
+
+    /// Threshold for pattern matching
+    pub pattern_match_threshold: f64,
+
+    /// Maximum number of skills (None for unlimited)
+    pub max_skills: Option<usize>,
+}
+
+impl ProceduralConfig {
+    pub fn default() -> Self {
+        Self {
+            min_episodes_for_skill: 3,
+            skill_success_threshold: 0.5,
+            pattern_match_threshold: 0.6,
+            max_skills: None,
+        }
+    }
+}
+
+// ============================================================================
+// Vector Index Configuration
+// ============================================================================
+
+/// Configuration for HNSW vector index
+pub struct VectorConfig {
+    /// Embedding dimensions
+    pub dimensions: usize,
+
+    /// Max connections per node per layer
+    pub m: usize,
+
+    /// Build-time search beam width
+    pub ef_construction: usize,
+
+    /// Query-time search beam width
+    pub ef_search: usize,
+
+    /// Distance metric
+    pub metric: DistanceMetric,
+}
+
+impl VectorConfig {
+    pub fn default() -> Self {
+        Self {
+            dimensions: 384,  // MiniLM-L6 default
+            m: 16,
+            ef_construction: 200,
+            ef_search: 50,
+            metric: DistanceMetric::Cosine,
+        }
+    }
+}
+
+pub enum DistanceMetric {
+    Cosine,
+    Euclidean,
+    DotProduct,
+}
+
+// ============================================================================
+// Storage Configuration
+// ============================================================================
+
+/// Configuration for storage layer
+pub struct StorageConfig {
+    /// Storage backend
+    pub backend: StorageBackend,
+
+    /// Hot store configuration
+    pub hot: HotStoreConfig,
+
+    /// Warm store configuration
+    pub warm: WarmStoreConfig,
+
+    /// Cold store configuration
+    pub cold: ColdStoreConfig,
+}
+
+impl StorageConfig {
+    pub fn default() -> Self {
+        Self {
+            backend: StorageBackend::File { path: "./engram_data".to_string() },
+            hot: HotStoreConfig::default(),
+            warm: WarmStoreConfig::default(),
+            cold: ColdStoreConfig::default(),
+        }
+    }
+}
+
+pub enum StorageBackend {
+    /// In-memory only (no persistence)
+    Memory,
+
+    /// File-based storage
+    File { path: String },
+
+    /// SQLite database
+    SQLite { path: String },
+
+    /// Redis
+    Redis { url: String },
+
+    /// Custom backend
+    Custom { name: String, config: Value },
+}
+
+pub struct HotStoreConfig {
+    pub capacity: ByteSize,
+    pub eviction_policy: EvictionPolicy,
+}
+
+impl HotStoreConfig {
+    pub fn default() -> Self {
+        Self {
+            capacity: ByteSize::mb(256),
+            eviction_policy: EvictionPolicy::LRU,
+        }
+    }
+}
+
+pub struct WarmStoreConfig {
+    pub memtable_size: ByteSize,
+    pub level_size_multiplier: usize,
+    pub bloom_filter_fp_rate: f64,
+}
+
+impl WarmStoreConfig {
+    pub fn default() -> Self {
+        Self {
+            memtable_size: ByteSize::mb(64),
+            level_size_multiplier: 10,
+            bloom_filter_fp_rate: 0.01,
+        }
+    }
+}
+
+pub struct ColdStoreConfig {
+    pub segment_size: ByteSize,
+    pub compression_level: u32,
+    pub sparse_index_interval: usize,
+}
+
+impl ColdStoreConfig {
+    pub fn default() -> Self {
+        Self {
+            segment_size: ByteSize::mb(256),
+            compression_level: 19,  // Max zstd
+            sparse_index_interval: 1000,
+        }
+    }
+}
+
+pub enum EvictionPolicy {
+    LRU,
+    LFU,
+    FIFO,
+}
+
+pub struct ByteSize(pub usize)
+
+impl ByteSize {
+    pub fn kb(n: usize) -> Self { ByteSize(n * 1024) }
+    pub fn mb(n: usize) -> Self { ByteSize(n * 1024 * 1024) }
+    pub fn gb(n: usize) -> Self { ByteSize(n * 1024 * 1024 * 1024) }
+}
+
+// ============================================================================
+// Embedding Configuration
+// ============================================================================
+
+/// Configuration for embedding generation
+pub struct EmbeddingConfig {
+    /// Embedding model to use
+    pub model: EmbeddingModel,
+
+    /// Output dimensions
+    pub dimensions: usize,
+
+    /// Whether to normalize embeddings
+    pub normalize: bool,
+
+    /// Batch size for embedding generation
+    pub batch_size: usize,
+}
+
+impl EmbeddingConfig {
+    pub fn default() -> Self {
+        Self {
+            model: EmbeddingModel::MiniLM_L6,
+            dimensions: 384,
+            normalize: true,
+            batch_size: 32,
+        }
+    }
+}
+
+pub enum EmbeddingModel {
+    /// Fast, good quality
+    MiniLM_L6,
+
+    /// Better quality, slower
+    BGE_Small,
+
+    /// External OpenAI API
+    OpenAI { model: String },
+
+    /// External API
+    External { url: String, model: String },
+
+    /// Custom ONNX model
+    Custom { path: String },
+}
+
+// ============================================================================
+// Distribution Configuration
+// ============================================================================
+
+/// Configuration for distribution and synchronization
+pub struct DistributionConfig {
+    /// Enable distribution features
+    pub enabled: bool,
+
+    /// Default scopes for different memory types
+    pub scope_defaults: ScopeDefaults,
+
+    /// Sync settings
+    pub sync: SyncSettings,
+
+    /// Authentication configuration
+    pub auth: Option<AuthConfig>,
+
+    /// Encryption configuration
+    pub encryption: Option<EncryptionConfig>,
+}
+
+impl DistributionConfig {
+    pub fn default() -> Self {
+        Self {
+            enabled: false,
+            scope_defaults: ScopeDefaults::default(),
+            sync: SyncSettings::default(),
+            auth: None,
+            encryption: None,
+        }
+    }
+}
+
+pub struct ScopeDefaults {
+    pub instant: Scope,
+    pub episodic: Scope,
+    pub semantic: Scope,
+    pub procedural: Scope,
+}
+
+impl ScopeDefaults {
+    pub fn default() -> Self {
+        Self {
+            instant: Scope::Instance { instance_id: "".to_string() },
+            episodic: Scope::Instance { instance_id: "".to_string() },
+            semantic: Scope::Instance { instance_id: "".to_string() },
+            procedural: Scope::Instance { instance_id: "".to_string() },
+        }
+    }
+
+    pub fn agent_shared() -> Self {
+        Self {
+            instant: Scope::Instance { instance_id: "".to_string() },
+            episodic: Scope::Instance { instance_id: "".to_string() },
+            semantic: Scope::Agent { agent_id: "".to_string() },
+            procedural: Scope::Agent { agent_id: "".to_string() },
+        }
+    }
+}
+
+pub struct SyncSettings {
+    pub strategy: SyncStrategy,
+    pub interval: Duration,
+    pub on_change: bool,
+}
+
+impl SyncSettings {
+    pub fn default() -> Self {
+        Self {
+            strategy: SyncStrategy::CRDT,
+            interval: Duration::from_secs(300),
+            on_change: false,
+        }
+    }
+}
+
+pub enum SyncStrategy {
+    CRDT,
+    Consensus,
+    Manual,
+}
+
+pub struct AuthConfig {
+    pub method: AuthMethod,
+    pub token_ttl: Duration,
+}
+
+pub enum AuthMethod {
+    SharedKey { key: String },
+    PKI { cert_path: String, key_path: String },
+    OAuth { provider: String, client_id: String },
+}
+
+pub struct EncryptionConfig {
+    pub at_rest: bool,
+    pub in_transit: bool,
+    pub algorithm: String,
+}
+
+// ============================================================================
+// Consolidation Configuration
+// ============================================================================
+
+/// Configuration for background consolidation process
+pub struct ConsolidationConfig {
+    /// Enable automatic consolidation
+    pub enabled: bool,
+
+    /// Interval between consolidation runs
+    pub interval: Duration,
+
+    /// Run consolidation on low activity
+    pub on_idle: bool,
+
+    /// Maximum duration for a single consolidation run
+    pub max_duration: Duration,
+}
+
+impl ConsolidationConfig {
+    pub fn default() -> Self {
+        Self {
+            enabled: true,
+            interval: Duration::from_hours(6),
+            on_idle: true,
+            max_duration: Duration::from_secs(60),
+        }
+    }
+}

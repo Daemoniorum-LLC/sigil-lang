@@ -1,0 +1,14 @@
+fn main() {
+    let a = vec3(0.0, 0.0, 0.0);
+    let b = vec3(0.0, 0.0, 0.0);
+    let c = vec3(0.0, 0.0, 0.0);
+    let ab_c = vec3_add(vec3_add(a, b), c);
+    let a_bc = vec3_add(a, vec3_add(b, c));
+    let diff_x = abs(get(ab_c, 0) - get(a_bc, 0));
+    let diff_y = abs(get(ab_c, 1) - get(a_bc, 1));
+    let diff_z = abs(get(ab_c, 2) - get(a_bc, 2));
+    println("diff_x: " ++ to_string(diff_x));
+    println("diff_y: " ++ to_string(diff_y));
+    println("diff_z: " ++ to_string(diff_z));
+    return 0.001 > diff_x;
+}

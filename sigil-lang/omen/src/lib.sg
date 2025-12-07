@@ -1,0 +1,1080 @@
+// Omen - Planning and Reasoning Infrastructure for Sigil
+// Public API
+
+pub mod types;
+pub mod belief;
+pub mod goal;
+pub mod plan;
+pub mod causal;
+
+use std::collections::HashMap;
+use std::time::{Duration, Timestamp};
+use engram::{Engram, Query};
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
+/// Unique identifiers
+pub struct BeliefId { bytes: [u8; 16] }
+pub struct GoalId { bytes: [u8; 16] }
+pub struct PlanId { bytes: [u8; 16] }
+pub struct StepId { bytes: [u8; 16] }
+
+impl BeliefId { pub fn new() -> Self { Self { bytes: uuid_v7() } } }
+impl GoalId { pub fn new() -> Self { Self { bytes: uuid_v7() } } }
+impl PlanId { pub fn new() -> Self { Self { bytes: uuid_v7() } } }
+impl StepId { pub fn new() -> Self { Self { bytes: uuid_v7() } } }
+
+/// Epistemic status
+#[derive(Clone, Copy, PartialEq)]
+pub enum Epistemic {
+    Axiomatic,
+    Observed,
+    Reported,
+    Inferred,
+    Contested,
+    Unknown,
+}
+
+impl Epistemic {
+    pub fn rank(&self) -> u8 {
+        match self {
+            Epistemic::Axiomatic => 5,
+            Epistemic::Observed => 4,
+            Epistemic::Reported => 3,
+            Epistemic::Inferred => 2,
+            Epistemic::Contested => 1,
+            Epistemic::Unknown => 0,
+        }
+    }
+}
+
+// ============================================================================
+// Belief System
+// ============================================================================
+
+/// A belief with epistemic tracking
+pub struct Belief {
+    pub id: BeliefId,
+    pub proposition: Proposition,
+    pub epistemic: Epistemic,
+    pub confidence: f32,
+    pub evidence: Vec<Evidence>,
+    pub source: BeliefSource,
+    pub acquired: Timestamp,
+}
+
+impl Belief {
+    pub fn observed(proposition: &str) -> Self {
+        Self {
+            id: BeliefId::new(),
+            proposition: Proposition::simple(proposition),
+            epistemic: Epistemic::Observed,
+            confidence: 0.95,
+            evidence: vec![],
+            source: BeliefSource::Observation,
+            acquired: Timestamp::now(),
+        }
+    }
+
+    pub fn inferred(proposition: &str, confidence: f32) -> Self {
+        Self {
+            id: BeliefId::new(),
+            proposition: Proposition::simple(proposition),
+            epistemic: Epistemic::Inferred,
+            confidence,
+            evidence: vec![],
+            source: BeliefSource::Assumption,
+            acquired: Timestamp::now(),
+        }
+    }
+
+    pub fn axiom(proposition: &str) -> Self {
+        Self {
+            id: BeliefId::new(),
+            proposition: Proposition::simple(proposition),
+            epistemic: Epistemic::Axiomatic,
+            confidence: 1.0,
+            evidence: vec![],
+            source: BeliefSource::Axiom,
+            acquired: Timestamp::now(),
+        }
+    }
+
+    pub fn contradicts(&self, other: &Belief) -> bool {
+        self.proposition.negates(&other.proposition)
+    }
+}
+
+pub struct Proposition {
+    pub subject: String,
+    pub predicate: String,
+    pub value: Option<Value>,
+    pub negated: bool,
+}
+
+impl Proposition {
+    pub fn simple(text: &str) -> Self {
+        Self {
+            subject: text.to_string(),
+            predicate: "is_true".to_string(),
+            value: None,
+            negated: false,
+        }
+    }
+
+    pub fn negates(&self, other: &Proposition) -> bool {
+        self.subject == other.subject &&
+        self.predicate == other.predicate &&
+        self.negated != other.negated
+    }
+}
+
+pub struct Evidence {
+    pub content: String,
+    pub source: String,
+    pub strength: f32,
+}
+
+pub enum BeliefSource {
+    Observation,
+    Inference { premises: Vec<BeliefId> },
+    Testimony { source: String },
+    Assumption,
+    Axiom,
+}
+
+// ============================================================================
+// Goal System
+// ============================================================================
+
+/// A goal to achieve
+pub struct Goal {
+    pub id: GoalId,
+    pub description: String,
+    pub success: Predicate,
+    pub priority: f32,
+    pub constraints: Vec<Constraint>,
+    pub deadline: Option<Timestamp>,
+    pub parent: Option<GoalId>,
+    pub status: GoalStatus,
+}
+
+impl Goal {
+    pub fn new(description: &str) -> Self {
+        Self {
+            id: GoalId::new(),
+            description: description.to_string(),
+            success: Predicate::always_false(),
+            priority: 0.5,
+            constraints: vec![],
+            deadline: None,
+            parent: None,
+            status: GoalStatus::Pending,
+        }
+    }
+
+    pub fn with_priority(mut self, priority: f32) -> Self {
+        self.priority = priority.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn with_deadline(mut self, duration: Duration) -> Self {
+        self.deadline = Some(Timestamp::now() + duration);
+        self
+    }
+
+    pub fn with_constraint(mut self, constraint: Constraint) -> Self {
+        self.constraints.push(constraint);
+        self
+    }
+}
+
+pub enum GoalStatus {
+    Pending,
+    Active,
+    Blocked { reason: String },
+    Achieved,
+    Failed { reason: String },
+    Abandoned { reason: String },
+}
+
+pub struct Predicate {
+    check: Box<dyn Fn(&State) -> bool + Send + Sync>,
+}
+
+impl Predicate {
+    pub fn always_true() -> Self {
+        Self { check: Box::new(|_| true) }
+    }
+
+    pub fn always_false() -> Self {
+        Self { check: Box::new(|_| false) }
+    }
+
+    pub fn evaluate(&self, state: &State) -> bool {
+        (self.check)(state)
+    }
+}
+
+pub struct Constraint {
+    pub name: String,
+    pub check: Box<dyn Fn(&Plan) -> bool + Send + Sync>,
+}
+
+impl Constraint {
+    pub fn deadline(duration: Duration) -> Self {
+        Self {
+            name: "deadline".to_string(),
+            check: Box::new(move |_| true),
+        }
+    }
+
+    pub fn no_breaking_changes() -> Self {
+        Self {
+            name: "no_breaking_changes".to_string(),
+            check: Box::new(|_| true),
+        }
+    }
+}
+
+// ============================================================================
+// Planning System
+// ============================================================================
+
+/// A plan to achieve a goal
+pub struct Plan {
+    pub id: PlanId,
+    pub goal: GoalId,
+    pub steps: Vec<PlanStep>,
+    pub success_probability: f32,
+    pub expected_cost: ResourceCost,
+    pub assumptions: Vec<Belief>,
+    pub risks: Vec<Risk>,
+    pub strategy: String,
+}
+
+pub struct PlanStep {
+    pub id: StepId,
+    pub action: Action,
+    pub preconditions: Vec<Predicate>,
+    pub effects: Vec<Effect>,
+    pub confidence: f32,
+    pub duration: Duration,
+    pub cost: ResourceCost,
+    pub contingency: Option<PlanId>,
+}
+
+pub struct Action {
+    pub name: String,
+    pub params: HashMap<String, Value>,
+    pub preconditions: Vec<Predicate>,
+    pub effects: Vec<Effect>,
+    pub success_rate: f32,
+    pub expected_duration: Duration,
+    pub expected_cost: ResourceCost,
+}
+
+impl Action {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            params: HashMap::new(),
+            preconditions: vec![],
+            effects: vec![],
+            success_rate: 0.9,
+            expected_duration: Duration::seconds(1),
+            expected_cost: ResourceCost::default(),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+pub struct Effect {
+    pub description: String,
+    pub probability: f32,
+}
+
+pub struct ResourceCost {
+    pub time: Duration,
+    pub compute: f32,
+    pub api_calls: u32,
+    pub custom: HashMap<String, f32>,
+}
+
+impl Default for ResourceCost {
+    fn default() -> Self {
+        Self {
+            time: Duration::zero(),
+            compute: 0.0,
+            api_calls: 0,
+            custom: HashMap::new(),
+        }
+    }
+}
+
+pub struct Risk {
+    pub id: RiskId,
+    pub description: String,
+    pub probability: f32,
+    pub impact: Impact,
+    pub affected_steps: Vec<StepId>,
+    pub mitigations: Vec<Mitigation>,
+}
+
+pub struct RiskId { bytes: [u8; 16] }
+impl RiskId { pub fn new() -> Self { Self { bytes: uuid_v7() } } }
+
+pub enum Impact {
+    PlanFailure,
+    PartialSuccess { degree: f32 },
+    IncreasedCost { factor: f32 },
+    Delay { duration: Duration },
+}
+
+pub struct Mitigation {
+    pub description: String,
+    pub effectiveness: f32,
+    pub cost: ResourceCost,
+}
+
+// ============================================================================
+// The Omen Planner
+// ============================================================================
+
+/// Main planner and reasoner
+pub struct Omen {
+    /// Configuration
+    config: OmenConfig,
+
+    /// Belief manager
+    beliefs: BeliefManager,
+
+    /// Goal manager
+    goals: GoalManager,
+
+    /// Action library
+    actions: ActionLibrary,
+
+    /// Planning strategies
+    strategies: Vec<Box<dyn PlanningStrategy>>,
+
+    /// Causal model
+    causal: Option<CausalModel>,
+
+    /// Memory integration
+    memory: Option<Engram>,
+
+    /// Learning from execution
+    learner: PlanLearner,
+}
+
+impl Omen {
+    pub fn new(config: OmenConfig) -> Self {
+        Self {
+            config,
+            beliefs: BeliefManager::new(),
+            goals: GoalManager::new(),
+            actions: ActionLibrary::new(),
+            strategies: vec![
+                Box::new(HTNPlanner::new()),
+                Box::new(MeansEndsPlanner::new()),
+            ],
+            causal: None,
+            memory: None,
+            learner: PlanLearner::new(),
+        }
+    }
+
+    pub fn with_memory(mut self, memory: Engram) -> Self {
+        self.memory = Some(memory);
+        self
+    }
+
+    // ========================================================================
+    // Belief Management
+    // ========================================================================
+
+    /// Add a belief
+    pub fn believe(&mut self, belief: Belief) {
+        self.beliefs.add(belief);
+    }
+
+    /// Observe something (create Observed belief)
+    pub fn observe(&mut self, observation: &str) {
+        self.beliefs.add(Belief::observed(observation));
+    }
+
+    /// Integrate new evidence
+    pub fn integrate_evidence(&mut self, evidence: Evidence) {
+        self.beliefs.revise_with_evidence(evidence);
+    }
+
+    /// Check if a proposition is believed
+    pub fn believes(&self, proposition: &str) -> bool {
+        self.beliefs.holds(proposition)
+    }
+
+    /// Get beliefs about a topic
+    pub fn beliefs_about(&self, topic: &str) -> Vec<&Belief> {
+        self.beliefs.about(topic)
+    }
+
+    // ========================================================================
+    // Goal Management
+    // ========================================================================
+
+    /// Add a goal
+    pub fn add_goal(&mut self, goal: Goal) -> GoalId {
+        self.goals.add(goal)
+    }
+
+    /// Get current highest-priority goal
+    pub fn current_goal(&self) -> Option<&Goal> {
+        self.goals.current()
+    }
+
+    // ========================================================================
+    // Planning
+    // ========================================================================
+
+    /// Plan to achieve a goal
+    pub fn plan(&self, goal: &Goal) -> Result<Plan, PlanningError> {
+        // Select strategy
+        let strategy = self.select_strategy(goal)?;
+
+        // Generate plan
+        let mut plan = strategy.plan(goal, &self.beliefs, &self.actions, &self.config)?;
+
+        // Assess risks
+        plan.risks = self.assess_risks(&plan);
+
+        // Add contingencies for risky steps
+        self.add_contingencies(&mut plan);
+
+        Ok(plan)
+    }
+
+    /// Plan using HTN decomposition
+    pub fn plan_htn(&self, goal: &Goal) -> Result<Plan, PlanningError> {
+        let htn = HTNPlanner::new();
+        htn.plan(goal, &self.beliefs, &self.actions, &self.config)
+    }
+
+    /// Reactive planning for immediate decisions
+    pub fn react(&self, situation: &str) -> Option<Action> {
+        // Simple rule-based reaction
+        self.actions.best_for(situation)
+    }
+
+    /// Replan when a step fails
+    pub fn replan(&self, goal: &Goal, failed_step: &PlanStep) -> Result<Plan, PlanningError> {
+        // Update beliefs based on failure
+        let mut beliefs = self.beliefs.clone();
+        beliefs.add(Belief::observed(&format!("Action {} failed", failed_step.action.name)));
+
+        // Plan again with updated beliefs
+        let strategy = self.select_strategy(goal)?;
+        strategy.plan(goal, &beliefs, &self.actions, &self.config)
+    }
+
+    fn select_strategy(&self, goal: &Goal) -> Result<&dyn PlanningStrategy, PlanningError> {
+        self.strategies.iter()
+            .find(|s| s.is_applicable(goal, &self.beliefs))
+            .map(|s| s.as_ref())
+            .ok_or(PlanningError::NoApplicableStrategy)
+    }
+
+    fn assess_risks(&self, plan: &Plan) -> Vec<Risk> {
+        let mut risks = Vec::new();
+
+        for step in &plan.steps {
+            if step.confidence < 0.7 {
+                risks.push(Risk {
+                    id: RiskId::new(),
+                    description: format!("Step '{}' has low confidence", step.action.name),
+                    probability: 1.0 - step.confidence,
+                    impact: Impact::PlanFailure,
+                    affected_steps: vec![step.id.clone()],
+                    mitigations: vec![],
+                });
+            }
+        }
+
+        risks
+    }
+
+    fn add_contingencies(&self, plan: &mut Plan) {
+        // Would add contingency plans for risky steps
+    }
+
+    // ========================================================================
+    // Causal Reasoning
+    // ========================================================================
+
+    /// Set causal model
+    pub fn set_causal_model(&mut self, model: CausalModel) {
+        self.causal = Some(model);
+    }
+
+    /// Predict with intervention
+    pub fn predict_with_intervention(&self, intervention: &HashMap<String, Value>) -> HashMap<String, f32> {
+        if let Some(model) = &self.causal {
+            model.intervene(intervention)
+        } else {
+            HashMap::new()
+        }
+    }
+
+    /// Abductive reasoning: infer causes from effects
+    pub fn abduce(&self, effects: &HashMap<String, Value>) -> Vec<Explanation> {
+        if let Some(model) = &self.causal {
+            model.abduce(effects)
+        } else {
+            vec![]
+        }
+    }
+
+    // ========================================================================
+    // Learning
+    // ========================================================================
+
+    /// Learn from plan execution
+    pub fn learn_from_execution(&mut self, plan: &Plan, outcome: PlanOutcome) {
+        self.learner.record(plan, outcome);
+
+        // Update action success rates
+        for step in &plan.steps {
+            let succeeded = matches!(outcome, PlanOutcome::Success);
+            self.actions.update_success_rate(&step.action.name, succeeded);
+        }
+
+        // Store in memory if available
+        if let Some(memory) = &mut self.memory {
+            memory.learn_from_plan(plan, &outcome);
+        }
+    }
+}
+
+// ============================================================================
+// Belief Manager
+// ============================================================================
+
+pub struct BeliefManager {
+    beliefs: HashMap<BeliefId, Belief>,
+    by_subject: HashMap<String, Vec<BeliefId>>,
+}
+
+impl BeliefManager {
+    pub fn new() -> Self {
+        Self {
+            beliefs: HashMap::new(),
+            by_subject: HashMap::new(),
+        }
+    }
+
+    pub fn add(&mut self, belief: Belief) {
+        // Check for contradictions
+        let contradictions: Vec<_> = self.beliefs.values()
+            .filter(|b| b.contradicts(&belief))
+            .map(|b| b.id.clone())
+            .collect();
+
+        for contra_id in contradictions {
+            if let Some(existing) = self.beliefs.get(&contra_id) {
+                // Keep belief with higher epistemic rank / confidence
+                if belief.epistemic.rank() > existing.epistemic.rank() ||
+                   (belief.epistemic.rank() == existing.epistemic.rank() &&
+                    belief.confidence > existing.confidence) {
+                    self.beliefs.remove(&contra_id);
+                } else {
+                    return;  // Don't add new belief
+                }
+            }
+        }
+
+        let subject = belief.proposition.subject.clone();
+        let id = belief.id.clone();
+
+        self.by_subject.entry(subject)
+            .or_default()
+            .push(id.clone());
+
+        self.beliefs.insert(id, belief);
+    }
+
+    pub fn revise_with_evidence(&mut self, evidence: Evidence) {
+        // Update beliefs based on evidence
+        for belief in self.beliefs.values_mut() {
+            if belief.proposition.subject.contains(&evidence.content) {
+                belief.confidence = (belief.confidence + evidence.strength) / 2.0;
+                belief.evidence.push(evidence.clone());
+            }
+        }
+    }
+
+    pub fn holds(&self, proposition: &str) -> bool {
+        self.beliefs.values()
+            .any(|b| b.proposition.subject == proposition && b.confidence > 0.5)
+    }
+
+    pub fn about(&self, topic: &str) -> Vec<&Belief> {
+        self.by_subject.get(topic)
+            .map(|ids| ids.iter()
+                .filter_map(|id| self.beliefs.get(id))
+                .collect())
+            .unwrap_or_default()
+    }
+
+    pub fn clone(&self) -> Self {
+        Self {
+            beliefs: self.beliefs.clone(),
+            by_subject: self.by_subject.clone(),
+        }
+    }
+}
+
+impl Clone for Belief {
+    fn clone(&self) -> Self {
+        Self {
+            id: BeliefId { bytes: self.id.bytes },
+            proposition: self.proposition.clone(),
+            epistemic: self.epistemic,
+            confidence: self.confidence,
+            evidence: self.evidence.clone(),
+            source: self.source.clone(),
+            acquired: Timestamp { nanos: self.acquired.nanos },
+        }
+    }
+}
+
+impl Clone for Proposition {
+    fn clone(&self) -> Self {
+        Self {
+            subject: self.subject.clone(),
+            predicate: self.predicate.clone(),
+            value: self.value.clone(),
+            negated: self.negated,
+        }
+    }
+}
+
+impl Clone for Evidence {
+    fn clone(&self) -> Self {
+        Self {
+            content: self.content.clone(),
+            source: self.source.clone(),
+            strength: self.strength,
+        }
+    }
+}
+
+impl Clone for BeliefSource {
+    fn clone(&self) -> Self {
+        match self {
+            BeliefSource::Observation => BeliefSource::Observation,
+            BeliefSource::Inference { premises } => BeliefSource::Inference {
+                premises: premises.iter().map(|id| BeliefId { bytes: id.bytes }).collect()
+            },
+            BeliefSource::Testimony { source } => BeliefSource::Testimony { source: source.clone() },
+            BeliefSource::Assumption => BeliefSource::Assumption,
+            BeliefSource::Axiom => BeliefSource::Axiom,
+        }
+    }
+}
+
+impl Clone for BeliefId {
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+// ============================================================================
+// Goal Manager
+// ============================================================================
+
+pub struct GoalManager {
+    goals: HashMap<GoalId, Goal>,
+}
+
+impl GoalManager {
+    pub fn new() -> Self {
+        Self {
+            goals: HashMap::new(),
+        }
+    }
+
+    pub fn add(&mut self, goal: Goal) -> GoalId {
+        let id = goal.id.clone();
+        self.goals.insert(id.clone(), goal);
+        id
+    }
+
+    pub fn current(&self) -> Option<&Goal> {
+        self.goals.values()
+            .filter(|g| matches!(g.status, GoalStatus::Active))
+            .max_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap())
+    }
+}
+
+impl Clone for GoalId {
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+// ============================================================================
+// Action Library
+// ============================================================================
+
+pub struct ActionLibrary {
+    actions: HashMap<String, Action>,
+    success_counts: HashMap<String, (u32, u32)>,  // (successes, total)
+}
+
+impl ActionLibrary {
+    pub fn new() -> Self {
+        Self {
+            actions: HashMap::new(),
+            success_counts: HashMap::new(),
+        }
+    }
+
+    pub fn register(&mut self, action: Action) {
+        self.actions.insert(action.name.clone(), action);
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Action> {
+        self.actions.get(name)
+    }
+
+    pub fn best_for(&self, situation: &str) -> Option<Action> {
+        // Simple matching
+        self.actions.values()
+            .find(|a| a.name.contains(situation))
+            .cloned()
+    }
+
+    pub fn update_success_rate(&mut self, name: &str, succeeded: bool) {
+        let counts = self.success_counts.entry(name.to_string())
+            .or_insert((0, 0));
+
+        if succeeded {
+            counts.0 += 1;
+        }
+        counts.1 += 1;
+
+        // Update action success rate
+        if let Some(action) = self.actions.get_mut(name) {
+            action.success_rate = counts.0 as f32 / counts.1 as f32;
+        }
+    }
+}
+
+impl Clone for Action {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            params: self.params.clone(),
+            preconditions: vec![],  // Can't clone closures
+            effects: self.effects.clone(),
+            success_rate: self.success_rate,
+            expected_duration: self.expected_duration,
+            expected_cost: self.expected_cost.clone(),
+        }
+    }
+}
+
+impl Clone for Effect {
+    fn clone(&self) -> Self {
+        Self {
+            description: self.description.clone(),
+            probability: self.probability,
+        }
+    }
+}
+
+impl Clone for ResourceCost {
+    fn clone(&self) -> Self {
+        Self {
+            time: self.time,
+            compute: self.compute,
+            api_calls: self.api_calls,
+            custom: self.custom.clone(),
+        }
+    }
+}
+
+// ============================================================================
+// Planning Strategies
+// ============================================================================
+
+pub trait PlanningStrategy: Send + Sync {
+    fn name(&self) -> &str;
+    fn is_applicable(&self, goal: &Goal, beliefs: &BeliefManager) -> bool;
+    fn plan(&self, goal: &Goal, beliefs: &BeliefManager, actions: &ActionLibrary, config: &OmenConfig) -> Result<Plan, PlanningError>;
+}
+
+pub struct HTNPlanner;
+
+impl HTNPlanner {
+    pub fn new() -> Self { Self }
+}
+
+impl PlanningStrategy for HTNPlanner {
+    fn name(&self) -> &str { "HTN" }
+
+    fn is_applicable(&self, _goal: &Goal, _beliefs: &BeliefManager) -> bool {
+        true
+    }
+
+    fn plan(&self, goal: &Goal, _beliefs: &BeliefManager, actions: &ActionLibrary, _config: &OmenConfig) -> Result<Plan, PlanningError> {
+        // Simple HTN: create linear plan
+        let step = PlanStep {
+            id: StepId::new(),
+            action: Action::new(&format!("achieve_{}", goal.description)),
+            preconditions: vec![],
+            effects: vec![],
+            confidence: 0.8,
+            duration: Duration::seconds(60),
+            cost: ResourceCost::default(),
+            contingency: None,
+        };
+
+        Ok(Plan {
+            id: PlanId::new(),
+            goal: goal.id.clone(),
+            steps: vec![step],
+            success_probability: 0.8,
+            expected_cost: ResourceCost::default(),
+            assumptions: vec![],
+            risks: vec![],
+            strategy: "HTN".to_string(),
+        })
+    }
+}
+
+pub struct MeansEndsPlanner;
+
+impl MeansEndsPlanner {
+    pub fn new() -> Self { Self }
+}
+
+impl PlanningStrategy for MeansEndsPlanner {
+    fn name(&self) -> &str { "MeansEnds" }
+
+    fn is_applicable(&self, _goal: &Goal, _beliefs: &BeliefManager) -> bool {
+        true
+    }
+
+    fn plan(&self, goal: &Goal, _beliefs: &BeliefManager, _actions: &ActionLibrary, _config: &OmenConfig) -> Result<Plan, PlanningError> {
+        Ok(Plan {
+            id: PlanId::new(),
+            goal: goal.id.clone(),
+            steps: vec![],
+            success_probability: 0.7,
+            expected_cost: ResourceCost::default(),
+            assumptions: vec![],
+            risks: vec![],
+            strategy: "MeansEnds".to_string(),
+        })
+    }
+}
+
+impl Clone for StepId {
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+// ============================================================================
+// Causal Model
+// ============================================================================
+
+pub struct CausalModel {
+    variables: HashMap<String, CausalVariable>,
+    edges: Vec<(String, String)>,
+}
+
+pub struct CausalVariable {
+    pub name: String,
+    pub domain: Vec<Value>,
+}
+
+impl CausalModel {
+    pub fn new() -> Self {
+        Self {
+            variables: HashMap::new(),
+            edges: vec![],
+        }
+    }
+
+    pub fn add_variable(mut self, name: &str) -> Self {
+        self.variables.insert(name.to_string(), CausalVariable {
+            name: name.to_string(),
+            domain: vec![],
+        });
+        self
+    }
+
+    pub fn add_cause(mut self, from: &str, to: &str) -> Self {
+        self.edges.push((from.to_string(), to.to_string()));
+        self
+    }
+
+    pub fn intervene(&self, intervention: &HashMap<String, Value>) -> HashMap<String, f32> {
+        // Simple intervention logic
+        HashMap::new()
+    }
+
+    pub fn abduce(&self, effects: &HashMap<String, Value>) -> Vec<Explanation> {
+        vec![]
+    }
+}
+
+pub struct Explanation {
+    pub causes: HashMap<String, Value>,
+    pub likelihood: f32,
+}
+
+// ============================================================================
+// Learning
+// ============================================================================
+
+pub struct PlanLearner {
+    history: Vec<PlanRecord>,
+}
+
+pub struct PlanRecord {
+    pub plan: PlanSummary,
+    pub outcome: PlanOutcome,
+    pub timestamp: Timestamp,
+}
+
+pub struct PlanSummary {
+    pub goal: String,
+    pub steps: usize,
+    pub strategy: String,
+}
+
+pub enum PlanOutcome {
+    Success,
+    PartialSuccess { degree: f32 },
+    Failure { reason: String },
+}
+
+impl PlanLearner {
+    pub fn new() -> Self {
+        Self { history: vec![] }
+    }
+
+    pub fn record(&mut self, plan: &Plan, outcome: PlanOutcome) {
+        self.history.push(PlanRecord {
+            plan: PlanSummary {
+                goal: format!("{:?}", plan.goal),
+                steps: plan.steps.len(),
+                strategy: plan.strategy.clone(),
+            },
+            outcome,
+            timestamp: Timestamp::now(),
+        });
+    }
+}
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+pub struct OmenConfig {
+    /// Planning horizon
+    pub horizon: usize,
+
+    /// Uncertainty tolerance
+    pub uncertainty_tolerance: f32,
+
+    /// Belief revision threshold
+    pub revision_threshold: f32,
+
+    /// Maximum planning depth
+    pub max_depth: usize,
+
+    /// Planning timeout
+    pub timeout: Duration,
+}
+
+impl Default for OmenConfig {
+    fn default() -> Self {
+        Self {
+            horizon: 10,
+            uncertainty_tolerance: 0.3,
+            revision_threshold: 0.2,
+            max_depth: 20,
+            timeout: Duration::seconds(30),
+        }
+    }
+}
+
+// ============================================================================
+// Errors
+// ============================================================================
+
+pub enum PlanningError {
+    NoApplicableStrategy,
+    GoalUnachievable,
+    Timeout,
+    ResourceExceeded,
+    MaxDepthExceeded,
+}
+
+// ============================================================================
+// Utility Types
+// ============================================================================
+
+pub struct State {
+    pub variables: HashMap<String, Value>,
+}
+
+pub struct Value {
+    inner: Vec<u8>,
+}
+
+impl Value {
+    pub fn empty() -> Self { Self { inner: vec![] } }
+}
+
+impl Clone for Value {
+    fn clone(&self) -> Self {
+        Self { inner: self.inner.clone() }
+    }
+}
+
+pub struct Timestamp { nanos: u64 }
+
+impl Timestamp {
+    pub fn now() -> Self { Self { nanos: 0 } }
+}
+
+impl std::ops::Add<Duration> for Timestamp {
+    type Output = Self;
+    fn add(self, _d: Duration) -> Self { self }
+}
+
+pub struct Duration { nanos: u64 }
+
+impl Duration {
+    pub fn zero() -> Self { Self { nanos: 0 } }
+    pub fn seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    pub fn minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    pub fn hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+}
+
+impl Copy for Duration {}
+impl Clone for Duration {
+    fn clone(&self) -> Self { *self }
+}
+
+fn uuid_v7() -> [u8; 16] { [0u8; 16] }

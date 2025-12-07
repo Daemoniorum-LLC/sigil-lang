@@ -1,0 +1,134 @@
+// Comprehensive JIT Benchmark Suite
+// Tests features supported by the Cranelift JIT backend
+
+fn fib(n) {
+    if n <= 1 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn ackermann(m, n) {
+    if m == 0 {
+        return n + 1;
+    }
+    if n == 0 {
+        return ackermann(m - 1, 1);
+    }
+    return ackermann(m - 1, ackermann(m, n - 1));
+}
+
+fn tak(x, y, z) {
+    if y >= x {
+        return z;
+    }
+    return tak(tak(x - 1, y, z), tak(y - 1, z, x), tak(z - 1, x, y));
+}
+
+fn gcd(a, b) {
+    let temp = 0;
+    while b != 0 {
+        temp = b;
+        b = a - (a / b) * b;
+        a = temp;
+    }
+    return a;
+}
+
+fn fib_iterative(n) {
+    if n <= 1 {
+        return n;
+    }
+    let a = 0;
+    let b = 1;
+    let i = 2;
+    let temp = 0;
+    while i <= n {
+        temp = a + b;
+        a = b;
+        b = temp;
+        i = i + 1;
+    }
+    return b;
+}
+
+fn main() {
+    // Test 1: fib(30) recursive
+    let start1 = now();
+    let r1 = fib(30);
+    let t1 = now() - start1;
+    print(t1);
+    print(r1);
+
+    // Test 2: fib(35) recursive
+    let start2 = now();
+    let r2 = fib(35);
+    let t2 = now() - start2;
+    print(t2);
+    print(r2);
+
+    // Test 3: ackermann(3, 7)
+    let start3 = now();
+    let r3 = ackermann(3, 7);
+    let t3 = now() - start3;
+    print(t3);
+    print(r3);
+
+    // Test 4: tak(18, 12, 6)
+    let start4 = now();
+    let r4 = tak(18, 12, 6);
+    let t4 = now() - start4;
+    print(t4);
+    print(r4);
+
+    // Test 5: GCD x10k
+    let start5 = now();
+    let i5 = 0;
+    let g5 = 0;
+    while i5 < 10000 {
+        g5 = gcd(48 * i5 + 1, 18 * i5 + 1);
+        i5 = i5 + 1;
+    }
+    let t5 = now() - start5;
+    print(t5);
+
+    // Test 6: Iterative fib x10k
+    let start6 = now();
+    let i6 = 0;
+    let f6 = 0;
+    while i6 < 10000 {
+        f6 = fib_iterative(50);
+        i6 = i6 + 1;
+    }
+    let t6 = now() - start6;
+    print(t6);
+
+    // Test 7: Sum 1M integers
+    let start7 = now();
+    let i7 = 0;
+    let sum7 = 0;
+    while i7 < 1000000 {
+        sum7 = sum7 + i7;
+        i7 = i7 + 1;
+    }
+    let t7 = now() - start7;
+    print(t7);
+
+    // Test 8: Nested loops 1000x1000
+    let start8 = now();
+    let outer8 = 0;
+    let inner8 = 0;
+    let count8 = 0;
+    while outer8 < 1000 {
+        inner8 = 0;
+        while inner8 < 1000 {
+            count8 = count8 + 1;
+            inner8 = inner8 + 1;
+        }
+        outer8 = outer8 + 1;
+    }
+    let t8 = now() - start8;
+    print(t8);
+
+    return 0;
+}

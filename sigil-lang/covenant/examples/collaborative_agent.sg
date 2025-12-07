@@ -1,0 +1,180 @@
+// Example: Building a collaborative research agent with Covenant
+// Demonstrates how agents and humans work together with clear boundaries
+
+use covenant::{
+    Covenant, Pact, SharedGoal, Boundary, Mode,
+    Handoff, HandoffType, Trust, Satisfaction,
+};
+
+// Define the agent's collaboration infrastructure
+struct ResearchAgent {
+    covenant: Covenant,
+    task_queue: Vec<ResearchTask>,
+}
+
+struct ResearchTask {
+    topic: String,
+    depth: ResearchDepth,
+    deadline: Option<Timestamp>,
+}
+
+enum ResearchDepth {
+    Quick,
+    Standard,
+    Deep,
+}
+
+impl ResearchAgent {
+    fn new() -> Self {
+        // Establish covenant with human
+        let pact = Pact::new()
+            .with_goal(SharedGoal {
+                description: "Complete research projects effectively".to_string(),
+                human_role: "Provide direction, feedback, and final approval".to_string(),
+                agent_role: "Research, synthesize, and draft findings".to_string(),
+            })
+            .with_boundary(Boundary::autonomous("search_web"))
+            .with_boundary(Boundary::autonomous("read_papers"))
+            .with_boundary(Boundary::autonomous("take_notes"))
+            .with_boundary(Boundary::inform_after("draft_document"))
+            .with_boundary(Boundary::require_approval("send_email"))
+            .with_boundary(Boundary::require_approval("publish"))
+            .with_boundary(Boundary::never_allow("share_credentials"))
+            .build();
+
+        let covenant = Covenant::with_pact(pact);
+
+        Self {
+            covenant,
+            task_queue: vec![],
+        }
+    }
+
+    fn start_research(&mut self, topic: &str) {
+        // Check if we can proceed autonomously
+        if self.covenant.permits("start_research") {
+            self.covenant.inform(&format!("Starting research on: {}", topic));
+            self.do_research(topic);
+        }
+    }
+
+    fn do_research(&mut self, topic: &str) {
+        // Research activities - all autonomous
+        self.search_papers(topic);
+        self.read_sources();
+        self.synthesize_findings();
+
+        // Drafting - inform after
+        self.draft_summary();
+        self.covenant.inform("Research draft complete, ready for review");
+    }
+
+    fn search_papers(&self, topic: &str) {
+        // Autonomous - no approval needed
+        println!("Searching for papers on: {}", topic);
+    }
+
+    fn read_sources(&self) {
+        // Autonomous
+        println!("Reading and analyzing sources...");
+    }
+
+    fn synthesize_findings(&self) {
+        // Autonomous
+        println!("Synthesizing findings...");
+    }
+
+    fn draft_summary(&self) {
+        // Inform after
+        println!("Drafting summary document...");
+    }
+
+    fn needs_human_decision(&mut self) {
+        // Multiple valid approaches - need human input
+        self.covenant.handoff(HandoffType::DecisionNeeded {
+            context: "Found conflicting sources on key claim".to_string(),
+            options: vec![
+                "Trust peer-reviewed sources over preprints".to_string(),
+                "Include both perspectives with caveats".to_string(),
+                "Seek additional sources for clarification".to_string(),
+            ],
+            recommendation: Some("Include both perspectives with caveats".to_string()),
+        });
+    }
+
+    fn publish_findings(&mut self, venue: &str) {
+        // Requires approval - critical action
+        match self.covenant.check_action("publish") {
+            ActionDecision::NeedsApproval => {
+                let request_id = self.covenant.request_approval(
+                    "publish",
+                    &format!("Request to publish findings to {}", venue),
+                );
+                println!("Awaiting approval for publication (request: {:?})", request_id);
+            }
+            ActionDecision::Proceed => {
+                // Already approved or trust level allows
+                self.do_publish(venue);
+            }
+            ActionDecision::Deny { reason } => {
+                println!("Cannot publish: {}", reason);
+            }
+        }
+    }
+
+    fn do_publish(&self, venue: &str) {
+        println!("Publishing to: {}", venue);
+    }
+
+    fn complete_task(&mut self, task: &str, quality: f32) {
+        // Record success for trust building
+        self.covenant.record_success(task, Satisfaction::Satisfied);
+        println!("Trust score: {:.2}", self.covenant.trust_score());
+    }
+
+    fn adapt_to_mode(&mut self) {
+        // Mode affects behavior
+        match self.covenant.current_mode() {
+            Mode::Autonomous => {
+                // Maximum independence, minimal check-ins
+                println!("Operating autonomously");
+            }
+            Mode::Collaborative => {
+                // Frequent sync, shared work
+                println!("Collaborating closely with human");
+            }
+            Mode::Supervised => {
+                // Propose, wait for approval
+                println!("Awaiting supervision for each step");
+            }
+            Mode::Guided => {
+                // Follow explicit instructions
+                println!("Following human guidance");
+            }
+            Mode::Paused => {
+                // Halt operations
+                println!("Paused - awaiting resumption");
+            }
+        }
+    }
+}
+
+// Example usage
+fn main() {
+    let mut agent = ResearchAgent::new();
+
+    // Start in collaborative mode
+    agent.covenant.set_mode(Mode::Collaborative);
+
+    // Begin research
+    agent.start_research("AI safety best practices");
+
+    // Encounter a decision point
+    agent.needs_human_decision();
+
+    // After human provides direction...
+    agent.complete_task("research_synthesis", 0.9);
+
+    // As trust builds, may request publication
+    agent.publish_findings("Internal Report");
+}

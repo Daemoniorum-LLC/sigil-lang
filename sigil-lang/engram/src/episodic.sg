@@ -1,0 +1,520 @@
+// Episodic Memory Module
+// Experience memory - what happened over time
+
+module engram::episodic
+
+use engram::types::*
+use engram::config::EpisodicConfig
+
+// ============================================================================
+// Episodic Memory
+// ============================================================================
+
+/// Episodic Memory - the agent's autobiographical record
+///
+/// Stores experiences as episodes - time-bounded events with context,
+/// participants, and outcomes. Episodes decay unless reinforced and
+/// can consolidate into semantic facts or procedural skills.
+pub struct EpisodicMemory {
+    /// Episodes indexed by time
+    episodes: Vec<Episode>,
+
+    /// Configuration
+    config: EpisodicConfig,
+
+    /// Last decay application
+    last_decay: Instant,
+}
+
+impl EpisodicMemory {
+    // ========================================================================
+    // Construction
+    // ========================================================================
+
+    pub fn new(config: EpisodicConfig) -> EngramResult<Self>! {
+        Ok(Self {
+            episodes: vec![],
+            config,
+            last_decay: Instant::now(),
+        })
+    }
+
+    // ========================================================================
+    // Core Operations
+    // ========================================================================
+
+    /// Record a new episode
+    pub fn record(episode: Episode) -> EngramResult<EpisodeId>! {
+        let id = episode.id.clone()
+
+        // Compute embedding for similarity search
+        let enriched = self.enrich_episode(episode)
+
+        self.episodes.push(enriched)
+
+        // Sort by time
+        self.episodes.sort_by(|a, b| b.started_at.cmp(&a.started_at))
+
+        Ok(id)
+    }
+
+    /// Recall episodes similar to the given context
+    pub fn recall_similar(context: &Context, limit: usize) -> Vec<Episode> {
+        // Simple keyword-based similarity for now
+        // In production, use embedding similarity
+        let context_text = context.to_string().to_lowercase()
+
+        let mut scored: Vec<_> = self.episodes.iter()
+            .filter(|e| e.strength > 0.1)
+            .map(|e| {
+                let score = self.compute_similarity(&context_text, e)
+                (e, score)
+            })
+            .filter(|(_, score)| *score > 0.1)
+            .collect()
+
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap())
+
+        scored.into_iter()
+            .take(limit)
+            .map(|(e, _)| {
+                // Update access tracking
+                // Note: In real implementation, need mutable access
+                e.clone()
+            })
+            .collect()
+    }
+
+    /// Recall episodes at a specific time
+    pub fn recall_at(time: Instant, window: Duration) -> Vec<Episode> {
+        let start = time - window
+        let end = time + window
+
+        self.episodes.iter()
+            .filter(|e| e.started_at >= start && e.started_at <= end)
+            .filter(|e| e.strength > 0.1)
+            .cloned()
+            .collect()
+    }
+
+    /// Recall episodes before a time point
+    pub fn recall_before(time: Instant, limit: usize) -> Vec<Episode> {
+        self.episodes.iter()
+            .filter(|e| e.started_at < time)
+            .filter(|e| e.strength > 0.1)
+            .take(limit)
+            .cloned()
+            .collect()
+    }
+
+    /// Get a specific episode
+    pub fn get(id: EpisodeId) -> Option<&Episode> {
+        self.episodes.iter().find(|e| e.id == id)
+    }
+
+    // ========================================================================
+    // Decay and Consolidation
+    // ========================================================================
+
+    /// Apply decay to all episodes
+    pub fn decay() {
+        let now = Instant::now()
+        let hours_since_decay = (now - self.last_decay).as_secs_f64() / 3600.0
+
+        for episode in &mut self.episodes {
+            let hours_since_access = (now - episode.last_accessed).as_secs_f64() / 3600.0
+
+            // Apply decay function
+            episode.strength = self.config.decay_function.apply(
+                episode.strength,
+                hours_since_access
+            )
+
+            // Significant episodes decay slower
+            if episode.significance > 0.7 {
+                episode.strength = episode.strength.max(0.3)
+            }
+        }
+
+        self.last_decay = now
+    }
+
+    /// Consolidate eligible episodes
+    pub fn consolidate() -> EpisodicConsolidationReport {
+        let mut report = EpisodicConsolidationReport {
+            consolidated_count: 0,
+            skills_learned: vec![],
+            facts_extracted: vec![],
+        }
+
+        // Find consolidation candidates
+        let candidates: Vec<_> = self.episodes.iter()
+            .filter(|e| !e.consolidated)
+            .filter(|e| e.strength < self.config.consolidation_threshold)
+            .filter(|e| e.significance > 0.3)
+            .cloned()
+            .collect()
+
+        // Group by similarity
+        let clusters = self.cluster_similar(&candidates, threshold: 0.7)
+
+        for cluster in clusters {
+            if cluster.len() >= 3 {
+                // Extract patterns for skills and facts
+                // This would integrate with procedural and semantic memory
+                report.consolidated_count += cluster.len()
+            }
+        }
+
+        // Mark as consolidated
+        for episode in &mut self.episodes {
+            if candidates.iter().any(|c| c.id == episode.id) {
+                episode.consolidated = true
+            }
+        }
+
+        report
+    }
+
+    /// Archive episodes below threshold
+    pub fn archive(predicate: fn(&Memory) -> bool) -> usize {
+        // In real implementation, move to cold storage
+        let initial_count = self.episodes.len()
+
+        self.episodes.retain(|e| {
+            let memory = Memory {
+                id: e.id.clone().into(),
+                content: e.summarize().into(),
+                relevance: e.significance,
+                confidence: e.outcome.confidence(),
+                epistemic: Epistemic::Observed {
+                    observer: "self".to_string(),
+                    timestamp: e.started_at,
+                },
+                source: MemorySource::Episodic,
+                timestamp: e.started_at,
+                access_path: None,
+            }
+            !predicate(&memory)
+        })
+
+        initial_count - self.episodes.len()
+    }
+
+    // ========================================================================
+    // Usage Information
+    // ========================================================================
+
+    pub fn usage() -> MemorySystemUsage {
+        MemorySystemUsage {
+            item_count: self.episodes.len(),
+            bytes_used: self.episodes.iter()
+                .map(|e| std::mem::size_of::<Episode>() + e.events.len() * 100)
+                .sum(),
+            capacity: Some(self.config.max_active_episodes),
+        }
+    }
+
+    // ========================================================================
+    // Internal Helpers
+    // ========================================================================
+
+    fn enrich_episode(episode: Episode) -> Episode {
+        let mut enriched = episode
+
+        // Compute significance if not set
+        if enriched.significance == 0.0 {
+            enriched.significance = self.compute_significance(&enriched)
+        }
+
+        // Initialize strength
+        enriched.strength = 1.0
+        enriched.access_count = 0
+        enriched.last_accessed = Instant::now()
+        enriched.consolidated = false
+
+        enriched
+    }
+
+    fn compute_similarity(context: &str, episode: &Episode) -> f64 {
+        let episode_text = episode.summarize().to_lowercase()
+
+        // Simple word overlap score
+        let context_words: HashSet<_> = context.split_whitespace().collect()
+        let episode_words: HashSet<_> = episode_text.split_whitespace().collect()
+
+        let intersection = context_words.intersection(&episode_words).count()
+        let union = context_words.union(&episode_words).count()
+
+        if union == 0 { 0.0 } else { intersection as f64 / union as f64 }
+    }
+
+    fn compute_significance(episode: &Episode) -> f64 {
+        let mut score = 0.0
+
+        // Outcome contributes to significance
+        match &episode.outcome {
+            Outcome::Success { goal_alignment, .. } => {
+                score += 0.3 + goal_alignment * 0.2
+            },
+            Outcome::Failure { .. } => {
+                score += 0.4  // Failures are significant to learn from
+            },
+            Outcome::Partial { .. } => {
+                score += 0.2
+            },
+            _ => {}
+        }
+
+        // More events = more significant
+        score += (episode.events.len() as f64 / 20.0).min(0.3)
+
+        // Valence extremes are significant
+        score += episode.valence.abs() * 0.2
+
+        score.min(1.0)
+    }
+
+    fn cluster_similar(episodes: &[Episode], threshold: f64) -> Vec<Vec<Episode>> {
+        // Simple single-linkage clustering
+        let mut clusters: Vec<Vec<Episode>> = vec![]
+
+        for episode in episodes {
+            let mut found_cluster = false
+
+            for cluster in &mut clusters {
+                let representative = &cluster[0]
+                let similarity = self.compute_similarity(
+                    &representative.summarize(),
+                    episode
+                )
+
+                if similarity >= threshold {
+                    cluster.push(episode.clone())
+                    found_cluster = true
+                    break
+                }
+            }
+
+            if !found_cluster {
+                clusters.push(vec![episode.clone()])
+            }
+        }
+
+        clusters
+    }
+}
+
+// ============================================================================
+// Episode Structure
+// ============================================================================
+
+/// An episode - a bounded experience in time
+pub struct Episode {
+    pub id: EpisodeId,
+
+    // Temporal bounds
+    pub started_at: Instant,
+    pub ended_at: Option<Instant>,
+
+    // Context
+    pub context: Context,
+
+    // Participants
+    pub participants: Vec<Participant>,
+
+    // Events
+    pub events: Vec<Event>,
+
+    // Outcome
+    pub outcome: Outcome,
+
+    // Evaluation
+    pub valence: f64,
+    pub significance: f64,
+    pub surprise: f64,
+
+    // Lifecycle
+    pub strength: f64,
+    pub access_count: u32,
+    pub last_accessed: Instant,
+    pub consolidated: bool,
+
+    // Links
+    pub caused_by: Vec<EpisodeId>,
+    pub leads_to: Vec<EpisodeId>,
+}
+
+impl Episode {
+    pub fn new(context: Context) -> Self {
+        Self {
+            id: EpisodeId::new().unwrap(),
+            started_at: Instant::now(),
+            ended_at: None,
+            context,
+            participants: vec![],
+            events: vec![],
+            outcome: Outcome::Ongoing,
+            valence: 0.0,
+            significance: 0.0,
+            surprise: 0.0,
+            strength: 1.0,
+            access_count: 0,
+            last_accessed: Instant::now(),
+            consolidated: false,
+            caused_by: vec![],
+            leads_to: vec![],
+        }
+    }
+
+    pub fn duration() -> Option<Duration> {
+        self.ended_at.map(|end| end - self.started_at)
+    }
+
+    pub fn is_ongoing() -> bool {
+        self.ended_at.is_none()
+    }
+
+    pub fn summarize() -> String {
+        let outcome_str = self.outcome.summarize()
+        let event_count = self.events.len()
+
+        format!(
+            "Episode at {}: {} events, {}",
+            self.started_at,
+            event_count,
+            outcome_str
+        )
+    }
+}
+
+/// An event within an episode
+pub struct Event {
+    pub timestamp: Instant,
+    pub sequence: u32,
+    pub event_type: EventType,
+    pub content: Value,
+    pub actor: Option<String>,
+    pub duration: Option<Duration>,
+    pub success: Option<bool>,
+}
+
+impl Event {
+    pub fn user_message(content: &str) -> Self {
+        Self {
+            timestamp: Instant::now(),
+            sequence: 0,
+            event_type: EventType::UserMessage,
+            content: Value::String(content.to_string()),
+            actor: Some("user".to_string()),
+            duration: None,
+            success: None,
+        }
+    }
+
+    pub fn agent_response(content: &str) -> Self {
+        Self {
+            timestamp: Instant::now(),
+            sequence: 0,
+            event_type: EventType::AgentResponse,
+            content: Value::String(content.to_string()),
+            actor: Some("agent".to_string()),
+            duration: None,
+            success: None,
+        }
+    }
+
+    pub fn tool_call(tool: &str, args: Value) -> Self {
+        Self {
+            timestamp: Instant::now(),
+            sequence: 0,
+            event_type: EventType::ToolCall,
+            content: json!({ "tool": tool, "args": args }),
+            actor: Some("agent".to_string()),
+            duration: None,
+            success: None,
+        }
+    }
+
+    pub fn error(error: &str, recoverable: bool) -> Self {
+        Self {
+            timestamp: Instant::now(),
+            sequence: 0,
+            event_type: EventType::Error,
+            content: json!({ "error": error, "recoverable": recoverable }),
+            actor: None,
+            duration: None,
+            success: Some(false),
+        }
+    }
+}
+
+pub enum EventType {
+    UserMessage,
+    AgentResponse,
+    SystemMessage,
+    ToolCall,
+    ToolResult,
+    StateChange,
+    Decision,
+    Error,
+    Custom(String),
+}
+
+/// A participant in an episode
+pub struct Participant {
+    pub id: String,
+    pub role: ParticipantRole,
+    pub name: Option<String>,
+}
+
+pub enum ParticipantRole {
+    Self_,
+    User,
+    OtherAgent,
+    System,
+    Tool,
+}
+
+/// Context snapshot for an episode
+pub struct Context {
+    pub goal: Option<String>,
+    pub task: Option<String>,
+    pub environment: HashMap<String, Value>,
+}
+
+impl Context {
+    pub fn new() -> Self {
+        Self {
+            goal: None,
+            task: None,
+            environment: HashMap::new(),
+        }
+    }
+
+    pub fn with_goal(goal: &str) -> Self {
+        Self {
+            goal: Some(goal.to_string()),
+            task: None,
+            environment: HashMap::new(),
+        }
+    }
+
+    pub fn to_string() -> String {
+        let mut parts = vec![]
+        if let Some(goal) = &self.goal {
+            parts.push(format!("Goal: {}", goal))
+        }
+        if let Some(task) = &self.task {
+            parts.push(format!("Task: {}", task))
+        }
+        parts.join(", ")
+    }
+}
+
+/// Consolidation report for episodic memory
+pub struct EpisodicConsolidationReport {
+    pub consolidated_count: usize,
+    pub skills_learned: Vec<SkillId>,
+    pub facts_extracted: Vec<EngramId>,
+}

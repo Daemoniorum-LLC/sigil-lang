@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sigil WASM Demo</title>
+    <style>
+        :root {
+            --bg-dark: #0d1117;
+            --bg-card: #161b22;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent: #58a6ff;
+            --accent-glow: rgba(88, 166, 255, 0.3);
+            --success: #3fb950;
+            --warning: #d29922;
+            --border: #30363d;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2rem;
+            background: linear-gradient(135deg, var(--bg-card) 0%, #1a1f29 100%);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, var(--accent), #a371f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            background: var(--accent-glow);
+            color: var(--accent);
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin-top: 1rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .card h3 {
+            color: var(--accent);
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .card h3::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: var(--accent);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--accent);
+        }
+
+        .code-block {
+            background: #0d1117;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9rem;
+            overflow-x: auto;
+            margin: 0.75rem 0;
+        }
+
+        .morpheme { color: #ff7b72; }
+        .keyword { color: #ff7b72; }
+        .function { color: #d2a8ff; }
+        .string { color: #a5d6ff; }
+        .number { color: #79c0ff; }
+        .comment { color: #8b949e; }
+        .operator { color: #ff7b72; }
+        .variable { color: #ffa657; }
+
+        #output {
+            background: #0d1117;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9rem;
+            min-height: 200px;
+            white-space: pre-wrap;
+        }
+
+        .output-line {
+            padding: 0.25rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .output-line:last-child {
+            border-bottom: none;
+        }
+
+        .output-value {
+            color: var(--success);
+        }
+
+        .output-label {
+            color: var(--text-secondary);
+            margin-right: 0.5rem;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--warning);
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-dot.ready {
+            background: var(--success);
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .run-btn {
+            background: linear-gradient(135deg, var(--accent), #a371f7);
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            font-size: 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 1rem;
+        }
+
+        .run-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px var(--accent-glow);
+        }
+
+        .run-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+            margin-top: 2rem;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .feature-list {
+            list-style: none;
+            margin-top: 0.5rem;
+        }
+
+        .feature-list li {
+            padding: 0.25rem 0;
+            color: var(--text-secondary);
+        }
+
+        .feature-list li::before {
+            content: '>';
+            color: var(--success);
+            margin-right: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Sigil WASM Runtime</h1>
+            <p class="subtitle">AI-Native Web Development with Morpheme Operators</p>
+            <span class="badge">WebAssembly Powered</span>
+        </header>
+
+        <div class="grid">
+            <div class="card">
+                <h3>Morpheme Operators</h3>
+                <div class="code-block">
+<span class="keyword">let</span> <span class="variable">data</span> = [<span class="number">10</span>, <span class="number">-5</span>, <span class="number">25</span>, <span class="number">-3</span>, <span class="number">18</span>];
+
+<span class="comment">// Filter, transform, sort</span>
+<span class="keyword">let</span> <span class="variable">result</span> = <span class="variable">data</span>
+    |<span class="morpheme">φ</span>{<span class="variable">x</span> => <span class="variable">x</span> > <span class="number">0</span>}
+    |<span class="morpheme">τ</span>{<span class="variable">n</span> => <span class="variable">n</span> * <span class="number">2</span>}
+    |<span class="morpheme">σ</span>;
+
+<span class="keyword">let</span> <span class="variable">sum</span> = <span class="variable">data</span>|<span class="morpheme">ρ</span>+;</div>
+                <ul class="feature-list">
+                    <li>τ - Transform (map)</li>
+                    <li>φ - Filter</li>
+                    <li>σ - Sort</li>
+                    <li>ρ - Reduce (fold)</li>
+                    <li>α/Ω - First/Last</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Module Paths</h3>
+                <div class="code-block">
+<span class="comment">// Signal-based reactivity</span>
+<span class="keyword">let</span> <span class="variable">count</span> = <span class="function">signal::create</span>(<span class="number">0</span>);
+<span class="function">signal::set</span>(<span class="variable">count</span>, <span class="number">42</span>);
+
+<span class="comment">// Virtual DOM</span>
+<span class="keyword">let</span> <span class="variable">node</span> = <span class="function">vdom::create_vnode</span>(<span class="string">"div"</span>);
+<span class="function">vdom::set_vnode_str_prop</span>(
+    <span class="variable">node</span>, <span class="string">"class"</span>, <span class="string">"app"</span>
+);</div>
+                <ul class="feature-list">
+                    <li>signal:: - Reactive state</li>
+                    <li>vdom:: - Virtual DOM</li>
+                    <li>async:: - Promises</li>
+                    <li>dom:: - Direct DOM</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Named Closures</h3>
+                <div class="code-block">
+<span class="comment">// Named parameter syntax</span>
+<span class="keyword">let</span> <span class="variable">squared</span> = <span class="variable">nums</span>|<span class="morpheme">τ</span>{<span class="variable">n</span> => <span class="variable">n</span> * <span class="variable">n</span>};
+
+<span class="comment">// Implicit 'it' parameter</span>
+<span class="keyword">let</span> <span class="variable">doubled</span> = <span class="variable">nums</span>|<span class="morpheme">τ</span>{<span class="variable">it</span> * <span class="number">2</span>};
+
+<span class="comment">// Reduce shortcuts</span>
+<span class="keyword">let</span> <span class="variable">sum</span> = <span class="variable">nums</span>|<span class="morpheme">ρ</span>+;
+<span class="keyword">let</span> <span class="variable">product</span> = <span class="variable">nums</span>|<span class="morpheme">ρ</span>*;</div>
+                <ul class="feature-list">
+                    <li>{x => x * 2} - Named param</li>
+                    <li>{it * 2} - Implicit it</li>
+                    <li>ρ+ - Sum shorthand</li>
+                    <li>ρ* - Product shorthand</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Recursion</h3>
+                <div class="code-block">
+<span class="keyword">pub fn</span> <span class="function">fibonacci</span>(<span class="variable">n</span>: <span class="keyword">i64</span>) -> <span class="keyword">i64</span> {
+    <span class="keyword">if</span> <span class="variable">n</span> <= <span class="number">1</span> {
+        <span class="variable">n</span>
+    } <span class="keyword">else</span> {
+        <span class="function">fibonacci</span>(<span class="variable">n</span> - <span class="number">1</span>) +
+        <span class="function">fibonacci</span>(<span class="variable">n</span> - <span class="number">2</span>)
+    }
+}</div>
+                <ul class="feature-list">
+                    <li>Full recursion support</li>
+                    <li>Pattern matching</li>
+                    <li>Tail call optimization</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 2rem;">
+            <h3>Live Output</h3>
+            <div class="status">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Loading WASM...</span>
+            </div>
+            <div id="output">Initializing Sigil runtime...</div>
+            <button class="run-btn" id="runBtn" disabled>Run Demo</button>
+        </div>
+
+        <footer>
+            <p>Sigil WASM Backend &bull; 4.4KB compiled &bull; <a href="https://github.com/Daemoniorum-LLC/sigil-lang">GitHub</a></p>
+            <p style="margin-top: 0.5rem; font-size: 0.9rem;">Powered by Daemoniorum LLC</p>
+        </footer>
+    </div>
+
+    <script type="module">
+        import { initSigil } from './runtime/web/sigil_runtime.js';
+
+        const output = document.getElementById('output');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const runBtn = document.getElementById('runBtn');
+
+        let sigil = null;
+        let outputLines = [];
+
+        function log(label, value) {
+            outputLines.push(`<div class="output-line"><span class="output-label">${label}:</span><span class="output-value">${value}</span></div>`);
+            output.innerHTML = outputLines.join('');
+        }
+
+        async function init() {
+            try {
+                sigil = await initSigil('./demo.wasm');
+                statusDot.classList.add('ready');
+                statusText.textContent = 'WASM Ready (4.4KB)';
+                runBtn.disabled = false;
+                output.innerHTML = '<span style="color: #3fb950;">WASM module loaded successfully!</span>\n\nClick "Run Demo" to execute.';
+            } catch (err) {
+                statusText.textContent = 'Failed to load WASM';
+                output.innerHTML = `<span style="color: #f85149;">Error: ${err.message}</span>`;
+            }
+        }
+
+        runBtn.addEventListener('click', () => {
+            outputLines = [];
+            output.innerHTML = '<span style="color: #8b949e;">Running Sigil demo...</span>\n\n';
+
+            // Override console.log to capture output
+            const originalLog = console.log;
+            let callCount = 0;
+            const labels = [
+                'Start marker',
+                'Min doubled positive',
+                'Max doubled positive',
+                'Sum of doubled positives',
+                'Fibonacci(0)',
+                'Fibonacci(9)',
+                'Factorial(5)',
+                'First prime',
+                'Last prime',
+                'Signal ID',
+                'VDOM container ID',
+                'End marker'
+            ];
+
+            console.log = (msg) => {
+                if (typeof msg === 'bigint' || typeof msg === 'number') {
+                    log(labels[callCount] || `Output ${callCount}`, msg.toString());
+                    callCount++;
+                } else {
+                    originalLog(msg);
+                }
+            };
+
+            try {
+                sigil.main();
+                console.log = originalLog;
+                outputLines.push('<div class="output-line" style="margin-top: 1rem; color: #3fb950;">Demo completed successfully!</div>');
+                output.innerHTML = outputLines.join('');
+            } catch (err) {
+                console.log = originalLog;
+                output.innerHTML += `<span style="color: #f85149;">Error: ${err.message}</span>`;
+            }
+        });
+
+        init();
+    </script>
+</body>
+</html>

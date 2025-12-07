@@ -1,0 +1,552 @@
+// Instant Memory Module
+// Working memory for the current context
+
+module engram::instant
+
+use engram::types::*
+use engram::config::InstantConfig
+
+// ============================================================================
+// Instant Memory
+// ============================================================================
+
+/// Instant Memory - the agent's working memory
+///
+/// Manages what the agent is currently "thinking about" - the active
+/// context window. Bounded by token capacity, with priority-based
+/// management and decay over time.
+pub struct InstantMemory {
+    /// Maximum token capacity
+    capacity: TokenCount,
+
+    /// Current items in working memory
+    items: Vec<InstantItem>,
+
+    /// Current token usage
+    token_count: TokenCount,
+
+    /// Decay rate per tick
+    decay_rate: f64,
+
+    /// Eviction threshold
+    eviction_threshold: f64,
+
+    /// Compression strategy
+    compression_strategy: CompressionStrategy,
+
+    /// Configuration
+    config: InstantConfig,
+}
+
+impl InstantMemory {
+    // ========================================================================
+    // Construction
+    // ========================================================================
+
+    /// Create new instant memory with configuration
+    pub fn new(config: InstantConfig) -> EngramResult<Self>! {
+        Ok(Self {
+            capacity: config.capacity,
+            items: vec![],
+            token_count: TokenCount::zero(),
+            decay_rate: config.decay_rate,
+            eviction_threshold: config.eviction_threshold,
+            compression_strategy: config.compression_strategy.clone(),
+            config,
+        })
+    }
+
+    // ========================================================================
+    // Core Operations
+    // ========================================================================
+
+    /// Add an item to working memory
+    ///
+    /// If adding would exceed capacity, lower-priority items are
+    /// evicted or compressed based on the compression strategy.
+    pub fn attend(content: Content, relevance: f64) -> EngramResult<ItemId>! {
+        let tokens = self.count_tokens(&content)
+
+        // Check if content is too large for capacity
+        if tokens.0 > self.capacity.0 {
+            return Err(EngramError::TokenBudgetExceeded {
+                needed: tokens,
+                available: self.capacity,
+            })
+        }
+
+        // Make room if needed
+        while self.token_count.0 + tokens.0 > self.capacity.0 {
+            self.evict_or_compress()?
+        }
+
+        let id = ItemId::new()!
+        let item = InstantItem {
+            id: id.clone(),
+            content,
+            tokens,
+            base_relevance: relevance,
+            current_priority: relevance,
+            added_at: Instant::now(),
+            last_refreshed: Instant::now(),
+            source: MemorySource::Instant,
+            source_id: None,
+        }
+
+        self.items.push(item)
+        self.token_count = self.token_count + tokens
+
+        // Re-sort by priority
+        self.sort_by_priority()
+
+        Ok(id)
+    }
+
+    /// Refresh an item's priority (it's still relevant)
+    pub fn refresh(id: ItemId, boost: f64) -> EngramResult<()>! {
+        let item = self.items.iter_mut()
+            .find(|i| i.id == id)
+            .ok_or(EngramError::NotFound {
+                id: id.to_string(),
+                memory_type: "instant".to_string(),
+            })?
+
+        item.current_priority = (item.current_priority + boost).min(1.0)
+        item.last_refreshed = Instant::now()
+
+        self.sort_by_priority()
+        Ok(())
+    }
+
+    /// Dismiss (remove) an item from working memory
+    pub fn dismiss(id: ItemId) -> EngramResult<()>! {
+        let idx = self.items.iter()
+            .position(|i| i.id == id)
+            .ok_or(EngramError::NotFound {
+                id: id.to_string(),
+                memory_type: "instant".to_string(),
+            })?
+
+        let item = self.items.remove(idx)
+        self.token_count = self.token_count - item.tokens
+
+        Ok(())
+    }
+
+    /// Get all active items, sorted by priority
+    pub fn active() -> Vec<&InstantItem> {
+        self.items.iter().collect()
+    }
+
+    /// Get a specific item by ID
+    pub fn get(id: ItemId) -> Option<&InstantItem> {
+        self.items.iter().find(|i| i.id == id)
+    }
+
+    /// Search for relevant items
+    pub fn search(query: &Query) -> Vec<Memory> {
+        let query_text = query.text()
+
+        self.items.iter()
+            .filter(|item| {
+                // Simple relevance check - in production, use embeddings
+                let content_str = item.content.to_string().to_lowercase()
+                let query_lower = query_text.to_lowercase()
+
+                query_lower.split_whitespace()
+                    .any(|word| content_str.contains(word))
+            })
+            .map(|item| Memory {
+                id: item.id.clone().into(),
+                content: item.content.to_value(),
+                relevance: item.current_priority,
+                confidence: 1.0,  // Instant memory is certain
+                epistemic: Epistemic::Observed {
+                    observer: "self".to_string(),
+                    timestamp: item.added_at,
+                },
+                source: MemorySource::Instant,
+                timestamp: item.added_at,
+                access_path: None,
+            })
+            .collect()
+    }
+
+    /// Apply decay tick
+    ///
+    /// Call this periodically to decay item priorities and evict
+    /// items that fall below the eviction threshold.
+    pub fn tick() {
+        let now = Instant::now()
+
+        for item in &mut self.items {
+            // Calculate decay based on time since last refresh
+            let elapsed = (now - item.last_refreshed).as_secs_f64() / 3600.0  // hours
+            let decay = (-self.decay_rate * elapsed).exp()
+            item.current_priority *= decay
+        }
+
+        // Evict items below threshold
+        let threshold = self.eviction_threshold
+        let mut to_remove = vec![]
+
+        for (idx, item) in self.items.iter().enumerate() {
+            if item.current_priority < threshold {
+                to_remove.push(idx)
+            }
+        }
+
+        // Remove in reverse order to preserve indices
+        for idx in to_remove.into_iter().rev() {
+            let item = self.items.remove(idx)
+            self.token_count = self.token_count - item.tokens
+        }
+
+        self.sort_by_priority()
+    }
+
+    /// Clear all items
+    pub fn clear() {
+        self.items.clear()
+        self.token_count = TokenCount::zero()
+    }
+
+    // ========================================================================
+    // Export
+    // ========================================================================
+
+    /// Export for LLM consumption
+    pub fn export(format: ExportFormat, budget: Option<TokenCount>) -> String {
+        let budget = budget.unwrap_or(self.capacity)
+        let mut used = TokenCount::zero()
+        let mut exported = vec![]
+
+        for item in &self.items {
+            if used.0 + item.tokens.0 > budget.0 {
+                break
+            }
+            exported.push(item)
+            used = used + item.tokens
+        }
+
+        match format {
+            ExportFormat::Plain => {
+                exported.iter()
+                    .map(|i| i.content.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+            },
+            ExportFormat::XML => {
+                exported.iter()
+                    .map(|i| format!(
+                        "<item priority=\"{:.2}\">\n{}\n</item>",
+                        i.current_priority,
+                        i.content.to_string()
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            },
+            ExportFormat::Markdown => {
+                exported.iter()
+                    .map(|i| format!(
+                        "**[{:.0}%]** {}",
+                        i.current_priority * 100.0,
+                        i.content.to_string()
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+            },
+            ExportFormat::JSON => {
+                let items: Vec<_> = exported.iter()
+                    .map(|i| json!({
+                        "content": i.content.to_string(),
+                        "priority": i.current_priority,
+                        "tokens": i.tokens.0,
+                    }))
+                    .collect()
+
+                serde_json::to_string_pretty(&items).unwrap_or_default()
+            },
+        }
+    }
+
+    // ========================================================================
+    // Usage Information
+    // ========================================================================
+
+    /// Get current token usage
+    pub fn token_usage() -> TokenUsage {
+        TokenUsage {
+            used: self.token_count,
+            capacity: self.capacity,
+            utilization: self.token_count.0 as f64 / self.capacity.0 as f64,
+        }
+    }
+
+    /// Get memory system usage
+    pub fn usage() -> MemorySystemUsage {
+        MemorySystemUsage {
+            item_count: self.items.len(),
+            bytes_used: self.items.iter()
+                .map(|i| i.estimated_size())
+                .sum(),
+            capacity: Some(self.capacity.0),
+        }
+    }
+
+    // ========================================================================
+    // Internal Helpers
+    // ========================================================================
+
+    fn count_tokens(content: &Content) -> TokenCount {
+        match &self.config.token_counter {
+            TokenCounterType::Approximate => {
+                TokenCount::from_text(&content.to_string())
+            },
+            TokenCounterType::Tiktoken { model } => {
+                // Use tiktoken for accurate counting
+                tiktoken::count(&content.to_string(), model)
+                    .map(|n| TokenCount(n))
+                    .unwrap_or_else(|| TokenCount::from_text(&content.to_string()))
+            },
+            TokenCounterType::Custom { counter } => {
+                TokenCount(counter(&content.to_string()))
+            },
+        }
+    }
+
+    fn sort_by_priority() {
+        self.items.sort_by(|a, b| {
+            b.current_priority.partial_cmp(&a.current_priority).unwrap()
+        })
+    }
+
+    fn evict_or_compress() -> EngramResult<()>! {
+        if self.items.is_empty() {
+            return Err(EngramError::Internal {
+                message: "Cannot evict from empty instant memory".to_string(),
+            })
+        }
+
+        match &self.compression_strategy {
+            CompressionStrategy::EvictLowest => {
+                // Remove lowest priority item
+                let item = self.items.pop().unwrap()
+                self.token_count = self.token_count - item.tokens
+            },
+
+            CompressionStrategy::Compress { target_ratio } => {
+                // Compress lowest priority item
+                let idx = self.items.len() - 1
+                let item = &mut self.items[idx]
+
+                let new_content = self.compress_content(&item.content, *target_ratio)
+                let new_tokens = self.count_tokens(&new_content)
+
+                self.token_count = self.token_count - item.tokens + new_tokens
+                item.content = new_content
+                item.tokens = new_tokens
+            },
+
+            CompressionStrategy::SummarizeBatch { batch_size, target_tokens } => {
+                // Summarize a batch of low-priority items
+                let to_summarize: Vec<_> = self.items
+                    .drain((self.items.len().saturating_sub(*batch_size))..)
+                    .collect()
+
+                let freed_tokens: TokenCount = to_summarize.iter()
+                    .map(|i| i.tokens)
+                    .fold(TokenCount::zero(), |a, b| a + b)
+
+                // Create summary
+                let combined_text = to_summarize.iter()
+                    .map(|i| i.content.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+
+                let summary = self.summarize(&combined_text, target_tokens.0)
+                let summary_tokens = self.count_tokens(&Content::Text(summary.clone()))
+
+                self.token_count = self.token_count - freed_tokens + summary_tokens
+
+                // Add summary as new item
+                let avg_priority = to_summarize.iter()
+                    .map(|i| i.current_priority)
+                    .sum::<f64>() / to_summarize.len() as f64
+
+                self.items.push(InstantItem {
+                    id: ItemId::new().unwrap(),
+                    content: Content::Summary {
+                        original_ids: to_summarize.iter().map(|i| i.id.clone()).collect(),
+                        text: summary,
+                    },
+                    tokens: summary_tokens,
+                    base_relevance: avg_priority,
+                    current_priority: avg_priority,
+                    added_at: Instant::now(),
+                    last_refreshed: Instant::now(),
+                    source: MemorySource::Instant,
+                    source_id: None,
+                })
+            },
+
+            CompressionStrategy::Aggressive => {
+                // Remove multiple lowest priority items
+                while self.items.len() > 1 &&
+                      self.token_count.0 > self.capacity.0 / 2 {
+                    let item = self.items.pop().unwrap()
+                    self.token_count = self.token_count - item.tokens
+                }
+            },
+        }
+
+        self.sort_by_priority()
+        Ok(())
+    }
+
+    fn compress_content(content: &Content, target_ratio: f64) -> Content {
+        let text = content.to_string()
+        let target_len = (text.len() as f64 * target_ratio) as usize
+
+        // Simple truncation with ellipsis - in production, use LLM summarization
+        if text.len() > target_len {
+            let truncated = &text[..target_len.saturating_sub(3)]
+            Content::Text(format!("{}...", truncated))
+        } else {
+            content.clone()
+        }
+    }
+
+    fn summarize(text: &str, target_tokens: usize) -> String {
+        // Simple extractive summary - in production, use LLM
+        let target_chars = target_tokens * 4
+
+        if text.len() <= target_chars {
+            return text.to_string()
+        }
+
+        // Take first and last portions
+        let half = target_chars / 2
+        let first = &text[..half]
+        let last = &text[text.len().saturating_sub(half)..]
+
+        format!("{}...[summarized]...{}", first, last)
+    }
+}
+
+// ============================================================================
+// Supporting Types
+// ============================================================================
+
+/// An item in instant memory
+pub struct InstantItem {
+    /// Unique identifier
+    pub id: ItemId,
+
+    /// The content
+    pub content: Content,
+
+    /// Token count
+    pub tokens: TokenCount,
+
+    /// Initial relevance when added
+    pub base_relevance: f64,
+
+    /// Current priority (after decay)
+    pub current_priority: f64,
+
+    /// When added
+    pub added_at: Instant,
+
+    /// Last time priority was refreshed
+    pub last_refreshed: Instant,
+
+    /// Source memory system
+    pub source: MemorySource,
+
+    /// ID in source system (if applicable)
+    pub source_id: Option<EngramId>,
+}
+
+impl InstantItem {
+    fn estimated_size() -> usize {
+        // Rough estimate of memory usage
+        std::mem::size_of::<Self>() + self.content.to_string().len()
+    }
+}
+
+/// Content that can be stored in instant memory
+pub enum Content {
+    /// Plain text
+    Text(String),
+
+    /// Structured data
+    Structured(Value),
+
+    /// Reference to an engram
+    Reference {
+        engram_id: EngramId,
+        summary: String,
+    },
+
+    /// Compressed summary of multiple items
+    Summary {
+        original_ids: Vec<ItemId>,
+        text: String,
+    },
+}
+
+impl Content {
+    pub fn to_string() -> String {
+        match self {
+            Content::Text(s) => s.clone(),
+            Content::Structured(v) => serde_json::to_string(v).unwrap_or_default(),
+            Content::Reference { summary, .. } => summary.clone(),
+            Content::Summary { text, .. } => text.clone(),
+        }
+    }
+
+    pub fn to_value() -> Value {
+        match self {
+            Content::Text(s) => Value::String(s.clone()),
+            Content::Structured(v) => v.clone(),
+            Content::Reference { summary, engram_id } => json!({
+                "type": "reference",
+                "id": engram_id.to_string(),
+                "summary": summary,
+            }),
+            Content::Summary { text, original_ids } => json!({
+                "type": "summary",
+                "text": text,
+                "original_count": original_ids.len(),
+            }),
+        }
+    }
+}
+
+impl From<String> for Content {
+    fn from(s: String) -> Self {
+        Content::Text(s)
+    }
+}
+
+impl From<&str> for Content {
+    fn from(s: &str) -> Self {
+        Content::Text(s.to_string())
+    }
+}
+
+/// Export formats
+pub enum ExportFormat {
+    Plain,
+    XML,
+    Markdown,
+    JSON,
+}
+
+/// Token usage information
+pub struct TokenUsage {
+    pub used: TokenCount,
+    pub capacity: TokenCount,
+    pub utilization: f64,
+}

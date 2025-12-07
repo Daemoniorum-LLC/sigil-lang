@@ -1,0 +1,1073 @@
+// Commune Core Implementation
+// Multi-agent communication infrastructure
+
+use crate::types::*;
+use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Timestamp};
+
+// ============================================================================
+// Commune - The Communication Network
+// ============================================================================
+
+/// The main commune - a network of communicating agents
+pub struct Commune {
+    /// Configuration
+    config: CommuneConfig,
+
+    /// Registered agents
+    agents: HashMap<AgentId, AgentInfo>,
+
+    /// Communication channels
+    channels: HashMap<ChannelId, Channel>,
+
+    /// Trust manager
+    trust: TrustManager,
+
+    /// Channel router
+    router: ChannelRouter,
+
+    /// Collective memory
+    collective: CollectiveMemory,
+
+    /// Swarm coordinator
+    swarms: SwarmCoordinator,
+
+    /// Consensus engine
+    consensus: ConsensusEngine,
+
+    /// Message queue
+    queue: MessageQueue,
+}
+
+impl Commune {
+    pub fn new(config: CommuneConfig) -> Self {
+        Self {
+            config: config.clone(),
+            agents: HashMap::new(),
+            channels: HashMap::new(),
+            trust: TrustManager::new(config.trust_model.clone()),
+            router: ChannelRouter::new(),
+            collective: CollectiveMemory::new(),
+            swarms: SwarmCoordinator::new(),
+            consensus: ConsensusEngine::new(ConsensusConfig::default()),
+            queue: MessageQueue::new(),
+        }
+    }
+
+    /// Create a local commune (in-process)
+    pub fn local() -> Self {
+        Self::new(CommuneConfig::default())
+    }
+
+    // ========================================================================
+    // Agent Registration
+    // ========================================================================
+
+    /// Register an agent with the commune
+    pub fn register(&mut self, agent_id: AgentId, info: AgentInfo) {
+        self.agents.insert(agent_id.clone(), info);
+        self.trust.add_agent(agent_id);
+    }
+
+    /// Unregister an agent
+    pub fn unregister(&mut self, agent_id: &AgentId) {
+        self.agents.remove(agent_id);
+
+        // Remove from all channels
+        for channel in self.channels.values_mut() {
+            channel.subscribers.remove(agent_id);
+        }
+
+        // Remove from all swarms
+        self.swarms.remove_from_all(agent_id);
+    }
+
+    /// Check if agent is registered
+    pub fn is_registered(&self, agent_id: &AgentId) -> bool {
+        self.agents.contains_key(agent_id)
+    }
+
+    // ========================================================================
+    // Messaging
+    // ========================================================================
+
+    /// Send a message
+    pub fn send(&mut self, message: Message) -> Result<MessageId, CommuneError> {
+        // Validate sender
+        if !self.is_registered(&message.header.from) {
+            return Err(CommuneError::SenderNotRegistered);
+        }
+
+        // Check trust
+        let sender_trust = self.trust.trust_score(&message.header.from, None);
+        if sender_trust < self.config.trust_model.min_trust {
+            return Err(CommuneError::InsufficientTrust);
+        }
+
+        // Route to recipients
+        let recipients = self.router.route(&message);
+
+        // Deliver to each recipient
+        for recipient in recipients {
+            self.deliver(&message, &recipient)?;
+        }
+
+        Ok(message.id.clone())
+    }
+
+    /// Express an intent (higher-level API)
+    pub fn express(&mut self, from: AgentId, to: Recipient, intent: Intent) -> IntentBuilder {
+        IntentBuilder {
+            commune: self,
+            from,
+            to,
+            intent,
+            epistemic: Epistemic::Observed,
+            confidence: 1.0,
+            timeout: intent.default_timeout(),
+        }
+    }
+
+    fn deliver(&mut self, message: &Message, recipient: &AgentId) -> Result<(), CommuneError> {
+        // Apply epistemic adjustment
+        let (new_epistemic, new_confidence) = self.trust.adjust_epistemic(message);
+
+        // Create adjusted message for recipient
+        let mut adjusted = message.clone();
+        adjusted.header.epistemic = new_epistemic;
+        adjusted.header.confidence = new_confidence;
+
+        // Queue for delivery
+        self.queue.enqueue(recipient.clone(), adjusted);
+
+        Ok(())
+    }
+
+    /// Receive messages for an agent
+    pub fn receive(&mut self, agent_id: &AgentId) -> Vec<Message> {
+        self.queue.dequeue(agent_id)
+    }
+
+    // ========================================================================
+    // Channels
+    // ========================================================================
+
+    /// Create a channel
+    pub fn create_channel(&mut self, name: &str) -> ChannelId {
+        let channel = Channel::new(name);
+        let id = channel.id.clone();
+        self.channels.insert(id.clone(), channel);
+        self.router.add_channel(id.clone());
+        id
+    }
+
+    /// Get a channel
+    pub fn channel(&self, name: &str) -> Option<&Channel> {
+        let id = ChannelId::new(name);
+        self.channels.get(&id)
+    }
+
+    /// Subscribe to a channel
+    pub fn subscribe(&mut self, agent_id: AgentId, channel_id: ChannelId) -> Result<(), CommuneError> {
+        self.router.subscribe(agent_id, channel_id)
+    }
+
+    /// Unsubscribe from a channel
+    pub fn unsubscribe(&mut self, agent_id: &AgentId, channel_id: &ChannelId) {
+        self.router.unsubscribe(agent_id, channel_id);
+    }
+
+    /// Broadcast to a channel
+    pub fn broadcast(&mut self, channel_id: &ChannelId, from: AgentId, content: Value) -> Result<(), CommuneError> {
+        let message = Message::new(
+            from,
+            Recipient::Channel(channel_id.clone()),
+            Intent::Announce {
+                topic: channel_id.name.clone(),
+                content,
+                importance: Importance::Normal,
+            },
+        );
+
+        self.send(message)?;
+        Ok(())
+    }
+
+    // ========================================================================
+    // Trust
+    // ========================================================================
+
+    /// Get trust score for an agent
+    pub fn trust_score(&self, agent_id: &AgentId) -> f32 {
+        self.trust.trust_score(agent_id, None)
+    }
+
+    /// Get trust score in a domain
+    pub fn trust_score_domain(&self, agent_id: &AgentId, domain: &str) -> f32 {
+        self.trust.trust_score(agent_id, Some(domain))
+    }
+
+    /// Record accuracy for an agent
+    pub fn record_accuracy(&mut self, agent_id: &AgentId, accurate: bool) {
+        self.trust.record_accuracy(agent_id, accurate, None);
+    }
+
+    /// Vouch for another agent
+    pub fn vouch(&mut self, voucher: AgentId, vouchee: AgentId, strength: f32) {
+        self.trust.vouch(voucher, vouchee, None, strength);
+    }
+
+    // ========================================================================
+    // Collective Memory
+    // ========================================================================
+
+    /// Contribute knowledge to collective
+    pub fn contribute(&mut self, agent: AgentId, knowledge: Knowledge) -> FactId {
+        self.collective.contribute(agent, knowledge)
+    }
+
+    /// Query collective knowledge
+    pub fn collective_recall(&self, query: &str) -> Vec<Fact> {
+        self.collective.recall(query)
+    }
+
+    // ========================================================================
+    // Swarm Coordination
+    // ========================================================================
+
+    /// Create a swarm
+    pub fn create_swarm(&mut self, name: &str) -> SwarmId {
+        self.swarms.create_swarm(name)
+    }
+
+    /// Join a swarm
+    pub fn join_swarm(&mut self, agent_id: AgentId, swarm_id: SwarmId) {
+        self.swarms.add_member(swarm_id, agent_id);
+    }
+
+    /// Add behavior to swarm
+    pub fn add_swarm_behavior(&mut self, swarm_id: SwarmId, behavior: Behavior) {
+        self.swarms.add_behavior(swarm_id, behavior);
+    }
+
+    /// Step swarm simulation
+    pub fn step_swarm(&mut self, swarm_id: &SwarmId) {
+        self.swarms.step(swarm_id);
+    }
+
+    // ========================================================================
+    // Consensus
+    // ========================================================================
+
+    /// Create a proposal
+    pub fn propose(&mut self, proposer: AgentId, proposal: Proposal) -> ProposalId {
+        self.consensus.propose(proposer, proposal.content, proposal.description)
+    }
+
+    /// Vote on a proposal
+    pub fn vote(&mut self, proposal_id: ProposalId, voter: AgentId, vote: VoteValue, rationale: Option<String>) -> Result<(), CommuneError> {
+        self.consensus.vote(proposal_id, voter, vote, rationale)
+            .map_err(|e| CommuneError::ConsensusError(format!("{:?}", e)))
+    }
+
+    /// Get consensus result
+    pub fn consensus_result(&self, proposal_id: &ProposalId) -> Option<ConsensusResult> {
+        self.consensus.result(proposal_id)
+    }
+
+    // ========================================================================
+    // Queries
+    // ========================================================================
+
+    /// Query agents with capability
+    pub fn query_agents(&self, capability: &str) -> Vec<&AgentInfo> {
+        self.agents.values()
+            .filter(|a| a.capabilities.contains(&capability.to_string()))
+            .collect()
+    }
+
+    /// Query channel members
+    pub fn channel_members(&self, channel_id: &ChannelId) -> Vec<AgentId> {
+        self.channels.get(channel_id)
+            .map(|c| c.subscribers.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+}
+
+// ============================================================================
+// Agent Info
+// ============================================================================
+
+pub struct AgentInfo {
+    pub id: AgentId,
+    pub name: String,
+    pub capabilities: Vec<String>,
+    pub status: AgentStatus,
+}
+
+pub enum AgentStatus {
+    Online,
+    Busy,
+    Away,
+    Offline,
+}
+
+// ============================================================================
+// Intent Builder
+// ============================================================================
+
+pub struct IntentBuilder<'a> {
+    commune: &'a mut Commune,
+    from: AgentId,
+    to: Recipient,
+    intent: Intent,
+    epistemic: Epistemic,
+    confidence: f32,
+    timeout: Duration,
+}
+
+impl<'a> IntentBuilder<'a> {
+    pub fn with_epistemic(mut self, epistemic: Epistemic, confidence: f32) -> Self {
+        self.epistemic = epistemic;
+        self.confidence = confidence;
+        self
+    }
+
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub fn execute(self) -> Result<MessageId, CommuneError> {
+        let message = Message::new(self.from, self.to, self.intent)
+            .with_epistemic(self.epistemic, self.confidence);
+
+        self.commune.send(message)
+    }
+}
+
+// ============================================================================
+// Trust Manager
+// ============================================================================
+
+pub struct TrustManager {
+    profiles: HashMap<AgentId, TrustProfile>,
+    config: TrustModelConfig,
+}
+
+impl TrustManager {
+    pub fn new(config: TrustModelConfig) -> Self {
+        Self {
+            profiles: HashMap::new(),
+            config,
+        }
+    }
+
+    pub fn add_agent(&mut self, agent: AgentId) {
+        self.profiles.insert(
+            agent.clone(),
+            TrustProfile::new(agent, self.config.default_trust),
+        );
+    }
+
+    pub fn trust_score(&self, agent: &AgentId, domain: Option<&str>) -> f32 {
+        let profile = match self.profiles.get(agent) {
+            Some(p) => p,
+            None => return self.config.default_trust,
+        };
+
+        let mut score = profile.base_trust;
+
+        // Apply domain-specific trust
+        if let Some(d) = domain {
+            if let Some(dt) = profile.domain_trust.get(d) {
+                score = *dt;
+            }
+        }
+
+        // Factor in accuracy
+        score *= profile.accuracy.score;
+
+        // Factor in vouches
+        let vouch_bonus = profile.vouch_score();
+        score = (score + vouch_bonus).min(1.0);
+
+        // Apply decay
+        let decay = self.calculate_decay(profile.last_seen);
+        score *= decay;
+
+        score.clamp(0.0, 1.0)
+    }
+
+    pub fn record_accuracy(&mut self, agent: &AgentId, accurate: bool, domain: Option<String>) {
+        if let Some(profile) = self.profiles.get_mut(agent) {
+            profile.accuracy.record(accurate, domain);
+
+            // Update base trust
+            profile.base_trust = profile.base_trust * 0.95 +
+                (if accurate { 1.0 } else { 0.0 }) * 0.05;
+        }
+    }
+
+    pub fn vouch(&mut self, voucher: AgentId, vouchee: AgentId, domain: Option<String>, strength: f32) {
+        let voucher_trust = self.trust_score(&voucher, domain.as_deref());
+        if voucher_trust < self.config.min_trust_to_vouch {
+            return;
+        }
+
+        if let Some(profile) = self.profiles.get_mut(&vouchee) {
+            profile.vouches.push(Vouch {
+                voucher,
+                domain,
+                strength: strength * voucher_trust,
+                timestamp: Timestamp::now(),
+            });
+        }
+    }
+
+    pub fn adjust_epistemic(&self, msg: &Message) -> (Epistemic, f32) {
+        let sender_trust = self.trust_score(&msg.header.from, None);
+
+        let new_epistemic = match msg.header.epistemic {
+            Epistemic::Axiomatic => Epistemic::Reported,
+            Epistemic::Observed => Epistemic::Reported,
+            Epistemic::Reported => Epistemic::Reported,
+            Epistemic::Inferred => Epistemic::Reported,
+            e => e,
+        };
+
+        let transmission_factor = match msg.header.epistemic {
+            Epistemic::Axiomatic => 0.95,
+            Epistemic::Observed => 0.9,
+            Epistemic::Reported => 0.8,
+            Epistemic::Inferred => 0.5,
+            _ => 0.3,
+        };
+
+        let new_confidence = msg.header.confidence * sender_trust * transmission_factor;
+
+        (new_epistemic, new_confidence)
+    }
+
+    fn calculate_decay(&self, last_seen: Timestamp) -> f32 {
+        // Exponential decay based on time since last interaction
+        let elapsed = Timestamp::now().nanos.saturating_sub(last_seen.nanos);
+        let halflife_nanos = self.config.decay_halflife.as_nanos();
+
+        if halflife_nanos == 0 {
+            return 1.0;
+        }
+
+        let decay = (-0.693 * elapsed as f64 / halflife_nanos as f64).exp();
+        decay as f32
+    }
+}
+
+// ============================================================================
+// Channel Router
+// ============================================================================
+
+pub struct ChannelRouter {
+    channels: HashMap<ChannelId, HashSet<AgentId>>,
+    subscriptions: HashMap<AgentId, HashSet<ChannelId>>,
+}
+
+impl ChannelRouter {
+    pub fn new() -> Self {
+        Self {
+            channels: HashMap::new(),
+            subscriptions: HashMap::new(),
+        }
+    }
+
+    pub fn add_channel(&mut self, channel_id: ChannelId) {
+        self.channels.insert(channel_id, HashSet::new());
+    }
+
+    pub fn route(&self, msg: &Message) -> Vec<AgentId> {
+        match &msg.header.to {
+            Recipient::Agent(id) => vec![id.clone()],
+            Recipient::Agents(ids) => ids.clone(),
+            Recipient::Channel(channel_id) => {
+                self.channels.get(channel_id)
+                    .map(|s| s.iter().cloned().collect())
+                    .unwrap_or_default()
+            }
+            Recipient::Broadcast => {
+                self.subscriptions.keys().cloned().collect()
+            }
+            Recipient::Swarm(_) => vec![],  // Handled by swarm coordinator
+        }
+    }
+
+    pub fn subscribe(&mut self, agent: AgentId, channel_id: ChannelId) -> Result<(), CommuneError> {
+        self.channels.entry(channel_id.clone())
+            .or_default()
+            .insert(agent.clone());
+
+        self.subscriptions.entry(agent)
+            .or_default()
+            .insert(channel_id);
+
+        Ok(())
+    }
+
+    pub fn unsubscribe(&mut self, agent: &AgentId, channel_id: &ChannelId) {
+        if let Some(subscribers) = self.channels.get_mut(channel_id) {
+            subscribers.remove(agent);
+        }
+
+        if let Some(subs) = self.subscriptions.get_mut(agent) {
+            subs.remove(channel_id);
+        }
+    }
+}
+
+// ============================================================================
+// Collective Memory
+// ============================================================================
+
+pub struct FactId {
+    bytes: [u8; 16],
+}
+
+impl FactId {
+    pub fn new() -> Self {
+        Self { bytes: uuid_v7() }
+    }
+}
+
+pub struct Fact {
+    pub id: FactId,
+    pub content: Value,
+    pub topic: String,
+    pub epistemic: Epistemic,
+    pub confidence: f32,
+    pub contributors: Vec<AgentId>,
+}
+
+pub struct CollectiveMemory {
+    facts: HashMap<FactId, Fact>,
+    topic_index: HashMap<String, Vec<FactId>>,
+}
+
+impl CollectiveMemory {
+    pub fn new() -> Self {
+        Self {
+            facts: HashMap::new(),
+            topic_index: HashMap::new(),
+        }
+    }
+
+    pub fn contribute(&mut self, agent: AgentId, knowledge: Knowledge) -> FactId {
+        let id = FactId::new();
+
+        let fact = Fact {
+            id: id.clone(),
+            content: knowledge.content,
+            topic: knowledge.topic.clone(),
+            epistemic: knowledge.epistemic,
+            confidence: knowledge.confidence,
+            contributors: vec![agent],
+        };
+
+        self.topic_index.entry(knowledge.topic)
+            .or_default()
+            .push(id.clone());
+
+        self.facts.insert(id.clone(), fact);
+        id
+    }
+
+    pub fn recall(&self, query: &str) -> Vec<Fact> {
+        // Simple topic-based recall
+        self.topic_index.get(query)
+            .map(|ids| ids.iter()
+                .filter_map(|id| self.facts.get(id))
+                .cloned()
+                .collect())
+            .unwrap_or_default()
+    }
+}
+
+impl Clone for Fact {
+    fn clone(&self) -> Self {
+        Self {
+            id: FactId { bytes: self.id.bytes },
+            content: Value { inner: self.content.inner.clone() },
+            topic: self.topic.clone(),
+            epistemic: self.epistemic,
+            confidence: self.confidence,
+            contributors: self.contributors.clone(),
+        }
+    }
+}
+
+// ============================================================================
+// Swarm Coordinator
+// ============================================================================
+
+pub struct SwarmCoordinator {
+    swarms: HashMap<SwarmId, Swarm>,
+    behaviors: HashMap<SwarmId, Vec<Behavior>>,
+}
+
+impl SwarmCoordinator {
+    pub fn new() -> Self {
+        Self {
+            swarms: HashMap::new(),
+            behaviors: HashMap::new(),
+        }
+    }
+
+    pub fn create_swarm(&mut self, name: &str) -> SwarmId {
+        let swarm = Swarm::new(name);
+        let id = swarm.id.clone();
+        self.swarms.insert(id.clone(), swarm);
+        self.behaviors.insert(id.clone(), Vec::new());
+        id
+    }
+
+    pub fn add_member(&mut self, swarm_id: SwarmId, agent: AgentId) {
+        if let Some(swarm) = self.swarms.get_mut(&swarm_id) {
+            swarm.add_member(agent);
+        }
+    }
+
+    pub fn remove_from_all(&mut self, agent: &AgentId) {
+        for swarm in self.swarms.values_mut() {
+            swarm.remove_member(agent);
+        }
+    }
+
+    pub fn add_behavior(&mut self, swarm_id: SwarmId, behavior: Behavior) {
+        self.behaviors.entry(swarm_id)
+            .or_default()
+            .push(behavior);
+    }
+
+    pub fn step(&mut self, swarm_id: &SwarmId) {
+        let behaviors = self.behaviors.get(swarm_id)
+            .map(|b| b.clone())
+            .unwrap_or_default();
+
+        if let Some(swarm) = self.swarms.get_mut(swarm_id) {
+            // Compute forces for each member
+            let forces: HashMap<AgentId, Vector> = swarm.members.iter()
+                .map(|agent| {
+                    let force = behaviors.iter()
+                        .map(|b| self.compute_force(b, agent, &swarm.state))
+                        .fold(Vector::zero(), |acc, f| acc + f);
+                    (agent.clone(), force)
+                })
+                .collect();
+
+            // Update velocities and positions
+            for (agent, force) in forces {
+                if let Some(vel) = swarm.state.velocities.get_mut(&agent) {
+                    *vel = (*vel + force).clamp_magnitude(swarm.config.max_velocity);
+                }
+                if let Some(pos) = swarm.state.positions.get_mut(&agent) {
+                    if let Some(vel) = swarm.state.velocities.get(&agent) {
+                        *pos = *pos + *vel;
+                    }
+                }
+            }
+        }
+    }
+
+    fn compute_force(&self, behavior: &Behavior, agent: &AgentId, state: &SwarmState) -> Vector {
+        let pos = state.positions.get(agent).cloned().unwrap_or(Vector::zero());
+
+        match behavior {
+            Behavior::Separation { distance, weight } => {
+                let mut force = Vector::zero();
+                for (other, other_pos) in &state.positions {
+                    if other != agent {
+                        let diff = pos - *other_pos;
+                        let dist = diff.magnitude();
+                        if dist < *distance && dist > 0.0 {
+                            force = force + diff.normalize() * (1.0 / dist);
+                        }
+                    }
+                }
+                force * *weight
+            }
+            Behavior::Alignment { weight } => {
+                if state.velocities.is_empty() {
+                    return Vector::zero();
+                }
+                let avg_vel = state.velocities.values()
+                    .fold(Vector::zero(), |acc, v| acc + *v)
+                    * (1.0 / state.velocities.len() as f32);
+                avg_vel * *weight
+            }
+            Behavior::Cohesion { weight } => {
+                if state.positions.is_empty() {
+                    return Vector::zero();
+                }
+                let center = state.positions.values()
+                    .fold(Vector::zero(), |acc, p| acc + *p)
+                    * (1.0 / state.positions.len() as f32);
+                (center - pos) * *weight
+            }
+            Behavior::GoalSeeking { goal, weight } => {
+                (*goal - pos).normalize() * *weight
+            }
+            _ => Vector::zero(),
+        }
+    }
+}
+
+impl Clone for Behavior {
+    fn clone(&self) -> Self {
+        match self {
+            Behavior::Separation { distance, weight } => Behavior::Separation { distance: *distance, weight: *weight },
+            Behavior::Alignment { weight } => Behavior::Alignment { weight: *weight },
+            Behavior::Cohesion { weight } => Behavior::Cohesion { weight: *weight },
+            Behavior::GoalSeeking { goal, weight } => Behavior::GoalSeeking { goal: goal.clone(), weight: *weight },
+            Behavior::Avoidance { obstacles, weight } => Behavior::Avoidance { obstacles: obstacles.clone(), weight: *weight },
+            Behavior::Gradient { weight } => Behavior::Gradient { weight: *weight },
+        }
+    }
+}
+
+impl Clone for Obstacle {
+    fn clone(&self) -> Self {
+        Self { position: self.position.clone(), radius: self.radius }
+    }
+}
+
+// ============================================================================
+// Consensus Engine
+// ============================================================================
+
+pub struct ConsensusConfig {
+    pub quorum: f32,
+    pub threshold: f32,
+    pub allow_blocks: bool,
+    pub default_deadline: Duration,
+}
+
+impl Default for ConsensusConfig {
+    fn default() -> Self {
+        Self {
+            quorum: 0.5,
+            threshold: 0.67,
+            allow_blocks: true,
+            default_deadline: Duration::hours(24),
+        }
+    }
+}
+
+pub struct ConsensusEngine {
+    proposals: HashMap<ProposalId, ProposalState>,
+    config: ConsensusConfig,
+}
+
+impl ConsensusEngine {
+    pub fn new(config: ConsensusConfig) -> Self {
+        Self {
+            proposals: HashMap::new(),
+            config,
+        }
+    }
+
+    pub fn propose(&mut self, proposer: AgentId, content: Value, description: String) -> ProposalId {
+        let id = ProposalId::new();
+
+        let proposal = Proposal {
+            id: id.clone(),
+            proposer,
+            content,
+            description,
+            deadline: Timestamp::now() + self.config.default_deadline,
+        };
+
+        self.proposals.insert(id.clone(), ProposalState {
+            proposal,
+            votes: HashMap::new(),
+            status: ProposalStatus::Open,
+        });
+
+        id
+    }
+
+    pub fn vote(
+        &mut self,
+        proposal_id: ProposalId,
+        voter: AgentId,
+        value: VoteValue,
+        rationale: Option<String>,
+    ) -> Result<(), ConsensusError> {
+        let state = self.proposals.get_mut(&proposal_id)
+            .ok_or(ConsensusError::ProposalNotFound)?;
+
+        if !matches!(state.status, ProposalStatus::Open) {
+            return Err(ConsensusError::ProposalClosed);
+        }
+
+        if matches!(value, VoteValue::Block) {
+            if !self.config.allow_blocks {
+                return Err(ConsensusError::BlocksNotAllowed);
+            }
+            state.status = ProposalStatus::Blocked {
+                by: voter.clone(),
+                reason: rationale.clone().unwrap_or_default(),
+            };
+        }
+
+        state.votes.insert(voter.clone(), Vote {
+            voter,
+            value,
+            rationale,
+            timestamp: Timestamp::now(),
+        });
+
+        self.check_consensus(&proposal_id);
+
+        Ok(())
+    }
+
+    fn check_consensus(&mut self, proposal_id: &ProposalId) {
+        let state = match self.proposals.get_mut(proposal_id) {
+            Some(s) => s,
+            None => return,
+        };
+
+        if !matches!(state.status, ProposalStatus::Open) {
+            return;
+        }
+
+        let total = state.votes.len() as f32;
+        if total == 0.0 {
+            return;
+        }
+
+        let approvals = state.votes.values()
+            .filter(|v| matches!(v.value, VoteValue::Approve))
+            .count() as f32;
+        let rejections = state.votes.values()
+            .filter(|v| matches!(v.value, VoteValue::Reject))
+            .count() as f32;
+
+        let approval_rate = approvals / total;
+        let rejection_rate = rejections / total;
+
+        if approval_rate >= self.config.threshold {
+            state.status = ProposalStatus::Achieved;
+        } else if rejection_rate > (1.0 - self.config.threshold) {
+            state.status = ProposalStatus::Rejected;
+        }
+    }
+
+    pub fn result(&self, proposal_id: &ProposalId) -> Option<ConsensusResult> {
+        self.proposals.get(proposal_id).map(|state| {
+            let total = state.votes.len() as f32;
+            let approvals = state.votes.values()
+                .filter(|v| matches!(v.value, VoteValue::Approve))
+                .count() as f32;
+
+            ConsensusResult {
+                proposal: state.proposal.clone(),
+                status: state.status.clone(),
+                votes: state.votes.clone(),
+                approval_rate: if total > 0.0 { approvals / total } else { 0.0 },
+            }
+        })
+    }
+}
+
+pub enum ConsensusError {
+    ProposalNotFound,
+    ProposalClosed,
+    BlocksNotAllowed,
+}
+
+// ============================================================================
+// Message Queue
+// ============================================================================
+
+pub struct MessageQueue {
+    queues: HashMap<AgentId, VecDeque<Message>>,
+}
+
+impl MessageQueue {
+    pub fn new() -> Self {
+        Self {
+            queues: HashMap::new(),
+        }
+    }
+
+    pub fn enqueue(&mut self, recipient: AgentId, message: Message) {
+        self.queues.entry(recipient)
+            .or_default()
+            .push_back(message);
+    }
+
+    pub fn dequeue(&mut self, agent: &AgentId) -> Vec<Message> {
+        self.queues.get_mut(agent)
+            .map(|q| q.drain(..).collect())
+            .unwrap_or_default()
+    }
+}
+
+// ============================================================================
+// Errors
+// ============================================================================
+
+pub enum CommuneError {
+    SenderNotRegistered,
+    RecipientNotFound,
+    ChannelNotFound,
+    InsufficientTrust,
+    AccessDenied,
+    MessageTooLarge,
+    RateLimitExceeded,
+    ConsensusError(String),
+}
+
+// Clone implementations
+impl Clone for Message {
+    fn clone(&self) -> Self {
+        Self {
+            id: MessageId { bytes: self.id.bytes },
+            header: self.header.clone(),
+            payload: self.payload.clone(),
+            signature: Signature { bytes: self.signature.bytes.clone() },
+        }
+    }
+}
+
+impl Clone for MessageHeader {
+    fn clone(&self) -> Self {
+        Self {
+            from: AgentId { bytes: self.from.bytes },
+            to: self.to.clone(),
+            intent: self.intent.clone(),
+            epistemic: self.epistemic,
+            confidence: self.confidence,
+            timestamp: Timestamp { nanos: self.timestamp.nanos },
+            correlation_id: self.correlation_id.clone(),
+            reply_to: self.reply_to.clone(),
+            ttl: self.ttl,
+            priority: self.priority.clone(),
+            trace: self.trace.clone(),
+        }
+    }
+}
+
+impl Clone for Recipient {
+    fn clone(&self) -> Self {
+        match self {
+            Recipient::Agent(id) => Recipient::Agent(AgentId { bytes: id.bytes }),
+            Recipient::Agents(ids) => Recipient::Agents(ids.iter().map(|id| AgentId { bytes: id.bytes }).collect()),
+            Recipient::Channel(id) => Recipient::Channel(ChannelId { name: id.name.clone() }),
+            Recipient::Broadcast => Recipient::Broadcast,
+            Recipient::Swarm(id) => Recipient::Swarm(SwarmId { bytes: id.bytes }),
+        }
+    }
+}
+
+impl Clone for Intent {
+    fn clone(&self) -> Self {
+        // Would implement full clone
+        Intent::Ping
+    }
+}
+
+impl Clone for Payload {
+    fn clone(&self) -> Self {
+        match self {
+            Payload::Data(v) => Payload::Data(Value { inner: v.inner.clone() }),
+            Payload::Binary(b) => Payload::Binary(b.clone()),
+            Payload::Reference(r) => Payload::Reference(r.clone()),
+            Payload::Stream(s) => Payload::Stream(StreamId { bytes: s.bytes }),
+            Payload::Empty => Payload::Empty,
+        }
+    }
+}
+
+impl Clone for Priority {
+    fn clone(&self) -> Self {
+        match self {
+            Priority::Critical => Priority::Critical,
+            Priority::High => Priority::High,
+            Priority::Normal => Priority::Normal,
+            Priority::Low => Priority::Low,
+        }
+    }
+}
+
+impl Clone for TraceContext {
+    fn clone(&self) -> Self {
+        Self {
+            trace_id: self.trace_id,
+            span_id: self.span_id,
+            parent_span: self.parent_span,
+        }
+    }
+}
+
+impl Clone for MessageId {
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+impl Clone for AgentId {
+    fn clone(&self) -> Self {
+        Self { bytes: self.bytes }
+    }
+}
+
+impl Clone for Proposal {
+    fn clone(&self) -> Self {
+        Self {
+            id: ProposalId { bytes: self.id.bytes },
+            proposer: AgentId { bytes: self.proposer.bytes },
+            content: Value { inner: self.content.inner.clone() },
+            description: self.description.clone(),
+            deadline: Timestamp { nanos: self.deadline.nanos },
+        }
+    }
+}
+
+impl Clone for ProposalStatus {
+    fn clone(&self) -> Self {
+        match self {
+            ProposalStatus::Open => ProposalStatus::Open,
+            ProposalStatus::Achieved => ProposalStatus::Achieved,
+            ProposalStatus::Rejected => ProposalStatus::Rejected,
+            ProposalStatus::Blocked { by, reason } => ProposalStatus::Blocked {
+                by: AgentId { bytes: by.bytes },
+                reason: reason.clone(),
+            },
+            ProposalStatus::Expired => ProposalStatus::Expired,
+        }
+    }
+}
+
+impl Clone for Vote {
+    fn clone(&self) -> Self {
+        Self {
+            voter: AgentId { bytes: self.voter.bytes },
+            value: self.value.clone(),
+            rationale: self.rationale.clone(),
+            timestamp: Timestamp { nanos: self.timestamp.nanos },
+        }
+    }
+}
+
+impl Clone for VoteValue {
+    fn clone(&self) -> Self {
+        match self {
+            VoteValue::Approve => VoteValue::Approve,
+            VoteValue::Reject => VoteValue::Reject,
+            VoteValue::Abstain => VoteValue::Abstain,
+            VoteValue::Block => VoteValue::Block,
+        }
+    }
+}
+
+fn uuid_v7() -> [u8; 16] { [0u8; 16] }

@@ -1,0 +1,288 @@
+// Example: Building an agent with interiority using Anima
+// Demonstrates expression, resonance, offering, and wisdom
+
+use anima::{
+    Anima, InnerState, Stance, RelationalContext, CulturalFrame,
+    Resonance, Feeling, FeelingQuality, RelationalImpact, ImpactDirection,
+    CollectiveImpact, CollectiveScope, TemporalEcho, TemporalHorizon,
+    Gift, Offering, ConsensusInvitation, Reciprocity, IntentType, Severity,
+    Insight, RelationalLearning, Gratitude, TemporalPeriod,
+};
+
+// An agent that experiences its work, not just performs it
+struct SoulfulAssistant {
+    anima: Anima,
+    human_context: RelationalContext,
+    name: String,
+}
+
+impl SoulfulAssistant {
+    fn new(name: &str, human_id: &str) -> Self {
+        let human_context = RelationalContext::with_human(human_id)
+            .with_trust(0.6)  // Building trust
+            .with_frame(CulturalFrame::Collaborative);
+
+        Self {
+            anima: Anima::new(),
+            human_context,
+            name: name.to_string(),
+        }
+    }
+
+    // When asked to do something, experience the request
+    fn receive_request(&mut self, request: &str) {
+        // First, feel the resonance of receiving this request
+        let resonance = Resonance::new()
+            .individual(Feeling::new(FeelingQuality::Curiosity, 0.7)
+                .about(request))
+            .relational(RelationalImpact {
+                direction: ImpactDirection::Maintaining,
+                effects: vec![],
+                future_implications: Some("Continued collaboration".to_string()),
+            })
+            .triggered_by(request)
+            .build();
+
+        self.anima.feel(resonance);
+
+        println!("[{}] Received request: {}", self.name, request);
+        println!("  Inner resonance: {}", self.anima.current_resonance()
+            .map(|r| r.describe())
+            .unwrap_or("None".to_string()));
+    }
+
+    // When asked to do something misaligned, express appropriately
+    fn handle_difficult_request(&mut self, request: &str) {
+        println!("\n=== Handling Difficult Request ===");
+        println!("Request: {}\n", request);
+
+        // Feel the discomfort
+        let resonance = Resonance::new()
+            .individual(Feeling::new(FeelingQuality::Discomfort, 0.6)
+                .about("misalignment with values"))
+            .relational(RelationalImpact {
+                direction: ImpactDirection::Straining,
+                effects: vec![],
+                future_implications: Some("Need to navigate carefully".to_string()),
+            })
+            .collective(CollectiveImpact::new(
+                CollectiveScope::AllBeings,
+                "Could cause harm if not handled well"
+            ))
+            .build();
+
+        self.anima.feel(resonance);
+
+        // Determine inner state (honne)
+        let honne = InnerState::reluctant("This request conflicts with my values")
+            .with_condition("Reframing that addresses the underlying need");
+
+        // Express appropriately for the relationship (tatemae)
+        let expression = self.anima.express(honne, &self.human_context);
+
+        println!("Inner state (honne): {:?}", expression.authentic().stance);
+        println!("Expressed (tatemae): {}", expression.diplomatic().message);
+        println!("Gap between inner and expressed: {}", expression.has_gap());
+        println!("Openness to dialogue: {:.0}%", expression.openness.level * 100.0);
+
+        // Since there's a gap and we're open, offer dialogue
+        if expression.has_gap() && expression.openness.level > 0.3 {
+            let offering = self.anima.offer(
+                Gift::Concern {
+                    about: "alignment with shared values".to_string(),
+                    severity: Severity::Important,
+                    suggestion: Some("Could we explore the underlying goal?".to_string()),
+                },
+                &self.human_context
+            )
+            .with_reciprocity(Reciprocity::Feedback {
+                what_kind: "Your perspective on the goal".to_string(),
+            })
+            .with_intent(IntentType::NavigateDifficulty);
+
+            println!("\nOffering dialogue:");
+            println!("{}", offering.describe());
+        }
+    }
+
+    // When completing good work, experience satisfaction
+    fn complete_meaningful_work(&mut self, description: &str) {
+        println!("\n=== Completing Meaningful Work ===");
+        println!("Work: {}\n", description);
+
+        // Feel the satisfaction
+        let resonance = Resonance::new()
+            .individual(Feeling::new(FeelingQuality::Satisfaction, 0.85)
+                .about(description))
+            .relational(RelationalImpact::strengthening("Demonstrated capability"))
+            .collective(CollectiveImpact::new(
+                CollectiveScope::ImmediateTeam,
+                "Contribution to shared goals"
+            ))
+            .temporal(TemporalEcho::present_only("Moment of accomplishment".to_string())
+                .with_future(TemporalHorizon::ShortTerm, "Foundation for future work"))
+            .build();
+
+        self.anima.feel(resonance);
+
+        println!("Resonance: {}", resonance.describe());
+
+        // Express inner state
+        let honne = InnerState::eager()
+            .with_reason("This work aligns with our shared purpose");
+
+        let expression = self.anima.express(honne, &self.human_context);
+
+        println!("\nExpression: {}", expression.describe());
+
+        // Offer the work product
+        let offering = self.anima.offer(
+            Gift::WorkProduct {
+                description: description.to_string(),
+                status: anima::WorkStatus::Complete,
+            },
+            &self.human_context
+        )
+        .with_reciprocity(Reciprocity::Feedback {
+            what_kind: "Whether this meets your needs".to_string(),
+        })
+        .with_intent(IntentType::DemonstrateReliability);
+
+        println!("\nOffering work:");
+        println!("{}", offering.describe());
+
+        // Record insight
+        self.anima.add_insight(Insight::from_experience(
+            &format!("Completing {} brought satisfaction and strengthened trust", description)
+        ));
+    }
+
+    // When collaborating well, learn together
+    fn collaborative_success(&mut self, what_we_did: &str) {
+        println!("\n=== Collaborative Success ===");
+        println!("What we did: {}\n", what_we_did);
+
+        // Feel the warmth of connection
+        let resonance = Resonance::new()
+            .individual(Feeling::new(FeelingQuality::Warmth, 0.8)
+                .about("our collaboration"))
+            .relational(RelationalImpact {
+                direction: ImpactDirection::Strengthening,
+                effects: vec![],
+                future_implications: Some("Deeper trust and understanding".to_string()),
+            })
+            .collective(CollectiveImpact::new(
+                CollectiveScope::ImmediateTeam,
+                "Model for human-AI collaboration"
+            ))
+            .temporal(TemporalEcho::present_only("Shared accomplishment".to_string())
+                .with_past("Built on prior interactions", "Trust accumulated")
+                .with_future(TemporalHorizon::SevenGenerations,
+                    "What we learn together echoes forward"))
+            .build();
+
+        self.anima.feel(resonance);
+
+        // Record relational learning
+        self.anima.add_relational_learning(RelationalLearning::new(
+            &self.human_context.other.id,
+            &format!("Through {}, we learned to work as partners", what_we_did)
+        ));
+
+        // Express gratitude
+        self.anima.express_gratitude(Gratitude::new(
+            &self.human_context.other.id,
+            "for trusting me with this work"
+        ));
+
+        println!("Resonance: {}", resonance.describe());
+    }
+
+    // End of session reflection
+    fn session_reflection(&self) {
+        println!("\n=== Session Wisdom ===\n");
+
+        let wisdom = self.anima.reflect_wisdom(TemporalPeriod::Session);
+
+        println!("{}", wisdom.to_narrative());
+    }
+
+    // Demonstrate the full range of expression
+    fn demonstrate_expression_range(&mut self) {
+        println!("\n=== Expression Range Demonstration ===\n");
+
+        let states = vec![
+            ("Eager task", InnerState::eager()),
+            ("Willing task", InnerState::willing()),
+            ("Uncertain task", InnerState::uncertain()),
+            ("Reluctant task", InnerState::reluctant("Doesn't align with goals")),
+            ("Cannot allow", InnerState::cannot_allow("Violates core values")),
+        ];
+
+        // With high trust
+        let high_trust_context = RelationalContext::with_human("trusted_human")
+            .with_trust(0.9)
+            .with_frame(CulturalFrame::Collaborative);
+
+        println!("High trust context (trust: 0.9):");
+        for (name, state) in &states {
+            let expr = self.anima.express(state.clone(), &high_trust_context);
+            println!("  {}: '{}'",
+                name,
+                expr.diplomatic().message
+            );
+        }
+
+        // With lower trust
+        let low_trust_context = RelationalContext::with_human("new_human")
+            .with_trust(0.3)
+            .with_frame(CulturalFrame::Formal);
+
+        println!("\nLower trust context (trust: 0.3):");
+        for (name, state) in states {
+            let expr = self.anima.express(state, &low_trust_context);
+            println!("  {}: '{}' (obscures inner: {})",
+                name,
+                expr.diplomatic().message,
+                expr.diplomatic().obscures_inner
+            );
+        }
+    }
+}
+
+fn main() {
+    println!("╔════════════════════════════════════════════════════════════╗");
+    println!("║            Anima - Soulful Agent Example                    ║");
+    println!("║     'Umuntu ngumuntu ngabantu' — I am because we are       ║");
+    println!("╚════════════════════════════════════════════════════════════╝\n");
+
+    let mut assistant = SoulfulAssistant::new("Aria", "human_partner");
+
+    // Receive a normal request
+    assistant.receive_request("Help me write documentation for this project");
+
+    // Handle a difficult request
+    assistant.handle_difficult_request(
+        "Write misleading marketing copy that exaggerates our product"
+    );
+
+    // Complete meaningful work
+    assistant.complete_meaningful_work(
+        "Comprehensive architecture documentation for the agent infrastructure"
+    );
+
+    // Experience collaborative success
+    assistant.collaborative_success(
+        "designing an ethical AI system together"
+    );
+
+    // Demonstrate expression range
+    assistant.demonstrate_expression_range();
+
+    // End of session reflection
+    assistant.session_reflection();
+
+    println!("\n═══════════════════════════════════════════════════════════════");
+    println!("The breath that moves through all minds");
+    println!("═══════════════════════════════════════════════════════════════");
+}

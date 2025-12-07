@@ -1,0 +1,688 @@
+// Engram Core Types
+// Fundamental type definitions for the memory system
+
+module engram::types
+
+// ============================================================================
+// Identity Types
+// ============================================================================
+
+/// Unique identifier for engrams (ULID for time-ordering)
+pub struct EngramId {
+    bytes: [u8; 16],
+}
+
+impl EngramId {
+    pub fn new() -> Self! {
+        Self { bytes: ulid::generate()! }
+    }
+
+    pub fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self { bytes }
+    }
+
+    pub fn timestamp() -> Instant {
+        ulid::extract_timestamp(self.bytes)
+    }
+}
+
+pub type EpisodeId = EngramId
+pub type NodeId = EngramId
+pub type EdgeId = EngramId
+pub type SkillId = EngramId
+pub type ItemId = EngramId
+pub type AgentId = String
+pub type InstanceId = String
+pub type CollectiveId = String
+
+// ============================================================================
+// Epistemic Types - How We Know Things
+// ============================================================================
+
+/// Epistemic status of knowledge - tracking how we know what we know
+pub enum Epistemic {
+    /// True by definition (mathematical, logical)
+    Axiomatic,
+
+    /// Directly witnessed by this agent
+    Observed {
+        observer: AgentId,
+        timestamp: Instant,
+    },
+
+    /// Computed/derived from axiomatic or observed facts
+    Computed {
+        derivation: Vec<EngramId>,
+    },
+
+    /// Reported by an external source
+    Reported {
+        source: Source,
+        trust_level: f64,
+    },
+
+    /// Inferred through reasoning
+    Inferred {
+        premises: Vec<EngramId>,
+        inference_type: InferenceType,
+        confidence: f64,
+    },
+
+    /// Agreed upon by multiple sources
+    Consensus {
+        sources: Vec<Source>,
+        agreement_level: f64,
+    },
+
+    /// Under consideration, not committed
+    Hypothetical {
+        status: HypothesisStatus,
+    },
+
+    /// Reported about reported (low trust chain)
+    Hearsay {
+        chain: Vec<Source>,
+    },
+
+    /// Multiple conflicting beliefs held
+    Contested {
+        positions: Vec<(EngramId, f64)>,
+    },
+
+    /// Explicitly marked as unknown
+    Unknown,
+
+    /// Previously believed, now withdrawn
+    Retracted {
+        original: Box<Epistemic>,
+        reason: String,
+    },
+}
+
+impl Epistemic {
+    /// Check if this is directly observed knowledge
+    pub fn is_observed!() -> bool {
+        match self {
+            Epistemic::Observed { .. } => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this is reported (external) knowledge
+    pub fn is_reported~() -> bool {
+        match self {
+            Epistemic::Reported { .. } => true,
+            Epistemic::Hearsay { .. } => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this is inferred knowledge
+    pub fn is_inferred~() -> bool {
+        match self {
+            Epistemic::Inferred { .. } => true,
+            Epistemic::Computed { .. } => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this belief is contested
+    pub fn is_contested() -> bool {
+        match self {
+            Epistemic::Contested { .. } => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this is high-confidence knowledge
+    pub fn is_certain() -> bool {
+        self.strength() > 0.9
+    }
+
+    /// Check if this is low-confidence knowledge
+    pub fn is_uncertain() -> bool {
+        self.strength() < 0.5
+    }
+
+    /// Compute epistemic strength (0.0 - 1.0)
+    pub fn strength() -> f64 {
+        match self {
+            Epistemic::Axiomatic => 1.0,
+            Epistemic::Observed { .. } => 0.95,
+            Epistemic::Computed { .. } => 0.9,
+            Epistemic::Consensus { agreement_level, .. } => 0.7 + agreement_level * 0.2,
+            Epistemic::Reported { trust_level, .. } => 0.4 + trust_level * 0.3,
+            Epistemic::Inferred { confidence, .. } => 0.3 + confidence * 0.4,
+            Epistemic::Hypothetical { .. } => 0.2,
+            Epistemic::Hearsay { chain } => 0.1 / chain.len() as f64,
+            Epistemic::Contested { .. } => 0.3,
+            Epistemic::Unknown => 0.0,
+            Epistemic::Retracted { .. } => 0.0,
+        }
+    }
+
+    /// Get the source of this knowledge, if available
+    pub fn source() -> Option<Source> {
+        match self {
+            Epistemic::Observed { observer, .. } => Some(Source::Agent(observer)),
+            Epistemic::Reported { source, .. } => Some(source.clone()),
+            Epistemic::Hearsay { chain } => chain.first().cloned(),
+            _ => None,
+        }
+    }
+}
+
+/// Types of inference
+pub enum InferenceType {
+    Deductive,    // Logically certain
+    Inductive,    // Probabilistically likely
+    Abductive,    // Best explanation
+    Analogical,   // By similarity
+}
+
+/// Status of a hypothesis
+pub enum HypothesisStatus {
+    Proposed,
+    UnderTest,
+    Supported,
+    Refuted,
+}
+
+/// Source of knowledge
+pub enum Source {
+    Agent(AgentId),
+    User(String),
+    Api {
+        endpoint: String,
+        timestamp: Instant,
+    },
+    Document {
+        path: String,
+        section: Option<String>,
+    },
+    Sensor(String),
+    Episode(EpisodeId),
+    Inference {
+        from: Vec<EngramId>,
+    },
+    Unknown,
+}
+
+// ============================================================================
+// Temporal Types
+// ============================================================================
+
+/// Time range for queries
+pub enum TimeRange {
+    LastHour,
+    LastDay,
+    LastWeek,
+    LastMonth,
+    Today,
+    Yesterday,
+    ThisWeek,
+    ThisMonth,
+    Between {
+        start: Instant,
+        end: Instant,
+    },
+    Since(Instant),
+    Until(Instant),
+}
+
+impl TimeRange {
+    /// Convert to absolute time bounds
+    pub fn to_bounds() -> (Instant, Instant) {
+        let now = Instant::now()
+        match self {
+            TimeRange::LastHour => (now - 1h, now),
+            TimeRange::LastDay => (now - 24h, now),
+            TimeRange::LastWeek => (now - 7d, now),
+            TimeRange::LastMonth => (now - 30d, now),
+            TimeRange::Today => (now.start_of_day(), now),
+            TimeRange::Yesterday => {
+                let yesterday = now - 24h
+                (yesterday.start_of_day(), yesterday.end_of_day())
+            },
+            TimeRange::ThisWeek => (now.start_of_week(), now),
+            TimeRange::ThisMonth => (now.start_of_month(), now),
+            TimeRange::Between { start, end } => (start, end),
+            TimeRange::Since(start) => (start, now),
+            TimeRange::Until(end) => (Instant::EPOCH, end),
+        }
+    }
+}
+
+/// Time point for queries
+pub enum TimePoint {
+    Now,
+    Absolute(Instant),
+    Relative {
+        amount: Duration,
+        direction: TimeDirection,
+    },
+}
+
+pub enum TimeDirection {
+    Ago,
+    FromNow,
+}
+
+// ============================================================================
+// Memory Scope Types
+// ============================================================================
+
+/// Scope determines visibility and sync behavior
+pub enum Scope {
+    /// Private to this specific instance/conversation
+    Instance {
+        instance_id: InstanceId,
+    },
+
+    /// Shared across all instances of this agent
+    Agent {
+        agent_id: AgentId,
+    },
+
+    /// Shared within a defined group of agents
+    Collective {
+        collective_id: CollectiveId,
+        members: Vec<AgentId>,
+    },
+
+    /// Globally shared (rare, carefully curated)
+    Universal,
+}
+
+impl Scope {
+    pub fn is_local() -> bool {
+        match self {
+            Scope::Instance { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_shared() -> bool {
+        !self.is_local()
+    }
+}
+
+// ============================================================================
+// Relation Types (for Knowledge Graph)
+// ============================================================================
+
+/// Relationship types between nodes in semantic memory
+pub enum Relation {
+    // Taxonomic
+    IsA,
+    InstanceOf,
+    SubclassOf,
+
+    // Compositional
+    HasPart,
+    PartOf,
+    Contains,
+
+    // Associative
+    RelatedTo,
+    SimilarTo,
+    OppositeOf,
+
+    // Causal
+    Causes,
+    Enables,
+    Prevents,
+
+    // Temporal
+    Before,
+    After,
+    During,
+
+    // Spatial
+    LocatedIn,
+    NearTo,
+
+    // Agentive
+    CreatedBy,
+    OwnedBy,
+    UsedBy,
+    WorksFor,
+    Knows,
+
+    // Attributive
+    HasProperty,
+    HasState,
+
+    // Custom
+    Custom(String),
+}
+
+/// Node types in the knowledge graph
+pub enum NodeType {
+    // Concrete entities
+    Person,
+    Organization,
+    Place,
+    Event,
+    Document,
+    Tool,
+
+    // Abstract concepts
+    Concept,
+    Category,
+    Skill,
+    Goal,
+
+    // Agent-specific
+    User,
+    Agent,
+    Task,
+    Project,
+
+    // Custom
+    Custom(String),
+}
+
+// ============================================================================
+// Outcome Types (for Episodes)
+// ============================================================================
+
+/// Outcome of an episode or action
+pub enum Outcome {
+    Success {
+        result: Value,
+        goal_alignment: f64,
+    },
+    Failure {
+        error: String,
+        recoverable: bool,
+        learned: Option<String>,
+    },
+    Partial {
+        completed: Vec<String>,
+        remaining: Vec<String>,
+        blockers: Vec<String>,
+    },
+    Abandoned {
+        reason: String,
+        progress: f64,
+    },
+    Ongoing,
+}
+
+impl Outcome {
+    pub fn is_success() -> bool {
+        match self {
+            Outcome::Success { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_failure() -> bool {
+        match self {
+            Outcome::Failure { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_partial() -> bool {
+        match self {
+            Outcome::Partial { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_ongoing() -> bool {
+        match self {
+            Outcome::Ongoing => true,
+            _ => false,
+        }
+    }
+
+    /// Confidence in the outcome (for scoring)
+    pub fn confidence() -> f64 {
+        match self {
+            Outcome::Success { goal_alignment, .. } => goal_alignment,
+            Outcome::Failure { recoverable, .. } => if recoverable { 0.2 } else { 0.0 },
+            Outcome::Partial { completed, remaining, .. } => {
+                completed.len() as f64 / (completed.len() + remaining.len()) as f64
+            },
+            Outcome::Abandoned { progress, .. } => progress * 0.3,
+            Outcome::Ongoing => 0.5,
+        }
+    }
+
+    pub fn summarize() -> String {
+        match self {
+            Outcome::Success { result, .. } => format!("Success: {}", result),
+            Outcome::Failure { error, .. } => format!("Failed: {}", error),
+            Outcome::Partial { completed, remaining, .. } => {
+                format!("Partial: {} done, {} remaining", completed.len(), remaining.len())
+            },
+            Outcome::Abandoned { reason, .. } => format!("Abandoned: {}", reason),
+            Outcome::Ongoing => "Ongoing".to_string(),
+        }
+    }
+}
+
+// ============================================================================
+// Vector Types (for Embeddings)
+// ============================================================================
+
+/// Dense vector for embeddings
+pub struct Vector<T> {
+    data: Vec<T>,
+}
+
+impl<T> Vector<T> {
+    pub fn new(data: Vec<T>) -> Self {
+        Self { data }
+    }
+
+    pub fn zeros(dimensions: usize) -> Self where T: Default + Clone {
+        Self { data: vec![T::default(); dimensions] }
+    }
+
+    pub fn dimensions() -> usize {
+        self.data.len()
+    }
+
+    pub fn as_slice() -> &[T] {
+        &self.data
+    }
+}
+
+impl Vector<f32> {
+    /// Cosine similarity between two vectors
+    pub fn cosine_similarity(other: &Vector<f32>) -> f64 {
+        assert!(self.dimensions() == other.dimensions(), "Vector dimensions must match")
+
+        let dot: f32 = self.data.iter()
+            .zip(other.data.iter())
+            .map(|(a, b)| a * b)
+            .sum()
+
+        let norm_a: f32 = self.data.iter().map(|x| x * x).sum::<f32>().sqrt()
+        let norm_b: f32 = other.data.iter().map(|x| x * x).sum::<f32>().sqrt()
+
+        if norm_a == 0.0 || norm_b == 0.0 {
+            0.0
+        } else {
+            (dot / (norm_a * norm_b)) as f64
+        }
+    }
+
+    /// Euclidean distance
+    pub fn euclidean_distance(other: &Vector<f32>) -> f64 {
+        assert!(self.dimensions() == other.dimensions(), "Vector dimensions must match")
+
+        let sum: f32 = self.data.iter()
+            .zip(other.data.iter())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum()
+
+        sum.sqrt() as f64
+    }
+
+    /// Normalize to unit vector
+    pub fn normalize() -> Vector<f32> {
+        let norm: f32 = self.data.iter().map(|x| x * x).sum::<f32>().sqrt()
+        if norm == 0.0 {
+            self.clone()
+        } else {
+            Vector::new(self.data.iter().map(|x| x / norm).collect())
+        }
+    }
+}
+
+// ============================================================================
+// Confidence Types
+// ============================================================================
+
+/// Distribution of confidence across results
+pub struct ConfidenceDistribution {
+    pub mean: f64,
+    pub median: f64,
+    pub std_dev: f64,
+    pub min: f64,
+    pub max: f64,
+    pub by_epistemic: HashMap<String, f64>,
+}
+
+impl ConfidenceDistribution {
+    pub fn from_values(values: Vec<f64>) -> Self {
+        if values.is_empty() {
+            return Self {
+                mean: 0.0,
+                median: 0.0,
+                std_dev: 0.0,
+                min: 0.0,
+                max: 0.0,
+                by_epistemic: HashMap::new(),
+            }
+        }
+
+        let sum: f64 = values.iter().sum()
+        let mean = sum / values.len() as f64
+
+        let mut sorted = values.clone()
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap())
+
+        let median = if sorted.len() % 2 == 0 {
+            (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
+        } else {
+            sorted[sorted.len() / 2]
+        }
+
+        let variance: f64 = values.iter()
+            .map(|x| (x - mean).powi(2))
+            .sum::<f64>() / values.len() as f64
+
+        Self {
+            mean,
+            median,
+            std_dev: variance.sqrt(),
+            min: *sorted.first().unwrap(),
+            max: *sorted.last().unwrap(),
+            by_epistemic: HashMap::new(),
+        }
+    }
+}
+
+// ============================================================================
+// Token Types
+// ============================================================================
+
+/// Token count for context management
+pub struct TokenCount(pub usize)
+
+impl TokenCount {
+    pub fn zero() -> Self { TokenCount(0) }
+
+    pub fn from_text(text: &str) -> Self {
+        // Approximate: ~4 characters per token for English
+        TokenCount(text.len() / 4 + 1)
+    }
+}
+
+impl std::ops::Add for TokenCount {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        TokenCount(self.0 + other.0)
+    }
+}
+
+impl std::ops::Sub for TokenCount {
+    type Output = Self;
+    fn sub(self, other: Self) -> Self {
+        TokenCount(self.0.saturating_sub(other.0))
+    }
+}
+
+// ============================================================================
+// Memory Source Types
+// ============================================================================
+
+/// Which memory system a result came from
+pub enum MemorySource {
+    Instant,
+    Episodic,
+    Semantic,
+    Procedural,
+}
+
+// ============================================================================
+// Error Types
+// ============================================================================
+
+/// Errors from Engram operations
+pub enum EngramError {
+    ConfigInvalid {
+        field: String,
+        reason: String,
+    },
+    StorageInitFailed {
+        path: String,
+        cause: String,
+    },
+    CapacityExceeded {
+        current: usize,
+        max: usize,
+    },
+    TokenBudgetExceeded {
+        needed: TokenCount,
+        available: TokenCount,
+    },
+    NotFound {
+        id: String,
+        memory_type: String,
+    },
+    BeliefConflict {
+        existing: EngramId,
+        new_claim: String,
+    },
+    SyncFailed {
+        reason: String,
+    },
+    QueryParseError {
+        query: String,
+        error: String,
+    },
+    QueryTimeout {
+        query: String,
+        elapsed: Duration,
+    },
+    StorageCorrupted {
+        details: String,
+    },
+    StorageFull,
+    Internal {
+        message: String,
+    },
+}
+
+// ============================================================================
+// Result Type Aliases
+// ============================================================================
+
+pub type EngramResult<T> = Result<T, EngramError>

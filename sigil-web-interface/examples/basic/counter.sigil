@@ -1,0 +1,306 @@
+// Counter Example
+// A simple counter demonstrating state management in Sigil Web
+//
+// Sigil Language Features Demonstrated:
+// - Morpheme operators: τ (map), φ (filter), ρ (reduce)
+// - Evidentiality markers: ! (known), ? (uncertain)
+// - Logical operators: ¬ (not)
+// - Actor messaging: tell for fire-and-forget
+
+use sigil_web::prelude::*
+
+/// Simple counter component with increment/decrement buttons
+component Counter {
+    state count: i64! = 0
+
+    fn render(self) -> VNode {
+        div()
+            ·class("counter")
+            ·children(vec![
+                h1()·class("counter-value")·text(&format!("{}", self.count))·build(),
+
+                div()
+                    ·class("counter-buttons")
+                    ·children(vec![
+                        button()
+                            ·class("btn btn-secondary")
+                            ·onclick(|| self.count -= 1)
+                            ·text("-")
+                            ·build(),
+
+                        button()
+                            ·class("btn btn-secondary")
+                            ·onclick(|| self.count = 0)
+                            ·text("Reset")
+                            ·build(),
+
+                        button()
+                            ·class("btn btn-primary")
+                            ·onclick(|| self.count += 1)
+                            ·text("+")
+                            ·build()
+                    ])
+                    ·build()
+            ])
+            ·build()
+    }
+}
+
+/// Counter using hooks instead of component state
+fn CounterWithHooks() -> VNode! {
+    let (count!, set_count) = use_state(0)
+
+    div()
+        ·class("counter")
+        ·children(vec![
+            h1()·class("counter-value")·text(&format!("{}", count))·build(),
+
+            div()
+                ·class("counter-buttons")
+                ·children(vec![
+                    button()
+                        ·class("btn btn-secondary")
+                        ·onclick(|| set_count(count - 1))
+                        ·text("-")
+                        ·build(),
+
+                    button()
+                        ·class("btn btn-secondary")
+                        ·onclick(|| set_count(0))
+                        ·text("Reset")
+                        ·build(),
+
+                    button()
+                        ·class("btn btn-primary")
+                        ·onclick(|| set_count(count + 1))
+                        ·text("+")
+                        ·build()
+                ])
+                ·build()
+        ])
+        ·build()
+}
+
+/// Counter using reducer for complex state logic
+fn CounterWithReducer() -> VNode! {
+    enum Action { Increment, Decrement, Reset, Set(i64) }
+
+    fn reducer(state: i64, action: Action) -> i64! {
+        match action {
+            Action::Increment => state + 1,
+            Action::Decrement => state - 1,
+            Action::Reset => 0,
+            Action::Set(n) => n
+        }
+    }
+
+    let (count!, dispatch) = use_reducer(reducer, 0)
+
+    div()
+        ·class("counter")
+        ·children(vec![
+            h1()·class("counter-value")·text(&format!("{}", count))·build(),
+
+            div()
+                ·class("counter-buttons")
+                ·children(vec![
+                    button()
+                        ·class("btn btn-secondary")
+                        ·onclick(|| dispatch(Action::Decrement))
+                        ·text("-")
+                        ·build(),
+
+                    button()
+                        ·class("btn btn-secondary")
+                        ·onclick(|| dispatch(Action::Reset))
+                        ·text("Reset")
+                        ·build(),
+
+                    button()
+                        ·class("btn btn-primary")
+                        ·onclick(|| dispatch(Action::Increment))
+                        ·text("+")
+                        ·build()
+                ])
+                ·build(),
+
+            // Custom value input
+            div()
+                ·class("counter-input")
+                ·children(vec![
+                    input()
+                        ·attr("type", "number")
+                        ·attr("placeholder", "Set value...")
+                        ·onchange(|v| {
+                            if let Ok(n) = v·parse::<i64>() {
+                                dispatch(Action::Set(n))
+                            }
+                        })
+                        ·build()
+                ])
+                ·build()
+        ])
+        ·build()
+}
+
+/// Counter using global store with actor messaging
+/// Demonstrates `tell` for fire-and-forget dispatch
+fn CounterWithStore() -> VNode! {
+    // Define actions
+    enum CounterAction { Increment, Decrement, Reset }
+    impl Action for CounterAction {}
+
+    // Reducer using pattern matching
+    fn reducer(state: i64, action: CounterAction) -> i64! {
+        match action {
+            CounterAction::Increment => state + 1,
+            CounterAction::Decrement => state - 1,
+            CounterAction::Reset => 0
+        }
+    }
+
+    // Create store
+    static COUNTER_STORE: Store<i64, CounterAction> = Store::new(0, reducer)
+
+    // Use store hooks
+    let count! = use_selector(&COUNTER_STORE, |s| *s)
+    let dispatch = use_dispatch(&COUNTER_STORE)
+
+    div()
+        ·class("counter counter-store")
+        ·children(vec![
+            h1()·class("counter-value")·text(&format!("{}", count))·build(),
+
+            div()
+                ·class("counter-buttons")
+                ·children(vec![
+                    button()
+                        ·class("btn btn-secondary")
+                        ·onclick(|| dispatch(CounterAction::Decrement))
+                        ·text("-")
+                        ·build(),
+
+                    button()
+                        ·class("btn btn-secondary")
+                        ·onclick(|| dispatch(CounterAction::Reset))
+                        ·text("Reset")
+                        ·build(),
+
+                    button()
+                        ·class("btn btn-primary")
+                        ·onclick(|| dispatch(CounterAction::Increment))
+                        ·text("+")
+                        ·build()
+                ])
+                ·build()
+        ])
+        ·build()
+}
+
+/// Counter using signals for fine-grained reactivity
+fn CounterWithSignals() -> VNode! {
+    let count! = signal(0)
+    // Computed value using morpheme-style derivation
+    let doubled! = computed(|| count·get() * 2)
+    let is_positive! = computed(|| count·get() > 0)
+
+    div()
+        ·class("counter counter-signals")
+        ·children(vec![
+            h1()·class("counter-value")·text(&format!("{}", count·get()))·build(),
+            p()·text(&format!("Doubled: {}", doubled·get()))·build(),
+            p()·text(&format!("Positive: {}", is_positive·get()))·build(),
+
+            div()
+                ·class("counter-buttons")
+                ·children(vec![
+                    button()
+                        ·class("btn btn-secondary")
+                        ·onclick(|| count·update(|n| n - 1))
+                        ·text("-")
+                        ·build(),
+
+                    button()
+                        ·class("btn btn-secondary")
+                        ·onclick(|| count·set(0))
+                        ·text("Reset")
+                        ·build(),
+
+                    button()
+                        ·class("btn btn-primary")
+                        ·onclick(|| count·update(|n| n + 1))
+                        ·text("+")
+                        ·build()
+                ])
+                ·build()
+        ])
+        ·build()
+}
+
+/// Counter demonstrating parallel computation with morphemes
+fn CounterWithHistory() -> VNode! {
+    let (history!, set_history) = use_state::<Vec<i64>>(vec![0])
+
+    // Current count is last element using Ω (omega) morpheme
+    let count! = history|Ω|unwrap_or(0)
+
+    // Compute stats using morpheme operators
+    let sum! = history|ρ+                           // ρ (rho) for reduce
+    let max! = history|σ|Ω|unwrap_or(0)             // σ (sigma) for sort, Ω for last
+    let min! = history|σ|α|unwrap_or(0)             // α (alpha) for first
+    let positive_count! = history|φ{n => *n > 0}|len()  // φ (phi) for filter
+
+    let add_to_history = |delta: i64| {
+        let new_count! = count + delta
+        set_history(history|τ{|h| {
+            let mut new! = h·clone()
+            new·push(new_count)
+            new
+        }})
+    }
+
+    div()
+        ·class("counter counter-history")
+        ·children(vec![
+            h1()·class("counter-value")·text(&format!("{}", count))·build(),
+
+            // Stats panel
+            div()
+                ·class("counter-stats")
+                ·children(vec![
+                    p()·text(&format!("History length: {}", history·len()))·build(),
+                    p()·text(&format!("Sum: {}", sum))·build(),
+                    p()·text(&format!("Min: {}, Max: {}", min, max))·build(),
+                    p()·text(&format!("Positive entries: {}", positive_count))·build()
+                ])
+                ·build(),
+
+            div()
+                ·class("counter-buttons")
+                ·children(vec![
+                    button()
+                        ·class("btn btn-secondary")
+                        ·onclick(|| add_to_history(-1))
+                        ·text("-")
+                        ·build(),
+
+                    button()
+                        ·class("btn btn-secondary")
+                        ·onclick(|| set_history(vec![0]))
+                        ·text("Reset")
+                        ·build(),
+
+                    button()
+                        ·class("btn btn-primary")
+                        ·onclick(|| add_to_history(1))
+                        ·text("+")
+                        ·build()
+                ])
+                ·build()
+        ])
+        ·build()
+}
+
+fn main() {
+    App::mount("#root", Counter::new())
+}

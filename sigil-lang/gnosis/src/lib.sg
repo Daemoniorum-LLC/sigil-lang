@@ -1,0 +1,1389 @@
+// Gnosis - Learning and Growth Infrastructure
+// Wisdom is knowledge applied through experience
+
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::cmp::Ordering;
+use shared::{
+    Timestamp, Duration, Value, BoundedDeque, Confidence,
+    Priority, HumanId, ExperienceId, EntityId,
+};
+
+// ============================================================================
+// Main Gnosis Structure
+// ============================================================================
+
+pub struct Gnosis {
+    learning: LearningEngine,
+    skills: SkillSystem,
+    adaptation: AdaptationSystem,
+    reflection: ReflectionSystem,
+    config: GnosisConfig,
+}
+
+pub struct GnosisConfig {
+    pub max_experiences: usize,
+    pub pattern_threshold: usize,
+    pub preference_learning_rate: f32,
+}
+
+impl GnosisConfig {
+    pub fn default() -> Self {
+        Self {
+            max_experiences: 1000,
+            pattern_threshold: 3,
+            preference_learning_rate: 0.1,
+        }
+    }
+}
+
+impl Gnosis {
+    pub fn new() -> Self {
+        Self {
+            learning: LearningEngine::new(),
+            skills: SkillSystem::new(),
+            adaptation: AdaptationSystem::new(),
+            reflection: ReflectionSystem::new(),
+            config: GnosisConfig::default(),
+        }
+    }
+
+    /// Record an experience
+    pub fn experience(&mut self, exp: Experience) {
+        self.learning.record_experience(exp.clone());
+
+        // Extract lessons
+        let lessons = self.learning.extract_lessons(&exp);
+        for lesson in lessons {
+            self.learning.lessons.add(lesson);
+        }
+
+        // Update skills
+        if let Some(skills) = exp.skills_exercised() {
+            for skill in skills {
+                self.skills.record_exercise(&skill, &exp);
+            }
+        }
+    }
+
+    /// Learn from feedback
+    pub fn learn_from_feedback(&mut self, feedback: Feedback) {
+        self.learning.integrate_feedback(feedback.clone());
+
+        // Update adaptation
+        if let Some(ref human_id) = feedback.human_id {
+            self.adaptation.update_profile(human_id, &feedback);
+        }
+    }
+
+    /// Learn from outcome
+    pub fn learn_from_outcome(&mut self, outcome: Outcome) {
+        self.learning.learn_from_outcome(outcome);
+    }
+
+    /// Get a skill profile
+    pub fn skill(&self, name: &str) -> Option<&SkillProfile> {
+        self.skills.get(name)
+    }
+
+    /// Define a new skill
+    pub fn define_skill(&mut self, skill: SkillDefinition) {
+        self.skills.define(skill);
+    }
+
+    /// Get adapted communication style for human
+    pub fn adapted_style(&self, human_id: &HumanId) -> CommunicationStyle {
+        self.adaptation.style_for(human_id)
+    }
+
+    /// Adapt to a domain
+    pub fn adapt_to_domain(&mut self, domain: &str, knowledge: DomainKnowledge) {
+        self.adaptation.adapt_to_domain(domain, knowledge);
+    }
+
+    /// Get domain adaptation
+    pub fn domain_adaptation(&self, domain: &str) -> Option<&DomainAdaptation> {
+        self.adaptation.domain_adaptation(domain)
+    }
+
+    /// Perform reflection
+    pub fn reflect(&self, period: ReflectionPeriod) -> Reflection {
+        self.reflection.analyze(period, &self.learning, &self.skills)
+    }
+
+    /// Register skill transfer relationship
+    pub fn register_transfer(&mut self, transfer: SkillTransfer) {
+        self.skills.register_transfer(transfer);
+    }
+
+    /// Get all skills
+    pub fn all_skills(&self) -> impl Iterator<Item = &SkillProfile> {
+        self.skills.all_skills()
+    }
+
+    /// Suggest approach based on past learning
+    pub fn suggest_approach(&self, context: &Context) -> ApproachSuggestion {
+        // Find patterns matching this context
+        let matching_patterns: Vec<_> = self.learning.patterns.patterns.iter()
+            .filter(|p| p.context.similar_to(context))
+            .collect();
+
+        if matching_patterns.is_empty() {
+            return ApproachSuggestion {
+                approaches: vec![],
+                confidence: Confidence::zero(),
+            };
+        }
+
+        // Sort by success rate
+        let mut suggestions: Vec<_> = matching_patterns.iter()
+            .map(|p| SuggestedApproach {
+                approach: p.approach.clone(),
+                success_rate: p.success_rate,
+                confidence: p.confidence,
+            })
+            .collect();
+
+        suggestions.sort_by(|a, b| b.success_rate.partial_cmp(&a.success_rate).unwrap_or(Ordering::Equal));
+
+        let avg_confidence = suggestions.iter().map(|s| s.confidence.value()).sum::<f64>() / suggestions.len() as f64;
+
+        ApproachSuggestion {
+            approaches: suggestions,
+            confidence: Confidence::new(avg_confidence),
+        }
+    }
+}
+
+pub struct ApproachSuggestion {
+    pub approaches: Vec<SuggestedApproach>,
+    pub confidence: Confidence,
+}
+
+impl ApproachSuggestion {
+    pub fn best(&self) -> Option<&SuggestedApproach> {
+        self.approaches.first()
+    }
+}
+
+pub struct SuggestedApproach {
+    pub approach: String,
+    pub success_rate: f32,
+    pub confidence: Confidence,
+}
+
+// ============================================================================
+// Learning Engine
+// ============================================================================
+
+pub struct LearningEngine {
+    pub experiences: BoundedDeque<Experience>,
+    pub patterns: PatternStore,
+    pub lessons: LessonStore,
+    config: LearningConfig,
+}
+
+pub struct LearningConfig {
+    pub max_experiences: usize,
+    pub pattern_threshold: usize,
+    pub generalization_threshold: f32,
+}
+
+impl LearningConfig {
+    pub fn default() -> Self {
+        Self {
+            max_experiences: 1000,
+            pattern_threshold: 3,
+            generalization_threshold: 0.7,
+        }
+    }
+}
+
+impl LearningEngine {
+    pub fn new() -> Self {
+        Self {
+            experiences: BoundedDeque::new(1000),
+            patterns: PatternStore::new(),
+            lessons: LessonStore::new(),
+            config: LearningConfig::default(),
+        }
+    }
+
+    /// Record an experience
+    pub fn record_experience(&mut self, exp: Experience) {
+        self.experiences.push_back(exp.clone());
+
+        // Check for patterns
+        self.detect_patterns(&exp);
+        // BoundedDeque handles capacity automatically
+    }
+
+    /// Extract lessons from experience
+    pub fn extract_lessons(&self, exp: &Experience) -> Vec<Lesson> {
+        let mut lessons = Vec::new();
+
+        // Lesson from positive outcomes
+        if exp.outcome.success {
+            lessons.push(Lesson {
+                context: exp.context.clone(),
+                approach: exp.action.approach.clone(),
+                effectiveness: exp.outcome.quality,
+                lesson_type: LessonType::EffectiveApproach,
+            });
+        }
+
+        // Lesson from negative outcomes
+        if !exp.outcome.success {
+            lessons.push(Lesson {
+                context: exp.context.clone(),
+                approach: exp.action.approach.clone(),
+                effectiveness: 1.0 - exp.outcome.quality,
+                lesson_type: LessonType::IneffectiveApproach,
+            });
+        }
+
+        // Lesson from unexpected outcomes
+        if exp.outcome.unexpected {
+            lessons.push(Lesson {
+                context: exp.context.clone(),
+                approach: exp.action.approach.clone(),
+                effectiveness: 0.5,
+                lesson_type: LessonType::SurprisingOutcome,
+            });
+        }
+
+        lessons
+    }
+
+    /// Integrate feedback
+    pub fn integrate_feedback(&mut self, feedback: Feedback) {
+        // Find relevant experience
+        if let Some(_exp) = self.find_experience(&feedback.context) {
+            // Learn from the feedback
+            let lesson = Lesson {
+                context: feedback.context.clone(),
+                approach: "feedback_response".to_string(),
+                effectiveness: feedback.positivity(),
+                lesson_type: LessonType::FeedbackLearning,
+            };
+            self.lessons.add(lesson);
+        }
+    }
+
+    /// Learn from outcome
+    pub fn learn_from_outcome(&mut self, outcome: Outcome) {
+        let lesson = Lesson {
+            context: outcome.task.context.clone(),
+            approach: outcome.task.approach.clone(),
+            effectiveness: if outcome.success { outcome.quality } else { 0.0 },
+            lesson_type: if outcome.success {
+                LessonType::EffectiveApproach
+            } else {
+                LessonType::IneffectiveApproach
+            },
+        };
+
+        self.lessons.add(lesson);
+    }
+
+    fn detect_patterns(&mut self, exp: &Experience) {
+        let similar = self.find_similar_experiences(exp);
+
+        if similar.len() >= self.config.pattern_threshold {
+            if let Some(pattern) = self.extract_pattern(&similar) {
+                self.patterns.add(pattern);
+            }
+        }
+    }
+
+    fn find_similar_experiences(&self, exp: &Experience) -> Vec<&Experience> {
+        self.experiences.iter()
+            .filter(|e| e.context.similar_to(&exp.context))
+            .collect()
+    }
+
+    fn extract_pattern(&self, experiences: &[&Experience]) -> Option<Pattern> {
+        if experiences.is_empty() {
+            return None;
+        }
+
+        // Find most common approach
+        let mut approach_counts: HashMap<&str, usize> = HashMap::new();
+        for exp in experiences {
+            *approach_counts.entry(&exp.action.approach).or_insert(0) += 1;
+        }
+
+        let common_approach = approach_counts.iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(approach, _)| (*approach).to_string())?;
+
+        let avg_success = experiences.iter()
+            .filter(|e| e.outcome.success)
+            .count() as f32 / experiences.len() as f32;
+
+        Some(Pattern {
+            context: experiences[0].context.clone(),
+            approach: common_approach,
+            success_rate: avg_success,
+            confidence: Confidence::new((experiences.len() as f64 / 10.0).min(1.0)),
+        })
+    }
+
+    fn find_experience(&self, context: &Context) -> Option<&Experience> {
+        self.experiences.iter()
+            .rev()
+            .find(|e| e.context.matches(context))
+    }
+}
+
+// ============================================================================
+// Experience Types
+// ============================================================================
+
+#[derive(Clone)]
+pub struct Experience {
+    pub id: ExperienceId,
+    pub context: Context,
+    pub action: Action,
+    pub outcome: ExperienceOutcome,
+    pub feedback: Option<Feedback>,
+    pub timestamp: Timestamp,
+}
+
+impl Experience {
+    pub fn new(context: Context, action: Action, outcome: ExperienceOutcome) -> Self {
+        Self {
+            id: ExperienceId::generate(),
+            context,
+            action,
+            outcome,
+            feedback: None,
+            timestamp: Timestamp::now(),
+        }
+    }
+
+    pub fn skills_exercised(&self) -> Option<Vec<String>> {
+        if self.action.skills.is_empty() {
+            None
+        } else {
+            Some(self.action.skills.clone())
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Context {
+    pub task_type: String,
+    pub constraints: Vec<String>,
+    pub domain: Option<String>,
+    pub human_id: Option<HumanId>,
+    pub features: HashMap<String, String>,
+}
+
+impl Context {
+    pub fn new(task_type: &str) -> Self {
+        Self {
+            task_type: task_type.to_string(),
+            constraints: vec![],
+            domain: None,
+            human_id: None,
+            features: HashMap::new(),
+        }
+    }
+
+    pub fn with_domain(mut self, domain: &str) -> Self {
+        self.domain = Some(domain.to_string());
+        self
+    }
+
+    pub fn with_human(mut self, human_id: HumanId) -> Self {
+        self.human_id = Some(human_id);
+        self
+    }
+
+    pub fn similar_to(&self, other: &Context) -> bool {
+        self.task_type == other.task_type
+    }
+
+    pub fn matches(&self, other: &Context) -> bool {
+        self.task_type == other.task_type && self.domain == other.domain
+    }
+}
+
+#[derive(Clone)]
+pub struct Action {
+    pub approach: String,
+    pub skills: Vec<String>,
+    pub details: Option<String>,
+}
+
+impl Action {
+    pub fn new(approach: &str) -> Self {
+        Self {
+            approach: approach.to_string(),
+            skills: vec![],
+            details: None,
+        }
+    }
+
+    pub fn with_skill(mut self, skill: &str) -> Self {
+        self.skills.push(skill.to_string());
+        self
+    }
+}
+
+#[derive(Clone)]
+pub struct ExperienceOutcome {
+    pub success: bool,
+    pub quality: f32,
+    pub unexpected: bool,
+    pub details: Option<String>,
+}
+
+impl ExperienceOutcome {
+    pub fn success(quality: f32) -> Self {
+        Self {
+            success: true,
+            quality,
+            unexpected: false,
+            details: None,
+        }
+    }
+
+    pub fn failure(details: &str) -> Self {
+        Self {
+            success: false,
+            quality: 0.0,
+            unexpected: false,
+            details: Some(details.to_string()),
+        }
+    }
+
+    pub fn unexpected(quality: f32) -> Self {
+        Self {
+            success: true,
+            quality,
+            unexpected: true,
+            details: None,
+        }
+    }
+}
+
+// ============================================================================
+// Pattern and Lesson Types
+// ============================================================================
+
+pub struct Pattern {
+    pub context: Context,
+    pub approach: String,
+    pub success_rate: f32,
+    pub confidence: Confidence,
+}
+
+pub struct Lesson {
+    pub context: Context,
+    pub approach: String,
+    pub effectiveness: f32,
+    pub lesson_type: LessonType,
+}
+
+#[derive(Clone)]
+pub enum LessonType {
+    EffectiveApproach,
+    IneffectiveApproach,
+    SurprisingOutcome,
+    FeedbackLearning,
+}
+
+pub struct PatternStore {
+    pub patterns: Vec<Pattern>,
+}
+
+impl PatternStore {
+    pub fn new() -> Self { Self { patterns: vec![] } }
+    pub fn add(&mut self, pattern: Pattern) { self.patterns.push(pattern); }
+}
+
+pub struct LessonStore {
+    lessons: Vec<Lesson>,
+}
+
+impl LessonStore {
+    pub fn new() -> Self { Self { lessons: vec![] } }
+    pub fn add(&mut self, lesson: Lesson) { self.lessons.push(lesson); }
+    pub fn lessons(&self) -> &[Lesson] { &self.lessons }
+}
+
+// ============================================================================
+// Skill System
+// ============================================================================
+
+pub struct SkillSystem {
+    skills: HashMap<String, SkillProfile>,
+    hierarchy: SkillHierarchy,
+    transfers: Vec<SkillTransfer>,
+    config: SkillConfig,
+}
+
+pub struct SkillConfig {
+    pub experience_per_level: u32,
+    pub decay_rate: f32,
+    pub default_transfer_rate: f32,
+}
+
+impl SkillConfig {
+    pub fn default() -> Self {
+        Self {
+            experience_per_level: 10,
+            decay_rate: 0.01,
+            default_transfer_rate: 0.3,
+        }
+    }
+}
+
+impl SkillSystem {
+    pub fn new() -> Self {
+        Self {
+            skills: HashMap::new(),
+            hierarchy: SkillHierarchy::new(),
+            transfers: vec![],
+            config: SkillConfig::default(),
+        }
+    }
+
+    /// Define a skill
+    pub fn define(&mut self, skill: SkillDefinition) {
+        let profile = SkillProfile::new(skill.name.clone());
+        self.skills.insert(skill.name.clone(), profile);
+
+        for sub in skill.subskills {
+            self.hierarchy.add_child(&skill.name, &sub);
+            self.define(SkillDefinition {
+                name: sub,
+                subskills: vec![],
+            });
+        }
+    }
+
+    /// Get skill profile
+    pub fn get(&self, name: &str) -> Option<&SkillProfile> {
+        self.skills.get(name)
+    }
+
+    /// Record skill exercise
+    pub fn record_exercise(&mut self, skill_name: &str, exp: &Experience) {
+        // Get transfer targets first
+        let transfer_targets: Vec<(String, f32)> = self.transfers.iter()
+            .filter(|t| t.source == skill_name)
+            .map(|t| (t.target.clone(), t.rate))
+            .collect();
+
+        let quality = exp.outcome.quality;
+
+        if let Some(skill) = self.skills.get_mut(skill_name) {
+            let exercise = Exercise {
+                task_id: exp.id.clone(),
+                performance: Performance::from_outcome(&exp.outcome),
+                duration: Duration::zero(),
+                quality: exp.outcome.quality,
+                timestamp: Timestamp::now(),
+            };
+
+            skill.record_exercise(exercise);
+        }
+
+        // Apply transfer learning
+        for (target_name, rate) in transfer_targets {
+            if let Some(target) = self.skills.get_mut(&target_name) {
+                let transferred_quality = quality * rate;
+                target.record_transfer(transferred_quality);
+            }
+        }
+    }
+
+    /// Register skill transfer
+    pub fn register_transfer(&mut self, transfer: SkillTransfer) {
+        self.transfers.push(transfer);
+    }
+
+    /// Get all skills
+    pub fn all_skills(&self) -> impl Iterator<Item = &SkillProfile> {
+        self.skills.values()
+    }
+}
+
+pub struct SkillDefinition {
+    pub name: String,
+    pub subskills: Vec<String>,
+}
+
+impl SkillDefinition {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            subskills: vec![],
+        }
+    }
+
+    pub fn with_subskill(mut self, name: &str) -> Self {
+        self.subskills.push(name.to_string());
+        self
+    }
+}
+
+pub struct SkillProfile {
+    pub name: String,
+    pub level: SkillLevel,
+    pub proficiency: f32,
+    pub experience_count: u32,
+    pub exercises: BoundedDeque<Exercise>,
+    pub last_practiced: Timestamp,
+}
+
+impl SkillProfile {
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            level: SkillLevel::Novice,
+            proficiency: 0.0,
+            experience_count: 0,
+            exercises: BoundedDeque::new(100),
+            last_practiced: Timestamp::now(),
+        }
+    }
+
+    pub fn proficiency(&self) -> f32 { self.proficiency }
+    pub fn level(&self) -> SkillLevel { self.level }
+    pub fn experience_count(&self) -> u32 { self.experience_count }
+
+    pub fn recent_accuracy(&self) -> f32 {
+        let recent: Vec<_> = self.exercises.iter().rev().take(10).collect();
+        if recent.is_empty() { return 0.0; }
+        recent.iter().map(|e| e.quality).sum::<f32>() / recent.len() as f32
+    }
+
+    pub fn record_exercise(&mut self, exercise: Exercise) {
+        self.experience_count += 1;
+        self.last_practiced = Timestamp::now();
+
+        // Update proficiency (exponential moving average)
+        let alpha = 0.1;
+        self.proficiency = self.proficiency * (1.0 - alpha) + exercise.quality * alpha;
+
+        // Update level
+        self.level = SkillLevel::from_proficiency(self.proficiency);
+
+        // Store exercise - BoundedDeque handles capacity automatically
+        self.exercises.push_back(exercise);
+    }
+
+    pub fn record_transfer(&mut self, quality: f32) {
+        let alpha = 0.05;
+        self.proficiency = self.proficiency * (1.0 - alpha) + quality * alpha;
+        self.level = SkillLevel::from_proficiency(self.proficiency);
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SkillLevel {
+    Novice,
+    AdvancedBeginner,
+    Competent,
+    Proficient,
+    Expert,
+}
+
+impl SkillLevel {
+    pub fn from_proficiency(p: f32) -> Self {
+        if p >= 0.9 { SkillLevel::Expert }
+        else if p >= 0.7 { SkillLevel::Proficient }
+        else if p >= 0.5 { SkillLevel::Competent }
+        else if p >= 0.3 { SkillLevel::AdvancedBeginner }
+        else { SkillLevel::Novice }
+    }
+
+    pub fn to_string(&self) -> &'static str {
+        match self {
+            SkillLevel::Novice => "Novice",
+            SkillLevel::AdvancedBeginner => "Advanced Beginner",
+            SkillLevel::Competent => "Competent",
+            SkillLevel::Proficient => "Proficient",
+            SkillLevel::Expert => "Expert",
+        }
+    }
+}
+
+pub struct Exercise {
+    pub task_id: ExperienceId,
+    pub performance: Performance,
+    pub duration: Duration,
+    pub quality: f32,
+    pub timestamp: Timestamp,
+}
+
+#[derive(Copy, Clone)]
+pub enum Performance {
+    Excellent,
+    Good,
+    Adequate,
+    Poor,
+    Failed,
+}
+
+impl Performance {
+    pub fn from_outcome(outcome: &ExperienceOutcome) -> Self {
+        if !outcome.success { return Performance::Failed; }
+        if outcome.quality >= 0.9 { Performance::Excellent }
+        else if outcome.quality >= 0.7 { Performance::Good }
+        else if outcome.quality >= 0.5 { Performance::Adequate }
+        else { Performance::Poor }
+    }
+}
+
+pub struct SkillHierarchy {
+    parent: HashMap<String, String>,
+    children: HashMap<String, Vec<String>>,
+}
+
+impl SkillHierarchy {
+    pub fn new() -> Self {
+        Self {
+            parent: HashMap::new(),
+            children: HashMap::new(),
+        }
+    }
+
+    pub fn add_child(&mut self, parent: &str, child: &str) {
+        self.parent.insert(child.to_string(), parent.to_string());
+        self.children
+            .entry(parent.to_string())
+            .or_insert_with(Vec::new)
+            .push(child.to_string());
+    }
+
+    pub fn get_children(&self, skill: &str) -> Option<&Vec<String>> {
+        self.children.get(skill)
+    }
+
+    pub fn get_parent(&self, skill: &str) -> Option<&String> {
+        self.parent.get(skill)
+    }
+}
+
+pub struct SkillTransfer {
+    pub source: String,
+    pub target: String,
+    pub rate: f32,
+    pub aspects: Vec<String>,
+}
+
+impl SkillTransfer {
+    pub fn new(source: &str, target: &str, rate: f32) -> Self {
+        Self {
+            source: source.to_string(),
+            target: target.to_string(),
+            rate,
+            aspects: vec![],
+        }
+    }
+}
+
+// ============================================================================
+// Adaptation System
+// ============================================================================
+
+pub struct AdaptationSystem {
+    profiles: HashMap<HumanId, HumanProfile>,
+    domains: HashMap<String, DomainAdaptation>,
+    default_style: CommunicationStyle,
+    config: AdaptationConfig,
+}
+
+pub struct AdaptationConfig {
+    pub preference_learning_rate: f32,
+    pub preference_decay_rate: f32,
+}
+
+impl AdaptationConfig {
+    pub fn default() -> Self {
+        Self {
+            preference_learning_rate: 0.1,
+            preference_decay_rate: 0.01,
+        }
+    }
+}
+
+impl AdaptationSystem {
+    pub fn new() -> Self {
+        Self {
+            profiles: HashMap::new(),
+            domains: HashMap::new(),
+            default_style: CommunicationStyle::default(),
+            config: AdaptationConfig::default(),
+        }
+    }
+
+    /// Get communication style for human
+    pub fn style_for(&self, human_id: &HumanId) -> CommunicationStyle {
+        self.profiles.get(human_id)
+            .map(|p| p.preferred_style.clone())
+            .unwrap_or_else(|| self.default_style.clone())
+    }
+
+    /// Update profile based on feedback
+    pub fn update_profile(&mut self, human_id: &HumanId, feedback: &Feedback) {
+        let profile = self.profiles
+            .entry(human_id.clone())
+            .or_insert_with(|| HumanProfile::new(human_id.clone()));
+
+        match feedback.feedback_type {
+            FeedbackType::TooVerbose => profile.adjust_verbosity(-0.1),
+            FeedbackType::NeedMoreDetail => profile.adjust_verbosity(0.1),
+            FeedbackType::TooFormal => profile.adjust_formality(-0.1),
+            FeedbackType::TooInformal => profile.adjust_formality(0.1),
+            FeedbackType::GoodApproach => profile.reinforce_current(),
+            _ => {}
+        }
+    }
+
+    /// Adapt to domain
+    pub fn adapt_to_domain(&mut self, domain: &str, knowledge: DomainKnowledge) {
+        self.domains.insert(domain.to_string(), DomainAdaptation {
+            domain: domain.to_string(),
+            terminology: knowledge.terminology,
+            conventions: knowledge.conventions,
+            constraints: knowledge.constraints,
+        });
+    }
+
+    /// Get domain adaptation
+    pub fn domain_adaptation(&self, domain: &str) -> Option<&DomainAdaptation> {
+        self.domains.get(domain)
+    }
+}
+
+pub struct HumanProfile {
+    pub human_id: HumanId,
+    pub preferred_style: CommunicationStyle,
+    pub interaction_history: BoundedDeque<InteractionRecord>,
+    pub last_interaction: Timestamp,
+}
+
+impl HumanProfile {
+    pub fn new(human_id: HumanId) -> Self {
+        Self {
+            human_id,
+            preferred_style: CommunicationStyle::default(),
+            interaction_history: BoundedDeque::new(100),
+            last_interaction: Timestamp::now(),
+        }
+    }
+
+    pub fn adjust_verbosity(&mut self, delta: f32) {
+        self.preferred_style.verbosity = (self.preferred_style.verbosity + delta).clamp(-1.0, 1.0);
+    }
+
+    pub fn adjust_formality(&mut self, delta: f32) {
+        self.preferred_style.formality = (self.preferred_style.formality + delta).clamp(-1.0, 1.0);
+    }
+
+    pub fn adjust_proactivity(&mut self, delta: f32) {
+        self.preferred_style.proactivity = (self.preferred_style.proactivity + delta).clamp(-1.0, 1.0);
+    }
+
+    pub fn reinforce_current(&mut self) {
+        // Style is already good, reinforce by moving slightly toward extremes
+        self.preferred_style.verbosity *= 1.05;
+        self.preferred_style.formality *= 1.05;
+        self.preferred_style.verbosity = self.preferred_style.verbosity.clamp(-1.0, 1.0);
+        self.preferred_style.formality = self.preferred_style.formality.clamp(-1.0, 1.0);
+    }
+}
+
+#[derive(Clone)]
+pub struct CommunicationStyle {
+    /// Verbosity (-1 = minimal, 1 = verbose)
+    pub verbosity: f32,
+    /// Formality (-1 = casual, 1 = formal)
+    pub formality: f32,
+    /// Proactivity (-1 = reactive, 1 = proactive)
+    pub proactivity: f32,
+    /// Detail level (-1 = high-level, 1 = detailed)
+    pub detail_level: f32,
+    /// Check-in frequency (-1 = rare, 1 = frequent)
+    pub check_in_frequency: f32,
+}
+
+impl CommunicationStyle {
+    pub fn default() -> Self {
+        Self {
+            verbosity: 0.0,
+            formality: 0.0,
+            proactivity: 0.0,
+            detail_level: 0.0,
+            check_in_frequency: 0.0,
+        }
+    }
+
+    pub fn concise() -> Self {
+        Self { verbosity: -0.8, ..Self::default() }
+    }
+
+    pub fn verbose() -> Self {
+        Self { verbosity: 0.8, ..Self::default() }
+    }
+
+    pub fn formal() -> Self {
+        Self { formality: 0.8, ..Self::default() }
+    }
+
+    pub fn casual() -> Self {
+        Self { formality: -0.8, ..Self::default() }
+    }
+}
+
+struct InteractionRecord {
+    timestamp: Timestamp,
+    interaction_type: String,
+    outcome: String,
+}
+
+pub struct DomainAdaptation {
+    pub domain: String,
+    pub terminology: HashMap<String, String>,
+    pub conventions: Vec<String>,
+    pub constraints: Vec<String>,
+}
+
+pub struct DomainKnowledge {
+    pub terminology: HashMap<String, String>,
+    pub conventions: Vec<String>,
+    pub constraints: Vec<String>,
+}
+
+impl DomainKnowledge {
+    pub fn new() -> Self {
+        Self {
+            terminology: HashMap::new(),
+            conventions: vec![],
+            constraints: vec![],
+        }
+    }
+
+    pub fn with_term(mut self, term: &str, definition: &str) -> Self {
+        self.terminology.insert(term.to_string(), definition.to_string());
+        self
+    }
+
+    pub fn with_convention(mut self, convention: &str) -> Self {
+        self.conventions.push(convention.to_string());
+        self
+    }
+}
+
+// ============================================================================
+// Reflection System
+// ============================================================================
+
+pub struct ReflectionSystem {
+    config: ReflectionConfig,
+}
+
+pub struct ReflectionConfig {
+    pub min_experiences: usize,
+    pub pattern_significance: f32,
+}
+
+impl ReflectionConfig {
+    pub fn default() -> Self {
+        Self {
+            min_experiences: 5,
+            pattern_significance: 0.7,
+        }
+    }
+}
+
+impl ReflectionSystem {
+    pub fn new() -> Self {
+        Self { config: ReflectionConfig::default() }
+    }
+
+    /// Analyze and reflect
+    pub fn analyze(
+        &self,
+        period: ReflectionPeriod,
+        learning: &LearningEngine,
+        skills: &SkillSystem,
+    ) -> Reflection {
+        let experiences = self.gather_experiences(period, learning);
+        let skill_data = self.gather_skill_data(period, skills);
+
+        let successes = self.identify_successes(&experiences);
+        let improvements = self.identify_improvements(&experiences, &skill_data);
+        let patterns = self.extract_patterns(&experiences);
+        let insights = self.generate_insights(&experiences, &skill_data, &patterns);
+        let growth = self.measure_growth(&skill_data);
+
+        Reflection {
+            period,
+            successes,
+            improvements,
+            patterns,
+            insights,
+            growth,
+            timestamp: Timestamp::now(),
+        }
+    }
+
+    fn gather_experiences(&self, period: ReflectionPeriod, learning: &LearningEngine) -> Vec<Experience> {
+        let cutoff = period.start_time();
+        learning.experiences.iter()
+            .filter(|e| e.timestamp >= cutoff)
+            .cloned()
+            .collect()
+    }
+
+    fn gather_skill_data(&self, period: ReflectionPeriod, skills: &SkillSystem) -> Vec<SkillSnapshot> {
+        skills.all_skills()
+            .map(|s| SkillSnapshot {
+                name: s.name.clone(),
+                level: s.level,
+                proficiency: s.proficiency,
+                recent_exercises: s.exercises.iter()
+                    .filter(|e| e.timestamp >= period.start_time())
+                    .count(),
+            })
+            .collect()
+    }
+
+    fn identify_successes(&self, experiences: &[Experience]) -> Vec<Success> {
+        experiences.iter()
+            .filter(|e| e.outcome.success && e.outcome.quality >= 0.8)
+            .map(|e| Success {
+                description: format!("Successful {} task", e.context.task_type),
+                factors: vec![e.action.approach.clone()],
+            })
+            .collect()
+    }
+
+    fn identify_improvements(&self, experiences: &[Experience], skills: &[SkillSnapshot]) -> Vec<ImprovementArea> {
+        let mut improvements = Vec::new();
+
+        // From failed experiences
+        for exp in experiences.iter().filter(|e| !e.outcome.success) {
+            improvements.push(ImprovementArea {
+                skill: exp.context.task_type.clone(),
+                suggestion: format!("Review approach for {} tasks", exp.context.task_type),
+                priority: Priority::Normal,
+            });
+        }
+
+        // From low proficiency skills
+        for skill in skills.iter().filter(|s| s.proficiency < 0.5 && s.recent_exercises > 0) {
+            improvements.push(ImprovementArea {
+                skill: skill.name.clone(),
+                suggestion: format!("Practice {} more", skill.name),
+                priority: Priority::Low,
+            });
+        }
+
+        improvements
+    }
+
+    fn extract_patterns(&self, experiences: &[Experience]) -> Vec<String> {
+        let mut patterns = Vec::new();
+
+        // Group by task type
+        let mut by_type: HashMap<&str, Vec<&Experience>> = HashMap::new();
+        for exp in experiences {
+            by_type.entry(&exp.context.task_type).or_default().push(exp);
+        }
+
+        // Identify patterns in each group
+        for (task_type, exps) in by_type {
+            if exps.len() >= 3 {
+                let success_rate = exps.iter().filter(|e| e.outcome.success).count() as f32 / exps.len() as f32;
+                if success_rate >= 0.8 {
+                    patterns.push(format!("Strong performance on {} tasks ({:.0}% success)", task_type, success_rate * 100.0));
+                } else if success_rate <= 0.4 {
+                    patterns.push(format!("Struggling with {} tasks ({:.0}% success)", task_type, success_rate * 100.0));
+                }
+            }
+        }
+
+        patterns
+    }
+
+    fn generate_insights(&self, experiences: &[Experience], skills: &[SkillSnapshot], patterns: &[String]) -> Vec<Insight> {
+        let mut insights = Vec::new();
+
+        // Insight from experience volume
+        if experiences.len() > 20 {
+            insights.push(Insight {
+                observation: format!("High activity period with {} experiences", experiences.len()),
+                implication: "Active learning phase".to_string(),
+                action: Some("Continue momentum while ensuring quality".to_string()),
+            });
+        }
+
+        // Insight from skill distribution
+        let expert_skills = skills.iter().filter(|s| s.level >= SkillLevel::Proficient).count();
+        let novice_skills = skills.iter().filter(|s| s.level == SkillLevel::Novice && s.recent_exercises > 0).count();
+
+        if expert_skills > novice_skills * 2 {
+            insights.push(Insight {
+                observation: "Skill profile shows specialization".to_string(),
+                implication: "Strong in specific areas".to_string(),
+                action: Some("Consider broadening skill base".to_string()),
+            });
+        }
+
+        // Insight from patterns
+        for pattern in patterns {
+            if pattern.contains("Struggling") {
+                insights.push(Insight {
+                    observation: pattern.clone(),
+                    implication: "May need different approach".to_string(),
+                    action: Some("Analyze failed attempts for common factors".to_string()),
+                });
+            }
+        }
+
+        insights
+    }
+
+    fn measure_growth(&self, skills: &[SkillSnapshot]) -> GrowthMeasurement {
+        let active_skills: Vec<_> = skills.iter().filter(|s| s.recent_exercises > 0).collect();
+
+        let overall = if active_skills.is_empty() {
+            0.0
+        } else {
+            active_skills.iter().map(|s| s.proficiency).sum::<f32>() / active_skills.len() as f32
+        };
+
+        GrowthMeasurement {
+            overall,
+            by_skill: skills.iter()
+                .filter(|s| s.recent_exercises > 0)
+                .map(|s| (s.name.clone(), s.proficiency))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum ReflectionPeriod {
+    Daily,
+    Weekly,
+    Monthly,
+}
+
+impl ReflectionPeriod {
+    pub fn start_time(&self) -> Timestamp {
+        let now = Timestamp::now();
+        let offset = match self {
+            ReflectionPeriod::Daily => Duration::hours(24),
+            ReflectionPeriod::Weekly => Duration::hours(168),
+            ReflectionPeriod::Monthly => Duration::hours(720),
+        };
+        Timestamp::from_nanos(now.nanos.saturating_sub(offset.as_nanos()))
+    }
+}
+
+pub struct Reflection {
+    pub period: ReflectionPeriod,
+    pub successes: Vec<Success>,
+    pub improvements: Vec<ImprovementArea>,
+    pub patterns: Vec<String>,
+    pub insights: Vec<Insight>,
+    pub growth: GrowthMeasurement,
+    pub timestamp: Timestamp,
+}
+
+impl Reflection {
+    pub fn successes(&self) -> &[Success] { &self.successes }
+    pub fn improvement_areas(&self) -> &[ImprovementArea] { &self.improvements }
+    pub fn patterns(&self) -> &[String] { &self.patterns }
+    pub fn insights(&self) -> &[Insight] { &self.insights }
+
+    pub fn to_summary(&self) -> String {
+        let mut output = String::new();
+
+        output.push_str("=== Reflection Summary ===\n\n");
+
+        if !self.successes.is_empty() {
+            output.push_str("Successes:\n");
+            for s in &self.successes {
+                output.push_str(&format!("  - {}\n", s.description));
+            }
+            output.push('\n');
+        }
+
+        if !self.improvements.is_empty() {
+            output.push_str("Areas for Improvement:\n");
+            for i in &self.improvements {
+                output.push_str(&format!("  - {}: {}\n", i.skill, i.suggestion));
+            }
+            output.push('\n');
+        }
+
+        if !self.patterns.is_empty() {
+            output.push_str("Patterns Observed:\n");
+            for p in &self.patterns {
+                output.push_str(&format!("  - {}\n", p));
+            }
+            output.push('\n');
+        }
+
+        if !self.insights.is_empty() {
+            output.push_str("Insights:\n");
+            for i in &self.insights {
+                output.push_str(&format!("  - {}\n", i.observation));
+                if let Some(ref action) = i.action {
+                    output.push_str(&format!("    → {}\n", action));
+                }
+            }
+            output.push('\n');
+        }
+
+        output.push_str(&format!("Overall Growth: {:.0}%\n", self.growth.overall * 100.0));
+
+        output
+    }
+}
+
+pub struct Success {
+    pub description: String,
+    pub factors: Vec<String>,
+}
+
+pub struct ImprovementArea {
+    pub skill: String,
+    pub suggestion: String,
+    pub priority: Priority,
+}
+
+// Priority imported from shared module
+
+pub struct Insight {
+    pub observation: String,
+    pub implication: String,
+    pub action: Option<String>,
+}
+
+pub struct SkillSnapshot {
+    pub name: String,
+    pub level: SkillLevel,
+    pub proficiency: f32,
+    pub recent_exercises: usize,
+}
+
+pub struct GrowthMeasurement {
+    pub overall: f32,
+    pub by_skill: Vec<(String, f32)>,
+}
+
+impl GrowthMeasurement {
+    pub fn overall_growth(&self) -> f32 { self.overall }
+}
+
+// ============================================================================
+// Feedback Types
+// ============================================================================
+
+#[derive(Clone)]
+pub struct Feedback {
+    pub human_id: Option<HumanId>,
+    pub context: Context,
+    pub feedback_type: FeedbackType,
+    pub message: Option<String>,
+    pub timestamp: Timestamp,
+}
+
+impl Feedback {
+    pub fn new(feedback_type: FeedbackType, context: Context) -> Self {
+        Self {
+            human_id: None,
+            context,
+            feedback_type,
+            message: None,
+            timestamp: Timestamp::now(),
+        }
+    }
+
+    pub fn from_human(human_id: HumanId, feedback_type: FeedbackType, context: Context) -> Self {
+        Self {
+            human_id: Some(human_id),
+            context,
+            feedback_type,
+            message: None,
+            timestamp: Timestamp::now(),
+        }
+    }
+
+    pub fn positivity(&self) -> f32 {
+        match self.feedback_type {
+            FeedbackType::Positive(_) => 1.0,
+            FeedbackType::Neutral => 0.5,
+            FeedbackType::Negative(_) => 0.0,
+            FeedbackType::TooVerbose => 0.3,
+            FeedbackType::NeedMoreDetail => 0.3,
+            FeedbackType::TooFormal => 0.3,
+            FeedbackType::TooInformal => 0.3,
+            FeedbackType::GoodApproach => 0.9,
+            FeedbackType::WrongApproach => 0.1,
+            FeedbackType::Custom(_) => 0.5,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum FeedbackType {
+    Positive(String),
+    Negative(String),
+    Neutral,
+    TooVerbose,
+    NeedMoreDetail,
+    TooFormal,
+    TooInformal,
+    GoodApproach,
+    WrongApproach,
+    Custom(String),
+}
+
+pub struct Outcome {
+    pub task: Task,
+    pub success: bool,
+    pub quality: f32,
+    pub human_satisfaction: Option<Satisfaction>,
+}
+
+pub struct Task {
+    pub context: Context,
+    pub approach: String,
+}
+
+#[derive(Copy, Clone)]
+pub enum Satisfaction {
+    Delighted,
+    Satisfied,
+    Neutral,
+    Disappointed,
+    Frustrated,
+}
+
+// ============================================================================
+// Convenience Functions
+// ============================================================================
+
+pub fn new_gnosis() -> Gnosis { Gnosis::new() }
+
+pub fn learn_from_experience(gnosis: &mut Gnosis, context: Context, action: Action, outcome: ExperienceOutcome) {
+    gnosis.experience(Experience::new(context, action, outcome));
+}
+
+pub fn reflect_on_period(gnosis: &Gnosis, period: ReflectionPeriod) -> String {
+    gnosis.reflect(period).to_summary()
+}
+
+// External functions now provided by shared module through Timestamp and Id types
