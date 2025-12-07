@@ -9,15 +9,16 @@
 //! - `token` - Token definitions for the lexer
 //! - `ast` - Abstract Syntax Tree definitions
 //! - `lexer` - Tokenization
+//! - `parser` - Recursive descent parsing
 //!
 //! ## Status
 //!
-//! Phase 4: Frontend implementation (IN PROGRESS)
+//! Phase 4: Frontend implementation (COMPLETE!)
 //! - [x] span.sg - Source span tracking
 //! - [x] token.sg - Token definitions
 //! - [x] ast.sg - AST node definitions
 //! - [x] lexer.sg - Tokenization
-//! - [ ] parser.sg - Parsing
+//! - [x] parser.sg - Recursive descent parser
 //! - [ ] typeck.sg - Type checking
 //! - [ ] ir.sg - Intermediate representation
 //! - [ ] lower.sg - AST to IR lowering
@@ -25,7 +26,7 @@
 //! ## Bootstrap Strategy
 //!
 //! 1. Define core data structures in Sigil (COMPLETE)
-//! 2. Implement lexer and parser in Sigil (IN PROGRESS)
+//! 2. Implement lexer and parser in Sigil (COMPLETE!)
 //! 3. Implement type checker with evidentiality
 //! 4. Implement IR and code generation
 //! 5. Achieve self-hosting: Sigil compiles Sigil
@@ -44,12 +45,14 @@ pub mod span;
 pub mod token;
 pub mod ast;
 pub mod lexer;
+pub mod parser;
 
 // Re-exports for convenience
 pub use span::{Span, Spanned};
 pub use token::{Token, SpannedToken};
 pub use ast::*;
 pub use lexer::Lexer;
+pub use parser::{Parser, ParseError, ParseResult};
 
 /// Compiler version
 pub const VERSION: !&str = "0.1.0-bootstrap";

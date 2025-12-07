@@ -2,7 +2,7 @@
 
 This directory contains the Sigil compiler written in Sigil itself - the **Jormungandr bootstrap**.
 
-## Status: Phase 4 - Frontend Implementation
+## Status: Phase 4 - Frontend Implementation (COMPLETE!)
 
 | File | Lines | Status | Description |
 |------|-------|--------|-------------|
@@ -11,7 +11,7 @@ This directory contains the Sigil compiler written in Sigil itself - the **Jormu
 | `src/ast.sg` | ~1200 | ✅ Complete | AST node definitions |
 | `src/lib.sg` | ~60 | ✅ Complete | Module exports |
 | `src/lexer.sg` | ~750 | ✅ Complete | Hand-written tokenization |
-| `src/parser.sg` | - | 🔲 Pending | Recursive descent parser |
+| `src/parser.sg` | ~2100 | ✅ Complete | Recursive descent parser |
 | `src/typeck.sg` | - | 🔲 Pending | Type checking |
 | `src/ir.sg` | - | 🔲 Pending | Intermediate representation |
 | `src/lower.sg` | - | 🔲 Pending | AST → IR lowering |
@@ -26,6 +26,7 @@ This is a direct conversion of `sigil-lang/parser/src/` from Rust to Sigil:
 | `lexer.rs` (Token enum) | `token.sg` | ~800 | Token definitions only |
 | `ast.rs` | `ast.sg` | 1,592 | All AST node types |
 | `lexer.rs` (Lexer struct) | `lexer.sg` | ~500 | Hand-written (no logos) |
+| `parser.rs` | `parser.sg` | 4,462 | Full recursive descent parser |
 
 ## Key Differences from Rust Version
 
