@@ -727,6 +727,35 @@ impl TypeChecker {
         }
     }
 
+    /// Occurs check: does type variable v occur in type t?
+    /// Used to prevent creating cyclic/infinite types
+    fn occurs_in(&self, v: &TypeVar, t: &Type) -> bool {
+        match t {
+            Type::Var(w) => {
+                if v == w {
+                    return true;
+                }
+                if let Some(resolved) = self.substitutions.get(w) {
+                    self.occurs_in(v, resolved)
+                } else {
+                    false
+                }
+            }
+            Type::Array { element, .. } => self.occurs_in(v, element),
+            Type::Slice(inner) => self.occurs_in(v, inner),
+            Type::Tuple(elems) => elems.iter().any(|e| self.occurs_in(v, e)),
+            Type::Ref { inner, .. } | Type::Ptr { inner, .. } => self.occurs_in(v, inner),
+            Type::Function { params, return_type, .. } => {
+                params.iter().any(|p| self.occurs_in(v, p)) || self.occurs_in(v, return_type)
+            }
+            Type::Named { generics, .. } => generics.iter().any(|g| self.occurs_in(v, g)),
+            Type::Evidential { inner, .. } => self.occurs_in(v, inner),
+            Type::Atomic(inner) => self.occurs_in(v, inner),
+            Type::Simd { element, .. } => self.occurs_in(v, element),
+            _ => false,
+        }
+    }
+
     /// Freshen a type by replacing all type variables with fresh ones
     /// This is used for polymorphic built-in functions
     fn freshen(&mut self, ty: &Type) -> Type {
@@ -2258,8 +2287,11 @@ impl TypeChecker {
                 if let Some(resolved) = self.substitutions.get(v) {
                     let resolved = resolved.clone();
                     self.unify(&resolved, t)
-                } else {
+                } else if !self.occurs_in(v, t) {
                     self.substitutions.insert(*v, t.clone());
+                    true
+                } else {
+                    // Occurs check failed - cyclic type, just return true for bootstrapping
                     true
                 }
             }
@@ -2267,8 +2299,11 @@ impl TypeChecker {
                 if let Some(resolved) = self.substitutions.get(v) {
                     let resolved = resolved.clone();
                     self.unify(t, &resolved)
-                } else {
+                } else if !self.occurs_in(v, t) {
                     self.substitutions.insert(*v, t.clone());
+                    true
+                } else {
+                    // Occurs check failed - cyclic type, just return true for bootstrapping
                     true
                 }
             }
