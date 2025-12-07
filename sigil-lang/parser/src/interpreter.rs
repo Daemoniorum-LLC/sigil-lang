@@ -908,7 +908,10 @@ impl Interpreter {
                 name: "String·new".to_string(),
                 arity: Some(0),
                 func: |_interp, _args| {
-                    Ok(Value::String(Rc::new(String::new())))
+                    // Return a Ref-wrapped string so it can be mutated in place
+                    Ok(Value::Ref(Rc::new(RefCell::new(
+                        Value::String(Rc::new(String::new()))
+                    ))))
                 },
             })),
         );
@@ -2528,6 +2531,7 @@ impl Interpreter {
     fn eval_match(&mut self, expr: &Expr, arms: &[MatchArm]) -> Result<Value, RuntimeError> {
         let value = self.evaluate(expr)?;
 
+
         for arm in arms.iter() {
             if self.pattern_matches(&arm.pattern, &value)? {
                 // Check guard if present
@@ -2704,8 +2708,9 @@ impl Interpreter {
                 };
                 Ok(start_matches && end_matches)
             }
-            // Char range patterns like 'a'..='z'
-            (Pattern::Range { start, end, inclusive }, Value::Char(c)) => {
+            // Char range patterns like 'a'..='z' - also handle evidential-wrapped chars
+            (Pattern::Range { start, end, inclusive }, val) if matches!(Self::unwrap_to_inner(val), Value::Char(_)) => {
+                let c = if let Value::Char(c) = Self::unwrap_to_inner(val) { c } else { unreachable!() };
                 let start_matches = match start {
                     Some(s) => {
                         if let Pattern::Literal(Literal::Char(start_char)) = s.as_ref() {
@@ -2733,6 +2738,10 @@ impl Interpreter {
     }
 
     fn values_equal(&self, a: &Value, b: &Value) -> bool {
+        // Unwrap evidential/affective wrappers for comparison
+        let a = Self::unwrap_to_inner(a);
+        let b = Self::unwrap_to_inner(b);
+
         match (a, b) {
             (Value::Null, Value::Null) => true,
             (Value::Bool(a), Value::Bool(b)) => a == b,
@@ -2741,6 +2750,15 @@ impl Interpreter {
             (Value::String(a), Value::String(b)) => a == b,
             (Value::Char(a), Value::Char(b)) => a == b,
             _ => false,
+        }
+    }
+
+    /// Recursively unwrap evidential and affective wrappers to get the inner value
+    fn unwrap_to_inner(value: &Value) -> &Value {
+        match value {
+            Value::Evidential { value: inner, .. } => Self::unwrap_to_inner(inner),
+            Value::Affective { value: inner, .. } => Self::unwrap_to_inner(inner),
+            other => other,
         }
     }
 
@@ -3028,10 +3046,12 @@ impl Interpreter {
                     return Err(RuntimeError::new("push expects 1 argument"));
                 }
                 let mut new_str = s.to_string();
-                match &arg_values[0] {
+                // Unwrap evidential/affective wrappers
+                let arg = Self::unwrap_to_inner(&arg_values[0]);
+                match arg {
                     Value::Char(c) => new_str.push(*c),
                     Value::String(cs) => new_str.push_str(cs),
-                    _ => return Err(RuntimeError::new("push expects char or string")),
+                    _ => return Err(RuntimeError::new(format!("push expects char or string, got {:?}", arg))),
                 }
                 Ok(Value::String(Rc::new(new_str)))
             }
@@ -3182,10 +3202,62 @@ impl Interpreter {
                 let values: Vec<Value> = m.borrow().values().cloned().collect();
                 Ok(Value::Array(Rc::new(RefCell::new(values))))
             }
+            // Ref methods
+            (Value::Ref(r), "cloned") => {
+                // Clone the value inside the ref
+                Ok(r.borrow().clone())
+            }
+            (Value::Ref(r), "borrow") => {
+                // Just return the value (interpreter doesn't track borrows)
+                Ok(r.borrow().clone())
+            }
+            (Value::Ref(r), "borrow_mut") => {
+                // Just return the value (interpreter doesn't track borrows)
+                Ok(r.borrow().clone())
+            }
+            // Ref<String> methods - mutate in place
+            (Value::Ref(r), "push") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("push expects 1 argument"));
+                }
+                let arg = Self::unwrap_to_inner(&arg_values[0]);
+                let mut inner = r.borrow_mut();
+                if let Value::String(s) = &*inner {
+                    let mut new_str = s.to_string();
+                    match arg {
+                        Value::Char(c) => new_str.push(*c),
+                        Value::String(cs) => new_str.push_str(cs),
+                        _ => return Err(RuntimeError::new(format!("push expects char or string, got {:?}", arg))),
+                    }
+                    *inner = Value::String(Rc::new(new_str));
+                    Ok(Value::Null) // push returns nothing
+                } else {
+                    Err(RuntimeError::new("push on ref requires ref to string"))
+                }
+            }
+            (Value::Ref(r), "len") => {
+                let inner = r.borrow();
+                if let Value::String(s) = &*inner {
+                    Ok(Value::Int(s.len() as i64))
+                } else if let Value::Array(arr) = &*inner {
+                    Ok(Value::Int(arr.borrow().len() as i64))
+                } else {
+                    Err(RuntimeError::new("len on ref requires ref to string or array"))
+                }
+            }
+            (Value::Ref(r), "as_str") => {
+                let inner = r.borrow();
+                if let Value::String(s) = &*inner {
+                    Ok(Value::String(s.clone()))
+                } else {
+                    Err(RuntimeError::new("as_str on ref requires ref to string"))
+                }
+            }
             // Try to find a method registered via impl block
-            (Value::Struct { name, .. }, method_name) => {
+            (Value::Struct { name, fields }, method_name) => {
                 // Look up Type·method in globals
                 let qualified_name = format!("{}·{}", name, method_name);
+
                 let func_opt = self.globals.borrow().get(&qualified_name).map(|v| v.clone());
                 if let Some(func_val) = func_opt {
                     if let Value::Function(f) = func_val {
@@ -5354,22 +5426,6 @@ impl Interpreter {
                     Some(b)
                 }
             }
-        }
-    }
-
-    /// Unwrap an evidential value to get the inner value for display
-    fn unwrap_evidential(value: &Value) -> &Value {
-        match value {
-            Value::Evidential { value: inner, .. } => Self::unwrap_evidential(inner),
-            _ => value,
-        }
-    }
-
-    /// Unwrap an affective value to get the inner value
-    fn unwrap_affective(value: &Value) -> &Value {
-        match value {
-            Value::Affective { value: inner, .. } => Self::unwrap_affective(inner),
-            _ => value,
         }
     }
 
