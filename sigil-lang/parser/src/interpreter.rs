@@ -46,6 +46,10 @@ pub enum Value {
         enum_name: String,
         variant_name: String,
     },
+    /// Default constructor (for types with #[derive(Default)])
+    DefaultConstructor {
+        type_name: String,
+    },
     /// Function/closure
     Function(Rc<Function>),
     /// Built-in function
@@ -94,6 +98,7 @@ impl Value {
             Value::Struct { .. } => "struct",
             Value::Variant { .. } => "variant",
             Value::VariantConstructor { .. } => "variant_constructor",
+            Value::DefaultConstructor { .. } => "default_constructor",
             Value::Function(_) => "function",
             Value::BuiltIn(_) => "builtin",
             Value::Ref(_) => "ref",
@@ -317,6 +322,9 @@ impl fmt::Debug for Value {
             }
             Value::VariantConstructor { enum_name, variant_name } => {
                 write!(f, "<variant {}::{}>", enum_name, variant_name)
+            }
+            Value::DefaultConstructor { type_name } => {
+                write!(f, "<default {}>", type_name)
             }
             Value::Function(func) => {
                 write!(f, "<fn {}>", func.name.as_deref().unwrap_or("anonymous"))
@@ -640,6 +648,7 @@ pub struct Interpreter {
 }
 
 /// Type definition for structs/enums
+#[derive(Clone)]
 pub enum TypeDef {
     Struct(StructDef),
     Enum(EnumDef),
@@ -807,6 +816,55 @@ impl Interpreter {
             })),
         );
 
+        // Register Map methods
+        self.globals.borrow_mut().define(
+            "Map·new".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Map·new".to_string(),
+                arity: Some(0),
+                func: |_interp, _args| {
+                    Ok(Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))))
+                },
+            })),
+        );
+
+        self.globals.borrow_mut().define(
+            "HashMap·new".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "HashMap·new".to_string(),
+                arity: Some(0),
+                func: |_interp, _args| {
+                    Ok(Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))))
+                },
+            })),
+        );
+
+        // Box::new - just returns the value (no boxing needed in interpreter)
+        self.globals.borrow_mut().define(
+            "Box·new".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Box·new".to_string(),
+                arity: Some(1),
+                func: |_interp, args| {
+                    Ok(args.into_iter().next().unwrap_or(Value::Null))
+                },
+            })),
+        );
+
+        // Rc::new - creates a reference-counted wrapper
+        self.globals.borrow_mut().define(
+            "Rc·new".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Rc·new".to_string(),
+                arity: Some(1),
+                func: |_interp, args| {
+                    Ok(Value::Ref(Rc::new(RefCell::new(
+                        args.into_iter().next().unwrap_or(Value::Null)
+                    ))))
+                },
+            })),
+        );
+
         // Default constructors
         self.globals.borrow_mut().define(
             "String·default".to_string(),
@@ -901,6 +959,7 @@ impl Interpreter {
                 Value::Actor(_) => "actor",
                 Value::Future(_) => "future",
                 Value::VariantConstructor { .. } => "variant_constructor",
+                Value::DefaultConstructor { .. } => "default_constructor",
             };
             Ok(Value::String(Rc::new(type_name.to_string())))
         });
@@ -1096,8 +1155,9 @@ impl Interpreter {
                 Ok(Value::Null)
             }
             Item::Struct(s) => {
+                let struct_name = s.name.name.clone();
                 self.types
-                    .insert(s.name.name.clone(), TypeDef::Struct(s.clone()));
+                    .insert(struct_name.clone(), TypeDef::Struct(s.clone()));
                 Ok(Value::Null)
             }
             Item::Enum(e) => {
@@ -1486,6 +1546,27 @@ impl Interpreter {
             if let Some(val) = self.globals.borrow().get(name) {
                 return Ok(val);
             }
+            // Prelude: Ok, Err, Some, None as standalone variants
+            match name.as_str() {
+                "Ok" => return Ok(Value::VariantConstructor {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Ok".to_string(),
+                }),
+                "Err" => return Ok(Value::VariantConstructor {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Err".to_string(),
+                }),
+                "Some" => return Ok(Value::VariantConstructor {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                }),
+                "None" => return Ok(Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "None".to_string(),
+                    fields: None,
+                }),
+                _ => {}
+            }
             Err(RuntimeError::new(format!("Undefined variable: {}", name)))
         } else {
             // Multi-segment path (module::item or Type::method)
@@ -1507,16 +1588,7 @@ impl Interpreter {
                 return Ok(val);
             }
 
-            // Try looking up the last segment (for Math·sqrt -> sqrt)
-            let last_name = &path.segments.last().unwrap().ident.name;
-            if let Some(val) = self.environment.borrow().get(last_name) {
-                return Ok(val);
-            }
-            if let Some(val) = self.globals.borrow().get(last_name) {
-                return Ok(val);
-            }
-
-            // Check for enum variant syntax (EnumName::Variant)
+            // Check for enum variant syntax and Type::default() BEFORE fallback
             if path.segments.len() == 2 {
                 let type_name = &path.segments[0].ident.name;
                 let variant_name = &path.segments[1].ident.name;
@@ -1545,6 +1617,26 @@ impl Interpreter {
                         }
                     }
                 }
+
+                // Check for Type::default() where Type has #[derive(Default)]
+                if variant_name == "default" {
+                    if let Some(TypeDef::Struct(struct_def)) = self.types.get(type_name) {
+                        if struct_def.attrs.derives.contains(&crate::ast::DeriveTrait::Default) {
+                            return Ok(Value::DefaultConstructor {
+                                type_name: type_name.clone(),
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Try looking up the last segment (for Math·sqrt -> sqrt) - fallback
+            let last_name = &path.segments.last().unwrap().ident.name;
+            if let Some(val) = self.environment.borrow().get(last_name) {
+                return Ok(val);
+            }
+            if let Some(val) = self.globals.borrow().get(last_name) {
+                return Ok(val);
             }
 
             Err(RuntimeError::new(format!(
@@ -1746,6 +1838,10 @@ impl Interpreter {
                     variant_name,
                     fields: Some(Rc::new(arg_values)),
                 })
+            }
+            Value::DefaultConstructor { type_name } => {
+                // Create default instance of the type
+                self.create_default_instance(&type_name)
             }
             _ => Err(RuntimeError::new("Cannot call non-function")),
         }
@@ -2372,10 +2468,37 @@ impl Interpreter {
         body: &Block,
     ) -> Result<Value, RuntimeError> {
         let iterable = self.evaluate(iter)?;
-        let items = match iterable {
+        let items = match &iterable {
             Value::Array(arr) => arr.borrow().clone(),
-            Value::Tuple(t) => (*t).clone(),
-            _ => return Err(RuntimeError::new("Cannot iterate over non-iterable")),
+            Value::Tuple(t) => (**t).clone(),
+            Value::String(s) => s.chars().map(Value::Char).collect(),
+            // Handle references to arrays
+            Value::Ref(r) => {
+                match &*r.borrow() {
+                    Value::Array(arr) => arr.borrow().clone(),
+                    Value::Tuple(t) => (**t).clone(),
+                    Value::String(s) => s.chars().map(Value::Char).collect(),
+                    other => return Err(RuntimeError::new(format!("Cannot iterate over non-iterable ref: {:?}", other))),
+                }
+            }
+            // Handle struct-based ranges like 0..10
+            Value::Struct { name, fields } if name == "Range" || name == "RangeInclusive" => {
+                let f = fields.borrow();
+                let start = match f.get("start") {
+                    Some(Value::Int(n)) => *n,
+                    _ => return Err(RuntimeError::new("Range start must be integer")),
+                };
+                let end = match f.get("end") {
+                    Some(Value::Int(n)) => *n,
+                    _ => return Err(RuntimeError::new("Range end must be integer")),
+                };
+                if name == "RangeInclusive" {
+                    (start..=end).map(Value::Int).collect()
+                } else {
+                    (start..end).map(Value::Int).collect()
+                }
+            }
+            other => return Err(RuntimeError::new(format!("Cannot iterate over non-iterable: {:?}", other))),
         };
 
         let mut result = Value::Null;
@@ -2612,6 +2735,58 @@ impl Interpreter {
                 }
             }
             (val, "unwrap") => Ok(val.clone()),
+            // Map methods
+            (Value::Map(m), "insert") => {
+                if arg_values.len() != 2 {
+                    return Err(RuntimeError::new("insert expects 2 arguments (key, value)"));
+                }
+                let key = match &arg_values[0] {
+                    Value::String(s) => s.to_string(),
+                    v => format!("{:?}", v),
+                };
+                m.borrow_mut().insert(key, arg_values[1].clone());
+                Ok(Value::Null)
+            }
+            (Value::Map(m), "get") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("get expects 1 argument"));
+                }
+                let key = match &arg_values[0] {
+                    Value::String(s) => s.to_string(),
+                    v => format!("{:?}", v),
+                };
+                Ok(m.borrow().get(&key).cloned().unwrap_or(Value::Null))
+            }
+            (Value::Map(m), "contains_key") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("contains_key expects 1 argument"));
+                }
+                let key = match &arg_values[0] {
+                    Value::String(s) => s.to_string(),
+                    v => format!("{:?}", v),
+                };
+                Ok(Value::Bool(m.borrow().contains_key(&key)))
+            }
+            (Value::Map(m), "remove") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("remove expects 1 argument"));
+                }
+                let key = match &arg_values[0] {
+                    Value::String(s) => s.to_string(),
+                    v => format!("{:?}", v),
+                };
+                Ok(m.borrow_mut().remove(&key).unwrap_or(Value::Null))
+            }
+            (Value::Map(m), "len") => Ok(Value::Int(m.borrow().len() as i64)),
+            (Value::Map(m), "is_empty") => Ok(Value::Bool(m.borrow().is_empty())),
+            (Value::Map(m), "keys") => {
+                let keys: Vec<Value> = m.borrow().keys().map(|k| Value::String(Rc::new(k.clone()))).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(keys))))
+            }
+            (Value::Map(m), "values") => {
+                let values: Vec<Value> = m.borrow().values().cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(values))))
+            }
             // Try to find a method registered via impl block
             (Value::Struct { name, .. }, method_name) => {
                 // Look up Type·method in globals
@@ -4855,6 +5030,72 @@ impl Interpreter {
         };
 
         Ok(Value::Array(Rc::new(RefCell::new(values))))
+    }
+
+    /// Create a default instance of a struct type
+    fn create_default_instance(&mut self, type_name: &str) -> Result<Value, RuntimeError> {
+        if let Some(TypeDef::Struct(struct_def)) = self.types.get(type_name).cloned() {
+            let mut fields_map = std::collections::HashMap::new();
+            if let crate::ast::StructFields::Named(fields) = &struct_def.fields {
+                for field in fields {
+                    // Use field default if present, otherwise type default
+                    let value = if let Some(ref init) = field.default {
+                        self.evaluate(init)?
+                    } else {
+                        // Get default for type
+                        self.default_value_for_type(&field.ty)
+                    };
+                    fields_map.insert(field.name.name.clone(), value);
+                }
+            }
+            Ok(Value::Struct {
+                name: type_name.to_string(),
+                fields: Rc::new(RefCell::new(fields_map)),
+            })
+        } else {
+            Err(RuntimeError::new(format!("Type {} does not support default()", type_name)))
+        }
+    }
+
+    /// Get a default value for a type
+    fn default_value_for_type(&self, ty: &crate::ast::TypeExpr) -> Value {
+        match ty {
+            crate::ast::TypeExpr::Path(path) => {
+                let name = path.segments.first().map(|s| s.ident.name.as_str()).unwrap_or("");
+                match name {
+                    "bool" => Value::Bool(false),
+                    "i8" | "i16" | "i32" | "i64" | "i128" | "isize" |
+                    "u8" | "u16" | "u32" | "u64" | "u128" | "usize" => Value::Int(0),
+                    "f32" | "f64" => Value::Float(0.0),
+                    "String" | "str" => Value::String(Rc::new(String::new())),
+                    "char" => Value::Char('\0'),
+                    "Option" => Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    },
+                    _ => {
+                        // Check if it's a struct with Default derive
+                        if let Some(TypeDef::Struct(s)) = self.types.get(name) {
+                            if s.attrs.derives.contains(&crate::ast::DeriveTrait::Default) {
+                                // Return None for now - the builtin will handle it
+                                Value::Null
+                            } else {
+                                Value::Null
+                            }
+                        } else {
+                            Value::Null
+                        }
+                    }
+                }
+            }
+            crate::ast::TypeExpr::Array { .. } => {
+                Value::Array(Rc::new(RefCell::new(vec![])))
+            }
+            crate::ast::TypeExpr::Slice(_) => Value::Array(Rc::new(RefCell::new(vec![]))),
+            crate::ast::TypeExpr::Evidential { inner, .. } => self.default_value_for_type(inner),
+            _ => Value::Null,
+        }
     }
 
     fn is_truthy(&self, value: &Value) -> bool {
