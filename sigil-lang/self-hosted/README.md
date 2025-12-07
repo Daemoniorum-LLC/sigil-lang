@@ -2,15 +2,15 @@
 
 This directory contains the Sigil compiler written in Sigil itself - the **Jormungandr bootstrap**.
 
-## Status: Phase 3 - Core Data Structures
+## Status: Phase 4 - Frontend Implementation
 
 | File | Lines | Status | Description |
 |------|-------|--------|-------------|
 | `src/span.sg` | ~140 | ✅ Complete | Source span tracking |
 | `src/token.sg` | ~450 | ✅ Complete | Token definitions |
 | `src/ast.sg` | ~1200 | ✅ Complete | AST node definitions |
-| `src/lib.sg` | ~50 | ✅ Complete | Module exports |
-| `src/lexer.sg` | - | 🔲 Pending | Tokenization |
+| `src/lib.sg` | ~60 | ✅ Complete | Module exports |
+| `src/lexer.sg` | ~750 | ✅ Complete | Hand-written tokenization |
 | `src/parser.sg` | - | 🔲 Pending | Recursive descent parser |
 | `src/typeck.sg` | - | 🔲 Pending | Type checking |
 | `src/ir.sg` | - | 🔲 Pending | Intermediate representation |
@@ -20,11 +20,12 @@ This directory contains the Sigil compiler written in Sigil itself - the **Jormu
 
 This is a direct conversion of `sigil-lang/parser/src/` from Rust to Sigil:
 
-| Rust File | Sigil File | Original Lines |
-|-----------|------------|----------------|
-| `span.rs` | `span.sg` | 58 |
-| `lexer.rs` (Token enum) | `token.sg` | ~800 |
-| `ast.rs` | `ast.sg` | 1,592 |
+| Rust File | Sigil File | Original Lines | Notes |
+|-----------|------------|----------------|-------|
+| `span.rs` | `span.sg` | 58 | Direct conversion |
+| `lexer.rs` (Token enum) | `token.sg` | ~800 | Token definitions only |
+| `ast.rs` | `ast.sg` | 1,592 | All AST node types |
+| `lexer.rs` (Lexer struct) | `lexer.sg` | ~500 | Hand-written (no logos) |
 
 ## Key Differences from Rust Version
 
