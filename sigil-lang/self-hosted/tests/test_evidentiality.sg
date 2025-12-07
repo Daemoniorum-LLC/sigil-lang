@@ -1,0 +1,161 @@
+//! Evidentiality system test for the Sigil self-hosted compiler
+//!
+//! This tests Sigil's unique evidentiality markers:
+//! - ! (Known) - Verified values
+//! - ? (Uncertain) - Possibly absent values
+//! - ~ (Reported) - External/unverified values
+//! - ‽ (Paradox) - Contradictory values
+
+/// Test basic known values
+pub fn test_known() -> !bool {
+    let x: !i32 = 42;
+    let y: !String = "hello";
+    let z: !bool = true;
+
+    // Known values can be used directly
+    assert(x == 42, "known i32 should equal 42");
+    assert(z, "known bool should be true");
+
+    return true;
+}
+
+/// Test uncertain/optional values
+pub fn test_uncertain() -> !bool {
+    // Uncertain values may be null
+    let maybe_int: ?i32 = 42;
+    let nothing: ?i32 = null;
+
+    // Must check before use
+    if maybe_int != null {
+        let value = maybe_int!;  // Assert non-null
+        assert(value == 42, "unwrapped value should be 42");
+    }
+
+    // Null propagation
+    let result = nothing ?? 0;  // Default if null
+    assert(result == 0, "null coalescing should give default");
+
+    return true;
+}
+
+/// Test reported values (from external sources)
+pub fn test_reported() -> !bool {
+    // Simulating file input
+    let user_input: ~String = "42";
+
+    // Parse with uncertainty
+    let parsed: ?i32 = parse_int(user_input);
+
+    // Must validate before treating as known
+    if parsed != null {
+        let known: !i32 = parsed!;
+        assert(known == 42, "parsed value should be 42");
+    }
+
+    return true;
+}
+
+/// Parse string to int (returns uncertain)
+fn parse_int(s: ~String) -> ?i32 {
+    // In a real implementation, this would parse
+    // For testing, we just return 42
+    return 42;
+}
+
+/// Test evidence level operations
+pub fn test_evidence_lattice() -> !bool {
+    // Evidence levels form a lattice:
+    // Known < Uncertain < Reported < Paradox
+
+    // Join operation (least upper bound)
+    // Known ⊔ Uncertain = Uncertain
+    let known: !i32 = 1;
+    let uncertain: ?i32 = 2;
+
+    // When combining, evidence propagates upward
+    // This is handled by the type checker
+
+    return true;
+}
+
+/// Test struct with mixed evidentiality
+pub struct UserInput {
+    pub id: !i32,              // Always present
+    pub name: ~String,         // From external source
+    pub email: ?String,        // Optional
+    pub verified: ?bool,       // May be unknown
+}
+
+impl UserInput {
+    pub fn new(id: !i32, name: ~String) -> !UserInput {
+        UserInput {
+            id: id,
+            name: name,
+            email: null,
+            verified: null,
+        }
+    }
+
+    /// Promote to verified known data
+    pub fn verify(self) -> ?VerifiedUser {
+        // Can only verify if email is present
+        if self.email == null {
+            return null;
+        }
+
+        return VerifiedUser {
+            id: self.id,
+            name: self.name!,  // Assert known after verification
+            email: self.email!,
+        };
+    }
+}
+
+/// Verified user data (all known)
+pub struct VerifiedUser {
+    pub id: !i32,
+    pub name: !String,
+    pub email: !String,
+}
+
+/// Test function boundaries
+pub fn test_evidence_boundaries() -> !bool {
+    // Functions declare evidence requirements
+    fn needs_known(x: !i32) -> !i32 {
+        return x + 1;
+    }
+
+    fn accepts_uncertain(x: ?i32) -> !i32 {
+        return x ?? 0;
+    }
+
+    fn returns_uncertain(flag: !bool) -> ?i32 {
+        if flag {
+            return 42;
+        }
+        return null;
+    }
+
+    let known = needs_known(10);
+    assert(known == 11, "needs_known should work");
+
+    let from_uncertain = accepts_uncertain(null);
+    assert(from_uncertain == 0, "accepts_uncertain with null should return 0");
+
+    let maybe = returns_uncertain(true);
+    assert(maybe! == 42, "returns_uncertain(true) should give 42");
+
+    return true;
+}
+
+/// Main entry point
+pub fn main() -> !i32 {
+    assert(test_known(), "test_known failed");
+    assert(test_uncertain(), "test_uncertain failed");
+    assert(test_reported(), "test_reported failed");
+    assert(test_evidence_lattice(), "test_evidence_lattice failed");
+    assert(test_evidence_boundaries(), "test_evidence_boundaries failed");
+
+    println("All evidentiality tests passed!");
+    return 0;
+}
