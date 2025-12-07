@@ -2,14 +2,14 @@
 
 This directory contains the Sigil compiler written in Sigil itself - the **Jormungandr bootstrap**.
 
-## Status: Phase 3 - Interpreter & Runtime (IN PROGRESS)
+## Status: Phase 3 - Code Generation (COMPLETE!)
 
 | File | Lines | Status | Description |
 |------|-------|--------|-------------|
 | `src/span.sg` | ~140 | ✅ Complete | Source span tracking |
 | `src/token.sg` | ~450 | ✅ Complete | Token definitions |
 | `src/ast.sg` | ~1200 | ✅ Complete | AST node definitions |
-| `src/lib.sg` | ~80 | ✅ Complete | Module exports |
+| `src/lib.sg` | ~85 | ✅ Complete | Module exports |
 | `src/lexer.sg` | ~750 | ✅ Complete | Hand-written tokenization |
 | `src/parser.sg` | ~2100 | ✅ Complete | Recursive descent parser |
 | `src/typeck.sg` | ~1800 | ✅ Complete | Type checking with evidentiality |
@@ -17,8 +17,9 @@ This directory contains the Sigil compiler written in Sigil itself - the **Jormu
 | `src/lower.sg` | ~800 | ✅ Complete | AST → IR lowering |
 | `src/interp.sg` | ~1100 | ✅ Complete | Tree-walking interpreter |
 | `src/runtime.sg` | ~600 | ✅ Complete | Runtime system (memory, stdlib) |
+| `src/codegen.sg` | ~950 | ✅ Complete | C code generation |
 
-**Total: ~10,100 lines of Sigil**
+**Total: ~11,000+ lines of Sigil**
 
 ## Conversion from Rust
 
@@ -74,16 +75,16 @@ This is a direct conversion of `sigil-lang/parser/src/` from Rust to Sigil:
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ Phase 3: Interpreter & Runtime (CURRENT)                     │
-│ Execute Sigil code without native compilation                │
+│ Phase 3: Execution ✅ COMPLETE                               │
+│ Execute Sigil code                                           │
 │ - interp.sg ✅ (tree-walking interpreter)                    │
 │ - runtime.sg ✅ (memory, stdlib, evidence)                   │
-│ - codegen.sg 🔲 (native code generation)                     │
+│ - codegen.sg ✅ (C code generation)                          │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ Phase 4: Fixed Point                                         │
+│ Phase 4: Fixed Point (NEXT)                                  │
 │ Sigil-Sigil compiles Sigil-Sigil → identical output          │
 │ Bootstrap complete!                                          │
 └─────────────────────────────────────────────────────────────┘

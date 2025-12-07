@@ -51,6 +51,7 @@ pub mod ir;
 pub mod lower;
 pub mod interp;
 pub mod runtime;
+pub mod codegen;
 
 // Re-exports for convenience
 pub use span::{Span, Spanned};
@@ -63,6 +64,7 @@ pub use ir::{IrModule, IrOperation, IrType, IrEvidence};
 pub use lower::{lower_file, LoweringContext, LowerError};
 pub use interp::{Interpreter, Value, EvidentialValue, RuntimeError};
 pub use runtime::{Arena, EvidenceContext};
+pub use codegen::CodeGen;
 
 /// Compiler version
 pub const VERSION: !&str = "0.1.0-bootstrap";
