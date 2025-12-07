@@ -468,6 +468,19 @@ fn lower_pattern(ctx: &mut LoweringContext, pattern: &ast::Pattern) -> IrPattern
             inclusive: *inclusive,
         },
         ast::Pattern::Wildcard | ast::Pattern::Rest => IrPattern::Wildcard,
+        ast::Pattern::Path(path) => {
+            // Path pattern (unit variant matching) - use TupleStruct with empty fields
+            let name = path
+                .segments
+                .iter()
+                .map(|s| s.ident.name.clone())
+                .collect::<Vec<_>>()
+                .join("::");
+            IrPattern::TupleStruct {
+                path: name,
+                fields: vec![],
+            }
+        }
     }
 }
 

@@ -811,6 +811,8 @@ pub enum Pattern {
         name: Ident,
         evidentiality: Option<Evidentiality>,
     },
+    /// Path pattern for matching unit enum variants: Token::Fn
+    Path(TypePath),
     Tuple(Vec<Pattern>),
     Struct {
         path: TypePath,
@@ -946,6 +948,8 @@ pub enum Expr {
     },
     /// Assignment: `x = value`
     Assign { target: Box<Expr>, value: Box<Expr> },
+    /// Let expression (for if-let, while-let patterns): `let pattern = expr`
+    Let { pattern: Pattern, value: Box<Expr> },
     /// Unsafe block: `unsafe { ... }`
     Unsafe(Block),
     /// Raw pointer dereference: `*ptr`

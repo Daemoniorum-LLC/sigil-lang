@@ -2080,7 +2080,7 @@ impl TypeChecker {
                     self.bind_pattern(first, ty, evidence);
                 }
             }
-            Pattern::Wildcard | Pattern::Rest | Pattern::Literal(_) | Pattern::Range { .. } => {
+            Pattern::Wildcard | Pattern::Rest | Pattern::Literal(_) | Pattern::Range { .. } | Pattern::Path(_) => {
                 // These don't introduce bindings
             }
         }

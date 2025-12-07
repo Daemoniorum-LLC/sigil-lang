@@ -151,7 +151,7 @@ fn test_span_overlaps() {
 #[test]
 fn test_spanned_map() {
     let spanned = Spanned::new(42, Span::new(0, 2));
-    let doubled = spanned.map(|x| x * 2);
+    let doubled = spanned.map({x => x * 2});
     assert_eq!(doubled.node, 84);
     assert_eq!(doubled.span, Span::new(0, 2));
 }
