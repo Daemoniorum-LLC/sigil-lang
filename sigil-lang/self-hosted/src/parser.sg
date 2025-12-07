@@ -176,7 +176,7 @@ impl Parser {
             items.push(self.parse_item()?);
         }
 
-        Ok(SourceFile { attrs, config, items })
+        Ok(SourceFile { path: null, attrs, config, items })
     }
 
     /// Parse an inner attribute: `#![name]` or `#![name(args)]`
