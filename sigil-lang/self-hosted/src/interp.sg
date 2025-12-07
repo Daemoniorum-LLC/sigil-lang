@@ -1,0 +1,1461 @@
+//! Tree-Walking Interpreter for Sigil IR
+//!
+//! This module provides an interpreter that directly executes the IR,
+//! serving as both a reference implementation and a stepping stone
+//! toward native code generation.
+//!
+//! ## Execution Model
+//!
+//! The interpreter uses a stack-based execution model with:
+//! - Value stack for operands and results
+//! - Call stack for function invocations
+//! - Environment stack for variable scoping
+//! - Evidence tracking at runtime
+//!
+//! ## Evidence at Runtime
+//!
+//! Unlike static typing, the interpreter tracks evidence dynamically:
+//! - Known (!) values are trusted implicitly
+//! - Uncertain (?) values trigger runtime checks
+//! - Reported (~) values are tagged for provenance tracking
+//! - Paradox (‽) values halt execution with an error
+
+use crate::ir::*;
+use crate::typeck::EvidenceLevel;
+
+// ============================================================================
+// Runtime Values
+// ============================================================================
+
+/// Runtime value representation with evidence tracking
+pub enum Value {
+    /// Unit value ()
+    Unit,
+
+    /// Boolean
+    Bool(!bool),
+
+    /// Signed integers
+    Int(!i64),
+
+    /// Floating point
+    Float(!f64),
+
+    /// Character
+    Char(!char),
+
+    /// String (heap allocated)
+    String(!String),
+
+    /// Array of values
+    Array(![Value]),
+
+    /// Tuple of values
+    Tuple(![Value]),
+
+    /// Struct instance
+    Struct {
+        name: !String,
+        fields: !Map<String, Value>,
+    },
+
+    /// Enum variant
+    Enum {
+        name: !String,
+        variant: !String,
+        fields: ![Value],
+    },
+
+    /// Closure (captured environment + function)
+    Closure {
+        params: ![String],
+        body: !Box<IrOperation>,
+        env: !Environment,
+    },
+
+    /// Function reference
+    Function(!String),
+
+    /// Reference to another value
+    Ref(!Box<Value>),
+
+    /// Mutable reference
+    RefMut(!Box<Value>),
+
+    /// Null/None value
+    Null,
+
+    /// Never type (diverging)
+    Never,
+}
+
+impl Value {
+    /// Check if this is a truthy value
+    pub fn is_truthy(self) -> !bool {
+        match self {
+            Value::Bool(b) => b,
+            Value::Int(n) => n != 0,
+            Value::Float(f) => f != 0.0,
+            Value::String(s) => !s.is_empty(),
+            Value::Array(a) => !a.is_empty(),
+            Value::Null => false,
+            Value::Unit => false,
+            _ => true,
+        }
+    }
+
+    /// Convert to string representation
+    pub fn to_string(self) -> !String {
+        match self {
+            Value::Unit => "()",
+            Value::Bool(b) => if b { "true" } else { "false" },
+            Value::Int(n) => n.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Char(c) => format!("'{}'", c),
+            Value::String(s) => s,
+            Value::Array(elements) => {
+                let parts = elements|τ{e => e.to_string()}|join(", ");
+                format!("[{}]", parts)
+            },
+            Value::Tuple(elements) => {
+                let parts = elements|τ{e => e.to_string()}|join(", ");
+                format!("({})", parts)
+            },
+            Value::Struct { name, fields } => {
+                let parts = fields.entries()|τ{(k, v) => format!("{}: {}", k, v.to_string())}|join(", ");
+                format!("{} {{ {} }}", name, parts)
+            },
+            Value::Enum { name, variant, fields } => {
+                if fields.is_empty() {
+                    format!("{}::{}", name, variant)
+                } else {
+                    let parts = fields|τ{f => f.to_string()}|join(", ");
+                    format!("{}::{}({})", name, variant, parts)
+                }
+            },
+            Value::Closure { .. } => "<closure>",
+            Value::Function(name) => format!("<fn {}>", name),
+            Value::Ref(v) => format!("&{}", v.to_string()),
+            Value::RefMut(v) => format!("&mut {}", v.to_string()),
+            Value::Null => "null",
+            Value::Never => "!",
+        }
+    }
+
+    /// Get type name for error messages
+    pub fn type_name(self) -> !&str {
+        match self {
+            Value::Unit => "()",
+            Value::Bool(_) => "bool",
+            Value::Int(_) => "i64",
+            Value::Float(_) => "f64",
+            Value::Char(_) => "char",
+            Value::String(_) => "str",
+            Value::Array(_) => "array",
+            Value::Tuple(_) => "tuple",
+            Value::Struct { name, .. } => name,
+            Value::Enum { name, .. } => name,
+            Value::Closure { .. } => "closure",
+            Value::Function(_) => "function",
+            Value::Ref(_) => "ref",
+            Value::RefMut(_) => "ref mut",
+            Value::Null => "null",
+            Value::Never => "!",
+        }
+    }
+}
+
+/// Runtime value with evidence annotation
+pub struct EvidentialValue {
+    pub value: !Value,
+    pub evidence: !IrEvidence,
+}
+
+impl EvidentialValue {
+    pub fn known(value: !Value) -> !EvidentialValue {
+        EvidentialValue { value, evidence: IrEvidence::Known }
+    }
+
+    pub fn uncertain(value: !Value) -> !EvidentialValue {
+        EvidentialValue { value, evidence: IrEvidence::Uncertain }
+    }
+
+    pub fn reported(value: !Value) -> !EvidentialValue {
+        EvidentialValue { value, evidence: IrEvidence::Reported }
+    }
+}
+
+// ============================================================================
+// Environment
+// ============================================================================
+
+/// Variable environment with scoping
+pub struct Environment {
+    /// Variable bindings
+    bindings: !Map<String, EvidentialValue>,
+    /// Parent scope
+    parent: ?Box<Environment>,
+}
+
+impl Environment {
+    /// Create a new empty environment
+    pub fn new() -> !Environment {
+        Environment {
+            bindings: Map::new(),
+            parent: null,
+        }
+    }
+
+    /// Create a child environment
+    pub fn child(parent: !Environment) -> !Environment {
+        Environment {
+            bindings: Map::new(),
+            parent: ?Box::new(parent),
+        }
+    }
+
+    /// Define a variable
+    pub fn define(mut self, name: !String, value: !EvidentialValue) {
+        self.bindings.insert(name, value);
+    }
+
+    /// Look up a variable
+    pub fn get(self, name: !&str) -> ?EvidentialValue {
+        if let ?val = self.bindings.get(name) {
+            return ?val.clone();
+        }
+        if let ?parent = self.parent {
+            return parent.get(name);
+        }
+        null
+    }
+
+    /// Update an existing variable
+    pub fn set(mut self, name: !&str, value: !EvidentialValue) -> !bool {
+        if self.bindings.contains_key(name) {
+            self.bindings.insert(name.to_string(), value);
+            return true;
+        }
+        if let ?parent = self.parent {
+            return parent.set(name, value);
+        }
+        false
+    }
+}
+
+// ============================================================================
+// Call Frame
+// ============================================================================
+
+/// Call stack frame
+pub struct CallFrame {
+    /// Function name
+    pub function: !String,
+    /// Local environment
+    pub env: !Environment,
+    /// Return address (for debugging)
+    pub return_addr: ?String,
+}
+
+// ============================================================================
+// Interpreter
+// ============================================================================
+
+/// The Sigil interpreter
+pub struct Interpreter {
+    /// Global environment
+    globals: !Environment,
+
+    /// Call stack
+    call_stack: ![CallFrame],
+
+    /// Loaded modules
+    modules: !Map<String, IrModule>,
+
+    /// Function definitions
+    functions: !Map<String, IrFunction>,
+
+    /// Output buffer (for print statements)
+    output: ![String],
+
+    /// Maximum call stack depth
+    max_stack_depth: !usize,
+}
+
+impl Interpreter {
+    /// Create a new interpreter
+    pub fn new() -> !Interpreter {
+        let mut interp = Interpreter {
+            globals: Environment::new(),
+            call_stack: [],
+            modules: Map::new(),
+            functions: Map::new(),
+            output: [],
+            max_stack_depth: 1000,
+        };
+
+        // Register built-in functions
+        interp.register_builtins();
+        interp
+    }
+
+    /// Register built-in functions
+    fn register_builtins(mut self) {
+        // I/O
+        self.globals.define("print", EvidentialValue::known(Value::Function("print")));
+        self.globals.define("println", EvidentialValue::known(Value::Function("println")));
+        self.globals.define("input", EvidentialValue::known(Value::Function("input")));
+
+        // Type conversions
+        self.globals.define("int", EvidentialValue::known(Value::Function("int")));
+        self.globals.define("float", EvidentialValue::known(Value::Function("float")));
+        self.globals.define("str", EvidentialValue::known(Value::Function("str")));
+        self.globals.define("bool", EvidentialValue::known(Value::Function("bool")));
+
+        // Math
+        self.globals.define("abs", EvidentialValue::known(Value::Function("abs")));
+        self.globals.define("sqrt", EvidentialValue::known(Value::Function("sqrt")));
+        self.globals.define("sin", EvidentialValue::known(Value::Function("sin")));
+        self.globals.define("cos", EvidentialValue::known(Value::Function("cos")));
+        self.globals.define("pow", EvidentialValue::known(Value::Function("pow")));
+        self.globals.define("floor", EvidentialValue::known(Value::Function("floor")));
+        self.globals.define("ceil", EvidentialValue::known(Value::Function("ceil")));
+        self.globals.define("round", EvidentialValue::known(Value::Function("round")));
+        self.globals.define("min", EvidentialValue::known(Value::Function("min")));
+        self.globals.define("max", EvidentialValue::known(Value::Function("max")));
+
+        // Collections
+        self.globals.define("len", EvidentialValue::known(Value::Function("len")));
+        self.globals.define("push", EvidentialValue::known(Value::Function("push")));
+        self.globals.define("pop", EvidentialValue::known(Value::Function("pop")));
+        self.globals.define("first", EvidentialValue::known(Value::Function("first")));
+        self.globals.define("last", EvidentialValue::known(Value::Function("last")));
+        self.globals.define("range", EvidentialValue::known(Value::Function("range")));
+
+        // Assertions
+        self.globals.define("assert", EvidentialValue::known(Value::Function("assert")));
+        self.globals.define("assert_eq", EvidentialValue::known(Value::Function("assert_eq")));
+
+        // Evidence
+        self.globals.define("evidence_of", EvidentialValue::known(Value::Function("evidence_of")));
+        self.globals.define("validate", EvidentialValue::known(Value::Function("validate")));
+        self.globals.define("verify", EvidentialValue::known(Value::Function("verify")));
+
+        // Control
+        self.globals.define("panic", EvidentialValue::known(Value::Function("panic")));
+        self.globals.define("todo", EvidentialValue::known(Value::Function("todo")));
+    }
+
+    /// Load an IR module
+    pub fn load_module(mut self, module: !IrModule) {
+        // Register all functions
+        for func in module.functions {
+            self.functions.insert(func.name.clone(), func);
+        }
+
+        // Store module
+        self.modules.insert(module.source.clone(), module);
+    }
+
+    /// Execute the main function
+    pub fn run(mut self) -> !Result<EvidentialValue, RuntimeError> {
+        // Find main function
+        if let ?main_fn = self.functions.get("main") {
+            self.call_function("main", [])
+        } else {
+            Result::Err(RuntimeError::new("no main function found"))
+        }
+    }
+
+    /// Call a function by name
+    pub fn call_function(mut self, name: !&str, args: ![EvidentialValue]) -> !Result<EvidentialValue, RuntimeError> {
+        // Check stack depth
+        if self.call_stack.len() >= self.max_stack_depth {
+            return Result::Err(RuntimeError::new("stack overflow"));
+        }
+
+        // Handle built-in functions
+        if self.is_builtin(name) {
+            return self.call_builtin(name, args);
+        }
+
+        // Find user function
+        let func = match self.functions.get(name) {
+            ?f => f,
+            null => return Result::Err(RuntimeError::new(format!("undefined function: {}", name))),
+        };
+
+        // Create new environment
+        let mut env = Environment::child(self.globals);
+
+        // Bind parameters
+        if func.params.len() != args.len() {
+            return Result::Err(RuntimeError::new(format!(
+                "function {} expected {} arguments, got {}",
+                name, func.params.len(), args.len()
+            )));
+        }
+
+        for (param, arg) in func.params.iter().zip(args.iter()) {
+            // Check evidence requirements
+            let required_ev = param.evidence;
+            if !self.check_evidence(required_ev, arg.evidence) {
+                return Result::Err(RuntimeError::new(format!(
+                    "evidence mismatch for parameter {}: expected {}, got {}",
+                    param.name, required_ev.name(), arg.evidence.name()
+                )));
+            }
+            env.define(param.name.clone(), arg);
+        }
+
+        // Push call frame
+        self.call_stack.push(CallFrame {
+            function: name.to_string(),
+            env: env.clone(),
+            return_addr: null,
+        });
+
+        // Execute body
+        let result = match func.body {
+            ?body => self.eval_with_env(body, env),
+            null => Result::Ok(EvidentialValue::known(Value::Unit)),
+        };
+
+        // Pop call frame
+        self.call_stack.pop();
+
+        result
+    }
+
+    /// Check if evidence satisfies requirement
+    fn check_evidence(self, required: !IrEvidence, actual: !IrEvidence) -> !bool {
+        fn rank(ev: !IrEvidence) -> !i32 {
+            match ev {
+                IrEvidence::Known => 0,
+                IrEvidence::Uncertain => 1,
+                IrEvidence::Reported => 2,
+                IrEvidence::Paradox => 3,
+            }
+        }
+        // More certain evidence can satisfy less certain requirements
+        rank(actual) <= rank(required)
+    }
+
+    /// Check if a function is built-in
+    fn is_builtin(self, name: !&str) -> !bool {
+        match name {
+            "print" | "println" | "input" |
+            "int" | "float" | "str" | "bool" |
+            "abs" | "sqrt" | "sin" | "cos" | "pow" | "floor" | "ceil" | "round" | "min" | "max" |
+            "len" | "push" | "pop" | "first" | "last" | "range" |
+            "assert" | "assert_eq" |
+            "evidence_of" | "validate" | "verify" |
+            "panic" | "todo" => true,
+            _ => false,
+        }
+    }
+
+    /// Call a built-in function
+    fn call_builtin(mut self, name: !&str, args: ![EvidentialValue]) -> !Result<EvidentialValue, RuntimeError> {
+        match name {
+            "print" => {
+                for arg in args {
+                    self.output.push(arg.value.to_string());
+                }
+                Result::Ok(EvidentialValue::known(Value::Unit))
+            },
+            "println" => {
+                for arg in args {
+                    self.output.push(arg.value.to_string());
+                }
+                self.output.push("\n");
+                Result::Ok(EvidentialValue::known(Value::Unit))
+            },
+            "len" => {
+                if args.len() != 1 {
+                    return Result::Err(RuntimeError::new("len expects 1 argument"));
+                }
+                let val = args[0].value;
+                let len = match val {
+                    Value::String(s) => s.len() as i64,
+                    Value::Array(a) => a.len() as i64,
+                    _ => return Result::Err(RuntimeError::new("len requires string or array")),
+                };
+                Result::Ok(EvidentialValue::known(Value::Int(len)))
+            },
+            "int" => {
+                if args.len() != 1 {
+                    return Result::Err(RuntimeError::new("int expects 1 argument"));
+                }
+                let val = match args[0].value {
+                    Value::Int(n) => n,
+                    Value::Float(f) => f as i64,
+                    Value::Bool(b) => if b { 1 } else { 0 },
+                    Value::String(s) => s.parse().unwrap_or(0),
+                    _ => return Result::Err(RuntimeError::new("cannot convert to int")),
+                };
+                Result::Ok(EvidentialValue::known(Value::Int(val)))
+            },
+            "float" => {
+                if args.len() != 1 {
+                    return Result::Err(RuntimeError::new("float expects 1 argument"));
+                }
+                let val = match args[0].value {
+                    Value::Int(n) => n as f64,
+                    Value::Float(f) => f,
+                    Value::String(s) => s.parse().unwrap_or(0.0),
+                    _ => return Result::Err(RuntimeError::new("cannot convert to float")),
+                };
+                Result::Ok(EvidentialValue::known(Value::Float(val)))
+            },
+            "str" => {
+                if args.len() != 1 {
+                    return Result::Err(RuntimeError::new("str expects 1 argument"));
+                }
+                Result::Ok(EvidentialValue::known(Value::String(args[0].value.to_string())))
+            },
+            "abs" => {
+                if args.len() != 1 {
+                    return Result::Err(RuntimeError::new("abs expects 1 argument"));
+                }
+                match args[0].value {
+                    Value::Int(n) => Result::Ok(EvidentialValue::known(Value::Int(n.abs()))),
+                    Value::Float(f) => Result::Ok(EvidentialValue::known(Value::Float(f.abs()))),
+                    _ => Result::Err(RuntimeError::new("abs requires number")),
+                }
+            },
+            "sqrt" => {
+                if args.len() != 1 {
+                    return Result::Err(RuntimeError::new("sqrt expects 1 argument"));
+                }
+                match args[0].value {
+                    Value::Float(f) => Result::Ok(EvidentialValue::known(Value::Float(f.sqrt()))),
+                    Value::Int(n) => Result::Ok(EvidentialValue::known(Value::Float((n as f64).sqrt()))),
+                    _ => Result::Err(RuntimeError::new("sqrt requires number")),
+                }
+            },
+            "sin" => {
+                if args.len() != 1 {
+                    return Result::Err(RuntimeError::new("sin expects 1 argument"));
+                }
+                match args[0].value {
+                    Value::Float(f) => Result::Ok(EvidentialValue::known(Value::Float(f.sin()))),
+                    Value::Int(n) => Result::Ok(EvidentialValue::known(Value::Float((n as f64).sin()))),
+                    _ => Result::Err(RuntimeError::new("sin requires number")),
+                }
+            },
+            "cos" => {
+                if args.len() != 1 {
+                    return Result::Err(RuntimeError::new("cos expects 1 argument"));
+                }
+                match args[0].value {
+                    Value::Float(f) => Result::Ok(EvidentialValue::known(Value::Float(f.cos()))),
+                    Value::Int(n) => Result::Ok(EvidentialValue::known(Value::Float((n as f64).cos()))),
+                    _ => Result::Err(RuntimeError::new("cos requires number")),
+                }
+            },
+            "pow" => {
+                if args.len() != 2 {
+                    return Result::Err(RuntimeError::new("pow expects 2 arguments"));
+                }
+                let base = match args[0].value {
+                    Value::Float(f) => f,
+                    Value::Int(n) => n as f64,
+                    _ => return Result::Err(RuntimeError::new("pow requires numbers")),
+                };
+                let exp = match args[1].value {
+                    Value::Float(f) => f,
+                    Value::Int(n) => n as f64,
+                    _ => return Result::Err(RuntimeError::new("pow requires numbers")),
+                };
+                Result::Ok(EvidentialValue::known(Value::Float(base.powf(exp))))
+            },
+            "min" => {
+                if args.len() != 2 {
+                    return Result::Err(RuntimeError::new("min expects 2 arguments"));
+                }
+                match (args[0].value, args[1].value) {
+                    (Value::Int(a), Value::Int(b)) => Result::Ok(EvidentialValue::known(Value::Int(if a < b { a } else { b }))),
+                    (Value::Float(a), Value::Float(b)) => Result::Ok(EvidentialValue::known(Value::Float(if a < b { a } else { b }))),
+                    _ => Result::Err(RuntimeError::new("min requires same types")),
+                }
+            },
+            "max" => {
+                if args.len() != 2 {
+                    return Result::Err(RuntimeError::new("max expects 2 arguments"));
+                }
+                match (args[0].value, args[1].value) {
+                    (Value::Int(a), Value::Int(b)) => Result::Ok(EvidentialValue::known(Value::Int(if a > b { a } else { b }))),
+                    (Value::Float(a), Value::Float(b)) => Result::Ok(EvidentialValue::known(Value::Float(if a > b { a } else { b }))),
+                    _ => Result::Err(RuntimeError::new("max requires same types")),
+                }
+            },
+            "range" => {
+                if args.len() != 2 {
+                    return Result::Err(RuntimeError::new("range expects 2 arguments"));
+                }
+                match (args[0].value, args[1].value) {
+                    (Value::Int(start), Value::Int(end)) => {
+                        let arr = (start..end)|τ{n => Value::Int(n)}|collect();
+                        Result::Ok(EvidentialValue::known(Value::Array(arr)))
+                    },
+                    _ => Result::Err(RuntimeError::new("range requires integers")),
+                }
+            },
+            "first" => {
+                if args.len() != 1 {
+                    return Result::Err(RuntimeError::new("first expects 1 argument"));
+                }
+                match args[0].value {
+                    Value::Array(arr) => match arr.first() {
+                        ?v => Result::Ok(EvidentialValue::uncertain(v.clone())),
+                        null => Result::Ok(EvidentialValue::known(Value::Null)),
+                    },
+                    _ => Result::Err(RuntimeError::new("first requires array")),
+                }
+            },
+            "last" => {
+                if args.len() != 1 {
+                    return Result::Err(RuntimeError::new("last expects 1 argument"));
+                }
+                match args[0].value {
+                    Value::Array(arr) => match arr.last() {
+                        ?v => Result::Ok(EvidentialValue::uncertain(v.clone())),
+                        null => Result::Ok(EvidentialValue::known(Value::Null)),
+                    },
+                    _ => Result::Err(RuntimeError::new("last requires array")),
+                }
+            },
+            "assert" => {
+                if args.len() != 1 {
+                    return Result::Err(RuntimeError::new("assert expects 1 argument"));
+                }
+                if !args[0].value.is_truthy() {
+                    return Result::Err(RuntimeError::new("assertion failed"));
+                }
+                Result::Ok(EvidentialValue::known(Value::Unit))
+            },
+            "assert_eq" => {
+                if args.len() != 2 {
+                    return Result::Err(RuntimeError::new("assert_eq expects 2 arguments"));
+                }
+                let eq = self.values_equal(args[0].value, args[1].value);
+                if !eq {
+                    return Result::Err(RuntimeError::new(format!(
+                        "assertion failed: {} != {}",
+                        args[0].value.to_string(),
+                        args[1].value.to_string()
+                    )));
+                }
+                Result::Ok(EvidentialValue::known(Value::Unit))
+            },
+            "evidence_of" => {
+                if args.len() != 1 {
+                    return Result::Err(RuntimeError::new("evidence_of expects 1 argument"));
+                }
+                Result::Ok(EvidentialValue::known(Value::String(args[0].evidence.name())))
+            },
+            "validate" => {
+                // Promote to uncertain
+                if args.len() != 1 {
+                    return Result::Err(RuntimeError::new("validate expects 1 argument"));
+                }
+                Result::Ok(EvidentialValue {
+                    value: args[0].value.clone(),
+                    evidence: IrEvidence::Uncertain,
+                })
+            },
+            "verify" => {
+                // Promote to known (runtime check passed)
+                if args.len() != 1 {
+                    return Result::Err(RuntimeError::new("verify expects 1 argument"));
+                }
+                Result::Ok(EvidentialValue::known(args[0].value.clone()))
+            },
+            "panic" => {
+                let msg = if args.is_empty() {
+                    "explicit panic"
+                } else {
+                    args[0].value.to_string()
+                };
+                Result::Err(RuntimeError::new(format!("panic: {}", msg)))
+            },
+            "todo" => {
+                Result::Err(RuntimeError::new("not yet implemented"))
+            },
+            _ => Result::Err(RuntimeError::new(format!("unknown builtin: {}", name))),
+        }
+    }
+
+    /// Check value equality
+    fn values_equal(self, a: !Value, b: !Value) -> !bool {
+        match (a, b) {
+            (Value::Unit, Value::Unit) => true,
+            (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::Float(a), Value::Float(b)) => a == b,
+            (Value::Char(a), Value::Char(b)) => a == b,
+            (Value::String(a), Value::String(b)) => a == b,
+            (Value::Null, Value::Null) => true,
+            (Value::Array(a), Value::Array(b)) => {
+                a.len() == b.len() &&
+                a.iter().zip(b.iter())|all{(x, y) => self.values_equal(x, y)}
+            },
+            _ => false,
+        }
+    }
+
+    /// Evaluate an operation in a given environment
+    fn eval_with_env(mut self, op: !IrOperation, mut env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
+        match op {
+            IrOperation::Literal { value, evidence, .. } => {
+                let val = match value {
+                    LiteralValue::Int(n) => Value::Int(n),
+                    LiteralValue::Float(f) => Value::Float(f),
+                    LiteralValue::Bool(b) => Value::Bool(b),
+                    LiteralValue::Char(c) => Value::Char(c),
+                    LiteralValue::String(s) => Value::String(s),
+                    LiteralValue::Null => Value::Null,
+                };
+                Result::Ok(EvidentialValue { value: val, evidence })
+            },
+
+            IrOperation::Var { name, evidence, .. } => {
+                match env.get(name) {
+                    ?val => Result::Ok(val),
+                    null => match self.globals.get(name) {
+                        ?val => Result::Ok(val),
+                        null => Result::Err(RuntimeError::new(format!("undefined variable: {}", name))),
+                    },
+                }
+            },
+
+            IrOperation::Let { pattern, init, evidence, .. } => {
+                let init_val = self.eval_with_env(*init, env)?;
+                self.bind_pattern(pattern, init_val, env)?;
+                Result::Ok(EvidentialValue::known(Value::Unit))
+            },
+
+            IrOperation::Binary { operator, left, right, evidence, .. } => {
+                let l = self.eval_with_env(*left, env)?;
+                let r = self.eval_with_env(*right, env)?;
+                let combined_ev = l.evidence.join(r.evidence);
+
+                let result = self.eval_binary(operator, l.value, r.value)?;
+                Result::Ok(EvidentialValue { value: result, evidence: combined_ev })
+            },
+
+            IrOperation::Unary { operator, operand, evidence, .. } => {
+                let val = self.eval_with_env(*operand, env)?;
+
+                let result = self.eval_unary(operator, val.value)?;
+                Result::Ok(EvidentialValue { value: result, evidence: val.evidence })
+            },
+
+            IrOperation::Call { function, args, evidence, .. } => {
+                let arg_vals = args|τ{a => self.eval_with_env(a, env)}|collect_results()?;
+                self.call_function(function, arg_vals)
+            },
+
+            IrOperation::If { condition, then_branch, else_branch, evidence, .. } => {
+                let cond = self.eval_with_env(*condition, env)?;
+
+                if cond.value.is_truthy() {
+                    self.eval_with_env(*then_branch, env)
+                } else if let ?else_expr = else_branch {
+                    self.eval_with_env(*else_expr, env)
+                } else {
+                    Result::Ok(EvidentialValue::known(Value::Unit))
+                }
+            },
+
+            IrOperation::Block { statements, evidence, .. } => {
+                let mut block_env = Environment::child(env);
+                let mut result = EvidentialValue::known(Value::Unit);
+
+                for stmt in statements {
+                    result = self.eval_with_env(stmt, block_env)?;
+                }
+
+                Result::Ok(result)
+            },
+
+            IrOperation::Return { value, evidence } => {
+                match value {
+                    ?v => self.eval_with_env(*v, env),
+                    null => Result::Ok(EvidentialValue::known(Value::Unit)),
+                }
+            },
+
+            IrOperation::Array { elements, evidence, .. } => {
+                let vals = elements|τ{e => self.eval_with_env(e, env)?.value}|collect();
+                Result::Ok(EvidentialValue { value: Value::Array(vals), evidence })
+            },
+
+            IrOperation::Tuple { elements, evidence, .. } => {
+                let vals = elements|τ{e => self.eval_with_env(e, env)?.value}|collect();
+                Result::Ok(EvidentialValue { value: Value::Tuple(vals), evidence })
+            },
+
+            IrOperation::Index { expr, index, evidence, .. } => {
+                let arr = self.eval_with_env(*expr, env)?;
+                let idx = self.eval_with_env(*index, env)?;
+
+                match (arr.value, idx.value) {
+                    (Value::Array(a), Value::Int(i)) => {
+                        if i < 0 || i >= a.len() as i64 {
+                            Result::Err(RuntimeError::new("array index out of bounds"))
+                        } else {
+                            Result::Ok(EvidentialValue {
+                                value: a[i as usize].clone(),
+                                evidence: arr.evidence.join(idx.evidence),
+                            })
+                        }
+                    },
+                    (Value::String(s), Value::Int(i)) => {
+                        if i < 0 || i >= s.len() as i64 {
+                            Result::Err(RuntimeError::new("string index out of bounds"))
+                        } else {
+                            let c = s.chars().nth(i as usize).unwrap();
+                            Result::Ok(EvidentialValue {
+                                value: Value::Char(c),
+                                evidence: arr.evidence.join(idx.evidence),
+                            })
+                        }
+                    },
+                    _ => Result::Err(RuntimeError::new("invalid index operation")),
+                }
+            },
+
+            IrOperation::Field { expr, field, evidence, .. } => {
+                let obj = self.eval_with_env(*expr, env)?;
+
+                match obj.value {
+                    Value::Struct { fields, .. } => {
+                        match fields.get(field) {
+                            ?v => Result::Ok(EvidentialValue {
+                                value: v.clone(),
+                                evidence: obj.evidence,
+                            }),
+                            null => Result::Err(RuntimeError::new(format!("no field: {}", field))),
+                        }
+                    },
+                    Value::Tuple(elements) => {
+                        // Tuple field access like .0, .1
+                        let idx: ?usize = field.parse().ok();
+                        match idx {
+                            ?i if i < elements.len() => Result::Ok(EvidentialValue {
+                                value: elements[i].clone(),
+                                evidence: obj.evidence,
+                            }),
+                            _ => Result::Err(RuntimeError::new(format!("no tuple field: {}", field))),
+                        }
+                    },
+                    _ => Result::Err(RuntimeError::new("field access on non-struct")),
+                }
+            },
+
+            IrOperation::Closure { params, body, evidence, .. } => {
+                let param_names = params|τ{p => p.name}|collect();
+                Result::Ok(EvidentialValue {
+                    value: Value::Closure {
+                        params: param_names,
+                        body: Box::new(*body),
+                        env: env.clone(),
+                    },
+                    evidence,
+                })
+            },
+
+            IrOperation::Pipeline { input, steps, evidence, .. } => {
+                let mut current = self.eval_with_env(*input, env)?;
+
+                for step in steps {
+                    current = self.eval_pipeline_step(step, current, env)?;
+                }
+
+                Result::Ok(current)
+            },
+
+            IrOperation::Match { scrutinee, arms, evidence, .. } => {
+                let val = self.eval_with_env(*scrutinee, env)?;
+
+                for arm in arms {
+                    if self.pattern_matches(arm.pattern, val.value, env)? {
+                        let mut arm_env = Environment::child(env);
+                        self.bind_pattern(arm.pattern, val.clone(), arm_env)?;
+
+                        if let ?guard = arm.guard {
+                            let guard_val = self.eval_with_env(guard, arm_env)?;
+                            if !guard_val.value.is_truthy() {
+                                continue;
+                            }
+                        }
+
+                        return self.eval_with_env(arm.body, arm_env);
+                    }
+                }
+
+                Result::Err(RuntimeError::new("non-exhaustive match"))
+            },
+
+            IrOperation::Loop { variant, condition, iterator, body, .. } => {
+                match variant {
+                    LoopVariant::Infinite => {
+                        loop {
+                            let result = self.eval_with_env(*body.clone(), env);
+                            match result {
+                                Result::Err(RuntimeError { is_break: true, value: ?v, .. }) => {
+                                    return Result::Ok(v);
+                                },
+                                Result::Err(RuntimeError { is_continue: true, .. }) => continue,
+                                Result::Err(e) => return Result::Err(e),
+                                _ => {},
+                            }
+                        }
+                    },
+                    LoopVariant::While => {
+                        while {
+                            let cond = match condition {
+                                ?c => self.eval_with_env(*c.clone(), env)?,
+                                null => EvidentialValue::known(Value::Bool(true)),
+                            };
+                            cond.value.is_truthy()
+                        } {
+                            let result = self.eval_with_env(*body.clone(), env);
+                            match result {
+                                Result::Err(RuntimeError { is_break: true, value: ?v, .. }) => {
+                                    return Result::Ok(v);
+                                },
+                                Result::Err(RuntimeError { is_continue: true, .. }) => continue,
+                                Result::Err(e) => return Result::Err(e),
+                                _ => {},
+                            }
+                        }
+                        Result::Ok(EvidentialValue::known(Value::Unit))
+                    },
+                    LoopVariant::For => {
+                        if let ?iter = iterator {
+                            let iterable = self.eval_with_env(*iter.iterable, env)?;
+                            let items = match iterable.value {
+                                Value::Array(a) => a,
+                                Value::String(s) => s.chars()|τ{c => Value::Char(c)}|collect(),
+                                _ => return Result::Err(RuntimeError::new("not iterable")),
+                            };
+
+                            for item in items {
+                                let mut loop_env = Environment::child(env);
+                                self.bind_pattern(iter.pattern, EvidentialValue {
+                                    value: item,
+                                    evidence: iterable.evidence,
+                                }, loop_env)?;
+
+                                let result = self.eval_with_env(*body.clone(), loop_env);
+                                match result {
+                                    Result::Err(RuntimeError { is_break: true, value: ?v, .. }) => {
+                                        return Result::Ok(v);
+                                    },
+                                    Result::Err(RuntimeError { is_continue: true, .. }) => continue,
+                                    Result::Err(e) => return Result::Err(e),
+                                    _ => {},
+                                }
+                            }
+                        }
+                        Result::Ok(EvidentialValue::known(Value::Unit))
+                    },
+                }
+            },
+
+            IrOperation::Break { value, .. } => {
+                let val = match value {
+                    ?v => ?self.eval_with_env(*v, env)?,
+                    null => null,
+                };
+                Result::Err(RuntimeError::break_with(val))
+            },
+
+            IrOperation::Continue { .. } => {
+                Result::Err(RuntimeError::continue_loop())
+            },
+
+            IrOperation::EvidenceCoerce { expr, to_evidence, .. } => {
+                let val = self.eval_with_env(*expr, env)?;
+                Result::Ok(EvidentialValue {
+                    value: val.value,
+                    evidence: to_evidence,
+                })
+            },
+
+            _ => Result::Err(RuntimeError::new("unsupported operation")),
+        }
+    }
+
+    /// Evaluate binary operation
+    fn eval_binary(self, op: !BinaryOp, left: !Value, right: !Value) -> !Result<Value, RuntimeError> {
+        match op {
+            BinaryOp::Add => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Result::Ok(Value::Int(a + b)),
+                (Value::Float(a), Value::Float(b)) => Result::Ok(Value::Float(a + b)),
+                (Value::String(a), Value::String(b)) => Result::Ok(Value::String(format!("{}{}", a, b))),
+                _ => Result::Err(RuntimeError::new("invalid operands for +")),
+            },
+            BinaryOp::Sub => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Result::Ok(Value::Int(a - b)),
+                (Value::Float(a), Value::Float(b)) => Result::Ok(Value::Float(a - b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for -")),
+            },
+            BinaryOp::Mul => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Result::Ok(Value::Int(a * b)),
+                (Value::Float(a), Value::Float(b)) => Result::Ok(Value::Float(a * b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for *")),
+            },
+            BinaryOp::Div => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => {
+                    if b == 0 {
+                        Result::Err(RuntimeError::new("division by zero"))
+                    } else {
+                        Result::Ok(Value::Int(a / b))
+                    }
+                },
+                (Value::Float(a), Value::Float(b)) => Result::Ok(Value::Float(a / b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for /")),
+            },
+            BinaryOp::Rem => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Result::Ok(Value::Int(a % b)),
+                (Value::Float(a), Value::Float(b)) => Result::Ok(Value::Float(a % b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for %")),
+            },
+            BinaryOp::Pow => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Result::Ok(Value::Int(a.pow(b as u32))),
+                (Value::Float(a), Value::Float(b)) => Result::Ok(Value::Float(a.powf(b))),
+                _ => Result::Err(RuntimeError::new("invalid operands for **")),
+            },
+            BinaryOp::Eq => Result::Ok(Value::Bool(self.values_equal(left, right))),
+            BinaryOp::Ne => Result::Ok(Value::Bool(!self.values_equal(left, right))),
+            BinaryOp::Lt => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Result::Ok(Value::Bool(a < b)),
+                (Value::Float(a), Value::Float(b)) => Result::Ok(Value::Bool(a < b)),
+                (Value::String(a), Value::String(b)) => Result::Ok(Value::Bool(a < b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for <")),
+            },
+            BinaryOp::Le => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Result::Ok(Value::Bool(a <= b)),
+                (Value::Float(a), Value::Float(b)) => Result::Ok(Value::Bool(a <= b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for <=")),
+            },
+            BinaryOp::Gt => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Result::Ok(Value::Bool(a > b)),
+                (Value::Float(a), Value::Float(b)) => Result::Ok(Value::Bool(a > b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for >")),
+            },
+            BinaryOp::Ge => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Result::Ok(Value::Bool(a >= b)),
+                (Value::Float(a), Value::Float(b)) => Result::Ok(Value::Bool(a >= b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for >=")),
+            },
+            BinaryOp::And => match (left, right) {
+                (Value::Bool(a), Value::Bool(b)) => Result::Ok(Value::Bool(a && b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for &&")),
+            },
+            BinaryOp::Or => match (left, right) {
+                (Value::Bool(a), Value::Bool(b)) => Result::Ok(Value::Bool(a || b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for ||")),
+            },
+            BinaryOp::BitAnd => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Result::Ok(Value::Int(a & b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for &")),
+            },
+            BinaryOp::BitOr => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Result::Ok(Value::Int(a | b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for |")),
+            },
+            BinaryOp::BitXor => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Result::Ok(Value::Int(a ^ b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for ^")),
+            },
+            BinaryOp::Shl => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Result::Ok(Value::Int(a << b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for <<")),
+            },
+            BinaryOp::Shr => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Result::Ok(Value::Int(a >> b)),
+                _ => Result::Err(RuntimeError::new("invalid operands for >>")),
+            },
+            BinaryOp::Concat => match (left, right) {
+                (Value::String(a), Value::String(b)) => Result::Ok(Value::String(format!("{}{}", a, b))),
+                (Value::Array(a), Value::Array(b)) => {
+                    let mut result = a.clone();
+                    result.extend(b);
+                    Result::Ok(Value::Array(result))
+                },
+                _ => Result::Err(RuntimeError::new("invalid operands for ++")),
+            },
+        }
+    }
+
+    /// Evaluate unary operation
+    fn eval_unary(self, op: !UnaryOp, val: !Value) -> !Result<Value, RuntimeError> {
+        match op {
+            UnaryOp::Neg => match val {
+                Value::Int(n) => Result::Ok(Value::Int(-n)),
+                Value::Float(f) => Result::Ok(Value::Float(-f)),
+                _ => Result::Err(RuntimeError::new("invalid operand for unary -")),
+            },
+            UnaryOp::Not => match val {
+                Value::Bool(b) => Result::Ok(Value::Bool(!b)),
+                Value::Int(n) => Result::Ok(Value::Int(!n)),
+                _ => Result::Err(RuntimeError::new("invalid operand for !")),
+            },
+            UnaryOp::Ref => Result::Ok(Value::Ref(Box::new(val))),
+            UnaryOp::RefMut => Result::Ok(Value::RefMut(Box::new(val))),
+            UnaryOp::Deref => match val {
+                Value::Ref(v) | Value::RefMut(v) => Result::Ok(*v),
+                _ => Result::Err(RuntimeError::new("cannot dereference non-reference")),
+            },
+        }
+    }
+
+    /// Evaluate a pipeline step
+    fn eval_pipeline_step(mut self, step: !IrPipelineStep, input: !EvidentialValue, env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
+        match step {
+            IrPipelineStep::Morpheme { morpheme, body, .. } => {
+                self.eval_morpheme(morpheme, input, body, env)
+            },
+            IrPipelineStep::Call { function, args } => {
+                let mut all_args = [input];
+                for arg in args {
+                    all_args.push(self.eval_with_env(arg, env)?);
+                }
+                self.call_function(function, all_args)
+            },
+            IrPipelineStep::Method { name, args } => {
+                let mut all_args = [input];
+                for arg in args {
+                    all_args.push(self.eval_with_env(arg, env)?);
+                }
+                self.call_function(name, all_args)
+            },
+            IrPipelineStep::Identity => Result::Ok(input),
+            IrPipelineStep::Await => Result::Ok(input), // Sync interpreter, await is no-op
+            _ => Result::Err(RuntimeError::new("unsupported pipeline step")),
+        }
+    }
+
+    /// Evaluate a morpheme operation
+    fn eval_morpheme(mut self, kind: !MorphemeKind, input: !EvidentialValue, body: ?Box<IrOperation>, env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
+        let arr = match input.value {
+            Value::Array(a) => a,
+            _ => return Result::Err(RuntimeError::new("morpheme requires array input")),
+        };
+
+        match kind {
+            MorphemeKind::Transform => {
+                // τ{expr} - map over array
+                let body = match body {
+                    ?b => *b,
+                    null => return Result::Err(RuntimeError::new("transform requires body")),
+                };
+
+                let results: ![Value] = [];
+                for item in arr {
+                    let mut item_env = Environment::child(env);
+                    item_env.define("it", EvidentialValue { value: item, evidence: input.evidence });
+                    let result = self.eval_with_env(body.clone(), item_env)?;
+                    results.push(result.value);
+                }
+                Result::Ok(EvidentialValue { value: Value::Array(results), evidence: input.evidence })
+            },
+            MorphemeKind::Filter => {
+                // φ{predicate} - filter array
+                let body = match body {
+                    ?b => *b,
+                    null => return Result::Err(RuntimeError::new("filter requires body")),
+                };
+
+                let results: ![Value] = [];
+                for item in arr {
+                    let mut item_env = Environment::child(env);
+                    item_env.define("it", EvidentialValue { value: item.clone(), evidence: input.evidence });
+                    let result = self.eval_with_env(body.clone(), item_env)?;
+                    if result.value.is_truthy() {
+                        results.push(item);
+                    }
+                }
+                Result::Ok(EvidentialValue { value: Value::Array(results), evidence: input.evidence })
+            },
+            MorphemeKind::Reduce => {
+                // ρ{accumulator} - fold array
+                let body = match body {
+                    ?b => *b,
+                    null => return Result::Err(RuntimeError::new("reduce requires body")),
+                };
+
+                if arr.is_empty() {
+                    return Result::Err(RuntimeError::new("cannot reduce empty array"));
+                }
+
+                let mut acc = arr[0].clone();
+                for item in arr[1..] {
+                    let mut fold_env = Environment::child(env);
+                    fold_env.define("acc", EvidentialValue { value: acc, evidence: input.evidence });
+                    fold_env.define("it", EvidentialValue { value: item, evidence: input.evidence });
+                    let result = self.eval_with_env(body.clone(), fold_env)?;
+                    acc = result.value;
+                }
+                Result::Ok(EvidentialValue { value: acc, evidence: input.evidence })
+            },
+            MorphemeKind::Sum => {
+                // Σ - sum numbers
+                let mut sum = 0.0;
+                for item in arr {
+                    match item {
+                        Value::Int(n) => sum += n as f64,
+                        Value::Float(f) => sum += f,
+                        _ => return Result::Err(RuntimeError::new("sum requires numbers")),
+                    }
+                }
+                Result::Ok(EvidentialValue { value: Value::Float(sum), evidence: input.evidence })
+            },
+            MorphemeKind::Product => {
+                // Π - product of numbers
+                let mut prod = 1.0;
+                for item in arr {
+                    match item {
+                        Value::Int(n) => prod *= n as f64,
+                        Value::Float(f) => prod *= f,
+                        _ => return Result::Err(RuntimeError::new("product requires numbers")),
+                    }
+                }
+                Result::Ok(EvidentialValue { value: Value::Float(prod), evidence: input.evidence })
+            },
+            MorphemeKind::Min => {
+                if arr.is_empty() {
+                    return Result::Err(RuntimeError::new("min on empty array"));
+                }
+                let mut min_val = arr[0].clone();
+                for item in arr[1..] {
+                    match (min_val.clone(), item) {
+                        (Value::Int(a), Value::Int(b)) if b < a => min_val = Value::Int(b),
+                        (Value::Float(a), Value::Float(b)) if b < a => min_val = Value::Float(b),
+                        _ => {},
+                    }
+                }
+                Result::Ok(EvidentialValue { value: min_val, evidence: input.evidence })
+            },
+            MorphemeKind::Max => {
+                if arr.is_empty() {
+                    return Result::Err(RuntimeError::new("max on empty array"));
+                }
+                let mut max_val = arr[0].clone();
+                for item in arr[1..] {
+                    match (max_val.clone(), item) {
+                        (Value::Int(a), Value::Int(b)) if b > a => max_val = Value::Int(b),
+                        (Value::Float(a), Value::Float(b)) if b > a => max_val = Value::Float(b),
+                        _ => {},
+                    }
+                }
+                Result::Ok(EvidentialValue { value: max_val, evidence: input.evidence })
+            },
+            MorphemeKind::First => {
+                match arr.first() {
+                    ?v => Result::Ok(EvidentialValue { value: v.clone(), evidence: IrEvidence::Uncertain }),
+                    null => Result::Ok(EvidentialValue { value: Value::Null, evidence: IrEvidence::Uncertain }),
+                }
+            },
+            MorphemeKind::Last => {
+                match arr.last() {
+                    ?v => Result::Ok(EvidentialValue { value: v.clone(), evidence: IrEvidence::Uncertain }),
+                    null => Result::Ok(EvidentialValue { value: Value::Null, evidence: IrEvidence::Uncertain }),
+                }
+            },
+            MorphemeKind::All => {
+                // ρ& - all elements truthy
+                let all = arr|all{item => item.is_truthy()};
+                Result::Ok(EvidentialValue { value: Value::Bool(all), evidence: input.evidence })
+            },
+            MorphemeKind::Any => {
+                // ρ| - any element truthy
+                let any = arr|any{item => item.is_truthy()};
+                Result::Ok(EvidentialValue { value: Value::Bool(any), evidence: input.evidence })
+            },
+            _ => Result::Err(RuntimeError::new(format!("unsupported morpheme: {}", kind.symbol()))),
+        }
+    }
+
+    /// Check if a pattern matches a value
+    fn pattern_matches(self, pattern: !IrPattern, value: !Value, env: !Environment) -> !Result<bool, RuntimeError> {
+        match pattern {
+            IrPattern::Wildcard => Result::Ok(true),
+            IrPattern::Ident { .. } => Result::Ok(true),
+            IrPattern::Literal { value: lit_val } => {
+                let lit = match lit_val {
+                    LiteralValue::Int(n) => Value::Int(n),
+                    LiteralValue::Float(f) => Value::Float(f),
+                    LiteralValue::Bool(b) => Value::Bool(b),
+                    LiteralValue::Char(c) => Value::Char(c),
+                    LiteralValue::String(s) => Value::String(s),
+                    LiteralValue::Null => Value::Null,
+                };
+                Result::Ok(self.values_equal(lit, value))
+            },
+            IrPattern::Tuple { elements } => {
+                match value {
+                    Value::Tuple(vals) => {
+                        if elements.len() != vals.len() {
+                            return Result::Ok(false);
+                        }
+                        for (pat, val) in elements.iter().zip(vals.iter()) {
+                            if !self.pattern_matches(pat, val, env)? {
+                                return Result::Ok(false);
+                            }
+                        }
+                        Result::Ok(true)
+                    },
+                    _ => Result::Ok(false),
+                }
+            },
+            IrPattern::Or { patterns } => {
+                for pat in patterns {
+                    if self.pattern_matches(pat, value.clone(), env)? {
+                        return Result::Ok(true);
+                    }
+                }
+                Result::Ok(false)
+            },
+            _ => Result::Ok(true), // Default match for complex patterns
+        }
+    }
+
+    /// Bind pattern variables to values in environment
+    fn bind_pattern(mut self, pattern: !IrPattern, value: !EvidentialValue, mut env: !Environment) -> !Result<(), RuntimeError> {
+        match pattern {
+            IrPattern::Ident { name, evidence, .. } => {
+                let ev = match evidence {
+                    ?e => e,
+                    null => value.evidence,
+                };
+                env.define(name, EvidentialValue { value: value.value, evidence: ev });
+                Result::Ok(())
+            },
+            IrPattern::Tuple { elements } => {
+                match value.value {
+                    Value::Tuple(vals) => {
+                        for (pat, val) in elements.iter().zip(vals.iter()) {
+                            self.bind_pattern(pat, EvidentialValue {
+                                value: val.clone(),
+                                evidence: value.evidence,
+                            }, env)?;
+                        }
+                        Result::Ok(())
+                    },
+                    _ => Result::Err(RuntimeError::new("expected tuple for destructuring")),
+                }
+            },
+            IrPattern::Wildcard => Result::Ok(()),
+            _ => Result::Ok(()), // Other patterns don't bind variables
+        }
+    }
+
+    /// Get interpreter output
+    pub fn get_output(self) -> !String {
+        self.output.join("")
+    }
+}
+
+// ============================================================================
+// Runtime Errors
+// ============================================================================
+
+/// Runtime error
+pub struct RuntimeError {
+    pub message: !String,
+    pub stack_trace: ![String],
+    pub is_break: !bool,
+    pub is_continue: !bool,
+    pub value: ?EvidentialValue,
+}
+
+impl RuntimeError {
+    pub fn new(message: !String) -> !RuntimeError {
+        RuntimeError {
+            message,
+            stack_trace: [],
+            is_break: false,
+            is_continue: false,
+            value: null,
+        }
+    }
+
+    pub fn break_with(value: ?EvidentialValue) -> !RuntimeError {
+        RuntimeError {
+            message: "break",
+            stack_trace: [],
+            is_break: true,
+            is_continue: false,
+            value,
+        }
+    }
+
+    pub fn continue_loop() -> !RuntimeError {
+        RuntimeError {
+            message: "continue",
+            stack_trace: [],
+            is_break: false,
+            is_continue: true,
+            value: null,
+        }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_value_to_string() {
+        assert_eq!(Value::Int(42).to_string(), "42");
+        assert_eq!(Value::Bool(true).to_string(), "true");
+        assert_eq!(Value::String("hello").to_string(), "hello");
+        assert_eq!(Value::Null.to_string(), "null");
+    }
+
+    #[test]
+    fn test_value_is_truthy() {
+        assert!(Value::Bool(true).is_truthy());
+        assert!(!Value::Bool(false).is_truthy());
+        assert!(Value::Int(1).is_truthy());
+        assert!(!Value::Int(0).is_truthy());
+        assert!(!Value::Null.is_truthy());
+    }
+
+    #[test]
+    fn test_evidence_check() {
+        let interp = Interpreter::new();
+        assert!(interp.check_evidence(IrEvidence::Reported, IrEvidence::Known));
+        assert!(interp.check_evidence(IrEvidence::Uncertain, IrEvidence::Known));
+        assert!(!interp.check_evidence(IrEvidence::Known, IrEvidence::Reported));
+    }
+
+    #[test]
+    fn test_builtin_len() {
+        let mut interp = Interpreter::new();
+        let args = [EvidentialValue::known(Value::String("hello"))];
+        let result = interp.call_builtin("len", args);
+        assert!(result.is_ok());
+        match result.unwrap().value {
+            Value::Int(n) => assert_eq!(n, 5),
+            _ => panic!("expected int"),
+        }
+    }
+
+    #[test]
+    fn test_binary_ops() {
+        let interp = Interpreter::new();
+        assert_eq!(interp.eval_binary(BinaryOp::Add, Value::Int(2), Value::Int(3)).unwrap(), Value::Int(5));
+        assert_eq!(interp.eval_binary(BinaryOp::Mul, Value::Int(4), Value::Int(5)).unwrap(), Value::Int(20));
+    }
+}

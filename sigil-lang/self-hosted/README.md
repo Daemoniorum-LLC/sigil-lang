@@ -2,21 +2,23 @@
 
 This directory contains the Sigil compiler written in Sigil itself - the **Jormungandr bootstrap**.
 
-## Status: Phase 6 - IR and Lowering (COMPLETE!)
+## Status: Phase 3 - Interpreter & Runtime (IN PROGRESS)
 
 | File | Lines | Status | Description |
 |------|-------|--------|-------------|
 | `src/span.sg` | ~140 | ✅ Complete | Source span tracking |
 | `src/token.sg` | ~450 | ✅ Complete | Token definitions |
 | `src/ast.sg` | ~1200 | ✅ Complete | AST node definitions |
-| `src/lib.sg` | ~75 | ✅ Complete | Module exports |
+| `src/lib.sg` | ~80 | ✅ Complete | Module exports |
 | `src/lexer.sg` | ~750 | ✅ Complete | Hand-written tokenization |
 | `src/parser.sg` | ~2100 | ✅ Complete | Recursive descent parser |
 | `src/typeck.sg` | ~1800 | ✅ Complete | Type checking with evidentiality |
 | `src/ir.sg` | ~900 | ✅ Complete | AI-facing intermediate representation |
 | `src/lower.sg` | ~800 | ✅ Complete | AST → IR lowering |
+| `src/interp.sg` | ~1100 | ✅ Complete | Tree-walking interpreter |
+| `src/runtime.sg` | ~600 | ✅ Complete | Runtime system (memory, stdlib) |
 
-**Total: ~8,400 lines of Sigil**
+**Total: ~10,100 lines of Sigil**
 
 ## Conversion from Rust
 
@@ -72,11 +74,11 @@ This is a direct conversion of `sigil-lang/parser/src/` from Rust to Sigil:
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ Phase 3: Self-Hosting (NEXT)                                 │
-│ Sigil compiler compiles itself                               │
-│ - codegen.sg (native code generation)                        │
-│ - Runtime and garbage collection                             │
-│ Rust version becomes bootstrap-only                          │
+│ Phase 3: Interpreter & Runtime (CURRENT)                     │
+│ Execute Sigil code without native compilation                │
+│ - interp.sg ✅ (tree-walking interpreter)                    │
+│ - runtime.sg ✅ (memory, stdlib, evidence)                   │
+│ - codegen.sg 🔲 (native code generation)                     │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
