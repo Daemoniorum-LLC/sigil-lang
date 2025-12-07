@@ -4999,6 +4999,7 @@ impl<'a> Parser<'a> {
                 | Some(Token::Static)
                 | Some(Token::Actor)
                 | Some(Token::Pub)
+                | Some(Token::Extern)
         )
     }
 

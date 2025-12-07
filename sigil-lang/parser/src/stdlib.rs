@@ -255,6 +255,7 @@ fn register_core(interp: &mut Interpreter) {
             Value::ThreadHandle(_) => "thread",
             Value::Actor(_) => "actor",
             Value::Future(_) => "future",
+            Value::VariantConstructor { .. } => "variant_constructor",
         };
         Ok(Value::String(Rc::new(type_name.to_string())))
     });
@@ -9205,6 +9206,7 @@ fn register_pattern(interp: &mut Interpreter) {
             Value::ThreadHandle(_) => "thread",
             Value::Actor(_) => "actor",
             Value::Future(_) => "future",
+            Value::VariantConstructor { .. } => "variant_constructor",
         };
         Ok(Value::String(Rc::new(type_name.to_string())))
     });
@@ -10101,6 +10103,9 @@ fn register_devex(interp: &mut Interpreter) {
             Value::ThreadHandle(_) => "thread".to_string(),
             Value::Actor(_) => "actor".to_string(),
             Value::Future(_) => "future".to_string(),
+            Value::VariantConstructor { enum_name, variant_name } => {
+                format!("<constructor {}::{}>", enum_name, variant_name)
+            }
         };
         let value_repr = format_value_debug(&args[0]);
         println!("[DEBUG] {}: {}", type_name, value_repr);
@@ -10714,6 +10719,9 @@ fn format_value_debug(value: &Value) -> String {
         Value::ThreadHandle(_) => "<thread>".to_string(),
         Value::Actor(_) => "<actor>".to_string(),
         Value::Future(_) => "<future>".to_string(),
+        Value::VariantConstructor { enum_name, variant_name } => {
+            format!("<constructor {}::{}>", enum_name, variant_name)
+        }
     }
 }
 
@@ -10855,6 +10863,7 @@ fn get_type_name(value: &Value) -> String {
         Value::ThreadHandle(_) => "thread".to_string(),
         Value::Actor(_) => "actor".to_string(),
         Value::Future(_) => "future".to_string(),
+        Value::VariantConstructor { enum_name, .. } => format!("{}_constructor", enum_name),
     }
 }
 

@@ -204,6 +204,20 @@ fn main() -> ExitCode {
         "init" => init_project(),
         "test" => run_tests(),
         "build" => build_project(),
+        "run-dir" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing directory argument");
+                eprintln!("Usage: sigil run-dir <directory> [-- args...]");
+                return ExitCode::from(1);
+            }
+            // Collect arguments after "--" to pass to the Sigil program
+            let sigil_args = if let Some(pos) = args.iter().position(|a| a == "--") {
+                args[pos + 1..].to_vec()
+            } else {
+                vec![]
+            };
+            run_directory(&args[2], sigil_args)
+        }
         _ => {
             // Treat as file if it ends with .sigil or .sg
             if args[1].ends_with(".sigil") || args[1].ends_with(".sg") {
@@ -254,6 +268,99 @@ fn run_file(path: &str, sigil_args: Vec<String>) -> ExitCode {
         }
         Err(e) => {
             eprintln!("Runtime error in '{}': {}", path, e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Run all .sg files in a directory as a multi-module program
+fn run_directory(dir_path: &str, sigil_args: Vec<String>) -> ExitCode {
+    use std::path::Path;
+
+    let dir = Path::new(dir_path);
+    if !dir.is_dir() {
+        eprintln!("Error: '{}' is not a directory", dir_path);
+        return ExitCode::from(1);
+    }
+
+    // Collect all .sg files in the directory
+    let mut sg_files: Vec<_> = match fs::read_dir(dir) {
+        Ok(entries) => entries
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path().extension().map_or(false, |ext| ext == "sg")
+            })
+            .collect(),
+        Err(e) => {
+            eprintln!("Error reading directory '{}': {}", dir_path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    if sg_files.is_empty() {
+        eprintln!("Error: no .sg files found in '{}'", dir_path);
+        return ExitCode::from(1);
+    }
+
+    // Sort files for consistent ordering (lib.sg should come first if it exists)
+    sg_files.sort_by(|a, b| {
+        let a_name = a.file_name();
+        let b_name = b.file_name();
+        // lib.sg comes first, then alphabetically
+        if a_name.to_string_lossy() == "lib.sg" {
+            std::cmp::Ordering::Less
+        } else if b_name.to_string_lossy() == "lib.sg" {
+            std::cmp::Ordering::Greater
+        } else {
+            a_name.cmp(&b_name)
+        }
+    });
+
+    eprintln!("Loading {} modules from '{}':", sg_files.len(), dir_path);
+
+    // Parse all files
+    let mut parsed_files = Vec::new();
+    for entry in &sg_files {
+        let path = entry.path();
+        let path_str = path.display().to_string();
+        eprintln!("  - {}", path.file_name().unwrap().to_string_lossy());
+
+        let source = match fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Error reading file '{}': {}", path_str, e);
+                return ExitCode::from(1);
+            }
+        };
+
+        let mut parser = Parser::new(&source);
+        let ast = match parser.parse_file() {
+            Ok(ast) => ast,
+            Err(e) => {
+                eprintln!("Parse error in '{}': {}", path_str, e);
+                return ExitCode::from(1);
+            }
+        };
+
+        parsed_files.push(ast);
+    }
+
+    // Execute all modules together
+    let mut interpreter = Interpreter::new();
+    register_stdlib(&mut interpreter);
+
+    // Collect references to parsed files
+    let file_refs: Vec<_> = parsed_files.iter().collect();
+
+    match interpreter.execute_modules(file_refs, sigil_args) {
+        Ok(value) => {
+            if !matches!(value, sigil_parser::Value::Null) {
+                println!("{}", value);
+            }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Runtime error: {}", e);
             ExitCode::from(1)
         }
     }
