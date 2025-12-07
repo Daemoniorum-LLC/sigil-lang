@@ -72,7 +72,13 @@ fn main() -> ExitCode {
                 eprintln!("Error: missing file argument");
                 return ExitCode::from(1);
             }
-            run_file(&args[2])
+            // Collect arguments after "--" to pass to the Sigil program
+            let sigil_args = if let Some(pos) = args.iter().position(|a| a == "--") {
+                args[pos + 1..].to_vec()
+            } else {
+                vec![]
+            };
+            run_file(&args[2], sigil_args)
         }
         #[cfg(feature = "jit")]
         "jit" => {
@@ -201,7 +207,13 @@ fn main() -> ExitCode {
         _ => {
             // Treat as file if it ends with .sigil or .sg
             if args[1].ends_with(".sigil") || args[1].ends_with(".sg") {
-                run_file(&args[1])
+                // Collect arguments after "--" to pass to the Sigil program
+                let sigil_args = if let Some(pos) = args.iter().position(|a| a == "--") {
+                    args[pos + 1..].to_vec()
+                } else {
+                    vec![]
+                };
+                run_file(&args[1], sigil_args)
             } else {
                 eprintln!("Unknown command: {}", args[1]);
                 ExitCode::from(1)
@@ -210,7 +222,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run_file(path: &str) -> ExitCode {
+fn run_file(path: &str, sigil_args: Vec<String>) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -229,10 +241,10 @@ fn run_file(path: &str) -> ExitCode {
         }
     };
 
-    // Execute with full stdlib
+    // Execute with full stdlib, passing CLI args to main
     let mut interpreter = Interpreter::new();
     register_stdlib(&mut interpreter);
-    match interpreter.execute(&ast) {
+    match interpreter.execute_with_args(&ast, sigil_args) {
         Ok(value) => {
             // Only print result if it's not null
             if !matches!(value, sigil_parser::Value::Null) {

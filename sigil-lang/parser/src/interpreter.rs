@@ -764,6 +764,11 @@ impl Interpreter {
 
     /// Execute a source file
     pub fn execute(&mut self, file: &SourceFile) -> Result<Value, RuntimeError> {
+        self.execute_with_args(file, vec![])
+    }
+
+    /// Execute a source file with command-line arguments passed to main
+    pub fn execute_with_args(&mut self, file: &SourceFile, args: Vec<String>) -> Result<Value, RuntimeError> {
         let mut result = Value::Null;
 
         for item in &file.items {
@@ -779,7 +784,18 @@ impl Interpreter {
             }
         });
         if let Some(f) = main_fn {
-            result = self.call_function(&f, vec![])?;
+            // Convert String args to Value::String array
+            let args_value = Value::Array(Rc::new(RefCell::new(
+                args.into_iter()
+                    .map(|s| Value::String(Rc::new(s)))
+                    .collect()
+            )));
+            // Check if main takes arguments
+            if f.params.is_empty() {
+                result = self.call_function(&f, vec![])?;
+            } else {
+                result = self.call_function(&f, vec![args_value])?;
+            }
         }
 
         Ok(result)
