@@ -1,0 +1,55 @@
+//! Sigil Self-Hosted Compiler
+//!
+//! This is the beginning of the Sigil compiler written in Sigil itself.
+//! Part of the Jormungandr research initiative - the self-hosting bootstrap.
+//!
+//! ## Module Structure
+//!
+//! - `span` - Source location tracking
+//! - `token` - Token definitions for the lexer
+//! - `ast` - Abstract Syntax Tree definitions
+//!
+//! ## Status
+//!
+//! Phase 3: Core data structures and types (IN PROGRESS)
+//! - [x] span.sg - Source span tracking
+//! - [x] token.sg - Token definitions
+//! - [x] ast.sg - AST node definitions
+//! - [ ] lexer.sg - Tokenization
+//! - [ ] parser.sg - Parsing
+//! - [ ] typeck.sg - Type checking
+//! - [ ] ir.sg - Intermediate representation
+//! - [ ] lower.sg - AST to IR lowering
+//!
+//! ## Bootstrap Strategy
+//!
+//! 1. Define core data structures in Sigil (current phase)
+//! 2. Implement lexer and parser in Sigil
+//! 3. Implement type checker with evidentiality
+//! 4. Implement IR and code generation
+//! 5. Achieve self-hosting: Sigil compiles Sigil
+//!
+//! ## Evidentiality in the Compiler
+//!
+//! The self-hosted compiler uses Sigil's evidentiality system:
+//! - `!` (Known) - Verified compiler-internal values
+//! - `?` (Uncertain) - User-provided input that may be invalid
+//! - `~` (Reported) - Values from external sources (files, etc.)
+//!
+//! This dogfooding ensures the evidentiality system is practical.
+
+// Core modules
+pub mod span;
+pub mod token;
+pub mod ast;
+
+// Re-exports for convenience
+pub use span::{Span, Spanned};
+pub use token::{Token, SpannedToken};
+pub use ast::*;
+
+/// Compiler version
+pub const VERSION: !&str = "0.1.0-bootstrap";
+
+/// Check if we're in bootstrap mode
+pub const BOOTSTRAP: !bool = true;
