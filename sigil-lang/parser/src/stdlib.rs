@@ -336,6 +336,95 @@ fn register_core(interp: &mut Interpreter) {
             ))),
         }
     });
+
+    // Result::Ok - create Ok variant
+    define(interp, "Result·Ok", Some(1), |_, args| {
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![args[0].clone()])),
+        })
+    });
+
+    // Result::Err - create Err variant
+    define(interp, "Result·Err", Some(1), |_, args| {
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Err".to_string(),
+            fields: Some(Rc::new(vec![args[0].clone()])),
+        })
+    });
+
+    // Option::Some - create Some variant
+    define(interp, "Option·Some", Some(1), |_, args| {
+        Ok(Value::Variant {
+            enum_name: "Option".to_string(),
+            variant_name: "Some".to_string(),
+            fields: Some(Rc::new(vec![args[0].clone()])),
+        })
+    });
+
+    // Option::None - create None variant
+    define(interp, "Option·None", Some(0), |_, _| {
+        Ok(Value::Variant {
+            enum_name: "Option".to_string(),
+            variant_name: "None".to_string(),
+            fields: None,
+        })
+    });
+
+    // Map::new - create empty map
+    define(interp, "Map·new", Some(0), |_, _| {
+        Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
+    });
+
+    // Vec::new - create empty vector/array
+    define(interp, "Vec·new", Some(0), |_, _| {
+        Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))))
+    });
+
+    // String::new - create empty string
+    define(interp, "String·new", Some(0), |_, _| {
+        Ok(Value::String(Rc::new(String::new())))
+    });
+
+    // String::from - create string from value
+    define(interp, "String·from", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            Value::Int(n) => n.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Char(c) => c.to_string(),
+            _ => format!("{}", args[0]),
+        };
+        Ok(Value::String(Rc::new(s)))
+    });
+
+    // Box::new - just return the value (Box is transparent in interpreter)
+    define(interp, "Box·new", Some(1), |_, args| {
+        Ok(args[0].clone())
+    });
+
+    // String::from_raw_parts - FFI emulation: construct string from "pointer", len, capacity
+    define(interp, "String·from_raw_parts", Some(3), |_, args| {
+        // In our FFI emulation, the first arg is already the string content
+        match &args[0] {
+            Value::String(s) => Ok(Value::String(s.clone())),
+            Value::Null => Ok(Value::String(Rc::new(String::new()))),
+            _ => Ok(Value::String(Rc::new(format!("{}", args[0])))),
+        }
+    });
+
+    // slice::from_raw_parts - FFI emulation
+    define(interp, "slice·from_raw_parts", Some(2), |_, args| {
+        // First arg is the "pointer" (string), second is len
+        match &args[0] {
+            Value::String(s) => Ok(Value::String(s.clone())),
+            Value::Array(arr) => Ok(Value::Array(arr.clone())),
+            _ => Ok(args[0].clone()),
+        }
+    });
 }
 
 // Deep clone helper
