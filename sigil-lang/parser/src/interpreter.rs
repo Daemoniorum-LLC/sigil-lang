@@ -645,6 +645,12 @@ pub struct Interpreter {
     return_value: Option<Value>,
     /// Current Self type (for impl blocks)
     current_self_type: Option<String>,
+    /// FFI state: last file read content (for sigil_read_file/sigil_file_len pattern)
+    ffi_last_file_content: Rc<RefCell<Option<String>>>,
+    /// FFI state: last string passed to as_ptr() (for FFI string passing)
+    ffi_last_string: Rc<RefCell<Option<String>>>,
+    /// FFI state: last content to write (for sigil_write_file pattern)
+    ffi_write_content: Rc<RefCell<Option<String>>>,
 }
 
 /// Type definition for structs/enums
@@ -666,6 +672,9 @@ impl Interpreter {
             return_value: None,
             output: Vec::new(),
             current_self_type: None,
+            ffi_last_file_content: Rc::new(RefCell::new(None)),
+            ffi_last_string: Rc::new(RefCell::new(None)),
+            ffi_write_content: Rc::new(RefCell::new(None)),
         };
 
         // Register built-in enums (Result, Option)
@@ -674,7 +683,135 @@ impl Interpreter {
         // Register built-in functions
         interp.register_builtins();
 
+        // Register FFI functions that need access to FFI state
+        interp.register_ffi_builtins();
+
         interp
+    }
+
+    /// Register FFI builtin functions that need access to interpreter state
+    fn register_ffi_builtins(&mut self) {
+        // sigil_read_file(path_ptr, path_len) -> content_ptr (or null)
+        // Uses ffi_last_string (set by as_ptr) to get the actual path
+        self.globals.borrow_mut().define(
+            "sigil_read_file".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "sigil_read_file".to_string(),
+                arity: Some(2),
+                func: |interp, _args| {
+                    // Get the path from ffi_last_string (set by as_ptr call)
+                    let path = interp.ffi_last_string.borrow().clone();
+                    if let Some(path_str) = path {
+                        // Actually read the file
+                        match std::fs::read_to_string(&path_str) {
+                            Ok(content) => {
+                                // Store content for sigil_file_len and String::from_raw_parts
+                                *interp.ffi_last_file_content.borrow_mut() = Some(content);
+                                // Return non-null pointer to indicate success
+                                Ok(Value::Int(1))
+                            }
+                            Err(_) => {
+                                // Return null pointer to indicate failure
+                                Ok(Value::Int(0))
+                            }
+                        }
+                    } else {
+                        // No path set, return null
+                        Ok(Value::Int(0))
+                    }
+                },
+            })),
+        );
+
+        // sigil_file_len() -> usize
+        self.globals.borrow_mut().define(
+            "sigil_file_len".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "sigil_file_len".to_string(),
+                arity: Some(0),
+                func: |interp, _args| {
+                    let content = interp.ffi_last_file_content.borrow();
+                    let len = content.as_ref().map(|s| s.len() as i64).unwrap_or(0);
+                    Ok(Value::Int(len))
+                },
+            })),
+        );
+
+        // sigil_write_file(path_ptr, path_len, content_ptr, content_len) -> bool
+        self.globals.borrow_mut().define(
+            "sigil_write_file".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "sigil_write_file".to_string(),
+                arity: Some(4),
+                func: |interp, _args| {
+                    // Get path and content from FFI state
+                    let path = interp.ffi_last_string.borrow().clone();
+                    let content = interp.ffi_write_content.borrow().clone();
+                    if let (Some(path_str), Some(content_str)) = (path, content) {
+                        // Actually write the file
+                        match std::fs::write(&path_str, &content_str) {
+                            Ok(_) => Ok(Value::Bool(true)),
+                            Err(_) => Ok(Value::Bool(false)),
+                        }
+                    } else {
+                        // No path or content, return false
+                        Ok(Value::Bool(false))
+                    }
+                },
+            })),
+        );
+
+        // write(fd, buf_ptr, count) -> isize  (for stdout/stderr)
+        self.globals.borrow_mut().define(
+            "write".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "write".to_string(),
+                arity: Some(3),
+                func: |interp, args| {
+                    // Get fd, and use ffi_last_string for the content
+                    let fd = match &args.get(0) {
+                        Some(Value::Int(n)) => *n,
+                        _ => 1,
+                    };
+                    let count = match &args.get(2) {
+                        Some(Value::Int(n)) => *n,
+                        _ => 0,
+                    };
+
+                    // Get the string content from FFI state
+                    if let Some(s) = interp.ffi_last_string.borrow().as_ref() {
+                        let output = if count as usize <= s.len() {
+                            &s[..count as usize]
+                        } else {
+                            s.as_str()
+                        };
+                        if fd == 1 {
+                            print!("{}", output);
+                        } else if fd == 2 {
+                            eprint!("{}", output);
+                        }
+                        // Also store in interpreter output for testing
+                        interp.output.push(output.to_string());
+                    }
+                    Ok(Value::Int(count))
+                },
+            })),
+        );
+
+        // String·from_raw_parts(ptr, len, capacity) - retrieves stored file content
+        self.globals.borrow_mut().define(
+            "String·from_raw_parts".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "String·from_raw_parts".to_string(),
+                arity: Some(3),
+                func: |interp, _args| {
+                    // Return the last file content stored by sigil_read_file
+                    let content = interp.ffi_last_file_content.borrow();
+                    let s = content.as_ref().cloned().unwrap_or_default();
+                    Ok(Value::String(Rc::new(s)))
+                },
+            })),
+        );
     }
 
     fn register_builtin_enums(&mut self) {
@@ -762,18 +899,8 @@ impl Interpreter {
         );
 
         // Register String methods
-        self.globals.borrow_mut().define(
-            "String·from_raw_parts".to_string(),
-            Value::BuiltIn(Rc::new(BuiltInFn {
-                name: "String·from_raw_parts".to_string(),
-                arity: Some(3),
-                func: |_interp, args| {
-                    // from_raw_parts(ptr, len, capacity) -> just return empty string in interpreter
-                    // Real implementation would reconstruct from memory
-                    Ok(Value::String(Rc::new(String::new())))
-                },
-            })),
-        );
+        // Note: String·from_raw_parts uses ffi_last_file_content, registered after interp created
+        // We'll register a placeholder here that will be replaced
 
         self.globals.borrow_mut().define(
             "String·new".to_string(),
@@ -1207,27 +1334,31 @@ impl Interpreter {
             }
             Item::ExternBlock(extern_block) => {
                 // Register extern functions (they become callable stubs)
+                // But DON'T overwrite existing implementations (from register_ffi_builtins)
                 for item in &extern_block.items {
                     match item {
                         crate::ast::ExternItem::Function(func) => {
                             let name = func.name.name.clone();
-                            // Register as a stub - actual implementation in builtins
-                            self.globals.borrow_mut().define(
-                                name.clone(),
-                                Value::BuiltIn(Rc::new(BuiltInFn {
-                                    name: name.clone(),
-                                    arity: Some(func.params.len()),
-                                    func: |_interp, args| {
-                                        // For now, most FFI functions are no-ops
-                                        // Real implementations would be added as needed
-                                        if args.is_empty() {
-                                            Ok(Value::Int(0))
-                                        } else {
-                                            Ok(args[0].clone())
-                                        }
-                                    },
-                                })),
-                            );
+                            // Only register if not already defined (don't overwrite FFI implementations)
+                            if self.globals.borrow().get(&name).is_none() {
+                                // Register as a stub - actual implementation in builtins
+                                self.globals.borrow_mut().define(
+                                    name.clone(),
+                                    Value::BuiltIn(Rc::new(BuiltInFn {
+                                        name: name.clone(),
+                                        arity: Some(func.params.len()),
+                                        func: |_interp, args| {
+                                            // For now, most FFI functions are no-ops
+                                            // Real implementations would be added as needed
+                                            if args.is_empty() {
+                                                Ok(Value::Int(0))
+                                            } else {
+                                                Ok(args[0].clone())
+                                            }
+                                        },
+                                    })),
+                                );
+                            }
                         }
                         crate::ast::ExternItem::Static(_) => {
                             // Static extern items - ignore for now
@@ -1359,9 +1490,21 @@ impl Interpreter {
                                     Ok(Value::Null)
                                 }
                             }
-                            ("Result", "Err") | ("Option", "None") => {
-                                // Propagate the error
-                                Err(RuntimeError::new("Try operator early return (Err/None)"))
+                            ("Result", "Err") => {
+                                // Propagate the error with details
+                                let err_msg = if let Some(f) = fields {
+                                    if let Some(v) = f.first() {
+                                        format!("Try operator returned Err: {:?}", v)
+                                    } else {
+                                        "Try operator returned Err".to_string()
+                                    }
+                                } else {
+                                    "Try operator returned Err".to_string()
+                                };
+                                Err(RuntimeError::new(err_msg))
+                            }
+                            ("Option", "None") => {
+                                Err(RuntimeError::new("Try operator returned None"))
                             }
                             _ => Ok(value),
                         }
@@ -1604,6 +1747,10 @@ impl Interpreter {
     fn eval_path(&self, path: &TypePath) -> Result<Value, RuntimeError> {
         if path.segments.len() == 1 {
             let name = &path.segments[0].ident.name;
+            // Wildcard _ is a "don't care" pattern - reading it returns Null
+            if name == "_" {
+                return Ok(Value::Null);
+            }
             // Try local environment first
             if let Some(val) = self.environment.borrow().get(name) {
                 return Ok(val);
@@ -1741,6 +1888,16 @@ impl Interpreter {
 
         let rhs = self.evaluate(right)?;
 
+        // Unwrap Ref values for comparison
+        let lhs = match lhs {
+            Value::Ref(r) => r.borrow().clone(),
+            v => v,
+        };
+        let rhs = match rhs {
+            Value::Ref(r) => r.borrow().clone(),
+            v => v,
+        };
+
         match (lhs, rhs) {
             (Value::Int(a), Value::Int(b)) => self.int_binary_op(a, b, op),
             (Value::Float(a), Value::Float(b)) => self.float_binary_op(a, b, op),
@@ -1791,6 +1948,42 @@ impl Interpreter {
                 BinOp::Ge => Ok(Value::Bool(a >= b)),
                 _ => Err(RuntimeError::new("Invalid char operation")),
             },
+            // Variant comparisons - compare by enum name and variant name
+            (Value::Variant { enum_name: e1, variant_name: v1, fields: f1 },
+             Value::Variant { enum_name: e2, variant_name: v2, fields: f2 }) => {
+                match op {
+                    BinOp::Eq => {
+                        if e1 != e2 || v1 != v2 {
+                            Ok(Value::Bool(false))
+                        } else {
+                            // Same variant, compare fields if present
+                            let equal = match (f1, f2) {
+                                (None, None) => true,
+                                (Some(a), Some(b)) if a.len() == b.len() => {
+                                    a.iter().zip(b.iter()).all(|(x, y)| self.values_equal(x, y))
+                                }
+                                _ => false,
+                            };
+                            Ok(Value::Bool(equal))
+                        }
+                    }
+                    BinOp::Ne => {
+                        if e1 != e2 || v1 != v2 {
+                            Ok(Value::Bool(true))
+                        } else {
+                            let equal = match (f1, f2) {
+                                (None, None) => true,
+                                (Some(a), Some(b)) if a.len() == b.len() => {
+                                    a.iter().zip(b.iter()).all(|(x, y)| self.values_equal(x, y))
+                                }
+                                _ => false,
+                            };
+                            Ok(Value::Bool(!equal))
+                        }
+                    }
+                    _ => Err(RuntimeError::new("Invalid variant operation")),
+                }
+            }
             (a, b) => Err(RuntimeError::new(format!(
                 "Type mismatch in binary operation {:?}: {} vs {}",
                 op, a.type_name(), b.type_name()
@@ -2335,7 +2528,7 @@ impl Interpreter {
     fn eval_match(&mut self, expr: &Expr, arms: &[MatchArm]) -> Result<Value, RuntimeError> {
         let value = self.evaluate(expr)?;
 
-        for arm in arms {
+        for arm in arms.iter() {
             if self.pattern_matches(&arm.pattern, &value)? {
                 // Check guard if present
                 if let Some(guard) = &arm.guard {
@@ -2503,6 +2696,30 @@ impl Interpreter {
                             } else {
                                 true
                             }
+                        } else {
+                            true
+                        }
+                    }
+                    None => true,
+                };
+                Ok(start_matches && end_matches)
+            }
+            // Char range patterns like 'a'..='z'
+            (Pattern::Range { start, end, inclusive }, Value::Char(c)) => {
+                let start_matches = match start {
+                    Some(s) => {
+                        if let Pattern::Literal(Literal::Char(start_char)) = s.as_ref() {
+                            *c >= *start_char
+                        } else {
+                            true
+                        }
+                    }
+                    None => true,
+                };
+                let end_matches = match end {
+                    Some(e) => {
+                        if let Pattern::Literal(Literal::Char(end_char)) = e.as_ref() {
+                            if *inclusive { *c <= *end_char } else { *c < *end_char }
                         } else {
                             true
                         }
@@ -2701,7 +2918,16 @@ impl Interpreter {
         method: &Ident,
         args: &[Expr],
     ) -> Result<Value, RuntimeError> {
-        let recv = self.evaluate(receiver)?;
+        let recv_raw = self.evaluate(receiver)?;
+        // Unwrap evidential/affective wrappers for method dispatch (recursively)
+        let mut recv = recv_raw.clone();
+        loop {
+            match &recv {
+                Value::Evidential { value, .. } => recv = (**value).clone(),
+                Value::Affective { value, .. } => recv = (**value).clone(),
+                _ => break,
+            }
+        }
         let arg_values: Vec<Value> = args
             .iter()
             .map(|a| self.evaluate(a))
@@ -2730,6 +2956,27 @@ impl Interpreter {
             (Value::String(s), "chars") => {
                 let chars: Vec<Value> = s.chars().map(Value::Char).collect();
                 Ok(Value::Array(Rc::new(RefCell::new(chars))))
+            }
+            // char_at(index) - get character at index
+            (Value::String(s), "char_at") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("char_at expects 1 argument"));
+                }
+                match &arg_values[0] {
+                    Value::Int(idx) => {
+                        let idx = *idx as usize;
+                        if idx < s.len() {
+                            if let Some(c) = s.chars().nth(idx) {
+                                Ok(Value::Char(c))
+                            } else {
+                                Ok(Value::Null)
+                            }
+                        } else {
+                            Ok(Value::Null)
+                        }
+                    }
+                    _ => Err(RuntimeError::new("char_at expects integer index")),
+                }
             }
             (Value::String(s), "contains") => {
                 if arg_values.len() != 1 {
@@ -2791,14 +3038,31 @@ impl Interpreter {
             // is_empty
             (Value::String(s), "is_empty") => Ok(Value::Bool(s.is_empty())),
             (Value::Array(arr), "is_empty") => Ok(Value::Bool(arr.borrow().is_empty())),
+            // char methods
+            (Value::Char(c), "len_utf8") => Ok(Value::Int(c.len_utf8() as i64)),
+            (Value::Char(c), "is_alphabetic") => Ok(Value::Bool(c.is_alphabetic())),
+            (Value::Char(c), "is_alphanumeric") => Ok(Value::Bool(c.is_alphanumeric())),
+            (Value::Char(c), "is_numeric") | (Value::Char(c), "is_digit") => Ok(Value::Bool(c.is_numeric())),
+            (Value::Char(c), "is_ascii") => Ok(Value::Bool(c.is_ascii())),
+            (Value::Char(c), "is_ascii_digit") => Ok(Value::Bool(c.is_ascii_digit())),
+            (Value::Char(c), "is_ascii_alphabetic") => Ok(Value::Bool(c.is_ascii_alphabetic())),
+            (Value::Char(c), "is_ascii_alphanumeric") => Ok(Value::Bool(c.is_ascii_alphanumeric())),
+            (Value::Char(c), "is_whitespace") => Ok(Value::Bool(c.is_whitespace())),
+            (Value::Char(c), "is_uppercase") => Ok(Value::Bool(c.is_uppercase())),
+            (Value::Char(c), "is_lowercase") => Ok(Value::Bool(c.is_lowercase())),
+            (Value::Char(c), "to_lowercase") => Ok(Value::Char(c.to_lowercase().next().unwrap_or(*c))),
+            (Value::Char(c), "to_uppercase") => Ok(Value::Char(c.to_uppercase().next().unwrap_or(*c))),
+            (Value::Char(c), "to_string") => Ok(Value::String(Rc::new(c.to_string()))),
             // to_string() - convert to string (identity for strings)
             (Value::String(s), "to_string") => Ok(Value::String(s.clone())),
             (Value::Int(n), "to_string") => Ok(Value::String(Rc::new(n.to_string()))),
             (Value::Float(n), "to_string") => Ok(Value::String(Rc::new(n.to_string()))),
             (Value::Bool(b), "to_string") => Ok(Value::String(Rc::new(b.to_string()))),
-            // FFI-related methods - return placeholder values for interpreter
-            (Value::String(_s), "as_ptr") => {
-                // In interpreter, return a dummy pointer value (the address doesn't matter)
+            // FFI-related methods - store string for FFI call interception
+            (Value::String(s), "as_ptr") => {
+                // Store the string for FFI functions to use
+                *self.ffi_last_string.borrow_mut() = Some(s.to_string());
+                // Return a dummy pointer value (the address doesn't matter)
                 Ok(Value::Int(0x1000))
             }
             (Value::Array(_arr), "as_ptr") => {
@@ -2812,8 +3076,10 @@ impl Interpreter {
             (Value::Null, "to_string") => Ok(Value::String(Rc::new("null".to_string()))),
             // clone() - for Rc/RefCell semantics
             (val, "clone") => Ok(val.clone()),
-            // is_null for nullable types (?)
+            // is_null for nullable types and FFI pointers
             (Value::Null, "is_null") => Ok(Value::Bool(true)),
+            // Int(0) is a null pointer in FFI context
+            (Value::Int(0), "is_null") => Ok(Value::Bool(true)),
             (_, "is_null") => Ok(Value::Bool(false)),
             // unwrap() - for Option/Result
             (Value::Variant { variant_name, fields, .. }, "unwrap") => {
