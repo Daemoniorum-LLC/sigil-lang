@@ -79,6 +79,38 @@ pub enum Value {
     Future(Rc<RefCell<FutureInner>>),
 }
 
+impl Value {
+    /// Get the type name as a string for error messages
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Value::Null => "null",
+            Value::Bool(_) => "bool",
+            Value::Int(_) => "int",
+            Value::Float(_) => "float",
+            Value::String(_) => "string",
+            Value::Char(_) => "char",
+            Value::Array(_) => "array",
+            Value::Tuple(_) => "tuple",
+            Value::Struct { .. } => "struct",
+            Value::Variant { .. } => "variant",
+            Value::VariantConstructor { .. } => "variant_constructor",
+            Value::Function(_) => "function",
+            Value::BuiltIn(_) => "builtin",
+            Value::Ref(_) => "ref",
+            Value::Infinity => "infinity",
+            Value::Empty => "empty",
+            Value::Evidential { .. } => "evidential",
+            Value::Affective { .. } => "affective",
+            Value::Map(_) => "map",
+            Value::Set(_) => "set",
+            Value::Channel(_) => "channel",
+            Value::ThreadHandle(_) => "thread_handle",
+            Value::Actor(_) => "actor",
+            Value::Future(_) => "future",
+        }
+    }
+}
+
 /// Future state for async computations
 #[derive(Clone)]
 pub enum FutureState {
@@ -771,6 +803,62 @@ impl Interpreter {
                 arity: Some(0),
                 func: |_interp, _args| {
                     Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))))
+                },
+            })),
+        );
+
+        // Default constructors
+        self.globals.borrow_mut().define(
+            "String·default".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "String·default".to_string(),
+                arity: Some(0),
+                func: |_interp, _args| {
+                    Ok(Value::String(Rc::new(String::new())))
+                },
+            })),
+        );
+
+        self.globals.borrow_mut().define(
+            "Vec·default".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Vec·default".to_string(),
+                arity: Some(0),
+                func: |_interp, _args| {
+                    Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))))
+                },
+            })),
+        );
+
+        self.globals.borrow_mut().define(
+            "bool·default".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "bool·default".to_string(),
+                arity: Some(0),
+                func: |_interp, _args| {
+                    Ok(Value::Bool(false))
+                },
+            })),
+        );
+
+        self.globals.borrow_mut().define(
+            "i64·default".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "i64·default".to_string(),
+                arity: Some(0),
+                func: |_interp, _args| {
+                    Ok(Value::Int(0))
+                },
+            })),
+        );
+
+        self.globals.borrow_mut().define(
+            "usize·default".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "usize·default".to_string(),
+                arity: Some(0),
+                func: |_interp, _args| {
+                    Ok(Value::Int(0))
                 },
             })),
         );
@@ -1519,7 +1607,36 @@ impl Interpreter {
                 }
                 _ => Err(RuntimeError::new("Invalid array operation")),
             },
-            _ => Err(RuntimeError::new("Type mismatch in binary operation")),
+            // Null comparisons
+            (Value::Null, Value::Null) => match op {
+                BinOp::Eq => Ok(Value::Bool(true)),
+                BinOp::Ne => Ok(Value::Bool(false)),
+                _ => Err(RuntimeError::new("Invalid null operation")),
+            },
+            (Value::Null, _) => match op {
+                BinOp::Eq => Ok(Value::Bool(false)),
+                BinOp::Ne => Ok(Value::Bool(true)),
+                _ => Err(RuntimeError::new("Invalid null operation")),
+            },
+            (_, Value::Null) => match op {
+                BinOp::Eq => Ok(Value::Bool(false)),
+                BinOp::Ne => Ok(Value::Bool(true)),
+                _ => Err(RuntimeError::new("Invalid null operation")),
+            },
+            // Char comparisons
+            (Value::Char(a), Value::Char(b)) => match op {
+                BinOp::Eq => Ok(Value::Bool(a == b)),
+                BinOp::Ne => Ok(Value::Bool(a != b)),
+                BinOp::Lt => Ok(Value::Bool(a < b)),
+                BinOp::Le => Ok(Value::Bool(a <= b)),
+                BinOp::Gt => Ok(Value::Bool(a > b)),
+                BinOp::Ge => Ok(Value::Bool(a >= b)),
+                _ => Err(RuntimeError::new("Invalid char operation")),
+            },
+            (a, b) => Err(RuntimeError::new(format!(
+                "Type mismatch in binary operation {:?}: {} vs {}",
+                op, a.type_name(), b.type_name()
+            ))),
         }
     }
 
