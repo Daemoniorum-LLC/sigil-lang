@@ -87,15 +87,31 @@ This is a direct conversion of `sigil-lang/parser/src/` from Rust to Sigil:
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ Phase 4: Fixed Point 🚧 IN PROGRESS                          │
-│ - [ ] Create self-compilation test                           │
-│ - [ ] Sigil-Sigil compiles Sigil-Sigil → identical output    │
+│ - [x] Create self-compilation test (bootstrap_test.sg)       │
+│ - [ ] Run: Sigil-Sigil compiles Sigil-Sigil → identical output│
 │ Bootstrap complete when output is identical!                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## Testing
 
-Once the lexer and parser are complete, the self-hosted compiler will be tested by:
+Test files are in `tests/`:
+
+| Test | Purpose |
+|------|---------|
+| `test_simple.sg` | Basic language features |
+| `test_evidentiality.sg` | Evidentiality system (!, ?, ~, ‽) |
+| `test_morphemes.sg` | Morpheme operators (τ, φ, σ, ρ, Σ, Π) |
+| `bootstrap_test.sg` | Fixed-point self-compilation |
+
+### Running Tests
+
+```bash
+sigil run tests/test_simple.sg
+sigil run tests/bootstrap_test.sg -- -v
+```
+
+### Bootstrap Verification
 
 1. **Differential Testing**: Same input → same AST (Rust vs Sigil)
 2. **Bootstrap Identity**: Sigil-compiled-by-Sigil = Sigil-compiled-by-Rust
@@ -120,3 +136,31 @@ This conversion is part of the Jormungandr research initiative. Notes from the c
 - `Ident::new()` factory pattern works well
 - Evidentiality lattice operations (join/meet) are simple to express
 - Enum variants with associated data are clean
+
+## Next Steps to Fixed Point
+
+To achieve the fixed point (Phase 4c), the following is needed:
+
+1. **Compile self-hosted with Rust compiler**:
+   ```bash
+   # Use sigil-lang/parser/ to compile self-hosted/src/*.sg
+   cargo run --manifest-path sigil-lang/parser/Cargo.toml -- \
+       compile self-hosted/src/driver.sg -o compiler.c
+   ```
+
+2. **Build native compiler**:
+   ```bash
+   cc -o sigil-native compiler.c
+   ```
+
+3. **Self-compile**:
+   ```bash
+   ./sigil-native compile self-hosted/src/driver.sg -o compiler2.c
+   ```
+
+4. **Verify fixed point**:
+   ```bash
+   diff compiler.c compiler2.c && echo "FIXED POINT ACHIEVED!"
+   ```
+
+When `compiler.c` equals `compiler2.c`, Jormungandr is complete.
