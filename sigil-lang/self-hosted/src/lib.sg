@@ -10,10 +10,17 @@
 //! - `ast` - Abstract Syntax Tree definitions
 //! - `lexer` - Tokenization
 //! - `parser` - Recursive descent parsing
+//! - `typeck` - Type checking with evidentiality
+//! - `ir` - Intermediate representation
+//! - `lower` - AST to IR lowering
+//! - `interp` - Tree-walking interpreter
+//! - `runtime` - Runtime system (memory, stdlib)
+//! - `codegen` - C code generation
+//! - `driver` - Compiler driver and CLI
 //!
 //! ## Status
 //!
-//! Phase 6: IR and Lowering (COMPLETE!)
+//! Phase 4: Fixed Point (IN PROGRESS)
 //! - [x] span.sg - Source span tracking
 //! - [x] token.sg - Token definitions
 //! - [x] ast.sg - AST node definitions
@@ -22,14 +29,19 @@
 //! - [x] typeck.sg - Type checking with evidentiality
 //! - [x] ir.sg - AI-facing intermediate representation
 //! - [x] lower.sg - AST to IR lowering
+//! - [x] interp.sg - Tree-walking interpreter
+//! - [x] runtime.sg - Runtime system
+//! - [x] codegen.sg - C code generation
+//! - [x] driver.sg - Compiler driver
+//! - [ ] Self-compilation test
+//! - [ ] Fixed-point verification
 //!
 //! ## Bootstrap Strategy
 //!
 //! 1. Define core data structures in Sigil (COMPLETE)
-//! 2. Implement lexer and parser in Sigil (COMPLETE!)
-//! 3. Implement type checker with evidentiality
-//! 4. Implement IR and code generation
-//! 5. Achieve self-hosting: Sigil compiles Sigil
+//! 2. Implement lexer and parser in Sigil (COMPLETE)
+//! 3. Implement code generation and interpreter (COMPLETE)
+//! 4. Achieve self-hosting: Sigil compiles Sigil (IN PROGRESS)
 //!
 //! ## Evidentiality in the Compiler
 //!
@@ -52,6 +64,7 @@ pub mod lower;
 pub mod interp;
 pub mod runtime;
 pub mod codegen;
+pub mod driver;
 
 // Re-exports for convenience
 pub use span::{Span, Spanned};
@@ -65,6 +78,7 @@ pub use lower::{lower_file, LoweringContext, LowerError};
 pub use interp::{Interpreter, Value, EvidentialValue, RuntimeError};
 pub use runtime::{Arena, EvidenceContext};
 pub use codegen::CodeGen;
+pub use driver::{Driver, Config, Command};
 
 /// Compiler version
 pub const VERSION: !&str = "0.1.0-bootstrap";

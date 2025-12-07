@@ -2,14 +2,14 @@
 
 This directory contains the Sigil compiler written in Sigil itself - the **Jormungandr bootstrap**.
 
-## Status: Phase 3 - Code Generation (COMPLETE!)
+## Status: Phase 4 - Fixed Point (IN PROGRESS)
 
 | File | Lines | Status | Description |
 |------|-------|--------|-------------|
 | `src/span.sg` | ~140 | ✅ Complete | Source span tracking |
 | `src/token.sg` | ~450 | ✅ Complete | Token definitions |
 | `src/ast.sg` | ~1200 | ✅ Complete | AST node definitions |
-| `src/lib.sg` | ~85 | ✅ Complete | Module exports |
+| `src/lib.sg` | ~100 | ✅ Complete | Module exports |
 | `src/lexer.sg` | ~750 | ✅ Complete | Hand-written tokenization |
 | `src/parser.sg` | ~2100 | ✅ Complete | Recursive descent parser |
 | `src/typeck.sg` | ~1800 | ✅ Complete | Type checking with evidentiality |
@@ -18,8 +18,9 @@ This directory contains the Sigil compiler written in Sigil itself - the **Jormu
 | `src/interp.sg` | ~1100 | ✅ Complete | Tree-walking interpreter |
 | `src/runtime.sg` | ~600 | ✅ Complete | Runtime system (memory, stdlib) |
 | `src/codegen.sg` | ~950 | ✅ Complete | C code generation |
+| `src/driver.sg` | ~500 | ✅ Complete | Compiler driver and CLI |
 
-**Total: ~11,000+ lines of Sigil**
+**Total: ~12,000+ lines of Sigil**
 
 ## Conversion from Rust
 
@@ -80,13 +81,15 @@ This is a direct conversion of `sigil-lang/parser/src/` from Rust to Sigil:
 │ - interp.sg ✅ (tree-walking interpreter)                    │
 │ - runtime.sg ✅ (memory, stdlib, evidence)                   │
 │ - codegen.sg ✅ (C code generation)                          │
+│ - driver.sg ✅ (compiler CLI)                                │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ Phase 4: Fixed Point (NEXT)                                  │
-│ Sigil-Sigil compiles Sigil-Sigil → identical output          │
-│ Bootstrap complete!                                          │
+│ Phase 4: Fixed Point 🚧 IN PROGRESS                          │
+│ - [ ] Create self-compilation test                           │
+│ - [ ] Sigil-Sigil compiles Sigil-Sigil → identical output    │
+│ Bootstrap complete when output is identical!                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
