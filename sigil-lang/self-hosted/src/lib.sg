@@ -13,15 +13,15 @@
 //!
 //! ## Status
 //!
-//! Phase 5: Type Checking (COMPLETE!)
+//! Phase 6: IR and Lowering (COMPLETE!)
 //! - [x] span.sg - Source span tracking
 //! - [x] token.sg - Token definitions
 //! - [x] ast.sg - AST node definitions
 //! - [x] lexer.sg - Tokenization
 //! - [x] parser.sg - Recursive descent parser
 //! - [x] typeck.sg - Type checking with evidentiality
-//! - [ ] ir.sg - Intermediate representation
-//! - [ ] lower.sg - AST to IR lowering
+//! - [x] ir.sg - AI-facing intermediate representation
+//! - [x] lower.sg - AST to IR lowering
 //!
 //! ## Bootstrap Strategy
 //!
@@ -47,6 +47,8 @@ pub mod ast;
 pub mod lexer;
 pub mod parser;
 pub mod typeck;
+pub mod ir;
+pub mod lower;
 
 // Re-exports for convenience
 pub use span::{Span, Spanned};
@@ -55,6 +57,8 @@ pub use ast::*;
 pub use lexer::Lexer;
 pub use parser::{Parser, ParseError, ParseResult};
 pub use typeck::{TypeChecker, Type, TypeError, EvidenceLevel};
+pub use ir::{IrModule, IrOperation, IrType, IrEvidence};
+pub use lower::{lower_file, LoweringContext, LowerError};
 
 /// Compiler version
 pub const VERSION: !&str = "0.1.0-bootstrap";

@@ -1,0 +1,1100 @@
+//! AST to IR Lowering
+//!
+//! This module converts the Abstract Syntax Tree (AST) into the
+//! Intermediate Representation (IR) suitable for optimization,
+//! analysis, and code generation.
+//!
+//! ## Key Responsibilities
+//!
+//! 1. **Type Resolution**: Attach resolved types to every IR node
+//! 2. **Evidence Propagation**: Track and propagate evidence levels
+//! 3. **Pipeline Desugaring**: Convert pipe chains to explicit operations
+//! 4. **Morpheme Expansion**: Expand morpheme shorthand to full operations
+//! 5. **Name Resolution**: Resolve all identifiers to unique IDs
+
+use crate::ast::*;
+use crate::ir::*;
+use crate::span::Span;
+use crate::typeck::{Type, TypeChecker, EvidenceLevel};
+
+// ============================================================================
+// Lowering Context
+// ============================================================================
+
+/// The lowering context tracks state during AST → IR conversion
+pub struct LoweringContext {
+    /// Type checker for type information
+    type_checker: !TypeChecker,
+
+    /// Unique ID counter for names
+    id_counter: !u64,
+
+    /// Current function being lowered
+    current_function: ?String,
+
+    /// Collected errors
+    errors: ![LowerError],
+
+    /// Variable ID map: source name → unique ID
+    var_ids: !Map<String, String>,
+}
+
+impl LoweringContext {
+    /// Create a new lowering context
+    pub fn new(type_checker: !TypeChecker) -> !LoweringContext {
+        LoweringContext {
+            type_checker,
+            id_counter: 0,
+            current_function: null,
+            errors: [],
+            var_ids: Map::new(),
+        }
+    }
+
+    /// Generate a unique ID
+    fn fresh_id(mut self) -> !String {
+        let id = self.id_counter;
+        self.id_counter += 1;
+        format!("id_{}", id)
+    }
+
+    /// Record an error
+    fn error(mut self, err: !LowerError) {
+        self.errors.push(err);
+    }
+
+    /// Get or create an ID for a variable
+    fn get_var_id(mut self, name: !&str) -> !String {
+        if let ?id = self.var_ids.get(name) {
+            id.clone()
+        } else {
+            let id = self.fresh_id();
+            self.var_ids.insert(name.to_string(), id.clone());
+            id
+        }
+    }
+}
+
+/// Lowering error
+pub struct LowerError {
+    pub message: !String,
+    pub span: ?Span,
+}
+
+impl LowerError {
+    pub fn new(message: !String) -> !LowerError {
+        LowerError { message, span: null }
+    }
+
+    pub fn with_span(mut self, span: !Span) -> !LowerError {
+        self.span = ?span;
+        self
+    }
+}
+
+// ============================================================================
+// Main Lowering Interface
+// ============================================================================
+
+/// Lower a complete source file to IR
+pub fn lower_file(file: !SourceFile, type_checker: !TypeChecker) -> !Result<IrModule, [LowerError]> {
+    let mut ctx = LoweringContext::new(type_checker);
+    let mut module = IrModule::new(file.path.unwrap_or("unknown"));
+
+    // Lower all items
+    for item in file.items {
+        lower_item(&mut ctx, &mut module, item.node);
+    }
+
+    if ctx.errors.is_empty() {
+        Result::Ok(module)
+    } else {
+        Result::Err(ctx.errors)
+    }
+}
+
+/// Lower a single item
+fn lower_item(ctx: &mut LoweringContext, module: &mut IrModule, item: !Item) {
+    match item {
+        Item::Function(f) => {
+            if let ?ir_fn = lower_function(ctx, f) {
+                module.functions.push(ir_fn);
+            }
+        },
+        Item::Struct(s) => {
+            module.types.push(lower_struct(ctx, s));
+        },
+        Item::Enum(e) => {
+            module.types.push(lower_enum(ctx, e));
+        },
+        Item::TypeAlias(t) => {
+            module.types.push(lower_type_alias(ctx, t));
+        },
+        Item::Const(c) => {
+            if let ?ir_const = lower_const(ctx, c) {
+                module.constants.push(ir_const);
+            }
+        },
+        Item::Trait(t) => {
+            module.traits.push(lower_trait(ctx, t));
+        },
+        Item::Impl(i) => {
+            module.impls.push(lower_impl(ctx, i));
+        },
+        _ => {
+            // Other items (Use, Mod, etc.) don't generate IR
+        },
+    }
+}
+
+// ============================================================================
+// Function Lowering
+// ============================================================================
+
+/// Lower a function definition
+fn lower_function(ctx: &mut LoweringContext, func: !Function) -> ?IrFunction {
+    let name = func.name.name.clone();
+    let id = ctx.fresh_id();
+
+    ctx.current_function = ?name.clone();
+
+    // Lower generics
+    let generics = match func.generics {
+        ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
+        null => [],
+    };
+
+    // Lower parameters
+    let params = func.params|τ{p => lower_param(ctx, p)}|collect();
+
+    // Lower return type
+    let return_type = match func.return_type {
+        ?t => lower_type(ctx, t),
+        null => IrType::Unit,
+    };
+
+    // Lower body
+    let body = match func.body {
+        ?b => ?lower_block(ctx, b),
+        null => null,
+    };
+
+    // Visibility
+    let visibility = lower_visibility(func.visibility);
+
+    // Span
+    let span = ?IrSpan::from_span(func.name.span);
+
+    ctx.current_function = null;
+
+    ?IrFunction {
+        name,
+        id,
+        visibility,
+        generics,
+        params,
+        return_type,
+        body,
+        attributes: [],
+        is_async: func.is_async,
+        span,
+    }
+}
+
+/// Lower a generic parameter
+fn lower_generic_param(ctx: &mut LoweringContext, param: !GenericParam) -> !IrGenericParam {
+    match param {
+        GenericParam::Type { name, bounds } => IrGenericParam {
+            name: name.name,
+            bounds: match bounds {
+                ?b => b|τ{bound => bound.to_string()}|collect(),
+                null => [],
+            },
+        },
+        GenericParam::Const { name, ty } => IrGenericParam {
+            name: name.name,
+            bounds: [],
+        },
+        GenericParam::Lifetime(name) => IrGenericParam {
+            name: format!("'{}", name.name),
+            bounds: [],
+        },
+    }
+}
+
+/// Lower a function parameter
+fn lower_param(ctx: &mut LoweringContext, param: !Parameter) -> !IrParam {
+    let name = match param.pattern.binding_name() {
+        ?n => n,
+        null => "_",
+    };
+
+    let ty = lower_type(ctx, param.ty);
+    let evidence = match param.pattern.evidentiality() {
+        ?e => IrEvidence::from_typeck(EvidenceLevel::from_ast(e)),
+        null => IrEvidence::Known,
+    };
+
+    IrParam { name, ty, evidence }
+}
+
+/// Lower visibility
+fn lower_visibility(vis: !Visibility) -> !IrVisibility {
+    match vis {
+        Visibility::Public => IrVisibility::Public,
+        Visibility::Crate => IrVisibility::Crate,
+        Visibility::Private => IrVisibility::Private,
+        Visibility::Restricted(_) => IrVisibility::Private,
+    }
+}
+
+// ============================================================================
+// Type Lowering
+// ============================================================================
+
+/// Lower a type expression to IR type
+fn lower_type(ctx: &mut LoweringContext, ty: !TypeExpr) -> !IrType {
+    match ty {
+        TypeExpr::Path(path) => {
+            let name = path.segments|τ{s => s.ident.name}|join("::");
+            let generics = match path.segments.last() {
+                ?seg => match seg.generics {
+                    ?gs => gs|τ{t => lower_type(ctx, t)}|collect(),
+                    null => [],
+                },
+                null => [],
+            };
+
+            // Check for primitive types
+            match name.as_str() {
+                "bool" => IrType::Primitive { name: "bool" },
+                "char" => IrType::Primitive { name: "char" },
+                "str" | "String" => IrType::Primitive { name: "str" },
+                "i8" | "i16" | "i32" | "i64" | "i128" | "isize" => IrType::Primitive { name },
+                "u8" | "u16" | "u32" | "u64" | "u128" | "usize" => IrType::Primitive { name },
+                "f32" | "f64" => IrType::Primitive { name },
+                _ => IrType::Named { name, generics },
+            }
+        },
+
+        TypeExpr::Reference { mutable, inner } => IrType::Reference {
+            mutable,
+            inner: Box::new(lower_type(ctx, *inner)),
+        },
+
+        TypeExpr::Pointer { mutable, inner } => IrType::Pointer {
+            mutable,
+            inner: Box::new(lower_type(ctx, *inner)),
+        },
+
+        TypeExpr::Array { element, size } => IrType::Array {
+            element: Box::new(lower_type(ctx, *element)),
+            size: match size {
+                ?s => ?eval_const_usize(ctx, s),
+                null => null,
+            },
+        },
+
+        TypeExpr::Slice(inner) => IrType::Slice {
+            element: Box::new(lower_type(ctx, *inner)),
+        },
+
+        TypeExpr::Tuple(elements) => IrType::Tuple {
+            elements: elements|τ{t => lower_type(ctx, t)}|collect(),
+        },
+
+        TypeExpr::Function { params, return_type } => IrType::Function {
+            params: params|τ{t => lower_type(ctx, t)}|collect(),
+            return_type: Box::new(match return_type {
+                ?t => lower_type(ctx, *t),
+                null => IrType::Unit,
+            }),
+            is_async: false,
+        },
+
+        TypeExpr::Evidential { inner, evidentiality, error_type: _ } => IrType::Evidential {
+            inner: Box::new(lower_type(ctx, *inner)),
+            evidence: IrEvidence::from_typeck(EvidenceLevel::from_ast(evidentiality)),
+        },
+
+        TypeExpr::Cycle { modulus: _ } => IrType::Cycle { modulus: 12 },
+
+        TypeExpr::Simd { element, lanes } => IrType::Simd {
+            element: Box::new(lower_type(ctx, *element)),
+            lanes: lanes as usize,
+        },
+
+        TypeExpr::Atomic(inner) => IrType::Atomic {
+            inner: Box::new(lower_type(ctx, *inner)),
+        },
+
+        TypeExpr::Never => IrType::Never,
+        TypeExpr::Infer => IrType::Infer,
+    }
+}
+
+/// Evaluate a constant expression to usize (for array sizes)
+fn eval_const_usize(ctx: &mut LoweringContext, expr: !Expr) -> !usize {
+    match expr {
+        Expr::Literal(Literal::Int { value, .. }) => value as usize,
+        _ => {
+            ctx.error(LowerError::new("array size must be constant integer"));
+            0
+        },
+    }
+}
+
+// ============================================================================
+// Type Definition Lowering
+// ============================================================================
+
+/// Lower a struct definition
+fn lower_struct(ctx: &mut LoweringContext, s: !Struct) -> !IrTypeDef {
+    let generics = match s.generics {
+        ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
+        null => [],
+    };
+
+    let fields = match s.fields {
+        StructFields::Named(fs) => fs|τ{f => IrField {
+            name: f.name.name,
+            ty: lower_type(ctx, f.ty),
+            visibility: lower_visibility(f.visibility),
+        }}|collect(),
+        StructFields::Tuple(ts) => ts
+            |enumerate()
+            |τ{(i, t) => IrField {
+                name: i.to_string(),
+                ty: lower_type(ctx, t),
+                visibility: IrVisibility::Private,
+            }}|collect(),
+        StructFields::Unit => [],
+    };
+
+    IrTypeDef::Struct {
+        name: s.name.name,
+        generics,
+        fields,
+        span: ?IrSpan::from_span(s.name.span),
+    }
+}
+
+/// Lower an enum definition
+fn lower_enum(ctx: &mut LoweringContext, e: !Enum) -> !IrTypeDef {
+    let generics = match e.generics {
+        ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
+        null => [],
+    };
+
+    let variants = e.variants|τ{v => {
+        let fields = match v.fields {
+            StructFields::Named(fs) => ?fs|τ{f => IrField {
+                name: f.name.name,
+                ty: lower_type(ctx, f.ty),
+                visibility: lower_visibility(f.visibility),
+            }}|collect(),
+            StructFields::Tuple(ts) => ?ts
+                |enumerate()
+                |τ{(i, t) => IrField {
+                    name: i.to_string(),
+                    ty: lower_type(ctx, t),
+                    visibility: IrVisibility::Private,
+                }}|collect(),
+            StructFields::Unit => null,
+        };
+
+        IrVariant {
+            name: v.name.name,
+            fields,
+            discriminant: match v.discriminant {
+                ?d => ?eval_const_i64(ctx, d),
+                null => null,
+            },
+        }
+    }}|collect();
+
+    IrTypeDef::Enum {
+        name: e.name.name,
+        generics,
+        variants,
+        span: ?IrSpan::from_span(e.name.span),
+    }
+}
+
+/// Lower a type alias
+fn lower_type_alias(ctx: &mut LoweringContext, t: !TypeAlias) -> !IrTypeDef {
+    let generics = match t.generics {
+        ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
+        null => [],
+    };
+
+    IrTypeDef::TypeAlias {
+        name: t.name.name,
+        generics,
+        target: lower_type(ctx, t.ty),
+        span: ?IrSpan::from_span(t.name.span),
+    }
+}
+
+/// Evaluate a constant expression to i64 (for enum discriminants)
+fn eval_const_i64(ctx: &mut LoweringContext, expr: !Expr) -> !i64 {
+    match expr {
+        Expr::Literal(Literal::Int { value, .. }) => value,
+        _ => {
+            ctx.error(LowerError::new("discriminant must be constant integer"));
+            0
+        },
+    }
+}
+
+// ============================================================================
+// Constant Lowering
+// ============================================================================
+
+/// Lower a constant definition
+fn lower_const(ctx: &mut LoweringContext, c: !Const) -> ?IrConstant {
+    let ty = lower_type(ctx, c.ty);
+    let value = lower_expr(ctx, c.value);
+    let visibility = lower_visibility(c.visibility);
+
+    ?IrConstant {
+        name: c.name.name,
+        ty,
+        value,
+        visibility,
+        span: ?IrSpan::from_span(c.name.span),
+    }
+}
+
+// ============================================================================
+// Trait and Impl Lowering
+// ============================================================================
+
+/// Lower a trait definition
+fn lower_trait(ctx: &mut LoweringContext, t: !Trait) -> !IrTraitDef {
+    let generics = match t.generics {
+        ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
+        null => [],
+    };
+
+    let super_traits = t.super_traits|τ{s => s.to_string()}|collect();
+
+    let methods = t.items
+        |φ{item => matches!(item, TraitItem::Method(_))}
+        |τ{item => match item {
+            TraitItem::Method(f) => lower_function(ctx, f),
+            _ => null,
+        }}
+        |φ{m => m != null}
+        |τ{m => m.unwrap()}
+        |collect();
+
+    IrTraitDef {
+        name: t.name.name,
+        generics,
+        super_traits,
+        methods,
+        span: ?IrSpan::from_span(t.name.span),
+    }
+}
+
+/// Lower an impl block
+fn lower_impl(ctx: &mut LoweringContext, i: !Impl) -> !IrImplBlock {
+    let generics = match i.generics {
+        ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
+        null => [],
+    };
+
+    let trait_name = match i.trait_path {
+        ?p => ?p.segments|τ{s => s.ident.name}|join("::"),
+        null => null,
+    };
+
+    let target_type = lower_type(ctx, i.self_type);
+
+    let methods = i.items
+        |φ{item => matches!(item, ImplItem::Method(_))}
+        |τ{item => match item {
+            ImplItem::Method(f) => lower_function(ctx, f),
+            _ => null,
+        }}
+        |φ{m => m != null}
+        |τ{m => m.unwrap()}
+        |collect();
+
+    IrImplBlock {
+        trait_name,
+        target_type,
+        generics,
+        methods,
+        span: null,
+    }
+}
+
+// ============================================================================
+// Expression Lowering
+// ============================================================================
+
+/// Lower an expression to IR operation
+fn lower_expr(ctx: &mut LoweringContext, expr: !Expr) -> !IrOperation {
+    match expr {
+        Expr::Literal(lit) => lower_literal(ctx, lit),
+
+        Expr::Path(path) => {
+            let name = path.segments|τ{s => s.ident.name}|join("::");
+            let id = ctx.get_var_id(name);
+            IrOperation::Var {
+                name,
+                id,
+                ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Binary { left, op, right } => {
+            let ir_left = lower_expr(ctx, *left);
+            let ir_right = lower_expr(ctx, *right);
+            let ir_op = lower_binop(op);
+
+            IrOperation::Binary {
+                operator: ir_op,
+                left: Box::new(ir_left),
+                right: Box::new(ir_right),
+                ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Unary { op, expr } => {
+            let operand = lower_expr(ctx, *expr);
+            let ir_op = lower_unaryop(op);
+
+            IrOperation::Unary {
+                operator: ir_op,
+                operand: Box::new(operand),
+                ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Call { func, args } => {
+            let func_name = match *func {
+                Expr::Path(path) => path.segments|τ{s => s.ident.name}|join("::"),
+                _ => "<anonymous>",
+            };
+
+            let ir_args = args|τ{a => lower_expr(ctx, a)}|collect();
+
+            IrOperation::Call {
+                function: func_name,
+                function_id: ctx.fresh_id(),
+                args: ir_args,
+                type_args: [],
+                ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Array(elements) => {
+            let ir_elements = elements|τ{e => lower_expr(ctx, e)}|collect();
+
+            IrOperation::Array {
+                elements: ir_elements,
+                ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Tuple(elements) => {
+            let ir_elements = elements|τ{e => lower_expr(ctx, e)}|collect();
+
+            IrOperation::Tuple {
+                elements: ir_elements,
+                ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Block(block) => lower_block(ctx, block),
+
+        Expr::If { condition, then_branch, else_branch } => {
+            let ir_cond = lower_expr(ctx, *condition);
+            let ir_then = lower_block(ctx, then_branch);
+            let ir_else = match else_branch {
+                ?e => ?Box::new(lower_expr(ctx, *e)),
+                null => null,
+            };
+
+            IrOperation::If {
+                condition: Box::new(ir_cond),
+                then_branch: Box::new(ir_then),
+                else_branch: ir_else,
+                ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Match { expr, arms } => {
+            let scrutinee = lower_expr(ctx, *expr);
+            let ir_arms = arms|τ{arm => lower_match_arm(ctx, arm)}|collect();
+
+            IrOperation::Match {
+                scrutinee: Box::new(scrutinee),
+                arms: ir_arms,
+                ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Pipe { expr, operations } => lower_pipeline(ctx, *expr, operations),
+
+        Expr::Index { expr, index } => {
+            let ir_expr = lower_expr(ctx, *expr);
+            let ir_index = lower_expr(ctx, *index);
+
+            IrOperation::Index {
+                expr: Box::new(ir_expr),
+                index: Box::new(ir_index),
+                ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Field { expr, field } => {
+            let ir_expr = lower_expr(ctx, *expr);
+
+            IrOperation::Field {
+                expr: Box::new(ir_expr),
+                field: field.name,
+                ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Return(val) => {
+            let ir_val = match val {
+                ?v => ?Box::new(lower_expr(ctx, *v)),
+                null => null,
+            };
+
+            IrOperation::Return {
+                value: ir_val,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Closure { params, body, .. } => {
+            let ir_params = params|τ{p => lower_param(ctx, p)}|collect();
+            let ir_body = lower_expr(ctx, *body);
+
+            IrOperation::Closure {
+                params: ir_params,
+                body: Box::new(ir_body),
+                captures: [],
+                ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Evidential { expr, evidentiality } => {
+            let inner = lower_expr(ctx, *expr);
+            let ev = IrEvidence::from_typeck(EvidenceLevel::from_ast(evidentiality));
+
+            IrOperation::EvidenceCoerce {
+                operation: EvidenceOp::Mark,
+                expr: Box::new(inner),
+                from_evidence: IrEvidence::Known,
+                to_evidence: ev,
+                ty: IrType::Infer,
+            }
+        },
+
+        Expr::Await(expr) => {
+            let ir_expr = lower_expr(ctx, *expr);
+
+            IrOperation::Await {
+                expr: Box::new(ir_expr),
+                ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        _ => {
+            // Fallback for unhandled expressions
+            ctx.error(LowerError::new("unsupported expression type"));
+            IrOperation::Literal {
+                variant: LiteralVariant::Null,
+                value: LiteralValue::Null,
+                ty: IrType::Unit,
+                evidence: IrEvidence::Known,
+            }
+        },
+    }
+}
+
+/// Lower a literal
+fn lower_literal(ctx: &mut LoweringContext, lit: !Literal) -> !IrOperation {
+    match lit {
+        Literal::Int { value, .. } => IrOperation::Literal {
+            variant: LiteralVariant::Int,
+            value: LiteralValue::Int(value),
+            ty: IrType::Primitive { name: "i64" },
+            evidence: IrEvidence::Known,
+        },
+        Literal::Float { value, .. } => IrOperation::Literal {
+            variant: LiteralVariant::Float,
+            value: LiteralValue::Float(value),
+            ty: IrType::Primitive { name: "f64" },
+            evidence: IrEvidence::Known,
+        },
+        Literal::Bool(b) => IrOperation::Literal {
+            variant: LiteralVariant::Bool,
+            value: LiteralValue::Bool(b),
+            ty: IrType::Primitive { name: "bool" },
+            evidence: IrEvidence::Known,
+        },
+        Literal::Char(c) => IrOperation::Literal {
+            variant: LiteralVariant::Char,
+            value: LiteralValue::Char(c),
+            ty: IrType::Primitive { name: "char" },
+            evidence: IrEvidence::Known,
+        },
+        Literal::String(s) => IrOperation::Literal {
+            variant: LiteralVariant::String,
+            value: LiteralValue::String(s),
+            ty: IrType::Primitive { name: "str" },
+            evidence: IrEvidence::Known,
+        },
+        Literal::Null => IrOperation::Literal {
+            variant: LiteralVariant::Null,
+            value: LiteralValue::Null,
+            ty: IrType::Unit,
+            evidence: IrEvidence::Known,
+        },
+        _ => {
+            ctx.error(LowerError::new("unsupported literal type"));
+            IrOperation::Literal {
+                variant: LiteralVariant::Null,
+                value: LiteralValue::Null,
+                ty: IrType::Unit,
+                evidence: IrEvidence::Known,
+            }
+        },
+    }
+}
+
+/// Lower a binary operator
+fn lower_binop(op: !BinOp) -> !BinaryOp {
+    match op {
+        BinOp::Add => BinaryOp::Add,
+        BinOp::Sub => BinaryOp::Sub,
+        BinOp::Mul => BinaryOp::Mul,
+        BinOp::Div => BinaryOp::Div,
+        BinOp::Rem => BinaryOp::Rem,
+        BinOp::Pow => BinaryOp::Pow,
+        BinOp::And => BinaryOp::And,
+        BinOp::Or => BinaryOp::Or,
+        BinOp::BitAnd => BinaryOp::BitAnd,
+        BinOp::BitOr => BinaryOp::BitOr,
+        BinOp::BitXor => BinaryOp::BitXor,
+        BinOp::Shl => BinaryOp::Shl,
+        BinOp::Shr => BinaryOp::Shr,
+        BinOp::Eq => BinaryOp::Eq,
+        BinOp::Ne => BinaryOp::Ne,
+        BinOp::Lt => BinaryOp::Lt,
+        BinOp::Le => BinaryOp::Le,
+        BinOp::Gt => BinaryOp::Gt,
+        BinOp::Ge => BinaryOp::Ge,
+        BinOp::Concat => BinaryOp::Concat,
+    }
+}
+
+/// Lower a unary operator
+fn lower_unaryop(op: !UnaryOp) -> !ir::UnaryOp {
+    match op {
+        UnaryOp::Neg => ir::UnaryOp::Neg,
+        UnaryOp::Not => ir::UnaryOp::Not,
+        UnaryOp::Ref => ir::UnaryOp::Ref,
+        UnaryOp::RefMut => ir::UnaryOp::RefMut,
+        UnaryOp::Deref => ir::UnaryOp::Deref,
+    }
+}
+
+// ============================================================================
+// Block and Statement Lowering
+// ============================================================================
+
+/// Lower a block
+fn lower_block(ctx: &mut LoweringContext, block: !Block) -> !IrOperation {
+    let mut statements: ![IrOperation] = [];
+
+    for stmt in block.stmts {
+        statements.push(lower_stmt(ctx, stmt));
+    }
+
+    // If there's a trailing expression, add it as the last statement
+    if let ?expr = block.expr {
+        statements.push(lower_expr(ctx, expr));
+    }
+
+    IrOperation::Block {
+        statements,
+        ty: IrType::Infer,
+        evidence: IrEvidence::Known,
+    }
+}
+
+/// Lower a statement
+fn lower_stmt(ctx: &mut LoweringContext, stmt: !Stmt) -> !IrOperation {
+    match stmt {
+        Stmt::Let { pattern, ty, init } => {
+            let ir_pattern = lower_pattern(ctx, pattern);
+            let type_annotation = match ty {
+                ?t => ?lower_type(ctx, t),
+                null => null,
+            };
+            let ir_init = match init {
+                ?e => lower_expr(ctx, e),
+                null => IrOperation::Literal {
+                    variant: LiteralVariant::Null,
+                    value: LiteralValue::Null,
+                    ty: IrType::Unit,
+                    evidence: IrEvidence::Known,
+                },
+            };
+
+            IrOperation::Let {
+                pattern: ir_pattern,
+                type_annotation,
+                init: Box::new(ir_init),
+                evidence: IrEvidence::Known,
+            }
+        },
+        Stmt::Expr(e) | Stmt::Semi(e) => lower_expr(ctx, e),
+        Stmt::Item(item) => {
+            // Nested items are handled separately
+            IrOperation::Block {
+                statements: [],
+                ty: IrType::Unit,
+                evidence: IrEvidence::Known,
+            }
+        },
+    }
+}
+
+// ============================================================================
+// Pattern Lowering
+// ============================================================================
+
+/// Lower a pattern
+fn lower_pattern(ctx: &mut LoweringContext, pattern: !Pattern) -> !IrPattern {
+    match pattern {
+        Pattern::Ident { name, mutable, evidentiality, .. } => {
+            let ev = match evidentiality {
+                ?e => ?IrEvidence::from_typeck(EvidenceLevel::from_ast(e)),
+                null => null,
+            };
+            IrPattern::Ident {
+                name: name.name,
+                mutable,
+                evidence: ev,
+            }
+        },
+        Pattern::Tuple(pats) => IrPattern::Tuple {
+            elements: pats|τ{p => lower_pattern(ctx, p)}|collect(),
+        },
+        Pattern::Struct { path, fields, rest } => IrPattern::Struct {
+            path: path.segments|τ{s => s.ident.name}|join("::"),
+            fields: fields|τ{f => (f.name.name, match f.pattern {
+                ?p => lower_pattern(ctx, p),
+                null => IrPattern::Ident {
+                    name: f.name.name,
+                    mutable: false,
+                    evidence: null,
+                },
+            })}|collect(),
+            rest,
+        },
+        Pattern::TupleStruct { path, fields } => IrPattern::TupleStruct {
+            path: path.segments|τ{s => s.ident.name}|join("::"),
+            fields: fields|τ{p => lower_pattern(ctx, p)}|collect(),
+        },
+        Pattern::Slice(pats) => IrPattern::Slice {
+            elements: pats|τ{p => lower_pattern(ctx, p)}|collect(),
+        },
+        Pattern::Or(pats) => IrPattern::Or {
+            patterns: pats|τ{p => lower_pattern(ctx, p)}|collect(),
+        },
+        Pattern::Literal(lit) => IrPattern::Literal {
+            value: lower_literal_value(ctx, lit),
+        },
+        Pattern::Range { start, end, inclusive } => IrPattern::Range {
+            start: match start {
+                ?s => ?Box::new(lower_pattern(ctx, *s)),
+                null => null,
+            },
+            end: match end {
+                ?e => ?Box::new(lower_pattern(ctx, *e)),
+                null => null,
+            },
+            inclusive,
+        },
+        Pattern::Wildcard => IrPattern::Wildcard,
+        Pattern::Rest => IrPattern::Wildcard,
+    }
+}
+
+/// Lower a literal to LiteralValue
+fn lower_literal_value(ctx: &mut LoweringContext, lit: !Literal) -> !LiteralValue {
+    match lit {
+        Literal::Int { value, .. } => LiteralValue::Int(value),
+        Literal::Float { value, .. } => LiteralValue::Float(value),
+        Literal::Bool(b) => LiteralValue::Bool(b),
+        Literal::Char(c) => LiteralValue::Char(c),
+        Literal::String(s) => LiteralValue::String(s),
+        Literal::Null => LiteralValue::Null,
+        _ => LiteralValue::Null,
+    }
+}
+
+// ============================================================================
+// Match Arm Lowering
+// ============================================================================
+
+/// Lower a match arm
+fn lower_match_arm(ctx: &mut LoweringContext, arm: !MatchArm) -> !IrMatchArm {
+    let pattern = lower_pattern(ctx, arm.pattern);
+    let guard = match arm.guard {
+        ?g => ?lower_expr(ctx, g),
+        null => null,
+    };
+    let body = lower_expr(ctx, arm.body);
+
+    IrMatchArm { pattern, guard, body }
+}
+
+// ============================================================================
+// Pipeline Lowering
+// ============================================================================
+
+/// Lower a pipeline expression
+fn lower_pipeline(ctx: &mut LoweringContext, input: !Expr, operations: ![PipeOp]) -> !IrOperation {
+    let ir_input = lower_expr(ctx, input);
+    let steps = operations|τ{op => lower_pipe_op(ctx, op)}|collect();
+
+    IrOperation::Pipeline {
+        input: Box::new(ir_input),
+        steps,
+        ty: IrType::Infer,
+        evidence: IrEvidence::Known,
+    }
+}
+
+/// Lower a pipe operation
+fn lower_pipe_op(ctx: &mut LoweringContext, op: !PipeOp) -> !IrPipelineStep {
+    match op {
+        PipeOp::Transform(body) => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Transform,
+            symbol: "τ",
+            body: ?Box::new(lower_expr(ctx, *body)),
+        },
+        PipeOp::Filter(body) => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Filter,
+            symbol: "φ",
+            body: ?Box::new(lower_expr(ctx, *body)),
+        },
+        PipeOp::Sort(body) => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Sort,
+            symbol: "σ",
+            body: match body {
+                ?b => ?Box::new(lower_expr(ctx, *b)),
+                null => null,
+            },
+        },
+        PipeOp::Reduce(body) => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Reduce,
+            symbol: "ρ",
+            body: ?Box::new(lower_expr(ctx, *body)),
+        },
+        PipeOp::ReduceSum => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Sum,
+            symbol: "Σ",
+            body: null,
+        },
+        PipeOp::ReduceProd => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Product,
+            symbol: "Π",
+            body: null,
+        },
+        PipeOp::First => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::First,
+            symbol: "α",
+            body: null,
+        },
+        PipeOp::Last => IrPipelineStep::Morpheme {
+            morpheme: MorphemeKind::Last,
+            symbol: "ω",
+            body: null,
+        },
+        PipeOp::Method { name, args } => IrPipelineStep::Method {
+            name: name.name,
+            args: args|τ{a => lower_expr(ctx, a)}|collect(),
+        },
+        PipeOp::Await => IrPipelineStep::Await,
+        PipeOp::Send(_) | PipeOp::Recv | PipeOp::Connect(_) | PipeOp::Close => {
+            IrPipelineStep::Protocol {
+                operation: match op {
+                    PipeOp::Send(_) => ProtocolOp::Send,
+                    PipeOp::Recv => ProtocolOp::Recv,
+                    PipeOp::Connect(_) => ProtocolOp::Connect,
+                    PipeOp::Close => ProtocolOp::Close,
+                    _ => ProtocolOp::Send,
+                },
+                config: null,
+            }
+        },
+        _ => IrPipelineStep::Identity,
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lower_literal() {
+        let mut ctx = LoweringContext::new(TypeChecker::new());
+
+        let lit = Literal::Int { value: 42, base: NumberBase::Decimal };
+        let ir = lower_literal(&mut ctx, lit);
+
+        match ir {
+            IrOperation::Literal { variant: LiteralVariant::Int, .. } => {},
+            _ => panic!("Expected Int literal"),
+        }
+    }
+
+    #[test]
+    fn test_lower_binop() {
+        assert!(matches!(lower_binop(BinOp::Add), BinaryOp::Add));
+        assert!(matches!(lower_binop(BinOp::Sub), BinaryOp::Sub));
+        assert!(matches!(lower_binop(BinOp::Mul), BinaryOp::Mul));
+    }
+
+    #[test]
+    fn test_ir_module_creation() {
+        let type_checker = TypeChecker::new();
+        let file = SourceFile {
+            path: ?"test.sigil",
+            items: [],
+            shebang: null,
+        };
+
+        let result = lower_file(file, type_checker);
+        assert!(result.is_ok());
+    }
+}

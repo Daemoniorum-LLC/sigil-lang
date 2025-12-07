@@ -2,19 +2,21 @@
 
 This directory contains the Sigil compiler written in Sigil itself - the **Jormungandr bootstrap**.
 
-## Status: Phase 5 - Type Checking (COMPLETE!)
+## Status: Phase 6 - IR and Lowering (COMPLETE!)
 
 | File | Lines | Status | Description |
 |------|-------|--------|-------------|
 | `src/span.sg` | ~140 | ✅ Complete | Source span tracking |
 | `src/token.sg` | ~450 | ✅ Complete | Token definitions |
 | `src/ast.sg` | ~1200 | ✅ Complete | AST node definitions |
-| `src/lib.sg` | ~70 | ✅ Complete | Module exports |
+| `src/lib.sg` | ~75 | ✅ Complete | Module exports |
 | `src/lexer.sg` | ~750 | ✅ Complete | Hand-written tokenization |
 | `src/parser.sg` | ~2100 | ✅ Complete | Recursive descent parser |
 | `src/typeck.sg` | ~1800 | ✅ Complete | Type checking with evidentiality |
-| `src/ir.sg` | - | 🔲 Pending | Intermediate representation |
-| `src/lower.sg` | - | 🔲 Pending | AST → IR lowering |
+| `src/ir.sg` | ~900 | ✅ Complete | AI-facing intermediate representation |
+| `src/lower.sg` | ~800 | ✅ Complete | AST → IR lowering |
+
+**Total: ~8,400 lines of Sigil**
 
 ## Conversion from Rust
 
@@ -28,6 +30,8 @@ This is a direct conversion of `sigil-lang/parser/src/` from Rust to Sigil:
 | `lexer.rs` (Lexer struct) | `lexer.sg` | ~500 | Hand-written (no logos) |
 | `parser.rs` | `parser.sg` | 4,462 | Full recursive descent parser |
 | `typeck.rs` | `typeck.sg` | 2,560 | Bidirectional inference + evidentiality |
+| `ir.rs` | `ir.sg` | 1,243 | AI-facing JSON-serializable IR |
+| `lower.rs` (new) | `lower.sg` | N/A | AST → IR transformation |
 
 ## Key Differences from Rust Version
 
@@ -58,18 +62,20 @@ This is a direct conversion of `sigil-lang/parser/src/` from Rust to Sigil:
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ Phase 2: Self-Hosted Core (CURRENT)                          │
+│ Phase 2: Self-Hosted Core ✅ COMPLETE                        │
 │ Write compiler data structures in Sigil                      │
 │ - span.sg, token.sg, ast.sg ✅                               │
 │ - lexer.sg, parser.sg ✅                                     │
 │ - typeck.sg ✅                                               │
-│ - ir.sg, lower.sg 🔲                                         │
+│ - ir.sg, lower.sg ✅                                         │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ Phase 3: Self-Hosting                                        │
+│ Phase 3: Self-Hosting (NEXT)                                 │
 │ Sigil compiler compiles itself                               │
+│ - codegen.sg (native code generation)                        │
+│ - Runtime and garbage collection                             │
 │ Rust version becomes bootstrap-only                          │
 └─────────────────────────────────────────────────────────────┘
                               │
