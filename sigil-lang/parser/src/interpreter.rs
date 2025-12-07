@@ -1449,6 +1449,17 @@ impl Interpreter {
                 inclusive,
             } => self.eval_range(start, end, *inclusive),
             Expr::Assign { target, value } => self.eval_assign(target, value),
+            // Let expression (for if-let, while-let patterns): returns bool for pattern match
+            Expr::Let { pattern, value } => {
+                let val = self.evaluate(value)?;
+                // Check if pattern matches and bind if so
+                if self.pattern_matches(pattern, &val)? {
+                    self.bind_pattern(pattern, val)?;
+                    Ok(Value::Bool(true))
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            }
             Expr::Await {
                 expr: inner,
                 evidentiality,
@@ -1523,28 +1534,57 @@ impl Interpreter {
                 match macro_name {
                     "format" => {
                         // Parse format string and arguments from tokens
-                        // For simplicity, just concatenate the tokens as a string for now
-                        // A proper implementation would parse the format string
                         let token_str = tokens.to_string();
                         // Try to extract format string and args
                         if let Some(idx) = token_str.find(',') {
                             let fmt = token_str[1..idx].trim_matches('"');
                             let args_str = &token_str[idx+1..];
-                            // For simple cases with single arg and single {}
-                            if fmt.contains("{}") && !fmt.contains("{:") {
-                                let parts: Vec<&str> = fmt.split("{}").collect();
-                                let arg_names: Vec<&str> = args_str.split(',').map(|s| s.trim()).collect();
-                                let mut result = String::new();
-                                for (i, part) in parts.iter().enumerate() {
-                                    result.push_str(part);
-                                    if i < arg_names.len() {
-                                        // Try to evaluate the argument
-                                        // For now, just use the string representation
-                                        result.push_str(arg_names[i]);
+
+                            // Parse and evaluate each argument
+                            let mut arg_values = Vec::new();
+                            for arg_expr_str in args_str.split(',').map(|s| s.trim()) {
+                                if !arg_expr_str.is_empty() {
+                                    // Parse the argument expression
+                                    let mut parser = crate::parser::Parser::new(arg_expr_str);
+                                    if let Ok(expr) = parser.parse_expr() {
+                                        if let Ok(val) = self.evaluate(&expr) {
+                                            arg_values.push(format!("{:?}", val));
+                                        } else {
+                                            arg_values.push(arg_expr_str.to_string());
+                                        }
+                                    } else {
+                                        arg_values.push(arg_expr_str.to_string());
                                     }
                                 }
-                                return Ok(Value::String(Rc::new(result)));
                             }
+
+                            // Replace {} and {:?} placeholders with evaluated values
+                            // Use regex-like replacement
+                            let mut result = String::new();
+                            let mut chars = fmt.chars().peekable();
+                            let mut arg_idx = 0;
+                            while let Some(c) = chars.next() {
+                                if c == '{' {
+                                    // Check for {} or {:?}
+                                    let mut placeholder = String::from("{");
+                                    while let Some(&nc) = chars.peek() {
+                                        placeholder.push(chars.next().unwrap());
+                                        if nc == '}' {
+                                            break;
+                                        }
+                                    }
+                                    // Insert argument value
+                                    if arg_idx < arg_values.len() {
+                                        result.push_str(&arg_values[arg_idx]);
+                                        arg_idx += 1;
+                                    } else {
+                                        result.push_str(&placeholder);
+                                    }
+                                } else {
+                                    result.push(c);
+                                }
+                            }
+                            return Ok(Value::String(Rc::new(result)));
                         }
                         // Fallback: return the raw token string
                         Ok(Value::String(Rc::new(token_str)))
@@ -1891,15 +1931,9 @@ impl Interpreter {
 
         let rhs = self.evaluate(right)?;
 
-        // Unwrap Ref values for comparison
-        let lhs = match lhs {
-            Value::Ref(r) => r.borrow().clone(),
-            v => v,
-        };
-        let rhs = match rhs {
-            Value::Ref(r) => r.borrow().clone(),
-            v => v,
-        };
+        // Unwrap Ref/Evidential/Affective values for comparison
+        let lhs = Self::unwrap_to_inner_owned(lhs);
+        let rhs = Self::unwrap_to_inner_owned(rhs);
 
         match (lhs, rhs) {
             (Value::Int(a), Value::Int(b)) => self.int_binary_op(a, b, op),
@@ -2125,8 +2159,19 @@ impl Interpreter {
         // Create new environment for function
         let env = Rc::new(RefCell::new(Environment::with_parent(func.closure.clone())));
 
-        // Bind parameters
+        // Bind parameters - unwrap Ref/Evidential/Affective values for by-value semantics
         for (param, value) in func.params.iter().zip(args) {
+            // Unwrap Ref values (pass by value, not by reference)
+            let value = match value {
+                Value::Ref(r) => r.borrow().clone(),
+                v => v,
+            };
+            // Unwrap evidential/affective wrappers
+            let value = match value {
+                Value::Evidential { value: inner, .. } => (*inner).clone(),
+                Value::Affective { value: inner, .. } => (*inner).clone(),
+                v => v,
+            };
             env.borrow_mut().define(param.clone(), value);
         }
 
@@ -2404,6 +2449,9 @@ impl Interpreter {
     }
 
     fn bind_pattern(&mut self, pattern: &Pattern, value: Value) -> Result<(), RuntimeError> {
+        // NOTE: We do NOT unwrap Ref values here - let bindings preserve Refs for mutability
+        // Refs are only unwrapped in call_function for parameter passing
+
         match pattern {
             Pattern::Ident { name, .. } => {
                 self.environment
@@ -2561,6 +2609,19 @@ impl Interpreter {
     }
 
     fn pattern_matches(&mut self, pattern: &Pattern, value: &Value) -> Result<bool, RuntimeError> {
+        // Unwrap Ref values before matching (for &T patterns matching T values)
+        if let Value::Ref(r) = value {
+            let inner = r.borrow();
+            return self.pattern_matches(pattern, &*inner);
+        }
+        // Unwrap evidential/affective wrappers before matching
+        if let Value::Evidential { value: inner, .. } = value {
+            return self.pattern_matches(pattern, inner);
+        }
+        if let Value::Affective { value: inner, .. } = value {
+            return self.pattern_matches(pattern, inner);
+        }
+
         match (pattern, value) {
             (Pattern::Wildcard, _) => Ok(true),
             (Pattern::Ident { .. }, _) => Ok(true),
@@ -2758,6 +2819,16 @@ impl Interpreter {
         match value {
             Value::Evidential { value: inner, .. } => Self::unwrap_to_inner(inner),
             Value::Affective { value: inner, .. } => Self::unwrap_to_inner(inner),
+            other => other,
+        }
+    }
+
+    /// Recursively unwrap Ref/Evidential/Affective wrappers (owned version)
+    fn unwrap_to_inner_owned(value: Value) -> Value {
+        match value {
+            Value::Ref(r) => Self::unwrap_to_inner_owned(r.borrow().clone()),
+            Value::Evidential { value: inner, .. } => Self::unwrap_to_inner_owned((*inner).clone()),
+            Value::Affective { value: inner, .. } => Self::unwrap_to_inner_owned((*inner).clone()),
             other => other,
         }
     }
@@ -3253,6 +3324,13 @@ impl Interpreter {
                     Err(RuntimeError::new("as_str on ref requires ref to string"))
                 }
             }
+            // Tuple methods
+            (Value::Tuple(t), "is_eof") => Ok(Value::Bool(false)), // tuple is not EOF
+            (Value::Tuple(t), "0") => t.first().cloned().ok_or_else(|| RuntimeError::new("tuple has no element 0")),
+            (Value::Tuple(t), "1") => t.get(1).cloned().ok_or_else(|| RuntimeError::new("tuple has no element 1")),
+            // Null methods - for optional returns like lexer.next_token()
+            (Value::Null, "is_eof") => Ok(Value::Bool(true)), // null means EOF
+            (Value::Null, _) => Err(RuntimeError::new("Cannot call method on null")),
             // Try to find a method registered via impl block
             (Value::Struct { name, fields }, method_name) => {
                 // Look up Type·method in globals

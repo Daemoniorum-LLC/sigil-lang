@@ -1905,7 +1905,7 @@ impl<'a> Parser<'a> {
 
     // === Expression parsing (Pratt parser) ===
 
-    fn parse_expr(&mut self) -> ParseResult<Expr> {
+    pub fn parse_expr(&mut self) -> ParseResult<Expr> {
         let lhs = self.parse_expr_bp(0)?;
 
         // Check for assignment: expr = value
