@@ -429,40 +429,57 @@ impl CodeGen {
             },
             IrTypeDef::Enum { name, variants, .. } => {
                 self.line(format!("/* Enum: {} */", name));
-                self.line(format!("typedef struct {} {{", name));
-                self.indent_push();
-                self.line("uint32_t tag;");
-                self.line("union {");
-                self.indent_push();
+
+                // For SigilValue-based enums, we use tagged variants
+                // Tag constants
+                for (i, variant) in variants.iter().enumerate() {
+                    self.line(format!("#define {}_{} {}", name.to_uppercase(), variant.name.to_uppercase(), i));
+                }
+                self.line("");
+
+                // Generate unit variant constants
+                for (i, variant) in variants.iter().enumerate() {
+                    let has_fields = match variant.fields {
+                        ?f => !f.is_empty(),
+                        null => false,
+                    };
+                    if !has_fields {
+                        // Unit variant - generate as constant
+                        self.line(format!("static const SigilValue {}____{} = {{ .tag = {}, .evidence = SIGIL_KNOWN }};",
+                            name, variant.name, i));
+                    }
+                }
+                self.line("");
+
+                // Generate constructor functions for tuple variants
                 for (i, variant) in variants.iter().enumerate() {
                     match variant.fields {
                         ?fields if !fields.is_empty() => {
-                            self.line(format!("struct {{ /* {} */", variant.name));
-                            self.indent_push();
-                            for field in fields {
-                                let c_type = self.ir_type_to_c(field.ty);
-                                // Make field name a valid C identifier (prefix numeric names with 'field_')
-                                let field_name = if field.name.chars().next().unwrap_or('a').is_digit(10) {
-                                    format!("field_{}", field.name)
-                                } else {
-                                    field.name.clone()
-                                };
-                                self.line(format!("{} {};", c_type, field_name));
+                            // Tuple variant - generate constructor
+                            let mut params: ![String] = [];
+                            for (j, _) in fields.iter().enumerate() {
+                                params.push(format!("SigilValue arg{}", j));
                             }
+                            let params_str = params.join(", ");
+
+                            self.line(format!("static inline SigilValue sigil_{}____{}({}) {{",
+                                name, variant.name, params_str));
+                            self.indent_push();
+
+                            // Create a struct to hold the variant data
+                            self.line(format!("SigilValue* fields = (SigilValue*)malloc({} * sizeof(SigilValue));", fields.len()));
+                            for (j, _) in fields.iter().enumerate() {
+                                self.line(format!("fields[{}] = arg{};", j, j));
+                            }
+                            self.line(format!("SigilValue v = {{ .tag = {}, .evidence = SIGIL_KNOWN }};", i));
+                            self.line("v.v.ptr = fields;");
+                            self.line("return v;");
+
                             self.indent_pop();
-                            self.line(format!("}} v{};", i));
+                            self.line("}");
                         },
                         _ => {},
                     }
-                }
-                self.indent_pop();
-                self.line("} data;");
-                self.indent_pop();
-                self.line(format!("}} {};", name));
-
-                // Emit variant tag constants
-                for (i, variant) in variants.iter().enumerate() {
-                    self.line(format!("#define {}_{} {}", name.to_uppercase(), variant.name.to_uppercase(), i));
                 }
                 self.line("");
             },
@@ -565,8 +582,11 @@ impl CodeGen {
 
     /// Mangle a Sigil name to valid C identifier
     fn mangle_name(self, name: !&str) -> !String {
+        // Strip evidentiality prefixes from type names
+        let stripped = self.strip_evidentiality_prefix(name);
+
         // Check for C keywords and add prefix
-        let is_c_keyword = match name {
+        let is_c_keyword = match stripped.as_str() {
             "auto" | "break" | "case" | "char" | "const" | "continue" |
             "default" | "do" | "double" | "else" | "enum" | "extern" |
             "float" | "for" | "goto" | "if" | "int" | "long" | "register" |
@@ -580,7 +600,7 @@ impl CodeGen {
         if is_c_keyword {
             result.push_str("sg_");
         }
-        for c in name.chars() {
+        for c in stripped.chars() {
             match c {
                 'a'..'z' | 'A'..'Z' | '0'..'9' => result.push(c),
                 '_' => result.push('_'),
@@ -589,6 +609,33 @@ impl CodeGen {
             }
         }
         result
+    }
+
+    /// Strip evidentiality prefixes from type names (e.g., "UncertainToken" -> "Token")
+    fn strip_evidentiality_prefix(self, name: !&str) -> !String {
+        // Handle qualified names like "UncertainToken::is_keyword"
+        if name.contains("::") {
+            let parts: ![&str] = name.split("::").collect();
+            let stripped_parts: ![String] = parts|τ{p => self.strip_single_prefix(p)}|collect();
+            stripped_parts.join("::")
+        } else {
+            self.strip_single_prefix(name)
+        }
+    }
+
+    fn strip_single_prefix(self, name: !&str) -> !String {
+        // Strip evidentiality prefixes
+        if name.starts_with("Uncertain") {
+            name.strip_prefix("Uncertain").unwrap_or(name).to_string()
+        } else if name.starts_with("Known") {
+            name.strip_prefix("Known").unwrap_or(name).to_string()
+        } else if name.starts_with("Reported") {
+            name.strip_prefix("Reported").unwrap_or(name).to_string()
+        } else if name.starts_with("Paradox") {
+            name.strip_prefix("Paradox").unwrap_or(name).to_string()
+        } else {
+            name.to_string()
+        }
     }
 
     // ========================================================================
@@ -692,7 +739,13 @@ impl CodeGen {
                 } else {
                     // Regular function call with sigil_ prefix
                     let fn_name = self.mangle_name(function.clone());
-                    format!("sigil_{}({})", fn_name, args_str)
+
+                    // Special handling for assert - add default message if only 1 arg
+                    if function == "assert" && arg_codes.len() == 1 {
+                        format!("sigil_assert({}, sigil_string(\"assertion failed\"))", args_str)
+                    } else {
+                        format!("sigil_{}({})", fn_name, args_str)
+                    }
                 };
 
                 self.with_evidence(call, evidence)
@@ -1054,8 +1107,8 @@ impl CodeGen {
                         format!("/* vec![{}] */ sigil_array(0)", tokens)
                     },
                     "assert" => {
-                        // assert!(cond) -> sigil_assert
-                        format!("sigil_assert(sigil_bool({}))", tokens)
+                        // assert!(cond) -> sigil_assert with default message
+                        format!("sigil_assert(sigil_bool({}), sigil_string(\"assertion failed\"))", tokens)
                     },
                     "assert_eq" => {
                         // assert_eq!(a, b) -> sigil_assert_eq
@@ -1109,6 +1162,12 @@ impl CodeGen {
                             "merge" | "contains" | "overlaps" | "empty_at" => ?("Span".to_string()),
                             // Spanned methods
                             "map" | "inner" | "into_inner" => ?("Spanned".to_string()),
+                            // Token methods
+                            "is_keyword" | "is_morpheme" | "is_evidentiality" | "is_affectivity" |
+                            "is_literal" | "is_comparison" | "is_assign_op" | "is_protocol" |
+                            "is_intensity" | "is_aspect" | "is_mood" | "is_polarity" => ?("Token".to_string()),
+                            // Option methods
+                            "is_some" | "is_none" | "unwrap" | "unwrap_or" | "expect" => ?("Option".to_string()),
                             _ => null,
                         };
 
