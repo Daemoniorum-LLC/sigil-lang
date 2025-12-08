@@ -774,6 +774,85 @@ impl CodeGen {
                 "sigil_unit()"
             },
 
+            IrOperation::Field { expr, field, evidence, .. } => {
+                // Generate field access for structs
+                // Structs are stored as arrays of SigilValue, field access by name
+                let base_code = self.emit_operation(*expr);
+                // Use the struct's field map to get the index
+                // For now, just access the named field from the struct pointer
+                let temp = self.fresh_temp();
+                self.line(format!("SigilValue {} = sigil_struct_field({}, \"{}\");", temp, base_code, field));
+                self.with_evidence(temp, evidence)
+            },
+
+            IrOperation::Index { expr, index, evidence, .. } => {
+                // Generate array/tuple index
+                let base = self.emit_operation(*expr);
+                let idx = self.emit_operation(*index);
+                let expr = format!("{}.v.arr.data[{}.v.i]", base, idx);
+                self.with_evidence(expr, evidence)
+            },
+
+            IrOperation::StructInit { name, fields, evidence, .. } => {
+                // Generate struct initialization
+                // Store as (name_str, array of field_names, array of field_values)
+                let temp = self.fresh_temp();
+                let n = fields.len();
+
+                // Build field names and values by index
+                let mut field_names_parts: ![String] = [];
+                let mut i = 0;
+                self.line(format!("SigilValue {}__values[{}];", temp, n));
+                while i < n {
+                    let field = fields[i];
+                    let field_name = field.0;
+                    let field_value = field.1;
+                    field_names_parts.push(format!("\"{}\"", field_name));
+                    let val = self.emit_operation(field_value);
+                    self.line(format!("{}__values[{}] = {};", temp, i, val));
+                    i = i + 1;
+                }
+                let field_names_str = field_names_parts.join(", ");
+
+                // Emit field names array
+                self.line(format!("static const char* {}__names[{}] = {{ {} }};",
+                    temp, n, field_names_str));
+
+                // Create struct value with sigil_struct helper
+                let expr = format!("sigil_struct(\"{}\", {}__names, {}__values, {})", name, temp, temp, n);
+                self.with_evidence(expr, evidence)
+            },
+
+            IrOperation::Tuple { elements, evidence, .. } => {
+                // Generate tuple
+                let temp = self.fresh_temp();
+                let n = elements.len();
+
+                self.line(format!("SigilValue {}__fields[{}];", temp, n));
+                for (i, elem) in elements.iter().enumerate() {
+                    let val = self.emit_operation(elem.clone());
+                    self.line(format!("{}__fields[{}] = {};", temp, i, val));
+                }
+
+                let expr = format!("sigil_tuple({}__fields, {})", temp, n);
+                self.with_evidence(expr, evidence)
+            },
+
+            IrOperation::Array { elements, evidence, .. } => {
+                // Generate array
+                let temp = self.fresh_temp();
+                let n = elements.len();
+
+                self.line(format!("SigilValue {}__elems[{}];", temp, n));
+                for (i, elem) in elements.iter().enumerate() {
+                    let val = self.emit_operation(elem.clone());
+                    self.line(format!("{}__elems[{}] = {};", temp, i, val));
+                }
+
+                let expr = format!("sigil_array({}__elems, {})", temp, n);
+                self.with_evidence(expr, evidence)
+            },
+
             _ => {
                 self.line("/* Unsupported operation */");
                 "sigil_unit()"
@@ -1161,6 +1240,37 @@ impl CodeGen {
         self.line("strcpy(s, a.v.s);");
         self.line("strcat(s, b.v.s);");
         self.line("return (SigilValue){ .tag = TAG_STRING, .evidence = SIGIL_KNOWN, .v.s = s };");
+        self.indent_pop();
+        self.line("}");
+        self.line("return sigil_null();");
+        self.indent_pop();
+        self.line("}");
+        self.line("");
+
+        // Struct helpers
+        self.line("typedef struct { const char* name; const char** field_names; SigilValue* field_values; size_t num_fields; } SigilStruct;");
+        self.line("");
+
+        self.line("SigilValue sigil_struct(const char* name, const char** names, SigilValue* values, size_t n) {");
+        self.indent_push();
+        self.line("SigilStruct* s = (SigilStruct*)malloc(sizeof(SigilStruct));");
+        self.line("s->name = name;");
+        self.line("s->field_names = names;");
+        self.line("s->field_values = (SigilValue*)malloc(n * sizeof(SigilValue));");
+        self.line("for (size_t i = 0; i < n; i++) s->field_values[i] = values[i];");
+        self.line("s->num_fields = n;");
+        self.line("return (SigilValue){ .tag = TAG_STRUCT, .evidence = SIGIL_KNOWN, .v.ptr = s };");
+        self.indent_pop();
+        self.line("}");
+        self.line("");
+
+        self.line("SigilValue sigil_struct_field(SigilValue v, const char* field) {");
+        self.indent_push();
+        self.line("if (v.tag != TAG_STRUCT) return sigil_null();");
+        self.line("SigilStruct* s = (SigilStruct*)v.v.ptr;");
+        self.line("for (size_t i = 0; i < s->num_fields; i++) {");
+        self.indent_push();
+        self.line("if (strcmp(s->field_names[i], field) == 0) return s->field_values[i];");
         self.indent_pop();
         self.line("}");
         self.line("return sigil_null();");

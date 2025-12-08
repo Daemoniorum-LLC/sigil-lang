@@ -306,6 +306,8 @@ impl EvidenceLevel {
             Evidentiality::Uncertain => EvidenceLevel::Uncertain,
             Evidentiality::Reported => EvidenceLevel::Reported,
             Evidentiality::Paradox => EvidenceLevel::Paradox,
+            // Handle null or unexpected values - default to Known (most certain)
+            _ => EvidenceLevel::Known,
         }
     }
 

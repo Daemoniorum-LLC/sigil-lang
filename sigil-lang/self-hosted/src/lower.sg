@@ -621,6 +621,28 @@ fn lower_expr(ctx: &mut LoweringContext, expr: !Expr) -> !IrOperation {
             }
         },
 
+        Expr::Struct { path, fields, rest } => {
+            // Get struct name from path
+            let name = path.segments|τ{s => s.ident.name}|join("::");
+
+            // Lower each field
+            let ir_fields = fields|τ{f => (f.name.name, lower_expr(ctx, f.value))}|collect();
+
+            // Lower rest expression if present
+            let ir_rest = match rest {
+                ?r => ?Box::new(lower_expr(ctx, *r)),
+                null => null,
+            };
+
+            IrOperation::StructInit {
+                name,
+                fields: ir_fields,
+                rest: ir_rest,
+                ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
         Expr::Block(block) => lower_block(ctx, block),
 
         Expr::If { condition, then_branch, else_branch } => {

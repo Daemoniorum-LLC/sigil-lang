@@ -2164,7 +2164,8 @@ impl Interpreter {
                         if patterns.len() != values.len() {
                             return Err(RuntimeError::new("Tuple pattern size mismatch"));
                         }
-                        for (p, v) in patterns.iter().zip(values.iter()) {
+                        for (i, (p, v)) in patterns.iter().zip(values.iter()).enumerate() {
+                            eprintln!("DEBUG   binding tuple element {}: {:?} = {}", i, p, self.format_value(v));
                             self.bind_pattern(p, v.clone())?;
                         }
                         Ok(())
@@ -2426,10 +2427,10 @@ impl Interpreter {
             (Pattern::Literal(lit), val) => {
                 let lit_val = self.eval_literal(lit)?;
                 let result = self.values_equal(&lit_val, val);
-                if let Value::String(s) = &value {
-                    if **s == "fn" {
-                        eprintln!("DEBUG literal match: pattern lit={:?}, result={}", lit, result);
-                    }
+                // Debug null pattern matching specifically
+                if matches!(lit, Literal::Null) || matches!(val, Value::Null) {
+                    eprintln!("DEBUG literal pattern: lit={:?}, lit_val={}, val={}, result={}",
+                        lit, self.format_value(&lit_val), self.format_value(val), result);
                 }
                 Ok(result)
             }
