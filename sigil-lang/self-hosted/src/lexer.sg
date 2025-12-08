@@ -57,6 +57,11 @@ impl Lexer {
         self.start = self.pos;
         let c = self.advance()!;
 
+        // Handle null character (unexpected EOF or invalid UTF-8)
+        if c == null {
+            return null;
+        }
+
         let token = match c {
             // Single-character tokens
             '(' => Token::LParen,

@@ -2497,6 +2497,36 @@ impl Interpreter {
                 }
                 Ok(true)
             }
+            // Struct pattern - matches struct-like enum variants (e.g., TypeExpr::Evidential { inner, ... })
+            (Pattern::Struct { path, fields: pat_fields, rest }, Value::Variant { variant_name, fields: variant_fields, .. }) => {
+                let pattern_variant = path.segments.last().map(|s| s.ident.name.as_str()).unwrap_or("");
+                if pattern_variant != variant_name {
+                    return Ok(false);
+                }
+                // Struct-like variants store fields as a single wrapped Struct value
+                if let Some(inner_fields) = variant_fields {
+                    if inner_fields.len() == 1 {
+                        if let Value::Struct { fields: inner_struct, .. } = &inner_fields[0] {
+                            let borrowed = inner_struct.borrow();
+                            for field_pat in pat_fields {
+                                let field_name = &field_pat.name.name;
+                                if let Some(field_val) = borrowed.get(field_name) {
+                                    if let Some(sub_pat) = &field_pat.pattern {
+                                        if !self.pattern_matches(sub_pat, field_val)? {
+                                            return Ok(false);
+                                        }
+                                    }
+                                } else if !rest {
+                                    return Ok(false);
+                                }
+                            }
+                            return Ok(true);
+                        }
+                    }
+                }
+                // No fields or structure doesn't match
+                Ok(pat_fields.is_empty() || *rest)
+            }
             // Or pattern - match if any sub-pattern matches
             (Pattern::Or(patterns), val) => {
                 for p in patterns {
@@ -2910,6 +2940,45 @@ impl Interpreter {
                 v.reverse();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
+            (Value::Array(arr), "skip") => {
+                let n = match arg_values.first() {
+                    Some(Value::Int(i)) => *i as usize,
+                    _ => 1,
+                };
+                let v: Vec<Value> = arr.borrow().iter().skip(n).cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "take") => {
+                let n = match arg_values.first() {
+                    Some(Value::Int(i)) => *i as usize,
+                    _ => 1,
+                };
+                let v: Vec<Value> = arr.borrow().iter().take(n).cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "step_by") => {
+                let n = match arg_values.first() {
+                    Some(Value::Int(i)) if *i > 0 => *i as usize,
+                    _ => 1,
+                };
+                let v: Vec<Value> = arr.borrow().iter().step_by(n).cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            // Tuple methods
+            (Value::Tuple(t), "to_string") | (Value::Tuple(t), "string") => {
+                let s: Vec<String> = t.iter().map(|v| format!("{}", v)).collect();
+                Ok(Value::String(Rc::new(format!("({})", s.join(", ")))))
+            }
+            (Value::Tuple(t), "len") => Ok(Value::Int(t.len() as i64)),
+            (Value::Tuple(t), "first") => t.first().cloned().ok_or_else(|| RuntimeError::new("empty tuple")),
+            (Value::Tuple(t), "last") => t.last().cloned().ok_or_else(|| RuntimeError::new("empty tuple")),
+            (Value::Tuple(t), "get") => {
+                let idx = match arg_values.first() {
+                    Some(Value::Int(i)) => *i as usize,
+                    _ => return Err(RuntimeError::new("get expects integer index")),
+                };
+                t.get(idx).cloned().ok_or_else(|| RuntimeError::new("tuple index out of bounds"))
+            }
             (Value::Array(arr), "first") => arr
                 .borrow()
                 .first()
@@ -3007,7 +3076,7 @@ impl Interpreter {
                 };
                 match s.chars().nth(idx) {
                     Some(c) => Ok(Value::Char(c)),
-                    None => Err(RuntimeError::new("char_at index out of bounds")),
+                    None => Ok(Value::Null), // Return null for out-of-bounds (Sigil's null-safety)
                 }
             }
             (Value::String(s), "chars") => {
@@ -3081,6 +3150,8 @@ impl Interpreter {
                     None => Ok(Value::Null),
                 }
             }
+            (Value::Char(c), "to_ascii_uppercase") => Ok(Value::Char(c.to_ascii_uppercase())),
+            (Value::Char(c), "to_ascii_lowercase") => Ok(Value::Char(c.to_ascii_lowercase())),
             (Value::String(s), "upper") | (Value::String(s), "uppercase") => {
                 Ok(Value::String(Rc::new(s.to_uppercase())))
             }
@@ -3637,6 +3708,48 @@ impl Interpreter {
                     method.name, enum_name
                 )))
             }
+            // Null-safe method handlers - methods called on null return sensible defaults
+            (Value::Null, "len_utf8") => Ok(Value::Int(0)),
+            (Value::Null, "is_ascii") => Ok(Value::Bool(false)),
+            (Value::Null, "is_alphabetic") => Ok(Value::Bool(false)),
+            (Value::Null, "is_alphanumeric") => Ok(Value::Bool(false)),
+            (Value::Null, "is_numeric") | (Value::Null, "is_digit") => Ok(Value::Bool(false)),
+            (Value::Null, "is_whitespace") => Ok(Value::Bool(false)),
+            (Value::Null, "is_uppercase") => Ok(Value::Bool(false)),
+            (Value::Null, "is_lowercase") => Ok(Value::Bool(false)),
+            (Value::Null, "len") => Ok(Value::Int(0)),
+            (Value::Null, "is_empty") => Ok(Value::Bool(true)),
+            (Value::Null, "to_string") => Ok(Value::String(Rc::new("".to_string()))),
+            (Value::Null, "clone") => Ok(Value::Null),
+            (Value::Null, "is_some") => Ok(Value::Bool(false)),
+            (Value::Null, "is_none") => Ok(Value::Bool(true)),
+            (Value::Null, "unwrap_or") => {
+                if arg_values.is_empty() {
+                    Ok(Value::Null)
+                } else {
+                    Ok(arg_values[0].clone())
+                }
+            }
+            // Int methods
+            (Value::Int(n), "to_string") | (Value::Int(n), "string") => {
+                Ok(Value::String(Rc::new(n.to_string())))
+            }
+            (Value::Int(n), "abs") => Ok(Value::Int(n.abs())),
+            (Value::Int(n), "to_float") | (Value::Int(n), "float") => Ok(Value::Float(*n as f64)),
+            // Float methods
+            (Value::Float(n), "to_string") | (Value::Float(n), "string") => {
+                Ok(Value::String(Rc::new(n.to_string())))
+            }
+            (Value::Float(n), "abs") => Ok(Value::Float(n.abs())),
+            (Value::Float(n), "to_int") | (Value::Float(n), "int") => Ok(Value::Int(*n as i64)),
+            // Bool methods
+            (Value::Bool(b), "to_string") | (Value::Bool(b), "string") => {
+                Ok(Value::String(Rc::new(b.to_string())))
+            }
+            // Char methods
+            (Value::Char(c), "to_string") | (Value::Char(c), "string") => {
+                Ok(Value::String(Rc::new(c.to_string())))
+            }
             _ => {
                 // Debug: what type is failing method lookup
                 let recv_type = match &recv {
@@ -3645,6 +3758,7 @@ impl Interpreter {
                     Value::Struct { name, .. } => format!("Struct({})", name),
                     Value::Variant { enum_name, variant_name, .. } => format!("Variant({}::{})", enum_name, variant_name),
                     Value::Ref(r) => format!("Ref({:?})", std::mem::discriminant(&*r.borrow())),
+                    Value::Null => "Null".to_string(),
                     other => format!("{:?}", std::mem::discriminant(other)),
                 };
                 eprintln!("DEBUG Unknown method '{}' on recv_type={}", method.name, recv_type);
@@ -3828,6 +3942,30 @@ impl Interpreter {
                 }
                 Ok(Value::Int(sum))
             }
+            (Value::Array(arr), "skip") => {
+                let n = match args.first() {
+                    Some(Value::Int(i)) => *i as usize,
+                    _ => 1,
+                };
+                let v: Vec<Value> = arr.borrow().iter().skip(n).cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "take") => {
+                let n = match args.first() {
+                    Some(Value::Int(i)) => *i as usize,
+                    _ => 1,
+                };
+                let v: Vec<Value> = arr.borrow().iter().take(n).cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "step_by") => {
+                let n = match args.first() {
+                    Some(Value::Int(i)) if *i > 0 => *i as usize,
+                    _ => 1,
+                };
+                let v: Vec<Value> = arr.borrow().iter().step_by(n).cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
 
             // Number methods
             (Value::Int(n), "abs") => Ok(Value::Int(n.abs())),
@@ -3913,21 +4051,19 @@ impl Interpreter {
     }
 
     fn apply_pipe_op(&mut self, value: Value, op: &PipeOp) -> Result<Value, RuntimeError> {
+        // Unwrap evidential/affective wrappers for pipe operations
+        let value = Self::unwrap_all(&value);
+
         match op {
             PipeOp::Transform(body) => {
                 // τ{f} - map over collection or apply to single value
-                // Check if body is a closure with explicit parameter
-                let (param_name, inner_body) = match body.as_ref() {
+                // Extract closure parameter pattern and body
+                let (param_pattern, inner_body) = match body.as_ref() {
                     Expr::Closure { params, body } => {
-                        let name = params.first()
-                            .map(|p| match &p.pattern {
-                                Pattern::Ident { name, .. } => name.name.clone(),
-                                _ => "_".to_string(),
-                            })
-                            .unwrap_or_else(|| "_".to_string());
-                        (name, body.as_ref())
+                        let pattern = params.first().map(|p| p.pattern.clone());
+                        (pattern, body.as_ref())
                     }
-                    _ => ("_".to_string(), body.as_ref()),
+                    _ => (None, body.as_ref()),
                 };
 
                 match value {
@@ -3936,36 +4072,40 @@ impl Interpreter {
                             .borrow()
                             .iter()
                             .map(|item| {
-                                self.environment
-                                    .borrow_mut()
-                                    .define(param_name.clone(), item.clone());
+                                // Bind the item to the pattern (supports tuple destructuring)
+                                if let Some(ref pattern) = param_pattern {
+                                    self.bind_pattern(pattern, item.clone())?;
+                                } else {
+                                    self.environment
+                                        .borrow_mut()
+                                        .define("_".to_string(), item.clone());
+                                }
                                 self.evaluate(inner_body)
                             })
                             .collect::<Result<_, _>>()?;
                         Ok(Value::Array(Rc::new(RefCell::new(results))))
                     }
                     single => {
-                        self.environment
-                            .borrow_mut()
-                            .define(param_name.clone(), single);
+                        if let Some(ref pattern) = param_pattern {
+                            self.bind_pattern(pattern, single)?;
+                        } else {
+                            self.environment
+                                .borrow_mut()
+                                .define("_".to_string(), single);
+                        }
                         self.evaluate(inner_body)
                     }
                 }
             }
             PipeOp::Filter(predicate) => {
                 // φ{p} - filter collection
-                // Check if predicate is a closure with explicit parameter
-                let (param_name, inner_pred) = match predicate.as_ref() {
+                // Extract closure parameter pattern and body
+                let (param_pattern, inner_pred) = match predicate.as_ref() {
                     Expr::Closure { params, body } => {
-                        let name = params.first()
-                            .map(|p| match &p.pattern {
-                                Pattern::Ident { name, .. } => name.name.clone(),
-                                _ => "_".to_string(),
-                            })
-                            .unwrap_or_else(|| "_".to_string());
-                        (name, body.as_ref())
+                        let pattern = params.first().map(|p| p.pattern.clone());
+                        (pattern, body.as_ref())
                     }
-                    _ => ("_".to_string(), predicate.as_ref()),
+                    _ => (None, predicate.as_ref()),
                 };
 
                 match value {
@@ -3974,9 +4114,16 @@ impl Interpreter {
                             .borrow()
                             .iter()
                             .filter_map(|item| {
-                                self.environment
-                                    .borrow_mut()
-                                    .define(param_name.clone(), item.clone());
+                                // Bind the item to the pattern (supports tuple destructuring)
+                                if let Some(ref pattern) = param_pattern {
+                                    if let Err(e) = self.bind_pattern(pattern, item.clone()) {
+                                        return Some(Err(e));
+                                    }
+                                } else {
+                                    self.environment
+                                        .borrow_mut()
+                                        .define("_".to_string(), item.clone());
+                                }
                                 match self.evaluate(inner_pred) {
                                     Ok(v) if self.is_truthy(&v) => Some(Ok(item.clone())),
                                     Ok(_) => None,
@@ -6041,8 +6188,21 @@ impl Interpreter {
 
     fn eval_evidential(&mut self, expr: &Expr, ev: &Evidentiality) -> Result<Value, RuntimeError> {
         let value = self.evaluate(expr)?;
+
+        // For Known (!) evidentiality - this is an "unwrap" or "assert known" operation
+        // If the value is null, return null (propagate nulls for graceful handling)
+        // If the value is already evidential, unwrap it
+        // Otherwise, return the value as-is (it's implicitly known)
+        if *ev == Evidentiality::Known {
+            return match value {
+                Value::Null => Ok(Value::Null),  // Null propagates
+                Value::Evidential { value: inner, .. } => Ok(*inner),  // Unwrap evidential
+                other => Ok(other),  // Non-null, non-evidential returns as-is
+            };
+        }
+
         let evidence = match ev {
-            Evidentiality::Known => Evidence::Known,
+            Evidentiality::Known => Evidence::Known,  // Won't reach here
             Evidentiality::Uncertain => Evidence::Uncertain,
             Evidentiality::Reported => Evidence::Reported,
             Evidentiality::Paradox => Evidence::Paradox,
