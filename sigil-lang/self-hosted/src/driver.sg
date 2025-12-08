@@ -244,7 +244,8 @@ impl CompileError {
             result.push_str("  --> ");
             result.push_str(file);
             if let ?span = self.span {
-                result.push_str(format!(":{}:{}", span.line, span.column));
+                // Use byte offsets since Span doesn't have line/column
+                result.push_str(format!(":{}:{}", span.start, span.end));
             }
             result.push('\n');
         }
@@ -360,9 +361,27 @@ impl Driver {
         let mut interpreter = Interpreter::new();
 
         for file_path in self.config.input_files {
-            let source = self.read_file(file_path)?;
-            let ast = self.parse(file_path, source)?;
-            let ir = self.lower(file_path, ast)?;
+            let source = match self.read_file(file_path) {
+                Result::Ok(s) => s,
+                Result::Err(code) => {
+                    self.print_errors();
+                    return Result::Err(code);
+                },
+            };
+            let ast = match self.parse(file_path, source) {
+                Result::Ok(a) => a,
+                Result::Err(code) => {
+                    self.print_errors();
+                    return Result::Err(code);
+                },
+            };
+            let ir = match self.lower(file_path, ast) {
+                Result::Ok(i) => i,
+                Result::Err(code) => {
+                    self.print_errors();
+                    return Result::Err(code);
+                },
+            };
             interpreter.load_module(ir);
         }
 
@@ -544,7 +563,7 @@ impl Driver {
         }
 
         // Lower to IR
-        match lower_file(ast, checker) {
+        match lower_file(ast, checker, file.to_string()) {
             Result::Ok(ir) => Result::Ok(ir),
             Result::Err(errs) => {
                 for err in errs {

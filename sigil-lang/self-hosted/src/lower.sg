@@ -97,9 +97,9 @@ impl LowerError {
 // ============================================================================
 
 /// Lower a complete source file to IR
-pub fn lower_file(file: !SourceFile, type_checker: !TypeChecker) -> !Result<IrModule, [LowerError]> {
+pub fn lower_file(file: !SourceFile, type_checker: !TypeChecker, path: !String) -> !Result<IrModule, [LowerError]> {
     let mut ctx = LoweringContext::new(type_checker);
-    let mut module = IrModule::new(file.path.unwrap_or("unknown"));
+    let mut module = IrModule::new(path);
 
     // Lower all items
     for item in file.items {
@@ -229,7 +229,10 @@ fn lower_param(ctx: &mut LoweringContext, param: !Parameter) -> !IrParam {
         null => "_",
     };
 
-    let ty = lower_type(ctx, param.ty);
+    let ty = match param.ty {
+        ?t => lower_type(ctx, t),
+        null => IrType::Infer,  // Closure params may have optional types
+    };
     let evidence = match param.pattern.evidentiality() {
         ?e => IrEvidence::from_typeck(EvidenceLevel::from_ast(e)),
         null => IrEvidence::Known,
@@ -255,6 +258,9 @@ fn lower_visibility(vis: !Visibility) -> !IrVisibility {
 /// Lower a type expression to IR type
 fn lower_type(ctx: &mut LoweringContext, ty: !TypeExpr) -> !IrType {
     match ty {
+        // Handle null TypeExpr gracefully (shouldn't happen but safety first)
+        null => IrType::Infer,
+
         TypeExpr::Path(path) => {
             let name = path.segments|τ{s => s.ident.name}|join("::");
             let generics = match path.segments.last() {
@@ -1089,12 +1095,12 @@ mod tests {
     fn test_ir_module_creation() {
         let type_checker = TypeChecker::new();
         let file = SourceFile {
-            path: ?"test.sigil",
+            attrs: [],
+            config: CrateConfig::default(),
             items: [],
-            shebang: null,
         };
 
-        let result = lower_file(file, type_checker);
+        let result = lower_file(file, type_checker, "test.sigil".to_string());
         assert!(result.is_ok());
     }
 }

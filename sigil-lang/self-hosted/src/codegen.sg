@@ -468,8 +468,9 @@ impl CodeGen {
         let ret_type = self.ir_type_to_c(func.return_type);
         let params = func.params|τ{p => format!("SigilValue {}", self.mangle_name(p.name))}|join(", ");
         let params = if params.is_empty() { "void" } else { params };
+        let func_name = format!("sigil_{}", self.mangle_name(func.name));
 
-        self.line(format!("{} {}({});", ret_type, self.mangle_name(func.name), params));
+        self.line(format!("{} {}({});", ret_type, func_name, params));
     }
 
     fn emit_function(mut self, func: !IrFunction) {
@@ -479,10 +480,11 @@ impl CodeGen {
         let ret_type = self.ir_type_to_c(func.return_type);
         let params = func.params|τ{p => format!("SigilValue {}", self.mangle_name(p.name))}|join(", ");
         let params = if params.is_empty() { "void" } else { params };
+        let func_name = format!("sigil_{}", self.mangle_name(func.name));
 
         self.line("");
         self.line(format!("/* Function: {} */", func.name));
-        self.line(format!("{} {}({}) {{", ret_type, self.mangle_name(func.name), params));
+        self.line(format!("{} {}({}) {{", ret_type, func_name, params));
         self.indent_push();
 
         match func.body {

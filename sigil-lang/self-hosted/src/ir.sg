@@ -258,9 +258,11 @@ pub struct IrPosition {
 
 impl IrSpan {
     pub fn from_span(span: !Span) -> !IrSpan {
+        // Span uses byte offsets, so we use those as placeholders
+        // A proper implementation would track line/column during parsing
         IrSpan {
-            start: IrPosition { line: span.line, column: span.column },
-            end: IrPosition { line: span.end_line, column: span.end_column },
+            start: IrPosition { line: span.start, column: 0 },
+            end: IrPosition { line: span.end, column: 0 },
         }
     }
 }

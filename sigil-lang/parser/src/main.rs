@@ -38,6 +38,7 @@ fn main() -> ExitCode {
         eprintln!();
         eprintln!("Commands:");
         eprintln!("  run <file>      Execute a Sigil file (interpreted)");
+        eprintln!("  run-dir <dir>   Execute all .sg files in dir (multi-module)");
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
         eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO)");
@@ -73,6 +74,19 @@ fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
             run_file(&args[2])
+        }
+        "run-dir" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing directory argument");
+                return ExitCode::from(1);
+            }
+            // Collect program args (after --)
+            let program_args: Vec<String> = if let Some(pos) = args.iter().position(|a| a == "--") {
+                args[pos+1..].to_vec()
+            } else {
+                vec![]
+            };
+            run_directory(&args[2], &program_args)
         }
         #[cfg(feature = "jit")]
         "jit" => {
@@ -198,24 +212,6 @@ fn main() -> ExitCode {
         "init" => init_project(),
         "test" => run_tests(),
         "build" => build_project(),
-        "run-dir" => {
-            // Run all .sg files in a directory as a multi-module program
-            if args.len() < 3 {
-                eprintln!("Error: missing directory argument");
-                eprintln!("Usage: sigil run-dir <directory> --main <module> [-- args...]");
-                return ExitCode::from(1);
-            }
-            let dir = &args[2];
-            let main_module = args.iter()
-                .position(|a| a == "--main")
-                .and_then(|pos| args.get(pos + 1))
-                .map(|s| s.as_str());
-            let program_args: Vec<String> = args.iter()
-                .position(|a| a == "--")
-                .map(|pos| args[pos + 1..].to_vec())
-                .unwrap_or_default();
-            run_directory(dir, main_module, &program_args)
-        }
         _ => {
             // Treat as file if it ends with .sigil or .sg
             if args[1].ends_with(".sigil") || args[1].ends_with(".sg") {
@@ -265,53 +261,48 @@ fn run_file(path: &str) -> ExitCode {
     }
 }
 
-fn run_directory(dir: &str, main_module: Option<&str>, program_args: &[String]) -> ExitCode {
+/// Run all .sg files in a directory as a multi-module program
+fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
     use std::path::Path;
 
-    // Collect all .sg files in the directory
-    let dir_path = Path::new(dir);
-    let mut files: Vec<_> = match fs::read_dir(dir_path) {
-        Ok(entries) => entries
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path().extension()
-                    .map(|ext| ext == "sg" || ext == "sigil")
-                    .unwrap_or(false)
-            })
-            .map(|e| e.path())
-            .collect(),
+    // Collect all .sg files
+    let dir = match fs::read_dir(dir_path) {
+        Ok(d) => d,
         Err(e) => {
-            eprintln!("Error reading directory '{}': {}", dir, e);
+            eprintln!("Error reading directory '{}': {}", dir_path, e);
             return ExitCode::from(1);
         }
     };
 
+    let mut files: Vec<String> = dir
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map_or(false, |ext| ext == "sg"))
+        .map(|e| e.path().to_string_lossy().to_string())
+        .collect();
+
+    files.sort(); // Sort for consistent ordering
+
     if files.is_empty() {
-        eprintln!("No .sg files found in '{}'", dir);
+        eprintln!("No .sg files found in '{}'", dir_path);
         return ExitCode::from(1);
     }
 
-    // Sort files for deterministic order
-    files.sort();
+    eprintln!("Loading {} modules from '{}':", files.len(), dir_path);
+    for f in &files {
+        let name = Path::new(f).file_name().unwrap_or_default().to_string_lossy();
+        eprintln!("  - {}", name);
+    }
 
-    // Create interpreter with stdlib
+    // Create interpreter and register stdlib
     let mut interpreter = Interpreter::new();
     register_stdlib(&mut interpreter);
 
-    // Set program arguments
-    let args_val = sigil_parser::Value::Array(std::rc::Rc::new(std::cell::RefCell::new(
-        program_args.iter()
-            .map(|s| sigil_parser::Value::String(std::rc::Rc::new(s.clone())))
-            .collect()
-    )));
-    interpreter.globals.borrow_mut().define("ARGS".to_string(), args_val);
-
-    // Parse and execute all files to load declarations
+    // Parse and execute each file to register its definitions
     for file_path in &files {
         let source = match fs::read_to_string(file_path) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("Error reading '{}': {}", file_path.display(), e);
+                eprintln!("Error reading '{}': {}", file_path, e);
                 return ExitCode::from(1);
             }
         };
@@ -320,53 +311,42 @@ fn run_directory(dir: &str, main_module: Option<&str>, program_args: &[String]) 
         let ast = match parser.parse_file() {
             Ok(ast) => ast,
             Err(e) => {
-                eprintln!("Parse error in '{}': {}", file_path.display(), e);
+                eprintln!("Parse error in '{}': {}", file_path, e);
                 return ExitCode::from(1);
             }
         };
 
-        // Load file declarations (without calling main)
-        if let Err(e) = interpreter.load_file(&ast) {
-            eprintln!("Error loading '{}': {}", file_path.display(), e);
+        // Execute to register all definitions
+        if let Err(e) = interpreter.execute(&ast) {
+            eprintln!("Error loading '{}': {}", file_path, e);
             return ExitCode::from(1);
         }
     }
 
-    // Call main function (the --main flag ensures that module is loaded last,
-    // so its main function is the one registered in the flat namespace)
-    let main_fn = "main";
+    // Create program args array
+    let args_value = sigil_parser::Value::Array(
+        std::rc::Rc::new(std::cell::RefCell::new(
+            program_args.iter()
+                .map(|s| sigil_parser::Value::String(std::rc::Rc::new(s.clone())))
+                .collect()
+        ))
+    );
 
-    // Look up and call main
-    let func_value = interpreter.globals.borrow().get(&main_fn);
-
-    // Convert program args to Sigil array of strings
-    let args_array: Vec<sigil_parser::Value> = program_args
-        .iter()
-        .map(|s| sigil_parser::Value::String(std::rc::Rc::new(s.clone())))
-        .collect();
-    let args_value = sigil_parser::Value::Array(std::rc::Rc::new(std::cell::RefCell::new(args_array)));
-
-    match func_value {
-        Some(sigil_parser::Value::Function(f)) => {
-            match interpreter.call_function(&f, vec![args_value]) {
-                Ok(value) => {
-                    if !matches!(value, sigil_parser::Value::Null) {
-                        println!("{}", value);
-                    }
+    // Try to call main with args
+    match interpreter.call_function_by_name("main", vec![args_value]) {
+        Ok(value) => {
+            // Check if result is an exit code
+            match &value {
+                sigil_parser::Value::Int(code) => ExitCode::from(*code as u8),
+                sigil_parser::Value::Null => ExitCode::SUCCESS,
+                _ => {
+                    println!("{}", value);
                     ExitCode::SUCCESS
-                }
-                Err(e) => {
-                    eprintln!("Runtime error: {}", e);
-                    ExitCode::from(1)
                 }
             }
         }
-        Some(_) => {
-            eprintln!("Error: {} is not a function", main_fn);
-            ExitCode::from(1)
-        }
-        None => {
-            eprintln!("Error: function {} not found", main_fn);
+        Err(e) => {
+            eprintln!("Runtime error: {}", e);
             ExitCode::from(1)
         }
     }
