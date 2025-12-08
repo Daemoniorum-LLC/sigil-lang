@@ -1560,6 +1560,15 @@ impl Parser {
 
                     expr = Expr::Incorporation { segments };
                 }
+                Token::As => {
+                    // Cast expression: expr as Type
+                    self.advance();
+                    let ty = self.parse_type()?;
+                    expr = Expr::Cast {
+                        expr: Box::new(expr),
+                        ty,
+                    };
+                }
                 _ => break,
             }
         }

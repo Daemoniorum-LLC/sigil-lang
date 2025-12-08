@@ -65,6 +65,9 @@ pub struct CodeGen {
 
     /// Whether we're in an expression context
     in_expr: !bool,
+
+    /// Buffer for closure functions (emitted before main code)
+    closure_buffer: !String,
 }
 
 impl CodeGen {
@@ -78,6 +81,7 @@ impl CodeGen {
             label_counter: 0,
             current_function: null,
             in_expr: false,
+            closure_buffer: String::new(),
         }
     }
 
@@ -98,10 +102,26 @@ impl CodeGen {
 
         self.line("");
 
-        // Emit function definitions
+        // Generate function bodies to a temporary buffer (this collects closures)
+        let header_code = self.output.clone();
+        self.output = String::new();
         for func in module.functions {
             self.emit_function(func);
         }
+        let func_code = self.output.clone();
+
+        // Rebuild output: header + closures + functions
+        self.output = header_code;
+
+        // Insert closure functions before main functions
+        if !self.closure_buffer.is_empty() {
+            self.line("/* Closure functions */");
+            self.output.push_str(self.closure_buffer.as_str());
+            self.line("");
+        }
+
+        // Add function bodies
+        self.output.push_str(func_code.as_str());
 
         // Emit main entry point wrapper
         self.emit_main_wrapper();
@@ -496,7 +516,21 @@ impl CodeGen {
 
     /// Mangle a Sigil name to valid C identifier
     fn mangle_name(self, name: !&str) -> !String {
+        // Check for C keywords and add prefix
+        let is_c_keyword = match name {
+            "auto" | "break" | "case" | "char" | "const" | "continue" |
+            "default" | "do" | "double" | "else" | "enum" | "extern" |
+            "float" | "for" | "goto" | "if" | "int" | "long" | "register" |
+            "return" | "short" | "signed" | "sizeof" | "static" | "struct" |
+            "switch" | "typedef" | "union" | "unsigned" | "void" | "volatile" |
+            "while" | "inline" | "restrict" | "_Bool" | "_Complex" | "_Imaginary" => true,
+            _ => false,
+        };
+
         let mut result = String::new();
+        if is_c_keyword {
+            result.push_str("sg_");
+        }
         for c in name.chars() {
             match c {
                 'a'..'z' | 'A'..'Z' | '0'..'9' => result.push(c),
@@ -580,11 +614,12 @@ impl CodeGen {
             },
 
             IrOperation::Call { function, args, evidence, .. } => {
-                let fn_name = self.mangle_name(function);
+                let fn_name = self.mangle_name(function.clone());
                 let arg_codes = args|τ{a => self.emit_operation(a)}|collect();
                 let args_str = arg_codes.join(", ");
 
                 // All functions get sigil_ prefix
+                // Note: Closure calls need special handling in the future
                 let call = format!("sigil_{}({})", fn_name, args_str);
 
                 self.with_evidence(call, evidence)
@@ -741,11 +776,36 @@ impl CodeGen {
             },
 
             IrOperation::Closure { params, body, evidence, .. } => {
-                // For closures, we'd need to emit a separate function
-                // For now, just emit a placeholder
-                let closure_name = self.fresh_temp();
-                self.line(format!("/* Closure: {} */", closure_name));
-                format!("sigil_null() /* closure */")
+                // Generate a top-level function for the closure
+                let closure_name = format!("sigil_closure_{}", self.temp_counter);
+                self.temp_counter += 1;
+
+                // Build parameter list
+                let param_names: ![String] = params|τ{p => self.mangle_name(p.name.clone())}|collect();
+                let param_decls = param_names.clone()|τ{name => format!("SigilValue {}", name)}|join(", ");
+                let param_decls = if param_decls.is_empty() { "void" } else { param_decls };
+
+                // Save current output and generate closure body
+                let saved_output = self.output.clone();
+                let saved_indent = self.indent;
+                self.output = String::new();
+                self.indent = 1;
+
+                let body_result = self.emit_operation(*body);
+                self.line(format!("return {};", body_result));
+                let body_code = self.output.clone();
+
+                // Restore output
+                self.output = saved_output;
+                self.indent = saved_indent;
+
+                // Add closure function to closure_buffer
+                self.closure_buffer.push_str(format!("static SigilValue {}({}) {{\n", closure_name, param_decls).as_str());
+                self.closure_buffer.push_str(body_code.as_str());
+                self.closure_buffer.push_str("}\n\n");
+
+                // Return the function pointer cast to SigilValue
+                format!("(SigilValue){{ .tag = TAG_CLOSURE, .evidence = SIGIL_KNOWN, .v.ptr = (void*){} }}", closure_name)
             },
 
             IrOperation::Pipeline { input, steps, evidence, .. } => {
@@ -849,6 +909,36 @@ impl CodeGen {
 
                 let expr = format!("sigil_array({}__elems, {})", temp, n);
                 self.with_evidence(expr, evidence)
+            },
+
+            IrOperation::Cast { expr, target_type, evidence, .. } => {
+                // Generate cast expression
+                let expr_code = self.emit_operation(*expr);
+
+                // Generate appropriate cast based on target type
+                let cast_code = match target_type {
+                    IrType::Primitive { name } => {
+                        match name.as_str() {
+                            "i8" | "i16" | "i32" | "i64" | "isize" |
+                            "u8" | "u16" | "u32" | "u64" | "usize" => {
+                                format!("sigil_int((int64_t){}.v.i)", expr_code)
+                            },
+                            "f32" | "f64" => {
+                                format!("sigil_float((double)({}.tag == TAG_INT ? (double){}.v.i : {}.v.f))",
+                                    expr_code, expr_code, expr_code)
+                            },
+                            "bool" => {
+                                format!("sigil_bool(sigil_truthy({}))", expr_code)
+                            },
+                            "char" => {
+                                format!("sigil_char((char){}.v.i)", expr_code)
+                            },
+                            _ => expr_code.clone(),
+                        }
+                    },
+                    _ => expr_code.clone(),
+                };
+                self.with_evidence(cast_code, evidence)
             },
 
             IrOperation::MethodCall { receiver, method, args, evidence, .. } => {

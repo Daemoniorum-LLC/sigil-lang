@@ -869,6 +869,18 @@ fn lower_expr(ctx: &mut LoweringContext, expr: !Expr) -> !IrOperation {
             }
         },
 
+        Expr::Cast { expr, ty } => {
+            let ir_expr = lower_expr(ctx, *expr);
+            let target_type = lower_type(ctx, ty);
+
+            IrOperation::Cast {
+                expr: Box::new(ir_expr),
+                target_type: target_type.clone(),
+                ty: target_type,
+                evidence: IrEvidence::Known,
+            }
+        },
+
         _ => {
             // Fallback for unhandled expressions
             ctx.error(LowerError::new("unsupported expression type"));
