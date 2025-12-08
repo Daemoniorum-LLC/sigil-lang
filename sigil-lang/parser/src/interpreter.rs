@@ -1061,10 +1061,17 @@ impl Interpreter {
             Expr::Assign { target, value } => self.eval_assign(target, value),
             Expr::Let { pattern, value } => {
                 // Let expression (for if-let, while-let patterns)
-                // Evaluate the value and bind it to the pattern
+                // Evaluate the value and check if pattern matches
                 let val = self.evaluate(value)?;
-                self.bind_pattern(pattern, val.clone())?;
-                Ok(val)
+                // Check if pattern matches - return true/false for if-let semantics
+                if self.pattern_matches(pattern, &val)? {
+                    // Pattern matches - bind variables and return true
+                    self.bind_pattern(pattern, val)?;
+                    Ok(Value::Bool(true))
+                } else {
+                    // Pattern doesn't match - return false without binding
+                    Ok(Value::Bool(false))
+                }
             }
             Expr::Await {
                 expr: inner,
@@ -1779,6 +1786,9 @@ impl Interpreter {
                         fields: None,
                     });
                 } else {
+                    if enum_name == "Item" {
+                        eprintln!("DEBUG creating Item::{} variant with {} fields", variant_name, arg_values.len());
+                    }
                     return Ok(Value::Variant {
                         enum_name,
                         variant_name,
@@ -2264,10 +2274,13 @@ impl Interpreter {
                 // Enum variant with fields: Result::Ok(value)
                 // Unwrap any refs first
                 let unwrapped = Self::unwrap_all(&value);
-                eprintln!("DEBUG bind_pattern TupleStruct: path={:?}, value type={:?}",
-                    path.segments.iter().map(|s| &s.ident.name).collect::<Vec<_>>(),
+                let path_str = path.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("::");
+                eprintln!("DEBUG bind_pattern TupleStruct: path={}, value type={:?}",
+                    path_str,
                     std::mem::discriminant(&unwrapped));
-                if let Value::Variant { variant_name, fields: variant_fields, .. } = &unwrapped {
+                if let Value::Variant { variant_name, fields: variant_fields, enum_name } = &unwrapped {
+                    eprintln!("DEBUG   Variant {}::{}, fields={}", enum_name, variant_name,
+                        if variant_fields.is_some() { format!("Some(len={})", variant_fields.as_ref().unwrap().len()) } else { "None".to_string() });
                     let pattern_variant = path.segments.last().map(|s| s.ident.name.as_str()).unwrap_or("");
                     if pattern_variant == variant_name {
                         // Unwrap fields and bind
@@ -2279,6 +2292,9 @@ impl Interpreter {
                                     self.bind_pattern(pat, val.clone())?;
                                 }
                             }
+                        } else if !fields.is_empty() {
+                            // Pattern expects fields but variant has none
+                            eprintln!("DEBUG TupleStruct: pattern expects {} fields but variant has none", fields.len());
                         }
                     }
                     Ok(())
@@ -2372,7 +2388,14 @@ impl Interpreter {
             }
         }
 
-        Err(RuntimeError::new("No matching pattern"))
+        // Debug: show what value we're trying to match with discriminant
+        eprintln!("DEBUG No matching pattern for value: {} (discriminant: {:?})",
+            self.format_value(&value), std::mem::discriminant(&value));
+        // Also show the arms
+        for (i, arm) in arms.iter().enumerate() {
+            eprintln!("DEBUG   arm {}: {:?}", i, arm.pattern);
+        }
+        Err(RuntimeError::new(format!("No matching pattern for {}", self.format_value(&value))))
     }
 
     fn pattern_matches(&mut self, pattern: &Pattern, value: &Value) -> Result<bool, RuntimeError> {
@@ -2389,13 +2412,15 @@ impl Interpreter {
         match (pattern, &value) {
             (Pattern::Wildcard, _) => Ok(true),
             // Pattern::Ident with evidentiality - ?g matches Some/non-null, !g matches Known values
-            (Pattern::Ident { evidentiality: Some(Evidentiality::Uncertain), .. }, val) => {
+            (Pattern::Ident { evidentiality: Some(Evidentiality::Uncertain), name, .. }, val) => {
                 // ?g pattern should match non-null values (i.e., Option::Some)
-                match val {
-                    Value::Null => Ok(false),
-                    Value::Variant { variant_name, .. } if variant_name == "None" => Ok(false),
-                    _ => Ok(true),
-                }
+                let matches = match val {
+                    Value::Null => false,
+                    Value::Variant { variant_name, .. } if variant_name == "None" => false,
+                    _ => true,
+                };
+                eprintln!("DEBUG pattern_matches ?{}: value={} => {}", name.name, self.format_value(val), matches);
+                Ok(matches)
             }
             (Pattern::Ident { .. }, _) => Ok(true),
             (Pattern::Literal(lit), val) => {
