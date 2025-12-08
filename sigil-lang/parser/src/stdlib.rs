@@ -6013,6 +6013,119 @@ fn register_fs(interp: &mut Interpreter) {
             None => Ok(Value::Null),
         }
     });
+
+    // ============================================================================
+    // FFI-style functions for self-hosted compiler compatibility
+    // These provide the low-level file I/O that the self-hosted compiler expects
+    // ============================================================================
+
+    // Store last read file content for sigil_file_len()
+    use std::cell::RefCell;
+    thread_local! {
+        static LAST_FILE_CONTENT: RefCell<String> = RefCell::new(String::new());
+    }
+
+    // sigil_read_file - read file content (FFI-compatible interface)
+    // Takes path pointer and length, returns pointer to content
+    // In interpreter, we fake the pointer API and just read the file
+    define(interp, "sigil_read_file", Some(2), |_, args| {
+        // Look up the path from either a string or a fake pointer ID
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Int(ptr_id) => {
+                // Look up the string from the fake pointer map
+                use crate::interpreter::FAKE_PTR_MAP;
+                FAKE_PTR_MAP.with(|map| {
+                    map.borrow().get(ptr_id).cloned()
+                }).ok_or_else(|| RuntimeError::new(format!(
+                    "sigil_read_file: invalid pointer {}", ptr_id
+                )))?
+            }
+            _ => return Err(RuntimeError::new("sigil_read_file() requires string path")),
+        };
+
+        match std::fs::read_to_string(&path) {
+            Ok(content) => {
+                // Store content for sigil_file_len
+                LAST_FILE_CONTENT.with(|last| {
+                    *last.borrow_mut() = content.clone();
+                });
+                // Return the content as a string (not a pointer in interpreted mode)
+                Ok(Value::String(Rc::new(content)))
+            }
+            Err(_) => Ok(Value::Null), // Return null for error (like a null pointer)
+        }
+    });
+
+    // sigil_file_len - get length of last read file
+    define(interp, "sigil_file_len", Some(0), |_, _| {
+        LAST_FILE_CONTENT.with(|last| {
+            Ok(Value::Int(last.borrow().len() as i64))
+        })
+    });
+
+    // sigil_write_file - write content to file
+    define(interp, "sigil_write_file", Some(4), |_, args| {
+        // In interpreted mode, we receive the actual strings, not pointers
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("sigil_write_file() requires string path")),
+        };
+        let content = match &args[2] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("sigil_write_file() requires string content")),
+        };
+
+        match std::fs::write(&path, content) {
+            Ok(()) => Ok(Value::Bool(true)),
+            Err(_) => Ok(Value::Bool(false)),
+        }
+    });
+
+    // write - POSIX write() syscall for stdout/stderr
+    define(interp, "write", Some(3), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("write() requires int fd")),
+        };
+
+        // Get the content - could be a string, a fake pointer ID, or something else
+        let content = match &args[1] {
+            Value::String(s) => s.to_string(),
+            Value::Int(ptr_id) => {
+                // Look up the string from the fake pointer map
+                use crate::interpreter::FAKE_PTR_MAP;
+                FAKE_PTR_MAP.with(|map| {
+                    map.borrow().get(ptr_id).cloned()
+                }).unwrap_or_else(|| format!("{}", ptr_id))
+            }
+            _ => format!("{}", args[1]),
+        };
+
+        // args[2] is the length - we use the actual string length in interpreted mode
+        let len = match &args[2] {
+            Value::Int(n) => *n as usize,
+            _ => content.len(),
+        };
+
+        let output = &content[..std::cmp::min(len, content.len())];
+
+        match fd {
+            1 => {
+                print!("{}", output);
+                use std::io::Write;
+                std::io::stdout().flush().ok();
+                Ok(Value::Int(output.len() as i64))
+            }
+            2 => {
+                eprint!("{}", output);
+                use std::io::Write;
+                std::io::stderr().flush().ok();
+                Ok(Value::Int(output.len() as i64))
+            }
+            _ => Err(RuntimeError::new(format!("write() unsupported fd: {}", fd))),
+        }
+    });
 }
 
 // ============================================================================

@@ -1905,7 +1905,7 @@ impl<'a> Parser<'a> {
 
     // === Expression parsing (Pratt parser) ===
 
-    fn parse_expr(&mut self) -> ParseResult<Expr> {
+    pub fn parse_expr(&mut self) -> ParseResult<Expr> {
         let lhs = self.parse_expr_bp(0)?;
 
         // Check for assignment: expr = value
@@ -2198,6 +2198,20 @@ impl<'a> Parser<'a> {
                     Token::Amp => "&".to_string(),
                     Token::Pipe => "|".to_string(),
                     Token::Underscore => "_".to_string(),
+                    Token::SelfLower => "self".to_string(),
+                    Token::SelfUpper => "Self".to_string(),
+                    Token::Plus => "+".to_string(),
+                    Token::Minus => "-".to_string(),
+                    Token::Star => "*".to_string(),
+                    Token::Slash => "/".to_string(),
+                    Token::Percent => "%".to_string(),
+                    Token::Mut => "mut".to_string(),
+                    Token::Let => "let".to_string(),
+                    Token::If => "if".to_string(),
+                    Token::Else => "else".to_string(),
+                    Token::True => "true".to_string(),
+                    Token::False => "false".to_string(),
+                    Token::Null => "null".to_string(),
                     _ => format!("{:?}", token),
                 };
                 if !tokens.is_empty() {
@@ -4999,6 +5013,7 @@ impl<'a> Parser<'a> {
                 | Some(Token::Static)
                 | Some(Token::Actor)
                 | Some(Token::Pub)
+                | Some(Token::Extern)
         )
     }
 
