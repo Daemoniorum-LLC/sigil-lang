@@ -367,6 +367,10 @@ impl CodeGen {
         self.line("");
         self.line("/* String operations */");
         self.line("SigilValue sigil_concat(SigilValue a, SigilValue b);");
+        self.line("");
+        self.line("/* Struct operations */");
+        self.line("SigilValue sigil_struct(const char* name, const char** names, SigilValue* values, size_t n);");
+        self.line("SigilValue sigil_struct_field(SigilValue v, const char* field);");
     }
 
     // ========================================================================
@@ -665,13 +669,6 @@ impl CodeGen {
                 self.with_evidence(result, evidence)
             },
 
-            IrOperation::Field { expr, field, evidence, .. } => {
-                let obj = self.emit_operation(*expr);
-                // For now, assume struct field access
-                let result = format!("{}.{}", obj, self.mangle_name(field));
-                self.with_evidence(result, evidence)
-            },
-
             IrOperation::Loop { variant, condition, iterator, body, .. } => {
                 let result_var = self.fresh_temp();
                 self.line(format!("SigilValue {} = sigil_unit();", result_var));
@@ -807,7 +804,8 @@ impl CodeGen {
                     let field = fields[i];
                     let field_name = field.0;
                     let field_value = field.1;
-                    field_names_parts.push(format!("\"{}\"", field_name));
+                    let quoted = format!("\"{}\"", field_name);
+                    field_names_parts.push(quoted);
                     let val = self.emit_operation(field_value);
                     self.line(format!("{}__values[{}] = {};", temp, i, val));
                     i = i + 1;

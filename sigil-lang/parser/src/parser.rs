@@ -2175,7 +2175,7 @@ impl<'a> Parser<'a> {
                     Token::Ident(s) => s.clone(),
                     Token::IntLit(s) => s.clone(),
                     Token::FloatLit(s) => s.clone(),
-                    Token::StringLit(s) => format!("\"{}\"", s),
+                    Token::StringLit(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
                     Token::CharLit(c) => format!("'{}'", c),
                     Token::Comma => ",".to_string(),
                     Token::Colon => ":".to_string(),
