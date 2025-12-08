@@ -215,6 +215,8 @@ impl CodeGen {
         self.line("#define TAG_CLOSURE 9");
         self.line("#define TAG_REF     10");
         self.line("#define TAG_NULL    11");
+        self.line("#define TAG_OPTION_NONE 12");
+        self.line("#define TAG_OPTION_SOME 13");
         self.line("");
 
         // Core value type
@@ -389,9 +391,9 @@ impl CodeGen {
         self.line("SigilValue sigil_last(SigilValue arr);");
         self.line("");
         self.line("/* Assertions */");
-        self.line("SigilValue sigil_assert(SigilValue cond);");
+        self.line("SigilValue sigil_assert(SigilValue cond, SigilValue msg);");
         self.line("SigilValue sigil_assert_eq(SigilValue a, SigilValue b);");
-        self.line("void sigil_panic(const char* msg);");
+        self.line("SigilValue sigil_panic(SigilValue msg);");
         self.line("");
         self.line("/* String operations */");
         self.line("SigilValue sigil_concat(SigilValue a, SigilValue b);");
@@ -399,6 +401,12 @@ impl CodeGen {
         self.line("/* Struct operations */");
         self.line("SigilValue sigil_struct(const char* name, const char** names, SigilValue* values, size_t n);");
         self.line("SigilValue sigil_struct_field(SigilValue v, const char* field);");
+        self.line("");
+        self.line("/* Option helpers */");
+        self.line("SigilValue sigil_Option____Some(SigilValue v);");
+        self.line("SigilValue sigil_is_some(SigilValue v);");
+        self.line("SigilValue sigil_is_none(SigilValue v);");
+        self.line("extern const SigilValue Option____None;");
     }
 
     // ========================================================================
@@ -1113,6 +1121,60 @@ impl CodeGen {
                 self.with_evidence(call, evidence)
             },
 
+            IrOperation::Match { scrutinee, arms, evidence, .. } => {
+                // Generate match as if-else chain
+                let scrutinee_code = self.emit_operation(*scrutinee);
+                let scrutinee_var = self.fresh_temp();
+                let result_var = self.fresh_temp();
+
+                self.line(format!("SigilValue {} = {};", scrutinee_var, scrutinee_code));
+                self.line(format!("SigilValue {};", result_var));
+
+                let mut first = true;
+                for arm in arms {
+                    let cond = self.emit_pattern_condition(arm.pattern.clone(), scrutinee_var.clone());
+
+                    if first {
+                        self.line(format!("if ({}) {{", cond));
+                        first = false;
+                    } else {
+                        self.line(format!("}} else if ({}) {{", cond));
+                    }
+                    self.indent_push();
+
+                    // Bind pattern variables
+                    self.emit_pattern_binding(arm.pattern.clone(), scrutinee_var.clone());
+
+                    // Handle guard if present
+                    match arm.guard {
+                        ?guard => {
+                            let guard_code = self.emit_operation(guard);
+                            self.line(format!("if (sigil_truthy({})) {{", guard_code));
+                            self.indent_push();
+                            let body_result = self.emit_operation(arm.body.clone());
+                            self.line(format!("{} = {};", result_var, body_result));
+                            self.indent_pop();
+                            self.line("}");
+                        },
+                        null => {
+                            let body_result = self.emit_operation(arm.body.clone());
+                            self.line(format!("{} = {};", result_var, body_result));
+                        },
+                    }
+
+                    self.indent_pop();
+                }
+
+                // Add else clause for no match
+                self.line("} else {");
+                self.indent_push();
+                self.line(format!("{} = sigil_unit();", result_var));
+                self.indent_pop();
+                self.line("}");
+
+                self.with_evidence(result_var, evidence)
+            },
+
             _ => {
                 self.line("/* Unsupported operation */");
                 "sigil_unit()"
@@ -1132,12 +1194,79 @@ impl CodeGen {
                     self.emit_pattern_binding(elem, elem_val);
                 }
             },
+            IrPattern::TupleStruct { path, fields, .. } => {
+                // For Option::Some(v), extract inner value from the pointer
+                if path.contains("Some") {
+                    for (i, elem) in fields.iter().enumerate() {
+                        let inner_val = format!("*(SigilValue*){}.v.ptr", value);
+                        self.emit_pattern_binding(elem, inner_val);
+                    }
+                } else {
+                    // Other tuple structs - bind fields
+                    for (i, elem) in fields.iter().enumerate() {
+                        let field_val = format!("{}.v.tup.fields[{}]", value, i);
+                        self.emit_pattern_binding(elem, field_val);
+                    }
+                }
+            },
             IrPattern::Wildcard => {
                 // No binding needed
             },
             _ => {
                 self.line(format!("/* Pattern binding: {} = {} */", "complex", value));
             },
+        }
+    }
+
+    /// Emit condition check for a pattern (used in match expressions)
+    fn emit_pattern_condition(self, pattern: !IrPattern, value: !String) -> !String {
+        match pattern {
+            IrPattern::Wildcard => "1".to_string(),  // Always matches
+            IrPattern::Ident { .. } => "1".to_string(),  // Binds any value
+            IrPattern::Literal { value: lit_val } => {
+                // Compare against literal
+                match lit_val {
+                    LiteralValue::Int(n) => format!("({}.tag == TAG_INT && {}.v.i == {}LL)", value, value, n),
+                    LiteralValue::Bool(b) => format!("({}.tag == TAG_BOOL && {}.v.b == {})", value, value, if b { "true" } else { "false" }),
+                    LiteralValue::Char(c) => format!("({}.tag == TAG_CHAR && {}.v.c == '{}')", value, value, c),
+                    LiteralValue::String(s) => format!("({}.tag == TAG_STRING && strcmp({}.v.s, \"{}\") == 0)", value, value, s),
+                    LiteralValue::Null => format!("{}.tag == TAG_NULL", value),
+                    _ => "1".to_string(),
+                }
+            },
+            IrPattern::TupleStruct { path, .. } => {
+                // Match on variant constructors
+                if path.contains("None") || path.ends_with("::None") {
+                    format!("({}.tag == TAG_NULL)", value)
+                } else if path.contains("Some") || path.ends_with("::Some") {
+                    format!("({}.tag == TAG_OPTION_SOME)", value)
+                } else if path.contains("Ok") || path.ends_with("::Ok") {
+                    format!("({}.tag == 0)", value)  // Placeholder
+                } else if path.contains("Err") || path.ends_with("::Err") {
+                    format!("({}.tag == 1)", value)  // Placeholder
+                } else {
+                    "1".to_string()  // Default: always matches
+                }
+            },
+            IrPattern::Path { path } => {
+                // Match on unit variants like None
+                if path.contains("None") || path.ends_with("::None") {
+                    format!("({}.tag == TAG_NULL)", value)
+                } else {
+                    "1".to_string()
+                }
+            },
+            IrPattern::Tuple { elements } => {
+                // Check tuple tag and recursively check elements
+                let mut conditions: ![String] = [];
+                conditions.push(format!("{}.tag == TAG_TUPLE", value));
+                for (i, elem) in elements.iter().enumerate() {
+                    let elem_val = format!("{}.v.tup.fields[{}]", value, i);
+                    conditions.push(self.emit_pattern_condition(elem, elem_val));
+                }
+                format!("({})", conditions.join(" && "))
+            },
+            _ => "1".to_string(),  // Default: always matches
         }
     }
 
@@ -1459,11 +1588,11 @@ impl CodeGen {
         self.line("");
 
         // Assert
-        self.line("SigilValue sigil_assert(SigilValue cond) {");
+        self.line("SigilValue sigil_assert(SigilValue cond, SigilValue msg) {");
         self.indent_push();
         self.line("if (!sigil_truthy(cond)) {");
         self.indent_push();
-        self.line("fprintf(stderr, \"Assertion failed\\n\");");
+        self.line("fprintf(stderr, \"Assertion failed: %s\\n\", msg.tag == TAG_STRING ? msg.v.s : \"<no message>\");");
         self.line("exit(1);");
         self.indent_pop();
         self.line("}");
@@ -1485,10 +1614,11 @@ impl CodeGen {
         self.line("}");
         self.line("");
 
-        self.line("void sigil_panic(const char* msg) {");
+        self.line("SigilValue sigil_panic(SigilValue msg) {");
         self.indent_push();
-        self.line("fprintf(stderr, \"panic: %s\\n\", msg);");
+        self.line("fprintf(stderr, \"panic: %s\\n\", msg.tag == TAG_STRING ? msg.v.s : \"<no message>\");");
         self.line("exit(1);");
+        self.line("return sigil_unit(); /* unreachable */");
         self.indent_pop();
         self.line("}");
         self.line("");
@@ -1537,6 +1667,32 @@ impl CodeGen {
         self.indent_pop();
         self.line("}");
         self.line("return sigil_null();");
+        self.indent_pop();
+        self.line("}");
+        self.line("");
+
+        // Option helpers - using a tagged variant representation
+        // We use TAG_NULL for None and a wrapper struct for Some
+        self.line("/* Option helpers */");
+        self.line("const SigilValue Option____None = { .tag = TAG_NULL, .evidence = SIGIL_KNOWN };");
+        self.line("");
+        self.line("SigilValue sigil_Option____Some(SigilValue v) {");
+        self.indent_push();
+        self.line("SigilValue* inner = (SigilValue*)malloc(sizeof(SigilValue));");
+        self.line("*inner = v;");
+        self.line("return (SigilValue){ .tag = TAG_OPTION_SOME, .evidence = SIGIL_KNOWN, .v.ptr = inner };");
+        self.indent_pop();
+        self.line("}");
+        self.line("");
+        self.line("SigilValue sigil_is_some(SigilValue v) {");
+        self.indent_push();
+        self.line("return sigil_bool(v.tag == TAG_OPTION_SOME);");
+        self.indent_pop();
+        self.line("}");
+        self.line("");
+        self.line("SigilValue sigil_is_none(SigilValue v) {");
+        self.indent_push();
+        self.line("return sigil_bool(v.tag == TAG_NULL || v.tag == TAG_OPTION_NONE);");
         self.indent_pop();
         self.line("}");
     }
