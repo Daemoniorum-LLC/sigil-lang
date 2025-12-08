@@ -195,6 +195,7 @@ pub struct StructAttrs {
 /// A complete Sigil source file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SourceFile {
+    pub path: ?String,  // Source file path (set by driver)
     pub attrs: ![Attribute],
     pub config: !CrateConfig,
     pub items: ![Spanned<Item>],

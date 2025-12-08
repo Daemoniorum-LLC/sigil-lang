@@ -114,9 +114,9 @@ pub mod llvm {
             opt_level: OptLevel,
             compile_mode: CompileMode,
         ) -> Result<Self, String> {
-            // Initialize native target for proper code generation
-            Target::initialize_native(&InitializationConfig::default())
-                .map_err(|e| e.to_string())?;
+            // Initialize all targets for proper code generation
+            // Use initialize_all as fallback for systems where native init might fail
+            Target::initialize_all(&InitializationConfig::default());
 
             let module = context.create_module("sigil_main");
             let builder = context.create_builder();
@@ -403,6 +403,25 @@ pub mod llvm {
                     Ok(None)
                 }
                 ast::Stmt::Item(_) => Ok(None),
+                ast::Stmt::LetElse { pattern, init, .. } => {
+                    // LetElse is like let but with an else branch for refutable patterns
+                    // For now, treat it like a regular let
+                    if let ast::Pattern::Ident {
+                        name: ref ident, ..
+                    } = pattern
+                    {
+                        let init_val = self.compile_expr(fn_value, scope, init)?;
+                        let alloca = self
+                            .builder
+                            .build_alloca(self.context.i64_type(), &ident.name)
+                            .map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_store(alloca, init_val)
+                            .map_err(|e| e.to_string())?;
+                        scope.vars.insert(ident.name.clone(), alloca);
+                    }
+                    Ok(None)
+                }
             }
         }
 
@@ -963,8 +982,7 @@ pub mod llvm {
 
         /// Run LLVM optimization passes
         fn run_llvm_optimizations(&self) -> Result<(), String> {
-            Target::initialize_native(&InitializationConfig::default())
-                .map_err(|e| e.to_string())?;
+            Target::initialize_all(&InitializationConfig::default());
 
             let triple = TargetMachine::get_default_triple();
             let target = Target::from_triple(&triple).map_err(|e| e.to_string())?;
@@ -1003,6 +1021,9 @@ pub mod llvm {
 
         /// Create JIT execution engine and run
         pub fn run(&mut self) -> Result<i64, String> {
+            // Initialize targets for JIT execution
+            Target::initialize_x86(&InitializationConfig::default());
+
             // Verify module before execution
             if let Err(msg) = self.module.verify() {
                 return Err(format!("Module verification failed: {}", msg.to_string()));
@@ -1077,8 +1098,7 @@ pub mod llvm {
 
         /// Write object file
         pub fn write_object_file(&self, path: &Path) -> Result<(), String> {
-            Target::initialize_native(&InitializationConfig::default())
-                .map_err(|e| e.to_string())?;
+            Target::initialize_all(&InitializationConfig::default());
 
             let triple = TargetMachine::get_default_triple();
             let target = Target::from_triple(&triple).map_err(|e| e.to_string())?;

@@ -361,9 +361,27 @@ impl Driver {
         let mut interpreter = Interpreter::new();
 
         for file_path in self.config.input_files {
-            let source = self.read_file(file_path)?;
-            let ast = self.parse(file_path, source)?;
-            let ir = self.lower(file_path, ast)?;
+            let source = match self.read_file(file_path) {
+                Result::Ok(s) => s,
+                Result::Err(code) => {
+                    self.print_errors();
+                    return Result::Err(code);
+                },
+            };
+            let ast = match self.parse(file_path, source) {
+                Result::Ok(a) => a,
+                Result::Err(code) => {
+                    self.print_errors();
+                    return Result::Err(code);
+                },
+            };
+            let ir = match self.lower(file_path, ast) {
+                Result::Ok(i) => i,
+                Result::Err(code) => {
+                    self.print_errors();
+                    return Result::Err(code);
+                },
+            };
             interpreter.load_module(ir);
         }
 
