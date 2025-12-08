@@ -1450,13 +1450,9 @@ impl Interpreter {
                 return Ok(val);
             }
 
-            // Try looking up the last segment (for Math·sqrt -> sqrt)
-            let last_name = &path.segments.last().unwrap().ident.name;
-            if let Some(val) = self.environment.borrow().get(last_name) {
-                return Ok(val);
-            }
-
-            // Check for enum variant syntax (EnumName::Variant)
+            // Check for enum variant syntax FIRST (EnumName::Variant)
+            // This must come before looking up just the last segment to avoid
+            // returning a built-in function instead of the actual variant
             if path.segments.len() == 2 {
                 let type_name = &path.segments[0].ident.name;
                 let variant_name = &path.segments[1].ident.name;
@@ -1476,6 +1472,12 @@ impl Interpreter {
                         }
                     }
                 }
+            }
+
+            // Try looking up the last segment (for Math·sqrt -> sqrt)
+            let last_name = &path.segments.last().unwrap().ident.name;
+            if let Some(val) = self.environment.borrow().get(last_name) {
+                return Ok(val);
             }
 
             // Check for variant constructor in variant_constructors table

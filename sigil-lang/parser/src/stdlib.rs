@@ -393,23 +393,25 @@ fn register_core(interp: &mut Interpreter) {
         })
     });
 
-    // Option::None - create None variant
-    define(interp, "Option·None", Some(0), |_, _| {
-        Ok(Value::Variant {
+    // Option::None - create None variant (direct value, not a function)
+    interp.globals.borrow_mut().define(
+        "Option·None".to_string(),
+        Value::Variant {
             enum_name: "Option".to_string(),
             variant_name: "None".to_string(),
             fields: None,
-        })
-    });
+        },
+    );
 
-    // None shorthand (without Option:: prefix)
-    define(interp, "None", Some(0), |_, _| {
-        Ok(Value::Variant {
+    // None shorthand (without Option:: prefix) - direct value
+    interp.globals.borrow_mut().define(
+        "None".to_string(),
+        Value::Variant {
             enum_name: "Option".to_string(),
             variant_name: "None".to_string(),
             fields: None,
-        })
-    });
+        },
+    );
 
     // Map::new - create empty map
     define(interp, "Map·new", Some(0), |_, _| {
