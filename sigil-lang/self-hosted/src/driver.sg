@@ -555,6 +555,7 @@ impl Driver {
             Result::Ok(_) => {},
             Result::Err(errs) => {
                 for err in errs {
+                    eprintln(format!("Type error: {}", err.message));
                     self.errors.push(CompileError::new(err.message)
                         .with_file(file.to_string()));
                 }

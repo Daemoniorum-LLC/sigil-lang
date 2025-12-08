@@ -1171,8 +1171,10 @@ impl Interpreter {
                                 }
                             }
                             ("Result", "Err") => {
+                                eprintln!("DEBUG Try propagating Result::Err with fields: {:?}", fields);
                                 let err_msg = if let Some(f) = fields {
                                     let first = f.first().cloned().unwrap_or(Value::Null);
+                                    eprintln!("DEBUG Try error first value: {}", first);
                                     // Try to get more detail from the error
                                     match &first {
                                         Value::Struct { name, fields: sf } => {
@@ -1744,6 +1746,32 @@ impl Interpreter {
                     });
                 }
             }
+
+            // Check for built-in type constructors (Map::new, String::new, etc.)
+            let segments: Vec<&str> = path.segments.iter().map(|s| s.ident.name.as_str()).collect();
+            match segments.as_slice() {
+                ["Map", "new"] => {
+                    // Create a new empty Map (represented as a struct with HashMap fields)
+                    return Ok(Value::Struct {
+                        name: "Map".to_string(),
+                        fields: Rc::new(RefCell::new(HashMap::new())),
+                    });
+                }
+                ["String", "new"] => {
+                    return Ok(Value::String(Rc::new(String::new())));
+                }
+                ["Vec", "new"] | ["Array", "new"] => {
+                    return Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))));
+                }
+                ["Box", "new"] => {
+                    // Box::new(value) - just return the value (no heap allocation in interpreter)
+                    if args.len() == 1 {
+                        return self.evaluate(&args[0]);
+                    }
+                    return Err(RuntimeError::new("Box::new expects 1 argument"));
+                }
+                _ => {}
+            }
         }
 
         let func = self.evaluate(func_expr)?;
@@ -2077,9 +2105,11 @@ impl Interpreter {
                 Ok(())
             }
             Pattern::Tuple(patterns) => {
+                // Unwrap evidential wrappers first
+                let unwrapped = Self::unwrap_all(&value);
                 eprintln!("DEBUG bind_pattern Tuple: patterns.len()={}, value type={:?}",
-                    patterns.len(), std::mem::discriminant(&value));
-                match value {
+                    patterns.len(), std::mem::discriminant(&unwrapped));
+                match unwrapped {
                     Value::Tuple(values) => {
                         if patterns.len() != values.len() {
                             return Err(RuntimeError::new("Tuple pattern size mismatch"));
@@ -3085,6 +3115,14 @@ impl Interpreter {
                     // Clone the struct value
                     return Ok(recv.clone());
                 }
+                if method.name == "to_string" {
+                    // Generic to_string for structs - returns a debug representation
+                    let field_str = fields.borrow().iter()
+                        .map(|(k, v)| format!("{}: {}", k, v))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return Ok(Value::String(Rc::new(format!("{} {{ {} }}", name, field_str))));
+                }
 
                 // Pattern methods - for AST patterns stored as structs (Pattern::Ident, Pattern::Tuple, etc.)
                 if name.starts_with("Pattern::") {
@@ -3099,8 +3137,26 @@ impl Interpreter {
                         "name" | "binding_name" => {
                             // Return the name field from the pattern struct (for binding purposes)
                             if let Some(n) = fields.borrow().get("name") {
-                                return Ok(n.clone());
+                                // The name field might be an Ident struct with a nested "name" field
+                                // Extract the inner string if that's the case
+                                let result = match &n {
+                                    Value::Struct { fields: inner_fields, .. } => {
+                                        if let Some(inner_name) = inner_fields.borrow().get("name") {
+                                            eprintln!("DEBUG binding_name: returning inner name {} from {}", inner_name, name);
+                                            inner_name.clone()
+                                        } else {
+                                            eprintln!("DEBUG binding_name: returning struct {} from {}", n, name);
+                                            n.clone()
+                                        }
+                                    }
+                                    _ => {
+                                        eprintln!("DEBUG binding_name: returning {} from {}", n, name);
+                                        n.clone()
+                                    }
+                                };
+                                return Ok(result);
                             }
+                            eprintln!("DEBUG binding_name: 'name' field not found in {}, fields: {:?}", name, fields.borrow().keys().collect::<Vec<_>>());
                             // For Pattern::Ident, name is the binding name
                             return Ok(Value::Null);
                         }
@@ -3116,6 +3172,76 @@ impl Interpreter {
                         }
                         "is_wildcard" => {
                             return Ok(Value::Bool(name == "Pattern::Wildcard"));
+                        }
+                        "clone" => {
+                            return Ok(recv.clone());
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Map methods - for built-in hash map operations
+                if name == "Map" {
+                    match method.name.as_str() {
+                        "get" => {
+                            // map.get(key) -> ?value
+                            if arg_values.len() != 1 {
+                                return Err(RuntimeError::new("Map.get expects 1 argument"));
+                            }
+                            let key = match &arg_values[0] {
+                                Value::String(s) => s.to_string(),
+                                Value::Int(n) => n.to_string(),
+                                other => format!("{:?}", other),
+                            };
+                            if let Some(val) = fields.borrow().get(&key) {
+                                return Ok(val.clone());
+                            }
+                            return Ok(Value::Null);
+                        }
+                        "insert" => {
+                            // map.insert(key, value)
+                            if arg_values.len() != 2 {
+                                return Err(RuntimeError::new("Map.insert expects 2 arguments"));
+                            }
+                            let key = match &arg_values[0] {
+                                Value::String(s) => s.to_string(),
+                                Value::Int(n) => n.to_string(),
+                                other => format!("{:?}", other),
+                            };
+                            eprintln!("DEBUG Map.insert: key='{}', value={}", key, arg_values[1]);
+                            fields.borrow_mut().insert(key, arg_values[1].clone());
+                            return Ok(Value::Null);
+                        }
+                        "contains_key" => {
+                            if arg_values.len() != 1 {
+                                return Err(RuntimeError::new("Map.contains_key expects 1 argument"));
+                            }
+                            let key = match &arg_values[0] {
+                                Value::String(s) => s.to_string(),
+                                Value::Int(n) => n.to_string(),
+                                other => format!("{:?}", other),
+                            };
+                            return Ok(Value::Bool(fields.borrow().contains_key(&key)));
+                        }
+                        "len" => {
+                            return Ok(Value::Int(fields.borrow().len() as i64));
+                        }
+                        "is_empty" => {
+                            return Ok(Value::Bool(fields.borrow().is_empty()));
+                        }
+                        "keys" => {
+                            let keys: Vec<Value> = fields.borrow()
+                                .keys()
+                                .map(|k| Value::String(Rc::new(k.clone())))
+                                .collect();
+                            return Ok(Value::Array(Rc::new(RefCell::new(keys))));
+                        }
+                        "values" => {
+                            let vals: Vec<Value> = fields.borrow()
+                                .values()
+                                .cloned()
+                                .collect();
+                            return Ok(Value::Array(Rc::new(RefCell::new(vals))));
                         }
                         "clone" => {
                             return Ok(recv.clone());
