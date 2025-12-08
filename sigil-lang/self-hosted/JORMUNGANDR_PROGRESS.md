@@ -3,7 +3,11 @@
 ## Overview
 The Jormungandr initiative aims to make Sigil self-hosting - compiling the Sigil compiler using itself. This document tracks progress on running the self-hosted compiler (in `self-hosted/src/`) through the Rust interpreter to compile Sigil programs to C code.
 
-## Current Status: Struct Support (Working!)
+## Current Status: span.sg Parsing Success!
+
+**Major Milestone**: The self-hosted parser can now successfully parse span.sg!
+
+The compilation pipeline progresses through parsing → type checking, but fails during type checking due to missing associated function resolution (e.g., `Span::new()`).
 
 ### What's Working
 
@@ -20,8 +24,47 @@ The Jormungandr initiative aims to make Sigil self-hosting - compiling the Sigil
 | Struct lowering | ✅ | `Point { x: 10, y: 32 }` lowers to IR |
 | Struct codegen | ✅ | Compiles to working C code |
 | Struct field access | ✅ | `p.x + p.y` → 42 |
+| #[derive(...)] attrs | ✅ | `#[derive(Debug, Clone)]` |
+| Prefix evidentiality | ✅ | `!usize`, `?T` |
+| Closure parsing | ✅ | `{x => x * 2}` |
+| Generic types | ✅ | `Spanned<T>` |
+| Lifetime markers | ✅ | `Token::Quote` added |
 
 ### Recent Fixes (This Session)
+
+#### Parser Fixes for span.sg
+
+1. **#[derive(...)] attribute support** (`parser.sg`)
+   - Added `Token::Derive`, `Token::Test`, `Token::Default` as valid identifiers in `parse_ident()`
+   - These keywords can now be used as attribute names
+
+2. **Prefix evidentiality parsing** (`parser.sg`)
+   - Fixed `parse_type_primary()` to handle `!T` as prefix evidentiality
+   - Previously `!` alone was parsed as Never type
+   - Now `!usize` correctly parses as `Known<usize>`
+
+3. **Expression path vs generics** (`parser.sg`)
+   - Added `parse_expr_path()` that doesn't interpret `<` as generics
+   - Fixed `parse_primary_expr()` to use `parse_expr_path()` for identifiers
+   - Now `offset < self.end` correctly parses as comparison, not generics
+
+4. **Type suffix evidentiality** (`parser.sg`)
+   - Fixed `parse_type()` to only wrap in `TypeExpr::Evidential` when marker present
+   - Previously `if let ev = parse_evidentiality_opt()` always matched
+
+5. **Token::Quote for lifetimes** (`token.sg`, `lexer.sg`)
+   - Added `Token::Quote` variant for `'` character
+   - Added `lex_quote_or_char()` to distinguish `'a'` (char) from `'a` (lifetime)
+
+6. **Closure parsing** (`parser.sg`, `lexer.sg`)
+   - Implemented `is_closure_start()` properly (was always returning false)
+   - Added `Lexer::peek_is_closure_indicator()` helper
+   - Now `{x => x * 2}` correctly parses as a closure
+
+7. **&str method support** (`interpreter.rs`)
+   - Added `to_string`, `len`, `is_empty`, `as_str` methods for `Value::Ref` containing String
+
+#### Previous Fixes
 
 1. **Tuple field access in format! macro** (`parser.rs`)
    - Fixed string literal escaping in `parse_macro_tokens`
@@ -99,19 +142,24 @@ echo 'fn factorial(n: i64) -> i64 { if n <= 1 { 1 } else { n * factorial(n - 1) 
 
 ## Next Steps
 
-1. **Add match codegen** - `IrOperation::Match` code generation
-2. **Self-compile span.sg** - First real module self-compilation test
-3. **Self-compile full compiler** - Ultimate goal
+1. **Fix type checker for associated functions** - `Span::new()`, `Spanned::new()` resolution
+2. **Add match codegen** - `IrOperation::Match` code generation
+3. **Complete span.sg compilation** - Through type checking, lowering, and codegen
+4. **Self-compile token.sg** - Next module after span.sg
+5. **Self-compile full compiler** - Ultimate goal
 
 ## File Changes Summary
 
 | File | Changes |
 |------|---------|
-| `parser/src/interpreter.rs` | Fixed if-let semantics |
+| `parser/src/interpreter.rs` | Fixed if-let semantics; added &str method support |
 | `parser/src/parser.rs` | Fixed string literal escaping in `parse_macro_tokens` |
 | `self-hosted/src/typeck.sg` | Added from_ast wildcard for null |
 | `self-hosted/src/lower.sg` | Added Expr::Struct lowering |
 | `self-hosted/src/codegen.sg` | Added StructInit, Field, Index, Tuple, Array codegen + runtime helpers; removed duplicate Field handler; added struct forward declarations |
+| `self-hosted/src/parser.sg` | Fixed prefix evidentiality, expression paths, closure detection, keyword-as-ident |
+| `self-hosted/src/lexer.sg` | Added lex_quote_or_char, peek_is_closure_indicator |
+| `self-hosted/src/token.sg` | Added Token::Quote variant |
 
 ## Architecture Notes
 
