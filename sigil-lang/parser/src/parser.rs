@@ -2265,12 +2265,32 @@ impl<'a> Parser<'a> {
         Ok(tokens)
     }
 
+    /// Check if an expression is a block-ending expression that should not be callable.
+    /// Block expressions like if/while/match/loop/for return values but should not
+    /// be directly called like functions.
+    fn is_non_callable_expr(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::If { .. }
+                | Expr::While { .. }
+                | Expr::Match { .. }
+                | Expr::Loop(_)
+                | Expr::For { .. }
+                | Expr::Block(_)
+        )
+    }
+
     fn parse_postfix_expr(&mut self) -> ParseResult<Expr> {
         let mut expr = self.parse_primary_expr()?;
 
         loop {
             match self.current_token() {
                 Some(Token::LParen) => {
+                    // Don't treat block-ending expressions as callable
+                    // This prevents parsing `if {...} (...)` as a call expression
+                    if Self::is_non_callable_expr(&expr) {
+                        break;
+                    }
                     self.advance();
                     let args = self.parse_expr_list()?;
                     self.expect(Token::RParen)?;

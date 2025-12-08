@@ -401,6 +401,10 @@ impl CodeGen {
         self.line("/* Struct operations */");
         self.line("SigilValue sigil_struct(const char* name, const char** names, SigilValue* values, size_t n);");
         self.line("SigilValue sigil_struct_field(SigilValue v, const char* field);");
+        self.line("void sigil_struct_set_field(SigilValue* v, const char* field, SigilValue val);");
+        self.line("");
+        self.line("/* Tuple operations */");
+        self.line("SigilValue sigil_tuple(SigilValue* fields, size_t n);");
         self.line("");
         self.line("/* Option helpers */");
         self.line("SigilValue sigil_Option____Some(SigilValue v);");
@@ -967,10 +971,24 @@ impl CodeGen {
             },
 
             IrOperation::Assign { target, value, .. } => {
-                let target_code = self.emit_operation(*target);
-                let value_code = self.emit_operation(*value);
-                self.line(format!("{} = {};", target_code, value_code));
-                "sigil_unit()"
+                // Check if target is a field access - need to use struct setter
+                match *target.clone() {
+                    IrOperation::Field { expr, field, .. } => {
+                        // Field assignment: obj.field = value
+                        // Need to set the field in the struct, not just a local copy
+                        let base_code = self.emit_operation(*expr);
+                        let value_code = self.emit_operation(*value);
+                        self.line(format!("sigil_struct_set_field(&{}, \"{}\", {});", base_code, field, value_code));
+                        "sigil_unit()"
+                    },
+                    _ => {
+                        // Regular assignment
+                        let target_code = self.emit_operation(*target);
+                        let value_code = self.emit_operation(*value);
+                        self.line(format!("{} = {};", target_code, value_code));
+                        "sigil_unit()"
+                    },
+                }
             },
 
             IrOperation::Field { expr, field, evidence, .. } => {
@@ -1726,6 +1744,32 @@ impl CodeGen {
         self.indent_pop();
         self.line("}");
         self.line("return sigil_null();");
+        self.indent_pop();
+        self.line("}");
+        self.line("");
+
+        self.line("void sigil_struct_set_field(SigilValue* v, const char* field, SigilValue val) {");
+        self.indent_push();
+        self.line("if (v->tag != TAG_STRUCT) return;");
+        self.line("SigilStruct* s = (SigilStruct*)v->v.ptr;");
+        self.line("for (size_t i = 0; i < s->num_fields; i++) {");
+        self.indent_push();
+        self.line("if (strcmp(s->field_names[i], field) == 0) { s->field_values[i] = val; return; }");
+        self.indent_pop();
+        self.line("}");
+        self.indent_pop();
+        self.line("}");
+        self.line("");
+
+        // Tuple helper
+        self.line("SigilValue sigil_tuple(SigilValue* fields, size_t n) {");
+        self.indent_push();
+        self.line("SigilValue* data = (SigilValue*)malloc(n * sizeof(SigilValue));");
+        self.line("for (size_t i = 0; i < n; i++) data[i] = fields[i];");
+        self.line("SigilValue v = { .tag = TAG_TUPLE, .evidence = SIGIL_KNOWN };");
+        self.line("v.v.tup.fields = data;");
+        self.line("v.v.tup.count = n;");
+        self.line("return v;");
         self.indent_pop();
         self.line("}");
         self.line("");

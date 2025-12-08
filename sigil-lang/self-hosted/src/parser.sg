@@ -64,6 +64,8 @@ pub struct Parser {
     current: ?(Token, Span),
     /// Whether we're parsing a condition (affects < parsing)
     in_condition: !bool,
+    /// Pending > token from splitting >> in generics
+    pending_gt: ?Span,
 }
 
 impl Parser {
@@ -75,6 +77,7 @@ impl Parser {
             lexer,
             current,
             in_condition: false,
+            pending_gt: null,
         }
     }
 
@@ -171,6 +174,33 @@ impl Parser {
                 )),
                 null => Err(ParseError::UnexpectedEof),
             }
+        }
+    }
+
+    /// Expect a `>` token, handling the case where `>>` (Shr) needs to be split.
+    /// This is necessary for nested generics like `Vec<Option<T>>`.
+    fn expect_gt(mut self) -> !ParseResult<Span> {
+        // First check if we have a pending > from a previous split
+        if self.pending_gt != null {
+            let span = self.pending_gt!;
+            self.pending_gt = null;
+            return Ok(span);
+        }
+
+        match self.current {
+            (Token::Gt, span) => {
+                self.advance();
+                Ok(span)
+            }
+            (Token::Shr, span) => {
+                // Split >> into two > tokens
+                // Take the first > now and save the second for later
+                self.pending_gt = ?span;
+                self.advance();
+                Ok(span)
+            }
+            (found, span) => Err(ParseError::unexpected("Token::Gt", found, span)),
+            null => Err(ParseError::UnexpectedEof),
         }
     }
 
@@ -1100,7 +1130,7 @@ impl Parser {
                 break;
             }
         }
-        self.expect(Token::Gt)?;
+        self.expect_gt()?;
 
         Ok(Generics { params })
     }
@@ -1328,14 +1358,14 @@ impl Parser {
                     }
                     _ => return Err(ParseError::custom("expected lane count")),
                 };
-                self.expect(Token::Gt)?;
+                self.expect_gt()?;
                 Ok(TypeExpr::Simd { element: Box::new(element), lanes })
             }
             Token::Atomic => {
                 self.advance();
                 self.expect(Token::Lt)?;
                 let inner = self.parse_type()?;
-                self.expect(Token::Gt)?;
+                self.expect_gt()?;
                 Ok(TypeExpr::Atomic(Box::new(inner)))
             }
             Token::Question => {
@@ -1397,7 +1427,7 @@ impl Parser {
         // Don't parse generics in condition context or when not allowed
         let generics = if allow_generics && !self.is_in_condition() && self.consume_if(&Token::Lt) {
             let types = self.parse_type_list()?;
-            self.expect(Token::Gt)?;
+            self.expect_gt()?;
             types
         } else {
             null
@@ -1448,6 +1478,37 @@ impl Parser {
             });
         }
 
+        // Check for compound assignment: expr += value, expr -= value, etc.
+        // Desugar to: expr = expr op value
+        let compound_op = match self.current_token() {
+            Token::PlusEq => ?BinOp::Add,
+            Token::MinusEq => ?BinOp::Sub,
+            Token::StarEq => ?BinOp::Mul,
+            Token::SlashEq => ?BinOp::Div,
+            Token::ShlEq => ?BinOp::Shl,
+            Token::ShrEq => ?BinOp::Shr,
+            Token::AmpEq => ?BinOp::BitAnd,
+            Token::PipeEq => ?BinOp::BitOr,
+            Token::CaretEq => ?BinOp::BitXor,
+            Token::PercentEq => ?BinOp::Rem,
+            _ => null,
+        };
+
+        if compound_op != null {
+            self.advance();
+            let rhs = self.parse_expr()?;
+            // Desugar: lhs op= rhs  ->  lhs = lhs op rhs
+            let binary = Expr::Binary {
+                left: Box::new(lhs.clone()),
+                op: compound_op!,
+                right: Box::new(rhs),
+            };
+            return Ok(Expr::Assign {
+                target: Box::new(lhs),
+                value: Box::new(binary),
+            });
+        }
+
         Ok(lhs)
     }
 
@@ -1485,7 +1546,35 @@ impl Parser {
                 Token::PlusPlus => BinOp::Concat,
                 Token::BitwiseAndSymbol => BinOp::BitAnd,
                 Token::BitwiseOrSymbol => BinOp::BitOr,
-                _ => break,
+                _ => {
+                    // Check for range operators: .. and ..=
+                    // Range has very low precedence (lower than all binary ops)
+                    if self.check(&Token::DotDot) || self.check(&Token::DotDotEq) {
+                        let inclusive = self.consume_if(&Token::DotDotEq);
+                        if !inclusive {
+                            self.advance(); // consume ..
+                        }
+                        // Parse end of range (optional for open ranges like `0..`)
+                        let end = if self.check(&Token::Semi)
+                            || self.check(&Token::RBrace)
+                            || self.check(&Token::Comma)
+                            || self.check(&Token::RParen)
+                            || self.check(&Token::RBracket)
+                            || self.check(&Token::LBrace)
+                        {
+                            null
+                        } else {
+                            ?Box::new(self.parse_expr_bp(0)?)
+                        };
+                        lhs = Expr::Range {
+                            start: ?Box::new(lhs),
+                            end,
+                            inclusive,
+                        };
+                        continue;
+                    }
+                    break;
+                }
             };
 
             let (l_bp, r_bp) = infix_binding_power(op);
@@ -1519,6 +1608,15 @@ impl Parser {
                 let expr = self.parse_prefix_expr()?;
                 Ok(Expr::Unary { op: UnaryOp::Not, expr: Box::new(expr) })
             }
+            Token::Question => {
+                // Evidential prefix: ?expr creates uncertain value
+                self.advance();
+                let expr = self.parse_prefix_expr()?;
+                Ok(Expr::Evidential {
+                    expr: Box::new(expr),
+                    evidentiality: Evidentiality::Uncertain,
+                })
+            }
             Token::Star => {
                 self.advance();
                 let expr = self.parse_prefix_expr()?;
@@ -1538,6 +1636,21 @@ impl Parser {
         }
     }
 
+    /// Check if an expression is a block-ending expression that should not be callable.
+    /// Block expressions like if/while/match/loop/for return values but should not
+    /// be directly called like functions.
+    fn is_non_callable_expr(self, expr: !&Expr) -> !bool {
+        match expr {
+            Expr::If { .. } => true,
+            Expr::While { .. } => true,
+            Expr::Match { .. } => true,
+            Expr::Loop(_) => true,
+            Expr::For { .. } => true,
+            Expr::Block(_) => true,
+            _ => false,
+        }
+    }
+
     /// Parse postfix expression.
     fn parse_postfix_expr(mut self) -> !ParseResult<Expr> {
         let mut expr = self.parse_primary_expr()?;
@@ -1545,6 +1658,11 @@ impl Parser {
         loop {
             match self.current_token() {
                 Token::LParen => {
+                    // Don't treat block-ending expressions as callable
+                    // This prevents parsing `if {...} (...)` as a call expression
+                    if self.is_non_callable_expr(&expr) {
+                        break;
+                    }
                     self.advance();
                     let args = self.parse_expr_list()?;
                     self.expect(Token::RParen)?;
@@ -1558,7 +1676,16 @@ impl Parser {
                 }
                 Token::Dot => {
                     self.advance();
-                    let field = self.parse_ident()?;
+                    // Handle both named fields (`.field`) and tuple indices (`.0`, `.1`)
+                    let field = match self.current_token() {
+                        Token::IntLit(idx) => {
+                            let span = self.current_span();
+                            let name = idx.clone();
+                            self.advance();
+                            Ident::new(name, span)
+                        }
+                        _ => self.parse_ident()?,
+                    };
                     if self.check(&Token::LParen) {
                         self.advance();
                         let args = self.parse_expr_list()?;
@@ -1764,6 +1891,16 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Literal(Literal::Infinity))
             }
+            Token::Underscore => {
+                // Underscore as an expression (wildcard/placeholder)
+                self.advance();
+                Ok(Expr::Path(TypePath {
+                    segments: vec![PathSegment {
+                        ident: Ident::new("_".to_string(), self.current_span()),
+                        generics: null,
+                    }],
+                }))
+            }
             Token::LParen => {
                 self.advance();
                 if self.check(&Token::RParen) {
@@ -1835,7 +1972,8 @@ impl Parser {
             }
             Token::Break => {
                 self.advance();
-                let value = if self.check(&Token::Semi) || self.check(&Token::RBrace) {
+                // Break without value if followed by ; } or , (match arm terminator)
+                let value = if self.check(&Token::Semi) || self.check(&Token::RBrace) || self.check(&Token::Comma) {
                     null
                 } else {
                     Box::new(self.parse_expr()?)
@@ -1983,9 +2121,26 @@ impl Parser {
     /// Parse if expression.
     fn parse_if_expr(mut self) -> !ParseResult<Expr> {
         self.expect(Token::If)?;
-        self.in_condition = true;
-        let condition = self.parse_expr()?;
-        self.in_condition = false;
+
+        // Check for if-let: if let pattern = expr { ... }
+        let condition = if self.consume_if(&Token::Let) {
+            let pattern = self.parse_pattern()?;
+            self.expect(Token::Eq)?;
+            self.in_condition = true;
+            let value = self.parse_expr()?;
+            self.in_condition = false;
+            // Create a Let expression which evaluates to true if pattern matches
+            Expr::Let {
+                pattern: Box::new(pattern),
+                value: Box::new(value),
+            }
+        } else {
+            self.in_condition = true;
+            let cond = self.parse_expr()?;
+            self.in_condition = false;
+            cond
+        };
+
         let then_branch = self.parse_block()?;
 
         let else_branch = if self.consume_if(&Token::Else) {
@@ -2027,9 +2182,9 @@ impl Parser {
             self.expect(Token::FatArrow)?;
             let body = self.parse_expr()?;
             arms.push(MatchArm { pattern, guard, body });
-            if !self.consume_if(&Token::Comma) {
-                break;
-            }
+            // In Rust/Sigil, commas are optional after block-bodied match arms
+            // So we try to consume a comma, but don't break if absent
+            self.consume_if(&Token::Comma);
         }
         self.expect(Token::RBrace)?;
 
@@ -2251,6 +2406,24 @@ impl Parser {
                 self.advance();
                 Ok(Pattern::Rest)
             }
+            // Evidential prefix pattern: ?(pattern) matches Some/uncertain values
+            Token::Question => {
+                self.advance();
+                let inner = self.parse_pattern_primary()?;
+                Ok(Pattern::Evidential {
+                    pattern: Box::new(inner),
+                    evidentiality: Evidentiality::Uncertain,
+                })
+            }
+            // Known evidentiality: !(pattern)
+            Token::Bang => {
+                self.advance();
+                let inner = self.parse_pattern_primary()?;
+                Ok(Pattern::Evidential {
+                    pattern: Box::new(inner),
+                    evidentiality: Evidentiality::Known,
+                })
+            }
             Token::Mut => {
                 self.advance();
                 let name = self.parse_ident()?;
@@ -2347,14 +2520,36 @@ impl Parser {
                 self.expect(Token::RBracket)?;
                 Ok(Pattern::Slice(patterns))
             }
-            // Literals
+            // Literals - check for range patterns after
             Token::IntLit(s) => {
                 self.advance();
-                Ok(Pattern::Literal(Literal::Int {
+                let lit = Pattern::Literal(Literal::Int {
                     value: s.clone(),
                     base: NumBase::Decimal,
                     suffix: null,
-                }))
+                });
+                // Check for range pattern: lit..end or lit..=end
+                if self.check(&Token::DotDot) || self.check(&Token::DotDotEq) {
+                    let inclusive = self.consume_if(&Token::DotDotEq);
+                    if !inclusive {
+                        self.advance(); // consume ..
+                    }
+                    // Parse end of range if present
+                    let end = match self.current_token() {
+                        Token::IntLit(_) | Token::CharLit(_) => {
+                            let end_pat = self.parse_pattern()?;
+                            ?Box::new(end_pat)
+                        },
+                        _ => null,
+                    };
+                    Ok(Pattern::Range {
+                        start: ?Box::new(lit),
+                        end,
+                        inclusive,
+                    })
+                } else {
+                    Ok(lit)
+                }
             }
             Token::StringLit(s) => {
                 self.advance();
@@ -2362,7 +2557,29 @@ impl Parser {
             }
             Token::CharLit(c) => {
                 self.advance();
-                Ok(Pattern::Literal(Literal::Char(c.clone())))
+                let lit = Pattern::Literal(Literal::Char(c.clone()));
+                // Check for range pattern: lit..end or lit..=end
+                if self.check(&Token::DotDot) || self.check(&Token::DotDotEq) {
+                    let inclusive = self.consume_if(&Token::DotDotEq);
+                    if !inclusive {
+                        self.advance(); // consume ..
+                    }
+                    // Parse end of range if present
+                    let end = match self.current_token() {
+                        Token::IntLit(_) | Token::CharLit(_) => {
+                            let end_pat = self.parse_pattern()?;
+                            ?Box::new(end_pat)
+                        },
+                        _ => null,
+                    };
+                    Ok(Pattern::Range {
+                        start: ?Box::new(lit),
+                        end,
+                        inclusive,
+                    })
+                } else {
+                    Ok(lit)
+                }
             }
             Token::True => {
                 self.advance();
@@ -2371,6 +2588,34 @@ impl Parser {
             Token::False => {
                 self.advance();
                 Ok(Pattern::Literal(Literal::Bool(false)))
+            }
+            Token::Null => {
+                self.advance();
+                Ok(Pattern::Literal(Literal::Null))
+            }
+            // Keywords that can be used as identifiers in pattern context
+            Token::Body | Token::Header | Token::Http | Token::Https | Token::Retry |
+            Token::Send | Token::Recv | Token::Close | Token::On => {
+                let span = self.current_span();
+                let name = match self.current_token() {
+                    Token::Body => "body",
+                    Token::Header => "header",
+                    Token::Http => "http",
+                    Token::Https => "https",
+                    Token::Retry => "retry",
+                    Token::Send => "send",
+                    Token::Recv => "recv",
+                    Token::Close => "close",
+                    Token::On => "on",
+                    _ => "unknown",
+                };
+                self.advance();
+                let evidentiality = self.parse_evidentiality_opt();
+                Ok(Pattern::Ident {
+                    mutable: false,
+                    name: Ident::new(name.to_string(), span),
+                    evidentiality,
+                })
             }
             t => Err(ParseError::unexpected("pattern", t?, self.current_span())),
         }
@@ -2417,6 +2662,40 @@ impl Parser {
             Token::Super => {
                 self.advance();
                 Ok(Ident::new("super".to_string(), span))
+            }
+            // Context-specific keywords that can be used as identifiers
+            Token::Body => {
+                self.advance();
+                Ok(Ident::new("body".to_string(), span))
+            }
+            Token::Header => {
+                self.advance();
+                Ok(Ident::new("header".to_string(), span))
+            }
+            Token::Http | Token::Https => {
+                let name = if self.current_token() == &Token::Http { "http" } else { "https" };
+                self.advance();
+                Ok(Ident::new(name.to_string(), span))
+            }
+            Token::Retry => {
+                self.advance();
+                Ok(Ident::new("retry".to_string(), span))
+            }
+            Token::Send => {
+                self.advance();
+                Ok(Ident::new("send".to_string(), span))
+            }
+            Token::Recv => {
+                self.advance();
+                Ok(Ident::new("recv".to_string(), span))
+            }
+            Token::Close => {
+                self.advance();
+                Ok(Ident::new("close".to_string(), span))
+            }
+            Token::On => {
+                self.advance();
+                Ok(Ident::new("on".to_string(), span))
             }
             t => Err(ParseError::unexpected("identifier", t?, span)),
         }

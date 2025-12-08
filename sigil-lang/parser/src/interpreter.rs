@@ -1034,7 +1034,7 @@ impl Interpreter {
             Expr::Loop(body) => self.eval_loop(body),
             Expr::Return(value) => self.eval_return(value),
             Expr::Break(value) => self.eval_break(value),
-            Expr::Continue => Err(RuntimeError::new("continue outside loop")),
+            Expr::Continue => Err(RuntimeError::new("continue")),
             Expr::Index { expr, index } => self.eval_index(expr, index),
             Expr::Field { expr, field } => self.eval_field(expr, field),
             Expr::MethodCall {
@@ -1218,6 +1218,63 @@ impl Interpreter {
                         }
                     }
                     _ => Ok(value), // Not a variant, pass through
+                }
+            }
+            // Cast expression: expr as Type
+            Expr::Cast { expr, ty } => {
+                let value = self.evaluate(expr)?;
+                // Handle type casts
+                let type_name = match ty {
+                    TypeExpr::Path(path) => {
+                        if !path.segments.is_empty() {
+                            path.segments.last().map(|s| s.ident.name.as_str()).unwrap_or("")
+                        } else {
+                            ""
+                        }
+                    }
+                    _ => "",
+                };
+                match (value, type_name) {
+                    // Char to numeric
+                    (Value::Char(c), "u8") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "u16") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "u32") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "u64") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "i8") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "i16") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "i32") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "i64") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "usize") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "isize") => Ok(Value::Int(c as i64)),
+                    // Int to int (no-op in our runtime)
+                    (Value::Int(i), "u8") => Ok(Value::Int(i)),
+                    (Value::Int(i), "u16") => Ok(Value::Int(i)),
+                    (Value::Int(i), "u32") => Ok(Value::Int(i)),
+                    (Value::Int(i), "u64") => Ok(Value::Int(i)),
+                    (Value::Int(i), "i8") => Ok(Value::Int(i)),
+                    (Value::Int(i), "i16") => Ok(Value::Int(i)),
+                    (Value::Int(i), "i32") => Ok(Value::Int(i)),
+                    (Value::Int(i), "i64") => Ok(Value::Int(i)),
+                    (Value::Int(i), "usize") => Ok(Value::Int(i)),
+                    (Value::Int(i), "isize") => Ok(Value::Int(i)),
+                    // Float to int
+                    (Value::Float(f), "i32") => Ok(Value::Int(f as i64)),
+                    (Value::Float(f), "i64") => Ok(Value::Int(f as i64)),
+                    (Value::Float(f), "u32") => Ok(Value::Int(f as i64)),
+                    (Value::Float(f), "u64") => Ok(Value::Int(f as i64)),
+                    // Int to float
+                    (Value::Int(i), "f32") => Ok(Value::Float(i as f64)),
+                    (Value::Int(i), "f64") => Ok(Value::Float(i as f64)),
+                    // Int to char
+                    (Value::Int(i), "char") => {
+                        if let Some(c) = char::from_u32(i as u32) {
+                            Ok(Value::Char(c))
+                        } else {
+                            Err(RuntimeError::new(format!("invalid char code: {}", i)))
+                        }
+                    }
+                    // Pass through for same type
+                    (v, _) => Ok(v),
                 }
             }
             _ => Err(RuntimeError::new(format!(
@@ -1822,6 +1879,32 @@ impl Interpreter {
                     }
                     return Err(RuntimeError::new("Box::new expects 1 argument"));
                 }
+                ["char", "from_u32"] => {
+                    // char::from_u32(u32) -> Option<char>
+                    if args.len() == 1 {
+                        let arg = self.evaluate(&args[0])?;
+                        let code = match arg {
+                            Value::Int(i) => i as u32,
+                            _ => return Err(RuntimeError::new("char::from_u32 expects u32")),
+                        };
+                        if let Some(c) = char::from_u32(code) {
+                            // Return Some(char)
+                            return Ok(Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "Some".to_string(),
+                                fields: Some(Rc::new(vec![Value::Char(c)])),
+                            });
+                        } else {
+                            // Return None
+                            return Ok(Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "None".to_string(),
+                                fields: None,
+                            });
+                        }
+                    }
+                    return Err(RuntimeError::new("char::from_u32 expects 1 argument"));
+                }
                 _ => {}
             }
         }
@@ -1835,7 +1918,10 @@ impl Interpreter {
         match func {
             Value::Function(f) => self.call_function(&f, arg_values),
             Value::BuiltIn(b) => self.call_builtin(&b, arg_values),
-            _ => Err(RuntimeError::new("Cannot call non-function")),
+            _ => {
+                eprintln!("DEBUG Cannot call non-function: {:?}, expr: {:?}", func, func_expr);
+                Err(RuntimeError::new("Cannot call non-function"))
+            }
         }
     }
 
@@ -3163,6 +3249,7 @@ impl Interpreter {
             }
             (Value::Char(c), "to_ascii_uppercase") => Ok(Value::Char(c.to_ascii_uppercase())),
             (Value::Char(c), "to_ascii_lowercase") => Ok(Value::Char(c.to_ascii_lowercase())),
+            (Value::Char(c), "clone") => Ok(Value::Char(*c)),
             (Value::String(s), "upper") | (Value::String(s), "uppercase") | (Value::String(s), "to_uppercase") => {
                 Ok(Value::String(Rc::new(s.to_uppercase())))
             }
@@ -3184,6 +3271,11 @@ impl Interpreter {
                 .ok_or_else(|| RuntimeError::new("empty string")),
             (Value::Array(arr), "is_empty") => Ok(Value::Bool(arr.borrow().is_empty())),
             (Value::Array(arr), "clone") => Ok(Value::Array(Rc::new(RefCell::new(arr.borrow().clone())))),
+            (Value::Array(arr), "collect") => {
+                // collect() on array just returns the array itself
+                // It's the terminal operation that materializes pipeline results
+                Ok(Value::Array(arr.clone()))
+            }
             (Value::Array(arr), "join") => {
                 let separator = if arg_values.is_empty() {
                     String::new()
@@ -3290,6 +3382,11 @@ impl Interpreter {
                         "as_str" => return Ok(Value::String(s.clone())),
                         _ => {}
                     }
+                }
+                // Handle clone on any Ref value - clone the inner value
+                if method.name == "clone" {
+                    eprintln!("DEBUG clone: recv_type=Ref({:?})", std::mem::discriminant(&inner));
+                    return Ok(inner.clone());
                 }
                 Err(RuntimeError::new(format!(
                     "Cannot call method {} on Ref to non-struct",
