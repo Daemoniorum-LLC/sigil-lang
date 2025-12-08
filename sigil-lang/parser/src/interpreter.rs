@@ -4253,6 +4253,34 @@ impl Interpreter {
                             _ => Err(RuntimeError::new("join requires array")),
                         }
                     }
+                    "all" => {
+                        // Check if all elements are truthy (no predicate in Method variant)
+                        match value {
+                            Value::Array(arr) => {
+                                for item in arr.borrow().iter() {
+                                    if !self.is_truthy(item) {
+                                        return Ok(Value::Bool(false));
+                                    }
+                                }
+                                Ok(Value::Bool(true))
+                            }
+                            _ => Err(RuntimeError::new("all requires array")),
+                        }
+                    }
+                    "any" => {
+                        // Check if any element is truthy
+                        match value {
+                            Value::Array(arr) => {
+                                for item in arr.borrow().iter() {
+                                    if self.is_truthy(item) {
+                                        return Ok(Value::Bool(true));
+                                    }
+                                }
+                                Ok(Value::Bool(false))
+                            }
+                            _ => Err(RuntimeError::new("any requires array")),
+                        }
+                    }
                     _ => Err(RuntimeError::new(format!(
                         "Unknown pipe method: {}",
                         name.name
@@ -4444,6 +4472,70 @@ impl Interpreter {
                             }
                         } else {
                             Ok(value)
+                        }
+                    }
+                    "all" => {
+                        if let Some(body) = body {
+                            match value {
+                                Value::Array(arr) => {
+                                    for item in arr.borrow().iter() {
+                                        self.environment
+                                            .borrow_mut()
+                                            .define("_".to_string(), item.clone());
+                                        let result = self.evaluate(body)?;
+                                        if !self.is_truthy(&result) {
+                                            return Ok(Value::Bool(false));
+                                        }
+                                    }
+                                    Ok(Value::Bool(true))
+                                }
+                                _ => Err(RuntimeError::new("all requires array")),
+                            }
+                        } else {
+                            // Without body, check if all elements are truthy
+                            match value {
+                                Value::Array(arr) => {
+                                    for item in arr.borrow().iter() {
+                                        if !self.is_truthy(item) {
+                                            return Ok(Value::Bool(false));
+                                        }
+                                    }
+                                    Ok(Value::Bool(true))
+                                }
+                                _ => Err(RuntimeError::new("all requires array")),
+                            }
+                        }
+                    }
+                    "any" => {
+                        if let Some(body) = body {
+                            match value {
+                                Value::Array(arr) => {
+                                    for item in arr.borrow().iter() {
+                                        self.environment
+                                            .borrow_mut()
+                                            .define("_".to_string(), item.clone());
+                                        let result = self.evaluate(body)?;
+                                        if self.is_truthy(&result) {
+                                            return Ok(Value::Bool(true));
+                                        }
+                                    }
+                                    Ok(Value::Bool(false))
+                                }
+                                _ => Err(RuntimeError::new("any requires array")),
+                            }
+                        } else {
+                            // Without body, check if any elements are truthy
+                            match value {
+                                Value::Array(arr) => {
+                                    for item in arr.borrow().iter() {
+                                        if self.is_truthy(item) {
+                                            return Ok(Value::Bool(true));
+                                        }
+                                    }
+                                    Ok(Value::Bool(false))
+                                }
+                                _ => Err(RuntimeError::new("any requires array")),
+                            }
                         }
                     }
                     _ => Err(RuntimeError::new(format!(
