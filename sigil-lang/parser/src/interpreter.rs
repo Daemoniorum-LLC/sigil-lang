@@ -72,6 +72,15 @@ pub enum Value {
     Actor(Arc<ActorInner>),
     /// Future - represents an async computation
     Future(Rc<RefCell<FutureInner>>),
+    /// Variant constructor (for creating enum variants)
+    VariantConstructor {
+        enum_name: String,
+        variant_name: String,
+    },
+    /// Default constructor (for default trait)
+    DefaultConstructor {
+        type_name: String,
+    },
 }
 
 /// Future state for async computations
@@ -372,6 +381,12 @@ impl fmt::Debug for Value {
                 }
                 Ok(())
             }
+            Value::VariantConstructor { enum_name, variant_name } => {
+                write!(f, "<constructor {}::{}>", enum_name, variant_name)
+            }
+            Value::DefaultConstructor { type_name } => {
+                write!(f, "<default {}>", type_name)
+            }
         }
     }
 }
@@ -664,6 +679,8 @@ impl Interpreter {
                 Value::ThreadHandle(_) => "thread",
                 Value::Actor(_) => "actor",
                 Value::Future(_) => "future",
+                Value::VariantConstructor { .. } => "variant_constructor",
+                Value::DefaultConstructor { .. } => "default_constructor",
             };
             Ok(Value::String(Rc::new(type_name.to_string())))
         });
@@ -2987,7 +3004,6 @@ impl Interpreter {
             (Value::Struct { name, fields }, _) => {
                 // Built-in struct methods
                 if method.name == "clone" {
-                    eprintln!("DEBUG struct clone: name={}", name);
                     // Clone the struct value
                     return Ok(recv.clone());
                 }
