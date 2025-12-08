@@ -3474,6 +3474,20 @@ impl Interpreter {
         match op {
             PipeOp::Transform(body) => {
                 // τ{f} - map over collection or apply to single value
+                // Check if body is a closure with explicit parameter
+                let (param_name, inner_body) = match body.as_ref() {
+                    Expr::Closure { params, body } => {
+                        let name = params.first()
+                            .map(|p| match &p.pattern {
+                                Pattern::Ident { name, .. } => name.name.clone(),
+                                _ => "_".to_string(),
+                            })
+                            .unwrap_or_else(|| "_".to_string());
+                        (name, body.as_ref())
+                    }
+                    _ => ("_".to_string(), body.as_ref()),
+                };
+
                 match value {
                     Value::Array(arr) => {
                         let results: Vec<Value> = arr
@@ -3482,8 +3496,8 @@ impl Interpreter {
                             .map(|item| {
                                 self.environment
                                     .borrow_mut()
-                                    .define("_".to_string(), item.clone());
-                                self.evaluate(body)
+                                    .define(param_name.clone(), item.clone());
+                                self.evaluate(inner_body)
                             })
                             .collect::<Result<_, _>>()?;
                         Ok(Value::Array(Rc::new(RefCell::new(results))))
@@ -3491,13 +3505,27 @@ impl Interpreter {
                     single => {
                         self.environment
                             .borrow_mut()
-                            .define("_".to_string(), single);
-                        self.evaluate(body)
+                            .define(param_name.clone(), single);
+                        self.evaluate(inner_body)
                     }
                 }
             }
             PipeOp::Filter(predicate) => {
                 // φ{p} - filter collection
+                // Check if predicate is a closure with explicit parameter
+                let (param_name, inner_pred) = match predicate.as_ref() {
+                    Expr::Closure { params, body } => {
+                        let name = params.first()
+                            .map(|p| match &p.pattern {
+                                Pattern::Ident { name, .. } => name.name.clone(),
+                                _ => "_".to_string(),
+                            })
+                            .unwrap_or_else(|| "_".to_string());
+                        (name, body.as_ref())
+                    }
+                    _ => ("_".to_string(), predicate.as_ref()),
+                };
+
                 match value {
                     Value::Array(arr) => {
                         let results: Vec<Value> = arr
@@ -3506,8 +3534,8 @@ impl Interpreter {
                             .filter_map(|item| {
                                 self.environment
                                     .borrow_mut()
-                                    .define("_".to_string(), item.clone());
-                                match self.evaluate(predicate) {
+                                    .define(param_name.clone(), item.clone());
+                                match self.evaluate(inner_pred) {
                                     Ok(v) if self.is_truthy(&v) => Some(Ok(item.clone())),
                                     Ok(_) => None,
                                     Err(e) => Some(Err(e)),
