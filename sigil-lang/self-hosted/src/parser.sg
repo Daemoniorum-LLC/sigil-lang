@@ -1352,7 +1352,7 @@ impl Parser {
                 self.expect(Token::Comma)?;
                 let lanes = match self.current_token() {
                     Token::IntLit(s) => {
-                        let n = s.parse::<u8>().map_err(|_| ParseError::custom("invalid lane count"))?;
+                        let n = s.parse::<u8>().map_err({err => ParseError::custom("invalid lane count")})?;
                         self.advance();
                         n
                     }
@@ -1686,13 +1686,24 @@ impl Parser {
                         }
                         _ => self.parse_ident()?,
                     };
-                    if self.check(&Token::LParen) {
-                        self.advance();
+                    // Check for method call (with optional turbofish)
+                    if self.check(&Token::LParen) || self.check(&Token::ColonColon) {
+                        // Parse turbofish: .method::<T, U>(args)
+                        let type_args = if self.consume_if(&Token::ColonColon) {
+                            self.expect(Token::Lt)?;
+                            let types = self.parse_type_list()?;
+                            self.expect_gt()?;
+                            ?types
+                        } else {
+                            null
+                        };
+                        self.expect(Token::LParen)?;
                         let args = self.parse_expr_list()?;
                         self.expect(Token::RParen)?;
                         expr = Expr::MethodCall {
                             receiver: Box::new(expr),
                             method: field,
+                            type_args,
                             args,
                         };
                     } else {
@@ -1932,6 +1943,38 @@ impl Parser {
             Token::LBrace => {
                 self.parse_block_or_closure()
             }
+            // Pipe closure: |params| body
+            Token::Pipe => {
+                self.advance();
+                let mut params = Vec::new();
+                while !self.check(&Token::Pipe) {
+                    let pattern = self.parse_pattern()?;
+                    let ty = if self.consume_if(&Token::Colon) {
+                        self.parse_type()?
+                    } else {
+                        null
+                    };
+                    params.push(ClosureParam { pattern, ty });
+                    if !self.consume_if(&Token::Comma) {
+                        break;
+                    }
+                }
+                self.expect(Token::Pipe)?;
+                let body = self.parse_expr()?;
+                Ok(Expr::Closure {
+                    params,
+                    body: Box::new(body),
+                })
+            }
+            // Or pattern in closures: || body (no params)
+            Token::OrOr => {
+                self.advance();
+                let body = self.parse_expr()?;
+                Ok(Expr::Closure {
+                    params: Vec::new(),
+                    body: Box::new(body),
+                })
+            }
             Token::If => self.parse_if_expr(),
             Token::Match => self.parse_match_expr(),
             Token::Loop => {
@@ -1994,7 +2037,13 @@ impl Parser {
             Token::Lambda | Token::Pi | Token::Alpha | Token::Omega => {
                 self.parse_morpheme_expr()
             }
-            Token::Ident(_) | Token::SelfLower | Token::SelfUpper => {
+            // Keywords that can be used as identifiers in expressions
+            Token::Ident(_) | Token::SelfLower | Token::SelfUpper
+                | Token::Derive | Token::Body | Token::Header | Token::Naked
+                | Token::Gpu | Token::Asm | Token::Simd | Token::Send | Token::Recv
+                | Token::Close | Token::Retry | Token::Http | Token::Https
+                | Token::On | Token::Ws | Token::Wss | Token::Grpc | Token::Kafka | Token::Amqp
+                | Token::Packed | Token::Repr | Token::Align => {
                 // Use parse_expr_path to avoid interpreting < as generics
                 let path = self.parse_expr_path()?;
 
@@ -2219,7 +2268,7 @@ impl Parser {
         })
     }
 
-    /// Parse let statement.
+    /// Parse let statement (with optional else for let-else syntax).
     fn parse_let_stmt(mut self) -> !ParseResult<Stmt> {
         self.expect(Token::Let)?;
         let pattern = self.parse_pattern()?;
@@ -2233,9 +2282,21 @@ impl Parser {
         } else {
             null
         };
-        self.expect(Token::Semi)?;
 
-        Ok(Stmt::Let { pattern, ty, init })
+        // Check for let-else syntax
+        if self.consume_if(&Token::Else) {
+            let else_block = self.parse_block()?;
+            self.expect(Token::Semi)?;
+            Ok(Stmt::LetElse {
+                pattern,
+                ty,
+                init: init!,
+                else_branch: Box::new(Expr::Block(else_block)),
+            })
+        } else {
+            self.expect(Token::Semi)?;
+            Ok(Stmt::Let { pattern, ty, init })
+        }
     }
 
     /// Parse condition (in condition context).
@@ -2315,11 +2376,12 @@ impl Parser {
                     self.expect(Token::RBrace)?;
                     Ok(PipeOp::Nth(Box::new(index)))
                 } else {
-                    Ok(PipeOp::Nth(Box::new(Expr::Literal(Literal::Int {
-                        value: "0".to_string(),
+                    let zero_lit = Literal::Int {
+                        value: "0",
                         base: NumBase::Decimal,
                         suffix: null,
-                    }))))
+                    };
+                    Ok(PipeOp::Nth(Box::new(Expr::Literal(zero_lit))))
                 }
             }
             Token::Xi => { self.advance(); Ok(PipeOp::Next) }
@@ -2430,7 +2492,12 @@ impl Parser {
                 let evidentiality = self.parse_evidentiality_opt();
                 Ok(Pattern::Ident { mutable: true, name, evidentiality })
             }
-            Token::Ident(_) => {
+            // Keywords that can be used as identifiers in patterns
+            Token::Ident(_) | Token::Derive | Token::Body | Token::Header | Token::Naked
+                | Token::Gpu | Token::Asm | Token::Simd | Token::Send | Token::Recv
+                | Token::Close | Token::Retry | Token::Http | Token::Https
+                | Token::On | Token::Ws | Token::Wss | Token::Grpc | Token::Kafka | Token::Amqp
+                | Token::Packed | Token::Repr | Token::Align => {
                 let ident = self.parse_ident()?;
 
                 // Build path segments (handle :: for qualified paths like Token::Fn)
@@ -2696,6 +2763,34 @@ impl Parser {
             Token::On => {
                 self.advance();
                 Ok(Ident::new("on".to_string(), span))
+            }
+            Token::Naked => {
+                self.advance();
+                Ok(Ident::new("naked".to_string(), span))
+            }
+            Token::Gpu => {
+                self.advance();
+                Ok(Ident::new("gpu".to_string(), span))
+            }
+            Token::Asm => {
+                self.advance();
+                Ok(Ident::new("asm".to_string(), span))
+            }
+            Token::Simd => {
+                self.advance();
+                Ok(Ident::new("simd".to_string(), span))
+            }
+            Token::Packed => {
+                self.advance();
+                Ok(Ident::new("packed".to_string(), span))
+            }
+            Token::Repr => {
+                self.advance();
+                Ok(Ident::new("repr".to_string(), span))
+            }
+            Token::Align => {
+                self.advance();
+                Ok(Ident::new("align".to_string(), span))
             }
             t => Err(ParseError::unexpected("identifier", t?, span)),
         }
