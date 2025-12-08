@@ -199,11 +199,16 @@ impl Lexer {
 
     /// Check if current char matches, and if so advance.
     fn match_char(mut self, expected: !char) -> !bool {
-        if self.current() == expected {
-            self.advance();
-            true
-        } else {
-            false
+        match self.current() {
+            ?c => {
+                if c == expected {
+                    self.advance();
+                    true
+                } else {
+                    false
+                }
+            },
+            null => false,
         }
     }
 
@@ -412,14 +417,27 @@ impl Lexer {
             }
         }
 
-        // Regular string
-        while self.current() != '"' && !self.is_eof() {
-            let c = self.advance()!;
-            if c == '\\' {
-                // Escape sequence
-                value.push(self.lex_escape_sequence());
-            } else {
-                value.push(c);
+        // Regular string - use explicit loop for nullable char handling
+        loop {
+            if self.is_eof() {
+                break;
+            }
+            let curr = self.current();
+            // Check for closing quote - use explicit nullable check
+            match curr {
+                ?c => {
+                    if c == '"' {
+                        break;
+                    }
+                    self.advance();
+                    if c == '\\' {
+                        // Escape sequence
+                        value.push(self.lex_escape_sequence());
+                    } else {
+                        value.push(c);
+                    }
+                },
+                null => break,
             }
         }
 

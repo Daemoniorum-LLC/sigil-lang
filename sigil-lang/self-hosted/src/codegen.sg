@@ -1164,7 +1164,12 @@ impl CodeGen {
                         recv_code.clone()
                     },
                     "to_string" if arg_codes.is_empty() => {
-                        format!("sigil_string({})", recv_code)
+                        // If receiver is already a sigil_string, just return it
+                        if recv_code.starts_with("sigil_string(") {
+                            recv_code.clone()
+                        } else {
+                            format!("sigil_string({})", recv_code)
+                        }
                     },
                     _ => {
                         // Default: call method name with receiver as first arg
@@ -1321,6 +1326,17 @@ impl CodeGen {
                     format!("({}.tag == 0)", value)  // Placeholder
                 } else if path.contains("Err") || path.ends_with("::Err") {
                     format!("({}.tag == 1)", value)  // Placeholder
+                } else if path.contains("::") {
+                    // User-defined enum variant: EnumName::VariantName
+                    let parts = path.split("::");
+                    if parts.len() >= 2 {
+                        let enum_name = parts[0];
+                        let variant_name = parts[parts.len() - 1];
+                        let tag_const = format!("{}_{}", enum_name.to_uppercase(), variant_name.to_uppercase());
+                        format!("({}.tag == {})", value, tag_const)
+                    } else {
+                        "1".to_string()
+                    }
                 } else {
                     "1".to_string()  // Default: always matches
                 }
@@ -1329,6 +1345,18 @@ impl CodeGen {
                 // Match on unit variants like None
                 if path.contains("None") || path.ends_with("::None") {
                     format!("({}.tag == TAG_NULL)", value)
+                } else if path.contains("::") {
+                    // User-defined enum variant: EnumName::VariantName
+                    // Generate condition: value.tag == ENUMNAME_VARIANTNAME
+                    let parts = path.split("::");
+                    if parts.len() >= 2 {
+                        let enum_name = parts[0];
+                        let variant_name = parts[parts.len() - 1];
+                        let tag_const = format!("{}_{}", enum_name.to_uppercase(), variant_name.to_uppercase());
+                        format!("({}.tag == {})", value, tag_const)
+                    } else {
+                        "1".to_string()
+                    }
                 } else {
                     "1".to_string()
                 }

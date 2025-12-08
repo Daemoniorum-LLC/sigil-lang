@@ -2376,12 +2376,8 @@ impl Parser {
                     self.expect(Token::RBrace)?;
                     Ok(PipeOp::Nth(Box::new(index)))
                 } else {
-                    let zero_lit = Literal::Int {
-                        value: "0",
-                        base: NumBase::Decimal,
-                        suffix: null,
-                    };
-                    Ok(PipeOp::Nth(Box::new(Expr::Literal(zero_lit))))
+                    // Default to first element when no index specified
+                    Ok(PipeOp::First)
                 }
             }
             Token::Xi => { self.advance(); Ok(PipeOp::Next) }
