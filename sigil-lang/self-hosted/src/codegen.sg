@@ -364,6 +364,9 @@ impl CodeGen {
         self.line("SigilValue sigil_assert(SigilValue cond);");
         self.line("SigilValue sigil_assert_eq(SigilValue a, SigilValue b);");
         self.line("void sigil_panic(const char* msg);");
+        self.line("");
+        self.line("/* String operations */");
+        self.line("SigilValue sigil_concat(SigilValue a, SigilValue b);");
     }
 
     // ========================================================================
@@ -426,36 +429,20 @@ impl CodeGen {
     }
 
     /// Convert IR type to C type string
+    /// Note: For consistency with our SigilValue-based runtime, all non-void types
+    /// return SigilValue. This makes the generated code type-safe.
     fn ir_type_to_c(self, ty: !IrType) -> !String {
         match ty {
             IrType::Unit => "void",
-            IrType::Primitive { name } => match name.as_str() {
-                "bool" => "bool",
-                "i8" => "int8_t",
-                "i16" => "int16_t",
-                "i32" => "int32_t",
-                "i64" => "int64_t",
-                "i128" => "__int128",
-                "u8" => "uint8_t",
-                "u16" => "uint16_t",
-                "u32" => "uint32_t",
-                "u64" => "uint64_t",
-                "u128" => "unsigned __int128",
-                "isize" => "intptr_t",
-                "usize" => "size_t",
-                "f32" => "float",
-                "f64" => "double",
-                "char" => "char",
-                "str" => "char*",
-                _ => "SigilValue",
-            },
+            // All primitive types use SigilValue wrapper for type safety
+            IrType::Primitive { .. } => "SigilValue",
             IrType::Array { .. } | IrType::Slice { .. } => "SigilValue",
             IrType::Tuple { .. } => "SigilValue",
             IrType::Named { name, .. } => name,
-            IrType::Reference { inner, .. } => format!("{}*", self.ir_type_to_c(*inner)),
-            IrType::Pointer { inner, .. } => format!("{}*", self.ir_type_to_c(*inner)),
+            IrType::Reference { .. } => "SigilValue",
+            IrType::Pointer { .. } => "SigilValue",
             IrType::Function { .. } => "void*",
-            IrType::Evidential { inner, .. } => "SigilValue",
+            IrType::Evidential { .. } => "SigilValue",
             _ => "SigilValue",
         }
     }
@@ -1032,8 +1019,9 @@ impl CodeGen {
         self.line("/* Main entry point */");
         self.line("int main(int argc, char** argv) {");
         self.indent_push();
-        self.line("sigil_main();");
-        self.line("return 0;");
+        self.line("(void)argc; (void)argv; /* suppress unused warnings */");
+        self.line("SigilValue result = sigil_main();");
+        self.line("return (result.tag == TAG_INT) ? (int)result.v.i : 0;");
         self.indent_pop();
         self.line("}");
     }
@@ -1045,7 +1033,7 @@ impl CodeGen {
         self.line("switch (v.tag) {");
         self.indent_push();
         self.line("case TAG_STRING: printf(\"%s\", v.v.s); break;");
-        self.line("case TAG_INT: printf(\"%lld\", v.v.i); break;");
+        self.line("case TAG_INT: printf(\"%ld\", (long)v.v.i); break;");
         self.line("case TAG_FLOAT: printf(\"%g\", v.v.f); break;");
         self.line("case TAG_BOOL: printf(\"%s\", v.v.b ? \"true\" : \"false\"); break;");
         self.line("case TAG_CHAR: printf(\"%c\", v.v.c); break;");

@@ -2090,26 +2090,84 @@ impl Interpreter {
                 }
             }
             Pattern::Wildcard => Ok(()),
-            Pattern::Struct { fields, .. } => {
+            Pattern::Struct { path, fields, .. } => {
                 // Unwrap any wrappers first
                 let unwrapped = Self::unwrap_all(&value);
-                // Bind each field from the struct
-                if let Value::Struct { fields: struct_fields, .. } = &unwrapped {
-                    for field_pat in fields {
-                        let field_name = &field_pat.name.name;
-                        if let Some(field_val) = struct_fields.borrow().get(field_name) {
-                            if let Some(pat) = &field_pat.pattern {
-                                self.bind_pattern(pat, field_val.clone())?;
-                            } else {
-                                // Shorthand: foo: foo - bind to same name
-                                self.environment.borrow_mut().define(field_name.clone(), field_val.clone());
+                // Bind each field from the struct or variant
+                match &unwrapped {
+                    Value::Struct { fields: struct_fields, .. } => {
+                        for field_pat in fields {
+                            let field_name = &field_pat.name.name;
+                            if let Some(field_val) = struct_fields.borrow().get(field_name) {
+                                if let Some(pat) = &field_pat.pattern {
+                                    self.bind_pattern(pat, field_val.clone())?;
+                                } else {
+                                    // Shorthand: foo: foo - bind to same name
+                                    self.environment.borrow_mut().define(field_name.clone(), field_val.clone());
+                                }
                             }
                         }
+                        Ok(())
                     }
-                    Ok(())
-                } else {
-                    eprintln!("DEBUG struct pattern bind: expected struct but got {:?}", std::mem::discriminant(&unwrapped));
-                    Err(RuntimeError::new("Expected struct value for struct pattern"))
+                    Value::Variant { enum_name, variant_name, fields: variant_fields } => {
+                        // Handle struct-like enum variants (e.g., IrPattern::Ident { name, .. })
+                        let pattern_variant = path.segments.last().map(|s| s.ident.name.as_str()).unwrap_or("");
+                        if pattern_variant == variant_name || path.segments.iter().any(|s| s.ident.name == *variant_name) {
+                            // Variant fields are stored as a Vec, but we need to map by name
+                            // For struct-like variants, the fields should be a Struct value with field names
+                            if let Some(inner_fields) = variant_fields {
+                                if inner_fields.len() == 1 {
+                                    // Single wrapped struct with named fields
+                                    if let Value::Struct { fields: inner_struct, .. } = &inner_fields[0] {
+                                        for field_pat in fields {
+                                            let field_name = &field_pat.name.name;
+                                            if let Some(field_val) = inner_struct.borrow().get(field_name) {
+                                                if let Some(pat) = &field_pat.pattern {
+                                                    self.bind_pattern(pat, field_val.clone())?;
+                                                } else {
+                                                    self.environment.borrow_mut().define(field_name.clone(), field_val.clone());
+                                                }
+                                            }
+                                        }
+                                        return Ok(());
+                                    }
+                                }
+                                // Named field lookup from variant's field map
+                                // Variants store struct fields as named HashMap inside the variant
+                                for field_pat in fields {
+                                    let field_name = &field_pat.name.name;
+                                    // Look for a field with matching name in variant fields
+                                    // Variant fields might be stored in order or as a struct
+                                    // For now, search by name if we can find it
+                                    let field_val = inner_fields.iter().find_map(|f| {
+                                        if let Value::Struct { fields: fs, .. } = f {
+                                            fs.borrow().get(field_name).cloned()
+                                        } else {
+                                            None
+                                        }
+                                    });
+                                    if let Some(val) = field_val {
+                                        if let Some(pat) = &field_pat.pattern {
+                                            self.bind_pattern(pat, val)?;
+                                        } else {
+                                            self.environment.borrow_mut().define(field_name.clone(), val);
+                                        }
+                                    }
+                                }
+                            }
+                            Ok(())
+                        } else {
+                            eprintln!("DEBUG variant name mismatch: pattern={}, actual={}", pattern_variant, variant_name);
+                            Err(RuntimeError::new(format!(
+                                "Variant name mismatch: expected {} but got {}::{}",
+                                pattern_variant, enum_name, variant_name
+                            )))
+                        }
+                    }
+                    _ => {
+                        eprintln!("DEBUG struct pattern bind: expected struct/variant but got {:?}", std::mem::discriminant(&unwrapped));
+                        Err(RuntimeError::new("Expected struct or variant value for struct pattern"))
+                    }
                 }
             }
             Pattern::Path(_path) => {
@@ -2119,7 +2177,12 @@ impl Interpreter {
             }
             Pattern::TupleStruct { path, fields } => {
                 // Enum variant with fields: Result::Ok(value)
-                if let Value::Variant { variant_name, fields: variant_fields, .. } = &value {
+                // Unwrap any refs first
+                let unwrapped = Self::unwrap_all(&value);
+                eprintln!("DEBUG bind_pattern TupleStruct: path={:?}, value type={:?}",
+                    path.segments.iter().map(|s| &s.ident.name).collect::<Vec<_>>(),
+                    std::mem::discriminant(&unwrapped));
+                if let Value::Variant { variant_name, fields: variant_fields, .. } = &unwrapped {
                     let pattern_variant = path.segments.last().map(|s| s.ident.name.as_str()).unwrap_or("");
                     if pattern_variant == variant_name {
                         // Unwrap fields and bind
@@ -3008,6 +3071,44 @@ impl Interpreter {
                     return Ok(recv.clone());
                 }
 
+                // Pattern methods - for AST patterns stored as structs (Pattern::Ident, Pattern::Tuple, etc.)
+                if name.starts_with("Pattern::") {
+                    match method.name.as_str() {
+                        "evidentiality" => {
+                            // Return the evidentiality field from the pattern struct
+                            if let Some(ev) = fields.borrow().get("evidentiality") {
+                                return Ok(ev.clone());
+                            }
+                            return Ok(Value::Null);
+                        }
+                        "name" | "binding_name" => {
+                            // Return the name field from the pattern struct (for binding purposes)
+                            if let Some(n) = fields.borrow().get("name") {
+                                return Ok(n.clone());
+                            }
+                            // For Pattern::Ident, name is the binding name
+                            return Ok(Value::Null);
+                        }
+                        "mutable" => {
+                            // Return the mutable field from the pattern struct
+                            if let Some(m) = fields.borrow().get("mutable") {
+                                return Ok(m.clone());
+                            }
+                            return Ok(Value::Bool(false));
+                        }
+                        "is_ident" => {
+                            return Ok(Value::Bool(name == "Pattern::Ident"));
+                        }
+                        "is_wildcard" => {
+                            return Ok(Value::Bool(name == "Pattern::Wildcard"));
+                        }
+                        "clone" => {
+                            return Ok(recv.clone());
+                        }
+                        _ => {}
+                    }
+                }
+
                 let qualified_name = format!("{}·{}", name, method.name);
 
                 // Debug: track Lexer method calls
@@ -3168,6 +3269,73 @@ impl Interpreter {
                                 }
                             }
                             return Ok(arg_values.first().cloned().unwrap_or(Value::Null));
+                        }
+                        _ => {}
+                    }
+                }
+                // Pattern methods - for AST pattern access
+                eprintln!("DEBUG variant method call: enum_name={}, variant_name={}, method={}", enum_name, variant_name, method.name);
+                if enum_name == "Pattern" {
+                    match method.name.as_str() {
+                        "evidentiality" => {
+                            // Pattern::Ident { name, mutable, evidentiality } - return the evidentiality field
+                            if variant_name == "Ident" {
+                                if let Some(f) = fields {
+                                    // Fields are stored as a struct or in order
+                                    // Try to find evidentiality field
+                                    for field_val in f.iter() {
+                                        if let Value::Struct { fields: inner, .. } = field_val {
+                                            if let Some(ev) = inner.borrow().get("evidentiality") {
+                                                return Ok(ev.clone());
+                                            }
+                                        }
+                                    }
+                                    // If fields are stored in order: name, mutable, evidentiality (index 2)
+                                    if f.len() > 2 {
+                                        return Ok(f[2].clone());
+                                    }
+                                }
+                            }
+                            // No evidentiality for other pattern types
+                            return Ok(Value::Null);
+                        }
+                        "name" => {
+                            // Get the name from Pattern::Ident
+                            if variant_name == "Ident" {
+                                if let Some(f) = fields {
+                                    for field_val in f.iter() {
+                                        if let Value::Struct { fields: inner, .. } = field_val {
+                                            if let Some(n) = inner.borrow().get("name") {
+                                                return Ok(n.clone());
+                                            }
+                                        }
+                                    }
+                                    // First field is name
+                                    if let Some(n) = f.first() {
+                                        return Ok(n.clone());
+                                    }
+                                }
+                            }
+                            return Ok(Value::Null);
+                        }
+                        "mutable" => {
+                            // Get mutable flag from Pattern::Ident
+                            if variant_name == "Ident" {
+                                if let Some(f) = fields {
+                                    for field_val in f.iter() {
+                                        if let Value::Struct { fields: inner, .. } = field_val {
+                                            if let Some(m) = inner.borrow().get("mutable") {
+                                                return Ok(m.clone());
+                                            }
+                                        }
+                                    }
+                                    // Second field is mutable
+                                    if f.len() > 1 {
+                                        return Ok(f[1].clone());
+                                    }
+                                }
+                            }
+                            return Ok(Value::Bool(false));
                         }
                         _ => {}
                     }

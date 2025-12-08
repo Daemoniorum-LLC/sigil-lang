@@ -6148,8 +6148,11 @@ fn register_fs(interp: &mut Interpreter) {
 
     // Store last read file content for sigil_file_len()
     use std::cell::RefCell;
+    use std::collections::HashMap;
     thread_local! {
         static LAST_FILE_CONTENT: RefCell<String> = RefCell::new(String::new());
+        // Fake pointer map: stores strings that can be looked up by pointer ID
+        static FAKE_PTR_MAP: RefCell<HashMap<i64, String>> = RefCell::new(HashMap::new());
     }
 
     // sigil_read_file - read file content (FFI-compatible interface)
@@ -6161,7 +6164,6 @@ fn register_fs(interp: &mut Interpreter) {
             Value::String(s) => s.to_string(),
             Value::Int(ptr_id) => {
                 // Look up the string from the fake pointer map
-                use crate::interpreter::FAKE_PTR_MAP;
                 FAKE_PTR_MAP.with(|map| {
                     map.borrow().get(ptr_id).cloned()
                 }).ok_or_else(|| RuntimeError::new(format!(
@@ -6221,7 +6223,6 @@ fn register_fs(interp: &mut Interpreter) {
             Value::String(s) => s.to_string(),
             Value::Int(ptr_id) => {
                 // Look up the string from the fake pointer map
-                use crate::interpreter::FAKE_PTR_MAP;
                 FAKE_PTR_MAP.with(|map| {
                     map.borrow().get(ptr_id).cloned()
                 }).unwrap_or_else(|| format!("{}", ptr_id))
