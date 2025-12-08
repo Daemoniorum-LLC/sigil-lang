@@ -32,6 +32,9 @@ pub struct LoweringContext {
     /// Current function being lowered
     current_function: ?String,
 
+    /// Current Self type name (when inside impl block)
+    current_self_type: ?String,
+
     /// Collected errors
     errors: ![LowerError],
 
@@ -46,6 +49,7 @@ impl LoweringContext {
             type_checker,
             id_counter: 0,
             current_function: null,
+            current_self_type: null,
             errors: [],
             var_ids: Map::new(),
         }
@@ -140,7 +144,39 @@ fn lower_item(ctx: &mut LoweringContext, module: &mut IrModule, item: !Item) {
             module.traits.push(lower_trait(ctx, t));
         },
         Item::Impl(i) => {
+            // Get the type name for qualified function names
+            let type_name = match i.self_ty {
+                TypeExpr::Path(p) => {
+                    if p.segments.len() > 0 {
+                        p.segments[0].ident.name.clone()
+                    } else {
+                        "".to_string()
+                    }
+                },
+                _ => "".to_string(),
+            };
+
+            // Set current Self type for resolving Self in struct expressions
+            ctx.current_self_type = ?type_name.clone();
+
+            // Add each method to module.functions with qualified name
+            for impl_item in i.items.clone() {
+                if let ImplItem::Function(f) = impl_item {
+                    // Create a copy of the function with qualified name
+                    let qualified_name = format!("{}::{}", type_name, f.name.name);
+                    let mut qualified_func = f.clone();
+                    qualified_func.name.name = qualified_name;
+
+                    if let ?ir_fn = lower_function(ctx, qualified_func) {
+                        module.functions.push(ir_fn);
+                    }
+                }
+            }
+
             module.impls.push(lower_impl(ctx, i));
+
+            // Reset current Self type
+            ctx.current_self_type = null;
         },
         _ => {
             // Other items (Use, Mod, etc.) don't generate IR
@@ -628,10 +664,34 @@ fn lower_expr(ctx: &mut LoweringContext, expr: !Expr) -> !IrOperation {
 
         Expr::Struct { path, fields, rest } => {
             // Get struct name from path
-            let name = path.segments|τ{s => s.ident.name}|join("::");
+            let mut name = path.segments|τ{s => s.ident.name}|join("::");
 
-            // Lower each field
-            let ir_fields = fields|τ{f => (f.name.name, lower_expr(ctx, f.value))}|collect();
+            // Resolve Self to actual type name when inside impl block
+            if name == "Self" {
+                if let ?self_type = ctx.current_self_type.clone() {
+                    name = self_type;
+                }
+            }
+
+            // Lower each field, handling shorthand syntax (Self { x } means Self { x: x })
+            let ir_fields = fields|τ{f => {
+                let value_expr = match f.value {
+                    ?v => lower_expr(ctx, v),
+                    null => {
+                        // Shorthand syntax: Self { x } means Self { x: x }
+                        // Generate a variable reference for the field name
+                        let field_name = f.name.name.clone();
+                        let id = ctx.get_var_id(field_name.clone());
+                        IrOperation::Var {
+                            name: field_name,
+                            id,
+                            ty: IrType::Infer,
+                            evidence: IrEvidence::Known,
+                        }
+                    },
+                };
+                (f.name.name.clone(), value_expr)
+            }}|collect();
 
             // Lower rest expression if present
             let ir_rest = match rest {
@@ -791,6 +851,20 @@ fn lower_expr(ctx: &mut LoweringContext, expr: !Expr) -> !IrOperation {
             IrOperation::Assign {
                 target: Box::new(ir_target),
                 value: Box::new(ir_value),
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::MethodCall { receiver, method, args } => {
+            let ir_receiver = lower_expr(ctx, *receiver);
+            let ir_args = args|τ{a => lower_expr(ctx, a)}|collect();
+
+            IrOperation::MethodCall {
+                receiver: Box::new(ir_receiver),
+                method: method.name,
+                args: ir_args,
+                type_args: [],
+                ty: IrType::Infer,
                 evidence: IrEvidence::Known,
             }
         },

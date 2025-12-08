@@ -851,6 +851,45 @@ impl CodeGen {
                 self.with_evidence(expr, evidence)
             },
 
+            IrOperation::MethodCall { receiver, method, args, evidence, .. } => {
+                // Generate method call
+                let recv_code = self.emit_operation(*receiver);
+                let arg_codes = args|τ{a => self.emit_operation(a)}|collect();
+
+                // Handle primitive methods inline
+                let call = match method.as_str() {
+                    "min" if arg_codes.len() == 1 => {
+                        let other = arg_codes[0].clone();
+                        format!("({}.v.i < {}.v.i ? {} : {})", recv_code, other, recv_code, other)
+                    },
+                    "max" if arg_codes.len() == 1 => {
+                        let other = arg_codes[0].clone();
+                        format!("({}.v.i > {}.v.i ? {} : {})", recv_code, other, recv_code, other)
+                    },
+                    "len" if arg_codes.is_empty() => {
+                        format!("sigil_len({})", recv_code)
+                    },
+                    "is_empty" if arg_codes.is_empty() => {
+                        format!("sigil_bool(sigil_len({}).v.i == 0)", recv_code)
+                    },
+                    "clone" if arg_codes.is_empty() => {
+                        recv_code.clone()
+                    },
+                    "to_string" if arg_codes.is_empty() => {
+                        format!("sigil_string({})", recv_code)
+                    },
+                    _ => {
+                        // Default: call method name with receiver as first arg
+                        let mut all_args = [recv_code.clone()];
+                        for arg in arg_codes {
+                            all_args.push(arg);
+                        }
+                        format!("sigil_{}({})", self.mangle_name(method), all_args.join(", "))
+                    },
+                };
+                self.with_evidence(call, evidence)
+            },
+
             _ => {
                 self.line("/* Unsupported operation */");
                 "sigil_unit()"

@@ -3,17 +3,26 @@
 ## Overview
 The Jormungandr initiative aims to make Sigil self-hosting - compiling the Sigil compiler using itself. This document tracks progress on running the self-hosted compiler (in `self-hosted/src/`) through the Rust interpreter to compile Sigil programs to C code.
 
-## Current Status: span.sg Compiles to C Code!
+## Current Status: Core span.sg Compiles and RUNS!
 
-**Major Milestone**: The self-hosted compiler can now compile span.sg through the full pipeline to C code!
+**Major Milestone**: The self-hosted compiler can now compile span.sg through the full pipeline to **working executable code**!
 
 The compilation pipeline successfully progresses through:
 - ✅ Parsing
 - ✅ Type checking (with warnings)
 - ✅ Lowering to IR
 - ✅ Code generation to C
+- ✅ **GCC compilation to executable**
+- ✅ **Correct execution (returns 10 for merged span length)**
 
-The generated C code compiles but impl block methods (associated functions like `Span::new()`) still need codegen fixes.
+```bash
+# Working test case
+Span::new(5, 10)          # length 5
+Span::new(8, 15)          # length 7
+Span::merge(a, b)         # (5, 15) length 10 ✓
+```
+
+Impl block methods with qualified calls (`Span::new()`, `Span::merge()`, etc.) work correctly!
 
 ### What's Working
 
@@ -35,6 +44,20 @@ The generated C code compiles but impl block methods (associated functions like 
 | Closure parsing | ✅ | `{x => x * 2}` |
 | Generic types | ✅ | `Spanned<T>` |
 | Lifetime markers | ✅ | `Token::Quote` added |
+| Impl block methods | ✅ | `Span::new()`, `Span::merge()` |
+| Qualified method calls | ✅ | `Type::method(receiver)` |
+| Struct shorthand syntax | ✅ | `Self { x, y }` → `Self { x: x, y: y }` |
+| Self type resolution | ✅ | `Self { ... }` → `Span { ... }` in impl |
+| Primitive methods | ✅ | `.min()`, `.max()`, `.len()` on integers |
+
+### Known Limitations
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Method call resolution | ⚠️ | `p.method()` needs explicit `Type::method(p)` |
+| Closures | ⚠️ | Parsed but codegen incomplete |
+| `write!` macro | ⚠️ | Generates malformed C code |
+| `as` casts | ❌ | Parser doesn't handle `x as i64` |
 
 ### Recent Fixes (This Session)
 
@@ -78,6 +101,29 @@ The generated C code compiles but impl block methods (associated functions like 
    - Type errors reported as warnings but continue
    - Lowering errors reported as warnings but continue
    - Allows bootstrapping even with incomplete features
+
+4. **Impl block method generation** (`lower.sg`)
+   - Impl methods added to `module.functions` with qualified names
+   - `Point::new` generates `sigil_Point____new` in C
+   - Added `current_self_type` tracking for Self resolution
+
+5. **Struct shorthand syntax** (`lower.sg`)
+   - `Self { x, y }` now generates var references for x and y
+   - Fixed null value handling in FieldInit
+
+6. **Self type resolution** (`lower.sg`)
+   - `Self` in struct expressions resolves to actual type name
+   - `Self { x, y }` inside `impl Span` generates `sigil_struct("Span", ...)`
+
+7. **Method call lowering** (`lower.sg`)
+   - Added `Expr::MethodCall` → `IrOperation::MethodCall` lowering
+
+#### Codegen Fixes
+
+1. **Method call codegen** (`codegen.sg`)
+   - Added `IrOperation::MethodCall` handler
+   - Primitive methods (min, max, len, is_empty, clone, to_string) inline-expanded
+   - Other method calls generate `sigil_method(receiver, args)`
 
 #### Interpreter Fixes
 
