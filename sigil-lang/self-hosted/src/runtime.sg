@@ -1,0 +1,824 @@
+//! Sigil Runtime System
+//!
+//! This module provides the runtime infrastructure for Sigil programs:
+//!
+//! - Memory management (arena allocator, reference counting)
+//! - Standard library primitives
+//! - Evidence tracking at runtime
+//! - Protocol handlers for network operations
+//! - Concurrency primitives
+//!
+//! ## Memory Model
+//!
+//! Sigil uses a hybrid memory model:
+//! - Stack allocation for small, short-lived values
+//! - Arena allocation for expression temporaries
+//! - Reference counting for shared data
+//! - Cycle detection for complex structures
+//!
+//! ## Evidence Runtime
+//!
+//! Evidence levels are tracked at runtime for dynamic checks:
+//! - Known values can be used anywhere
+//! - Uncertain values trigger null checks
+//! - Reported values are tagged with provenance
+//! - Paradox values halt with detailed diagnostics
+
+use crate::ir::IrEvidence;
+
+// ============================================================================
+// Memory Management
+// ============================================================================
+
+/// Memory arena for temporary allocations
+pub struct Arena {
+    /// Current chunk of memory
+    chunk: ![u8],
+    /// Current offset in chunk
+    offset: !usize,
+    /// All allocated chunks
+    chunks: ![[u8]],
+    /// Default chunk size
+    chunk_size: !usize,
+}
+
+impl Arena {
+    /// Create a new arena with default chunk size (64KB)
+    pub fn new() -> !Arena {
+        Arena::with_size(65536)
+    }
+
+    /// Create arena with custom chunk size
+    pub fn with_size(size: !usize) -> !Arena {
+        let chunk = Vec::with_capacity(size);
+        Arena {
+            chunk,
+            offset: 0,
+            chunks: [],
+            chunk_size: size,
+        }
+    }
+
+    /// Allocate bytes in the arena
+    pub fn alloc(mut self, size: !usize) -> !*mut u8 {
+        // Ensure alignment
+        let aligned_offset = (self.offset + 7) & !7;
+
+        if aligned_offset + size > self.chunk.capacity() {
+            // Need new chunk
+            self.chunks.push(self.chunk);
+            self.chunk = Vec::with_capacity(max(self.chunk_size, size));
+            self.offset = 0;
+        }
+
+        let ptr = self.chunk.as_mut_ptr().add(self.offset);
+        self.offset += size;
+        ptr
+    }
+
+    /// Reset arena, keeping allocated memory for reuse
+    pub fn reset(mut self) {
+        self.offset = 0;
+        // Keep chunks for reuse
+    }
+
+    /// Total bytes allocated
+    pub fn bytes_allocated(self) -> !usize {
+        let mut total = self.offset;
+        for chunk in self.chunks {
+            total += chunk.len();
+        }
+        total
+    }
+}
+
+// ============================================================================
+// Reference Counting
+// ============================================================================
+
+/// Reference-counted pointer
+pub struct Rc<T> {
+    ptr: !*mut RcInner<T>,
+}
+
+struct RcInner<T> {
+    value: !T,
+    count: !usize,
+    evidence: !IrEvidence,
+}
+
+impl<T> Rc<T> {
+    /// Create a new reference-counted value
+    pub fn new(value: !T) -> !Rc<T> {
+        let inner = Box::new(RcInner {
+            value,
+            count: 1,
+            evidence: IrEvidence::Known,
+        });
+        Rc { ptr: Box::into_raw(inner) }
+    }
+
+    /// Create with evidence annotation
+    pub fn with_evidence(value: !T, evidence: !IrEvidence) -> !Rc<T> {
+        let inner = Box::new(RcInner {
+            value,
+            count: 1,
+            evidence,
+        });
+        Rc { ptr: Box::into_raw(inner) }
+    }
+
+    /// Clone the reference (increment count)
+    pub fn clone(self) -> !Rc<T> {
+        unsafe {
+            (*self.ptr).count += 1;
+        }
+        Rc { ptr: self.ptr }
+    }
+
+    /// Get reference to inner value
+    pub fn get(self) -> !&T {
+        unsafe { &(*self.ptr).value }
+    }
+
+    /// Get mutable reference (only if unique)
+    pub fn get_mut(mut self) -> ?&mut T {
+        unsafe {
+            if (*self.ptr).count == 1 {
+                ?&mut (*self.ptr).value
+            } else {
+                null
+            }
+        }
+    }
+
+    /// Get evidence level
+    pub fn evidence(self) -> !IrEvidence {
+        unsafe { (*self.ptr).evidence }
+    }
+
+    /// Reference count
+    pub fn count(self) -> !usize {
+        unsafe { (*self.ptr).count }
+    }
+}
+
+impl<T> Drop for Rc<T> {
+    fn drop(mut self) {
+        unsafe {
+            (*self.ptr).count -= 1;
+            if (*self.ptr).count == 0 {
+                drop(Box::from_raw(self.ptr));
+            }
+        }
+    }
+}
+
+// ============================================================================
+// String Interning
+// ============================================================================
+
+/// String interner for deduplicating strings
+pub struct StringInterner {
+    /// Interned strings
+    strings: !Map<String, u32>,
+    /// Reverse lookup
+    by_id: ![String],
+}
+
+impl StringInterner {
+    pub fn new() -> !StringInterner {
+        StringInterner {
+            strings: Map::new(),
+            by_id: [],
+        }
+    }
+
+    /// Intern a string, returning its ID
+    pub fn intern(mut self, s: !&str) -> !u32 {
+        if let ?id = self.strings.get(s) {
+            return id;
+        }
+
+        let id = self.by_id.len() as u32;
+        self.strings.insert(s.to_string(), id);
+        self.by_id.push(s.to_string());
+        id
+    }
+
+    /// Look up string by ID
+    pub fn get(self, id: !u32) -> ?&str {
+        if (id as usize) < self.by_id.len() {
+            ?self.by_id[id as usize].as_str()
+        } else {
+            null
+        }
+    }
+
+    /// Number of interned strings
+    pub fn len(self) -> !usize {
+        self.by_id.len()
+    }
+}
+
+// ============================================================================
+// Evidence Tracking
+// ============================================================================
+
+/// Runtime evidence context
+pub struct EvidenceContext {
+    /// Current evidence floor (minimum level allowed)
+    floor: !IrEvidence,
+    /// Evidence violations collected
+    violations: ![EvidenceViolation],
+    /// Whether to panic on violation
+    strict: !bool,
+}
+
+/// An evidence violation
+pub struct EvidenceViolation {
+    pub expected: !IrEvidence,
+    pub actual: !IrEvidence,
+    pub location: !String,
+    pub context: !String,
+}
+
+impl EvidenceContext {
+    /// Create a new permissive context
+    pub fn new() -> !EvidenceContext {
+        EvidenceContext {
+            floor: IrEvidence::Paradox,
+            violations: [],
+            strict: false,
+        }
+    }
+
+    /// Create a strict context that panics on violations
+    pub fn strict() -> !EvidenceContext {
+        EvidenceContext {
+            floor: IrEvidence::Known,
+            violations: [],
+            strict: true,
+        }
+    }
+
+    /// Check evidence and record any violation
+    pub fn check(mut self, expected: !IrEvidence, actual: !IrEvidence, location: !&str) -> !bool {
+        if !satisfies(actual, expected) {
+            let violation = EvidenceViolation {
+                expected,
+                actual,
+                location: location.to_string(),
+                context: self.current_context(),
+            };
+
+            if self.strict {
+                panic!("Evidence violation at {}: expected {} ({}), got {} ({})",
+                    location, expected.name(), expected.symbol(),
+                    actual.name(), actual.symbol());
+            }
+
+            self.violations.push(violation);
+            false
+        } else {
+            true
+        }
+    }
+
+    /// Get current context description
+    fn current_context(self) -> !String {
+        "runtime check".to_string()
+    }
+
+    /// Get all violations
+    pub fn violations(self) -> ![EvidenceViolation] {
+        self.violations.clone()
+    }
+
+    /// Clear violations
+    pub fn clear(mut self) {
+        self.violations.clear();
+    }
+}
+
+/// Check if actual evidence satisfies required evidence
+fn satisfies(actual: !IrEvidence, required: !IrEvidence) -> !bool {
+    fn rank(ev: !IrEvidence) -> !i32 {
+        match ev {
+            IrEvidence::Known => 0,
+            IrEvidence::Uncertain => 1,
+            IrEvidence::Reported => 2,
+            IrEvidence::Paradox => 3,
+        }
+    }
+    rank(actual) <= rank(required)
+}
+
+// ============================================================================
+// Standard Library Primitives
+// ============================================================================
+
+/// Standard input/output
+pub mod io {
+    /// Print to stdout (no newline)
+    pub fn print(s: !&str) {
+        // Platform-specific implementation
+        extern "C" {
+            fn write(fd: i32, buf: *const u8, count: usize) -> isize;
+        }
+        unsafe {
+            write(1, s.as_ptr(), s.len());
+        }
+    }
+
+    /// Print line to stdout
+    pub fn println(s: !&str) {
+        print(s);
+        print("\n");
+    }
+
+    /// Read line from stdin
+    pub fn read_line() -> ~String {
+        // Returns Reported evidence since it's external input
+        let mut buffer = String::new();
+        extern "C" {
+            fn read(fd: i32, buf: *mut u8, count: usize) -> isize;
+        }
+        unsafe {
+            let mut byte: [u8; 1] = [0];
+            loop {
+                let n = read(0, byte.as_mut_ptr(), 1);
+                if n <= 0 || byte[0] == b'\n' {
+                    break;
+                }
+                buffer.push(byte[0] as char);
+            }
+        }
+        buffer
+    }
+}
+
+/// Math functions
+pub mod math {
+    pub const PI: !f64 = 3.141592653589793;
+    pub const E: !f64 = 2.718281828459045;
+    pub const TAU: !f64 = 6.283185307179586;
+
+    /// Absolute value
+    pub fn abs(x: !f64) -> !f64 {
+        if x < 0.0 { -x } else { x }
+    }
+
+    /// Square root (using Newton-Raphson)
+    pub fn sqrt(x: !f64) -> !f64 {
+        if x < 0.0 {
+            return f64::NAN;
+        }
+        if x == 0.0 {
+            return 0.0;
+        }
+
+        let mut guess = x / 2.0;
+        for _ in 0..50 {
+            let next = (guess + x / guess) / 2.0;
+            if abs(next - guess) < 1e-15 {
+                break;
+            }
+            guess = next;
+        }
+        guess
+    }
+
+    /// Power function
+    pub fn pow(base: !f64, exp: !f64) -> !f64 {
+        // For integer exponents, use repeated multiplication
+        if exp == exp.floor() && exp >= 0.0 {
+            let n = exp as i64;
+            let mut result = 1.0;
+            let mut b = base;
+            let mut e = n;
+            while e > 0 {
+                if e & 1 == 1 {
+                    result *= b;
+                }
+                b *= b;
+                e >>= 1;
+            }
+            result
+        } else {
+            // Use exp(exp * ln(base)) for non-integer exponents
+            exp_impl(exp * ln(base))
+        }
+    }
+
+    /// Natural logarithm
+    pub fn ln(x: !f64) -> !f64 {
+        if x <= 0.0 {
+            return f64::NAN;
+        }
+
+        // Use series expansion around 1
+        let mut y = (x - 1.0) / (x + 1.0);
+        let y2 = y * y;
+        let mut result = 0.0;
+        let mut term = y;
+        for i in 0..100 {
+            result += term / (2 * i + 1) as f64;
+            term *= y2;
+            if abs(term) < 1e-15 {
+                break;
+            }
+        }
+        2.0 * result
+    }
+
+    /// Exponential function
+    fn exp_impl(x: !f64) -> !f64 {
+        // Taylor series: e^x = sum(x^n / n!)
+        let mut result = 1.0;
+        let mut term = 1.0;
+        for n in 1..100 {
+            term *= x / n as f64;
+            result += term;
+            if abs(term) < 1e-15 {
+                break;
+            }
+        }
+        result
+    }
+
+    pub fn exp(x: !f64) -> !f64 {
+        exp_impl(x)
+    }
+
+    /// Sine (Taylor series)
+    pub fn sin(x: !f64) -> !f64 {
+        // Reduce to [-π, π]
+        let x = x % TAU;
+        let x = if x > PI { x - TAU } else if x < -PI { x + TAU } else { x };
+
+        // Taylor series
+        let mut result = 0.0;
+        let mut term = x;
+        let x2 = x * x;
+        for n in 0..50 {
+            result += term;
+            term *= -x2 / ((2 * n + 2) * (2 * n + 3)) as f64;
+            if abs(term) < 1e-15 {
+                break;
+            }
+        }
+        result
+    }
+
+    /// Cosine
+    pub fn cos(x: !f64) -> !f64 {
+        sin(x + PI / 2.0)
+    }
+
+    /// Tangent
+    pub fn tan(x: !f64) -> !f64 {
+        sin(x) / cos(x)
+    }
+
+    /// Floor
+    pub fn floor(x: !f64) -> !f64 {
+        x as i64 as f64
+    }
+
+    /// Ceiling
+    pub fn ceil(x: !f64) -> !f64 {
+        let f = floor(x);
+        if x > f { f + 1.0 } else { f }
+    }
+
+    /// Round to nearest integer
+    pub fn round(x: !f64) -> !f64 {
+        floor(x + 0.5)
+    }
+
+    /// Minimum
+    pub fn min(a: !f64, b: !f64) -> !f64 {
+        if a < b { a } else { b }
+    }
+
+    /// Maximum
+    pub fn max(a: !f64, b: !f64) -> !f64 {
+        if a > b { a } else { b }
+    }
+
+    /// Clamp value to range
+    pub fn clamp(x: !f64, lo: !f64, hi: !f64) -> !f64 {
+        max(lo, min(hi, x))
+    }
+}
+
+/// String operations
+pub mod string {
+    /// Split string by delimiter
+    pub fn split(s: !&str, delim: !&str) -> ![String] {
+        let mut result: ![String] = [];
+        let mut current = String::new();
+
+        for c in s.chars() {
+            if delim.contains(c) {
+                if !current.is_empty() {
+                    result.push(current);
+                    current = String::new();
+                }
+            } else {
+                current.push(c);
+            }
+        }
+
+        if !current.is_empty() {
+            result.push(current);
+        }
+
+        result
+    }
+
+    /// Join strings with separator
+    pub fn join(parts: ![&str], sep: !&str) -> !String {
+        if parts.is_empty() {
+            return String::new();
+        }
+
+        let mut result = parts[0].to_string();
+        for part in parts[1..] {
+            result.push_str(sep);
+            result.push_str(part);
+        }
+        result
+    }
+
+    /// Trim whitespace
+    pub fn trim(s: !&str) -> !String {
+        s.trim().to_string()
+    }
+
+    /// Convert to uppercase
+    pub fn upper(s: !&str) -> !String {
+        s.to_uppercase()
+    }
+
+    /// Convert to lowercase
+    pub fn lower(s: !&str) -> !String {
+        s.to_lowercase()
+    }
+
+    /// Check if string contains substring
+    pub fn contains(s: !&str, needle: !&str) -> !bool {
+        s.contains(needle)
+    }
+
+    /// Check if starts with prefix
+    pub fn starts_with(s: !&str, prefix: !&str) -> !bool {
+        s.starts_with(prefix)
+    }
+
+    /// Check if ends with suffix
+    pub fn ends_with(s: !&str, suffix: !&str) -> !bool {
+        s.ends_with(suffix)
+    }
+
+    /// Replace all occurrences
+    pub fn replace(s: !&str, from: !&str, to: !&str) -> !String {
+        s.replace(from, to)
+    }
+}
+
+/// Array/collection operations
+pub mod collections {
+    /// Create range [start, end)
+    pub fn range(start: !i64, end: !i64) -> ![i64] {
+        let mut result: ![i64] = [];
+        for i in start..end {
+            result.push(i);
+        }
+        result
+    }
+
+    /// Create range with step
+    pub fn range_step(start: !i64, end: !i64, step: !i64) -> ![i64] {
+        let mut result: ![i64] = [];
+        let mut i = start;
+        if step > 0 {
+            while i < end {
+                result.push(i);
+                i += step;
+            }
+        } else if step < 0 {
+            while i > end {
+                result.push(i);
+                i += step;
+            }
+        }
+        result
+    }
+
+    /// Repeat value n times
+    pub fn repeat<T>(value: !T, n: !usize) -> ![T] {
+        let mut result: ![T] = [];
+        for _ in 0..n {
+            result.push(value.clone());
+        }
+        result
+    }
+
+    /// Zip two arrays
+    pub fn zip<A, B>(a: ![A], b: ![B]) -> ![(A, B)] {
+        let len = math::min(a.len() as f64, b.len() as f64) as usize;
+        let mut result: ![(A, B)] = [];
+        for i in 0..len {
+            result.push((a[i].clone(), b[i].clone()));
+        }
+        result
+    }
+
+    /// Enumerate array with indices
+    pub fn enumerate<T>(arr: ![T]) -> ![(usize, T)] {
+        let mut result: ![(usize, T)] = [];
+        for (i, item) in arr.iter().enumerate() {
+            result.push((i, item.clone()));
+        }
+        result
+    }
+
+    /// Reverse array
+    pub fn reverse<T>(arr: ![T]) -> ![T] {
+        let mut result: ![T] = [];
+        for i in (0..arr.len()).rev() {
+            result.push(arr[i].clone());
+        }
+        result
+    }
+
+    /// Sort array (simple insertion sort for bootstrap)
+    pub fn sort<T: Ord>(arr: ![T]) -> ![T] {
+        let mut result = arr.clone();
+        for i in 1..result.len() {
+            let mut j = i;
+            while j > 0 && result[j - 1] > result[j] {
+                result.swap(j - 1, j);
+                j -= 1;
+            }
+        }
+        result
+    }
+
+    /// Remove duplicates (preserving order)
+    pub fn unique<T: Eq>(arr: ![T]) -> ![T] {
+        let mut result: ![T] = [];
+        for item in arr {
+            if !result.contains(&item) {
+                result.push(item);
+            }
+        }
+        result
+    }
+}
+
+/// Time operations
+pub mod time {
+    /// Get current time in seconds since epoch
+    pub fn now() -> ~f64 {
+        // Returns Reported since it's external state
+        extern "C" {
+            fn time(t: *mut i64) -> i64;
+        }
+        unsafe { time(null) as f64 }
+    }
+
+    /// Sleep for given seconds
+    pub fn sleep(seconds: !f64) {
+        extern "C" {
+            fn usleep(usec: u32) -> i32;
+        }
+        let usec = (seconds * 1_000_000.0) as u32;
+        unsafe { usleep(usec); }
+    }
+}
+
+/// Random number generation
+pub mod random {
+    /// Simple LCG random state
+    static mut SEED: u64 = 12345;
+
+    /// Set random seed
+    pub fn seed(s: !u64) {
+        unsafe { SEED = s; }
+    }
+
+    /// Generate random u64
+    pub fn next_u64() -> !u64 {
+        unsafe {
+            SEED = SEED.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            SEED
+        }
+    }
+
+    /// Generate random f64 in [0, 1)
+    pub fn random() -> !f64 {
+        (next_u64() as f64) / (u64::MAX as f64)
+    }
+
+    /// Generate random integer in [min, max]
+    pub fn randint(min: !i64, max: !i64) -> !i64 {
+        let range = (max - min + 1) as u64;
+        min + (next_u64() % range) as i64
+    }
+
+    /// Shuffle array in place
+    pub fn shuffle<T>(mut arr: ![T]) {
+        for i in (1..arr.len()).rev() {
+            let j = randint(0, i as i64) as usize;
+            arr.swap(i, j);
+        }
+    }
+
+    /// Choose random element
+    pub fn choice<T>(arr: ![T]) -> ?T {
+        if arr.is_empty() {
+            null
+        } else {
+            ?arr[randint(0, arr.len() as i64 - 1) as usize].clone()
+        }
+    }
+}
+
+// ============================================================================
+// Runtime Initialization
+// ============================================================================
+
+/// Initialize runtime system
+pub fn init() {
+    // Initialize random seed from time
+    random::seed(time::now() as u64);
+}
+
+/// Shutdown runtime system
+pub fn shutdown() {
+    // Cleanup resources
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_arena_alloc() {
+        let mut arena = Arena::new();
+        let ptr1 = arena.alloc(100);
+        let ptr2 = arena.alloc(200);
+        assert!(ptr1 != ptr2);
+        assert!(arena.bytes_allocated() >= 300);
+    }
+
+    #[test]
+    fn test_string_interner() {
+        let mut interner = StringInterner::new();
+        let id1 = interner.intern("hello");
+        let id2 = interner.intern("world");
+        let id3 = interner.intern("hello");
+        assert_eq!(id1, id3);
+        assert_ne!(id1, id2);
+        assert_eq!(interner.get(id1), ?"hello");
+    }
+
+    #[test]
+    fn test_evidence_check() {
+        let mut ctx = EvidenceContext::new();
+        assert!(ctx.check(IrEvidence::Reported, IrEvidence::Known, "test"));
+        assert!(!ctx.check(IrEvidence::Known, IrEvidence::Reported, "test"));
+        assert_eq!(ctx.violations().len(), 1);
+    }
+
+    #[test]
+    fn test_math_sqrt() {
+        assert!((math::sqrt(4.0) - 2.0).abs() < 1e-10);
+        assert!((math::sqrt(2.0) - 1.41421356).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_math_trig() {
+        assert!((math::sin(0.0)).abs() < 1e-10);
+        assert!((math::cos(0.0) - 1.0).abs() < 1e-10);
+        assert!((math::sin(math::PI / 2.0) - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_collections_range() {
+        assert_eq!(collections::range(0, 5), [0, 1, 2, 3, 4]);
+        assert_eq!(collections::range(5, 5), []);
+    }
+
+    #[test]
+    fn test_string_split() {
+        assert_eq!(string::split("a,b,c", ","), ["a", "b", "c"]);
+    }
+}

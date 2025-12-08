@@ -1,0 +1,2184 @@
+//! Type checker for Sigil.
+//!
+//! Implements bidirectional type inference with evidentiality tracking.
+//! The type system enforces that evidence levels propagate correctly
+//! through computations.
+//!
+//! ## Evidence Lattice
+//!
+//! Evidence levels form a lattice for tracking data certainty:
+//!
+//! ```
+//!     Known (!) < Uncertain (?) < Reported (~) < Paradox (‽)
+//! ```
+//!
+//! Operations combine evidence using join (least upper bound):
+//! - `known + uncertain` → `uncertain`
+//! - `known + reported` → `reported`
+//! - Any operation with paradox → `paradox`
+
+use crate::ast::*;
+use crate::span::Span;
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
+/// Internal type representation for the type checker.
+pub enum Type {
+    // Primitive types
+    Unit,
+    Bool,
+    Int(!IntSize),
+    Float(!FloatSize),
+    Char,
+    Str,
+
+    // Compound types
+    Array {
+        element: !Box<Type>,
+        size: ?usize,
+    },
+    Slice(!Box<Type>),
+    Tuple(![Type]),
+
+    // Named type (struct, enum, type alias)
+    Named {
+        name: !String,
+        generics: ![Type],
+    },
+
+    // Function type
+    Function {
+        params: ![Type],
+        return_type: !Box<Type>,
+        is_async: !bool,
+    },
+
+    // Reference types
+    Ref {
+        mutable: !bool,
+        inner: !Box<Type>,
+    },
+    Ptr {
+        mutable: !bool,
+        inner: !Box<Type>,
+    },
+
+    // Evidential wrapper - the core of Sigil's type system
+    Evidential {
+        inner: !Box<Type>,
+        evidence: !EvidenceLevel,
+    },
+
+    // Cyclic type (modular arithmetic)
+    Cycle {
+        modulus: !usize,
+    },
+
+    // SIMD vector type
+    Simd {
+        element: !Box<Type>,
+        lanes: !u8,
+    },
+
+    // Atomic type
+    Atomic(!Box<Type>),
+
+    // Type variable for inference
+    Var(!TypeVar),
+
+    // Error type (for error recovery)
+    Error,
+
+    // Never type (diverging)
+    Never,
+}
+
+impl Type {
+    /// Create a unit type
+    pub fn unit() -> !Type {
+        Type::Unit
+    }
+
+    /// Create a bool type
+    pub fn bool_type() -> !Type {
+        Type::Bool
+    }
+
+    /// Create a string type
+    pub fn str_type() -> !Type {
+        Type::Str
+    }
+
+    /// Create a never type
+    pub fn never() -> !Type {
+        Type::Never
+    }
+
+    /// Create an error type
+    pub fn error() -> !Type {
+        Type::Error
+    }
+
+    /// Check if this is an error type
+    pub fn is_error(self) -> !bool {
+        match self {
+            Type::Error => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this is a never type
+    pub fn is_never(self) -> !bool {
+        match self {
+            Type::Never => true,
+            _ => false,
+        }
+    }
+
+    /// Display the type as a string
+    pub fn to_string(self) -> !String {
+        match self {
+            Type::Unit => "()",
+            Type::Bool => "bool",
+            Type::Int(size) => size.to_string(),
+            Type::Float(size) => size.to_string(),
+            Type::Char => "char",
+            Type::Str => "str",
+            Type::Array { element, size } => {
+                match size {
+                    ?n => format!("[{}; {}]", element.to_string(), n),
+                    null => format!("[{}]", element.to_string()),
+                }
+            },
+            Type::Slice(inner) => format!("[{}]", inner.to_string()),
+            Type::Tuple(elems) => {
+                let parts = elems|τ{e => e.to_string()}|join(", ");
+                format!("({})", parts)
+            },
+            Type::Named { name, generics } => {
+                if generics.is_empty() {
+                    name
+                } else {
+                    let params = generics|τ{g => g.to_string()}|join(", ");
+                    format!("{}<{}>", name, params)
+                }
+            },
+            Type::Function { params, return_type, is_async } => {
+                let prefix = if is_async { "async " } else { "" };
+                let param_str = params|τ{p => p.to_string()}|join(", ");
+                format!("{}fn({}) -> {}", prefix, param_str, return_type.to_string())
+            },
+            Type::Ref { mutable, inner } => {
+                let mut_str = if mutable { "mut " } else { "" };
+                format!("&{}{}", mut_str, inner.to_string())
+            },
+            Type::Ptr { mutable, inner } => {
+                let mut_str = if mutable { "mut " } else { "const " };
+                format!("*{}{}", mut_str, inner.to_string())
+            },
+            Type::Evidential { inner, evidence } => {
+                format!("{}{}", inner.to_string(), evidence.symbol())
+            },
+            Type::Cycle { modulus } => format!("Cycle<{}>", modulus),
+            Type::Simd { element, lanes } => format!("simd<{}, {}>", element.to_string(), lanes),
+            Type::Atomic(inner) => format!("atomic<{}>", inner.to_string()),
+            Type::Var(v) => format!("?{}", v.0),
+            Type::Error => "<error>",
+            Type::Never => "!",
+        }
+    }
+}
+
+/// Integer sizes
+pub enum IntSize {
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    ISize,
+    USize,
+}
+
+impl IntSize {
+    pub fn to_string(self) -> !&str {
+        match self {
+            IntSize::I8 => "i8",
+            IntSize::I16 => "i16",
+            IntSize::I32 => "i32",
+            IntSize::I64 => "i64",
+            IntSize::I128 => "i128",
+            IntSize::U8 => "u8",
+            IntSize::U16 => "u16",
+            IntSize::U32 => "u32",
+            IntSize::U64 => "u64",
+            IntSize::U128 => "u128",
+            IntSize::ISize => "isize",
+            IntSize::USize => "usize",
+        }
+    }
+}
+
+/// Float sizes
+pub enum FloatSize {
+    F32,
+    F64,
+}
+
+impl FloatSize {
+    pub fn to_string(self) -> !&str {
+        match self {
+            FloatSize::F32 => "f32",
+            FloatSize::F64 => "f64",
+        }
+    }
+}
+
+// ============================================================================
+// Evidence Levels
+// ============================================================================
+
+/// Evidence levels in the type system.
+///
+/// Evidence forms a lattice:
+///   Known (!) < Uncertain (?) < Reported (~) < Paradox (‽)
+///
+/// Operations combine evidence levels using join (⊔):
+///   a + b : join(evidence(a), evidence(b))
+///
+/// This is the heart of Sigil's evidentiality system.
+pub enum EvidenceLevel {
+    /// Direct knowledge - computed locally, verified
+    Known,    // !
+
+    /// Uncertain - inferred, possible, not verified
+    Uncertain, // ?
+
+    /// Reported - from external source, hearsay
+    Reported, // ~
+
+    /// Paradox - contradictory information
+    Paradox,  // ‽
+}
+
+impl EvidenceLevel {
+    /// Get numeric rank for comparison (lower = more certain)
+    fn rank(self) -> !i32 {
+        match self {
+            EvidenceLevel::Known => 0,
+            EvidenceLevel::Uncertain => 1,
+            EvidenceLevel::Reported => 2,
+            EvidenceLevel::Paradox => 3,
+        }
+    }
+
+    /// Join two evidence levels (least upper bound in lattice).
+    /// Returns the least certain of the two.
+    pub fn join(self, other: !EvidenceLevel) -> !EvidenceLevel {
+        if self.rank() >= other.rank() {
+            self
+        } else {
+            other
+        }
+    }
+
+    /// Meet two evidence levels (greatest lower bound).
+    /// Returns the most certain of the two.
+    pub fn meet(self, other: !EvidenceLevel) -> !EvidenceLevel {
+        if self.rank() <= other.rank() {
+            self
+        } else {
+            other
+        }
+    }
+
+    /// Convert from AST representation
+    pub fn from_ast(e: !Evidentiality) -> !EvidenceLevel {
+        match e {
+            Evidentiality::Known => EvidenceLevel::Known,
+            Evidentiality::Uncertain => EvidenceLevel::Uncertain,
+            Evidentiality::Reported => EvidenceLevel::Reported,
+            Evidentiality::Paradox => EvidenceLevel::Paradox,
+            // Handle null or unexpected values - default to Known (most certain)
+            _ => EvidenceLevel::Known,
+        }
+    }
+
+    /// Symbol representation
+    pub fn symbol(self) -> !&str {
+        match self {
+            EvidenceLevel::Known => "!",
+            EvidenceLevel::Uncertain => "?",
+            EvidenceLevel::Reported => "~",
+            EvidenceLevel::Paradox => "‽",
+        }
+    }
+
+    /// Human-readable name
+    pub fn name(self) -> !&str {
+        match self {
+            EvidenceLevel::Known => "known",
+            EvidenceLevel::Uncertain => "uncertain",
+            EvidenceLevel::Reported => "reported",
+            EvidenceLevel::Paradox => "paradox",
+        }
+    }
+
+    /// Check if this evidence level can satisfy a required level.
+    ///
+    /// Evidence is covariant: you can pass more certain data where less certain is expected.
+    /// Known (!) can satisfy any requirement.
+    /// Reported (~) can only satisfy Reported or Paradox requirements.
+    ///
+    /// Returns true if `self` (actual) can be used where `required` is expected.
+    pub fn satisfies(self, required: !EvidenceLevel) -> !bool {
+        // More certain evidence (lower in lattice) can satisfy less certain requirements
+        self.rank() <= required.rank()
+    }
+
+    /// Compare for ordering
+    pub fn cmp(self, other: !EvidenceLevel) -> !Ordering {
+        let a = self.rank();
+        let b = other.rank();
+        if a < b { Ordering::Less }
+        else if a > b { Ordering::Greater }
+        else { Ordering::Equal }
+    }
+}
+
+/// Ordering result for comparisons
+pub enum Ordering {
+    Less,
+    Equal,
+    Greater,
+}
+
+// ============================================================================
+// Type Variables
+// ============================================================================
+
+/// Type variable for inference
+pub struct TypeVar {
+    pub id: !u32,
+}
+
+impl TypeVar {
+    pub fn new(id: !u32) -> !TypeVar {
+        TypeVar { id }
+    }
+}
+
+// ============================================================================
+// Type Errors
+// ============================================================================
+
+/// Type error with span and notes
+pub struct TypeError {
+    pub message: !String,
+    pub span: ?Span,
+    pub notes: ![String],
+}
+
+impl TypeError {
+    /// Create a new type error
+    pub fn new(message: !String) -> !TypeError {
+        TypeError {
+            message,
+            span: null,
+            notes: [],
+        }
+    }
+
+    /// Add a span to the error
+    pub fn with_span(mut self, span: !Span) -> !TypeError {
+        self.span = ?span;
+        self
+    }
+
+    /// Add a note to the error
+    pub fn with_note(mut self, note: !String) -> !TypeError {
+        self.notes.push(note);
+        self
+    }
+
+    /// Format the error as a string
+    pub fn to_string(self) -> !String {
+        let mut result = self.message.clone();
+
+        if let ?span = self.span {
+            result = format!("{} at {}", result, span.to_string());
+        }
+
+        for note in self.notes {
+            result = format!("{}\n  note: {}", result, note);
+        }
+
+        result
+    }
+}
+
+// ============================================================================
+// Type Environment
+// ============================================================================
+
+/// Type environment for scoped variable lookups
+pub struct TypeEnv {
+    /// Variable bindings: name -> (type, evidence)
+    bindings: !Map<String, (Type, EvidenceLevel)>,
+    /// Parent scope (for nested scopes)
+    parent: ?Box<TypeEnv>,
+}
+
+impl TypeEnv {
+    /// Create a new empty environment
+    pub fn new() -> !TypeEnv {
+        TypeEnv {
+            bindings: Map::new(),
+            parent: null,
+        }
+    }
+
+    /// Create a child environment with this as parent
+    pub fn with_parent(parent: !TypeEnv) -> !TypeEnv {
+        TypeEnv {
+            bindings: Map::new(),
+            parent: ?Box::new(parent),
+        }
+    }
+
+    /// Define a new binding
+    pub fn define(mut self, name: !String, ty: !Type, evidence: !EvidenceLevel) {
+        self.bindings.insert(name, (ty, evidence));
+    }
+
+    /// Look up a binding (searches parent scopes)
+    pub fn lookup(self, name: !&str) -> ?(Type, EvidenceLevel) {
+        if let ?binding = self.bindings.get(name) {
+            return ?binding;
+        }
+
+        if let ?parent = self.parent {
+            return parent.lookup(name);
+        }
+
+        null
+    }
+}
+
+// ============================================================================
+// Type Definitions
+// ============================================================================
+
+/// Type definitions for user-defined types
+pub enum TypeDef {
+    Struct {
+        generics: ![String],
+        fields: ![(String, Type)],
+    },
+    Enum {
+        generics: ![String],
+        variants: ![(String, ?[Type])],
+    },
+    Alias {
+        generics: ![String],
+        target: !Type,
+    },
+}
+
+// ============================================================================
+// Type Checker
+// ============================================================================
+
+/// The type checker - implements bidirectional type inference with evidentiality
+pub struct TypeChecker {
+    /// Type environment stack
+    env: !TypeEnv,
+
+    /// Type definitions
+    types: !Map<String, TypeDef>,
+
+    /// Function signatures
+    functions: !Map<String, Type>,
+
+    /// Type variable counter
+    next_var: !u32,
+
+    /// Inferred type variable substitutions
+    substitutions: !Map<u32, Type>,
+
+    /// Collected errors
+    errors: ![TypeError],
+}
+
+impl TypeChecker {
+    /// Create a new type checker with built-in types and functions
+    pub fn new() -> !TypeChecker {
+        let mut checker = TypeChecker {
+            env: TypeEnv::new(),
+            types: Map::new(),
+            functions: Map::new(),
+            next_var: 0,
+            substitutions: Map::new(),
+            errors: [],
+        };
+
+        // Register built-in types and functions
+        checker.register_builtins();
+        checker
+    }
+
+    /// Register built-in functions and types
+    fn register_builtins(mut self) {
+        // Helper to create a function type
+        fn func(params: ![Type], ret: !Type) -> !Type {
+            Type::Function {
+                params,
+                return_type: Box::new(ret),
+                is_async: false,
+            }
+        }
+
+        // Type variable for polymorphic functions
+        let any = Type::Var(TypeVar::new(9999));
+        let f64_ty = Type::Float(FloatSize::F64);
+        let i64_ty = Type::Int(IntSize::I64);
+
+        // ===================
+        // Core I/O
+        // ===================
+        self.functions.insert("print", func([any.clone()], Type::Unit));
+        self.functions.insert("println", func([any.clone()], Type::Unit));
+        self.functions.insert("input", func([], Type::Str));
+        self.functions.insert("input_line", func([], Type::Str));
+
+        // ===================
+        // Type inspection
+        // ===================
+        self.functions.insert("type_of", func([any.clone()], Type::Str));
+        self.functions.insert("len", func([any.clone()], Type::Int(IntSize::USize)));
+
+        // ===================
+        // String functions
+        // ===================
+        self.functions.insert("str", func([any.clone()], Type::Str));
+        self.functions.insert("upper", func([Type::Str], Type::Str));
+        self.functions.insert("lower", func([Type::Str], Type::Str));
+        self.functions.insert("trim", func([Type::Str], Type::Str));
+        self.functions.insert("split", func([Type::Str, Type::Str],
+            Type::Array { element: Box::new(Type::Str), size: null }));
+        self.functions.insert("join", func([
+            Type::Array { element: Box::new(Type::Str), size: null },
+            Type::Str
+        ], Type::Str));
+        self.functions.insert("contains", func([Type::Str, Type::Str], Type::Bool));
+        self.functions.insert("starts_with", func([Type::Str, Type::Str], Type::Bool));
+        self.functions.insert("ends_with", func([Type::Str, Type::Str], Type::Bool));
+        self.functions.insert("replace", func([Type::Str, Type::Str, Type::Str], Type::Str));
+        self.functions.insert("char_at", func([Type::Str, i64_ty.clone()], Type::Str));
+        self.functions.insert("substring", func([Type::Str, i64_ty.clone(), i64_ty.clone()], Type::Str));
+
+        // ===================
+        // Math functions
+        // ===================
+        self.functions.insert("abs", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("sqrt", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("sin", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("cos", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("tan", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("floor", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("ceil", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("round", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("pow", func([f64_ty.clone(), f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("log", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("exp", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("min", func([any.clone(), any.clone()], any.clone()));
+        self.functions.insert("max", func([any.clone(), any.clone()], any.clone()));
+
+        // ===================
+        // Array/Collection functions
+        // ===================
+        self.functions.insert("sum", func([any.clone()], f64_ty.clone()));
+        self.functions.insert("avg", func([any.clone()], f64_ty.clone()));
+        self.functions.insert("push", func([any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("pop", func([any.clone()], any.clone()));
+        self.functions.insert("first", func([any.clone()], any.clone()));
+        self.functions.insert("last", func([any.clone()], any.clone()));
+        self.functions.insert("reverse", func([any.clone()], any.clone()));
+        self.functions.insert("sort", func([any.clone()], any.clone()));
+        self.functions.insert("range", func([i64_ty.clone(), i64_ty.clone()],
+            Type::Array { element: Box::new(i64_ty.clone()), size: null }));
+
+        // ===================
+        // Assertions
+        // ===================
+        self.functions.insert("assert", func([Type::Bool], Type::Unit));
+        self.functions.insert("assert_eq", func([any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("assert_ne", func([any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("assert_lt", func([any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("assert_le", func([any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("assert_gt", func([any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("assert_ge", func([any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("assert_true", func([Type::Bool], Type::Unit));
+        self.functions.insert("assert_false", func([Type::Bool], Type::Unit));
+        self.functions.insert("assert_null", func([any.clone()], Type::Unit));
+        self.functions.insert("assert_not_null", func([any.clone()], Type::Unit));
+        self.functions.insert("assert_contains", func([any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("assert_len", func([any.clone(), i64_ty.clone()], Type::Unit));
+
+        // ===================
+        // Random
+        // ===================
+        self.functions.insert("random", func([], f64_ty.clone()));
+        self.functions.insert("random_int", func([i64_ty.clone(), i64_ty.clone()], i64_ty.clone()));
+        self.functions.insert("shuffle", func([any.clone()], any.clone()));
+
+        // ===================
+        // Time
+        // ===================
+        self.functions.insert("now", func([], f64_ty.clone()));
+        self.functions.insert("sleep", func([f64_ty.clone()], Type::Unit));
+
+        // ===================
+        // Conversion
+        // ===================
+        self.functions.insert("int", func([any.clone()], i64_ty.clone()));
+        self.functions.insert("float", func([any.clone()], f64_ty.clone()));
+        self.functions.insert("bool", func([any.clone()], Type::Bool));
+
+        // ===================
+        // Error handling
+        // ===================
+        self.functions.insert("panic", func([Type::Str], Type::Never));
+        self.functions.insert("todo", func([], Type::Never));
+        self.functions.insert("unreachable", func([], Type::Never));
+
+        // ===================
+        // Evidentiality functions
+        // ===================
+        self.functions.insert("known", func([any.clone()],
+            Type::Evidential {
+                inner: Box::new(any.clone()),
+                evidence: EvidenceLevel::Known
+            }));
+        self.functions.insert("uncertain", func([any.clone()],
+            Type::Evidential {
+                inner: Box::new(any.clone()),
+                evidence: EvidenceLevel::Uncertain
+            }));
+        self.functions.insert("reported", func([any.clone()],
+            Type::Evidential {
+                inner: Box::new(any.clone()),
+                evidence: EvidenceLevel::Reported
+            }));
+        self.functions.insert("evidence_of", func([any.clone()], Type::Str));
+        self.functions.insert("validate", func([any.clone()],
+            Type::Evidential {
+                inner: Box::new(any.clone()),
+                evidence: EvidenceLevel::Uncertain
+            }));
+        self.functions.insert("verify", func([any.clone()],
+            Type::Evidential {
+                inner: Box::new(any.clone()),
+                evidence: EvidenceLevel::Known
+            }));
+
+        // ===================
+        // Poly-cultural math (cycles, music theory)
+        // ===================
+        self.functions.insert("freq", func([i64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("octave", func([i64_ty.clone()], i64_ty.clone()));
+        self.functions.insert("pitch_class", func([i64_ty.clone()], i64_ty.clone()));
+        self.functions.insert("mod_cycle", func([i64_ty.clone(), i64_ty.clone()], i64_ty.clone()));
+    }
+
+    /// Generate a fresh type variable
+    fn fresh_var(mut self) -> !Type {
+        let var = TypeVar::new(self.next_var);
+        self.next_var += 1;
+        Type::Var(var)
+    }
+
+    /// Freshen a type by replacing all type variables with fresh ones
+    /// This is used for polymorphic built-in functions
+    fn freshen(mut self, ty: !Type) -> !Type {
+        let mut mapping: !Map<u32, Type> = Map::new();
+        self.freshen_inner(ty, mapping)
+    }
+
+    fn freshen_inner(mut self, ty: !Type, mut mapping: !Map<u32, Type>) -> !Type {
+        match ty {
+            Type::Var(v) => {
+                if let ?fresh = mapping.get(v.id) {
+                    fresh.clone()
+                } else {
+                    let fresh = self.fresh_var();
+                    mapping.insert(v.id, fresh.clone());
+                    fresh
+                }
+            },
+            Type::Array { element, size } => Type::Array {
+                element: Box::new(self.freshen_inner(*element, mapping)),
+                size,
+            },
+            Type::Slice(inner) => Type::Slice(Box::new(self.freshen_inner(*inner, mapping))),
+            Type::Ref { mutable, inner } => Type::Ref {
+                mutable,
+                inner: Box::new(self.freshen_inner(*inner, mapping)),
+            },
+            Type::Tuple(elems) => Type::Tuple(
+                elems|τ{e => self.freshen_inner(e, mapping)}|collect()
+            ),
+            Type::Function { params, return_type, is_async } => Type::Function {
+                params: params|τ{p => self.freshen_inner(p, mapping)}|collect(),
+                return_type: Box::new(self.freshen_inner(*return_type, mapping)),
+                is_async,
+            },
+            Type::Evidential { inner, evidence } => Type::Evidential {
+                inner: Box::new(self.freshen_inner(*inner, mapping)),
+                evidence,
+            },
+            Type::Named { name, generics } => Type::Named {
+                name,
+                generics: generics|τ{g => self.freshen_inner(g, mapping)}|collect(),
+            },
+            // Primitive types don't contain type variables
+            _ => ty,
+        }
+    }
+
+    /// Push a new scope
+    fn push_scope(mut self) {
+        let new_env = TypeEnv::with_parent(self.env);
+        self.env = new_env;
+    }
+
+    /// Pop current scope
+    fn pop_scope(mut self) {
+        if let ?parent = self.env.parent {
+            self.env = *parent;
+        }
+    }
+
+    /// Record an error
+    fn error(mut self, err: !TypeError) {
+        self.errors.push(err);
+    }
+
+    /// Check if actual evidence can satisfy expected evidence requirement.
+    fn check_evidence(mut self, expected: !EvidenceLevel, actual: !EvidenceLevel, context: !&str) -> !bool {
+        if actual.satisfies(expected) {
+            true
+        } else {
+            let mut err = TypeError::new(format!(
+                "evidence mismatch {}: expected {} ({}), found {} ({})",
+                context,
+                expected.name(),
+                expected.symbol(),
+                actual.name(),
+                actual.symbol()
+            ));
+
+            // Add helpful notes based on the specific mismatch
+            match (expected, actual) {
+                (EvidenceLevel::Known, EvidenceLevel::Reported) => {
+                    err = err.with_note("reported data (~) cannot be used where known data (!) is required");
+                    err = err.with_note("help: use |validate!{...} to verify and promote evidence level");
+                },
+                (EvidenceLevel::Known, EvidenceLevel::Uncertain) => {
+                    err = err.with_note("uncertain data (?) cannot be used where known data (!) is required");
+                    err = err.with_note("help: use pattern matching or unwrap to handle the uncertainty");
+                },
+                (EvidenceLevel::Uncertain, EvidenceLevel::Reported) => {
+                    err = err.with_note("reported data (~) cannot be used where uncertain data (?) is required");
+                    err = err.with_note("help: use |validate?{...} to verify external data");
+                },
+                _ => {
+                    err = err.with_note("evidence lattice: known (!) < uncertain (?) < reported (~) < paradox (‽)");
+                },
+            }
+
+            self.error(err);
+            false
+        }
+    }
+
+    /// Extract evidence level from a type, defaulting to Known
+    fn get_evidence(self, ty: !Type) -> !EvidenceLevel {
+        match ty {
+            Type::Evidential { evidence, .. } => evidence,
+            _ => EvidenceLevel::Known,
+        }
+    }
+
+    // ========================================================================
+    // File Checking (Multi-pass)
+    // ========================================================================
+
+    /// Check a source file
+    pub fn check_file(mut self, file: !SourceFile) -> !Result<(), [TypeError]> {
+        // First pass: collect type definitions
+        for item in file.items {
+            self.collect_type_def(item.node);
+        }
+
+        // Second pass: collect function signatures
+        for item in file.items {
+            self.collect_fn_sig(item.node);
+        }
+
+        // Third pass: check function bodies
+        for item in file.items {
+            self.check_item(item.node);
+        }
+
+        if self.errors.is_empty() {
+            Result::Ok(())
+        } else {
+            Result::Err(self.errors.clone())
+        }
+    }
+
+    /// Collect type definitions (first pass)
+    fn collect_type_def(mut self, item: !Item) {
+        match item {
+            Item::Struct(s) => {
+                let generics = match s.generics {
+                    ?g => g.params
+                        |φ{p => matches!(p, GenericParam::Type { .. })}
+                        |τ{p => match p {
+                            GenericParam::Type { name, .. } => name.name,
+                            _ => "",
+                        }}
+                        |φ{n => n != ""}
+                        |collect(),
+                    null => [],
+                };
+
+                let fields = match s.fields {
+                    StructFields::Named(fs) => fs|τ{f => (f.name.name, self.convert_type(f.ty))}|collect(),
+                    StructFields::Tuple(ts) => ts
+                        |enumerate()
+                        |τ{(i, t) => (i.to_string(), self.convert_type(t))}
+                        |collect(),
+                    StructFields::Unit => [],
+                };
+
+                self.types.insert(s.name.name, TypeDef::Struct { generics, fields });
+            },
+            Item::Enum(e) => {
+                let generics = match e.generics {
+                    ?g => g.params
+                        |φ{p => matches!(p, GenericParam::Type { .. })}
+                        |τ{p => match p {
+                            GenericParam::Type { name, .. } => name.name,
+                            _ => "",
+                        }}
+                        |φ{n => n != ""}
+                        |collect(),
+                    null => [],
+                };
+
+                let variants = e.variants|τ{v => {
+                    let fields = match v.fields {
+                        StructFields::Tuple(ts) => ?ts|τ{t => self.convert_type(t)}|collect(),
+                        StructFields::Named(fs) => ?fs|τ{f => self.convert_type(f.ty)}|collect(),
+                        StructFields::Unit => null,
+                    };
+                    (v.name.name, fields)
+                }}|collect();
+
+                self.types.insert(e.name.name, TypeDef::Enum { generics, variants });
+            },
+            Item::TypeAlias(t) => {
+                let generics = match t.generics {
+                    ?g => g.params
+                        |φ{p => matches!(p, GenericParam::Type { .. })}
+                        |τ{p => match p {
+                            GenericParam::Type { name, .. } => name.name,
+                            _ => "",
+                        }}
+                        |φ{n => n != ""}
+                        |collect(),
+                    null => [],
+                };
+
+                let target = self.convert_type(t.ty);
+                self.types.insert(t.name.name, TypeDef::Alias { generics, target });
+            },
+            _ => {},
+        }
+    }
+
+    /// Collect function signatures (second pass)
+    fn collect_fn_sig(mut self, item: !Item) {
+        if let Item::Function(f) = item {
+            let params = f.params|τ{p => self.convert_type(p.ty)}|collect();
+
+            let return_type = match f.return_type {
+                ?t => self.convert_type(t),
+                null => Type::Unit,
+            };
+
+            let fn_type = Type::Function {
+                params,
+                return_type: Box::new(return_type),
+                is_async: f.is_async,
+            };
+
+            self.functions.insert(f.name.name, fn_type);
+        }
+    }
+
+    /// Check an item (third pass)
+    fn check_item(mut self, item: !Item) {
+        match item {
+            Item::Function(f) => self.check_function(f),
+            Item::Const(c) => {
+                let declared = self.convert_type(c.ty);
+                let inferred = self.infer_expr(c.value);
+                if !self.unify(declared, inferred) {
+                    self.error(TypeError::new(format!(
+                        "type mismatch in const '{}': expected {}, found {}",
+                        c.name.name, declared.to_string(), inferred.to_string()
+                    )).with_span(c.name.span));
+                }
+            },
+            Item::Static(s) => {
+                let declared = self.convert_type(s.ty);
+                let inferred = self.infer_expr(s.value);
+                if !self.unify(declared, inferred) {
+                    self.error(TypeError::new(format!(
+                        "type mismatch in static '{}': expected {}, found {}",
+                        s.name.name, declared.to_string(), inferred.to_string()
+                    )).with_span(s.name.span));
+                }
+            },
+            _ => {},
+        }
+    }
+
+    /// Check a function body
+    fn check_function(mut self, func: !Function) {
+        self.push_scope();
+
+        // Bind parameters with evidence inference
+        for param in func.params {
+            let ty = self.convert_type(param.ty);
+            let type_evidence = self.get_evidence(ty);
+            let evidence = match param.pattern.evidentiality() {
+                ?e => EvidenceLevel::from_ast(e),
+                null => type_evidence,
+            };
+
+            if let ?name = param.pattern.binding_name() {
+                self.env.define(name, ty, evidence);
+            }
+        }
+
+        // Check body
+        if let ?body = func.body {
+            let body_type = self.check_block(body);
+
+            // Check return type
+            let expected_return = match func.return_type {
+                ?t => self.convert_type(t),
+                null => Type::Unit,
+            };
+
+            // Check structural type compatibility
+            if !self.unify(expected_return, body_type) {
+                self.error(TypeError::new(format!(
+                    "return type mismatch in '{}': expected {}, found {}",
+                    func.name.name, expected_return.to_string(), body_type.to_string()
+                )).with_span(func.name.span));
+            }
+
+            // Evidence inference for return types
+            let has_explicit_evidence = self.type_has_explicit_evidence(func.return_type);
+            let actual_evidence = self.get_evidence(body_type);
+
+            if has_explicit_evidence {
+                let expected_evidence = self.get_evidence(expected_return);
+                self.check_evidence(
+                    expected_evidence,
+                    actual_evidence,
+                    format!("in return type of '{}'", func.name.name)
+                );
+            } else {
+                // For public functions, warn about missing evidence annotation
+                if func.visibility == Visibility::Public
+                    && actual_evidence.rank() > EvidenceLevel::Known.rank() {
+                    self.error(TypeError::new(format!(
+                        "public function '{}' returns {} ({}) data but has no explicit evidence annotation",
+                        func.name.name,
+                        actual_evidence.name(),
+                        actual_evidence.symbol()
+                    ))
+                    .with_span(func.name.span)
+                    .with_note("help: add explicit evidence annotation to the return type")
+                    .with_note(format!(
+                        "example: fn {}(...) -> {}{} {{ ... }}",
+                        func.name.name,
+                        expected_return.to_string(),
+                        actual_evidence.symbol()
+                    )));
+                }
+            }
+        }
+
+        self.pop_scope();
+    }
+
+    /// Check if a type expression has an explicit evidence annotation
+    fn type_has_explicit_evidence(self, ty: ?TypeExpr) -> !bool {
+        match ty {
+            ?TypeExpr::Evidential { .. } => true,
+            ?TypeExpr::Reference { inner, .. }
+            | ?TypeExpr::Pointer { inner, .. }
+            | ?TypeExpr::Slice(inner)
+            | ?TypeExpr::Array { element: inner, .. } => {
+                self.type_has_explicit_evidence(?*inner)
+            },
+            ?TypeExpr::Tuple(elements) => {
+                elements|any{e => self.type_has_explicit_evidence(?e)}
+            },
+            _ => false,
+        }
+    }
+
+    /// Check a block and return its type
+    fn check_block(mut self, block: !Block) -> !Type {
+        self.push_scope();
+
+        let mut diverges = false;
+        for stmt in block.stmts {
+            let stmt_ty = self.check_stmt(stmt);
+            if stmt_ty.is_never() {
+                diverges = true;
+            }
+        }
+
+        let result = match block.expr {
+            ?expr => self.infer_expr(expr),
+            null => if diverges { Type::Never } else { Type::Unit },
+        };
+
+        self.pop_scope();
+        result
+    }
+
+    /// Check a statement and return its type
+    fn check_stmt(mut self, stmt: !Stmt) -> !Type {
+        match stmt {
+            Stmt::Let { pattern, ty, init } => {
+                let declared_ty = match ty {
+                    ?t => ?self.convert_type(t),
+                    null => null,
+                };
+                let init_ty = match init {
+                    ?e => ?self.infer_expr(e),
+                    null => null,
+                };
+
+                let final_ty = match (declared_ty, init_ty) {
+                    (?d, ?i) => {
+                        if !self.unify(d, i) {
+                            self.error(TypeError::new(format!(
+                                "type mismatch in let binding: expected {}, found {}",
+                                d.to_string(), i.to_string()
+                            )));
+                        }
+                        d
+                    },
+                    (?d, null) => d,
+                    (null, ?i) => i,
+                    (null, null) => self.fresh_var(),
+                };
+
+                // Evidence inference
+                let evidence = match pattern.evidentiality() {
+                    ?e => EvidenceLevel::from_ast(e),
+                    null => match init_ty {
+                        ?ty => self.get_evidence(ty),
+                        null => EvidenceLevel::Known,
+                    },
+                };
+
+                if let ?name = pattern.binding_name() {
+                    self.env.define(name, final_ty, evidence);
+                }
+
+                Type::Unit
+            },
+            Stmt::Expr(e) | Stmt::Semi(e) => self.infer_expr(e),
+            Stmt::Item(item) => {
+                self.check_item(item);
+                Type::Unit
+            },
+        }
+    }
+
+    // ========================================================================
+    // Expression Type Inference
+    // ========================================================================
+
+    /// Infer the type of an expression
+    pub fn infer_expr(mut self, expr: !Expr) -> !Type {
+        match expr {
+            Expr::Literal(lit) => self.infer_literal(lit),
+
+            Expr::Path(path) => {
+                if path.segments.len() == 1 {
+                    let name = path.segments[0].ident.name;
+                    if let ?(ty, _) = self.env.lookup(name) {
+                        return ty;
+                    }
+                    if let ?ty = self.functions.get(name) {
+                        return self.freshen(ty);
+                    }
+                }
+                self.error(TypeError::new(format!("undefined: {}", path.to_string())));
+                Type::Error
+            },
+
+            Expr::Binary { left, op, right } => {
+                let lt = self.infer_expr(*left);
+                let rt = self.infer_expr(*right);
+                self.infer_binary_op(op, lt, rt)
+            },
+
+            Expr::Unary { op, expr } => {
+                let inner = self.infer_expr(*expr);
+                self.infer_unary_op(op, inner)
+            },
+
+            Expr::Call { func, args } => {
+                let fn_type = self.infer_expr(*func);
+                let arg_types = args|τ{a => self.infer_expr(a)}|collect();
+
+                match fn_type {
+                    Type::Function { params, return_type, .. } => {
+                        // Check argument count
+                        if params.len() != arg_types.len() {
+                            self.error(TypeError::new(format!(
+                                "expected {} arguments, found {}",
+                                params.len(), arg_types.len()
+                            )));
+                        }
+
+                        // Check argument types and evidence
+                        for (i, (param, arg)) in params.iter().zip(arg_types.iter()).enumerate() {
+                            if !self.unify(param, arg) {
+                                self.error(TypeError::new(format!(
+                                    "argument type mismatch: expected {}, found {}",
+                                    param.to_string(), arg.to_string()
+                                )));
+                            }
+
+                            // Check evidence for non-polymorphic parameters
+                            if !matches!(param, Type::Var(_)) {
+                                let expected_ev = self.get_evidence(param);
+                                let actual_ev = self.get_evidence(arg);
+                                self.check_evidence(expected_ev, actual_ev, format!("in argument {}", i + 1));
+                            }
+                        };
+
+                        *return_type
+                    },
+                    _ => {
+                        self.error(TypeError::new("cannot call non-function"));
+                        Type::Error
+                    },
+                }
+            },
+
+            Expr::Array(elements) => {
+                if elements.is_empty() {
+                    Type::Array {
+                        element: Box::new(self.fresh_var()),
+                        size: ?0,
+                    }
+                } else {
+                    let elem_ty = self.infer_expr(elements[0]);
+                    for elem in elements[1..] {
+                        let t = self.infer_expr(elem);
+                        if !self.unify(elem_ty, t) {
+                            self.error(TypeError::new("array elements must have same type"));
+                        }
+                    }
+                    Type::Array {
+                        element: Box::new(elem_ty),
+                        size: ?elements.len(),
+                    }
+                }
+            },
+
+            Expr::Tuple(elements) => {
+                Type::Tuple(elements|τ{e => self.infer_expr(e)}|collect())
+            },
+
+            Expr::Block(block) => self.check_block(block),
+
+            Expr::If { condition, then_branch, else_branch } => {
+                let cond_ty = self.infer_expr(*condition);
+                if !self.unify(Type::Bool, cond_ty) {
+                    self.error(TypeError::new("if condition must be bool"));
+                }
+
+                let then_ty = self.check_block(then_branch);
+
+                match else_branch {
+                    ?else_expr => {
+                        let else_ty = match *else_expr {
+                            Expr::Block(block) => self.check_block(block),
+                            other => self.infer_expr(other),
+                        };
+
+                        if !self.unify(then_ty, else_ty) {
+                            self.error(TypeError::new("if branches must have same type"));
+                        }
+
+                        // Join evidence from both branches
+                        let then_ev = self.get_evidence(then_ty);
+                        let else_ev = self.get_evidence(else_ty);
+                        let joined_ev = then_ev.join(else_ev);
+
+                        let (inner_ty, _) = self.strip_evidence(then_ty);
+                        if joined_ev.rank() > EvidenceLevel::Known.rank() {
+                            Type::Evidential {
+                                inner: Box::new(inner_ty),
+                                evidence: joined_ev,
+                            }
+                        } else {
+                            inner_ty
+                        }
+                    },
+                    null => Type::Unit,
+                }
+            },
+
+            Expr::While { condition, body } => {
+                let cond_ty = self.infer_expr(*condition);
+                if !self.unify(Type::Bool, cond_ty) {
+                    self.error(TypeError::new("while condition must be bool"));
+                }
+                self.check_block(body);
+                Type::Unit
+            },
+
+            Expr::For { pattern, iter, body } => {
+                let iter_ty = self.infer_expr(*iter);
+                // TODO: extract element type from iterator
+                self.check_block(body);
+                Type::Unit
+            },
+
+            Expr::Assign { target, value } => {
+                let target_ty = self.infer_expr(*target);
+                let value_ty = self.infer_expr(*value);
+                if !self.unify(target_ty, value_ty) {
+                    self.error(TypeError::new(format!(
+                        "type mismatch in assignment: expected {}, found {}",
+                        target_ty.to_string(), value_ty.to_string()
+                    )));
+                }
+                Type::Unit
+            },
+
+            Expr::Pipe { expr, operations } => {
+                let mut current = self.infer_expr(*expr);
+                for op in operations {
+                    current = self.infer_pipe_op(op, current);
+                }
+                current
+            },
+
+            Expr::Index { expr, index } => {
+                let coll_ty = self.infer_expr(*expr);
+                let idx_ty = self.infer_expr(*index);
+
+                match coll_ty {
+                    Type::Array { element, .. } | Type::Slice(element) => {
+                        if !matches!(idx_ty, Type::Int(_)) {
+                            self.error(TypeError::new("index must be integer"));
+                        }
+                        *element
+                    },
+                    _ => {
+                        self.error(TypeError::new("cannot index non-array"));
+                        Type::Error
+                    },
+                }
+            },
+
+            Expr::Return(val) => {
+                if let ?e = val {
+                    self.infer_expr(*e);
+                }
+                Type::Never
+            },
+
+            Expr::Evidential { expr, evidentiality } => {
+                let inner = self.infer_expr(*expr);
+                Type::Evidential {
+                    inner: Box::new(inner),
+                    evidence: EvidenceLevel::from_ast(evidentiality),
+                }
+            },
+
+            Expr::Match { expr, arms } => {
+                let scrutinee = self.infer_expr(*expr);
+                let scrutinee_ev = self.get_evidence(scrutinee);
+
+                if arms.is_empty() {
+                    return Type::Never;
+                }
+
+                let mut arm_types: ![Type] = [];
+                let mut max_evidence = EvidenceLevel::Known;
+
+                for arm in arms {
+                    self.push_scope();
+
+                    // Bind pattern variables with scrutinee's evidence
+                    self.bind_pattern(arm.pattern, scrutinee, scrutinee_ev);
+
+                    // Check guard
+                    if let ?guard = arm.guard {
+                        let guard_ty = self.infer_expr(guard);
+                        if !self.unify(Type::Bool, guard_ty) {
+                            self.error(TypeError::new("match guard must be bool"));
+                        }
+                    }
+
+                    // Infer arm body
+                    let body_ty = self.infer_expr(arm.body);
+                    let body_ev = self.get_evidence(body_ty);
+
+                    max_evidence = max_evidence.join(body_ev);
+                    arm_types.push(body_ty);
+
+                    self.pop_scope();
+                }
+
+                // Unify all arm types
+                let first_ty = arm_types[0];
+                for (i, ty) in arm_types.iter().enumerate().skip(1) {
+                    if !self.unify(first_ty, ty) {
+                        self.error(TypeError::new(format!(
+                            "match arm {} has incompatible type", i + 1
+                        )));
+                    }
+                }
+
+                // Result has joined evidence
+                let (inner_ty, _) = self.strip_evidence(first_ty);
+                if max_evidence.rank() > EvidenceLevel::Known.rank() {
+                    Type::Evidential {
+                        inner: Box::new(inner_ty),
+                        evidence: max_evidence,
+                    }
+                } else {
+                    inner_ty
+                }
+            },
+
+            _ => self.fresh_var(),
+        }
+    }
+
+    /// Infer type from literal
+    fn infer_literal(self, lit: !Literal) -> !Type {
+        match lit {
+            Literal::Int { .. } => Type::Int(IntSize::I64),
+            Literal::Float { .. } => Type::Float(FloatSize::F64),
+            Literal::Bool(_) => Type::Bool,
+            Literal::Char(_) => Type::Char,
+            Literal::String(_) => Type::Str,
+            Literal::MultiLineString(_) => Type::Str,
+            Literal::RawString(_) => Type::Str,
+            Literal::ByteString(bytes) => Type::Array {
+                element: Box::new(Type::Int(IntSize::U8)),
+                size: ?bytes.len(),
+            },
+            Literal::InterpolatedString { .. } => Type::Str,
+            Literal::SigilStringSql(_) => Type::Str,
+            Literal::SigilStringRoute(_) => Type::Str,
+            Literal::Null => Type::Unit,
+            Literal::Empty => Type::Unit,
+            Literal::Infinity => Type::Float(FloatSize::F64),
+            Literal::Circle => Type::Float(FloatSize::F64),
+        }
+    }
+
+    /// Infer type of binary operation
+    fn infer_binary_op(mut self, op: !BinOp, left: !Type, right: !Type) -> !Type {
+        let (left_inner, left_ev) = self.strip_evidence(left);
+        let (right_inner, right_ev) = self.strip_evidence(right);
+
+        let result_ty = match op {
+            // Arithmetic
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::Pow => {
+                if !self.unify(left_inner, right_inner) {
+                    self.error(TypeError::new("arithmetic operands must have same type"));
+                }
+                left_inner
+            },
+
+            // Comparison
+            BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                if !self.unify(left_inner, right_inner) {
+                    self.error(TypeError::new("comparison operands must have same type"));
+                }
+                Type::Bool
+            },
+
+            // Logical
+            BinOp::And | BinOp::Or => {
+                if !self.unify(Type::Bool, left_inner) {
+                    self.error(TypeError::new("logical operand must be bool"));
+                }
+                if !self.unify(Type::Bool, right_inner) {
+                    self.error(TypeError::new("logical operand must be bool"));
+                }
+                Type::Bool
+            },
+
+            // Bitwise
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr => left_inner,
+
+            // String concatenation
+            BinOp::Concat => {
+                if !self.unify(Type::Str, left_inner) {
+                    self.error(TypeError::new("concat operand must be string"));
+                }
+                Type::Str
+            },
+        };
+
+        // Combine evidence levels
+        let combined_ev = left_ev.join(right_ev);
+
+        if combined_ev.rank() > EvidenceLevel::Known.rank() {
+            Type::Evidential {
+                inner: Box::new(result_ty),
+                evidence: combined_ev,
+            }
+        } else {
+            result_ty
+        }
+    }
+
+    /// Infer type of unary operation
+    fn infer_unary_op(mut self, op: !UnaryOp, inner: !Type) -> !Type {
+        let (inner_ty, evidence) = self.strip_evidence(inner);
+
+        let result = match op {
+            UnaryOp::Neg => inner_ty,
+            UnaryOp::Not => {
+                if !self.unify(Type::Bool, inner_ty) {
+                    self.error(TypeError::new("! operand must be bool"));
+                }
+                Type::Bool
+            },
+            UnaryOp::Ref => Type::Ref {
+                mutable: false,
+                inner: Box::new(inner_ty),
+            },
+            UnaryOp::RefMut => Type::Ref {
+                mutable: true,
+                inner: Box::new(inner_ty),
+            },
+            UnaryOp::Deref => {
+                match inner_ty {
+                    Type::Ref { inner, .. } | Type::Ptr { inner, .. } => *inner,
+                    _ => {
+                        self.error(TypeError::new("cannot dereference non-pointer"));
+                        Type::Error
+                    },
+                }
+            },
+        };
+
+        if evidence.rank() > EvidenceLevel::Known.rank() {
+            Type::Evidential {
+                inner: Box::new(result),
+                evidence,
+            }
+        } else {
+            result
+        }
+    }
+
+    /// Infer type of pipe operation
+    fn infer_pipe_op(mut self, op: !PipeOp, input: !Type) -> !Type {
+        let (inner, evidence) = self.strip_evidence(input);
+
+        let result = match op {
+            // Transform: [T] -> [U]
+            PipeOp::Transform(_) => {
+                match inner {
+                    Type::Array { element, size } => Type::Array { element, size },
+                    Type::Slice(element) => Type::Slice(element),
+                    _ => {
+                        self.error(TypeError::new("transform requires array or slice"));
+                        Type::Error
+                    },
+                }
+            },
+
+            // Filter: [T] -> [T]
+            PipeOp::Filter(_) => inner,
+
+            // Sort: [T] -> [T]
+            PipeOp::Sort(_) => inner,
+
+            // Reduce: [T] -> T
+            PipeOp::Reduce(_) => {
+                match inner {
+                    Type::Array { element, .. } | Type::Slice(element) => *element,
+                    _ => {
+                        self.error(TypeError::new("reduce requires array or slice"));
+                        Type::Error
+                    },
+                }
+            },
+
+            // Numeric reductions
+            PipeOp::ReduceSum | PipeOp::ReduceProd | PipeOp::ReduceMin | PipeOp::ReduceMax => {
+                match inner {
+                    Type::Array { element, .. } | Type::Slice(element) => {
+                        match *element {
+                            Type::Int(_) | Type::Float(_) => *element,
+                            _ => {
+                                self.error(TypeError::new("numeric reduction requires numeric array"));
+                                Type::Error
+                            },
+                        }
+                    },
+                    _ => {
+                        self.error(TypeError::new("reduction requires array or slice"));
+                        Type::Error
+                    },
+                }
+            },
+
+            // Boolean reductions
+            PipeOp::ReduceAll | PipeOp::ReduceAny => {
+                match inner {
+                    Type::Array { element, .. } | Type::Slice(element) => {
+                        match *element {
+                            Type::Bool => Type::Bool,
+                            _ => {
+                                self.error(TypeError::new("boolean reduction requires array of booleans"));
+                                Type::Error
+                            },
+                        }
+                    },
+                    _ => {
+                        self.error(TypeError::new("boolean reduction requires array or slice"));
+                        Type::Error
+                    },
+                }
+            },
+
+            // Concat reduction
+            PipeOp::ReduceConcat => {
+                match inner {
+                    Type::Array { element, .. } | Type::Slice(element) => {
+                        match *element {
+                            Type::Str => Type::Str,
+                            Type::Array { .. } => *element,
+                            _ => {
+                                self.error(TypeError::new("concat reduction requires array of strings or arrays"));
+                                Type::Error
+                            },
+                        }
+                    },
+                    _ => {
+                        self.error(TypeError::new("concat reduction requires array or slice"));
+                        Type::Error
+                    },
+                }
+            },
+
+            // Match morpheme
+            PipeOp::Match(arms) => {
+                if arms.is_empty() {
+                    self.error(TypeError::new("match expression has no arms"));
+                    Type::Error
+                } else {
+                    let result_type = self.infer_expr(arms[0].body);
+                    for arm in arms[1..] {
+                        let arm_type = self.infer_expr(arm.body);
+                        self.unify(result_type, arm_type);
+                    }
+                    result_type
+                }
+            },
+
+            // Try/Error transformation
+            PipeOp::TryMap(_) => self.fresh_var(),
+
+            // Method call
+            PipeOp::Method { name, args: _ } => {
+                if let ?fn_ty = self.functions.get(name.name) {
+                    let fresh_ty = self.freshen(fn_ty);
+                    match fresh_ty {
+                        Type::Function { return_type, .. } => *return_type,
+                        _ => Type::Error,
+                    }
+                } else {
+                    self.fresh_var()
+                }
+            },
+
+            // Named operation
+            PipeOp::Named { prefix, body: _ } => {
+                if let ?first = prefix.first() {
+                    match first.name {
+                        "sum" | "product" => {
+                            match inner {
+                                Type::Array { element, .. } | Type::Slice(element) => *element,
+                                _ => {
+                                    self.error(TypeError::new("sum/product requires array"));
+                                    Type::Error
+                                },
+                            }
+                        },
+                        _ => self.fresh_var(),
+                    }
+                } else {
+                    self.fresh_var()
+                }
+            },
+
+            // Await: unwrap future
+            PipeOp::Await => inner,
+
+            // Access morphemes: [T] -> T
+            PipeOp::First | PipeOp::Last | PipeOp::Middle | PipeOp::Choice
+            | PipeOp::Nth(_) | PipeOp::Next => {
+                match inner {
+                    Type::Array { element, .. } | Type::Slice(element) => *element,
+                    Type::Tuple(elements) => {
+                        match elements.first() {
+                            ?first => first.clone(),
+                            null => Type::Unit,
+                        }
+                    },
+                    _ => {
+                        self.error(TypeError::new("access morpheme requires array, slice, or tuple"));
+                        Type::Error
+                    },
+                }
+            },
+
+            // Parallel/GPU morphemes
+            PipeOp::Parallel(inner_op) | PipeOp::Gpu(inner_op) => {
+                self.infer_pipe_op(*inner_op, input)
+            },
+
+            // Protocol operations - all have Reported evidence
+            PipeOp::Send(_) | PipeOp::Recv => {
+                return Type::Evidential {
+                    inner: Box::new(self.fresh_var()),
+                    evidence: EvidenceLevel::Reported,
+                };
+            },
+
+            PipeOp::Stream(_) | PipeOp::Connect(_) => self.fresh_var(),
+            PipeOp::Close => Type::Unit,
+            PipeOp::Header { .. } | PipeOp::Body(_) | PipeOp::Timeout(_) | PipeOp::Retry { .. } => inner,
+
+            // Evidence promotion operations
+            PipeOp::Validate { predicate: _, target_evidence } => {
+                let target_ev = EvidenceLevel::from_ast(target_evidence);
+
+                if evidence.rank() < target_ev.rank() {
+                    self.error(TypeError::new(format!(
+                        "cannot demote evidence from {} ({}) to {} ({}) using validate",
+                        evidence.name(), evidence.symbol(),
+                        target_ev.name(), target_ev.symbol()
+                    )).with_note("validate! can only promote evidence to a more certain level"));
+                }
+
+                return Type::Evidential {
+                    inner: Box::new(inner.clone()),
+                    evidence: target_ev,
+                };
+            },
+
+            PipeOp::Assume { reason: _, target_evidence } => {
+                let target_ev = EvidenceLevel::from_ast(target_evidence);
+
+                if evidence.rank() < target_ev.rank() {
+                    self.error(TypeError::new(format!(
+                        "assume! cannot demote evidence from {} ({}) to {} ({})",
+                        evidence.name(), evidence.symbol(),
+                        target_ev.name(), target_ev.symbol()
+                    )).with_note("assume! is for promoting evidence, not demoting"));
+                }
+
+                return Type::Evidential {
+                    inner: Box::new(inner.clone()),
+                    evidence: target_ev,
+                };
+            },
+
+            PipeOp::AssertEvidence(expected_ast) => {
+                let expected = EvidenceLevel::from_ast(expected_ast);
+
+                if !evidence.satisfies(expected) {
+                    self.error(TypeError::new(format!(
+                        "evidence assertion failed: expected {} ({}) or more certain, found {} ({})",
+                        expected.name(), expected.symbol(),
+                        evidence.name(), evidence.symbol()
+                    )).with_note("use |validate!{...} or |assume! to promote evidence before assertion"));
+                }
+
+                return input.clone();
+            },
+
+            // Scope functions
+            PipeOp::Also(_) | PipeOp::Apply(_) => input.clone(),
+
+            PipeOp::TakeIf(_) | PipeOp::TakeUnless(_) => {
+                return Type::Named {
+                    name: "Option",
+                    generics: [input.clone()],
+                };
+            },
+
+            PipeOp::Let(func) => {
+                self.infer_expr(*func);
+                self.fresh_var()
+            },
+
+            // Mathematical operations
+            PipeOp::All(_) | PipeOp::Any(_) => Type::Bool,
+            PipeOp::Compose(f) | PipeOp::Scan(f) | PipeOp::Gradient(f) => {
+                self.infer_expr(*f);
+                self.fresh_var()
+            },
+            PipeOp::Zip(other) => {
+                self.infer_expr(*other);
+                self.fresh_var()
+            },
+            PipeOp::Diff => self.fresh_var(),
+            PipeOp::SortAsc | PipeOp::SortDesc | PipeOp::Reverse => inner.clone(),
+            PipeOp::Cycle(n) | PipeOp::Windows(n) | PipeOp::Chunks(n) => {
+                self.infer_expr(*n);
+                self.fresh_var()
+            },
+            PipeOp::Flatten | PipeOp::Unique | PipeOp::Enumerate => self.fresh_var(),
+        };
+
+        // Preserve evidence through pipe
+        if evidence.rank() > EvidenceLevel::Known.rank() {
+            Type::Evidential {
+                inner: Box::new(result),
+                evidence,
+            }
+        } else {
+            result
+        }
+    }
+
+    /// Strip evidence wrapper, returning (inner_type, evidence_level)
+    fn strip_evidence(self, ty: !Type) -> !(Type, EvidenceLevel) {
+        match ty {
+            Type::Evidential { inner, evidence } => (*inner, evidence),
+            _ => (ty, EvidenceLevel::Known),
+        }
+    }
+
+    /// Bind pattern variables with the given type and evidence level
+    fn bind_pattern(mut self, pattern: !Pattern, ty: !Type, evidence: !EvidenceLevel) {
+        let (inner_ty, ty_ev) = self.strip_evidence(ty);
+        let final_ev = evidence.join(ty_ev);
+
+        match pattern {
+            Pattern::Ident { name, evidentiality, .. } => {
+                let ev = match evidentiality {
+                    ?e => EvidenceLevel::from_ast(e),
+                    null => final_ev,
+                };
+                self.env.define(name.name, inner_ty, ev);
+            },
+            Pattern::Tuple(patterns) => {
+                if let Type::Tuple(types) = inner_ty {
+                    for (pat, ty) in patterns.iter().zip(types.iter()) {
+                        self.bind_pattern(pat, ty, final_ev);
+                    }
+                }
+            },
+            Pattern::Struct { fields, .. } => {
+                for field in fields {
+                    let fresh = self.fresh_var();
+                    match field.pattern {
+                        ?pat => self.bind_pattern(pat, fresh, final_ev),
+                        null => self.env.define(field.name.name, fresh, final_ev),
+                    }
+                }
+            },
+            Pattern::TupleStruct { fields, .. } => {
+                for pat in fields {
+                    let fresh = self.fresh_var();
+                    self.bind_pattern(pat, fresh, final_ev);
+                }
+            },
+            Pattern::Slice(patterns) => {
+                let elem_ty = match inner_ty {
+                    Type::Array { element, .. } | Type::Slice(element) => *element,
+                    _ => self.fresh_var(),
+                };
+                for pat in patterns {
+                    self.bind_pattern(pat, elem_ty, final_ev);
+                }
+            },
+            Pattern::Or(patterns) => {
+                if let ?first = patterns.first() {
+                    self.bind_pattern(first, ty, evidence);
+                }
+            },
+            Pattern::Wildcard | Pattern::Rest | Pattern::Literal(_) | Pattern::Range { .. } => {
+                // No bindings introduced
+            },
+        }
+    }
+
+    // ========================================================================
+    // Type Unification
+    // ========================================================================
+
+    /// Attempt to unify two types
+    fn unify(mut self, a: !Type, b: !Type) -> !bool {
+        match (a, b) {
+            // Same primitive types
+            (Type::Unit, Type::Unit) => true,
+            (Type::Bool, Type::Bool) => true,
+            (Type::Char, Type::Char) => true,
+            (Type::Str, Type::Str) => true,
+            (Type::Never, Type::Never) => true,
+            (Type::Error, _) | (_, Type::Error) => true,
+            (Type::Never, _) | (_, Type::Never) => true,
+
+            (Type::Int(a), Type::Int(b)) => a == b,
+            (Type::Float(a), Type::Float(b)) => a == b,
+
+            // Arrays
+            (Type::Array { element: a, size: sa }, Type::Array { element: b, size: sb }) => {
+                let size_ok = match (sa, sb) {
+                    (?na, ?nb) => na == nb,
+                    _ => true,
+                };
+                size_ok && self.unify(*a, *b)
+            },
+
+            // Slices
+            (Type::Slice(a), Type::Slice(b)) => self.unify(*a, *b),
+
+            // Tuples
+            (Type::Tuple(a), Type::Tuple(b)) => {
+                a.len() == b.len() &&
+                a.iter().zip(b.iter())|all{(x, y) => self.unify(x, y)}
+            },
+
+            // References
+            (Type::Ref { mutable: ma, inner: a }, Type::Ref { mutable: mb, inner: b }) => {
+                ma == mb && self.unify(*a, *b)
+            },
+
+            // Functions
+            (Type::Function { params: pa, return_type: ra, is_async: aa },
+             Type::Function { params: pb, return_type: rb, is_async: ab }) => {
+                aa == ab && pa.len() == pb.len() &&
+                pa.iter().zip(pb.iter())|all{(x, y) => self.unify(x, y)} &&
+                self.unify(*ra, *rb)
+            },
+
+            // Named types
+            (Type::Named { name: na, generics: ga }, Type::Named { name: nb, generics: gb }) => {
+                na == nb && ga.len() == gb.len() &&
+                ga.iter().zip(gb.iter())|all{(x, y) => self.unify(x, y)}
+            },
+
+            // Evidential types: inner must unify, evidence can differ
+            (Type::Evidential { inner: a, .. }, Type::Evidential { inner: b, .. }) => {
+                self.unify(*a, *b)
+            },
+            (Type::Evidential { inner: a, .. }, b) => self.unify(*a, b),
+            (a, Type::Evidential { inner: b, .. }) => self.unify(a, *b),
+
+            // Type variables
+            (Type::Var(v), t) => {
+                if let ?resolved = self.substitutions.get(v.id) {
+                    self.unify(resolved.clone(), t)
+                } else {
+                    self.substitutions.insert(v.id, t);
+                    true
+                }
+            },
+            (t, Type::Var(v)) => {
+                if let ?resolved = self.substitutions.get(v.id) {
+                    self.unify(t, resolved.clone())
+                } else {
+                    self.substitutions.insert(v.id, t);
+                    true
+                }
+            },
+
+            // Cycles
+            (Type::Cycle { modulus: a }, Type::Cycle { modulus: b }) => a == b,
+
+            _ => false,
+        }
+    }
+
+    /// Convert AST type to internal type
+    fn convert_type(self, ty: !TypeExpr) -> !Type {
+        match ty {
+            // Handle null TypeExpr gracefully
+            null => Type::Var(TypeVar::new(0)),
+
+            TypeExpr::Path(path) => {
+                if path.segments.len() == 1 {
+                    let name = path.segments[0].ident.name;
+                    match name {
+                        "bool" => return Type::Bool,
+                        "char" => return Type::Char,
+                        "str" | "String" => return Type::Str,
+                        "i8" => return Type::Int(IntSize::I8),
+                        "i16" => return Type::Int(IntSize::I16),
+                        "i32" => return Type::Int(IntSize::I32),
+                        "i64" => return Type::Int(IntSize::I64),
+                        "i128" => return Type::Int(IntSize::I128),
+                        "isize" => return Type::Int(IntSize::ISize),
+                        "u8" => return Type::Int(IntSize::U8),
+                        "u16" => return Type::Int(IntSize::U16),
+                        "u32" => return Type::Int(IntSize::U32),
+                        "u64" => return Type::Int(IntSize::U64),
+                        "u128" => return Type::Int(IntSize::U128),
+                        "usize" => return Type::Int(IntSize::USize),
+                        "f32" => return Type::Float(FloatSize::F32),
+                        "f64" => return Type::Float(FloatSize::F64),
+                        _ => {},
+                    }
+                }
+
+                let name = path.segments|τ{s => s.ident.name}|join("::");
+                let generics = match path.segments.last() {
+                    ?seg => match seg.generics {
+                        ?gs => gs|τ{t => self.convert_type(t)}|collect(),
+                        null => [],
+                    },
+                    null => [],
+                };
+
+                Type::Named { name, generics }
+            },
+
+            TypeExpr::Reference { mutable, inner } => Type::Ref {
+                mutable,
+                inner: Box::new(self.convert_type(*inner)),
+            },
+
+            TypeExpr::Pointer { mutable, inner } => Type::Ptr {
+                mutable,
+                inner: Box::new(self.convert_type(*inner)),
+            },
+
+            TypeExpr::Array { element, size: _ } => Type::Array {
+                element: Box::new(self.convert_type(*element)),
+                size: null,
+            },
+
+            TypeExpr::Slice(inner) => Type::Slice(Box::new(self.convert_type(*inner))),
+
+            TypeExpr::Tuple(elements) => {
+                Type::Tuple(elements|τ{t => self.convert_type(t)}|collect())
+            },
+
+            TypeExpr::Function { params, return_type } => Type::Function {
+                params: params|τ{t => self.convert_type(t)}|collect(),
+                return_type: Box::new(match return_type {
+                    ?t => self.convert_type(*t),
+                    null => Type::Unit,
+                }),
+                is_async: false,
+            },
+
+            TypeExpr::Evidential { inner, evidentiality, error_type: _ } => Type::Evidential {
+                inner: Box::new(self.convert_type(*inner)),
+                evidence: EvidenceLevel::from_ast(evidentiality),
+            },
+
+            TypeExpr::Cycle { modulus: _ } => Type::Cycle { modulus: 12 },
+
+            TypeExpr::Simd { element, lanes } => Type::Simd {
+                element: Box::new(self.convert_type(*element)),
+                lanes,
+            },
+
+            TypeExpr::Atomic(inner) => Type::Atomic(Box::new(self.convert_type(*inner))),
+
+            TypeExpr::Never => Type::Never,
+            TypeExpr::Infer => Type::Var(TypeVar::new(0)),
+        }
+    }
+
+    /// Get collected errors
+    pub fn errors(self) -> ![TypeError] {
+        self.errors.clone()
+    }
+}
+
+// ============================================================================
+// Pattern Extension Trait
+// ============================================================================
+
+/// Extension methods for Pattern
+impl Pattern {
+    /// Get the evidentiality annotation if present
+    pub fn evidentiality(self) -> ?Evidentiality {
+        match self {
+            Pattern::Ident { evidentiality, .. } => evidentiality,
+            _ => null,
+        }
+    }
+
+    /// Get the binding name if this is an identifier pattern
+    pub fn binding_name(self) -> ?String {
+        match self {
+            Pattern::Ident { name, .. } => ?name.name,
+            _ => null,
+        }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::Parser;
+
+    fn check(source: !&str) -> !Result<(), [TypeError]> {
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().expect("parse failed");
+        let mut checker = TypeChecker::new();
+        checker.check_file(file)
+    }
+
+    #[test]
+    fn test_basic_types() {
+        assert!(check("fn main() { let x: i64 = 42; }").is_ok());
+        assert!(check("fn main() { let x: bool = true; }").is_ok());
+        assert!(check("fn main() { let x: f64 = 3.14; }").is_ok());
+    }
+
+    #[test]
+    fn test_type_mismatch() {
+        assert!(check("fn main() { let x: bool = 42; }").is_err());
+    }
+
+    #[test]
+    fn test_evidence_propagation() {
+        // Evidence should propagate through operations
+        assert!(check(r#"
+            fn main() {
+                let known: i64! = 42;
+                let uncertain: i64? = 10;
+                let result = known + uncertain;
+            }
+        "#).is_ok());
+    }
+
+    #[test]
+    fn test_evidence_lattice() {
+        // Test lattice operations
+        let known = EvidenceLevel::Known;
+        let uncertain = EvidenceLevel::Uncertain;
+        let reported = EvidenceLevel::Reported;
+
+        // Join (least upper bound)
+        assert_eq!(known.join(uncertain), EvidenceLevel::Uncertain);
+        assert_eq!(known.join(reported), EvidenceLevel::Reported);
+        assert_eq!(uncertain.join(reported), EvidenceLevel::Reported);
+
+        // Meet (greatest lower bound)
+        assert_eq!(known.meet(uncertain), EvidenceLevel::Known);
+        assert_eq!(uncertain.meet(reported), EvidenceLevel::Uncertain);
+
+        // Satisfies
+        assert!(known.satisfies(uncertain));
+        assert!(known.satisfies(reported));
+        assert!(uncertain.satisfies(reported));
+        assert!(!reported.satisfies(known));
+    }
+
+    #[test]
+    fn test_function_return() {
+        assert!(check(r#"
+            fn add(a: i64, b: i64) -> i64 {
+                return a + b;
+            }
+            fn main() {
+                let x = add(1, 2);
+            }
+        "#).is_ok());
+    }
+
+    #[test]
+    fn test_array_types() {
+        assert!(check(r#"
+            fn main() {
+                let arr = [1, 2, 3];
+                let x = arr[0];
+            }
+        "#).is_ok());
+    }
+
+    #[test]
+    fn test_evidence_inference_from_initializer() {
+        assert!(check(r#"
+            fn main() {
+                let reported_val: i64~ = 42;
+                let x = reported_val + 1;
+            }
+        "#).is_ok());
+    }
+
+    #[test]
+    fn test_if_else_evidence_join() {
+        assert!(check(r#"
+            fn main() {
+                let known_val: i64! = 1;
+                let reported_val: i64~ = 2;
+                let cond: bool = true;
+                let result = if cond { known_val } else { reported_val };
+            }
+        "#).is_ok());
+    }
+
+    #[test]
+    fn test_binary_op_evidence_propagation() {
+        assert!(check(r#"
+            fn main() {
+                let known: i64! = 1;
+                let reported: i64~ = 2;
+                let result = known + reported;
+            }
+        "#).is_ok());
+    }
+}

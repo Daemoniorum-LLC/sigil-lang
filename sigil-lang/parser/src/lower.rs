@@ -393,6 +393,20 @@ fn lower_stmt(ctx: &mut LoweringContext, stmt: &ast::Stmt) -> Option<IrOperation
                 evidence: IrEvidence::Known,
             })
         }
+        ast::Stmt::LetElse { pattern, ty, init, else_branch } => {
+            // LetElse: let PATTERN = EXPR else { ... }
+            // Lower as: let pattern = init; with conditional else handling
+            let ir_pattern = lower_pattern(ctx, pattern);
+            let type_annotation = ty.as_ref().map(lower_type_expr);
+            let init_expr = Box::new(lower_expr(ctx, init));
+            // TODO: Properly handle else_branch in IR
+            Some(IrOperation::Let {
+                pattern: ir_pattern,
+                type_annotation,
+                init: init_expr,
+                evidence: IrEvidence::Known,
+            })
+        }
         ast::Stmt::Expr(e) => Some(lower_expr(ctx, e)),
         ast::Stmt::Semi(e) => Some(lower_expr(ctx, e)),
         ast::Stmt::Item(_) => None, // Handled at module level
@@ -468,6 +482,19 @@ fn lower_pattern(ctx: &mut LoweringContext, pattern: &ast::Pattern) -> IrPattern
             inclusive: *inclusive,
         },
         ast::Pattern::Wildcard | ast::Pattern::Rest => IrPattern::Wildcard,
+        ast::Pattern::Path(path) => {
+            // Path pattern (unit variant matching) - use TupleStruct with empty fields
+            let name = path
+                .segments
+                .iter()
+                .map(|s| s.ident.name.clone())
+                .collect::<Vec<_>>()
+                .join("::");
+            IrPattern::TupleStruct {
+                path: name,
+                fields: vec![],
+            }
+        }
     }
 }
 
@@ -550,6 +577,7 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             receiver,
             method,
             args,
+            ..
         } => {
             let receiver_ir = lower_expr(ctx, receiver);
             let args_ir: Vec<IrOperation> = args.iter().map(|a| lower_expr(ctx, a)).collect();

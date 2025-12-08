@@ -255,6 +255,8 @@ fn register_core(interp: &mut Interpreter) {
             Value::ThreadHandle(_) => "thread",
             Value::Actor(_) => "actor",
             Value::Future(_) => "future",
+            Value::VariantConstructor { .. } => "variant_constructor",
+            Value::DefaultConstructor { .. } => "default_constructor",
         };
         Ok(Value::String(Rc::new(type_name.to_string())))
     });
@@ -334,6 +336,131 @@ fn register_core(interp: &mut Interpreter) {
                 "no default for type: {}",
                 type_name
             ))),
+        }
+    });
+
+    // Result::Ok - create Ok variant
+    define(interp, "Result·Ok", Some(1), |_, args| {
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![args[0].clone()])),
+        })
+    });
+
+    // Ok shorthand (without Result:: prefix)
+    define(interp, "Ok", Some(1), |_, args| {
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![args[0].clone()])),
+        })
+    });
+
+    // Result::Err - create Err variant
+    define(interp, "Result·Err", Some(1), |_, args| {
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Err".to_string(),
+            fields: Some(Rc::new(vec![args[0].clone()])),
+        })
+    });
+
+    // Err shorthand (without Result:: prefix)
+    define(interp, "Err", Some(1), |_, args| {
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Err".to_string(),
+            fields: Some(Rc::new(vec![args[0].clone()])),
+        })
+    });
+
+    // Option::Some - create Some variant
+    define(interp, "Option·Some", Some(1), |_, args| {
+        Ok(Value::Variant {
+            enum_name: "Option".to_string(),
+            variant_name: "Some".to_string(),
+            fields: Some(Rc::new(vec![args[0].clone()])),
+        })
+    });
+
+    // Some shorthand (without Option:: prefix)
+    define(interp, "Some", Some(1), |_, args| {
+        Ok(Value::Variant {
+            enum_name: "Option".to_string(),
+            variant_name: "Some".to_string(),
+            fields: Some(Rc::new(vec![args[0].clone()])),
+        })
+    });
+
+    // Option::None - create None variant
+    define(interp, "Option·None", Some(0), |_, _| {
+        Ok(Value::Variant {
+            enum_name: "Option".to_string(),
+            variant_name: "None".to_string(),
+            fields: None,
+        })
+    });
+
+    // None shorthand (without Option:: prefix)
+    define(interp, "None", Some(0), |_, _| {
+        Ok(Value::Variant {
+            enum_name: "Option".to_string(),
+            variant_name: "None".to_string(),
+            fields: None,
+        })
+    });
+
+    // Map::new - create empty map
+    define(interp, "Map·new", Some(0), |_, _| {
+        Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
+    });
+
+    // Vec::new - create empty vector/array
+    define(interp, "Vec·new", Some(0), |_, _| {
+        Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))))
+    });
+
+    // String::new - create empty string
+    define(interp, "String·new", Some(0), |_, _| {
+        Ok(Value::String(Rc::new(String::new())))
+    });
+
+    // String::from - create string from value
+    define(interp, "String·from", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            Value::Int(n) => n.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Char(c) => c.to_string(),
+            _ => format!("{}", args[0]),
+        };
+        Ok(Value::String(Rc::new(s)))
+    });
+
+    // Box::new - just return the value (Box is transparent in interpreter)
+    define(interp, "Box·new", Some(1), |_, args| {
+        Ok(args[0].clone())
+    });
+
+    // String::from_raw_parts - FFI emulation: construct string from "pointer", len, capacity
+    define(interp, "String·from_raw_parts", Some(3), |_, args| {
+        // In our FFI emulation, the first arg is already the string content
+        match &args[0] {
+            Value::String(s) => Ok(Value::String(s.clone())),
+            Value::Null => Ok(Value::String(Rc::new(String::new()))),
+            _ => Ok(Value::String(Rc::new(format!("{}", args[0])))),
+        }
+    });
+
+    // slice::from_raw_parts - FFI emulation
+    define(interp, "slice·from_raw_parts", Some(2), |_, args| {
+        // First arg is the "pointer" (string), second is len
+        match &args[0] {
+            Value::String(s) => Ok(Value::String(s.clone())),
+            Value::Array(arr) => Ok(Value::Array(arr.clone())),
+            _ => Ok(args[0].clone()),
         }
     });
 }
@@ -6013,6 +6140,120 @@ fn register_fs(interp: &mut Interpreter) {
             None => Ok(Value::Null),
         }
     });
+
+    // ============================================================================
+    // FFI-style functions for self-hosted compiler compatibility
+    // These provide the low-level file I/O that the self-hosted compiler expects
+    // ============================================================================
+
+    // Store last read file content for sigil_file_len()
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    thread_local! {
+        static LAST_FILE_CONTENT: RefCell<String> = RefCell::new(String::new());
+        // Fake pointer map: stores strings that can be looked up by pointer ID
+        static FAKE_PTR_MAP: RefCell<HashMap<i64, String>> = RefCell::new(HashMap::new());
+    }
+
+    // sigil_read_file - read file content (FFI-compatible interface)
+    // Takes path pointer and length, returns pointer to content
+    // In interpreter, we fake the pointer API and just read the file
+    define(interp, "sigil_read_file", Some(2), |_, args| {
+        // Look up the path from either a string or a fake pointer ID
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Int(ptr_id) => {
+                // Look up the string from the fake pointer map
+                FAKE_PTR_MAP.with(|map| {
+                    map.borrow().get(ptr_id).cloned()
+                }).ok_or_else(|| RuntimeError::new(format!(
+                    "sigil_read_file: invalid pointer {}", ptr_id
+                )))?
+            }
+            _ => return Err(RuntimeError::new("sigil_read_file() requires string path")),
+        };
+
+        match std::fs::read_to_string(&path) {
+            Ok(content) => {
+                // Store content for sigil_file_len
+                LAST_FILE_CONTENT.with(|last| {
+                    *last.borrow_mut() = content.clone();
+                });
+                // Return the content as a string (not a pointer in interpreted mode)
+                Ok(Value::String(Rc::new(content)))
+            }
+            Err(_) => Ok(Value::Null), // Return null for error (like a null pointer)
+        }
+    });
+
+    // sigil_file_len - get length of last read file
+    define(interp, "sigil_file_len", Some(0), |_, _| {
+        LAST_FILE_CONTENT.with(|last| {
+            Ok(Value::Int(last.borrow().len() as i64))
+        })
+    });
+
+    // sigil_write_file - write content to file
+    define(interp, "sigil_write_file", Some(4), |_, args| {
+        // In interpreted mode, we receive the actual strings, not pointers
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("sigil_write_file() requires string path")),
+        };
+        let content = match &args[2] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("sigil_write_file() requires string content")),
+        };
+
+        match std::fs::write(&path, content) {
+            Ok(()) => Ok(Value::Bool(true)),
+            Err(_) => Ok(Value::Bool(false)),
+        }
+    });
+
+    // write - POSIX write() syscall for stdout/stderr
+    define(interp, "write", Some(3), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("write() requires int fd")),
+        };
+
+        // Get the content - could be a string, a fake pointer ID, or something else
+        let content = match &args[1] {
+            Value::String(s) => s.to_string(),
+            Value::Int(ptr_id) => {
+                // Look up the string from the fake pointer map
+                FAKE_PTR_MAP.with(|map| {
+                    map.borrow().get(ptr_id).cloned()
+                }).unwrap_or_else(|| format!("{}", ptr_id))
+            }
+            _ => format!("{}", args[1]),
+        };
+
+        // args[2] is the length - we use the actual string length in interpreted mode
+        let len = match &args[2] {
+            Value::Int(n) => *n as usize,
+            _ => content.len(),
+        };
+
+        let output = &content[..std::cmp::min(len, content.len())];
+
+        match fd {
+            1 => {
+                print!("{}", output);
+                use std::io::Write;
+                std::io::stdout().flush().ok();
+                Ok(Value::Int(output.len() as i64))
+            }
+            2 => {
+                eprint!("{}", output);
+                use std::io::Write;
+                std::io::stderr().flush().ok();
+                Ok(Value::Int(output.len() as i64))
+            }
+            _ => Err(RuntimeError::new(format!("write() unsupported fd: {}", fd))),
+        }
+    });
 }
 
 // ============================================================================
@@ -9205,6 +9446,8 @@ fn register_pattern(interp: &mut Interpreter) {
             Value::ThreadHandle(_) => "thread",
             Value::Actor(_) => "actor",
             Value::Future(_) => "future",
+            Value::VariantConstructor { .. } => "variant_constructor",
+            Value::DefaultConstructor { .. } => "default_constructor",
         };
         Ok(Value::String(Rc::new(type_name.to_string())))
     });
@@ -10101,6 +10344,12 @@ fn register_devex(interp: &mut Interpreter) {
             Value::ThreadHandle(_) => "thread".to_string(),
             Value::Actor(_) => "actor".to_string(),
             Value::Future(_) => "future".to_string(),
+            Value::VariantConstructor { enum_name, variant_name } => {
+                format!("<constructor {}::{}>", enum_name, variant_name)
+            }
+            Value::DefaultConstructor { type_name } => {
+                format!("<default {}>", type_name)
+            }
         };
         let value_repr = format_value_debug(&args[0]);
         println!("[DEBUG] {}: {}", type_name, value_repr);
@@ -10714,6 +10963,12 @@ fn format_value_debug(value: &Value) -> String {
         Value::ThreadHandle(_) => "<thread>".to_string(),
         Value::Actor(_) => "<actor>".to_string(),
         Value::Future(_) => "<future>".to_string(),
+        Value::VariantConstructor { enum_name, variant_name } => {
+            format!("<constructor {}::{}>", enum_name, variant_name)
+        }
+        Value::DefaultConstructor { type_name } => {
+            format!("<default {}>", type_name)
+        }
     }
 }
 
@@ -10855,6 +11110,8 @@ fn get_type_name(value: &Value) -> String {
         Value::ThreadHandle(_) => "thread".to_string(),
         Value::Actor(_) => "actor".to_string(),
         Value::Future(_) => "future".to_string(),
+        Value::VariantConstructor { enum_name, .. } => format!("{}_constructor", enum_name),
+        Value::DefaultConstructor { type_name } => format!("{}_default", type_name),
     }
 }
 

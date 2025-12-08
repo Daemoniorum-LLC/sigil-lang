@@ -798,6 +798,13 @@ pub enum Stmt {
         ty: Option<TypeExpr>,
         init: Option<Expr>,
     },
+    /// Let-else statement: `let PATTERN = EXPR else { ... }`
+    LetElse {
+        pattern: Pattern,
+        ty: Option<TypeExpr>,
+        init: Expr,
+        else_branch: Box<Expr>,
+    },
     Expr(Expr),
     Semi(Expr),
     Item(Box<Item>),
@@ -811,6 +818,8 @@ pub enum Pattern {
         name: Ident,
         evidentiality: Option<Evidentiality>,
     },
+    /// Path pattern for matching unit enum variants: Token::Fn
+    Path(TypePath),
     Tuple(Vec<Pattern>),
     Struct {
         path: TypePath,
@@ -869,6 +878,8 @@ pub enum Expr {
     MethodCall {
         receiver: Box<Expr>,
         method: Ident,
+        /// Turbofish type arguments: `method::<T, U>(args)`
+        type_args: Option<Vec<TypeExpr>>,
         args: Vec<Expr>,
     },
     /// Field access
@@ -946,6 +957,8 @@ pub enum Expr {
     },
     /// Assignment: `x = value`
     Assign { target: Box<Expr>, value: Box<Expr> },
+    /// Let expression (for if-let, while-let patterns): `let pattern = expr`
+    Let { pattern: Pattern, value: Box<Expr> },
     /// Unsafe block: `unsafe { ... }`
     Unsafe(Block),
     /// Raw pointer dereference: `*ptr`
@@ -1542,6 +1555,8 @@ pub enum Literal {
     /// Route sigil string (ρ"...")
     SigilStringRoute(String),
     Char(char),
+    /// Byte character literal (b'x')
+    ByteChar(u8),
     Bool(bool),
     Null, // null
     /// Special mathematical constants
