@@ -2432,10 +2432,27 @@ impl Parser {
                 Token::RBracket => tokens.push_str("]"),
                 Token::LBrace => tokens.push_str("{"),
                 Token::RBrace => tokens.push_str("}"),
+                Token::Dot => tokens.push_str("."),
+                Token::Bang => tokens.push_str("!"),
+                Token::Question => tokens.push_str("?"),
+                Token::Lt => tokens.push_str(" < "),
+                Token::Gt => tokens.push_str(" > "),
+                Token::LtEq => tokens.push_str(" <= "),
+                Token::GtEq => tokens.push_str(" >= "),
+                Token::EqEq => tokens.push_str(" == "),
+                Token::NotEq => tokens.push_str(" != "),
+                Token::Amp => tokens.push_str("&"),
+                Token::Pipe => tokens.push_str("|"),
+                Token::AndAnd => tokens.push_str(" && "),
+                Token::OrOr => tokens.push_str(" || "),
+                Token::ColonColon => tokens.push_str("::"),
+                Token::Semi => tokens.push_str("; "),
+                Token::Arrow => tokens.push_str(" -> "),
+                Token::FatArrow => tokens.push_str(" => "),
                 _ => {
-                    // For other tokens, add a placeholder
+                    // For other tokens, output token debug representation
                     if !tokens.is_empty() { tokens.push_str(" "); }
-                    tokens.push_str("?");
+                    tokens.push_str("/* unknown token */");
                 }
             }
             self.advance();

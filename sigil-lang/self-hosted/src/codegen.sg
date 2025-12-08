@@ -123,8 +123,16 @@ impl CodeGen {
         // Add function bodies
         self.output.push_str(func_code.as_str());
 
-        // Emit main entry point wrapper
-        self.emit_main_wrapper();
+        // Check if module has a main function
+        let mut has_main = false;
+        for func in module.functions {
+            if func.name == "main" {
+                has_main = true;
+            }
+        }
+
+        // Emit main entry point wrapper (only if has main)
+        self.emit_main_wrapper(has_main);
 
         self.output.clone()
     }
@@ -1028,7 +1036,21 @@ impl CodeGen {
                         for arg in arg_codes {
                             all_args.push(arg);
                         }
-                        format!("sigil_{}({})", self.mangle_name(method), all_args.join(", "))
+
+                        // Use method name heuristics to determine type prefix
+                        // This is a workaround until proper type tracking is implemented
+                        let type_prefix = match method.as_str() {
+                            // Span methods
+                            "merge" | "contains" | "overlaps" | "empty_at" => ?("Span".to_string()),
+                            // Spanned methods
+                            "map" | "inner" | "into_inner" => ?("Spanned".to_string()),
+                            _ => null,
+                        };
+
+                        match type_prefix {
+                            ?prefix => format!("sigil_{}____{}({})", prefix, self.mangle_name(method), all_args.join(", ")),
+                            null => format!("sigil_{}({})", self.mangle_name(method), all_args.join(", ")),
+                        }
                     },
                 };
                 self.with_evidence(call, evidence)
@@ -1273,20 +1295,23 @@ impl CodeGen {
     // Main Wrapper
     // ========================================================================
 
-    fn emit_main_wrapper(mut self) {
+    fn emit_main_wrapper(mut self, has_main: !bool) {
         self.line("");
         self.line("/* Built-in function implementations */");
         self.emit_builtin_impls();
 
-        self.line("");
-        self.line("/* Main entry point */");
-        self.line("int main(int argc, char** argv) {");
-        self.indent_push();
-        self.line("(void)argc; (void)argv; /* suppress unused warnings */");
-        self.line("SigilValue result = sigil_main();");
-        self.line("return (result.tag == TAG_INT) ? (int)result.v.i : 0;");
-        self.indent_pop();
-        self.line("}");
+        // Only emit main entry point if the module has a main function
+        if has_main {
+            self.line("");
+            self.line("/* Main entry point */");
+            self.line("int main(int argc, char** argv) {");
+            self.indent_push();
+            self.line("(void)argc; (void)argv; /* suppress unused warnings */");
+            self.line("SigilValue result = sigil_main();");
+            self.line("return (result.tag == TAG_INT) ? (int)result.v.i : 0;");
+            self.indent_pop();
+            self.line("}");
+        }
     }
 
     fn emit_builtin_impls(mut self) {
