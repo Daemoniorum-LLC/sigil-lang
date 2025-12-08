@@ -2077,16 +2077,31 @@ impl Interpreter {
                 Ok(())
             }
             Pattern::Tuple(patterns) => {
-                if let Value::Tuple(values) = value {
-                    if patterns.len() != values.len() {
-                        return Err(RuntimeError::new("Tuple pattern size mismatch"));
+                eprintln!("DEBUG bind_pattern Tuple: patterns.len()={}, value type={:?}",
+                    patterns.len(), std::mem::discriminant(&value));
+                match value {
+                    Value::Tuple(values) => {
+                        if patterns.len() != values.len() {
+                            return Err(RuntimeError::new("Tuple pattern size mismatch"));
+                        }
+                        for (p, v) in patterns.iter().zip(values.iter()) {
+                            self.bind_pattern(p, v.clone())?;
+                        }
+                        Ok(())
                     }
-                    for (p, v) in patterns.iter().zip(values.iter()) {
-                        self.bind_pattern(p, v.clone())?;
+                    Value::Null => {
+                        // Null value during iteration - treat as end of iteration (no binding)
+                        Ok(())
                     }
-                    Ok(())
-                } else {
-                    Err(RuntimeError::new("Expected tuple"))
+                    Value::Array(arr) if arr.borrow().len() == patterns.len() => {
+                        // Allow array to be destructured as tuple
+                        let vals = arr.borrow();
+                        for (p, v) in patterns.iter().zip(vals.iter()) {
+                            self.bind_pattern(p, v.clone())?;
+                        }
+                        Ok(())
+                    }
+                    _ => Err(RuntimeError::new("Expected tuple"))
                 }
             }
             Pattern::Wildcard => Ok(()),
@@ -3889,6 +3904,27 @@ impl Interpreter {
                             Ok(Value::Array(Rc::new(RefCell::new(v))))
                         }
                         _ => Err(RuntimeError::new("reverse requires array")),
+                    },
+                    "iter" => {
+                        // iter() returns the array for iteration (identity operation)
+                        Ok(value)
+                    },
+                    "enumerate" => {
+                        // enumerate() returns array of (index, value) tuples
+                        match &value {
+                            Value::Array(arr) => {
+                                let enumerated: Vec<Value> = arr
+                                    .borrow()
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, v)| {
+                                        Value::Tuple(Rc::new(vec![Value::Int(i as i64), v.clone()]))
+                                    })
+                                    .collect();
+                                Ok(Value::Array(Rc::new(RefCell::new(enumerated))))
+                            }
+                            _ => Err(RuntimeError::new("enumerate requires array")),
+                        }
                     },
                     "first" => match &value {
                         Value::Array(arr) => arr
