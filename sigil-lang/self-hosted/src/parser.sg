@@ -1134,21 +1134,26 @@ impl Parser {
         let ty = self.parse_type_primary()?;
 
         // Check for evidentiality suffix: T!, T?, T~
-        if let ev = self.parse_evidentiality_opt() {
-            // Check for error type: T?[Error]
-            let error_type = if self.consume_if(&Token::LBracket) {
-                let err = self.parse_type()?;
-                self.expect(Token::RBracket)?;
-                Box::new(err)
-            } else {
-                null
-            };
+        // Only check for suffix if current token is actually an evidentiality marker
+        match self.current_token() {
+            Token::Bang | Token::Question | Token::Tilde | Token::Interrobang => {
+                let ev = self.parse_evidentiality_opt();
+                // Check for error type: T?[Error]
+                let error_type = if self.consume_if(&Token::LBracket) {
+                    let err = self.parse_type()?;
+                    self.expect(Token::RBracket)?;
+                    Box::new(err)
+                } else {
+                    null
+                };
 
-            return Ok(TypeExpr::Evidential {
-                inner: Box::new(ty),
-                evidentiality: ev,
-                error_type,
-            });
+                return Ok(TypeExpr::Evidential {
+                    inner: Box::new(ty),
+                    evidentiality: ev,
+                    error_type,
+                });
+            }
+            _ => {}
         }
 
         Ok(ty)
@@ -1233,7 +1238,41 @@ impl Parser {
             }
             Token::Bang => {
                 self.advance();
-                Ok(TypeExpr::Never)
+                // Check if this is prefix evidentiality (!T) or the never type
+                // If followed by a type-starting token, parse as evidential
+                match self.current_token() {
+                    Token::Ident(_) | Token::Amp | Token::Star | Token::LBracket |
+                    Token::LParen | Token::Fn | Token::SelfUpper | Token::Simd | Token::Atomic => {
+                        // This is prefix evidentiality: !T means Known<T>
+                        let inner = self.parse_type_primary()?;
+                        // Check for suffix evidentiality after inner type
+                        if let suffix = self.parse_evidentiality_opt() {
+                            // Combine prefix ! with suffix, but prefix takes precedence
+                            let error_type = if self.consume_if(&Token::LBracket) {
+                                let err = self.parse_type()?;
+                                self.expect(Token::RBracket)?;
+                                Box::new(err)
+                            } else {
+                                null
+                            };
+                            Ok(TypeExpr::Evidential {
+                                inner: Box::new(inner),
+                                evidentiality: Evidentiality::Known,
+                                error_type,
+                            })
+                        } else {
+                            Ok(TypeExpr::Evidential {
+                                inner: Box::new(inner),
+                                evidentiality: Evidentiality::Known,
+                                error_type: null,
+                            })
+                        }
+                    }
+                    _ => {
+                        // Just ! alone is the never type
+                        Ok(TypeExpr::Never)
+                    }
+                }
             }
             Token::Underscore => {
                 self.advance();
@@ -1269,24 +1308,37 @@ impl Parser {
         }
     }
 
-    /// Parse a type path.
+    /// Parse a type path (with optional generic arguments).
     fn parse_type_path(mut self) -> !ParseResult<TypePath> {
         let mut segments = Vec::new();
-        segments.push(self.parse_path_segment()?);
+        segments.push(self.parse_path_segment(true)?);
 
         while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
-            segments.push(self.parse_path_segment()?);
+            segments.push(self.parse_path_segment(true)?);
+        }
+
+        Ok(TypePath { segments })
+    }
+
+    /// Parse an expression path (without generic arguments - < is comparison).
+    fn parse_expr_path(mut self) -> !ParseResult<TypePath> {
+        let mut segments = Vec::new();
+        segments.push(self.parse_path_segment(false)?);
+
+        while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+            segments.push(self.parse_path_segment(false)?);
         }
 
         Ok(TypePath { segments })
     }
 
     /// Parse a path segment.
-    fn parse_path_segment(mut self) -> !ParseResult<PathSegment> {
+    /// If `allow_generics` is true and we're not in condition context, parses generic arguments.
+    fn parse_path_segment(mut self, allow_generics: !bool) -> !ParseResult<PathSegment> {
         let ident = self.parse_ident()?;
 
-        // Don't parse generics in condition context
-        let generics = if !self.is_in_condition() && self.consume_if(&Token::Lt) {
+        // Don't parse generics in condition context or when not allowed
+        let generics = if allow_generics && !self.is_in_condition() && self.consume_if(&Token::Lt) {
             let types = self.parse_type_list()?;
             self.expect(Token::Gt)?;
             types
@@ -1679,7 +1731,8 @@ impl Parser {
                 self.parse_morpheme_expr()
             }
             Token::Ident(_) | Token::SelfLower | Token::SelfUpper => {
-                let path = self.parse_type_path()?;
+                // Use parse_expr_path to avoid interpreting < as generics
+                let path = self.parse_expr_path()?;
 
                 // Check for struct literal
                 if self.check(&Token::LBrace) && !self.is_in_condition() {
@@ -1739,14 +1792,13 @@ impl Parser {
     }
 
     /// Check if we're at the start of a closure.
-    fn is_closure_start(self) -> !bool {
+    fn is_closure_start(mut self) -> !bool {
         // Look for pattern => or pattern, pattern =>
-        // This is a simplified heuristic
+        // Simple heuristic: check if ident followed by =>, comma, or colon
         match self.current_token() {
             Token::Ident(_) | Token::Underscore => {
-                // Check if followed by => or , or :
-                // Would need lookahead here
-                false
+                // Check if next token indicates closure
+                self.lexer.peek_is_closure_indicator()
             }
             _ => false,
         }
@@ -2210,6 +2262,19 @@ impl Parser {
             Token::SelfUpper => {
                 self.advance();
                 Ok(Ident::new("Self".to_string(), span))
+            }
+            // Keywords that can also be used as identifiers in certain contexts
+            Token::Derive => {
+                self.advance();
+                Ok(Ident::new("derive".to_string(), span))
+            }
+            Token::Test => {
+                self.advance();
+                Ok(Ident::new("test".to_string(), span))
+            }
+            Token::Default => {
+                self.advance();
+                Ok(Ident::new("default".to_string(), span))
             }
             t => Err(ParseError::unexpected("identifier", t?, span)),
         }

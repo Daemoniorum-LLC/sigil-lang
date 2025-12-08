@@ -91,7 +91,7 @@ impl Lexer {
 
             // String literals
             '"' => self.lex_string(),
-            '\'' => self.lex_char(),
+            '\'' => self.lex_quote_or_char(),
 
             // Numbers
             '0'..='9' => self.lex_number(c),
@@ -119,6 +119,25 @@ impl Lexer {
             }
         }
         (&self.peeked!, &self.peeked_span!)
+    }
+
+    /// Check if peeked token indicates start of a closure (=>, comma, or colon).
+    pub fn peek_is_closure_indicator(mut self) -> !bool {
+        if self.peeked == null {
+            match self.next_token() {
+                (token, span) => {
+                    self.peeked = token;
+                    self.peeked_span = span;
+                }
+                null => return false,
+            }
+        }
+        match self.peeked {
+            Token::FatArrow => true,
+            Token::Comma => true,
+            Token::Colon => true,
+            _ => false,
+        }
     }
 
     /// Get the current span (for error reporting).
@@ -476,6 +495,32 @@ impl Lexer {
 
         self.match_char('}');
         char::from_u32(value) ?? '?'
+    }
+
+    /// Lex a quote (') which could be a char literal or lifetime marker.
+    fn lex_quote_or_char(mut self) -> !Token {
+        // Check what follows the opening quote
+        match self.current() {
+            // If followed by identifier start, check if it's a lifetime
+            'a'..='z' | 'A'..='Z' | '_' => {
+                // Peek one ahead: if next char after the letter is a closing quote,
+                // it's a char literal like 'a'; otherwise it's a lifetime
+                match self.peek_char(1) {
+                    '\'' => {
+                        // It's a char literal like 'a'
+                        self.lex_char()
+                    }
+                    _ => {
+                        // It's a lifetime/quote marker - just return Quote token
+                        Token::Quote
+                    }
+                }
+            }
+            // Escaped char is always a char literal
+            '\\' => self.lex_char(),
+            // Any other single char followed by ' is a char literal
+            _ => self.lex_char(),
+        }
     }
 
     /// Lex a character literal.

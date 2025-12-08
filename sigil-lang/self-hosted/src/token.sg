@@ -274,6 +274,7 @@ pub enum Token {
     HashBang,       // #! - Inner attribute prefix
     Hash,           // #
     Underscore,     // _
+    Quote,          // ' - Single quote (lifetimes)
 
     // ========================================
     // Delimiters

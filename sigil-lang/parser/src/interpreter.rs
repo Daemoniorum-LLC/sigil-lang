@@ -3198,6 +3198,17 @@ impl Interpreter {
                         method.name, name
                     )));
                 }
+                // For non-struct refs (like &str), auto-deref and call method on inner value
+                // Handle common methods on &str (reference to String)
+                if let Value::String(s) = &inner {
+                    match method.name.as_str() {
+                        "to_string" => return Ok(Value::String(s.clone())),
+                        "len" => return Ok(Value::Int(s.len() as i64)),
+                        "is_empty" => return Ok(Value::Bool(s.is_empty())),
+                        "as_str" => return Ok(Value::String(s.clone())),
+                        _ => {}
+                    }
+                }
                 Err(RuntimeError::new(format!(
                     "Cannot call method {} on Ref to non-struct",
                     method.name
