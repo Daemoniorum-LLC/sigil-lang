@@ -67,8 +67,8 @@ secrets.yaml
 **/*.credentials
 
 # Ignore root-level test directories created accidentally
-/src/
-/test/
+# /src/  # REMOVED - was preventing source code from being committed!
+# /test/ # REMOVED - was preventing tests from being committed!
 
 # Autonomous development logs and artifacts
 autonomous-logs/
