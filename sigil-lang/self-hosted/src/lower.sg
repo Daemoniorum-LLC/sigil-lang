@@ -640,6 +640,38 @@ fn lower_expr(ctx: &mut LoweringContext, expr: !Expr) -> !IrOperation {
             }
         },
 
+        Expr::While { condition, body } => {
+            let ir_cond = lower_expr(ctx, *condition);
+            let ir_body = lower_block(ctx, body);
+
+            IrOperation::Loop {
+                variant: LoopVariant::While,
+                condition: ?Box::new(ir_cond),
+                iterator: null,
+                body: Box::new(ir_body),
+                ty: IrType::Unit,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::For { pattern, iter, body } => {
+            let ir_iter = lower_expr(ctx, *iter);
+            let ir_body = lower_block(ctx, body);
+            let ir_pattern = lower_pattern(ctx, pattern);
+
+            IrOperation::Loop {
+                variant: LoopVariant::For,
+                condition: null,
+                iterator: ?IrForIterator {
+                    pattern: ir_pattern,
+                    iterable: Box::new(ir_iter),
+                },
+                body: Box::new(ir_body),
+                ty: IrType::Unit,
+                evidence: IrEvidence::Known,
+            }
+        },
+
         Expr::Match { expr, arms } => {
             let scrutinee = lower_expr(ctx, *expr);
             let ir_arms = arms|τ{arm => lower_match_arm(ctx, arm)}|collect();
@@ -721,6 +753,17 @@ fn lower_expr(ctx: &mut LoweringContext, expr: !Expr) -> !IrOperation {
             IrOperation::Await {
                 expr: Box::new(ir_expr),
                 ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Assign { target, value } => {
+            let ir_target = lower_expr(ctx, *target);
+            let ir_value = lower_expr(ctx, *value);
+
+            IrOperation::Assign {
+                target: Box::new(ir_target),
+                value: Box::new(ir_value),
                 evidence: IrEvidence::Known,
             }
         },

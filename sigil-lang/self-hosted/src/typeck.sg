@@ -1262,6 +1262,34 @@ impl TypeChecker {
                 }
             },
 
+            Expr::While { condition, body } => {
+                let cond_ty = self.infer_expr(*condition);
+                if !self.unify(Type::Bool, cond_ty) {
+                    self.error(TypeError::new("while condition must be bool"));
+                }
+                self.check_block(body);
+                Type::Unit
+            },
+
+            Expr::For { pattern, iter, body } => {
+                let iter_ty = self.infer_expr(*iter);
+                // TODO: extract element type from iterator
+                self.check_block(body);
+                Type::Unit
+            },
+
+            Expr::Assign { target, value } => {
+                let target_ty = self.infer_expr(*target);
+                let value_ty = self.infer_expr(*value);
+                if !self.unify(target_ty, value_ty) {
+                    self.error(TypeError::new(format!(
+                        "type mismatch in assignment: expected {}, found {}",
+                        target_ty.to_string(), value_ty.to_string()
+                    )));
+                }
+                Type::Unit
+            },
+
             Expr::Pipe { expr, operations } => {
                 let mut current = self.infer_expr(*expr);
                 for op in operations {

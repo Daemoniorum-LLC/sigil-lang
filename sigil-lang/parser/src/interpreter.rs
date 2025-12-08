@@ -1423,7 +1423,12 @@ impl Interpreter {
             self.environment
                 .borrow()
                 .get(name)
-                .ok_or_else(|| RuntimeError::new(format!("Undefined variable: {}", name)))
+                .ok_or_else(|| {
+                    if name.len() <= 2 {
+                        eprintln!("DEBUG Undefined variable '{}' (len={})", name, name.len());
+                    }
+                    RuntimeError::new(format!("Undefined variable: {}", name))
+                })
         } else {
             // Multi-segment path (module::item or Type·method)
             // Try full qualified name first (joined with ·)
@@ -2301,10 +2306,15 @@ impl Interpreter {
                 // Range patterns like 'a'..='z' don't bind anything
                 Ok(())
             }
-            Pattern::Or(_) => {
-                // Or patterns like 'a' | 'b' | 'c' don't bind anything
-                // (If they had identifiers, we'd need to ensure all arms bind the same names)
-                Ok(())
+            Pattern::Or(patterns) => {
+                // Or patterns - find the matching pattern and bind its variables
+                for p in patterns {
+                    if self.pattern_matches(p, &value)? {
+                        return self.bind_pattern(p, value.clone());
+                    }
+                }
+                // No pattern matched - this shouldn't happen if pattern_matches returned true earlier
+                Err(RuntimeError::new("Or pattern didn't match any alternative"))
             }
             _ => Err(RuntimeError::new(format!("Unsupported pattern: {:?}", pattern))),
         }
@@ -3475,6 +3485,33 @@ impl Interpreter {
                 }
                 // Pattern methods - for AST pattern access
                 eprintln!("DEBUG variant method call: enum_name={}, variant_name={}, method={}", enum_name, variant_name, method.name);
+
+                // Type methods
+                if enum_name == "Type" {
+                    match method.name.as_str() {
+                        "is_never" => {
+                            // Type::Never is the never type, all others are not
+                            return Ok(Value::Bool(variant_name == "Never"));
+                        }
+                        "to_string" => {
+                            // Convert type to string representation
+                            let type_str = match variant_name.as_str() {
+                                "Bool" => "bool".to_string(),
+                                "Int" => "i64".to_string(),
+                                "Float" => "f64".to_string(),
+                                "Str" => "str".to_string(),
+                                "Char" => "char".to_string(),
+                                "Unit" => "()".to_string(),
+                                "Never" => "!".to_string(),
+                                "Error" => "<error>".to_string(),
+                                other => format!("Type::{}", other),
+                            };
+                            return Ok(Value::String(Rc::new(type_str)));
+                        }
+                        _ => {}
+                    }
+                }
+
                 if enum_name == "Pattern" {
                     match method.name.as_str() {
                         "evidentiality" => {

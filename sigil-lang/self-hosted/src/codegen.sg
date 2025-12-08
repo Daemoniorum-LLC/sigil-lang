@@ -767,6 +767,13 @@ impl CodeGen {
                 format!("sigil_with_evidence({}, {})", val, ev)
             },
 
+            IrOperation::Assign { target, value, .. } => {
+                let target_code = self.emit_operation(*target);
+                let value_code = self.emit_operation(*value);
+                self.line(format!("{} = {};", target_code, value_code));
+                "sigil_unit()"
+            },
+
             _ => {
                 self.line("/* Unsupported operation */");
                 "sigil_unit()"
