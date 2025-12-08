@@ -2368,22 +2368,31 @@ impl Interpreter {
 
         for arm in arms {
             if self.pattern_matches(&arm.pattern, &value)? {
-                // Check guard if present
-                if let Some(guard) = &arm.guard {
-                    let guard_val = self.evaluate(guard)?;
-                    if !self.is_truthy(&guard_val) {
-                        continue;
-                    }
-                }
-
-                // Bind pattern variables and evaluate body
+                // Create new environment for pattern bindings
                 let env = Rc::new(RefCell::new(Environment::with_parent(
                     self.environment.clone(),
                 )));
                 let prev_env = self.environment.clone();
                 self.environment = env;
 
-                self.bind_pattern(&arm.pattern, value)?;
+                // Bind pattern variables FIRST (before evaluating guard)
+                // This is necessary for guards like `?fields if !fields.is_empty()`
+                if let Err(e) = self.bind_pattern(&arm.pattern, value.clone()) {
+                    self.environment = prev_env;
+                    return Err(e);
+                }
+
+                // Check guard if present (pattern vars are now in scope)
+                if let Some(guard) = &arm.guard {
+                    let guard_val = self.evaluate(guard)?;
+                    if !self.is_truthy(&guard_val) {
+                        // Guard failed - restore environment and try next arm
+                        self.environment = prev_env;
+                        continue;
+                    }
+                }
+
+                // Pattern matched and guard passed - evaluate body
                 let result = self.evaluate(&arm.body);
 
                 self.environment = prev_env;
@@ -2981,11 +2990,11 @@ impl Interpreter {
                 };
                 t.get(idx).cloned().ok_or_else(|| RuntimeError::new("tuple index out of bounds"))
             }
-            (Value::Array(arr), "first") => arr
+            (Value::Array(arr), "first") | (Value::Array(arr), "next") => Ok(arr
                 .borrow()
                 .first()
                 .cloned()
-                .ok_or_else(|| RuntimeError::new("empty array")),
+                .unwrap_or(Value::Null)),
             (Value::Array(arr), "last") => arr
                 .borrow()
                 .last()
@@ -3154,10 +3163,10 @@ impl Interpreter {
             }
             (Value::Char(c), "to_ascii_uppercase") => Ok(Value::Char(c.to_ascii_uppercase())),
             (Value::Char(c), "to_ascii_lowercase") => Ok(Value::Char(c.to_ascii_lowercase())),
-            (Value::String(s), "upper") | (Value::String(s), "uppercase") => {
+            (Value::String(s), "upper") | (Value::String(s), "uppercase") | (Value::String(s), "to_uppercase") => {
                 Ok(Value::String(Rc::new(s.to_uppercase())))
             }
-            (Value::String(s), "lower") | (Value::String(s), "lowercase") => {
+            (Value::String(s), "lower") | (Value::String(s), "lowercase") | (Value::String(s), "to_lowercase") => {
                 Ok(Value::String(Rc::new(s.to_lowercase())))
             }
             (Value::String(s), "trim") => Ok(Value::String(Rc::new(s.trim().to_string()))),
@@ -3732,6 +3741,12 @@ impl Interpreter {
                     Ok(arg_values[0].clone())
                 }
             }
+            // unwrap_or for non-null values returns the value itself
+            (Value::Char(c), "unwrap_or") => Ok(Value::Char(*c)),
+            (Value::Int(n), "unwrap_or") => Ok(Value::Int(*n)),
+            (Value::Float(n), "unwrap_or") => Ok(Value::Float(*n)),
+            (Value::String(s), "unwrap_or") => Ok(Value::String(s.clone())),
+            (Value::Bool(b), "unwrap_or") => Ok(Value::Bool(*b)),
             // Int methods
             (Value::Int(n), "to_string") | (Value::Int(n), "string") => {
                 Ok(Value::String(Rc::new(n.to_string())))
@@ -3831,10 +3846,10 @@ impl Interpreter {
         match (receiver, method_name) {
             // String methods
             (Value::String(s), "len") => Ok(Value::Int(s.len() as i64)),
-            (Value::String(s), "upper") | (Value::String(s), "uppercase") => {
+            (Value::String(s), "upper") | (Value::String(s), "uppercase") | (Value::String(s), "to_uppercase") => {
                 Ok(Value::String(Rc::new(s.to_uppercase())))
             }
-            (Value::String(s), "lower") | (Value::String(s), "lowercase") => {
+            (Value::String(s), "lower") | (Value::String(s), "lowercase") | (Value::String(s), "to_lowercase") => {
                 Ok(Value::String(Rc::new(s.to_lowercase())))
             }
             (Value::String(s), "trim") => Ok(Value::String(Rc::new(s.trim().to_string()))),
@@ -3902,11 +3917,11 @@ impl Interpreter {
 
             // Array methods
             (Value::Array(arr), "len") => Ok(Value::Int(arr.borrow().len() as i64)),
-            (Value::Array(arr), "first") => arr
+            (Value::Array(arr), "first") | (Value::Array(arr), "next") => Ok(arr
                 .borrow()
                 .first()
                 .cloned()
-                .ok_or_else(|| RuntimeError::new("empty array")),
+                .unwrap_or(Value::Null)),
             (Value::Array(arr), "last") => arr
                 .borrow()
                 .last()

@@ -433,7 +433,13 @@ impl CodeGen {
                             self.indent_push();
                             for field in fields {
                                 let c_type = self.ir_type_to_c(field.ty);
-                                self.line(format!("{} {};", c_type, field.name));
+                                // Make field name a valid C identifier (prefix numeric names with 'field_')
+                                let field_name = if field.name.chars().next().unwrap_or('a').is_digit(10) {
+                                    format!("field_{}", field.name)
+                                } else {
+                                    field.name.clone()
+                                };
+                                self.line(format!("{} {};", c_type, field_name));
                             }
                             self.indent_pop();
                             self.line(format!("}} v{};", i));
@@ -470,7 +476,15 @@ impl CodeGen {
             IrType::Primitive { .. } => "SigilValue",
             IrType::Array { .. } | IrType::Slice { .. } => "SigilValue",
             IrType::Tuple { .. } => "SigilValue",
-            IrType::Named { name, .. } => name,
+            IrType::Named { name, .. } => {
+                // Generic type parameters (single uppercase letters) should be SigilValue
+                // Since we use boxed representation for all values
+                if name.len() == 1 && name.chars().next().unwrap_or('a').is_uppercase() {
+                    "SigilValue"
+                } else {
+                    name
+                }
+            },
             IrType::Reference { .. } => "SigilValue",
             IrType::Pointer { .. } => "SigilValue",
             IrType::Function { .. } => "void*",
