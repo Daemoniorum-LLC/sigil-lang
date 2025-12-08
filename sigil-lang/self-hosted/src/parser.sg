@@ -134,6 +134,14 @@ impl Parser {
         }
     }
 
+    /// Check if the next token matches expected.
+    fn peek_is(self, expected: !&Token) -> !bool {
+        match self.peek_next_token() {
+            ?token => &token == expected,
+            null => false,
+        }
+    }
+
     /// Check if in condition context (< is comparison, not generics).
     fn is_in_condition(self) -> !bool {
         self.in_condition
@@ -467,8 +475,9 @@ impl Parser {
         let mut params = Vec::new();
 
         while !self.check(&Token::RParen) {
-            // Handle self parameter
-            if self.check(&Token::SelfLower) || self.check(&Token::Amp) {
+            // Handle self parameter (self, &self, &mut self, mut self)
+            if self.check(&Token::SelfLower) || self.check(&Token::Amp) ||
+               (self.check(&Token::Mut) && self.peek_is(&Token::SelfLower)) {
                 let param = self.parse_self_param()?;
                 params.push(param);
             } else {
@@ -487,9 +496,19 @@ impl Parser {
     }
 
     /// Parse self parameter.
+    /// Handles: self, mut self, &self, &mut self
     fn parse_self_param(mut self) -> !ParseResult<Param> {
         let span = self.current_span();
-        let mutable = self.consume_if(&Token::Amp) && self.consume_if(&Token::Mut);
+
+        // Check for reference variants: &self, &mut self
+        let is_ref = self.consume_if(&Token::Amp);
+        let mutable = if is_ref {
+            // &mut self
+            self.consume_if(&Token::Mut)
+        } else {
+            // mut self (no &)
+            self.consume_if(&Token::Mut)
+        };
 
         self.expect(Token::SelfLower)?;
 
@@ -1318,6 +1337,26 @@ impl Parser {
                 let inner = self.parse_type()?;
                 self.expect(Token::Gt)?;
                 Ok(TypeExpr::Atomic(Box::new(inner)))
+            }
+            Token::Question => {
+                self.advance();
+                // Prefix ? means optional/uncertain type: ?T -> Uncertain<T>
+                let inner = self.parse_type_primary()?;
+                Ok(TypeExpr::Evidential {
+                    inner: Box::new(inner),
+                    evidentiality: Evidentiality::Uncertain,
+                    error_type: null,
+                })
+            }
+            Token::Tilde => {
+                self.advance();
+                // Prefix ~ means reported type: ~T -> Reported<T>
+                let inner = self.parse_type_primary()?;
+                Ok(TypeExpr::Evidential {
+                    inner: Box::new(inner),
+                    evidentiality: Evidentiality::Reported,
+                    error_type: null,
+                })
             }
             _ => {
                 let path = self.parse_type_path()?;
@@ -2221,11 +2260,16 @@ impl Parser {
             Token::Ident(_) => {
                 let ident = self.parse_ident()?;
 
+                // Build path segments (handle :: for qualified paths like Token::Fn)
+                let mut segments = vec![PathSegment { ident, args: null }];
+                while self.consume_if(&Token::ColonColon) {
+                    let next_ident = self.parse_ident()?;
+                    segments.push(PathSegment { ident: next_ident, args: null });
+                }
+                let path = TypePath { segments: segments.clone() };
+
                 // Check for struct pattern
                 if self.check(&Token::LBrace) {
-                    let path = TypePath {
-                        segments: vec![PathSegment { ident, generics: null }],
-                    };
                     self.advance();
                     let mut fields = Vec::new();
                     let mut rest = false;
@@ -2250,9 +2294,6 @@ impl Parser {
                 }
                 // Check for tuple struct pattern
                 else if self.check(&Token::LParen) {
-                    let path = TypePath {
-                        segments: vec![PathSegment { ident, generics: null }],
-                    };
                     self.advance();
                     let mut fields = Vec::new();
                     while !self.check(&Token::RParen) {
@@ -2264,9 +2305,14 @@ impl Parser {
                     self.expect(Token::RParen)?;
                     Ok(Pattern::TupleStruct { path, fields })
                 }
-                else {
+                // Single segment path without { or ( -> simple identifier pattern
+                else if segments.len() == 1 {
                     let evidentiality = self.parse_evidentiality_opt();
-                    Ok(Pattern::Ident { mutable: false, name: ident, evidentiality })
+                    Ok(Pattern::Ident { mutable: false, name: segments[0].ident.clone(), evidentiality })
+                }
+                // Multi-segment path (like Token::Fn) -> TupleStruct with no fields (unit variant)
+                else {
+                    Ok(Pattern::TupleStruct { path, fields: [] })
                 }
             }
             Token::LParen => {
@@ -2362,6 +2408,15 @@ impl Parser {
             Token::Default => {
                 self.advance();
                 Ok(Ident::new("default".to_string(), span))
+            }
+            // Path keywords that can be used as identifiers in use/path contexts
+            Token::Crate => {
+                self.advance();
+                Ok(Ident::new("crate".to_string(), span))
+            }
+            Token::Super => {
+                self.advance();
+                Ok(Ident::new("super".to_string(), span))
             }
             t => Err(ParseError::unexpected("identifier", t?, span)),
         }
