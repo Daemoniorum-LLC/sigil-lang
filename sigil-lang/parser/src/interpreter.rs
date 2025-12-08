@@ -1522,6 +1522,12 @@ impl Interpreter {
         let lhs = Self::unwrap_all(&lhs);
         let rhs = Self::unwrap_all(&rhs);
 
+        // Debug Mul operations involving potential null
+        if matches!(op, BinOp::Mul) && (matches!(lhs, Value::Null) || matches!(rhs, Value::Null) || matches!(lhs, Value::Struct { .. }) || matches!(rhs, Value::Struct { .. })) {
+            eprintln!("DEBUG eval_binary Mul: left={:?}, right={:?}", left, right);
+            eprintln!("DEBUG eval_binary Mul: lhs={}, rhs={}", self.format_value(&lhs), self.format_value(&rhs));
+        }
+
         match (lhs, rhs) {
             (Value::Int(a), Value::Int(b)) => self.int_binary_op(a, b, op),
             (Value::Float(a), Value::Float(b)) => self.float_binary_op(a, b, op),
@@ -1552,12 +1558,18 @@ impl Interpreter {
             (Value::Null, Value::Null) => match op {
                 BinOp::Eq => Ok(Value::Bool(true)),
                 BinOp::Ne => Ok(Value::Bool(false)),
-                _ => Err(RuntimeError::new("Invalid null operation")),
+                _ => {
+                    eprintln!("DEBUG: null op {:?} on (Null, Null)", op);
+                    Err(RuntimeError::new(format!("Invalid null operation: {:?} on (Null, Null)", op)))
+                }
             },
-            (Value::Null, _) | (_, Value::Null) => match op {
+            (Value::Null, other) | (other, Value::Null) => match op {
                 BinOp::Eq => Ok(Value::Bool(false)),
                 BinOp::Ne => Ok(Value::Bool(true)),
-                _ => Err(RuntimeError::new("Invalid null operation")),
+                _ => {
+                    eprintln!("DEBUG: null op {:?} with other={}", op, self.format_value(&other));
+                    Err(RuntimeError::new(format!("Invalid null operation: {:?}", op)))
+                }
             },
             // Char comparisons
             (Value::Char(a), Value::Char(b)) => match op {
@@ -1670,6 +1682,29 @@ impl Interpreter {
             (UnaryOp::Neg, Value::Float(n)) => Ok(Value::Float(-n)),
             (UnaryOp::Not, Value::Bool(b)) => Ok(Value::Bool(!b)),
             (UnaryOp::Not, Value::Int(n)) => Ok(Value::Int(!n)),
+            // Handle evidential values - unwrap, negate, rewrap
+            (UnaryOp::Not, Value::Evidential { value, evidence }) => {
+                // Negate the inner value
+                match value.as_ref() {
+                    Value::Bool(b) => Ok(Value::Evidential {
+                        value: Box::new(Value::Bool(!b)),
+                        evidence: evidence.clone(),
+                    }),
+                    other => {
+                        let truthy = self.is_truthy(other);
+                        Ok(Value::Evidential {
+                            value: Box::new(Value::Bool(!truthy)),
+                            evidence: evidence.clone(),
+                        })
+                    }
+                }
+            }
+            // Handle string truthiness (non-empty = true)
+            (UnaryOp::Not, Value::String(s)) => Ok(Value::Bool(s.is_empty())),
+            // Handle array truthiness (non-empty = true)
+            (UnaryOp::Not, Value::Array(arr)) => Ok(Value::Bool(arr.borrow().is_empty())),
+            // Handle null - null is falsy
+            (UnaryOp::Not, Value::Null) => Ok(Value::Bool(true)),
             (UnaryOp::Ref, _) => Ok(Value::Ref(Rc::new(RefCell::new(val)))),
             (UnaryOp::RefMut, _) => Ok(Value::Ref(Rc::new(RefCell::new(val)))),
             (UnaryOp::Deref, Value::Ref(r)) => Ok(r.borrow().clone()),
@@ -2853,6 +2888,16 @@ impl Interpreter {
                 // iter() on an array just returns the array - iteration happens in for loops
                 Ok(Value::Array(arr.clone()))
             }
+            (Value::Array(arr), "enumerate") => {
+                // enumerate() returns array of (index, value) tuples
+                let enumerated: Vec<Value> = arr
+                    .borrow()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| Value::Tuple(Rc::new(vec![Value::Int(i as i64), v.clone()])))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(enumerated))))
+            }
             (Value::Array(arr), "zip") => {
                 // zip with another array to create array of tuples
                 if arg_values.len() != 1 {
@@ -3021,6 +3066,20 @@ impl Interpreter {
                 .ok_or_else(|| RuntimeError::new("empty string")),
             (Value::Array(arr), "is_empty") => Ok(Value::Bool(arr.borrow().is_empty())),
             (Value::Array(arr), "clone") => Ok(Value::Array(Rc::new(RefCell::new(arr.borrow().clone())))),
+            (Value::Array(arr), "join") => {
+                let separator = if arg_values.is_empty() {
+                    String::new()
+                } else {
+                    match &arg_values[0] {
+                        Value::String(s) => (**s).clone(),
+                        _ => return Err(RuntimeError::new("join separator must be string")),
+                    }
+                };
+                let parts: Vec<String> = arr.borrow().iter()
+                    .map(|v| self.format_value(v))
+                    .collect();
+                Ok(Value::String(Rc::new(parts.join(&separator))))
+            }
             // Map methods
             (Value::Map(m), "insert") => {
                 if arg_values.len() != 2 {

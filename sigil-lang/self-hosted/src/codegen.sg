@@ -580,12 +580,8 @@ impl CodeGen {
                 let arg_codes = args|τ{a => self.emit_operation(a)}|collect();
                 let args_str = arg_codes.join(", ");
 
-                // Check for builtins
-                let call = if self.is_builtin(function) {
-                    format!("sigil_{}({})", function, args_str)
-                } else {
-                    format!("{}({})", fn_name, args_str)
-                };
+                // All functions get sigil_ prefix
+                let call = format!("sigil_{}({})", fn_name, args_str);
 
                 self.with_evidence(call, evidence)
             },
@@ -811,7 +807,7 @@ impl CodeGen {
                 for arg in args {
                     all_args.push(self.emit_operation(arg));
                 }
-                format!("{}({})", fn_name, all_args.join(", "))
+                format!("sigil_{}({})", fn_name, all_args.join(", "))
             },
             IrPipelineStep::Method { name, args } => {
                 let mut all_args = [input.clone()];

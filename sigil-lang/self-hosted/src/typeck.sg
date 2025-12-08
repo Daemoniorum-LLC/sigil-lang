@@ -1186,7 +1186,7 @@ impl TypeChecker {
                                 let actual_ev = self.get_evidence(arg);
                                 self.check_evidence(expected_ev, actual_ev, format!("in argument {}", i + 1));
                             }
-                        }
+                        };
 
                         *return_type
                     },
