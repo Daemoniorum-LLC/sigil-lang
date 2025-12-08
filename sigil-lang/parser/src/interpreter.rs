@@ -593,6 +593,8 @@ pub struct Interpreter {
     pub types: HashMap<String, TypeDef>,
     /// Variant constructors: qualified_name -> (enum_name, variant_name, arity)
     pub variant_constructors: HashMap<String, (String, String, usize)>,
+    /// Structs with #[derive(Default)]
+    pub default_structs: HashMap<String, StructDef>,
     /// Output buffer (for testing)
     pub output: Vec<String>,
     /// Return value from the last return statement (control flow)
@@ -615,6 +617,7 @@ impl Interpreter {
             environment,
             types: HashMap::new(),
             variant_constructors: HashMap::new(),
+            default_structs: HashMap::new(),
             return_value: None,
             output: Vec::new(),
         };
@@ -736,6 +739,26 @@ impl Interpreter {
             })
         });
 
+        // Box::new - just return the value (Sigil is GC'd)
+        self.globals.borrow_mut().define(
+            "Box·new".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Box·new".to_string(),
+                arity: Some(1),
+                func: |_, args| Ok(args[0].clone()),
+            })),
+        );
+
+        // Map::new - create empty map
+        self.globals.borrow_mut().define(
+            "Map·new".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Map·new".to_string(),
+                arity: Some(0),
+                func: |_, _| Ok(Value::Map(Rc::new(RefCell::new(HashMap::new())))),
+            })),
+        );
+
         // Range function
         self.define_builtin("range", Some(2), |_, args| {
             let start = match &args[0] {
@@ -804,6 +827,13 @@ impl Interpreter {
             Item::Struct(s) => {
                 self.types
                     .insert(s.name.name.clone(), TypeDef::Struct(s.clone()));
+
+                // Check for #[derive(Default)] attribute and store for later lookup
+                let has_default = s.attrs.derives.iter().any(|d| matches!(d, DeriveTrait::Default));
+                if has_default {
+                    self.default_structs.insert(s.name.name.clone(), s.clone());
+                }
+
                 Ok(Value::Null)
             }
             Item::Enum(e) => {
@@ -924,6 +954,10 @@ impl Interpreter {
                     if let ImplItem::Function(func) = impl_item {
                         let fn_value = self.create_function(func)?;
                         let qualified_name = format!("{}·{}", type_name, func.name.name);
+                        // Debug: track Lexer method registration
+                        if type_name == "Lexer" && func.name.name.contains("keyword") {
+                            eprintln!("DEBUG registering: {}", qualified_name);
+                        }
                         self.globals.borrow_mut().define(qualified_name, fn_value);
                     }
                 }
@@ -1008,6 +1042,13 @@ impl Interpreter {
                 inclusive,
             } => self.eval_range(start, end, *inclusive),
             Expr::Assign { target, value } => self.eval_assign(target, value),
+            Expr::Let { pattern, value } => {
+                // Let expression (for if-let, while-let patterns)
+                // Evaluate the value and bind it to the pattern
+                let val = self.evaluate(value)?;
+                self.bind_pattern(pattern, val.clone())?;
+                Ok(val)
+            }
             Expr::Await {
                 expr: inner,
                 evidentiality,
@@ -1114,7 +1155,24 @@ impl Interpreter {
                             }
                             ("Result", "Err") => {
                                 let err_msg = if let Some(f) = fields {
-                                    format!("{}", f.first().cloned().unwrap_or(Value::Null))
+                                    let first = f.first().cloned().unwrap_or(Value::Null);
+                                    // Try to get more detail from the error
+                                    match &first {
+                                        Value::Struct { name, fields: sf } => {
+                                            let field_str = sf.borrow().iter()
+                                                .map(|(k, v)| format!("{}: {}", k, v))
+                                                .collect::<Vec<_>>()
+                                                .join(", ");
+                                            format!("{} {{ {} }}", name, field_str)
+                                        }
+                                        Value::Variant { enum_name: en, variant_name: vn, fields: vf } => {
+                                            let vf_str = vf.as_ref().map(|vs|
+                                                vs.iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join(", ")
+                                            ).unwrap_or_default();
+                                            format!("{}::{} {{ {} }}", en, vn, vf_str)
+                                        }
+                                        _ => format!("{}", first)
+                                    }
                                 } else {
                                     "error".to_string()
                                 };
@@ -1339,6 +1397,10 @@ impl Interpreter {
     fn eval_path(&self, path: &TypePath) -> Result<Value, RuntimeError> {
         if path.segments.len() == 1 {
             let name = &path.segments[0].ident.name;
+            // Handle wildcard "_" - return Null instead of looking it up
+            if name == "_" {
+                return Ok(Value::Null);
+            }
             self.environment
                 .borrow()
                 .get(name)
@@ -1437,6 +1499,10 @@ impl Interpreter {
 
         let rhs = self.evaluate(right)?;
 
+        // Unwrap all wrappers (evidential/affective/ref) for binary operations
+        let lhs = Self::unwrap_all(&lhs);
+        let rhs = Self::unwrap_all(&rhs);
+
         match (lhs, rhs) {
             (Value::Int(a), Value::Int(b)) => self.int_binary_op(a, b, op),
             (Value::Float(a), Value::Float(b)) => self.float_binary_op(a, b, op),
@@ -1520,7 +1586,10 @@ impl Interpreter {
                 BinOp::Ne => Ok(Value::Bool(n1 != n2 || !Rc::ptr_eq(&f1, &f2))),
                 _ => Err(RuntimeError::new("Invalid struct operation")),
             },
-            _ => Err(RuntimeError::new("Type mismatch in binary operation")),
+            (l, r) => Err(RuntimeError::new(format!(
+                "Type mismatch in binary operation: {:?} {:?} {:?}",
+                l, op, r
+            ))),
         }
     }
 
@@ -1577,14 +1646,25 @@ impl Interpreter {
 
     fn eval_unary(&mut self, op: &UnaryOp, expr: &Expr) -> Result<Value, RuntimeError> {
         let val = self.evaluate(expr)?;
-        match (op, val) {
+        match (op, &val) {
             (UnaryOp::Neg, Value::Int(n)) => Ok(Value::Int(-n)),
             (UnaryOp::Neg, Value::Float(n)) => Ok(Value::Float(-n)),
             (UnaryOp::Not, Value::Bool(b)) => Ok(Value::Bool(!b)),
             (UnaryOp::Not, Value::Int(n)) => Ok(Value::Int(!n)),
-            (UnaryOp::Ref, val) => Ok(Value::Ref(Rc::new(RefCell::new(val)))),
+            (UnaryOp::Ref, _) => Ok(Value::Ref(Rc::new(RefCell::new(val)))),
+            (UnaryOp::RefMut, _) => Ok(Value::Ref(Rc::new(RefCell::new(val)))),
             (UnaryOp::Deref, Value::Ref(r)) => Ok(r.borrow().clone()),
-            _ => Err(RuntimeError::new("Invalid unary operation")),
+            (UnaryOp::Deref, other) => {
+                // Try to unwrap evidential/affective wrappers and deref
+                let unwrapped = Self::unwrap_all(&val);
+                if let Value::Ref(r) = &unwrapped {
+                    return Ok(r.borrow().clone());
+                }
+                // For non-ref types in interpreted code, just return the value as-is
+                // (dereferencing a copy type in Sigil is a no-op)
+                Ok(unwrapped)
+            }
+            _ => Err(RuntimeError::new(format!("Invalid unary {:?} on {:?}", op, std::mem::discriminant(&val)))),
         }
     }
 
@@ -1596,7 +1676,30 @@ impl Interpreter {
                 .collect::<Vec<_>>()
                 .join("·");
 
-            // Check variant constructors first
+            // Check for TypeName·default pattern
+            if qualified_name.ends_with("·default") && args.is_empty() {
+                let type_name = qualified_name.strip_suffix("·default").unwrap();
+                if let Some(struct_def) = self.default_structs.get(type_name).cloned() {
+                    let mut fields = HashMap::new();
+                    if let StructFields::Named(field_defs) = &struct_def.fields {
+                        for field in field_defs {
+                            let default_val = if let Some(default_expr) = &field.default {
+                                self.evaluate(default_expr)?
+                            } else {
+                                // No default - use null for optional/uncertain types
+                                Value::Null
+                            };
+                            fields.insert(field.name.name.clone(), default_val);
+                        }
+                    }
+                    return Ok(Value::Struct {
+                        name: type_name.to_string(),
+                        fields: Rc::new(RefCell::new(fields)),
+                    });
+                }
+            }
+
+            // Check variant constructors
             if let Some((enum_name, variant_name, arity)) = self.variant_constructors.get(&qualified_name).cloned() {
                 let arg_values: Vec<Value> = args
                     .iter()
@@ -1650,6 +1753,18 @@ impl Interpreter {
                 func.params.len(),
                 args.len()
             )));
+        }
+
+        // Debug: trace calls to keyword_or_ident
+        if func.params.iter().any(|p| p == "name") {
+            for arg in &args {
+                let unwrapped = Self::unwrap_all(arg);
+                if let Value::String(s) = &unwrapped {
+                    if s.len() <= 10 {
+                        eprintln!("DEBUG call_function(name='{}')", s);
+                    }
+                }
+            }
         }
 
         // Create new environment for function
@@ -1936,9 +2051,12 @@ impl Interpreter {
     fn bind_pattern(&mut self, pattern: &Pattern, value: Value) -> Result<(), RuntimeError> {
         match pattern {
             Pattern::Ident { name, .. } => {
-                self.environment
-                    .borrow_mut()
-                    .define(name.name.clone(), value);
+                // Don't bind "_" - it's a wildcard in identifier form
+                if name.name != "_" {
+                    self.environment
+                        .borrow_mut()
+                        .define(name.name.clone(), value);
+                }
                 Ok(())
             }
             Pattern::Tuple(patterns) => {
@@ -1956,8 +2074,10 @@ impl Interpreter {
             }
             Pattern::Wildcard => Ok(()),
             Pattern::Struct { fields, .. } => {
+                // Unwrap any wrappers first
+                let unwrapped = Self::unwrap_all(&value);
                 // Bind each field from the struct
-                if let Value::Struct { fields: struct_fields, .. } = &value {
+                if let Value::Struct { fields: struct_fields, .. } = &unwrapped {
                     for field_pat in fields {
                         let field_name = &field_pat.name.name;
                         if let Some(field_val) = struct_fields.borrow().get(field_name) {
@@ -1971,6 +2091,7 @@ impl Interpreter {
                     }
                     Ok(())
                 } else {
+                    eprintln!("DEBUG struct pattern bind: expected struct but got {:?}", std::mem::discriminant(&unwrapped));
                     Err(RuntimeError::new("Expected struct value for struct pattern"))
                 }
             }
@@ -2016,6 +2137,15 @@ impl Interpreter {
                 // Rest pattern .. - just ignores rest of values
                 Ok(())
             }
+            Pattern::Range { .. } => {
+                // Range patterns like 'a'..='z' don't bind anything
+                Ok(())
+            }
+            Pattern::Or(_) => {
+                // Or patterns like 'a' | 'b' | 'c' don't bind anything
+                // (If they had identifiers, we'd need to ensure all arms bind the same names)
+                Ok(())
+            }
             _ => Err(RuntimeError::new(format!("Unsupported pattern: {:?}", pattern))),
         }
     }
@@ -2038,6 +2168,14 @@ impl Interpreter {
 
     fn eval_match(&mut self, expr: &Expr, arms: &[MatchArm]) -> Result<Value, RuntimeError> {
         let value = self.evaluate(expr)?;
+
+        // Debug all string matches to find keyword_or_ident
+        let unwrapped = Self::unwrap_all(&value);
+        if let Value::String(s) = &unwrapped {
+            if s.len() <= 10 {
+                eprintln!("DEBUG eval_match: string='{}', arms={}", s, arms.len());
+            }
+        }
 
         for arm in arms {
             if self.pattern_matches(&arm.pattern, &value)? {
@@ -2068,12 +2206,37 @@ impl Interpreter {
     }
 
     fn pattern_matches(&mut self, pattern: &Pattern, value: &Value) -> Result<bool, RuntimeError> {
-        match (pattern, value) {
+        // Unwrap evidential/affective/ref wrappers from value
+        let value = Self::unwrap_all(value);
+
+        // Debug string pattern matching
+        if let Value::String(s) = &value {
+            if **s == "fn" {
+                eprintln!("DEBUG pattern_matches: value='fn', pattern={:?}", pattern);
+            }
+        }
+
+        match (pattern, &value) {
             (Pattern::Wildcard, _) => Ok(true),
+            // Pattern::Ident with evidentiality - ?g matches Some/non-null, !g matches Known values
+            (Pattern::Ident { evidentiality: Some(Evidentiality::Uncertain), .. }, val) => {
+                // ?g pattern should match non-null values (i.e., Option::Some)
+                match val {
+                    Value::Null => Ok(false),
+                    Value::Variant { variant_name, .. } if variant_name == "None" => Ok(false),
+                    _ => Ok(true),
+                }
+            }
             (Pattern::Ident { .. }, _) => Ok(true),
             (Pattern::Literal(lit), val) => {
                 let lit_val = self.eval_literal(lit)?;
-                Ok(self.values_equal(&lit_val, val))
+                let result = self.values_equal(&lit_val, val);
+                if let Value::String(s) = &value {
+                    if **s == "fn" {
+                        eprintln!("DEBUG literal match: pattern lit={:?}, result={}", lit, result);
+                    }
+                }
+                Ok(result)
             }
             (Pattern::Tuple(patterns), Value::Tuple(values)) => {
                 if patterns.len() != values.len() {
@@ -2149,6 +2312,59 @@ impl Interpreter {
             }
             // Rest pattern always matches
             (Pattern::Rest, _) => Ok(true),
+            // Range pattern: 'a'..='z' or 0..=9
+            (Pattern::Range { start, end, inclusive }, val) => {
+                // Helper to extract char from pattern
+                let extract_char = |pat: &Option<Box<Pattern>>| -> Option<char> {
+                    match pat {
+                        Some(p) => match p.as_ref() {
+                            Pattern::Literal(Literal::Char(c)) => Some(*c),
+                            _ => None,
+                        },
+                        None => None,
+                    }
+                };
+                // Helper to extract int from pattern
+                let extract_int = |pat: &Option<Box<Pattern>>| -> Option<i64> {
+                    match pat {
+                        Some(p) => match p.as_ref() {
+                            Pattern::Literal(Literal::Int { value, .. }) => value.parse().ok(),
+                            _ => None,
+                        },
+                        None => None,
+                    }
+                };
+
+                match val {
+                    Value::Char(c) => {
+                        let start_val = extract_char(start);
+                        let end_val = extract_char(end);
+                        let in_range = match (start_val, end_val, *inclusive) {
+                            (Some(s), Some(e), true) => *c >= s && *c <= e,
+                            (Some(s), Some(e), false) => *c >= s && *c < e,
+                            (Some(s), None, _) => *c >= s,
+                            (None, Some(e), true) => *c <= e,
+                            (None, Some(e), false) => *c < e,
+                            (None, None, _) => true,
+                        };
+                        Ok(in_range)
+                    }
+                    Value::Int(i) => {
+                        let start_val = extract_int(start);
+                        let end_val = extract_int(end);
+                        let in_range = match (start_val, end_val, *inclusive) {
+                            (Some(s), Some(e), true) => *i >= s && *i <= e,
+                            (Some(s), Some(e), false) => *i >= s && *i < e,
+                            (Some(s), None, _) => *i >= s,
+                            (None, Some(e), true) => *i <= e,
+                            (None, Some(e), false) => *i < e,
+                            (None, None, _) => true,
+                        };
+                        Ok(in_range)
+                    }
+                    _ => Ok(false),
+                }
+            }
             // Literal matching against string or char
             (Pattern::Literal(Literal::String(s)), Value::String(vs)) => {
                 Ok(s == vs.as_str())
@@ -2166,7 +2382,14 @@ impl Interpreter {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::Float(a), Value::Float(b)) => (a - b).abs() < f64::EPSILON,
-            (Value::String(a), Value::String(b)) => a == b,
+            (Value::String(a), Value::String(b)) => {
+                let result = **a == **b;
+                // Debug ALL short string comparisons
+                if a.len() <= 5 && b.len() <= 5 {
+                    eprintln!("DEBUG values_equal: '{}' == '{}' -> {}", a, b, result);
+                }
+                result
+            }
             (Value::Char(a), Value::Char(b)) => a == b,
             _ => false,
         }
@@ -2178,11 +2401,26 @@ impl Interpreter {
         iter: &Expr,
         body: &Block,
     ) -> Result<Value, RuntimeError> {
-        let iterable = self.evaluate(iter)?;
+        let iterable_raw = self.evaluate(iter)?;
+        let iterable = Self::unwrap_all(&iterable_raw);
         let items = match iterable {
             Value::Array(arr) => arr.borrow().clone(),
             Value::Tuple(t) => (*t).clone(),
-            _ => return Err(RuntimeError::new("Cannot iterate over non-iterable")),
+            Value::String(s) => s.chars().map(Value::Char).collect(),
+            Value::Map(m) => {
+                // Iterate over key-value pairs as tuples
+                m.borrow()
+                    .iter()
+                    .map(|(k, v)| {
+                        Value::Tuple(Rc::new(vec![
+                            Value::String(Rc::new(k.clone())),
+                            v.clone(),
+                        ]))
+                    })
+                    .collect()
+            }
+            Value::Variant { fields: Some(f), .. } => (*f).clone(),
+            _ => return Err(RuntimeError::new(format!("Cannot iterate over non-iterable: {:?}", iterable_raw))),
         };
 
         let mut result = Value::Null;
@@ -2293,24 +2531,44 @@ impl Interpreter {
 
     fn eval_field(&mut self, expr: &Expr, field: &Ident) -> Result<Value, RuntimeError> {
         let value = self.evaluate(expr)?;
-        match value {
-            Value::Struct { fields, .. } => fields
-                .borrow()
-                .get(&field.name)
-                .cloned()
-                .ok_or_else(|| RuntimeError::new(format!("Unknown field: {}", field.name))),
-            Value::Tuple(t) => {
-                // Tuple field access like .0, .1
-                let idx: usize = field
-                    .name
-                    .parse()
-                    .map_err(|_| RuntimeError::new("Invalid tuple index"))?;
-                t.get(idx)
-                    .cloned()
-                    .ok_or_else(|| RuntimeError::new("Tuple index out of bounds"))
+        // Helper to get field from a value
+        fn get_field(val: &Value, field_name: &str) -> Result<Value, RuntimeError> {
+            match val {
+                Value::Struct { name, fields } => {
+                    let field_val = fields.borrow().get(field_name).cloned();
+                    if field_val.is_none() && field_name == "path" {
+                        eprintln!("DEBUG Unknown field 'path': struct={}, available={:?}", name, fields.borrow().keys().collect::<Vec<_>>());
+                    }
+                    field_val.ok_or_else(|| RuntimeError::new(format!("Unknown field: {}", field_name)))
+                }
+                Value::Tuple(t) => {
+                    // Tuple field access like .0, .1
+                    let idx: usize = field_name
+                        .parse()
+                        .map_err(|_| RuntimeError::new("Invalid tuple index"))?;
+                    t.get(idx)
+                        .cloned()
+                        .ok_or_else(|| RuntimeError::new("Tuple index out of bounds"))
+                }
+                Value::Ref(r) => {
+                    // Dereference and access field on inner value
+                    get_field(&r.borrow(), field_name)
+                }
+                Value::Evidential { value, .. } => {
+                    // Unwrap evidential wrapper and access field
+                    get_field(value, field_name)
+                }
+                Value::Affective { value, .. } => {
+                    // Unwrap affective wrapper and access field
+                    get_field(value, field_name)
+                }
+                other => {
+                    eprintln!("DEBUG Cannot access field '{}' on: {:?}", field_name, std::mem::discriminant(other));
+                    Err(RuntimeError::new("Cannot access field on non-struct"))
+                }
             }
-            _ => Err(RuntimeError::new("Cannot access field on non-struct")),
         }
+        get_field(&value, &field.name)
     }
 
     fn eval_method_call(
@@ -2319,11 +2577,123 @@ impl Interpreter {
         method: &Ident,
         args: &[Expr],
     ) -> Result<Value, RuntimeError> {
-        let recv = self.evaluate(receiver)?;
+        // Special handling for String::push/push_str - needs to mutate the variable
+        if (method.name == "push" || method.name == "push_str") && args.len() == 1 {
+            let recv_val = self.evaluate(receiver)?;
+            let recv_unwrapped = Self::unwrap_value(&recv_val).clone();
+            if let Value::String(s) = &recv_unwrapped {
+                let arg = self.evaluate(&args[0])?;
+                let arg_unwrapped = Self::unwrap_value(&arg).clone();
+                let new_s = match arg_unwrapped {
+                    Value::Char(c) => {
+                        let mut new_str = (**s).clone();
+                        new_str.push(c);
+                        new_str
+                    }
+                    Value::String(ref add_s) => {
+                        let mut new_str = (**s).clone();
+                        new_str.push_str(add_s);
+                        new_str
+                    }
+                    _ => return Err(RuntimeError::new("push expects char or string argument")),
+                };
+                let new_val = Value::String(Rc::new(new_s));
+                // Update the receiver variable if it's a simple identifier
+                if let Expr::Path(path) = receiver {
+                    if path.segments.len() == 1 {
+                        let var_name = &path.segments[0].ident.name;
+                        self.environment.borrow_mut().set(var_name, new_val)?;
+                        return Ok(Value::Null);
+                    }
+                }
+                // Handle field access like self.output.push(c)
+                if let Expr::Field { expr: base_expr, field: field_ident } = receiver {
+                    let base = self.evaluate(base_expr)?;
+                    if let Value::Struct { fields, .. } = base {
+                        fields.borrow_mut().insert(field_ident.name.clone(), new_val);
+                        return Ok(Value::Null);
+                    }
+                }
+                // Fallback: can't mutate, just return the new string
+                return Ok(new_val);
+            }
+        }
+
+        let recv_raw = self.evaluate(receiver)?;
+        // Unwrap evidential/affective wrappers for method dispatch
+        let recv = Self::unwrap_value(&recv_raw).clone();
+
+        // Debug: trace ALL method calls to find Lexer
+        static METHOD_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let count = METHOD_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if count < 500 {
+            let recv_type = match &recv {
+                Value::Struct { name, .. } => format!("Struct({})", name),
+                Value::String(s) => format!("String('{}')", if s.len() <= 20 { s.as_str() } else { "<long>" }),
+                Value::Ref(r) => format!("Ref({:?})", std::mem::discriminant(&*r.borrow())),
+                other => format!("{:?}", std::mem::discriminant(other)),
+            };
+            if recv_type.contains("Lexer") || method.name.contains("keyword") || method.name.contains("lex") {
+                eprintln!("DEBUG method #{}: {}.{}()", count, recv_type, method.name);
+            }
+        }
         let arg_values: Vec<Value> = args
             .iter()
             .map(|a| self.evaluate(a))
             .collect::<Result<_, _>>()?;
+
+        // Debug: Trace cloned/clone method calls
+        if method.name == "cloned" || method.name == "clone" {
+            let recv_type = match &recv {
+                Value::Struct { name, .. } => format!("Struct({})", name),
+                Value::Variant { enum_name, variant_name, .. } => format!("Variant({}::{})", enum_name, variant_name),
+                Value::String(_) => "String".to_string(),
+                Value::Ref(r) => format!("Ref({:?})", std::mem::discriminant(&*r.borrow())),
+                Value::Null => "Null".to_string(),
+                other => format!("{:?}", std::mem::discriminant(other)),
+            };
+            eprintln!("DEBUG {}: recv_type={}", method.name, recv_type);
+        }
+
+        // Debug: Trace ALL as_str calls
+        if method.name == "as_str" {
+            let recv_unwrapped = Self::unwrap_all(&recv);
+            if let Value::String(s) = &recv_unwrapped {
+                eprintln!("DEBUG as_str CALL: recv='{}' len={}", s, s.len());
+            } else {
+                eprintln!("DEBUG as_str CALL: recv={:?} (not string)", recv_unwrapped);
+            }
+        }
+
+        // Debug: trace keyword_or_ident method calls
+        if method.name == "keyword_or_ident" {
+            let recv_type = match &recv {
+                Value::Struct { name, .. } => format!("Struct({})", name),
+                Value::String(_) => "String".to_string(),
+                Value::Ref(r) => format!("Ref({})", match &*r.borrow() {
+                    Value::Struct { name, .. } => format!("Struct({})", name),
+                    other => format!("{:?}", std::mem::discriminant(other)),
+                }),
+                other => format!("{:?}", std::mem::discriminant(other)),
+            };
+            eprintln!("DEBUG keyword_or_ident: recv_type={}", recv_type);
+        }
+
+        // Debug: Find "fn" as method argument
+        for arg in &arg_values {
+            let unwrapped = Self::unwrap_all(arg);
+            if let Value::String(s) = &unwrapped {
+                if **s == "fn" {
+                    let recv_type = match &recv {
+                        Value::Struct { name, .. } => format!("Struct({})", name),
+                        Value::String(_) => "String".to_string(),
+                        Value::Ref(_) => "Ref".to_string(),
+                        other => format!("{:?}", std::mem::discriminant(other)),
+                    };
+                    eprintln!("DEBUG method call with 'fn': method={}, recv_type={}", method.name, recv_type);
+                }
+            }
+        }
 
         // Built-in methods
         match (&recv, method.name.as_str()) {
@@ -2344,6 +2714,38 @@ impl Interpreter {
                 v.reverse();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
+            (Value::Array(arr), "first") => arr
+                .borrow()
+                .first()
+                .cloned()
+                .ok_or_else(|| RuntimeError::new("empty array")),
+            (Value::Array(arr), "last") => arr
+                .borrow()
+                .last()
+                .cloned()
+                .ok_or_else(|| RuntimeError::new("empty array")),
+            (Value::Array(arr), "iter") => {
+                // iter() on an array just returns the array - iteration happens in for loops
+                Ok(Value::Array(arr.clone()))
+            }
+            (Value::Array(arr), "zip") => {
+                // zip with another array to create array of tuples
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("zip expects 1 argument"));
+                }
+                match &arg_values[0] {
+                    Value::Array(other) => {
+                        let a = arr.borrow();
+                        let b = other.borrow();
+                        let zipped: Vec<Value> = a.iter()
+                            .zip(b.iter())
+                            .map(|(x, y)| Value::Tuple(Rc::new(vec![x.clone(), y.clone()])))
+                            .collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(zipped))))
+                    }
+                    _ => Err(RuntimeError::new("zip expects array argument")),
+                }
+            }
             (Value::String(s), "len") => Ok(Value::Int(s.len() as i64)),
             (Value::String(s), "chars") => {
                 let chars: Vec<Value> = s.chars().map(Value::Char).collect();
@@ -2358,7 +2760,10 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("contains expects string")),
                 }
             }
-            (Value::String(s), "as_str") => Ok(Value::String(s.clone())),
+            (Value::String(s), "as_str") => {
+                if s.len() <= 10 { eprintln!("DEBUG as_str: '{}'", s); }
+                Ok(Value::String(s.clone()))
+            }
             (Value::String(s), "to_string") => Ok(Value::String(s.clone())),
             (Value::String(s), "starts_with") => {
                 if arg_values.len() != 1 {
@@ -2431,6 +2836,11 @@ impl Interpreter {
             (Value::Char(c), "len_utf8") => Ok(Value::Int(c.len_utf8() as i64)),
             (Value::Char(c), "is_alphabetic") => Ok(Value::Bool(c.is_alphabetic())),
             (Value::Char(c), "is_alphanumeric") => Ok(Value::Bool(c.is_alphanumeric())),
+            (Value::Char(c), "is_ascii_alphanumeric") => Ok(Value::Bool(c.is_ascii_alphanumeric())),
+            (Value::Char(c), "is_ascii_alphabetic") => Ok(Value::Bool(c.is_ascii_alphabetic())),
+            (Value::Char(c), "is_ascii_digit") => Ok(Value::Bool(c.is_ascii_digit())),
+            (Value::Char(c), "is_ascii_hexdigit") => Ok(Value::Bool(c.is_ascii_hexdigit())),
+            (Value::Char(c), "is_ascii") => Ok(Value::Bool(c.is_ascii())),
             (Value::Char(c), "is_digit") => {
                 let radix = if arg_values.is_empty() { 10 } else {
                     match &arg_values[0] {
@@ -2472,6 +2882,18 @@ impl Interpreter {
                 Ok(Value::String(Rc::new(s.to_lowercase())))
             }
             (Value::String(s), "trim") => Ok(Value::String(Rc::new(s.trim().to_string()))),
+            (Value::String(s), "len") => Ok(Value::Int(s.len() as i64)),
+            (Value::String(s), "is_empty") => Ok(Value::Bool(s.is_empty())),
+            (Value::String(s), "first") => s
+                .chars()
+                .next()
+                .map(Value::Char)
+                .ok_or_else(|| RuntimeError::new("empty string")),
+            (Value::String(s), "last") => s
+                .chars()
+                .last()
+                .map(Value::Char)
+                .ok_or_else(|| RuntimeError::new("empty string")),
             (Value::Array(arr), "is_empty") => Ok(Value::Bool(arr.borrow().is_empty())),
             (Value::Array(arr), "clone") => Ok(Value::Array(Rc::new(RefCell::new(arr.borrow().clone())))),
             // Map methods
@@ -2518,9 +2940,83 @@ impl Interpreter {
                 let values: Vec<Value> = m.borrow().values().cloned().collect();
                 Ok(Value::Array(Rc::new(RefCell::new(values))))
             }
+            // Ref methods
+            (Value::Ref(r), "cloned") => {
+                // Clone the inner value
+                Ok(r.borrow().clone())
+            }
+            (Value::Ref(r), "borrow") => {
+                // Return a reference to the inner value
+                Ok(recv.clone())
+            }
+            (Value::Ref(r), "borrow_mut") => {
+                // Return a reference to the inner value (mutable in place)
+                Ok(recv.clone())
+            }
+            // Forward method calls on Ref to inner value (struct method lookup)
+            (Value::Ref(r), _) => {
+                // Dereference and look up method on inner struct
+                let inner = r.borrow().clone();
+                if let Value::Struct { name, fields: _ } = &inner {
+                    // Try struct method lookup with the inner struct
+                    let qualified_name = format!("{}·{}", name, method.name);
+                    let func = self.globals.borrow().get(&qualified_name).map(|v| v.clone());
+                    if let Some(func) = func {
+                        if let Value::Function(f) = func {
+                            // Pass the Ref as the receiver (for &mut self methods)
+                            let mut all_args = vec![recv.clone()];
+                            all_args.extend(arg_values.clone());
+                            return self.call_function(&f, all_args);
+                        } else if let Value::BuiltIn(b) = func {
+                            let mut all_args = vec![recv.clone()];
+                            all_args.extend(arg_values.clone());
+                            return (b.func)(self, all_args);
+                        }
+                    }
+                    return Err(RuntimeError::new(format!(
+                        "Unknown method: {} on &{}",
+                        method.name, name
+                    )));
+                }
+                Err(RuntimeError::new(format!(
+                    "Cannot call method {} on Ref to non-struct",
+                    method.name
+                )))
+            }
             // Try struct method lookup: StructName·method
             (Value::Struct { name, fields }, _) => {
+                // Built-in struct methods
+                if method.name == "clone" {
+                    eprintln!("DEBUG struct clone: name={}", name);
+                    // Clone the struct value
+                    return Ok(recv.clone());
+                }
+
                 let qualified_name = format!("{}·{}", name, method.name);
+
+                // Debug: track Lexer method calls
+                if name == "Lexer" {
+                    // Print all args for lex_ident_or_keyword
+                    if method.name == "lex_ident_or_keyword" {
+                        for (i, arg) in arg_values.iter().enumerate() {
+                            let unwrapped = Self::unwrap_all(arg);
+                            if let Value::Char(c) = &unwrapped {
+                                eprintln!("DEBUG Lexer·lex_ident_or_keyword arg[{}]='{}'", i, c);
+                            }
+                        }
+                    }
+                    eprintln!("DEBUG Lexer method call: {}", qualified_name);
+                }
+                // Check if arg is "fn" string
+                for arg in &arg_values {
+                    let unwrapped = Self::unwrap_all(arg);
+                    if let Value::String(s) = &unwrapped {
+                        if **s == "fn" {
+                            eprintln!("DEBUG struct method with 'fn': {} recv_name={}", method.name, name);
+                        }
+                    }
+                }
+
                 let func = self.globals.borrow().get(&qualified_name).map(|v| v.clone());
                 if let Some(func) = func {
                     if let Value::Function(f) = func {
@@ -2576,7 +3072,95 @@ impl Interpreter {
                 )))
             }
             // Try variant method lookup: EnumName·method
-            (Value::Variant { enum_name, .. }, _) => {
+            (Value::Variant { enum_name, variant_name, fields }, _) => {
+                // Built-in Option methods
+                if enum_name == "Option" {
+                    match method.name.as_str() {
+                        "cloned" => {
+                            // cloned() on Option<&T> returns Option<T>
+                            // In our interpreter, just clone the value
+                            return Ok(recv.clone());
+                        }
+                        "is_some" => {
+                            return Ok(Value::Bool(variant_name == "Some"));
+                        }
+                        "is_none" => {
+                            return Ok(Value::Bool(variant_name == "None"));
+                        }
+                        "unwrap" => {
+                            if variant_name == "Some" {
+                                if let Some(f) = fields {
+                                    return Ok(f.first().cloned().unwrap_or(Value::Null));
+                                }
+                            }
+                            return Err(RuntimeError::new("unwrap on None"));
+                        }
+                        "unwrap_or" => {
+                            if variant_name == "Some" {
+                                if let Some(f) = fields {
+                                    return Ok(f.first().cloned().unwrap_or(Value::Null));
+                                }
+                            }
+                            return Ok(arg_values.first().cloned().unwrap_or(Value::Null));
+                        }
+                        "map" => {
+                            // Option::map takes a closure
+                            if variant_name == "Some" {
+                                if let Some(f) = fields {
+                                    if let Some(inner) = f.first() {
+                                        if let Some(Value::Function(func)) = arg_values.first() {
+                                            let result = self.call_function(func, vec![inner.clone()])?;
+                                            return Ok(Value::Variant {
+                                                enum_name: "Option".to_string(),
+                                                variant_name: "Some".to_string(),
+                                                fields: Some(Rc::new(vec![result])),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                            return Ok(Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "None".to_string(),
+                                fields: None,
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+                // Built-in Result methods
+                if enum_name == "Result" {
+                    match method.name.as_str() {
+                        "is_ok" => {
+                            return Ok(Value::Bool(variant_name == "Ok"));
+                        }
+                        "is_err" => {
+                            return Ok(Value::Bool(variant_name == "Err"));
+                        }
+                        "unwrap" => {
+                            if variant_name == "Ok" {
+                                if let Some(f) = fields {
+                                    return Ok(f.first().cloned().unwrap_or(Value::Null));
+                                }
+                            }
+                            return Err(RuntimeError::new("unwrap on Err"));
+                        }
+                        "unwrap_or" => {
+                            if variant_name == "Ok" {
+                                if let Some(f) = fields {
+                                    return Ok(f.first().cloned().unwrap_or(Value::Null));
+                                }
+                            }
+                            return Ok(arg_values.first().cloned().unwrap_or(Value::Null));
+                        }
+                        _ => {}
+                    }
+                }
+                // Built-in clone method for all variants
+                if method.name == "clone" {
+                    return Ok(recv.clone());
+                }
+
                 let qualified_name = format!("{}·{}", enum_name, method.name);
                 let func = self.globals.borrow().get(&qualified_name).map(|v| v.clone());
                 if let Some(func) = func {
@@ -2595,10 +3179,22 @@ impl Interpreter {
                     method.name, enum_name
                 )))
             }
-            _ => Err(RuntimeError::new(format!(
-                "Unknown method: {}",
-                method.name
-            ))),
+            _ => {
+                // Debug: what type is failing method lookup
+                let recv_type = match &recv {
+                    Value::String(s) => format!("String(len={})", s.len()),
+                    Value::Array(arr) => format!("Array(len={})", arr.borrow().len()),
+                    Value::Struct { name, .. } => format!("Struct({})", name),
+                    Value::Variant { enum_name, variant_name, .. } => format!("Variant({}::{})", enum_name, variant_name),
+                    Value::Ref(r) => format!("Ref({:?})", std::mem::discriminant(&*r.borrow())),
+                    other => format!("{:?}", std::mem::discriminant(other)),
+                };
+                eprintln!("DEBUG Unknown method '{}' on recv_type={}", method.name, recv_type);
+                Err(RuntimeError::new(format!(
+                    "Unknown method: {}",
+                    method.name
+                )))
+            }
         }
     }
 
@@ -2694,7 +3290,10 @@ impl Interpreter {
                 .parse::<f64>()
                 .map(Value::Float)
                 .map_err(|_| RuntimeError::new(format!("cannot parse '{}' as float", s))),
-            (Value::String(s), "as_str") => Ok(Value::String(s.clone())),
+            (Value::String(s), "as_str") => {
+                if s.len() <= 10 { eprintln!("DEBUG as_str: '{}'", s); }
+                Ok(Value::String(s.clone()))
+            }
             (Value::String(s), "to_string") => Ok(Value::String(s.clone())),
             (Value::String(s), "starts_with") => {
                 if args.len() != 1 {
@@ -2716,6 +3315,16 @@ impl Interpreter {
             }
             (Value::String(s), "is_empty") => Ok(Value::Bool(s.is_empty())),
             (Value::String(s), "clone") => Ok(Value::String(Rc::new((**s).clone()))),
+            (Value::String(s), "first") => s
+                .chars()
+                .next()
+                .map(Value::Char)
+                .ok_or_else(|| RuntimeError::new("empty string")),
+            (Value::String(s), "last") => s
+                .chars()
+                .last()
+                .map(Value::Char)
+                .ok_or_else(|| RuntimeError::new("empty string")),
 
             // Array methods
             (Value::Array(arr), "len") => Ok(Value::Int(arr.borrow().len() as i64)),
@@ -3115,6 +3724,26 @@ impl Interpreter {
                                 Ok(Value::Array(Rc::new(RefCell::new(v))))
                             }
                             _ => Err(RuntimeError::new("skip requires array")),
+                        }
+                    }
+                    "join" => {
+                        // Join array elements with a separator string
+                        let separator = if arg_values.is_empty() {
+                            String::new()
+                        } else {
+                            match &arg_values[0] {
+                                Value::String(s) => (**s).clone(),
+                                _ => return Err(RuntimeError::new("join separator must be string")),
+                            }
+                        };
+                        match value {
+                            Value::Array(arr) => {
+                                let parts: Vec<String> = arr.borrow().iter()
+                                    .map(|v| format!("{}", Self::unwrap_all(v)))
+                                    .collect();
+                                Ok(Value::String(Rc::new(parts.join(&separator))))
+                            }
+                            _ => Err(RuntimeError::new("join requires array")),
                         }
                     }
                     _ => Err(RuntimeError::new(format!(
@@ -4798,6 +5427,16 @@ impl Interpreter {
             Value::Evidential { value: inner, .. } => Self::unwrap_value(inner),
             Value::Affective { value: inner, .. } => Self::unwrap_value(inner),
             _ => value,
+        }
+    }
+
+    /// Unwrap all wrappers including Ref for deep value access
+    fn unwrap_all(value: &Value) -> Value {
+        match value {
+            Value::Evidential { value: inner, .. } => Self::unwrap_all(inner),
+            Value::Affective { value: inner, .. } => Self::unwrap_all(inner),
+            Value::Ref(r) => Self::unwrap_all(&r.borrow()),
+            _ => value.clone(),
         }
     }
 

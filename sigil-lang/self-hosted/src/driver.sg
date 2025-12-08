@@ -244,7 +244,8 @@ impl CompileError {
             result.push_str("  --> ");
             result.push_str(file);
             if let ?span = self.span {
-                result.push_str(format!(":{}:{}", span.line, span.column));
+                // Use byte offsets since Span doesn't have line/column
+                result.push_str(format!(":{}:{}", span.start, span.end));
             }
             result.push('\n');
         }
@@ -544,7 +545,7 @@ impl Driver {
         }
 
         // Lower to IR
-        match lower_file(ast, checker) {
+        match lower_file(ast, checker, file.to_string()) {
             Result::Ok(ir) => Result::Ok(ir),
             Result::Err(errs) => {
                 for err in errs {

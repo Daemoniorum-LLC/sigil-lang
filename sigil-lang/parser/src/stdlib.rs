@@ -346,8 +346,26 @@ fn register_core(interp: &mut Interpreter) {
         })
     });
 
+    // Ok shorthand (without Result:: prefix)
+    define(interp, "Ok", Some(1), |_, args| {
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![args[0].clone()])),
+        })
+    });
+
     // Result::Err - create Err variant
     define(interp, "Result·Err", Some(1), |_, args| {
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Err".to_string(),
+            fields: Some(Rc::new(vec![args[0].clone()])),
+        })
+    });
+
+    // Err shorthand (without Result:: prefix)
+    define(interp, "Err", Some(1), |_, args| {
         Ok(Value::Variant {
             enum_name: "Result".to_string(),
             variant_name: "Err".to_string(),
@@ -364,8 +382,26 @@ fn register_core(interp: &mut Interpreter) {
         })
     });
 
+    // Some shorthand (without Option:: prefix)
+    define(interp, "Some", Some(1), |_, args| {
+        Ok(Value::Variant {
+            enum_name: "Option".to_string(),
+            variant_name: "Some".to_string(),
+            fields: Some(Rc::new(vec![args[0].clone()])),
+        })
+    });
+
     // Option::None - create None variant
     define(interp, "Option·None", Some(0), |_, _| {
+        Ok(Value::Variant {
+            enum_name: "Option".to_string(),
+            variant_name: "None".to_string(),
+            fields: None,
+        })
+    });
+
+    // None shorthand (without Option:: prefix)
+    define(interp, "None", Some(0), |_, _| {
         Ok(Value::Variant {
             enum_name: "Option".to_string(),
             variant_name: "None".to_string(),

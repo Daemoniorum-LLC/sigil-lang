@@ -97,9 +97,9 @@ impl LowerError {
 // ============================================================================
 
 /// Lower a complete source file to IR
-pub fn lower_file(file: !SourceFile, type_checker: !TypeChecker) -> !Result<IrModule, [LowerError]> {
+pub fn lower_file(file: !SourceFile, type_checker: !TypeChecker, path: !String) -> !Result<IrModule, [LowerError]> {
     let mut ctx = LoweringContext::new(type_checker);
-    let mut module = IrModule::new(file.path.unwrap_or("unknown"));
+    let mut module = IrModule::new(path);
 
     // Lower all items
     for item in file.items {
@@ -1089,12 +1089,12 @@ mod tests {
     fn test_ir_module_creation() {
         let type_checker = TypeChecker::new();
         let file = SourceFile {
-            path: ?"test.sigil",
+            attrs: [],
+            config: CrateConfig::default(),
             items: [],
-            shebang: null,
         };
 
-        let result = lower_file(file, type_checker);
+        let result = lower_file(file, type_checker, "test.sigil".to_string());
         assert!(result.is_ok());
     }
 }
