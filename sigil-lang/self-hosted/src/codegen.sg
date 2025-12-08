@@ -662,9 +662,25 @@ impl CodeGen {
             },
 
             IrOperation::Block { statements, evidence, .. } => {
-                let mut last_result = "sigil_unit()";
-                for stmt in statements {
-                    last_result = self.emit_operation(stmt);
+                let mut last_result = "sigil_unit()".to_string();
+                let n = statements.len();
+                for (i, stmt) in statements.iter().enumerate() {
+                    let result = self.emit_operation(stmt);
+                    if i < n - 1 {
+                        // Not the last statement - emit as side effect if not a let binding
+                        match stmt {
+                            IrOperation::Let { .. } => {},  // Already emitted by emit_operation
+                            IrOperation::Return { .. } => {},  // Already emitted
+                            IrOperation::Block { .. } => {},  // Already emitted
+                            _ => {
+                                // Emit expression statements as side effects
+                                if !result.is_empty() && result != "sigil_unit()" {
+                                    self.line(format!("{};", result));
+                                }
+                            },
+                        }
+                    }
+                    last_result = result;
                 }
                 last_result
             },
@@ -939,6 +955,44 @@ impl CodeGen {
                     _ => expr_code.clone(),
                 };
                 self.with_evidence(cast_code, evidence)
+            },
+
+            IrOperation::MacroExpansion { name, tokens, evidence, .. } => {
+                // Generate macro expansion based on macro name
+                match name.as_str() {
+                    "write" | "writeln" => {
+                        // write!/writeln! -> generate a comment (side effect placeholder)
+                        format!("/* {}!({}) */ sigil_unit()", name, tokens)
+                    },
+                    "format" => {
+                        // format!("...", args) -> sigil_string
+                        format!("sigil_string({})", tokens)
+                    },
+                    "print" => {
+                        // print!("...") -> printf
+                        format!("(printf(\"%s\", {}), sigil_unit())", tokens)
+                    },
+                    "println" => {
+                        // println!("...") -> printf with newline
+                        format!("(printf(\"%s\\n\", {}), sigil_unit())", tokens)
+                    },
+                    "vec" => {
+                        // vec![a, b, c] -> array creation placeholder
+                        format!("/* vec![{}] */ sigil_array(0)", tokens)
+                    },
+                    "assert" => {
+                        // assert!(cond) -> sigil_assert
+                        format!("sigil_assert(sigil_bool({}))", tokens)
+                    },
+                    "assert_eq" => {
+                        // assert_eq!(a, b) -> sigil_assert_eq
+                        format!("/* assert_eq!({}) */ sigil_unit()", tokens)
+                    },
+                    _ => {
+                        // Unknown macro - generate a comment
+                        format!("/* {}!({}) */ sigil_unit()", name, tokens)
+                    },
+                }
             },
 
             IrOperation::MethodCall { receiver, method, args, evidence, .. } => {

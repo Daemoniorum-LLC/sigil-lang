@@ -140,6 +140,25 @@ impl Lexer {
         }
     }
 
+    /// Check if peeked token is a macro delimiter (paren, bracket, brace).
+    pub fn peek_is_macro_delimiter(mut self) -> !bool {
+        if self.peeked == null {
+            match self.next_token() {
+                (token, span) => {
+                    self.peeked = token;
+                    self.peeked_span = span;
+                }
+                null => return false,
+            }
+        }
+        match self.peeked {
+            Token::LParen => true,
+            Token::LBracket => true,
+            Token::LBrace => true,
+            _ => false,
+        }
+    }
+
     /// Get the current span (for error reporting).
     pub fn span(self) -> !Span {
         Span::new(self.start, self.pos)

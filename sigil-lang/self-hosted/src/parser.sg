@@ -116,6 +116,24 @@ impl Parser {
         }
     }
 
+    /// Peek at the next token without consuming current.
+    fn peek_next_token(self) -> ?Token {
+        match self.lexer.peek() {
+            ?(token, _) => ?token.clone(),
+            null => null,
+        }
+    }
+
+    /// Check if next token is a macro delimiter (paren, bracket, brace).
+    fn peek_is_macro_delimiter(self) -> !bool {
+        match self.peek_next_token() {
+            ?Token::LParen => true,
+            ?Token::LBracket => true,
+            ?Token::LBrace => true,
+            _ => false,
+        }
+    }
+
     /// Check if in condition context (< is comparison, not generics).
     fn is_in_condition(self) -> !bool {
         self.in_condition
@@ -1519,8 +1537,40 @@ impl Parser {
                     self.advance();
                     expr = Expr::Try(Box::new(expr));
                 }
-                Token::Bang | Token::Tilde | Token::Interrobang => {
-                    if let ev = self.parse_evidentiality_opt() {
+                Token::Bang => {
+                    // Check if this is a macro invocation: name!(...)
+                    if let Expr::Path(path) = expr.clone() {
+                        // Check for macro delimiter after !
+                        if self.lexer.peek_is_macro_delimiter() {
+                            self.advance(); // consume !
+                            let tokens = self.parse_macro_tokens()?;
+                            expr = Expr::Macro { path, tokens };
+                            // Loop will naturally continue
+                        } else {
+                            // Not a macro, treat as evidentiality
+                            if let ?ev = self.parse_evidentiality_opt() {
+                                expr = Expr::Evidential {
+                                    expr: Box::new(expr),
+                                    evidentiality: ev,
+                                };
+                            } else {
+                                break;
+                            }
+                        }
+                    } else {
+                        // Not a path, treat as evidentiality
+                        if let ?ev = self.parse_evidentiality_opt() {
+                            expr = Expr::Evidential {
+                                expr: Box::new(expr),
+                                evidentiality: ev,
+                            };
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                Token::Tilde | Token::Interrobang => {
+                    if let ?ev = self.parse_evidentiality_opt() {
                         expr = Expr::Evidential {
                             expr: Box::new(expr),
                             evidentiality: ev,
@@ -2313,6 +2363,86 @@ impl Parser {
             }
         }
         Ok(exprs)
+    }
+
+    /// Parse macro tokens: collects all tokens inside matching delimiters.
+    fn parse_macro_tokens(mut self) -> !ParseResult<String> {
+        // Determine delimiter type
+        let open: Token;
+        let close: Token;
+        match self.current_token() {
+            Token::LParen => { open = Token::LParen; close = Token::RParen; }
+            Token::LBracket => { open = Token::LBracket; close = Token::RBracket; }
+            Token::LBrace => { open = Token::LBrace; close = Token::RBrace; }
+            _ => {
+                return Err(ParseError::custom("expected '(', '[', or '{' for macro invocation"));
+            }
+        }
+
+        self.advance(); // consume opening delimiter
+        let mut tokens = String::new();
+        let mut depth = 1;
+
+        while depth > 0 && !self.is_eof() {
+            if self.check(&open) {
+                depth += 1;
+            } else if self.check(&close) {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+
+            // Collect token text
+            match self.current_token() {
+                Token::Ident(s) => {
+                    if !tokens.is_empty() { tokens.push_str(" "); }
+                    tokens.push_str(s.as_str());
+                }
+                Token::IntLit(s) => {
+                    if !tokens.is_empty() { tokens.push_str(" "); }
+                    tokens.push_str(s.as_str());
+                }
+                Token::FloatLit(s) => {
+                    if !tokens.is_empty() { tokens.push_str(" "); }
+                    tokens.push_str(s.as_str());
+                }
+                Token::StringLit(s) => {
+                    if !tokens.is_empty() { tokens.push_str(" "); }
+                    tokens.push_str("\"");
+                    tokens.push_str(s.as_str());
+                    tokens.push_str("\"");
+                }
+                Token::CharLit(c) => {
+                    if !tokens.is_empty() { tokens.push_str(" "); }
+                    tokens.push_str("'");
+                    tokens.push(c);
+                    tokens.push_str("'");
+                }
+                Token::Comma => tokens.push_str(", "),
+                Token::Colon => tokens.push_str(": "),
+                Token::Plus => tokens.push_str(" + "),
+                Token::Minus => tokens.push_str(" - "),
+                Token::Star => tokens.push_str(" * "),
+                Token::Slash => tokens.push_str(" / "),
+                Token::Eq => tokens.push_str(" = "),
+                Token::LParen => tokens.push_str("("),
+                Token::RParen => tokens.push_str(")"),
+                Token::LBracket => tokens.push_str("["),
+                Token::RBracket => tokens.push_str("]"),
+                Token::LBrace => tokens.push_str("{"),
+                Token::RBrace => tokens.push_str("}"),
+                _ => {
+                    // For other tokens, add a placeholder
+                    if !tokens.is_empty() { tokens.push_str(" "); }
+                    tokens.push_str("?");
+                }
+            }
+            self.advance();
+        }
+
+        self.expect(close)?;
+        Ok(tokens)
     }
 }
 

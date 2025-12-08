@@ -963,6 +963,11 @@ pub enum Expr {
         variables: ?Box<Expr>,
         operation_name: ?Box<Expr>,
     },
+    /// Macro invocation: `write!(buf, "...")`
+    Macro {
+        path: !TypePath,
+        tokens: !String,
+    },
 }
 
 /// Inline assembly.
