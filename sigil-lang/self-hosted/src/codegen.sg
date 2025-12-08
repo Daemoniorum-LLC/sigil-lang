@@ -522,6 +522,25 @@ impl CodeGen {
         self.current_function = null;
     }
 
+    /// Check if a function name is likely a closure parameter
+    /// Heuristic: single lowercase letters or common closure/callback names
+    fn is_likely_closure_param(self, name: !&str) -> !bool {
+        // Single lowercase letter (f, g, h, etc.)
+        if name.len() == 1 {
+            // Check common single-letter closure parameter names
+            match name {
+                "f" | "g" | "h" | "p" | "q" | "x" | "y" | "z" => true,
+                _ => false,
+            }
+        } else {
+            // Common closure parameter names
+            match name {
+                "func" | "fn" | "callback" | "cb" | "handler" | "pred" | "predicate" | "mapper" | "op" => true,
+                _ => false,
+            }
+        }
+    }
+
     /// Mangle a Sigil name to valid C identifier
     fn mangle_name(self, name: !&str) -> !String {
         // Check for C keywords and add prefix
@@ -622,13 +641,37 @@ impl CodeGen {
             },
 
             IrOperation::Call { function, args, evidence, .. } => {
-                let fn_name = self.mangle_name(function.clone());
                 let arg_codes = args|τ{a => self.emit_operation(a)}|collect();
                 let args_str = arg_codes.join(", ");
 
-                // All functions get sigil_ prefix
-                // Note: Closure calls need special handling in the future
-                let call = format!("sigil_{}({})", fn_name, args_str);
+                // Check if this looks like a closure parameter call
+                // Heuristic: single lowercase letter or common closure names
+                let is_closure_param = self.is_likely_closure_param(function.as_str());
+
+                let call = if is_closure_param {
+                    // Closure call: invoke the function pointer stored in the SigilValue
+                    let fn_var = self.mangle_name(function.clone());
+                    let num_args = arg_codes.len();
+                    if num_args == 0 {
+                        format!("((SigilValue (*)(void)){}.v.ptr)()", fn_var)
+                    } else if num_args == 1 {
+                        format!("((SigilValue (*)(SigilValue)){}.v.ptr)({})", fn_var, args_str)
+                    } else if num_args == 2 {
+                        format!("((SigilValue (*)(SigilValue, SigilValue)){}.v.ptr)({})", fn_var, args_str)
+                    } else {
+                        // For more args, build signature manually
+                        let mut sig_parts: ![String] = [];
+                        for _ in arg_codes {
+                            sig_parts.push("SigilValue".to_string());
+                        }
+                        let sig = sig_parts.join(", ");
+                        format!("((SigilValue (*)({})){}.v.ptr)({})", sig, fn_var, args_str)
+                    }
+                } else {
+                    // Regular function call with sigil_ prefix
+                    let fn_name = self.mangle_name(function.clone());
+                    format!("sigil_{}({})", fn_name, args_str)
+                };
 
                 self.with_evidence(call, evidence)
             },

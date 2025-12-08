@@ -1543,8 +1543,36 @@ impl Parser {
                         // Check for macro delimiter after !
                         if self.lexer.peek_is_macro_delimiter() {
                             self.advance(); // consume !
-                            let tokens = self.parse_macro_tokens()?;
-                            expr = Expr::Macro { path, tokens };
+
+                            // Get the macro name to check for special handling
+                            let macro_name = if path.segments.len() == 1 {
+                                ?path.segments[0].ident.name.clone()
+                            } else {
+                                null
+                            };
+
+                            // Handle assert! specially by parsing body as expression
+                            match macro_name {
+                                ?"assert" => {
+                                    self.expect(Token::LParen)?;
+                                    let cond_expr = self.parse_expr()?;
+                                    self.expect(Token::RParen)?;
+                                    // Desugar assert!(cond) to assert(cond)
+                                    expr = Expr::Call {
+                                        func: Box::new(Expr::Path(TypePath {
+                                            segments: [PathSegment {
+                                                ident: Ident { name: "assert".to_string(), evidentiality: null, affect: null, span: Span::empty_at(0) },
+                                                args: null,
+                                            }],
+                                        })),
+                                        args: [cond_expr],
+                                    };
+                                },
+                                _ => {
+                                    let tokens = self.parse_macro_tokens()?;
+                                    expr = Expr::Macro { path, tokens };
+                                },
+                            }
                             // Loop will naturally continue
                         } else {
                             // Not a macro, treat as evidentiality
@@ -2449,6 +2477,17 @@ impl Parser {
                 Token::Semi => tokens.push_str("; "),
                 Token::Arrow => tokens.push_str(" -> "),
                 Token::FatArrow => tokens.push_str(" => "),
+                Token::SelfLower => tokens.push_str("self"),
+                Token::SelfUpper => tokens.push_str("Self"),
+                Token::Percent => tokens.push_str(" % "),
+                Token::Caret => tokens.push_str(" ^ "),
+                Token::Tilde => tokens.push_str("~"),
+                Token::At => tokens.push_str("@"),
+                Token::Hash => tokens.push_str("#"),
+                Token::Dollar => tokens.push_str("$"),
+                Token::True => tokens.push_str("true"),
+                Token::False => tokens.push_str("false"),
+                Token::Null => tokens.push_str("null"),
                 _ => {
                     // For other tokens, output token debug representation
                     if !tokens.is_empty() { tokens.push_str(" "); }
