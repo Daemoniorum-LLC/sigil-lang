@@ -96,21 +96,55 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse an outer attribute: `#[name]` or `#[name(args)]`
+    /// Parse an outer attribute: `#[name]` or `#[name(args)]` or `@[name]` or `@[name(args)]`
+    /// The `@[]` syntax is the preferred Sigil style.
+    /// Also supports the shorthand `@[Clone, Debug]` which expands to `@[derive(Clone, Debug)]`
     fn parse_outer_attribute(&mut self) -> ParseResult<Attribute> {
-        self.expect(Token::Hash)?;
+        // Accept either # or @ as attribute prefix
+        let is_at_syntax = self.check(&Token::At);
+        if is_at_syntax {
+            self.advance();
+        } else {
+            self.expect(Token::Hash)?;
+        }
         self.expect(Token::LBracket)?;
 
         let name = self.parse_attr_name()?;
-        let args = self.parse_attr_args()?;
 
-        self.expect(Token::RBracket)?;
+        // Check for @[Ident, Ident, ...] shorthand for derive
+        // Only applies to @ syntax when we see a comma after the first identifier
+        if is_at_syntax && self.check(&Token::Comma) && !self.check(&Token::LParen) {
+            // This is the shorthand @[Clone, Debug] syntax - convert to derive
+            let mut args = vec![AttrArg::Ident(name)];
+            while self.consume_if(&Token::Comma) {
+                if self.check(&Token::RBracket) {
+                    break; // Trailing comma
+                }
+                args.push(AttrArg::Ident(self.parse_attr_name()?));
+            }
+            self.expect(Token::RBracket)?;
 
-        Ok(Attribute {
-            name,
-            args,
-            is_inner: false,
-        })
+            // Return as derive attribute
+            Ok(Attribute {
+                name: Ident {
+                    name: "derive".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span: self.current_span(),
+                },
+                args: Some(AttrArgs::Paren(args)),
+                is_inner: false,
+            })
+        } else {
+            let args = self.parse_attr_args()?;
+            self.expect(Token::RBracket)?;
+
+            Ok(Attribute {
+                name,
+                args,
+                is_inner: false,
+            })
+        }
     }
 
     /// Parse an attribute name (identifier or keyword used as attribute).
@@ -697,14 +731,89 @@ impl<'a> Parser<'a> {
         false
     }
 
+    /// Check if the current token can start a new item.
+    /// Used to make semicolons optional in Sigil.
+    fn can_start_item(&self) -> bool {
+        matches!(
+            self.current_token(),
+            Some(
+                Token::Pub
+                    | Token::Fn
+                    | Token::Async
+                    | Token::Struct
+                    | Token::Enum
+                    | Token::Trait
+                    | Token::Impl
+                    | Token::Type
+                    | Token::Mod
+                    | Token::Use
+                    | Token::Const
+                    | Token::Static
+                    | Token::Actor
+                    | Token::Extern
+                    | Token::Hash
+                    | Token::At
+                    | Token::Naked
+                    | Token::Packed
+                    | Token::LineComment(_)
+                    | Token::DocComment(_)
+            )
+        )
+    }
+
+    /// Check if the current token can start a new statement in a block.
+    /// Used to make semicolons optional in Sigil's advanced syntax.
+    fn can_start_stmt(&self) -> bool {
+        matches!(
+            self.current_token(),
+            Some(
+                Token::Let
+                    | Token::If
+                    | Token::Match
+                    | Token::Loop
+                    | Token::While
+                    | Token::For
+                    | Token::Return
+                    | Token::Break
+                    | Token::Continue
+                    | Token::Ident(_)
+                    | Token::SelfLower
+                    | Token::SelfUpper
+                    | Token::LParen
+                    | Token::LBracket
+                    | Token::LBrace
+                    | Token::LineComment(_)
+                    | Token::DocComment(_)
+            )
+        ) || self.can_start_item()
+    }
+
+    /// Consume semicolon if present, or skip if next token can start an item.
+    /// This makes semicolons optional in Sigil's advanced syntax.
+    fn expect_semi_or_item_start(&mut self) -> ParseResult<()> {
+        if self.consume_if(&Token::Semi) {
+            return Ok(());
+        }
+        if self.can_start_item() || self.is_eof() || self.check(&Token::RBrace) {
+            // Semicolon is optional before a new item, EOF, or closing brace
+            return Ok(());
+        }
+        let span = self.current_span();
+        Err(ParseError::UnexpectedToken {
+            expected: "`;` or new item".to_string(),
+            found: self.current_token().cloned().unwrap_or(Token::Semi),
+            span,
+        })
+    }
+
     // === Item parsing ===
 
     fn parse_item(&mut self) -> ParseResult<Spanned<Item>> {
         let start_span = self.current_span();
 
-        // Collect outer attributes (#[...])
+        // Collect outer attributes (#[...] or @[...])
         let mut outer_attrs = Vec::new();
-        while self.check(&Token::Hash) {
+        while self.check(&Token::Hash) || self.check(&Token::At) {
             outer_attrs.push(self.parse_outer_attribute()?);
         }
 
@@ -962,6 +1071,8 @@ impl<'a> Parser<'a> {
 
         self.expect(Token::Struct)?;
         let name = self.parse_ident()?;
+        // Optional ! suffix for newtype/value type syntax: `struct Name! { ... }`
+        let _is_newtype = self.consume_if(&Token::Bang);
         let generics = self.parse_generics_opt()?;
 
         let fields = if self.check(&Token::LBrace) {
@@ -973,10 +1084,12 @@ impl<'a> Parser<'a> {
             self.expect(Token::LParen)?;
             let types = self.parse_type_list()?;
             self.expect(Token::RParen)?;
-            self.expect(Token::Semi)?;
+            // Semicolon is optional in Sigil's advanced syntax
+            self.expect_semi_or_item_start()?;
             StructFields::Tuple(types)
         } else {
-            self.expect(Token::Semi)?;
+            // Semicolon is optional in Sigil's advanced syntax
+            self.expect_semi_or_item_start()?;
             StructFields::Unit
         };
 
@@ -1027,8 +1140,8 @@ impl<'a> Parser<'a> {
             ) {
                 self.advance();
             }
-            // Skip any outer attributes (#[...])
-            while self.check(&Token::Hash) {
+            // Skip any outer attributes (#[...] or @[...])
+            while self.check(&Token::Hash) || self.check(&Token::At) {
                 self.parse_outer_attribute()?;
             }
             // Skip any additional comments after attributes
@@ -1265,7 +1378,8 @@ impl<'a> Parser<'a> {
             self.expect(Token::RBrace)?;
             Some(items)
         } else {
-            self.expect(Token::Semi)?;
+            // Semicolon is optional in Sigil's advanced syntax
+            self.expect_semi_or_item_start()?;
             None
         };
 
@@ -1279,7 +1393,8 @@ impl<'a> Parser<'a> {
     fn parse_use(&mut self, visibility: Visibility) -> ParseResult<UseDecl> {
         self.expect(Token::Use)?;
         let tree = self.parse_use_tree()?;
-        self.expect(Token::Semi)?;
+        // Semicolon is optional in Sigil's advanced syntax
+        self.expect_semi_or_item_start()?;
 
         Ok(UseDecl { visibility, tree })
     }
@@ -1359,7 +1474,8 @@ impl<'a> Parser<'a> {
         let ty = self.parse_type()?;
         self.expect(Token::Eq)?;
         let value = self.parse_expr()?;
-        self.expect(Token::Semi)?;
+        // Semicolon is optional in Sigil's advanced syntax
+        self.expect_semi_or_item_start()?;
 
         Ok(ConstDef {
             visibility,
@@ -1377,7 +1493,8 @@ impl<'a> Parser<'a> {
         let ty = self.parse_type()?;
         self.expect(Token::Eq)?;
         let value = self.parse_expr()?;
-        self.expect(Token::Semi)?;
+        // Semicolon is optional in Sigil's advanced syntax
+        self.expect_semi_or_item_start()?;
 
         Ok(StaticDef {
             visibility,
@@ -2764,7 +2881,8 @@ impl<'a> Parser<'a> {
             Some(Token::Ident(_)) => {
                 let path = self.parse_type_path()?;
 
-                // Check for struct literal
+                // Check for struct literal with optional ! suffix: Name { ... } or Name! { ... }
+                let _is_newtype = self.consume_if(&Token::Bang);
                 if self.check(&Token::LBrace) && !self.is_in_condition() {
                     self.advance();
                     let (fields, rest) = self.parse_struct_fields()?;
@@ -2824,7 +2942,8 @@ impl<'a> Parser<'a> {
             // Handle contextual keywords as identifiers in expressions
             Some(ref token) if Self::keyword_as_ident(token).is_some() => {
                 let path = self.parse_type_path()?;
-                // Check for struct literal
+                // Check for struct literal with optional ! suffix: Name { ... } or Name! { ... }
+                let _is_newtype = self.consume_if(&Token::Bang);
                 if self.check(&Token::LBrace) && !self.is_in_condition() {
                     self.advance();
                     let (fields, rest) = self.parse_struct_fields()?;
@@ -4139,7 +4258,17 @@ impl<'a> Parser<'a> {
                 else_branch,
             })
         } else {
-            self.expect(Token::Semi)?;
+            // Semicolon is optional in Sigil's advanced syntax
+            // Consume if present, or allow if next token can start a new statement
+            if !self.consume_if(&Token::Semi) {
+                if !self.can_start_stmt() && !self.check(&Token::RBrace) {
+                    return Err(ParseError::UnexpectedToken {
+                        expected: "`;` or new statement".to_string(),
+                        found: self.current_token().cloned().unwrap_or(Token::Semi),
+                        span: self.current_span(),
+                    });
+                }
+            }
             Ok(Stmt::Let { pattern, ty, init })
         }
     }
