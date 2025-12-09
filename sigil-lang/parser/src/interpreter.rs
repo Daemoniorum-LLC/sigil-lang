@@ -1034,7 +1034,7 @@ impl Interpreter {
             Expr::Loop(body) => self.eval_loop(body),
             Expr::Return(value) => self.eval_return(value),
             Expr::Break(value) => self.eval_break(value),
-            Expr::Continue => Err(RuntimeError::new("continue outside loop")),
+            Expr::Continue => Err(RuntimeError::new("continue")),
             Expr::Index { expr, index } => self.eval_index(expr, index),
             Expr::Field { expr, field } => self.eval_field(expr, field),
             Expr::MethodCall {
@@ -1218,6 +1218,63 @@ impl Interpreter {
                         }
                     }
                     _ => Ok(value), // Not a variant, pass through
+                }
+            }
+            // Cast expression: expr as Type
+            Expr::Cast { expr, ty } => {
+                let value = self.evaluate(expr)?;
+                // Handle type casts
+                let type_name = match ty {
+                    TypeExpr::Path(path) => {
+                        if !path.segments.is_empty() {
+                            path.segments.last().map(|s| s.ident.name.as_str()).unwrap_or("")
+                        } else {
+                            ""
+                        }
+                    }
+                    _ => "",
+                };
+                match (value, type_name) {
+                    // Char to numeric
+                    (Value::Char(c), "u8") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "u16") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "u32") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "u64") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "i8") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "i16") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "i32") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "i64") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "usize") => Ok(Value::Int(c as i64)),
+                    (Value::Char(c), "isize") => Ok(Value::Int(c as i64)),
+                    // Int to int (no-op in our runtime)
+                    (Value::Int(i), "u8") => Ok(Value::Int(i)),
+                    (Value::Int(i), "u16") => Ok(Value::Int(i)),
+                    (Value::Int(i), "u32") => Ok(Value::Int(i)),
+                    (Value::Int(i), "u64") => Ok(Value::Int(i)),
+                    (Value::Int(i), "i8") => Ok(Value::Int(i)),
+                    (Value::Int(i), "i16") => Ok(Value::Int(i)),
+                    (Value::Int(i), "i32") => Ok(Value::Int(i)),
+                    (Value::Int(i), "i64") => Ok(Value::Int(i)),
+                    (Value::Int(i), "usize") => Ok(Value::Int(i)),
+                    (Value::Int(i), "isize") => Ok(Value::Int(i)),
+                    // Float to int
+                    (Value::Float(f), "i32") => Ok(Value::Int(f as i64)),
+                    (Value::Float(f), "i64") => Ok(Value::Int(f as i64)),
+                    (Value::Float(f), "u32") => Ok(Value::Int(f as i64)),
+                    (Value::Float(f), "u64") => Ok(Value::Int(f as i64)),
+                    // Int to float
+                    (Value::Int(i), "f32") => Ok(Value::Float(i as f64)),
+                    (Value::Int(i), "f64") => Ok(Value::Float(i as f64)),
+                    // Int to char
+                    (Value::Int(i), "char") => {
+                        if let Some(c) = char::from_u32(i as u32) {
+                            Ok(Value::Char(c))
+                        } else {
+                            Err(RuntimeError::new(format!("invalid char code: {}", i)))
+                        }
+                    }
+                    // Pass through for same type
+                    (v, _) => Ok(v),
                 }
             }
             _ => Err(RuntimeError::new(format!(
@@ -1450,13 +1507,9 @@ impl Interpreter {
                 return Ok(val);
             }
 
-            // Try looking up the last segment (for Math·sqrt -> sqrt)
-            let last_name = &path.segments.last().unwrap().ident.name;
-            if let Some(val) = self.environment.borrow().get(last_name) {
-                return Ok(val);
-            }
-
-            // Check for enum variant syntax (EnumName::Variant)
+            // Check for enum variant syntax FIRST (EnumName::Variant)
+            // This must come before looking up just the last segment to avoid
+            // returning a built-in function instead of the actual variant
             if path.segments.len() == 2 {
                 let type_name = &path.segments[0].ident.name;
                 let variant_name = &path.segments[1].ident.name;
@@ -1476,6 +1529,12 @@ impl Interpreter {
                         }
                     }
                 }
+            }
+
+            // Try looking up the last segment (for Math·sqrt -> sqrt)
+            let last_name = &path.segments.last().unwrap().ident.name;
+            if let Some(val) = self.environment.borrow().get(last_name) {
+                return Ok(val);
             }
 
             // Check for variant constructor in variant_constructors table
@@ -1820,6 +1879,32 @@ impl Interpreter {
                     }
                     return Err(RuntimeError::new("Box::new expects 1 argument"));
                 }
+                ["char", "from_u32"] => {
+                    // char::from_u32(u32) -> Option<char>
+                    if args.len() == 1 {
+                        let arg = self.evaluate(&args[0])?;
+                        let code = match arg {
+                            Value::Int(i) => i as u32,
+                            _ => return Err(RuntimeError::new("char::from_u32 expects u32")),
+                        };
+                        if let Some(c) = char::from_u32(code) {
+                            // Return Some(char)
+                            return Ok(Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "Some".to_string(),
+                                fields: Some(Rc::new(vec![Value::Char(c)])),
+                            });
+                        } else {
+                            // Return None
+                            return Ok(Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "None".to_string(),
+                                fields: None,
+                            });
+                        }
+                    }
+                    return Err(RuntimeError::new("char::from_u32 expects 1 argument"));
+                }
                 _ => {}
             }
         }
@@ -1833,7 +1918,10 @@ impl Interpreter {
         match func {
             Value::Function(f) => self.call_function(&f, arg_values),
             Value::BuiltIn(b) => self.call_builtin(&b, arg_values),
-            _ => Err(RuntimeError::new("Cannot call non-function")),
+            _ => {
+                eprintln!("DEBUG Cannot call non-function: {:?}, expr: {:?}", func, func_expr);
+                Err(RuntimeError::new("Cannot call non-function"))
+            }
         }
     }
 
@@ -2366,22 +2454,31 @@ impl Interpreter {
 
         for arm in arms {
             if self.pattern_matches(&arm.pattern, &value)? {
-                // Check guard if present
-                if let Some(guard) = &arm.guard {
-                    let guard_val = self.evaluate(guard)?;
-                    if !self.is_truthy(&guard_val) {
-                        continue;
-                    }
-                }
-
-                // Bind pattern variables and evaluate body
+                // Create new environment for pattern bindings
                 let env = Rc::new(RefCell::new(Environment::with_parent(
                     self.environment.clone(),
                 )));
                 let prev_env = self.environment.clone();
                 self.environment = env;
 
-                self.bind_pattern(&arm.pattern, value)?;
+                // Bind pattern variables FIRST (before evaluating guard)
+                // This is necessary for guards like `?fields if !fields.is_empty()`
+                if let Err(e) = self.bind_pattern(&arm.pattern, value.clone()) {
+                    self.environment = prev_env;
+                    return Err(e);
+                }
+
+                // Check guard if present (pattern vars are now in scope)
+                if let Some(guard) = &arm.guard {
+                    let guard_val = self.evaluate(guard)?;
+                    if !self.is_truthy(&guard_val) {
+                        // Guard failed - restore environment and try next arm
+                        self.environment = prev_env;
+                        continue;
+                    }
+                }
+
+                // Pattern matched and guard passed - evaluate body
                 let result = self.evaluate(&arm.body);
 
                 self.environment = prev_env;
@@ -2496,6 +2593,36 @@ impl Interpreter {
                     }
                 }
                 Ok(true)
+            }
+            // Struct pattern - matches struct-like enum variants (e.g., TypeExpr::Evidential { inner, ... })
+            (Pattern::Struct { path, fields: pat_fields, rest }, Value::Variant { variant_name, fields: variant_fields, .. }) => {
+                let pattern_variant = path.segments.last().map(|s| s.ident.name.as_str()).unwrap_or("");
+                if pattern_variant != variant_name {
+                    return Ok(false);
+                }
+                // Struct-like variants store fields as a single wrapped Struct value
+                if let Some(inner_fields) = variant_fields {
+                    if inner_fields.len() == 1 {
+                        if let Value::Struct { fields: inner_struct, .. } = &inner_fields[0] {
+                            let borrowed = inner_struct.borrow();
+                            for field_pat in pat_fields {
+                                let field_name = &field_pat.name.name;
+                                if let Some(field_val) = borrowed.get(field_name) {
+                                    if let Some(sub_pat) = &field_pat.pattern {
+                                        if !self.pattern_matches(sub_pat, field_val)? {
+                                            return Ok(false);
+                                        }
+                                    }
+                                } else if !rest {
+                                    return Ok(false);
+                                }
+                            }
+                            return Ok(true);
+                        }
+                    }
+                }
+                // No fields or structure doesn't match
+                Ok(pat_fields.is_empty() || *rest)
             }
             // Or pattern - match if any sub-pattern matches
             (Pattern::Or(patterns), val) => {
@@ -2698,6 +2825,58 @@ impl Interpreter {
 
     fn eval_index(&mut self, expr: &Expr, index: &Expr) -> Result<Value, RuntimeError> {
         let collection = self.evaluate(expr)?;
+
+        // Handle range slicing before evaluating the index
+        if let Expr::Range { start, end, inclusive } = index {
+            let start_val = match start {
+                Some(e) => match self.evaluate(e)? {
+                    Value::Int(n) => n as usize,
+                    _ => return Err(RuntimeError::new("Slice start must be an integer")),
+                },
+                None => 0,
+            };
+
+            return match &collection {
+                Value::Array(arr) => {
+                    let arr = arr.borrow();
+                    let len = arr.len();
+                    let end_val = match end {
+                        Some(e) => match self.evaluate(e)? {
+                            Value::Int(n) => {
+                                let n = n as usize;
+                                if *inclusive { n + 1 } else { n }
+                            },
+                            _ => return Err(RuntimeError::new("Slice end must be an integer")),
+                        },
+                        None => len,  // Open-ended range: slice to end
+                    };
+                    let end_val = end_val.min(len);
+                    let start_val = start_val.min(len);
+                    let sliced: Vec<Value> = arr[start_val..end_val].to_vec();
+                    Ok(Value::Array(Rc::new(RefCell::new(sliced))))
+                }
+                Value::String(s) => {
+                    let len = s.len();
+                    let end_val = match end {
+                        Some(e) => match self.evaluate(e)? {
+                            Value::Int(n) => {
+                                let n = n as usize;
+                                if *inclusive { n + 1 } else { n }
+                            },
+                            _ => return Err(RuntimeError::new("Slice end must be an integer")),
+                        },
+                        None => len,  // Open-ended range: slice to end
+                    };
+                    let end_val = end_val.min(len);
+                    let start_val = start_val.min(len);
+                    // Use byte slicing for consistency with char_at
+                    let sliced = &s[start_val..end_val];
+                    Ok(Value::String(Rc::new(sliced.to_string())))
+                }
+                _ => Err(RuntimeError::new("Cannot slice this type")),
+            };
+        }
+
         let idx = self.evaluate(index)?;
 
         match (collection, idx) {
@@ -2910,11 +3089,58 @@ impl Interpreter {
                 v.reverse();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
-            (Value::Array(arr), "first") => arr
+            (Value::Array(arr), "skip") => {
+                let n = match arg_values.first() {
+                    Some(Value::Int(i)) => *i as usize,
+                    _ => 1,
+                };
+                let v: Vec<Value> = arr.borrow().iter().skip(n).cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "take") => {
+                let n = match arg_values.first() {
+                    Some(Value::Int(i)) => *i as usize,
+                    _ => 1,
+                };
+                let v: Vec<Value> = arr.borrow().iter().take(n).cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "step_by") => {
+                let n = match arg_values.first() {
+                    Some(Value::Int(i)) if *i > 0 => *i as usize,
+                    _ => 1,
+                };
+                let v: Vec<Value> = arr.borrow().iter().step_by(n).cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "contains") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("contains expects 1 argument"));
+                }
+                let target = &arg_values[0];
+                let found = arr.borrow().iter().any(|v| self.values_equal(v, target));
+                Ok(Value::Bool(found))
+            }
+            // Tuple methods
+            (Value::Tuple(t), "to_string") | (Value::Tuple(t), "string") => {
+                let s: Vec<String> = t.iter().map(|v| format!("{}", v)).collect();
+                Ok(Value::String(Rc::new(format!("({})", s.join(", ")))))
+            }
+            (Value::Tuple(t), "len") => Ok(Value::Int(t.len() as i64)),
+            (Value::Tuple(t), "first") => t.first().cloned().ok_or_else(|| RuntimeError::new("empty tuple")),
+            (Value::Tuple(t), "last") => t.last().cloned().ok_or_else(|| RuntimeError::new("empty tuple")),
+            (Value::Tuple(t), "get") => {
+                let idx = match arg_values.first() {
+                    Some(Value::Int(i)) => *i as usize,
+                    _ => return Err(RuntimeError::new("get expects integer index")),
+                };
+                t.get(idx).cloned().ok_or_else(|| RuntimeError::new("tuple index out of bounds"))
+            }
+            (Value::Array(arr), "first") | (Value::Array(arr), "next") => Ok(arr
                 .borrow()
                 .first()
                 .cloned()
-                .ok_or_else(|| RuntimeError::new("empty array")),
+                .unwrap_or(Value::Null)),
             (Value::Array(arr), "last") => arr
                 .borrow()
                 .last()
@@ -2989,6 +3215,34 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("ends_with expects string")),
                 }
             }
+            (Value::String(s), "strip_prefix") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("strip_prefix expects 1 argument"));
+                }
+                match &arg_values[0] {
+                    Value::String(prefix) => {
+                        match s.strip_prefix(prefix.as_str()) {
+                            Some(stripped) => Ok(Value::String(Rc::new(stripped.to_string()))),
+                            None => Ok(Value::Null),
+                        }
+                    }
+                    _ => Err(RuntimeError::new("strip_prefix expects string")),
+                }
+            }
+            (Value::String(s), "strip_suffix") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("strip_suffix expects 1 argument"));
+                }
+                match &arg_values[0] {
+                    Value::String(suffix) => {
+                        match s.strip_suffix(suffix.as_str()) {
+                            Some(stripped) => Ok(Value::String(Rc::new(stripped.to_string()))),
+                            None => Ok(Value::Null),
+                        }
+                    }
+                    _ => Err(RuntimeError::new("strip_suffix expects string")),
+                }
+            }
             (Value::String(s), "is_empty") => Ok(Value::Bool(s.is_empty())),
             (Value::String(s), "clone") => Ok(Value::String(Rc::new((**s).clone()))),
             (Value::String(s), "as_ptr") => {
@@ -3005,9 +3259,17 @@ impl Interpreter {
                     Value::Int(i) => *i as usize,
                     _ => return Err(RuntimeError::new("char_at expects integer index")),
                 };
-                match s.chars().nth(idx) {
-                    Some(c) => Ok(Value::Char(c)),
-                    None => Err(RuntimeError::new("char_at index out of bounds")),
+                // Use byte-based indexing to match the self-hosted lexer's pos tracking
+                // which increments by c.len_utf8() (byte count, not character count)
+                if idx < s.len() {
+                    // Get the character starting at byte position idx
+                    let remaining = &s[idx..];
+                    match remaining.chars().next() {
+                        Some(c) => Ok(Value::Char(c)),
+                        None => Ok(Value::Null),
+                    }
+                } else {
+                    Ok(Value::Null) // Out of bounds
                 }
             }
             (Value::String(s), "chars") => {
@@ -3081,10 +3343,13 @@ impl Interpreter {
                     None => Ok(Value::Null),
                 }
             }
-            (Value::String(s), "upper") | (Value::String(s), "uppercase") => {
+            (Value::Char(c), "to_ascii_uppercase") => Ok(Value::Char(c.to_ascii_uppercase())),
+            (Value::Char(c), "to_ascii_lowercase") => Ok(Value::Char(c.to_ascii_lowercase())),
+            (Value::Char(c), "clone") => Ok(Value::Char(*c)),
+            (Value::String(s), "upper") | (Value::String(s), "uppercase") | (Value::String(s), "to_uppercase") => {
                 Ok(Value::String(Rc::new(s.to_uppercase())))
             }
-            (Value::String(s), "lower") | (Value::String(s), "lowercase") => {
+            (Value::String(s), "lower") | (Value::String(s), "lowercase") | (Value::String(s), "to_lowercase") => {
                 Ok(Value::String(Rc::new(s.to_lowercase())))
             }
             (Value::String(s), "trim") => Ok(Value::String(Rc::new(s.trim().to_string()))),
@@ -3102,6 +3367,11 @@ impl Interpreter {
                 .ok_or_else(|| RuntimeError::new("empty string")),
             (Value::Array(arr), "is_empty") => Ok(Value::Bool(arr.borrow().is_empty())),
             (Value::Array(arr), "clone") => Ok(Value::Array(Rc::new(RefCell::new(arr.borrow().clone())))),
+            (Value::Array(arr), "collect") => {
+                // collect() on array just returns the array itself
+                // It's the terminal operation that materializes pipeline results
+                Ok(Value::Array(arr.clone()))
+            }
             (Value::Array(arr), "join") => {
                 let separator = if arg_values.is_empty() {
                     String::new()
@@ -3197,6 +3467,22 @@ impl Interpreter {
                         "Unknown method: {} on &{}",
                         method.name, name
                     )));
+                }
+                // For non-struct refs (like &str), auto-deref and call method on inner value
+                // Handle common methods on &str (reference to String)
+                if let Value::String(s) = &inner {
+                    match method.name.as_str() {
+                        "to_string" => return Ok(Value::String(s.clone())),
+                        "len" => return Ok(Value::Int(s.len() as i64)),
+                        "is_empty" => return Ok(Value::Bool(s.is_empty())),
+                        "as_str" => return Ok(Value::String(s.clone())),
+                        _ => {}
+                    }
+                }
+                // Handle clone on any Ref value - clone the inner value
+                if method.name == "clone" {
+                    eprintln!("DEBUG clone: recv_type=Ref({:?})", std::mem::discriminant(&inner));
+                    return Ok(inner.clone());
                 }
                 Err(RuntimeError::new(format!(
                     "Cannot call method {} on Ref to non-struct",
@@ -3626,6 +3912,54 @@ impl Interpreter {
                     method.name, enum_name
                 )))
             }
+            // Null-safe method handlers - methods called on null return sensible defaults
+            (Value::Null, "len_utf8") => Ok(Value::Int(0)),
+            (Value::Null, "is_ascii") => Ok(Value::Bool(false)),
+            (Value::Null, "is_alphabetic") => Ok(Value::Bool(false)),
+            (Value::Null, "is_alphanumeric") => Ok(Value::Bool(false)),
+            (Value::Null, "is_numeric") | (Value::Null, "is_digit") => Ok(Value::Bool(false)),
+            (Value::Null, "is_whitespace") => Ok(Value::Bool(false)),
+            (Value::Null, "is_uppercase") => Ok(Value::Bool(false)),
+            (Value::Null, "is_lowercase") => Ok(Value::Bool(false)),
+            (Value::Null, "len") => Ok(Value::Int(0)),
+            (Value::Null, "is_empty") => Ok(Value::Bool(true)),
+            (Value::Null, "to_string") => Ok(Value::String(Rc::new("".to_string()))),
+            (Value::Null, "clone") => Ok(Value::Null),
+            (Value::Null, "is_some") => Ok(Value::Bool(false)),
+            (Value::Null, "is_none") => Ok(Value::Bool(true)),
+            (Value::Null, "unwrap_or") => {
+                if arg_values.is_empty() {
+                    Ok(Value::Null)
+                } else {
+                    Ok(arg_values[0].clone())
+                }
+            }
+            // unwrap_or for non-null values returns the value itself
+            (Value::Char(c), "unwrap_or") => Ok(Value::Char(*c)),
+            (Value::Int(n), "unwrap_or") => Ok(Value::Int(*n)),
+            (Value::Float(n), "unwrap_or") => Ok(Value::Float(*n)),
+            (Value::String(s), "unwrap_or") => Ok(Value::String(s.clone())),
+            (Value::Bool(b), "unwrap_or") => Ok(Value::Bool(*b)),
+            // Int methods
+            (Value::Int(n), "to_string") | (Value::Int(n), "string") => {
+                Ok(Value::String(Rc::new(n.to_string())))
+            }
+            (Value::Int(n), "abs") => Ok(Value::Int(n.abs())),
+            (Value::Int(n), "to_float") | (Value::Int(n), "float") => Ok(Value::Float(*n as f64)),
+            // Float methods
+            (Value::Float(n), "to_string") | (Value::Float(n), "string") => {
+                Ok(Value::String(Rc::new(n.to_string())))
+            }
+            (Value::Float(n), "abs") => Ok(Value::Float(n.abs())),
+            (Value::Float(n), "to_int") | (Value::Float(n), "int") => Ok(Value::Int(*n as i64)),
+            // Bool methods
+            (Value::Bool(b), "to_string") | (Value::Bool(b), "string") => {
+                Ok(Value::String(Rc::new(b.to_string())))
+            }
+            // Char methods
+            (Value::Char(c), "to_string") | (Value::Char(c), "string") => {
+                Ok(Value::String(Rc::new(c.to_string())))
+            }
             _ => {
                 // Debug: what type is failing method lookup
                 let recv_type = match &recv {
@@ -3634,6 +3968,7 @@ impl Interpreter {
                     Value::Struct { name, .. } => format!("Struct({})", name),
                     Value::Variant { enum_name, variant_name, .. } => format!("Variant({}::{})", enum_name, variant_name),
                     Value::Ref(r) => format!("Ref({:?})", std::mem::discriminant(&*r.borrow())),
+                    Value::Null => "Null".to_string(),
                     other => format!("{:?}", std::mem::discriminant(other)),
                 };
                 eprintln!("DEBUG Unknown method '{}' on recv_type={}", method.name, recv_type);
@@ -3704,10 +4039,10 @@ impl Interpreter {
         match (receiver, method_name) {
             // String methods
             (Value::String(s), "len") => Ok(Value::Int(s.len() as i64)),
-            (Value::String(s), "upper") | (Value::String(s), "uppercase") => {
+            (Value::String(s), "upper") | (Value::String(s), "uppercase") | (Value::String(s), "to_uppercase") => {
                 Ok(Value::String(Rc::new(s.to_uppercase())))
             }
-            (Value::String(s), "lower") | (Value::String(s), "lowercase") => {
+            (Value::String(s), "lower") | (Value::String(s), "lowercase") | (Value::String(s), "to_lowercase") => {
                 Ok(Value::String(Rc::new(s.to_lowercase())))
             }
             (Value::String(s), "trim") => Ok(Value::String(Rc::new(s.trim().to_string()))),
@@ -3775,11 +4110,11 @@ impl Interpreter {
 
             // Array methods
             (Value::Array(arr), "len") => Ok(Value::Int(arr.borrow().len() as i64)),
-            (Value::Array(arr), "first") => arr
+            (Value::Array(arr), "first") | (Value::Array(arr), "next") => Ok(arr
                 .borrow()
                 .first()
                 .cloned()
-                .ok_or_else(|| RuntimeError::new("empty array")),
+                .unwrap_or(Value::Null)),
             (Value::Array(arr), "last") => arr
                 .borrow()
                 .last()
@@ -3816,6 +4151,30 @@ impl Interpreter {
                     }
                 }
                 Ok(Value::Int(sum))
+            }
+            (Value::Array(arr), "skip") => {
+                let n = match args.first() {
+                    Some(Value::Int(i)) => *i as usize,
+                    _ => 1,
+                };
+                let v: Vec<Value> = arr.borrow().iter().skip(n).cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "take") => {
+                let n = match args.first() {
+                    Some(Value::Int(i)) => *i as usize,
+                    _ => 1,
+                };
+                let v: Vec<Value> = arr.borrow().iter().take(n).cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "step_by") => {
+                let n = match args.first() {
+                    Some(Value::Int(i)) if *i > 0 => *i as usize,
+                    _ => 1,
+                };
+                let v: Vec<Value> = arr.borrow().iter().step_by(n).cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
 
             // Number methods
@@ -3902,21 +4261,19 @@ impl Interpreter {
     }
 
     fn apply_pipe_op(&mut self, value: Value, op: &PipeOp) -> Result<Value, RuntimeError> {
+        // Unwrap evidential/affective wrappers for pipe operations
+        let value = Self::unwrap_all(&value);
+
         match op {
             PipeOp::Transform(body) => {
                 // τ{f} - map over collection or apply to single value
-                // Check if body is a closure with explicit parameter
-                let (param_name, inner_body) = match body.as_ref() {
+                // Extract closure parameter pattern and body
+                let (param_pattern, inner_body) = match body.as_ref() {
                     Expr::Closure { params, body } => {
-                        let name = params.first()
-                            .map(|p| match &p.pattern {
-                                Pattern::Ident { name, .. } => name.name.clone(),
-                                _ => "_".to_string(),
-                            })
-                            .unwrap_or_else(|| "_".to_string());
-                        (name, body.as_ref())
+                        let pattern = params.first().map(|p| p.pattern.clone());
+                        (pattern, body.as_ref())
                     }
-                    _ => ("_".to_string(), body.as_ref()),
+                    _ => (None, body.as_ref()),
                 };
 
                 match value {
@@ -3925,36 +4282,40 @@ impl Interpreter {
                             .borrow()
                             .iter()
                             .map(|item| {
-                                self.environment
-                                    .borrow_mut()
-                                    .define(param_name.clone(), item.clone());
+                                // Bind the item to the pattern (supports tuple destructuring)
+                                if let Some(ref pattern) = param_pattern {
+                                    self.bind_pattern(pattern, item.clone())?;
+                                } else {
+                                    self.environment
+                                        .borrow_mut()
+                                        .define("_".to_string(), item.clone());
+                                }
                                 self.evaluate(inner_body)
                             })
                             .collect::<Result<_, _>>()?;
                         Ok(Value::Array(Rc::new(RefCell::new(results))))
                     }
                     single => {
-                        self.environment
-                            .borrow_mut()
-                            .define(param_name.clone(), single);
+                        if let Some(ref pattern) = param_pattern {
+                            self.bind_pattern(pattern, single)?;
+                        } else {
+                            self.environment
+                                .borrow_mut()
+                                .define("_".to_string(), single);
+                        }
                         self.evaluate(inner_body)
                     }
                 }
             }
             PipeOp::Filter(predicate) => {
                 // φ{p} - filter collection
-                // Check if predicate is a closure with explicit parameter
-                let (param_name, inner_pred) = match predicate.as_ref() {
+                // Extract closure parameter pattern and body
+                let (param_pattern, inner_pred) = match predicate.as_ref() {
                     Expr::Closure { params, body } => {
-                        let name = params.first()
-                            .map(|p| match &p.pattern {
-                                Pattern::Ident { name, .. } => name.name.clone(),
-                                _ => "_".to_string(),
-                            })
-                            .unwrap_or_else(|| "_".to_string());
-                        (name, body.as_ref())
+                        let pattern = params.first().map(|p| p.pattern.clone());
+                        (pattern, body.as_ref())
                     }
-                    _ => ("_".to_string(), predicate.as_ref()),
+                    _ => (None, predicate.as_ref()),
                 };
 
                 match value {
@@ -3963,9 +4324,16 @@ impl Interpreter {
                             .borrow()
                             .iter()
                             .filter_map(|item| {
-                                self.environment
-                                    .borrow_mut()
-                                    .define(param_name.clone(), item.clone());
+                                // Bind the item to the pattern (supports tuple destructuring)
+                                if let Some(ref pattern) = param_pattern {
+                                    if let Err(e) = self.bind_pattern(pattern, item.clone()) {
+                                        return Some(Err(e));
+                                    }
+                                } else {
+                                    self.environment
+                                        .borrow_mut()
+                                        .define("_".to_string(), item.clone());
+                                }
                                 match self.evaluate(inner_pred) {
                                     Ok(v) if self.is_truthy(&v) => Some(Ok(item.clone())),
                                     Ok(_) => None,
@@ -4242,6 +4610,34 @@ impl Interpreter {
                             _ => Err(RuntimeError::new("join requires array")),
                         }
                     }
+                    "all" => {
+                        // Check if all elements are truthy (no predicate in Method variant)
+                        match value {
+                            Value::Array(arr) => {
+                                for item in arr.borrow().iter() {
+                                    if !self.is_truthy(item) {
+                                        return Ok(Value::Bool(false));
+                                    }
+                                }
+                                Ok(Value::Bool(true))
+                            }
+                            _ => Err(RuntimeError::new("all requires array")),
+                        }
+                    }
+                    "any" => {
+                        // Check if any element is truthy
+                        match value {
+                            Value::Array(arr) => {
+                                for item in arr.borrow().iter() {
+                                    if self.is_truthy(item) {
+                                        return Ok(Value::Bool(true));
+                                    }
+                                }
+                                Ok(Value::Bool(false))
+                            }
+                            _ => Err(RuntimeError::new("any requires array")),
+                        }
+                    }
                     _ => Err(RuntimeError::new(format!(
                         "Unknown pipe method: {}",
                         name.name
@@ -4433,6 +4829,70 @@ impl Interpreter {
                             }
                         } else {
                             Ok(value)
+                        }
+                    }
+                    "all" => {
+                        if let Some(body) = body {
+                            match value {
+                                Value::Array(arr) => {
+                                    for item in arr.borrow().iter() {
+                                        self.environment
+                                            .borrow_mut()
+                                            .define("_".to_string(), item.clone());
+                                        let result = self.evaluate(body)?;
+                                        if !self.is_truthy(&result) {
+                                            return Ok(Value::Bool(false));
+                                        }
+                                    }
+                                    Ok(Value::Bool(true))
+                                }
+                                _ => Err(RuntimeError::new("all requires array")),
+                            }
+                        } else {
+                            // Without body, check if all elements are truthy
+                            match value {
+                                Value::Array(arr) => {
+                                    for item in arr.borrow().iter() {
+                                        if !self.is_truthy(item) {
+                                            return Ok(Value::Bool(false));
+                                        }
+                                    }
+                                    Ok(Value::Bool(true))
+                                }
+                                _ => Err(RuntimeError::new("all requires array")),
+                            }
+                        }
+                    }
+                    "any" => {
+                        if let Some(body) = body {
+                            match value {
+                                Value::Array(arr) => {
+                                    for item in arr.borrow().iter() {
+                                        self.environment
+                                            .borrow_mut()
+                                            .define("_".to_string(), item.clone());
+                                        let result = self.evaluate(body)?;
+                                        if self.is_truthy(&result) {
+                                            return Ok(Value::Bool(true));
+                                        }
+                                    }
+                                    Ok(Value::Bool(false))
+                                }
+                                _ => Err(RuntimeError::new("any requires array")),
+                            }
+                        } else {
+                            // Without body, check if any elements are truthy
+                            match value {
+                                Value::Array(arr) => {
+                                    for item in arr.borrow().iter() {
+                                        if self.is_truthy(item) {
+                                            return Ok(Value::Bool(true));
+                                        }
+                                    }
+                                    Ok(Value::Bool(false))
+                                }
+                                _ => Err(RuntimeError::new("any requires array")),
+                            }
                         }
                     }
                     _ => Err(RuntimeError::new(format!(
@@ -5938,8 +6398,21 @@ impl Interpreter {
 
     fn eval_evidential(&mut self, expr: &Expr, ev: &Evidentiality) -> Result<Value, RuntimeError> {
         let value = self.evaluate(expr)?;
+
+        // For Known (!) evidentiality - this is an "unwrap" or "assert known" operation
+        // If the value is null, return null (propagate nulls for graceful handling)
+        // If the value is already evidential, unwrap it
+        // Otherwise, return the value as-is (it's implicitly known)
+        if *ev == Evidentiality::Known {
+            return match value {
+                Value::Null => Ok(Value::Null),  // Null propagates
+                Value::Evidential { value: inner, .. } => Ok(*inner),  // Unwrap evidential
+                other => Ok(other),  // Non-null, non-evidential returns as-is
+            };
+        }
+
         let evidence = match ev {
-            Evidentiality::Known => Evidence::Known,
+            Evidentiality::Known => Evidence::Known,  // Won't reach here
             Evidentiality::Uncertain => Evidence::Uncertain,
             Evidentiality::Reported => Evidence::Reported,
             Evidentiality::Paradox => Evidence::Paradox,

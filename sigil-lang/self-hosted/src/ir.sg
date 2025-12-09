@@ -528,6 +528,15 @@ pub enum IrOperation {
         evidence: !IrEvidence,
     },
 
+    /// Let-else binding: let pattern = init else { else_branch }
+    LetElse {
+        pattern: !IrPattern,
+        type_annotation: ?IrType,
+        init: !Box<IrOperation>,
+        else_branch: !Box<IrOperation>,
+        evidence: !IrEvidence,
+    },
+
     // === Binary operations ===
     Binary {
         operator: !BinaryOp,
@@ -716,7 +725,7 @@ pub enum IrOperation {
         url: !Box<IrOperation>,
         headers: ?Box<IrOperation>,
         body: ?Box<IrOperation>,
-        timeout: ?Box<IrOperation>,
+        timeout_ms: ?Box<IrOperation>,
         ty: !IrType,
         evidence: !IrEvidence,
     },
@@ -747,6 +756,14 @@ pub enum IrOperation {
     Cast {
         expr: !Box<IrOperation>,
         target_type: !IrType,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Macro expansion ===
+    MacroExpansion {
+        name: !String,
+        tokens: !String,
         ty: !IrType,
         evidence: !IrEvidence,
     },

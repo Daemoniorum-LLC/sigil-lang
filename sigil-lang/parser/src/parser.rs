@@ -2292,7 +2292,7 @@ impl<'a> Parser<'a> {
                     Token::Ident(s) => s.clone(),
                     Token::IntLit(s) => s.clone(),
                     Token::FloatLit(s) => s.clone(),
-                    Token::StringLit(s) => format!("\"{}\"", s),
+                    Token::StringLit(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
                     Token::CharLit(c) => format!("'{}'", c),
                     Token::Comma => ",".to_string(),
                     Token::Colon => ":".to_string(),
@@ -2382,12 +2382,32 @@ impl<'a> Parser<'a> {
         Ok(tokens)
     }
 
+    /// Check if an expression is a block-ending expression that should not be callable.
+    /// Block expressions like if/while/match/loop/for return values but should not
+    /// be directly called like functions.
+    fn is_non_callable_expr(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::If { .. }
+                | Expr::While { .. }
+                | Expr::Match { .. }
+                | Expr::Loop(_)
+                | Expr::For { .. }
+                | Expr::Block(_)
+        )
+    }
+
     fn parse_postfix_expr(&mut self) -> ParseResult<Expr> {
         let mut expr = self.parse_primary_expr()?;
 
         loop {
             match self.current_token() {
                 Some(Token::LParen) => {
+                    // Don't treat block-ending expressions as callable
+                    // This prevents parsing `if {...} (...)` as a call expression
+                    if Self::is_non_callable_expr(&expr) {
+                        break;
+                    }
                     self.advance();
                     let args = self.parse_expr_list()?;
                     self.expect(Token::RParen)?;
@@ -4096,36 +4116,35 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a morpheme closure: x => expr or (a, b) => expr
+    /// For morphemes, (a, b) is a SINGLE tuple parameter pattern, not multiple parameters
     fn parse_morpheme_closure(&mut self) -> ParseResult<Expr> {
-        let params = if self.check(&Token::LParen) {
-            // Tuple pattern: (a, b) => expr
+        let pattern = if self.check(&Token::LParen) {
+            // Tuple pattern: (a, b) => expr - treated as single parameter with tuple pattern
             self.advance();
-            let mut params = Vec::new();
+            let mut patterns = Vec::new();
             while !self.check(&Token::RParen) {
-                let pattern = self.parse_pattern()?;
-                params.push(ClosureParam { pattern, ty: None });
+                let pat = self.parse_pattern()?;
+                patterns.push(pat);
                 if !self.consume_if(&Token::Comma) {
                     break;
                 }
             }
             self.expect(Token::RParen)?;
-            params
+            // Create a single tuple pattern
+            Pattern::Tuple(patterns)
         } else {
             // Simple pattern: x => expr
             let name = self.parse_ident()?;
-            vec![ClosureParam {
-                pattern: Pattern::Ident {
-                    mutable: false,
-                    name,
-                    evidentiality: None,
-                },
-                ty: None,
-            }]
+            Pattern::Ident {
+                mutable: false,
+                name,
+                evidentiality: None,
+            }
         };
         self.expect(Token::FatArrow)?;
         let body = self.parse_expr()?;
         Ok(Expr::Closure {
-            params,
+            params: vec![ClosureParam { pattern, ty: None }],
             body: Box::new(body),
         })
     }

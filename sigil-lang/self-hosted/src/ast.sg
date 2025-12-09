@@ -255,7 +255,7 @@ pub struct ExternStatic {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FunctionAttrs {
     pub naked: !bool = false,
-    pub inline: ?InlineHint,
+    pub inline_hint: ?InlineHint,
     pub calling_convention: ?String,
     pub no_mangle: !bool = false,
     pub link_section: ?String,
@@ -579,7 +579,7 @@ pub struct FieldDef {
     pub visibility: !Visibility,
     pub name: !Ident,
     pub ty: !TypeExpr,
-    pub default: ?Expr,
+    pub default_value: ?Expr,
 }
 
 /// Enum definition.
@@ -716,6 +716,12 @@ pub enum Stmt {
         ty: ?TypeExpr,
         init: ?Expr,
     },
+    LetElse {
+        pattern: !Pattern,
+        ty: ?TypeExpr,
+        init: !Expr,
+        else_branch: !Box<Expr>,
+    },
     Expr(!Expr),
     Semi(!Expr),
     Item(!Box<Item>),
@@ -798,6 +804,7 @@ pub enum Expr {
     MethodCall {
         receiver: !Box<Expr>,
         method: !Ident,
+        type_args: ?[TypeExpr],  // Turbofish: .method::<T, U>(args)
         args: ![Expr],
     },
     /// Field access
@@ -932,7 +939,7 @@ pub enum Expr {
         url: !Box<Expr>,
         headers: ![(Expr, Expr)],
         body: ?Box<Expr>,
-        timeout: ?Box<Expr>,
+        timeout_ms: ?Box<Expr>,
     },
     /// gRPC call
     GrpcCall {
@@ -940,7 +947,7 @@ pub enum Expr {
         method: !Box<Expr>,
         message: ?Box<Expr>,
         metadata: ![(Expr, Expr)],
-        timeout: ?Box<Expr>,
+        timeout_ms: ?Box<Expr>,
     },
     /// WebSocket connect
     WebSocketConnect {
@@ -962,6 +969,11 @@ pub enum Expr {
         document: !Box<Expr>,
         variables: ?Box<Expr>,
         operation_name: ?Box<Expr>,
+    },
+    /// Macro invocation: `write!(buf, "...")`
+    Macro {
+        path: !TypePath,
+        tokens: !String,
     },
 }
 
@@ -992,7 +1004,7 @@ pub enum AsmOperandKind {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AsmOptions {
-    pub volatile: !bool = false,
+    pub is_volatile: !bool = false,
     pub pure_asm: !bool = false,
     pub nomem: !bool = false,
     pub nostack: !bool = false,

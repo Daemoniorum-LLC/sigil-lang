@@ -32,11 +32,17 @@ pub struct LoweringContext {
     /// Current function being lowered
     current_function: ?String,
 
+    /// Current Self type name (when inside impl block)
+    current_self_type: ?String,
+
     /// Collected errors
     errors: ![LowerError],
 
     /// Variable ID map: source name → unique ID
     var_ids: !Map<String, String>,
+
+    /// Variable type map: variable name → type name (for method resolution)
+    var_types: !Map<String, String>,
 }
 
 impl LoweringContext {
@@ -46,8 +52,10 @@ impl LoweringContext {
             type_checker,
             id_counter: 0,
             current_function: null,
+            current_self_type: null,
             errors: [],
             var_ids: Map::new(),
+            var_types: Map::new(),
         }
     }
 
@@ -106,11 +114,12 @@ pub fn lower_file(file: !SourceFile, type_checker: !TypeChecker, path: !String) 
         lower_item(&mut ctx, &mut module, item.node);
     }
 
-    if ctx.errors.is_empty() {
-        Result::Ok(module)
-    } else {
-        Result::Err(ctx.errors)
+    // Report errors but continue - allows codegen to proceed
+    // even with lowering errors (for development/bootstrapping)
+    for error in ctx.errors {
+        eprintln!("Lowering error: {}", error);
     }
+    Result::Ok(module)
 }
 
 /// Lower a single item
@@ -139,7 +148,39 @@ fn lower_item(ctx: &mut LoweringContext, module: &mut IrModule, item: !Item) {
             module.traits.push(lower_trait(ctx, t));
         },
         Item::Impl(i) => {
+            // Get the type name for qualified function names
+            let type_name = match i.self_ty {
+                TypeExpr::Path(p) => {
+                    if p.segments.len() > 0 {
+                        p.segments[0].ident.name.clone()
+                    } else {
+                        "".to_string()
+                    }
+                },
+                _ => "".to_string(),
+            };
+
+            // Set current Self type for resolving Self in struct expressions
+            ctx.current_self_type = ?type_name.clone();
+
+            // Add each method to module.functions with qualified name
+            for impl_item in i.items.clone() {
+                if let ImplItem::Function(f) = impl_item {
+                    // Create a copy of the function with qualified name
+                    let qualified_name = format!("{}::{}", type_name, f.name.name);
+                    let mut qualified_func = f.clone();
+                    qualified_func.name.name = qualified_name;
+
+                    if let ?ir_fn = lower_function(ctx, qualified_func) {
+                        module.functions.push(ir_fn);
+                    }
+                }
+            }
+
             module.impls.push(lower_impl(ctx, i));
+
+            // Reset current Self type
+            ctx.current_self_type = null;
         },
         _ => {
             // Other items (Use, Mod, etc.) don't generate IR
@@ -276,10 +317,10 @@ fn lower_type(ctx: &mut LoweringContext, ty: !TypeExpr) -> !IrType {
                 "bool" => IrType::Primitive { name: "bool" },
                 "char" => IrType::Primitive { name: "char" },
                 "str" | "String" => IrType::Primitive { name: "str" },
-                "i8" | "i16" | "i32" | "i64" | "i128" | "isize" => IrType::Primitive { name },
-                "u8" | "u16" | "u32" | "u64" | "u128" | "usize" => IrType::Primitive { name },
-                "f32" | "f64" => IrType::Primitive { name },
-                _ => IrType::Named { name, generics },
+                "i8" | "i16" | "i32" | "i64" | "i128" | "isize" => IrType::Primitive { name: name.clone() },
+                "u8" | "u16" | "u32" | "u64" | "u128" | "usize" => IrType::Primitive { name: name.clone() },
+                "f32" | "f64" => IrType::Primitive { name: name.clone() },
+                _ => IrType::Named { name: name.clone(), generics },
             }
         },
 
@@ -369,9 +410,9 @@ fn lower_struct(ctx: &mut LoweringContext, s: !Struct) -> !IrTypeDef {
         }}|collect(),
         StructFields::Tuple(ts) => ts
             |enumerate()
-            |τ{(i, t) => IrField {
-                name: i.to_string(),
-                ty: lower_type(ctx, t),
+            |τ{pair => IrField {
+                name: pair.0.to_string(),
+                ty: lower_type(ctx, pair.1),
                 visibility: IrVisibility::Private,
             }}|collect(),
         StructFields::Unit => [],
@@ -401,9 +442,9 @@ fn lower_enum(ctx: &mut LoweringContext, e: !Enum) -> !IrTypeDef {
             }}|collect(),
             StructFields::Tuple(ts) => ?ts
                 |enumerate()
-                |τ{(i, t) => IrField {
-                    name: i.to_string(),
-                    ty: lower_type(ctx, t),
+                |τ{pair => IrField {
+                    name: pair.0.to_string(),
+                    ty: lower_type(ctx, pair.1),
                     visibility: IrVisibility::Private,
                 }}|collect(),
             StructFields::Unit => null,
@@ -477,13 +518,13 @@ fn lower_const(ctx: &mut LoweringContext, c: !Const) -> ?IrConstant {
 // ============================================================================
 
 /// Lower a trait definition
-fn lower_trait(ctx: &mut LoweringContext, t: !Trait) -> !IrTraitDef {
+fn lower_trait(ctx: &mut LoweringContext, t: !TraitDef) -> !IrTraitDef {
     let generics = match t.generics {
         ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
         null => [],
     };
 
-    let super_traits = t.super_traits|τ{s => s.to_string()}|collect();
+    let super_traits = t.supertraits|τ{s => s.to_string()}|collect();
 
     let methods = t.items
         |φ{item => matches!(item, TraitItem::Method(_))}
@@ -505,27 +546,31 @@ fn lower_trait(ctx: &mut LoweringContext, t: !Trait) -> !IrTraitDef {
 }
 
 /// Lower an impl block
-fn lower_impl(ctx: &mut LoweringContext, i: !Impl) -> !IrImplBlock {
+fn lower_impl(ctx: &mut LoweringContext, i: !ImplBlock) -> !IrImplBlock {
     let generics = match i.generics {
         ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
         null => [],
     };
 
-    let trait_name = match i.trait_path {
-        ?p => ?p.segments|τ{s => s.ident.name}|join("::"),
+    let trait_name: ?String = match i.trait_ {
+        ?p => {
+            let mut names: ![String] = [];
+            for seg in p.segments {
+                names.push(seg.ident.name);
+            }
+            ?names.join("::")
+        },
         null => null,
     };
 
-    let target_type = lower_type(ctx, i.self_type);
+    let target_type = lower_type(ctx, i.self_ty);
 
     let methods = i.items
-        |φ{item => matches!(item, ImplItem::Method(_))}
+        |φ{item => matches!(item, ImplItem::Function(_))}
         |τ{item => match item {
-            ImplItem::Method(f) => lower_function(ctx, f),
-            _ => null,
+            ImplItem::Function(f) => lower_function(ctx, f),
+            _ => panic("unreachable"),
         }}
-        |φ{m => m != null}
-        |τ{m => m.unwrap()}
         |collect();
 
     IrImplBlock {
@@ -623,10 +668,34 @@ fn lower_expr(ctx: &mut LoweringContext, expr: !Expr) -> !IrOperation {
 
         Expr::Struct { path, fields, rest } => {
             // Get struct name from path
-            let name = path.segments|τ{s => s.ident.name}|join("::");
+            let mut name = path.segments|τ{s => s.ident.name}|join("::");
 
-            // Lower each field
-            let ir_fields = fields|τ{f => (f.name.name, lower_expr(ctx, f.value))}|collect();
+            // Resolve Self to actual type name when inside impl block
+            if name == "Self" {
+                if let ?self_type = ctx.current_self_type.clone() {
+                    name = self_type;
+                }
+            }
+
+            // Lower each field, handling shorthand syntax (Self { x } means Self { x: x })
+            let ir_fields = fields|τ{f => {
+                let value_expr = match f.value {
+                    ?v => lower_expr(ctx, v),
+                    null => {
+                        // Shorthand syntax: Self { x } means Self { x: x }
+                        // Generate a variable reference for the field name
+                        let field_name = f.name.name.clone();
+                        let id = ctx.get_var_id(field_name.clone());
+                        IrOperation::Var {
+                            name: field_name,
+                            id,
+                            ty: IrType::Infer,
+                            evidence: IrEvidence::Known,
+                        }
+                    },
+                };
+                (f.name.name.clone(), value_expr)
+            }}|collect();
 
             // Lower rest expression if present
             let ir_rest = match rest {
@@ -790,6 +859,148 @@ fn lower_expr(ctx: &mut LoweringContext, expr: !Expr) -> !IrOperation {
             }
         },
 
+        Expr::MethodCall { receiver, method, args } => {
+            let ir_receiver = lower_expr(ctx, *receiver.clone());
+            let ir_args = args|τ{a => lower_expr(ctx, a)}|collect();
+
+            // Try to resolve method calls to qualified calls
+            // 1. If receiver is 'self' and we're in an impl block, use Type::method(self, args)
+            // 2. If receiver is a variable with known type, use Type::method(var, args)
+            let receiver_type: ?String = match *receiver {
+                Expr::Path(p) => {
+                    if p.segments.len() == 1 {
+                        let name = p.segments[0].ident.name.clone();
+                        if name == "self" {
+                            ctx.current_self_type.clone()
+                        } else {
+                            // Look up variable type
+                            if let ?type_name = ctx.var_types.get(name.as_str()) {
+                                ?type_name.clone()
+                            } else {
+                                null
+                            }
+                        }
+                    } else {
+                        null
+                    }
+                },
+                _ => null,
+            };
+
+            if let ?recv_type = receiver_type {
+                // Strip evidence prefixes (Uncertain, Known, Reported) from type name
+                // These are generated by the interpreter for evidential types
+                let base_type = if recv_type.starts_with("Uncertain") {
+                    recv_type[9..].to_string()
+                } else if recv_type.starts_with("Known") {
+                    recv_type[5..].to_string()
+                } else if recv_type.starts_with("Reported") {
+                    recv_type[8..].to_string()
+                } else {
+                    recv_type.clone()
+                };
+
+                // Generate qualified call: Type::method(receiver, args)
+                let qualified_name = format!("{}::{}", base_type, method.name);
+                let mut all_args = [ir_receiver];
+                for arg in ir_args {
+                    all_args.push(arg);
+                }
+                return IrOperation::Call {
+                    function: qualified_name,
+                    args: all_args,
+                    type_args: [],
+                    ty: IrType::Infer,
+                    evidence: IrEvidence::Known,
+                };
+            }
+
+            // Fallback to generic method call
+            IrOperation::MethodCall {
+                receiver: Box::new(ir_receiver),
+                method: method.name,
+                args: ir_args,
+                type_args: [],
+                ty: IrType::Infer,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Cast { expr, ty } => {
+            let ir_expr = lower_expr(ctx, *expr);
+            let target_type = lower_type(ctx, ty);
+
+            IrOperation::Cast {
+                expr: Box::new(ir_expr),
+                target_type: target_type.clone(),
+                ty: target_type,
+                evidence: IrEvidence::Known,
+            }
+        },
+
+        Expr::Macro { path, tokens } => {
+            // Get macro name from path
+            let macro_name = path.segments|τ{s => s.ident.name}|join("::");
+
+            // Handle known macros
+            match macro_name.as_str() {
+                "write" | "writeln" => {
+                    // write!(buf, "format", args...) -> macro_write(buf, "format", args...)
+                    IrOperation::MacroExpansion {
+                        name: macro_name,
+                        tokens,
+                        ty: IrType::Unit,
+                        evidence: IrEvidence::Known,
+                    }
+                },
+                "format" => {
+                    // format!("...", args) -> macro_format("...", args)
+                    IrOperation::MacroExpansion {
+                        name: macro_name,
+                        tokens,
+                        ty: IrType::Primitive { name: "String" },
+                        evidence: IrEvidence::Known,
+                    }
+                },
+                "print" | "println" => {
+                    // print!("...") -> macro_print("...")
+                    IrOperation::MacroExpansion {
+                        name: macro_name,
+                        tokens,
+                        ty: IrType::Unit,
+                        evidence: IrEvidence::Known,
+                    }
+                },
+                "vec" => {
+                    // vec![a, b, c] -> macro_vec(a, b, c)
+                    IrOperation::MacroExpansion {
+                        name: macro_name,
+                        tokens,
+                        ty: IrType::Infer,
+                        evidence: IrEvidence::Known,
+                    }
+                },
+                "assert" | "assert_eq" => {
+                    // assert!(cond) -> macro_assert(cond)
+                    IrOperation::MacroExpansion {
+                        name: macro_name,
+                        tokens,
+                        ty: IrType::Unit,
+                        evidence: IrEvidence::Known,
+                    }
+                },
+                _ => {
+                    // Unknown macro - generate generic macro call
+                    IrOperation::MacroExpansion {
+                        name: macro_name,
+                        tokens,
+                        ty: IrType::Infer,
+                        evidence: IrEvidence::Uncertain,
+                    }
+                },
+            }
+        },
+
         _ => {
             // Fallback for unhandled expressions
             ctx.error(LowerError::new("unsupported expression type"));
@@ -880,14 +1091,14 @@ fn lower_binop(op: !BinOp) -> !BinaryOp {
     }
 }
 
-/// Lower a unary operator
-fn lower_unaryop(op: !UnaryOp) -> !ir::UnaryOp {
+/// Lower a unary operator (AST UnaryOp -> IR UnaryOp)
+fn lower_unaryop(op: !ast::UnaryOp) -> !UnaryOp {
     match op {
-        UnaryOp::Neg => ir::UnaryOp::Neg,
-        UnaryOp::Not => ir::UnaryOp::Not,
-        UnaryOp::Ref => ir::UnaryOp::Ref,
-        UnaryOp::RefMut => ir::UnaryOp::RefMut,
-        UnaryOp::Deref => ir::UnaryOp::Deref,
+        ast::UnaryOp::Neg => UnaryOp::Neg,
+        ast::UnaryOp::Not => UnaryOp::Not,
+        ast::UnaryOp::Ref => UnaryOp::Ref,
+        ast::UnaryOp::RefMut => UnaryOp::RefMut,
+        ast::UnaryOp::Deref => UnaryOp::Deref,
     }
 }
 
@@ -919,11 +1130,50 @@ fn lower_block(ctx: &mut LoweringContext, block: !Block) -> !IrOperation {
 fn lower_stmt(ctx: &mut LoweringContext, stmt: !Stmt) -> !IrOperation {
     match stmt {
         Stmt::Let { pattern, ty, init } => {
-            let ir_pattern = lower_pattern(ctx, pattern);
+            let ir_pattern = lower_pattern(ctx, pattern.clone());
             let type_annotation = match ty {
                 ?t => ?lower_type(ctx, t),
                 null => null,
             };
+
+            // Try to infer type from init expression (e.g., Point::new(...) → Point)
+            let inferred_type: ?String = match init.clone() {
+                ?e => {
+                    match e {
+                        Expr::Call { func, .. } => {
+                            match *func {
+                                Expr::Path(p) => {
+                                    // If call is Type::method, extract Type
+                                    let segments = p.segments;
+                                    if segments.len() >= 2 {
+                                        ?segments[0].ident.name.clone()
+                                    } else if segments.len() == 1 && segments[0].ident.name.contains("::") {
+                                        // Handle qualified name like "Point::new"
+                                        let parts = segments[0].ident.name.split("::");
+                                        if parts.len() >= 1 { ?parts[0].to_string() } else { null }
+                                    } else {
+                                        null
+                                    }
+                                },
+                                _ => null,
+                            }
+                        },
+                        _ => null,
+                    }
+                },
+                null => null,
+            };
+
+            // If we inferred a type and the pattern is a simple identifier, track it
+            if let ?type_name = inferred_type {
+                match pattern {
+                    Pattern::Ident { name, .. } => {
+                        ctx.var_types.insert(name.name.clone(), type_name);
+                    },
+                    _ => {},
+                }
+            }
+
             let ir_init = match init {
                 ?e => lower_expr(ctx, e),
                 null => IrOperation::Literal {
@@ -938,6 +1188,27 @@ fn lower_stmt(ctx: &mut LoweringContext, stmt: !Stmt) -> !IrOperation {
                 pattern: ir_pattern,
                 type_annotation,
                 init: Box::new(ir_init),
+                evidence: IrEvidence::Known,
+            }
+        },
+        Stmt::LetElse { pattern, ty, init, else_branch } => {
+            // Lower let-else: let Pattern = expr else { ... }
+            let ir_pattern = lower_pattern(ctx, pattern.clone());
+            let type_annotation = match ty {
+                ?t => ?lower_type(ctx, t),
+                null => null,
+            };
+
+            let ir_init = lower_expr(ctx, init);
+            let ir_else = lower_expr(ctx, else_branch);
+
+            // Lower to a conditional with pattern matching
+            // The else branch should diverge (return/panic)
+            IrOperation::LetElse {
+                pattern: ir_pattern,
+                type_annotation,
+                init: Box::new(ir_init),
+                else_branch: Box::new(ir_else),
                 evidence: IrEvidence::Known,
             }
         },
@@ -1012,6 +1283,16 @@ fn lower_pattern(ctx: &mut LoweringContext, pattern: !Pattern) -> !IrPattern {
         },
         Pattern::Wildcard => IrPattern::Wildcard,
         Pattern::Rest => IrPattern::Wildcard,
+        Pattern::Evidential { pattern: inner, evidentiality } => {
+            // Evidential patterns like ?(x, y) - lower the inner pattern
+            lower_pattern(ctx, *inner)
+        },
+        Pattern::Path(path) => {
+            // Path patterns like Some or None
+            IrPattern::Path {
+                path: path.segments|τ{s => s.ident.name}|join("::"),
+            }
+        },
     }
 }
 
