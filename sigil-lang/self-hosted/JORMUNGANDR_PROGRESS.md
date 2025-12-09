@@ -3,7 +3,131 @@
 ## Overview
 The Jormungandr initiative aims to make Sigil self-hosting - compiling the Sigil compiler using itself. This document tracks progress on running the self-hosted compiler (in `self-hosted/src/`) through the Rust interpreter to compile Sigil programs to C code.
 
-## Current Status: Core span.sg Compiles and RUNS!
+## Current Status: 🎉 ALL 13 MODULES COMPILE TO C! 🎉
+
+**Major Milestone Achieved**: The self-hosted compiler can now compile **ALL 13 of its own modules** through the complete pipeline to C code!
+
+### Compilation Results (December 2024)
+
+| Module | Lines of C | Status |
+|--------|------------|--------|
+| typeck.sg | 4,578 | ✅ |
+| parser.sg | 4,200 | ✅ |
+| interp.sg | 3,236 | ✅ |
+| lower.sg | 2,841 | ✅ |
+| ast.sg | 2,719 | ✅ |
+| codegen.sg | 2,494 | ✅ |
+| lexer.sg | 2,137 | ✅ |
+| ir.sg | 1,760 | ✅ |
+| token.sg | 1,181 | ✅ |
+| driver.sg | 1,079 | ✅ |
+| runtime.sg | 644 | ✅ |
+| span.sg | 482 | ✅ |
+| lib.sg | 304 | ✅ |
+| **TOTAL** | **~27,655** | ✅ |
+
+### Run Command
+```bash
+cd sigil-lang/parser
+cargo run --release -- run-dir ../self-hosted/src -- compile /path/to/module.sg
+```
+
+---
+
+## Next Steps: GCC-Compatible C Output
+
+The generated C code has some issues that prevent GCC compilation. Here's the roadmap to fix them:
+
+### Phase 1: Codegen Fixes (Required for GCC)
+
+1. **Fix enum variant name generation** (`codegen.sg`)
+   - Issue: `Evidentiality____` generated instead of `Evidentiality____Paradox`
+   - Location: Enum variant codegen in `generate_expr` or similar
+   - Fix: Ensure full variant path is emitted (e.g., `EnumName____VariantName`)
+
+2. **Handle Unicode character literals** (`codegen.sg`)
+   - Issue: `'‽'` (interrobang) causes GCC warning/error
+   - Location: Character literal codegen
+   - Fix: Either escape to numeric value or use wide char type
+
+3. **Add cross-module forward declarations** (`codegen.sg`)
+   - Issue: `sigil_Span____new` undeclared when compiling ast.c
+   - Location: Module output preamble
+   - Fix: Generate `extern` declarations for functions from other modules
+
+### Phase 2: Module Linking
+
+4. **Create unified build system**
+   - Combine all 13 C files into single compilation unit, OR
+   - Generate proper header files with declarations
+   - Handle duplicate runtime definitions (only emit once)
+
+5. **Add main() entry point**
+   - Create driver that calls `sigil_main()` or similar
+   - Handle command-line argument passing
+
+### Phase 3: Bootstrap Verification
+
+6. **Compile with GCC**
+   ```bash
+   gcc -o sigil2 span.c token.c ast.c ... driver.c -lm
+   ```
+
+7. **Fixed-point test**
+   ```bash
+   ./sigil2 compile self-hosted/src/*.sg -o sigil3.c
+   diff sigil2.c sigil3.c  # Should be identical!
+   ```
+
+---
+
+## Recent Fixes (This Bootstrap Cycle)
+
+### Parser Enhancements (`parser.sg`)
+
+1. **Enum variant attribute skipping**
+   - Added `while self.check(&Token::Hash)` loop before parsing variant name
+   - Allows `#[default]` and other attributes on enum variants
+
+2. **Inline extern block skipping**
+   - Added `skip_extern_block()` function
+   - Modified `parse_block_contents()` to handle `Token::Extern`
+   - Skips FFI declarations inside function bodies
+
+### Source Compatibility Fixes
+
+3. **C keyword avoidance** (various files)
+   - `inline` → `inline_hint` (ast.sg, parser.sg)
+   - `default` → `default_value` (ast.sg)
+   - `volatile` → `is_volatile` (ast.sg)
+   - `timeout` → `timeout_ms` (ast.sg, ir.sg)
+
+4. **Nested function → closure conversion** (typeck.sg, interp.sg, runtime.sg)
+   - `fn rank(ev) { ... }` → `let rank = |ev| { ... };`
+
+5. **Tuple pattern workarounds** (typeck.sg, lower.sg, interp.sg)
+   - `|τ{(i, t) => ...}` → `|τ{pair => ... pair.0 ... pair.1 ...}`
+   - `|all{(x, y) => ...}` → explicit for loops
+
+6. **Morpheme syntax workarounds** (interp.sg)
+   - `arr|all{item => ...}` → explicit for loop with break
+   - `arr|any{item => ...}` → explicit for loop with break
+
+7. **Pipe-then-try workaround** (interp.sg)
+   - `|collect_results()?` → split into two statements
+
+8. **Scientific notation replacement** (runtime.sg)
+   - `1e-15` → `0.000000000000001`
+   - `1e-10` → `0.0000000001`
+   - `1e-6` → `0.000001`
+
+9. **Operator workarounds** (runtime.sg)
+   - `e >>= 1` → `e = e >> 1`
+   - `b'\n'` → `10`
+
+---
+
+## Previous Milestone: Core span.sg Compiles and RUNS!
 
 **Major Milestone**: The self-hosted compiler can now compile span.sg through the full pipeline to **working executable code**!
 
