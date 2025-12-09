@@ -122,7 +122,7 @@ impl Value {
                 format!("({})", parts)
             },
             Value::Struct { name, fields } => {
-                let parts = fields.entries()|τ{(k, v) => format!("{}: {}", k, v.to_string())}|join(", ");
+                let parts = fields.entries()|τ{pair => format!("{}: {}", pair.0, pair.1.to_string())}|join(", ");
                 format!("{} {{ {} }}", name, parts)
             },
             Value::Enum { name, variant, fields } => {
@@ -429,14 +429,14 @@ impl Interpreter {
 
     /// Check if evidence satisfies requirement
     fn check_evidence(self, required: !IrEvidence, actual: !IrEvidence) -> !bool {
-        fn rank(ev: !IrEvidence) -> !i32 {
+        let rank = |ev: !IrEvidence| {
             match ev {
                 IrEvidence::Known => 0,
                 IrEvidence::Uncertain => 1,
                 IrEvidence::Reported => 2,
                 IrEvidence::Paradox => 3,
             }
-        }
+        };
         // More certain evidence can satisfy less certain requirements
         rank(actual) <= rank(required)
     }
@@ -699,7 +699,7 @@ impl Interpreter {
             (Value::Null, Value::Null) => true,
             (Value::Array(a), Value::Array(b)) => {
                 a.len() == b.len() &&
-                a.iter().zip(b.iter())|all{(x, y) => self.values_equal(x, y)}
+                a.iter().zip(b.iter())|all{pair => self.values_equal(pair.0, pair.1)}
             },
             _ => false,
         }
@@ -753,7 +753,8 @@ impl Interpreter {
             },
 
             IrOperation::Call { function, args, evidence, .. } => {
-                let arg_vals = args|τ{a => self.eval_with_env(a, env)}|collect_results()?;
+                let arg_results = args|τ{a => self.eval_with_env(a, env)}|collect_results();
+                let arg_vals = arg_results?;
                 self.call_function(function, arg_vals)
             },
 

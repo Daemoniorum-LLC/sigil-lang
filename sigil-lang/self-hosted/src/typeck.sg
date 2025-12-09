@@ -540,14 +540,14 @@ impl TypeChecker {
 
     /// Register built-in functions and types
     fn register_builtins(mut self) {
-        // Helper to create a function type
-        fn func(params: ![Type], ret: !Type) -> !Type {
+        // Helper to create a function type (as a closure)
+        let func = |params: ![Type], ret: !Type| {
             Type::Function {
                 params,
                 return_type: Box::new(ret),
                 is_async: false,
             }
-        }
+        };
 
         // Type variable for polymorphic functions
         let any = Type::Var(TypeVar::new(9999));
@@ -872,7 +872,7 @@ impl TypeChecker {
                     StructFields::Named(fs) => fs|τ{f => (f.name.name, self.convert_type(f.ty))}|collect(),
                     StructFields::Tuple(ts) => ts
                         |enumerate()
-                        |τ{(i, t) => (i.to_string(), self.convert_type(t))}
+                        |τ{pair => (pair.0.to_string(), self.convert_type(pair.1))}
                         |collect(),
                     StructFields::Unit => [],
                 };
@@ -2242,6 +2242,43 @@ impl TypeChecker {
     // Type Unification
     // ========================================================================
 
+    /// Fully resolve a type by following substitution chains
+    /// Detects cycles and returns the last variable in the chain if a cycle is found
+    fn resolve_type(self, ty: !Type) -> !Type {
+        match ty {
+            Type::Var(v) => {
+                let mut seen: ![i64] = [];
+                let mut current = Type::Var(v);
+                loop {
+                    match current {
+                        Type::Var(cv) => {
+                            // Check for cycle
+                            if seen.contains(cv.id) {
+                                // Cycle detected, return the current variable
+                                return current;
+                            }
+                            seen.push(cv.id);
+                            match self.substitutions.get(cv.id) {
+                                ?resolved => {
+                                    current = resolved.clone();
+                                },
+                                null => {
+                                    // Not substituted, return as-is
+                                    return current;
+                                }
+                            }
+                        },
+                        _ => {
+                            // Resolved to a concrete type
+                            return current;
+                        }
+                    }
+                }
+            },
+            _ => ty,
+        }
+    }
+
     /// Attempt to unify two types
     fn unify(mut self, a: !Type, b: !Type) -> !bool {
         match (a, b) {
@@ -2273,7 +2310,7 @@ impl TypeChecker {
             // Tuples
             (Type::Tuple(a), Type::Tuple(b)) => {
                 a.len() == b.len() &&
-                a.iter().zip(b.iter())|all{(x, y) => self.unify(x, y)}
+                a.iter().zip(b.iter())|all{pair => self.unify(pair.0, pair.1)}
             },
 
             // References
@@ -2285,14 +2322,14 @@ impl TypeChecker {
             (Type::Function { params: pa, return_type: ra, is_async: aa },
              Type::Function { params: pb, return_type: rb, is_async: ab }) => {
                 aa == ab && pa.len() == pb.len() &&
-                pa.iter().zip(pb.iter())|all{(x, y) => self.unify(x, y)} &&
+                pa.iter().zip(pb.iter())|all{pair => self.unify(pair.0, pair.1)} &&
                 self.unify(*ra, *rb)
             },
 
             // Named types
             (Type::Named { name: na, generics: ga }, Type::Named { name: nb, generics: gb }) => {
                 na == nb && ga.len() == gb.len() &&
-                ga.iter().zip(gb.iter())|all{(x, y) => self.unify(x, y)}
+                ga.iter().zip(gb.iter())|all{pair => self.unify(pair.0, pair.1)}
             },
 
             // Evidential types: inner must unify, evidence can differ
@@ -2302,21 +2339,57 @@ impl TypeChecker {
             (Type::Evidential { inner: a, .. }, b) => self.unify(*a, b),
             (a, Type::Evidential { inner: b, .. }) => self.unify(a, *b),
 
-            // Type variables
+            // Type variables - use resolve to break cycles
             (Type::Var(v), t) => {
-                if let ?resolved = self.substitutions.get(v.id) {
-                    self.unify(resolved.clone(), t)
-                } else {
-                    self.substitutions.insert(v.id, t);
-                    true
+                let resolved_a = self.resolve_type(Type::Var(v.clone()));
+                match resolved_a {
+                    Type::Var(rv) => {
+                        // Check if t is also a Var and if they're the same
+                        let resolved_b = self.resolve_type(t.clone());
+                        match resolved_b {
+                            Type::Var(rb) => {
+                                if rv.id == rb.id {
+                                    true  // Same variable
+                                } else {
+                                    // Bind one to the other
+                                    self.substitutions.insert(rv.id, Type::Var(rb));
+                                    true
+                                }
+                            },
+                            _ => {
+                                // Bind the unresolved var to the resolved type
+                                self.substitutions.insert(rv.id, resolved_b);
+                                true
+                            }
+                        }
+                    },
+                    _ => self.unify(resolved_a, t)  // Already resolved, unify directly
                 }
             },
             (t, Type::Var(v)) => {
-                if let ?resolved = self.substitutions.get(v.id) {
-                    self.unify(t, resolved.clone())
-                } else {
-                    self.substitutions.insert(v.id, t);
-                    true
+                let resolved_b = self.resolve_type(Type::Var(v.clone()));
+                match resolved_b {
+                    Type::Var(rv) => {
+                        // Check if t is also a Var and if they're the same
+                        let resolved_a = self.resolve_type(t.clone());
+                        match resolved_a {
+                            Type::Var(ra) => {
+                                if ra.id == rv.id {
+                                    true  // Same variable
+                                } else {
+                                    // Bind one to the other
+                                    self.substitutions.insert(rv.id, Type::Var(ra));
+                                    true
+                                }
+                            },
+                            _ => {
+                                // Bind the unresolved var to the resolved type
+                                self.substitutions.insert(rv.id, resolved_a);
+                                true
+                            }
+                        }
+                    },
+                    _ => self.unify(t, resolved_b)  // Already resolved, unify directly
                 }
             },
 

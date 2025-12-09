@@ -303,14 +303,14 @@ impl EvidenceContext {
 
 /// Check if actual evidence satisfies required evidence
 fn satisfies(actual: !IrEvidence, required: !IrEvidence) -> !bool {
-    fn rank(ev: !IrEvidence) -> !i32 {
+    let rank = |ev: !IrEvidence| {
         match ev {
             IrEvidence::Known => 0,
             IrEvidence::Uncertain => 1,
             IrEvidence::Reported => 2,
             IrEvidence::Paradox => 3,
         }
-    }
+    };
     rank(actual) <= rank(required)
 }
 

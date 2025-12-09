@@ -2825,6 +2825,58 @@ impl Interpreter {
 
     fn eval_index(&mut self, expr: &Expr, index: &Expr) -> Result<Value, RuntimeError> {
         let collection = self.evaluate(expr)?;
+
+        // Handle range slicing before evaluating the index
+        if let Expr::Range { start, end, inclusive } = index {
+            let start_val = match start {
+                Some(e) => match self.evaluate(e)? {
+                    Value::Int(n) => n as usize,
+                    _ => return Err(RuntimeError::new("Slice start must be an integer")),
+                },
+                None => 0,
+            };
+
+            return match &collection {
+                Value::Array(arr) => {
+                    let arr = arr.borrow();
+                    let len = arr.len();
+                    let end_val = match end {
+                        Some(e) => match self.evaluate(e)? {
+                            Value::Int(n) => {
+                                let n = n as usize;
+                                if *inclusive { n + 1 } else { n }
+                            },
+                            _ => return Err(RuntimeError::new("Slice end must be an integer")),
+                        },
+                        None => len,  // Open-ended range: slice to end
+                    };
+                    let end_val = end_val.min(len);
+                    let start_val = start_val.min(len);
+                    let sliced: Vec<Value> = arr[start_val..end_val].to_vec();
+                    Ok(Value::Array(Rc::new(RefCell::new(sliced))))
+                }
+                Value::String(s) => {
+                    let len = s.len();
+                    let end_val = match end {
+                        Some(e) => match self.evaluate(e)? {
+                            Value::Int(n) => {
+                                let n = n as usize;
+                                if *inclusive { n + 1 } else { n }
+                            },
+                            _ => return Err(RuntimeError::new("Slice end must be an integer")),
+                        },
+                        None => len,  // Open-ended range: slice to end
+                    };
+                    let end_val = end_val.min(len);
+                    let start_val = start_val.min(len);
+                    // Use byte slicing for consistency with char_at
+                    let sliced = &s[start_val..end_val];
+                    Ok(Value::String(Rc::new(sliced.to_string())))
+                }
+                _ => Err(RuntimeError::new("Cannot slice this type")),
+            };
+        }
+
         let idx = self.evaluate(index)?;
 
         match (collection, idx) {
@@ -3060,6 +3112,14 @@ impl Interpreter {
                 };
                 let v: Vec<Value> = arr.borrow().iter().step_by(n).cloned().collect();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "contains") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("contains expects 1 argument"));
+                }
+                let target = &arg_values[0];
+                let found = arr.borrow().iter().any(|v| self.values_equal(v, target));
+                Ok(Value::Bool(found))
             }
             // Tuple methods
             (Value::Tuple(t), "to_string") | (Value::Tuple(t), "string") => {

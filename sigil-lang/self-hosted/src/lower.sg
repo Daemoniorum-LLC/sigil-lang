@@ -410,9 +410,9 @@ fn lower_struct(ctx: &mut LoweringContext, s: !Struct) -> !IrTypeDef {
         }}|collect(),
         StructFields::Tuple(ts) => ts
             |enumerate()
-            |τ{(i, t) => IrField {
-                name: i.to_string(),
-                ty: lower_type(ctx, t),
+            |τ{pair => IrField {
+                name: pair.0.to_string(),
+                ty: lower_type(ctx, pair.1),
                 visibility: IrVisibility::Private,
             }}|collect(),
         StructFields::Unit => [],
@@ -442,9 +442,9 @@ fn lower_enum(ctx: &mut LoweringContext, e: !Enum) -> !IrTypeDef {
             }}|collect(),
             StructFields::Tuple(ts) => ?ts
                 |enumerate()
-                |τ{(i, t) => IrField {
-                    name: i.to_string(),
-                    ty: lower_type(ctx, t),
+                |τ{pair => IrField {
+                    name: pair.0.to_string(),
+                    ty: lower_type(ctx, pair.1),
                     visibility: IrVisibility::Private,
                 }}|collect(),
             StructFields::Unit => null,
@@ -518,13 +518,13 @@ fn lower_const(ctx: &mut LoweringContext, c: !Const) -> ?IrConstant {
 // ============================================================================
 
 /// Lower a trait definition
-fn lower_trait(ctx: &mut LoweringContext, t: !Trait) -> !IrTraitDef {
+fn lower_trait(ctx: &mut LoweringContext, t: !TraitDef) -> !IrTraitDef {
     let generics = match t.generics {
         ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
         null => [],
     };
 
-    let super_traits = t.super_traits|τ{s => s.to_string()}|collect();
+    let super_traits = t.supertraits|τ{s => s.to_string()}|collect();
 
     let methods = t.items
         |φ{item => matches!(item, TraitItem::Method(_))}

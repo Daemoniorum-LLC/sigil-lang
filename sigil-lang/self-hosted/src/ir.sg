@@ -725,7 +725,7 @@ pub enum IrOperation {
         url: !Box<IrOperation>,
         headers: ?Box<IrOperation>,
         body: ?Box<IrOperation>,
-        timeout: ?Box<IrOperation>,
+        timeout_ms: ?Box<IrOperation>,
         ty: !IrType,
         evidence: !IrEvidence,
     },
