@@ -939,7 +939,7 @@ pub enum Expr {
         url: !Box<Expr>,
         headers: ![(Expr, Expr)],
         body: ?Box<Expr>,
-        timeout: ?Box<Expr>,
+        timeout_ms: ?Box<Expr>,
     },
     /// gRPC call
     GrpcCall {
@@ -947,7 +947,7 @@ pub enum Expr {
         method: !Box<Expr>,
         message: ?Box<Expr>,
         metadata: ![(Expr, Expr)],
-        timeout: ?Box<Expr>,
+        timeout_ms: ?Box<Expr>,
     },
     /// WebSocket connect
     WebSocketConnect {
@@ -1004,7 +1004,7 @@ pub enum AsmOperandKind {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AsmOptions {
-    pub volatile: !bool = false,
+    pub is_volatile: !bool = false,
     pub pure_asm: !bool = false,
     pub nomem: !bool = false,
     pub nostack: !bool = false,

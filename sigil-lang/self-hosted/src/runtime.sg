@@ -348,7 +348,7 @@ pub mod io {
             let mut byte: [u8; 1] = [0];
             loop {
                 let n = read(0, byte.as_mut_ptr(), 1);
-                if n <= 0 || byte[0] == b'\n' {
+                if n <= 0 || byte[0] == 10 {  // 10 = ASCII newline
                     break;
                 }
                 buffer.push(byte[0] as char);
@@ -381,7 +381,7 @@ pub mod math {
         let mut guess = x / 2.0;
         for _ in 0..50 {
             let next = (guess + x / guess) / 2.0;
-            if abs(next - guess) < 1e-15 {
+            if abs(next - guess) < 0.000000000000001 {
                 break;
             }
             guess = next;
@@ -402,7 +402,7 @@ pub mod math {
                     result *= b;
                 }
                 b *= b;
-                e >>= 1;
+                e = e >> 1;
             }
             result
         } else {
@@ -425,7 +425,7 @@ pub mod math {
         for i in 0..100 {
             result += term / (2 * i + 1) as f64;
             term *= y2;
-            if abs(term) < 1e-15 {
+            if abs(term) < 0.000000000000001 {
                 break;
             }
         }
@@ -440,7 +440,7 @@ pub mod math {
         for n in 1..100 {
             term *= x / n as f64;
             result += term;
-            if abs(term) < 1e-15 {
+            if abs(term) < 0.000000000000001 {
                 break;
             }
         }
@@ -464,7 +464,7 @@ pub mod math {
         for n in 0..50 {
             result += term;
             term *= -x2 / ((2 * n + 2) * (2 * n + 3)) as f64;
-            if abs(term) < 1e-15 {
+            if abs(term) < 0.000000000000001 {
                 break;
             }
         }
@@ -800,15 +800,15 @@ mod tests {
 
     #[test]
     fn test_math_sqrt() {
-        assert!((math::sqrt(4.0) - 2.0).abs() < 1e-10);
-        assert!((math::sqrt(2.0) - 1.41421356).abs() < 1e-6);
+        assert!((math::sqrt(4.0) - 2.0).abs() < 0.0000000001);
+        assert!((math::sqrt(2.0) - 1.41421356).abs() < 0.000001);
     }
 
     #[test]
     fn test_math_trig() {
-        assert!((math::sin(0.0)).abs() < 1e-10);
-        assert!((math::cos(0.0) - 1.0).abs() < 1e-10);
-        assert!((math::sin(math::PI / 2.0) - 1.0).abs() < 1e-10);
+        assert!((math::sin(0.0)).abs() < 0.0000000001);
+        assert!((math::cos(0.0) - 1.0).abs() < 0.0000000001);
+        assert!((math::sin(math::PI / 2.0) - 1.0).abs() < 0.0000000001);
     }
 
     #[test]

@@ -663,6 +663,10 @@ impl Parser {
         self.expect(Token::LBrace)?;
         let mut variants = Vec::new();
         while !self.check(&Token::RBrace) {
+            // Skip attributes on enum variants
+            while self.check(&Token::Hash) {
+                self.parse_outer_attribute()?;
+            }
             let variant_name = self.parse_ident()?;
 
             let fields = if self.check(&Token::LBrace) {
@@ -2151,6 +2155,9 @@ impl Parser {
         while !self.check(&Token::RBrace) {
             if self.check(&Token::Let) {
                 stmts.push(self.parse_let_stmt()?);
+            } else if self.check(&Token::Extern) {
+                // Skip inline extern blocks (FFI declarations inside functions)
+                self.skip_extern_block()?;
             } else {
                 let e = self.parse_expr()?;
                 if self.consume_if(&Token::Semi) {
@@ -2165,6 +2172,27 @@ impl Parser {
         }
 
         Ok(Block { stmts, expr })
+    }
+
+    /// Skip an inline extern block (used in FFI, not needed for bootstrap)
+    fn skip_extern_block(mut self) -> !ParseResult<()> {
+        self.expect(Token::Extern)?;
+        // Skip optional ABI string like "C"
+        if let Token::StringLit(_) = self.current_token() {
+            self.advance();
+        }
+        self.expect(Token::LBrace)?;
+        // Skip balanced braces
+        let mut depth = 1;
+        while depth > 0 {
+            match self.current_token() {
+                Token::LBrace => { self.advance(); depth += 1; },
+                Token::RBrace => { self.advance(); depth -= 1; },
+                Token::Eof => return Err(ParseError::unexpected("}", Token::Eof, self.current_span())),
+                _ => { self.advance(); }
+            }
+        }
+        Ok(())
     }
 
     /// Parse a block.

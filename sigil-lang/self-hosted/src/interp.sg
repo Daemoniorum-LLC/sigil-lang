@@ -1271,13 +1271,15 @@ impl Interpreter {
             },
             MorphemeKind::All => {
                 // ρ& - all elements truthy
-                let all = arr|all{item => item.is_truthy()};
-                Result::Ok(EvidentialValue { value: Value::Bool(all), evidence: input.evidence })
+                let mut all_truthy = true;
+                for item in arr { if !item.is_truthy() { all_truthy = false; break; } }
+                Result::Ok(EvidentialValue { value: Value::Bool(all_truthy), evidence: input.evidence })
             },
             MorphemeKind::Any => {
                 // ρ| - any element truthy
-                let any = arr|any{item => item.is_truthy()};
-                Result::Ok(EvidentialValue { value: Value::Bool(any), evidence: input.evidence })
+                let mut any_truthy = false;
+                for item in arr { if item.is_truthy() { any_truthy = true; break; } }
+                Result::Ok(EvidentialValue { value: Value::Bool(any_truthy), evidence: input.evidence })
             },
             _ => Result::Err(RuntimeError::new(format!("unsupported morpheme: {}", kind.symbol()))),
         }
