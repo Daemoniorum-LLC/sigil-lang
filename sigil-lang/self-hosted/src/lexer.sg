@@ -719,6 +719,11 @@ impl Lexer {
 
     /// Lex an identifier or keyword.
     fn lex_ident_or_keyword(mut self, first: !char) -> !Token {
+        // Check for raw string literal (r#"..."# or r"...")
+        if first == 'r' && (self.current() == '#' || self.current() == '"') {
+            return self.lex_raw_string();
+        }
+
         let mut name = String::new();
         name.push(first);
 
@@ -729,6 +734,59 @@ impl Lexer {
 
         // Check for keywords
         self.keyword_or_ident(name)
+    }
+
+    /// Lex a raw string literal (r"..." or r#"..."#).
+    fn lex_raw_string(mut self) -> !Token {
+        // Count the number of # characters
+        let mut hash_count = 0;
+        while self.current() == '#' {
+            self.advance();
+            hash_count = hash_count + 1;
+        }
+
+        // Expect opening quote
+        if self.current() != '"' {
+            // Not a valid raw string, return as identifier 'r' followed by hashes
+            // This shouldn't normally happen in valid Sigil code
+            return Token::Ident("r".to_string());
+        }
+        self.advance(); // consume opening quote
+
+        let mut value = String::new();
+
+        // Read until we find closing quote followed by same number of #
+        loop {
+            if self.is_eof() {
+                break;
+            }
+
+            let c = self.advance()!;
+            if c == '"' {
+                // Check for closing # sequence
+                let mut closing_hashes = 0;
+                while closing_hashes < hash_count && self.current() == '#' {
+                    self.advance();
+                    closing_hashes = closing_hashes + 1;
+                }
+                if closing_hashes == hash_count {
+                    // Found the closing sequence
+                    break;
+                } else {
+                    // Not the closing sequence, add the quote and hashes to value
+                    value.push('"');
+                    let mut i = 0;
+                    while i < closing_hashes {
+                        value.push('#');
+                        i = i + 1;
+                    }
+                }
+            } else {
+                value.push(c);
+            }
+        }
+
+        Token::RawStringLit(value)
     }
 
     /// Continue lexing identifier after initial character.

@@ -2006,7 +2006,8 @@ fn register_string(interp: &mut Interpreter) {
         }
     });
 
-    // char_at - get character at index (safer than indexing)
+    // char_at - get character at byte index (safer than indexing)
+    // Uses byte-based indexing to match self-hosted lexer's pos tracking
     define(interp, "char_at", Some(2), |_, args| {
         let s = match &args[0] {
             Value::String(s) => (**s).clone(),
@@ -2024,15 +2025,21 @@ fn register_string(interp: &mut Interpreter) {
                 ))
             }
         };
-        let chars: Vec<char> = s.chars().collect();
+        // Use byte-based indexing
         let actual_idx = if idx < 0 {
-            (chars.len() as i64 + idx) as usize
+            // Negative indexing counts from end of string (in bytes)
+            (s.len() as i64 + idx) as usize
         } else {
             idx as usize
         };
-        match chars.get(actual_idx) {
-            Some(c) => Ok(Value::Char(*c)),
-            None => Ok(Value::Null),
+        if actual_idx < s.len() {
+            let remaining = &s[actual_idx..];
+            match remaining.chars().next() {
+                Some(c) => Ok(Value::Char(c)),
+                None => Ok(Value::Null),
+            }
+        } else {
+            Ok(Value::Null)
         }
     });
 

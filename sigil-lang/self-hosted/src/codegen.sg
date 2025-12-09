@@ -671,6 +671,27 @@ impl CodeGen {
                 "sigil_unit()"
             },
 
+            IrOperation::LetElse { pattern, init, else_branch, .. } => {
+                // let pattern = init else { else_branch }
+                // We emit this as a pattern match with fallthrough to else
+                let init_code = self.emit_operation(*init);
+                let temp_name = self.fresh_temp();
+                self.line(format!("SigilValue {} = {};", temp_name, init_code));
+
+                // Check if pattern matches and bind, else execute else_branch
+                let cond = self.emit_pattern_condition(pattern.clone(), temp_name.clone());
+                self.line(format!("if ({}) {{", cond));
+                self.indent_push();
+                self.emit_pattern_binding(pattern, temp_name);
+                self.indent_pop();
+                self.line("} else {");
+                self.indent_push();
+                self.emit_operation(*else_branch);
+                self.indent_pop();
+                self.line("}");
+                "sigil_unit()"
+            },
+
             IrOperation::Binary { operator, left, right, evidence, .. } => {
                 let l = self.emit_operation(*left);
                 let r = self.emit_operation(*right);
@@ -800,6 +821,7 @@ impl CodeGen {
                         // Not the last statement - emit as side effect if not a let binding
                         match stmt {
                             IrOperation::Let { .. } => {},  // Already emitted by emit_operation
+                            IrOperation::LetElse { .. } => {},  // Already emitted by emit_operation
                             IrOperation::Return { .. } => {},  // Already emitted
                             IrOperation::Block { .. } => {},  // Already emitted
                             _ => {

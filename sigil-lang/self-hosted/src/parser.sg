@@ -1878,6 +1878,14 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Literal(Literal::String(s)))
             }
+            Token::RawStringLit(s) => {
+                self.advance();
+                Ok(Expr::Literal(Literal::String(s)))
+            }
+            Token::MultiLineStringLit(s) => {
+                self.advance();
+                Ok(Expr::Literal(Literal::String(s)))
+            }
             Token::CharLit(c) => {
                 self.advance();
                 Ok(Expr::Literal(Literal::Char(c)))

@@ -3155,6 +3155,34 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("ends_with expects string")),
                 }
             }
+            (Value::String(s), "strip_prefix") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("strip_prefix expects 1 argument"));
+                }
+                match &arg_values[0] {
+                    Value::String(prefix) => {
+                        match s.strip_prefix(prefix.as_str()) {
+                            Some(stripped) => Ok(Value::String(Rc::new(stripped.to_string()))),
+                            None => Ok(Value::Null),
+                        }
+                    }
+                    _ => Err(RuntimeError::new("strip_prefix expects string")),
+                }
+            }
+            (Value::String(s), "strip_suffix") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("strip_suffix expects 1 argument"));
+                }
+                match &arg_values[0] {
+                    Value::String(suffix) => {
+                        match s.strip_suffix(suffix.as_str()) {
+                            Some(stripped) => Ok(Value::String(Rc::new(stripped.to_string()))),
+                            None => Ok(Value::Null),
+                        }
+                    }
+                    _ => Err(RuntimeError::new("strip_suffix expects string")),
+                }
+            }
             (Value::String(s), "is_empty") => Ok(Value::Bool(s.is_empty())),
             (Value::String(s), "clone") => Ok(Value::String(Rc::new((**s).clone()))),
             (Value::String(s), "as_ptr") => {
@@ -3171,9 +3199,17 @@ impl Interpreter {
                     Value::Int(i) => *i as usize,
                     _ => return Err(RuntimeError::new("char_at expects integer index")),
                 };
-                match s.chars().nth(idx) {
-                    Some(c) => Ok(Value::Char(c)),
-                    None => Ok(Value::Null), // Return null for out-of-bounds (Sigil's null-safety)
+                // Use byte-based indexing to match the self-hosted lexer's pos tracking
+                // which increments by c.len_utf8() (byte count, not character count)
+                if idx < s.len() {
+                    // Get the character starting at byte position idx
+                    let remaining = &s[idx..];
+                    match remaining.chars().next() {
+                        Some(c) => Ok(Value::Char(c)),
+                        None => Ok(Value::Null),
+                    }
+                } else {
+                    Ok(Value::Null) // Out of bounds
                 }
             }
             (Value::String(s), "chars") => {

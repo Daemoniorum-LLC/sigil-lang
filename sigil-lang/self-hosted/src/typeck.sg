@@ -1194,6 +1194,46 @@ impl TypeChecker {
 
                 Type::Unit
             },
+            Stmt::LetElse { pattern, ty, init, else_branch } => {
+                // Let-else: let Pattern = expr else { ... }
+                let declared_ty = match ty {
+                    ?t => ?self.convert_type(t),
+                    null => null,
+                };
+                let init_ty = ?self.infer_expr(init);
+
+                let final_ty = match (declared_ty, init_ty) {
+                    (?d, ?i) => {
+                        if !self.unify(d, i) {
+                            self.error(TypeError::new(format!(
+                                "type mismatch in let-else binding: expected {}, found {}",
+                                d.to_string(), i.to_string()
+                            )));
+                        }
+                        d
+                    },
+                    (?d, null) => d,
+                    (null, ?i) => i,
+                    (null, null) => self.fresh_var(),
+                };
+
+                // Evidence inference
+                let evidence = match pattern.evidentiality() {
+                    ?e => EvidenceLevel::from_ast(e),
+                    null => match init_ty {
+                        ?ty => self.get_evidence(ty),
+                        null => EvidenceLevel::Known,
+                    },
+                };
+
+                // Bind pattern variables
+                self.bind_pattern(pattern, final_ty, evidence);
+
+                // Check else branch (must diverge)
+                self.infer_expr(else_branch);
+
+                Type::Unit
+            },
             Stmt::Expr(e) | Stmt::Semi(e) => self.infer_expr(e),
             Stmt::Item(item) => {
                 self.check_item(item);
@@ -2180,6 +2220,17 @@ impl TypeChecker {
                 if let ?first = patterns.first() {
                     self.bind_pattern(first, ty, evidence);
                 }
+            },
+            Pattern::Evidential { pattern: inner, evidentiality } => {
+                // Evidential patterns like ?(x, y) - process the inner pattern
+                let ev = match evidentiality {
+                    ?e => EvidenceLevel::from_ast(e),
+                    null => final_ev,
+                };
+                self.bind_pattern(*inner, ty, ev);
+            },
+            Pattern::Path(_) => {
+                // Path patterns like None don't introduce bindings
             },
             Pattern::Wildcard | Pattern::Rest | Pattern::Literal(_) | Pattern::Range { .. } => {
                 // No bindings introduced

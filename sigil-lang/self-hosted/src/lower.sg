@@ -1191,6 +1191,27 @@ fn lower_stmt(ctx: &mut LoweringContext, stmt: !Stmt) -> !IrOperation {
                 evidence: IrEvidence::Known,
             }
         },
+        Stmt::LetElse { pattern, ty, init, else_branch } => {
+            // Lower let-else: let Pattern = expr else { ... }
+            let ir_pattern = lower_pattern(ctx, pattern.clone());
+            let type_annotation = match ty {
+                ?t => ?lower_type(ctx, t),
+                null => null,
+            };
+
+            let ir_init = lower_expr(ctx, init);
+            let ir_else = lower_expr(ctx, else_branch);
+
+            // Lower to a conditional with pattern matching
+            // The else branch should diverge (return/panic)
+            IrOperation::LetElse {
+                pattern: ir_pattern,
+                type_annotation,
+                init: Box::new(ir_init),
+                else_branch: Box::new(ir_else),
+                evidence: IrEvidence::Known,
+            }
+        },
         Stmt::Expr(e) | Stmt::Semi(e) => lower_expr(ctx, e),
         Stmt::Item(item) => {
             // Nested items are handled separately

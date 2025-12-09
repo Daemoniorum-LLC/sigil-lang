@@ -528,6 +528,15 @@ pub enum IrOperation {
         evidence: !IrEvidence,
     },
 
+    /// Let-else binding: let pattern = init else { else_branch }
+    LetElse {
+        pattern: !IrPattern,
+        type_annotation: ?IrType,
+        init: !Box<IrOperation>,
+        else_branch: !Box<IrOperation>,
+        evidence: !IrEvidence,
+    },
+
     // === Binary operations ===
     Binary {
         operator: !BinaryOp,
