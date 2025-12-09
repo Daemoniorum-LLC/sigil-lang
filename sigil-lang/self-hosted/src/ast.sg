@@ -255,7 +255,7 @@ pub struct ExternStatic {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FunctionAttrs {
     pub naked: !bool = false,
-    pub inline: ?InlineHint,
+    pub inline_hint: ?InlineHint,
     pub calling_convention: ?String,
     pub no_mangle: !bool = false,
     pub link_section: ?String,
@@ -579,7 +579,7 @@ pub struct FieldDef {
     pub visibility: !Visibility,
     pub name: !Ident,
     pub ty: !TypeExpr,
-    pub default: ?Expr,
+    pub default_value: ?Expr,
 }
 
 /// Enum definition.
