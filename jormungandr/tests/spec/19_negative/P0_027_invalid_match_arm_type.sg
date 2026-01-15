@@ -1,0 +1,14 @@
+// EXPECTED: Static type checking should catch this error
+// Negative Test: Match arms return different types
+// Should fail with type error
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let x = 5;
+    let result = match x {
+        1 => 10,
+        2 => "twenty",  // ERROR: String vs i32
+        _ => 0,
+    };
+    println(result);
+}

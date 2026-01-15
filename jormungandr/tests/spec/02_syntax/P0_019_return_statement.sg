@@ -1,0 +1,18 @@
+// Test: Return statement in function
+// Spec: 02-SYNTAX.md § 5.1 Return Statements
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate return statement works correctly.
+//
+// Expected behavior:
+// Should return 42 and print it.
+
+fn get_value() -> !i32 {
+    return 42;
+}
+
+fn main() {
+    let x: !i32 = get_value();
+    println(x);
+}

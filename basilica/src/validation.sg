@@ -1,0 +1,165 @@
+//! Validation Gates
+//!
+//! Validation is the mechanism for promoting evidence from ~ to !
+//! This is the core security boundary in Basilica.
+
+use crate::evidence::{EvidenceLevel, Evidenced, HttpEvidence, EvidenceError};
+use crate::error::{BasilicaError, BasilicaResult};
+
+/// Trait for types that can be validated
+pub trait Validate: Sized {
+    /// Validation error type
+    type Error;
+
+    /// Validate the value, returning errors if invalid
+    fn validate(&self) -> Result<(), Self::Error>;
+}
+
+/// A validation gate that promotes evidence on success
+pub struct ValidationGate;
+
+impl ValidationGate {
+    /// Validate an evidenced value, promoting ~ to ! on success
+    pub fn validate<T: Validate>(
+        evidenced: Evidenced<T>,
+    ) -> Result<Evidenced<T>, BasilicaError>
+    where
+        T::Error: Into<Vec<String>>,
+    {
+        // Run validation
+        match evidenced.value.validate() {
+            Ok(()) => {
+                // Promote evidence to Known
+                Ok(Evidenced {
+                    value: evidenced.value,
+                    evidence: HttpEvidence::UserInput {
+                        validated: true,
+                        validation_errors: vec![],
+                    },
+                    captured_at: evidenced.captured_at,
+                })
+            }
+            Err(errors) => {
+                let error_strings: Vec<String> = errors.into();
+                Err(BasilicaError::Validation {
+                    field: "body".to_string(),
+                    message: "Validation failed".to_string(),
+                    errors: error_strings,
+                })
+            }
+        }
+    }
+
+    /// Require a specific evidence level
+    pub fn require<T>(
+        evidenced: Evidenced<T>,
+        level: EvidenceLevel,
+    ) -> Result<T, BasilicaError> {
+        if evidenced.level().satisfies(level) {
+            Ok(evidenced.value)
+        } else {
+            Err(BasilicaError::InsufficientEvidence {
+                required: level,
+                actual: evidenced.level(),
+                context: "validation gate".to_string(),
+            })
+        }
+    }
+
+    /// Require known (!) evidence
+    pub fn require_known<T>(evidenced: Evidenced<T>) -> Result<T, BasilicaError> {
+        Self::require(evidenced, EvidenceLevel::Known)
+    }
+}
+
+/// Builder for complex validation rules
+pub struct ValidationBuilder<T> {
+    value: T,
+    errors: Vec<String>,
+}
+
+impl<T> ValidationBuilder<T> {
+    pub fn new(value: T) -> Self {
+        Self {
+            value,
+            errors: vec![],
+        }
+    }
+
+    /// Add a validation rule
+    pub fn check<F: FnOnce(&T) -> bool>(mut self, predicate: F, error: &str) -> Self {
+        if !predicate(&self.value) {
+            self.errors.push(error.to_string());
+        }
+        self
+    }
+
+    /// Validate a field
+    pub fn field<F, V: Validate>(mut self, extractor: F, field_name: &str) -> Self
+    where
+        F: FnOnce(&T) -> &V,
+        V::Error: Into<Vec<String>>,
+    {
+        let field = extractor(&self.value);
+        if let Err(errors) = field.validate() {
+            let error_strings: Vec<String> = errors.into();
+            for e in error_strings {
+                self.errors.push(format!("{}: {}", field_name, e));
+            }
+        }
+        self
+    }
+
+    /// Complete validation
+    pub fn finish(self) -> Result<T, Vec<String>> {
+        if self.errors.is_empty() {
+            Ok(self.value)
+        } else {
+            Err(self.errors)
+        }
+    }
+}
+
+// Common validation functions
+pub mod rules {
+    /// Check that a string is not empty
+    pub fn not_empty(s: &str) -> bool {
+        !s.trim().is_empty()
+    }
+
+    /// Check string length
+    pub fn max_length(s: &str, max: usize) -> bool {
+        s.len() <= max
+    }
+
+    /// Check string length
+    pub fn min_length(s: &str, min: usize) -> bool {
+        s.len() >= min
+    }
+
+    /// Check that a value is positive
+    pub fn positive<N: PartialOrd + Default>(n: &N) -> bool {
+        *n > N::default()
+    }
+
+    /// Check that a value is in range
+    pub fn in_range<N: PartialOrd>(n: &N, min: N, max: N) -> bool {
+        *n >= min && *n <= max
+    }
+
+    /// Simple email check (not comprehensive)
+    pub fn looks_like_email(s: &str) -> bool {
+        s.contains('@') && s.contains('.')
+    }
+
+    /// UUID format check
+    pub fn is_uuid(s: &str) -> bool {
+        s.len() == 36 &&
+        s.chars().enumerate().all(|(i, c)| {
+            match i {
+                8 | 13 | 18 | 23 => c == '-',
+                _ => c.is_ascii_hexdigit(),
+            }
+        })
+    }
+}

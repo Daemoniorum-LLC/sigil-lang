@@ -317,6 +317,38 @@ pub enum Item {
     Static(StaticDef),
     Actor(ActorDef),
     ExternBlock(ExternBlock),
+    /// Macro definition (declarative macro)
+    Macro(MacroDef),
+    /// Macro invocation at item level
+    MacroInvocation(MacroInvocation),
+    /// Plurality items (DAEMONIORUM extensions)
+    Plurality(crate::plurality::PluralityItem),
+}
+
+/// Declarative macro definition.
+/// `macro name($pattern) { $expansion }`
+#[derive(Debug, Clone, PartialEq)]
+pub struct MacroDef {
+    pub visibility: Visibility,
+    pub name: Ident,
+    pub rules: String, // Raw token body for now
+}
+
+/// Macro invocation at item level.
+/// `thread_local! { ... }` or `vec![1, 2, 3]`
+#[derive(Debug, Clone, PartialEq)]
+pub struct MacroInvocation {
+    pub path: TypePath,
+    pub delimiter: MacroDelimiter,
+    pub tokens: String, // Raw token body
+}
+
+/// Delimiter used in macro invocation
+#[derive(Debug, Clone, PartialEq)]
+pub enum MacroDelimiter {
+    Paren,   // ()
+    Bracket, // []
+    Brace,   // {}
 }
 
 /// Foreign function interface block.
@@ -415,6 +447,8 @@ pub enum Aspect {
 pub struct Function {
     pub visibility: Visibility,
     pub is_async: bool,
+    pub is_const: bool,
+    pub is_unsafe: bool,
     pub attrs: FunctionAttrs,
     pub name: Ident,
     pub aspect: Option<Aspect>, // Verb aspect: ·ing, ·ed, ·able, ·ive
@@ -447,10 +481,58 @@ pub struct Ident {
 /// Evidentiality markers from the type system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Evidentiality {
-    Known,     // !
-    Uncertain, // ?
-    Reported,  // ~
-    Paradox,   // ‽
+    Known,     // ! - verified ground truth
+    Uncertain, // ? - unverified input
+    Reported,  // ~ - EMA, eventually consistent
+    Predicted, // ◊ - model output, speculative
+    Paradox,   // ‽ - contradiction detected
+}
+
+// ============================================
+// Legion Morphemes (Holographic Agent Collective)
+// ============================================
+
+/// Legion collective operations for distributed memory.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LegionOp {
+    /// Superposition: pattern joins the collective
+    /// `field∿ ⊕= pattern`
+    Superposition,
+
+    /// Interference: query the collective
+    /// `query ⫰ field∿`
+    Interference,
+
+    /// Resonance: extract agreement peaks
+    /// `resonance~ |◉`
+    Resonance,
+
+    /// Distribute: fragment holographically
+    /// `task ⟁ agent_count`
+    Distribute,
+
+    /// Gather: unify via interference
+    /// `fragments ⟀`
+    Gather,
+
+    /// Broadcast: one to many
+    /// `signal ↠ legion`
+    Broadcast,
+
+    /// Consensus: many become one
+    /// `contributions ⇢`
+    Consensus,
+
+    /// Decay: graceful fading
+    /// `field∿ ∂= 0.95`
+    Decay,
+}
+
+/// Suffix marker for Legion field types.
+/// `memory∿` indicates a LegionField collective memory.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegionFieldMarker {
+    pub base_name: Ident,
 }
 
 /// Affective markers for sentiment and emotion tracking.
@@ -549,10 +631,14 @@ pub enum GenericParam {
         name: Ident,
         bounds: Vec<TypeExpr>,
         evidentiality: Option<Evidentiality>,
+        /// Default type: `T = DefaultType`
+        default: Option<TypeExpr>,
     },
     Const {
         name: Ident,
         ty: TypeExpr,
+        /// Default value for const generics
+        default: Option<Box<Expr>>,
     },
     Lifetime(String),
 }
@@ -574,8 +660,8 @@ pub struct WherePredicate {
 pub enum TypeExpr {
     /// Simple named type: `i32`, `String`
     Path(TypePath),
-    /// Reference: `&T`, `&mut T`
-    Reference { mutable: bool, inner: Box<TypeExpr> },
+    /// Reference: `&T`, `&mut T`, `&'a T`, `&'static mut T`
+    Reference { lifetime: Option<String>, mutable: bool, inner: Box<TypeExpr> },
     /// Pointer: `*const T`, `*mut T`
     Pointer { mutable: bool, inner: Box<TypeExpr> },
     /// Array: `[T; N]`
@@ -613,6 +699,42 @@ pub enum TypeExpr {
     Never,
     /// Inferred: `_`
     Infer,
+    /// Lifetime bound: `'static`, `'a`
+    Lifetime(String),
+    /// Trait object: `dyn Trait` or `dyn Trait + Send + 'static`
+    TraitObject(Vec<TypeExpr>),
+    /// Higher-ranked trait bound: `for<'a> Trait<'a>`
+    Hrtb {
+        lifetimes: Vec<String>,
+        bound: Box<TypeExpr>,
+    },
+    /// Inline struct type: `struct { field: Type, ... }`
+    InlineStruct {
+        fields: Vec<FieldDef>,
+    },
+    /// Inline enum type: `enum { Variant1, Variant2(Type), ... }`
+    InlineEnum {
+        variants: Vec<EnumVariant>,
+    },
+    /// Impl trait: `impl Trait`, `impl Fn() -> R`
+    ImplTrait(Vec<TypeExpr>),
+    /// Associated type binding: `Output = Type` used in trait bounds
+    AssocTypeBinding {
+        name: Ident,
+        ty: Box<TypeExpr>,
+    },
+    /// Const expression in type position (for const generics): `<32>`, `<{N + 1}>`
+    ConstExpr(Box<Expr>),
+    /// Qualified path type: `<Type as Trait>::AssociatedType`
+    /// Also supports `<Type>::Associated` for inherent associated types
+    QualifiedPath {
+        /// The base type: `Type` in `<Type as Trait>::...`
+        self_type: Box<TypeExpr>,
+        /// Optional trait bound: `Trait` in `<Type as Trait>::...`
+        trait_path: Option<TypePath>,
+        /// The associated item path: `AssociatedType` or `Associated::Nested`
+        item_path: TypePath,
+    },
 }
 
 /// Type path with optional generics.
@@ -798,6 +920,13 @@ pub enum Stmt {
         ty: Option<TypeExpr>,
         init: Option<Expr>,
     },
+    /// Let-else statement: `let PATTERN = EXPR else { ... }`
+    LetElse {
+        pattern: Pattern,
+        ty: Option<TypeExpr>,
+        init: Expr,
+        else_branch: Box<Expr>,
+    },
     Expr(Expr),
     Semi(Expr),
     Item(Box<Item>),
@@ -811,6 +940,8 @@ pub enum Pattern {
         name: Ident,
         evidentiality: Option<Evidentiality>,
     },
+    /// Path pattern for matching unit enum variants: Token::Fn
+    Path(TypePath),
     Tuple(Vec<Pattern>),
     Struct {
         path: TypePath,
@@ -828,6 +959,17 @@ pub enum Pattern {
         start: Option<Box<Pattern>>,
         end: Option<Box<Pattern>>,
         inclusive: bool,
+    },
+    /// Reference pattern: `&pattern` or `&mut pattern`
+    Ref {
+        mutable: bool,
+        pattern: Box<Pattern>,
+    },
+    /// Ref binding pattern: `ref ident` or `ref mut ident`
+    RefBinding {
+        mutable: bool,
+        name: Ident,
+        evidentiality: Option<Evidentiality>,
     },
     Wildcard,
     Rest,
@@ -869,6 +1011,8 @@ pub enum Expr {
     MethodCall {
         receiver: Box<Expr>,
         method: Ident,
+        /// Turbofish type arguments: `method::<T, U>(args)`
+        type_args: Option<Vec<TypeExpr>>,
         args: Vec<Expr>,
     },
     /// Field access
@@ -877,6 +1021,11 @@ pub enum Expr {
     Index { expr: Box<Expr>, index: Box<Expr> },
     /// Array literal
     Array(Vec<Expr>),
+    /// Array repeat literal: `[value; count]`
+    ArrayRepeat {
+        value: Box<Expr>,
+        count: Box<Expr>,
+    },
     /// Tuple literal
     Tuple(Vec<Expr>),
     /// Struct literal
@@ -898,20 +1047,32 @@ pub enum Expr {
         expr: Box<Expr>,
         arms: Vec<MatchArm>,
     },
-    /// Loop
-    Loop(Block),
-    /// While loop
-    While { condition: Box<Expr>, body: Block },
-    /// For loop
+    /// Loop with optional label: `'label: loop { ... }`
+    Loop {
+        label: Option<Ident>,
+        body: Block,
+    },
+    /// While loop with optional label: `'label: while cond { ... }`
+    While {
+        label: Option<Ident>,
+        condition: Box<Expr>,
+        body: Block,
+    },
+    /// For loop with optional label: `'label: for x in iter { ... }`
     For {
+        label: Option<Ident>,
         pattern: Pattern,
         iter: Box<Expr>,
         body: Block,
     },
-    /// Closure: `{x => x + 1}` or `|x| x + 1`
+    /// Closure: `{x => x + 1}` or `|x| x + 1` or `move |x| x + 1` or `|x| -> T { ... }`
     Closure {
         params: Vec<ClosureParam>,
+        /// Optional explicit return type annotation: `|x| -> i32 { x + 1 }`
+        return_type: Option<TypeExpr>,
         body: Box<Expr>,
+        /// Whether this is a move closure that takes ownership of captured variables
+        is_move: bool,
     },
     /// Await with optional evidentiality: `expr⌛` or `expr⌛?` or `expr⌛!` or `expr⌛~`
     /// The evidentiality marker specifies how to handle the awaited result:
@@ -927,10 +1088,15 @@ pub enum Expr {
     Try(Box<Expr>),
     /// Return
     Return(Option<Box<Expr>>),
-    /// Break
-    Break(Option<Box<Expr>>),
-    /// Continue
-    Continue,
+    /// Break with optional label and value: `break 'label value`
+    Break {
+        label: Option<Ident>,
+        value: Option<Box<Expr>>,
+    },
+    /// Continue with optional label: `continue 'label`
+    Continue {
+        label: Option<Ident>,
+    },
     /// Range: `a..b` or `a..=b`
     Range {
         start: Option<Box<Expr>>,
@@ -946,8 +1112,12 @@ pub enum Expr {
     },
     /// Assignment: `x = value`
     Assign { target: Box<Expr>, value: Box<Expr> },
+    /// Let expression (for if-let, while-let patterns): `let pattern = expr`
+    Let { pattern: Pattern, value: Box<Expr> },
     /// Unsafe block: `unsafe { ... }`
     Unsafe(Block),
+    /// Async block: `async { ... }` or `async move { ... }`
+    Async { block: Block, is_move: bool },
     /// Raw pointer dereference: `*ptr`
     Deref(Box<Expr>),
     /// Address-of: `&expr` or `&mut expr`
@@ -1081,6 +1251,77 @@ pub enum Expr {
         source: Box<Expr>,
         config: Option<Box<Expr>>,
     },
+
+    // ==========================================
+    // Legion Expressions - Holographic Agent Collective
+    // All Legion expressions work with collective memory and multi-agent coordination
+    // ==========================================
+
+    /// Legion field variable: `memory∿`
+    /// The ∿ suffix indicates a LegionField collective memory type
+    LegionFieldVar {
+        name: Ident,
+    },
+
+    /// Superposition: `field∿ ⊕= pattern`
+    /// Pattern joins the collective memory
+    LegionSuperposition {
+        field: Box<Expr>,
+        pattern: Box<Expr>,
+    },
+
+    /// Interference query: `query ⫰ field∿`
+    /// Query the collective memory via interference
+    LegionInterference {
+        query: Box<Expr>,
+        field: Box<Expr>,
+    },
+
+    /// Resonance extraction: `resonance~ |◉`
+    /// Extract agreement peaks from interference pattern
+    LegionResonance {
+        expr: Box<Expr>,
+    },
+
+    /// Distribute: `task ⟁ agent_count`
+    /// Fragment task holographically across agents
+    LegionDistribute {
+        task: Box<Expr>,
+        count: Box<Expr>,
+    },
+
+    /// Gather: `fragments ⟀`
+    /// Unify fragments via interference
+    LegionGather {
+        fragments: Box<Expr>,
+    },
+
+    /// Broadcast: `signal ↠ legion`
+    /// Send signal to all agents
+    LegionBroadcast {
+        signal: Box<Expr>,
+        target: Box<Expr>,
+    },
+
+    /// Consensus: `contributions ⇢`
+    /// Achieve consensus from multiple contributions
+    LegionConsensus {
+        contributions: Box<Expr>,
+    },
+
+    /// Decay: `field∿ ∂= rate`
+    /// Apply decay to collective memory
+    LegionDecay {
+        field: Box<Expr>,
+        rate: Box<Expr>,
+    },
+
+    /// Named argument in function call: `name: value`
+    /// Used in calls like `stack(axis: 0)` or `func(x: 1, y: 2)`
+    NamedArg {
+        name: Ident,
+        value: Box<Expr>,
+    },
 }
 
 /// Inline assembly expression.
@@ -1184,8 +1425,10 @@ pub enum PipeOp {
     /// GPU compute morpheme: `⊛{op}` or `gpu{op}` - execute operation on GPU
     /// Wraps another operation to run it as a compute shader
     Gpu(Box<PipeOp>),
-    /// Method call
-    Method { name: Ident, args: Vec<Expr> },
+    /// Method call with optional turbofish type arguments: `|collect::<String>()`
+    Method { name: Ident, type_args: Option<Vec<TypeExpr>>, args: Vec<Expr> },
+    /// Call an arbitrary expression (e.g., `|self.layer` where layer is a callable)
+    Call(Box<Expr>),
     /// Await
     Await,
     /// Match morpheme: `|match{ Pattern => expr, ... }`
@@ -1502,6 +1745,12 @@ pub enum BinOp {
     Gt,
     Ge,
     Concat,
+    /// Matrix multiplication (@)
+    MatMul,
+    /// Hadamard/element-wise product (⊙)
+    Hadamard,
+    /// Tensor/outer product (⊗)
+    TensorProd,
 }
 
 /// Unary operators.
@@ -1542,6 +1791,8 @@ pub enum Literal {
     /// Route sigil string (ρ"...")
     SigilStringRoute(String),
     Char(char),
+    /// Byte character literal (b'x')
+    ByteChar(u8),
     Bool(bool),
     Null, // null
     /// Special mathematical constants

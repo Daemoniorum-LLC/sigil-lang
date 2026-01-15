@@ -7,6 +7,7 @@ use logos::Logos;
 
 /// Process escape sequences in a string literal.
 /// Converts \n, \t, \r, \\, \", \', \0, \xNN, \u{NNNN} to their actual characters.
+/// Also handles line continuation: \<newline><whitespace> is stripped entirely.
 fn process_escape_sequences(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
@@ -14,6 +15,16 @@ fn process_escape_sequences(s: &str) -> String {
     while let Some(c) = chars.next() {
         if c == '\\' {
             match chars.next() {
+                Some('\n') => {
+                    // Line continuation: skip newline and any leading whitespace
+                    while let Some(&c) = chars.peek() {
+                        if c == ' ' || c == '\t' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                }
                 Some('n') => result.push('\n'),
                 Some('t') => result.push('\t'),
                 Some('r') => result.push('\r'),
@@ -72,8 +83,83 @@ fn process_escape_sequences(s: &str) -> String {
     result
 }
 
+/// Process escape sequences in byte string literals, returning bytes.
+fn process_byte_escape_sequences(s: &str) -> Vec<u8> {
+    let mut result = Vec::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('\n') => {
+                    // Line continuation: skip newline and any leading whitespace
+                    while let Some(&c) = chars.peek() {
+                        if c == ' ' || c == '\t' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                Some('n') => result.push(b'\n'),
+                Some('t') => result.push(b'\t'),
+                Some('r') => result.push(b'\r'),
+                Some('\\') => result.push(b'\\'),
+                Some('"') => result.push(b'"'),
+                Some('\'') => result.push(b'\''),
+                Some('0') => result.push(0),
+                Some('x') => {
+                    // \xNN - two hex digits
+                    let mut hex = String::new();
+                    for _ in 0..2 {
+                        if let Some(&c) = chars.peek() {
+                            if c.is_ascii_hexdigit() {
+                                hex.push(chars.next().unwrap());
+                            }
+                        }
+                    }
+                    if let Ok(val) = u8::from_str_radix(&hex, 16) {
+                        result.push(val);
+                    }
+                }
+                Some(other) => {
+                    // Unknown escape, keep as-is
+                    result.push(b'\\');
+                    if other.is_ascii() {
+                        result.push(other as u8);
+                    }
+                }
+                None => result.push(b'\\'),
+            }
+        } else if c.is_ascii() {
+            result.push(c as u8);
+        }
+        // Non-ASCII in byte strings is ignored (Rust doesn't allow it)
+    }
+    result
+}
+
 /// Callback for delimited raw strings (r#"..."#).
 /// Reads until the closing "# is found.
+/// Callback for block comments: /* ... */
+/// Consumes characters until */ is found
+fn block_comment_callback(lex: &mut logos::Lexer<'_, Token>) -> Option<String> {
+    let remainder = lex.remainder();
+
+    // Find the closing */
+    if let Some(end_pos) = remainder.find("*/") {
+        let content = &remainder[..end_pos];
+        // Bump past content and closing */ (2 chars)
+        lex.bump(end_pos + 2);
+        Some(content.to_string())
+    } else {
+        // No closing */ found - consume rest as comment
+        let len = remainder.len();
+        lex.bump(len);
+        Some(remainder.to_string())
+    }
+}
+
 fn raw_string_delimited_callback(lex: &mut logos::Lexer<'_, Token>) -> Option<String> {
     let remainder = lex.remainder();
 
@@ -142,6 +228,30 @@ fn process_char_escape(s: &str) -> char {
     }
 }
 
+/// Process escape sequences in a byte character literal (b'x').
+fn process_byte_char_escape(s: &str) -> u8 {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some('\\') => match chars.next() {
+            Some('n') => b'\n',
+            Some('t') => b'\t',
+            Some('r') => b'\r',
+            Some('\\') => b'\\',
+            Some('"') => b'"',
+            Some('\'') => b'\'',
+            Some('0') => b'\0',
+            Some('x') => {
+                let hex: String = chars.take(2).collect();
+                u8::from_str_radix(&hex, 16).unwrap_or(b'?')
+            }
+            Some(c) => c as u8,
+            None => b'?',
+        },
+        Some(c) => c as u8,
+        None => b'?',
+    }
+}
+
 /// Token types for Sigil.
 #[derive(Logos, Debug, Clone, PartialEq)]
 #[logos(skip r"[ \t\r\n\f]+")]
@@ -152,6 +262,14 @@ pub enum Token {
 
     #[regex(r"//![^\n]*", |lex| lex.slice().to_string())]
     DocComment(String),
+
+    // Tilde comment style: ~~ ... ~~
+    #[regex(r"~~[^\n]*", |lex| lex.slice().to_string())]
+    TildeComment(String),
+
+    // Block comment: /* ... */ (non-nested)
+    #[token("/*", block_comment_callback)]
+    BlockComment(String),
 
     // === Keywords ===
     #[token("fn")]
@@ -167,6 +285,7 @@ pub enum Token {
     #[token("type")]
     Type,
     #[token("struct")]
+    #[token("sigil")]  // Alternative syntax for struct
     Struct,
     #[token("enum")]
     Enum,
@@ -175,8 +294,10 @@ pub enum Token {
     #[token("impl")]
     Impl,
     #[token("mod")]
+    #[token("scroll")]  // Sigil-native: scroll = mod
     Mod,
     #[token("use")]
+    #[token("invoke")]  // Sigil-native: invoke = use
     Use,
     #[token("pub")]
     Pub,
@@ -188,6 +309,10 @@ pub enum Token {
     Scope,
     #[token("rune")]
     Rune,
+    #[token("macro")]
+    Macro,
+    #[token("macro_rules")]
+    MacroRules,
 
     // Control flow
     #[token("if")]
@@ -223,6 +348,7 @@ pub enum Token {
     #[token("super")]
     Super,
     #[token("crate")]
+    #[token("tome")]  // Sigil-native: tome = crate
     Crate,
     #[token("where")]
     Where,
@@ -256,6 +382,44 @@ pub enum Token {
     Derive,
     #[token("on")]
     On,
+
+    // Plurality keywords (DAEMONIORUM extensions)
+    #[token("alter")]
+    Alter,
+    #[token("switch")]
+    Switch,
+    #[token("headspace")]
+    Headspace,
+    #[token("cocon")]
+    CoCon,
+    #[token("reality")]
+    Reality,
+    #[token("split")]
+    Split,
+    #[token("trigger")]
+    Trigger,
+    #[token("layer")]
+    Layer,
+    #[token("location")]
+    Location,
+    #[token("states")]
+    States,
+    #[token("anima")]
+    Anima,
+    #[token("to")]
+    To,
+    #[token("from")]
+    From,
+
+    // Alter-source markers (compound tokens)
+    #[token("@!")]
+    AlterSourceFronting,
+    #[token("@~")]
+    AlterSourceCoCon,
+    #[token("@?")]
+    AlterSourceDormant,
+    #[token("@‽")]
+    AlterSourceBlended,
 
     // Boolean literals
     #[token("true")]
@@ -329,6 +493,18 @@ pub enum Token {
     #[token("Ξ")]
     Xi, // Next in sequence
 
+    #[token("ψ")]
+    #[token("Ψ")]
+    Psi, // Psychological/mental state
+
+    #[token("θ")]
+    #[token("Θ")]
+    Theta, // Threshold/angle
+
+    #[token("κ")]
+    #[token("Κ")]
+    Kappa, // Callback/continuation
+
     // === Parallel/Concurrency Morphemes ===
     #[token("∥")]
     #[token("parallel")]
@@ -399,6 +575,11 @@ pub enum Token {
     #[token("⋎")]
     BitwiseOrSymbol, // Bitwise OR (U+22CE)
 
+    #[token("⊙")]
+    CircledDot, // Hadamard product / element-wise multiply (U+2299)
+
+    // Note: ⊗ (tensor product) is already defined as Token::Tensor below
+
     // === Type Theory ===
     #[token("∷")]
     TypeAnnotation, // Type annotation (alternative to :)
@@ -467,7 +648,47 @@ pub enum Token {
     // === Evidentiality Markers ===
     // Note: These are handled contextually since ! and ? have other uses
     #[token("‽")]
-    Interrobang, // Paradox/trust boundary
+    Interrobang, // Paradox/trust boundary (U+203D)
+
+    #[token("◊")]
+    Lozenge, // Predicted/speculative (U+25CA) - Token◊
+
+    // === Legion Morphemes (Holographic Agent Collective) ===
+    // From Infernum 2.0 - distributed memory and multi-agent coordination
+
+    #[token("∿")]
+    #[token("legion_field")]
+    LegionField, // Collective memory substrate (U+223F sine wave) - memory∿
+
+    #[token("⫰")]
+    #[token("interfere")]
+    Interfere, // Interference query (U+2AF0) - query ⫰ field∿
+
+    #[token("⟁")]
+    #[token("distribute")]
+    Distribute, // Holographic distribution (U+27C1) - task ⟁ 8
+
+    #[token("⟀")]
+    #[token("gather")]
+    Gather, // Interference gathering (U+27C0) - fragments ⟀
+
+    #[token("↠")]
+    #[token("broadcast")]
+    Broadcast, // One-to-many broadcast (U+21A0) - signal ↠ legion
+
+    #[token("⇢")]
+    #[token("consensus")]
+    Consensus, // Many-to-one consensus (U+21E2) - contributions ⇢
+
+    // Compound Legion operators
+    #[token("⊕=")]
+    DirectSumEq, // Superposition assign - field∿ ⊕= pattern
+
+    #[token("∂=")]
+    PartialEq_, // Decay assign - field∿ ∂= 0.95 (renamed to avoid std conflict)
+
+    #[token("⫰=")]
+    InterfereEq, // Interference assign
 
     // === Affective Markers (Sentiment & Emotion) ===
     // Sentiment polarity
@@ -591,6 +812,10 @@ pub enum Token {
     Amp,
     #[token("^")]
     Caret,
+    #[token("<<=")]
+    ShlEq,
+    #[token(">>=")]
+    ShrEq,
     #[token("<<")]
     Shl,
     #[token(">>")]
@@ -605,6 +830,14 @@ pub enum Token {
     StarEq,
     #[token("/=")]
     SlashEq,
+    #[token("%=")]
+    PercentEq,
+    #[token("|=")]
+    PipeEq,
+    #[token("&=")]
+    AmpEq,
+    #[token("^=")]
+    CaretEq,
     #[token("..")]
     DotDot,
     #[token("..=")]
@@ -709,16 +942,16 @@ pub enum Token {
     GraphQL,
 
     // === Numbers ===
-    // Binary: 0b...
-    #[regex(r"0b[01_]+", |lex| lex.slice().to_string())]
+    // Binary: 0b... with optional type suffix
+    #[regex(r"0b[01_]+(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize)?", |lex| lex.slice().to_string())]
     BinaryLit(String),
 
-    // Octal: 0o...
-    #[regex(r"0o[0-7_]+", |lex| lex.slice().to_string())]
+    // Octal: 0o... with optional type suffix
+    #[regex(r"0o[0-7_]+(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize)?", |lex| lex.slice().to_string())]
     OctalLit(String),
 
-    // Hex: 0x...
-    #[regex(r"0x[0-9a-fA-F_]+", |lex| lex.slice().to_string())]
+    // Hex: 0x... with optional type suffix
+    #[regex(r"0x[0-9a-fA-F_]+(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize)?", |lex| lex.slice().to_string())]
     HexLit(String),
 
     // Vigesimal: 0v... (base 20)
@@ -733,17 +966,19 @@ pub enum Token {
     #[regex(r"0z[0-9a-bA-B_]+", |lex| lex.slice().to_string())]
     DuodecimalLit(String),
 
-    // Float: 123.456 or 1.23e10
-    #[regex(r"[0-9][0-9_]*\.[0-9][0-9_]*([eE][+-]?[0-9_]+)?", |lex| lex.slice().to_string())]
+    // Float: 123.456 or 1.23e10 or 1e-15 (with or without decimal point if exponent present)
+    // Optional type suffix: f16, f32, f64, f128
+    #[regex(r"([0-9][0-9_]*\.[0-9][0-9_]*([eE][+-]?[0-9_]+)?|[0-9][0-9_]*[eE][+-]?[0-9_]+)(f16|f32|f64|f128)?", |lex| lex.slice().to_string())]
     FloatLit(String),
 
-    // Integer: 123
-    #[regex(r"[0-9][0-9_]*", |lex| lex.slice().to_string())]
+    // Integer: 123 with optional type suffix (i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize)
+    #[regex(r"[0-9][0-9_]*(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize)?", |lex| lex.slice().to_string())]
     IntLit(String),
 
     // === Strings ===
     // Regular string with escape sequence processing
-    #[regex(r#""([^"\\]|\\.)*""#, |lex| {
+    // Note: \\(.|\n) handles both regular escapes and line continuation (\ at end of line)
+    #[regex(r#""([^"\\]|\\(.|\n))*""#, |lex| {
         let s = lex.slice();
         let inner = &s[1..s.len()-1];
         process_escape_sequences(inner)
@@ -758,7 +993,7 @@ pub enum Token {
     #[regex(r#"b"([^"\\]|\\.)*""#, |lex| {
         let s = lex.slice();
         let inner = &s[2..s.len()-1];
-        inner.as_bytes().to_vec()
+        process_byte_escape_sequences(inner)
     })]
     ByteStringLit(Vec<u8>),
 
@@ -791,15 +1026,25 @@ pub enum Token {
     SigilStringRoute(String),
 
     // Char literal with escape sequence processing
-    #[regex(r"'([^'\\]|\\.)'", |lex| {
+    // Matches: single char, hex escape \xNN, unicode escape \u{N...}, or simple escape \c
+    #[regex(r"'([^'\\]|\\x[0-9a-fA-F]{2}|\\u\{[0-9a-fA-F]{1,6}\}|\\.)'", |lex| {
         let s = lex.slice();
         let inner = &s[1..s.len()-1];
         process_char_escape(inner)
     })]
     CharLit(char),
 
-    // Raw string (no escape processing)
-    #[regex(r#"r"[^"]*""#, |lex| {
+    // Byte char literal (b'x' or b'\n')
+    #[regex(r"b'([^'\\]|\\x[0-9a-fA-F]{2}|\\.)'", |lex| {
+        let s = lex.slice();
+        // Extract the character between b' and '
+        let inner = &s[2..s.len()-1];
+        process_byte_char_escape(inner)
+    })]
+    ByteCharLit(u8),
+
+    // Raw string (no escape processing, but allows \" for literal quotes in patterns)
+    #[regex(r#"r"([^"\\]|\\.)*""#, |lex| {
         let s = lex.slice();
         s[2..s.len()-1].to_string()
     })]
@@ -809,8 +1054,14 @@ pub enum Token {
     #[token(r##"r#""##, raw_string_delimited_callback)]
     RawStringDelimited(String),
 
+    // === Lifetime/Label (for loop labels like 'outer: loop { break 'outer }) ===
+    #[regex(r"'[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice()[1..].to_string())]
+    Lifetime(String),
+
     // === Identifiers ===
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
+    // Includes Greek letters for polysynthetic identifiers like compute_ψ_state
+    // Greek letters (both cases): αΑ, βΒ, γΓ, δΔ, εΕ, ζΖ, ηΗ, θΘ, ιΙ, κΚ, λΛ, μΜ, νΝ, ξΞ, οΟ, πΠ, ρΡ, σΣ, τΤ, υΥ, φΦ, χΧ, ψΨ, ωΩ
+    #[regex(r"[a-zA-Z_αΑβΒγΓδΔεΕζΖηΗθΘιΙκΚλΛμΜνΝξΞοΟπΠρΡσΣτΤυΥφΦχΧψΨωΩ][a-zA-Z0-9_αΑβΒγΓδΔεΕζΖηΗθΘιΙκΚλΛμΜνΝξΞοΟπΠρΡσΣτΤυΥφΦχΧψΨωΩ]*", |lex| lex.slice().to_string())]
     Ident(String),
 
     // === Rune annotation ===
@@ -851,6 +1102,35 @@ impl Token {
                 | Token::Return
                 | Token::Yield
                 | Token::Await
+        ) || self.is_plurality_keyword()
+    }
+
+    pub fn is_plurality_keyword(&self) -> bool {
+        matches!(
+            self,
+            Token::Alter
+                | Token::Switch
+                | Token::Headspace
+                | Token::CoCon
+                | Token::Reality
+                | Token::Split
+                | Token::Trigger
+                | Token::Layer
+                | Token::Location
+                | Token::States
+                | Token::Anima
+                | Token::To
+                | Token::From
+        )
+    }
+
+    pub fn is_alter_source(&self) -> bool {
+        matches!(
+            self,
+            Token::AlterSourceFronting
+                | Token::AlterSourceCoCon
+                | Token::AlterSourceDormant
+                | Token::AlterSourceBlended
         )
     }
 
@@ -923,7 +1203,29 @@ impl Token {
     pub fn is_evidentiality(&self) -> bool {
         matches!(
             self,
-            Token::Bang | Token::Question | Token::Tilde | Token::Interrobang
+            Token::Bang | Token::Question | Token::Tilde | Token::Interrobang | Token::Lozenge
+        )
+    }
+
+    pub fn is_legion_morpheme(&self) -> bool {
+        matches!(
+            self,
+            Token::LegionField      // ∿ - collective memory
+                | Token::DirectSum  // ⊕ - superposition
+                | Token::Interfere  // ⫰ - interference
+                | Token::ConfidenceHigh  // ◉ - resonance (dual-purpose)
+                | Token::Distribute // ⟁ - holographic distribution
+                | Token::Gather     // ⟀ - interference gathering
+                | Token::Broadcast  // ↠ - one-to-many
+                | Token::Consensus  // ⇢ - many-to-one
+                | Token::Partial    // ∂ - decay
+        )
+    }
+
+    pub fn is_legion_assign(&self) -> bool {
+        matches!(
+            self,
+            Token::DirectSumEq | Token::PartialEq_ | Token::InterfereEq
         )
     }
 
@@ -987,22 +1289,20 @@ impl Token {
 /// Lexer wrapping Logos for Sigil.
 pub struct Lexer<'a> {
     inner: logos::Lexer<'a, Token>,
-    peeked: Option<Option<(Token, Span)>>,
+    /// Buffer for lookahead tokens (supports multi-token peek)
+    buffer: Vec<Option<(Token, Span)>>,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
         Self {
             inner: Token::lexer(source),
-            peeked: None,
+            buffer: Vec::new(),
         }
     }
 
-    pub fn next_token(&mut self) -> Option<(Token, Span)> {
-        if let Some(peeked) = self.peeked.take() {
-            return peeked;
-        }
-
+    /// Read the next token from the underlying logos lexer
+    fn read_next(&mut self) -> Option<(Token, Span)> {
         match self.inner.next() {
             Some(Ok(token)) => {
                 let span = self.inner.span();
@@ -1010,17 +1310,33 @@ impl<'a> Lexer<'a> {
             }
             Some(Err(_)) => {
                 // Skip invalid tokens and try next
-                self.next_token()
+                self.read_next()
             }
             None => None,
         }
     }
 
-    pub fn peek(&mut self) -> Option<&(Token, Span)> {
-        if self.peeked.is_none() {
-            self.peeked = Some(self.next_token());
+    pub fn next_token(&mut self) -> Option<(Token, Span)> {
+        if !self.buffer.is_empty() {
+            // Return from buffer (front = next token)
+            // Each buffer element is Option<(Token, Span)> where None = EOF
+            return self.buffer.remove(0);
         }
-        self.peeked.as_ref().and_then(|p| p.as_ref())
+        self.read_next()
+    }
+
+    pub fn peek(&mut self) -> Option<&(Token, Span)> {
+        self.peek_n(0)
+    }
+
+    /// Peek n tokens ahead (0 = next token, 1 = token after that, etc.)
+    pub fn peek_n(&mut self, n: usize) -> Option<&(Token, Span)> {
+        // Fill buffer up to position n
+        while self.buffer.len() <= n {
+            let token = self.read_next();
+            self.buffer.push(token);
+        }
+        self.buffer.get(n).and_then(|opt| opt.as_ref())
     }
 
     pub fn span(&self) -> Span {
@@ -1165,6 +1481,19 @@ mod tests {
         assert!(matches!(lexer.next_token(), Some((Token::Parallel, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Gpu, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Gpu, _))));
+    }
+
+    #[test]
+    fn test_lifetime_labels() {
+        // Test loop labels
+        let mut lexer = Lexer::new("'outer: loop { break 'outer }");
+        assert!(matches!(lexer.next_token(), Some((Token::Lifetime(s), _)) if s == "outer"));
+        assert!(matches!(lexer.next_token(), Some((Token::Colon, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Loop, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::LBrace, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Break, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Lifetime(s), _)) if s == "outer"));
+        assert!(matches!(lexer.next_token(), Some((Token::RBrace, _))));
     }
 
     // ==================== STRING LITERAL TESTS ====================

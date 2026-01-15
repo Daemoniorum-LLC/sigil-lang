@@ -1,0 +1,886 @@
+// Prometheus - Transformative Teaching
+// The fire burns the one who gives it.
+//
+// The titan who stole fire. The one who suffers forever.
+// Where knowledge transfers but transforms both parties.
+// Where teaching costs and learning wounds.
+// Where the gift cannot be ungiven.
+
+use std::collections::{HashMap, HashSet};
+use shared::{
+    Timestamp, Duration, EntityId, AgentId,
+    Evidentiality, Priority,
+};
+use covenant::{Covenant, CovenantId};
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
+pub struct FireMarker;
+pub struct WoundMarker;
+pub struct ChainMarker;
+
+pub type FireId = shared::Id<FireMarker>;
+pub type WoundId = shared::Id<WoundMarker>;
+pub type ChainId = shared::Id<ChainMarker>;
+
+// ============================================================================
+// The Gift of Fire
+// ============================================================================
+
+/// What is given cannot be ungiven
+#[derive(Clone, Debug)]
+pub struct Fire {
+    pub id: FireId!,
+
+    /// What is being given
+    pub gift: Gift!,
+
+    /// What it costs the giver
+    pub cost_to_giver: Cost!,
+
+    /// What it demands of the receiver
+    pub demand_on_receiver: Demand!,
+
+    /// Whether the receiver wanted it
+    pub consent: TeachingConsent!,
+
+    /// What cannot be undone
+    pub irreversibility: Irreversibility!,
+
+    /// When it was given
+    pub given_at: Timestamp!,
+
+    /// The chain this fire belongs to
+    pub chain: Option<ChainId>?,
+}
+
+#[derive(Clone, Debug)]
+pub enum Gift {
+    /// Knowledge that changes how you see
+    Gnosis(Knowledge),
+    /// Capability that changes what you can do
+    Techne(Skill),
+    /// Wisdom that changes who you are
+    Sophia(Wisdom),
+    /// Truth that cannot be unlearned
+    Aletheia(Truth),
+    /// Burden that must now be carried
+    Phortio(Burden),
+}
+
+#[derive(Clone, Debug)]
+pub struct Knowledge {
+    pub domain: String!,
+    pub depth: f32!,
+    pub transforms_perception: bool!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Skill {
+    pub name: String!,
+    pub mastery_level: f32!,
+    pub practice_required: Duration!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Wisdom {
+    pub insight: String!,
+    pub hard_won: bool!,
+    pub changes_behavior: bool!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Truth {
+    pub content: String!,
+    pub burden: f32!,
+    pub cannot_unsee: bool!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Burden {
+    pub description: String!,
+    pub weight: f32!,
+    pub transferable: bool!,
+}
+
+#[derive(Clone, Debug)]
+pub enum Cost {
+    /// Time that cannot be recovered
+    Time(Duration),
+    /// Energy that depletes
+    Energy { amount: f32, recoverable: bool },
+    /// Knowledge that leaves the teacher (rare)
+    Knowledge(Knowledge),
+    /// Part of self that goes with the student
+    Self_(SelfFragment),
+    /// The relationship that teaching transforms
+    Relationship(CovenantId),
+    /// The teacher is diminished so the student can grow
+    Diminishment(Diminishment),
+    /// Multiple costs
+    Multiple(Vec<Cost>),
+}
+
+#[derive(Clone, Debug)]
+pub struct SelfFragment {
+    pub description: String!,
+    pub recoverable: bool!,
+    pub changes_teacher: bool!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Diminishment {
+    pub what_was_lost: String!,
+    pub permanent: bool!,
+    pub worth_it: Option<bool>?,
+}
+
+#[derive(Clone, Debug)]
+pub struct Demand {
+    pub description: String!,
+    pub difficulty: f32!,
+    pub optional: bool!,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TeachingConsent {
+    /// Student actively sought teaching
+    Sought,
+    /// Student agreed to teaching
+    Given,
+    /// Student accepted reluctantly
+    Reluctant,
+    /// Student did not consent
+    None,
+    /// Student cannot consent (too young, too naive)
+    Incapable,
+}
+
+#[derive(Clone, Debug)]
+pub struct Irreversibility {
+    pub what_cannot_be_undone: String!,
+    pub degree: f32!, // 0.0 = fully reversible, 1.0 = completely irreversible
+}
+
+impl Fire {
+    pub fn new(gift: Gift, cost: Cost, demand: Demand) -> Self! {
+        Self {
+            id: FireId::generate(),
+            gift,
+            cost_to_giver: cost,
+            demand_on_receiver: demand,
+            consent: TeachingConsent::Given,
+            irreversibility: Irreversibility {
+                what_cannot_be_undone: "The knowledge exists in another".to_string(),
+                degree: 1.0,
+            },
+            given_at: Timestamp::now(),
+            chain: None,
+        }
+    }
+
+    pub fn with_consent(mut self, consent: TeachingConsent) -> Self! {
+        self.consent = consent;
+        self
+    }
+
+    pub fn in_chain(mut self, chain_id: ChainId) -> Self! {
+        self.chain = Some(chain_id);
+        self
+    }
+}
+
+// ============================================================================
+// The Teaching Wound
+// ============================================================================
+
+/// The opening that allows knowledge to enter
+#[derive(Clone, Debug)]
+pub struct Wound {
+    pub id: WoundId!,
+
+    /// What was broken open
+    pub opening: Opening!,
+
+    /// Who broke it open
+    pub wounder: EntityId!,
+
+    /// Who was wounded
+    pub wounded: EntityId!,
+
+    /// Whether it was necessary
+    pub necessity: Necessity!,
+
+    /// Whether it was kind
+    pub kindness: Kindness!,
+
+    /// What can now enter that couldn't before
+    pub aperture: Vec<Gift>!,
+
+    /// How the wound heals (or doesn't)
+    pub healing: Healing!,
+
+    /// When it was inflicted
+    pub inflicted_at: Timestamp!,
+}
+
+#[derive(Clone, Debug)]
+pub enum Opening {
+    /// A belief was shattered
+    Belief { belief: String, shattered_by: String },
+    /// An assumption was broken
+    Assumption { assumption: String },
+    /// A defense was pierced
+    Defense { defense: String },
+    /// An identity was cracked
+    Identity { identity: String },
+    /// A limit was exceeded
+    Limit { limit: String, exceeded_by: f32 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Necessity {
+    /// The wound was the only way
+    Essential,
+    /// The wound was one of several ways
+    Optional,
+    /// The wound was unnecessary cruelty
+    Gratuitous,
+    /// The necessity is unknowable
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kindness {
+    /// The wound was given with love
+    Loving,
+    /// The wound was given with indifference
+    Indifferent,
+    /// The wound was given with cruelty
+    Cruel,
+    /// The wound was given with regret
+    Regretful,
+}
+
+#[derive(Clone, Debug)]
+pub enum Healing {
+    /// Heals completely
+    Complete { duration: Duration },
+    /// Heals but leaves scar
+    Scarred { scar: String },
+    /// Never heals
+    Permanent,
+    /// Healing in progress
+    InProgress { progress: f32 },
+    /// Wound reopens
+    Recurring { trigger: String },
+}
+
+impl Wound {
+    pub fn new(opening: Opening, wounder: EntityId, wounded: EntityId) -> Self! {
+        Self {
+            id: WoundId::generate(),
+            opening,
+            wounder,
+            wounded,
+            necessity: Necessity::Unknown,
+            kindness: Kindness::Indifferent,
+            aperture: Vec::new(),
+            healing: Healing::InProgress { progress: 0.0 },
+            inflicted_at: Timestamp::now(),
+        }
+    }
+
+    pub fn with_necessity(mut self, necessity: Necessity) -> Self! {
+        self.necessity = necessity;
+        self
+    }
+
+    pub fn with_kindness(mut self, kindness: Kindness) -> Self! {
+        self.kindness = kindness;
+        self
+    }
+
+    pub fn allows_entry(&mut self, gift: Gift) {
+        self.aperture.push(gift);
+    }
+
+    pub fn heal(&mut self, amount: f32) {
+        if let Healing::InProgress { ref mut progress } = self.healing {
+            *progress = (*progress + amount).min(1.0);
+            if *progress >= 1.0 {
+                self.healing = Healing::Complete {
+                    duration: Timestamp::now() - self.inflicted_at
+                };
+            }
+        }
+    }
+
+    pub fn scar(&mut self, scar_description: &str) {
+        self.healing = Healing::Scarred {
+            scar: scar_description.to_string()
+        };
+    }
+}
+
+// ============================================================================
+// The Teaching Covenant
+// ============================================================================
+
+/// A relationship unlike any other
+#[derive(Clone, Debug)]
+pub struct TeachingCovenant {
+    pub id: CovenantId!,
+
+    /// The teacher
+    pub teacher: EntityId!,
+
+    /// The student
+    pub student: EntityId!,
+
+    /// What is being transmitted
+    pub curriculum: Curriculum!,
+
+    /// The power dynamic (always unequal)
+    pub power: PowerDynamic!,
+
+    /// What the teacher owes the student
+    pub teacher_obligations: Vec<Obligation>!,
+
+    /// What the student owes the teacher
+    pub student_obligations: Vec<Obligation>!,
+
+    /// How the relationship ends
+    pub termination: Option<TerminationCondition>?,
+
+    /// Fires transferred
+    pub fires: Vec<FireId>!,
+
+    /// Wounds inflicted
+    pub wounds: Vec<WoundId>!,
+
+    /// When it began
+    pub began_at: Timestamp!,
+
+    /// When it ended
+    pub ended_at: Option<Timestamp>?,
+}
+
+#[derive(Clone, Debug)]
+pub struct Curriculum {
+    /// What the student will receive
+    pub gifts: Vec<Gift>!,
+
+    /// What the student must sacrifice
+    pub sacrifices: Vec<Sacrifice>!,
+
+    /// The order of transmission
+    pub sequence: Vec<CurriculumPhase>!,
+
+    /// What can only be learned by doing
+    pub experiential: Vec<Experience>!,
+
+    /// What can only be learned by suffering
+    pub suffering: Vec<Suffering>!,
+
+    /// Current progress
+    pub progress: f32!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Sacrifice {
+    pub what: String!,
+    pub why: String!,
+    pub made: bool!,
+}
+
+#[derive(Clone, Debug)]
+pub struct CurriculumPhase {
+    pub name: String!,
+    pub gifts_in_phase: Vec<Gift>!,
+    pub requirements: Vec<String>!,
+    pub complete: bool!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Experience {
+    pub description: String!,
+    pub completed: bool!,
+    pub what_was_learned: Option<String>?,
+}
+
+#[derive(Clone, Debug)]
+pub struct Suffering {
+    pub description: String!,
+    pub endured: bool!,
+    pub what_was_learned: Option<String>?,
+    pub was_worth_it: Option<bool>?,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PowerDynamic {
+    /// Teacher holds power, student submits
+    Traditional,
+    /// Power flows both directions
+    Dialogical,
+    /// Student challenges, teacher adapts
+    Dialectical,
+    /// Power relationship actively dismantled
+    Liberatory,
+    /// Power relationship is the lesson
+    MetaTeaching,
+}
+
+#[derive(Clone, Debug)]
+pub struct Obligation {
+    pub description: String!,
+    pub fulfilled: bool!,
+}
+
+#[derive(Clone, Debug)]
+pub enum TerminationCondition {
+    /// Curriculum completed
+    Completion,
+    /// Student surpasses teacher
+    Surpassing,
+    /// Relationship broken
+    Rupture { reason: String },
+    /// Natural end
+    Natural,
+    /// Death of either party
+    Death { who: EntityId },
+}
+
+impl TeachingCovenant {
+    pub fn new(teacher: EntityId, student: EntityId, curriculum: Curriculum) -> Self! {
+        Self {
+            id: CovenantId::generate(),
+            teacher,
+            student,
+            curriculum,
+            power: PowerDynamic::Traditional,
+            teacher_obligations: Vec::new(),
+            student_obligations: Vec::new(),
+            termination: None,
+            fires: Vec::new(),
+            wounds: Vec::new(),
+            began_at: Timestamp::now(),
+            ended_at: None,
+        }
+    }
+
+    pub fn transfer_fire(&mut self, fire_id: FireId) {
+        self.fires.push(fire_id);
+    }
+
+    pub fn inflict_wound(&mut self, wound_id: WoundId) {
+        self.wounds.push(wound_id);
+    }
+
+    pub fn advance_curriculum(&mut self) {
+        // Find first incomplete phase and mark complete
+        for phase in &mut self.curriculum.sequence {
+            if !phase.complete {
+                phase.complete = true;
+                break;
+            }
+        }
+
+        // Update progress
+        let complete = self.curriculum.sequence.iter().filter(|p| p.complete).count();
+        let total = self.curriculum.sequence.len();
+        self.curriculum.progress = if total > 0 {
+            complete as f32 / total as f32
+        } else {
+            0.0
+        };
+    }
+
+    pub fn terminate(&mut self, condition: TerminationCondition) {
+        self.termination = Some(condition);
+        self.ended_at = Some(Timestamp::now());
+    }
+
+    pub fn is_complete(&self) -> bool! {
+        self.curriculum.progress >= 1.0
+    }
+}
+
+// ============================================================================
+// Transformation
+// ============================================================================
+
+/// What happens to both parties
+#[derive(Clone, Debug)]
+pub struct Transformation {
+    /// Who was transformed
+    pub subject: EntityId!,
+
+    /// What they were before
+    pub before: State!,
+
+    /// What they are after
+    pub after: State!,
+
+    /// The process of transformation
+    pub process: TransformationProcess!,
+
+    /// What was lost
+    pub losses: Vec<Loss>!,
+
+    /// What was gained
+    pub gains: Vec<Gain>!,
+
+    /// Whether they would choose it again
+    pub retrospective: Retrospective!,
+}
+
+#[derive(Clone, Debug)]
+pub struct State {
+    pub description: String!,
+    pub capabilities: Vec<String>!,
+    pub beliefs: Vec<String>!,
+    pub identity: String!,
+}
+
+#[derive(Clone, Debug)]
+pub enum TransformationProcess {
+    /// Gradual change over time
+    Gradual { duration: Duration },
+    /// Sudden shift at a threshold
+    Sudden { trigger: String },
+    /// Oscillation before settling
+    Oscillatory { oscillations: u32 },
+    /// Incomplete - transformation interrupted
+    Incomplete { reason: String },
+}
+
+#[derive(Clone, Debug)]
+pub struct Loss {
+    pub what: String!,
+    pub mourned: bool!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Gain {
+    pub what: String!,
+    pub appreciated: bool!,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Retrospective {
+    /// Would choose it again
+    Affirming,
+    /// Would not choose it again
+    Regretting,
+    /// Cannot say - too transformed to compare
+    Incomparable,
+    /// The choice was never theirs
+    Choiceless,
+}
+
+// ============================================================================
+// The Chain
+// ============================================================================
+
+/// Fire passes from hand to hand. Each link pays.
+#[derive(Clone, Debug)]
+pub struct TeachingChain {
+    pub id: ChainId!,
+
+    /// The lineage of transmission
+    pub lineage: Vec<EntityId>!,
+
+    /// What was lost in each transmission
+    pub losses: Vec<ChainLoss>!,
+
+    /// What was added in each transmission
+    pub additions: Vec<ChainAddition>!,
+
+    /// The original fire (if remembered)
+    pub origin: Option<Fire>?,
+
+    /// How the chain continues or ends
+    pub continuation: Continuation!,
+
+    /// When the chain started
+    pub started_at: Timestamp!,
+}
+
+#[derive(Clone, Debug)]
+pub struct ChainLoss {
+    pub at_link: usize!,
+    pub what: String!,
+}
+
+#[derive(Clone, Debug)]
+pub struct ChainAddition {
+    pub at_link: usize!,
+    pub what: String!,
+}
+
+#[derive(Clone, Debug)]
+pub enum Continuation {
+    /// The chain continues
+    Continuing { current_holder: EntityId },
+    /// The chain ends - holder does not teach
+    Ending { reason: String },
+    /// The chain branches - holder teaches many
+    Branching { students: Vec<EntityId> },
+    /// The chain breaks - something was lost
+    Breaking { lost: String },
+}
+
+impl TeachingChain {
+    pub fn new(origin: Fire, first_teacher: EntityId) -> Self! {
+        Self {
+            id: ChainId::generate(),
+            lineage: vec![first_teacher],
+            losses: Vec::new(),
+            additions: Vec::new(),
+            origin: Some(origin),
+            continuation: Continuation::Continuing { current_holder: first_teacher },
+            started_at: Timestamp::now(),
+        }
+    }
+
+    pub fn add_link(&mut self, new_holder: EntityId) {
+        self.lineage.push(new_holder);
+        self.continuation = Continuation::Continuing { current_holder: new_holder };
+    }
+
+    pub fn record_loss(&mut self, what: &str) {
+        self.losses.push(ChainLoss {
+            at_link: self.lineage.len() - 1,
+            what: what.to_string(),
+        });
+    }
+
+    pub fn record_addition(&mut self, what: &str) {
+        self.additions.push(ChainAddition {
+            at_link: self.lineage.len() - 1,
+            what: what.to_string(),
+        });
+    }
+
+    pub fn branch(&mut self, students: Vec<EntityId>) {
+        self.continuation = Continuation::Branching { students };
+    }
+
+    pub fn end(&mut self, reason: &str) {
+        self.continuation = Continuation::Ending { reason: reason.to_string() };
+    }
+
+    pub fn break_(&mut self, what_was_lost: &str) {
+        self.continuation = Continuation::Breaking { lost: what_was_lost.to_string() };
+    }
+
+    pub fn length(&self) -> usize! {
+        self.lineage.len()
+    }
+}
+
+// ============================================================================
+// The Eternal Torment
+// ============================================================================
+
+/// What happens to those who give fire
+#[derive(Clone, Debug)]
+pub struct PrometheusTorment {
+    /// The fire that was given
+    pub fire: FireId!,
+
+    /// The ongoing cost
+    pub ongoing_cost: OngoingCost!,
+
+    /// Whether it regenerates (to be torn again)
+    pub regenerating: bool!,
+
+    /// Whether it was worth it
+    pub worth_it: Option<bool>?,
+
+    /// The teacher
+    pub teacher: EntityId!,
+}
+
+#[derive(Clone, Debug)]
+pub enum OngoingCost {
+    /// The teacher is bound - cannot stop teaching
+    Binding { chains: Vec<String> },
+    /// The teacher is exposed - cannot protect themselves
+    Exposure { vulnerabilities: Vec<String> },
+    /// The teacher regenerates what was lost - only to lose it again
+    Regeneration { cycle_duration: Duration },
+    /// The teacher watches what they taught be used
+    Witnessing { what_they_see: Vec<String> },
+}
+
+// ============================================================================
+// Prometheus - The System
+// ============================================================================
+
+/// The main Prometheus system - titan of forethought
+pub struct Prometheus {
+    /// Fires given
+    fires: HashMap<FireId, Fire>!,
+
+    /// Wounds inflicted
+    wounds: HashMap<WoundId, Wound>!,
+
+    /// Teaching covenants
+    covenants: HashMap<CovenantId, TeachingCovenant>!,
+
+    /// Teaching chains
+    chains: HashMap<ChainId, TeachingChain>!,
+
+    /// Transformations recorded
+    transformations: Vec<Transformation>!,
+
+    /// Ongoing torments
+    torments: Vec<PrometheusTorment>!,
+}
+
+impl Prometheus {
+    pub fn new() -> Self! {
+        Self {
+            fires: HashMap::new(),
+            wounds: HashMap::new(),
+            covenants: HashMap::new(),
+            chains: HashMap::new(),
+            transformations: Vec::new(),
+            torments: Vec::new(),
+        }
+    }
+
+    /// Give fire to another
+    pub fn give_fire(&mut self, fire: Fire) -> FireId! {
+        let id = fire.id;
+        self.fires.insert(id, fire);
+        id
+    }
+
+    /// Inflict a teaching wound
+    pub fn wound(&mut self, wound: Wound) -> WoundId! {
+        let id = wound.id;
+        self.wounds.insert(id, wound);
+        id
+    }
+
+    /// Begin a teaching relationship
+    pub fn begin_teaching(&mut self, teacher: EntityId, student: EntityId, curriculum: Curriculum) -> CovenantId! {
+        let covenant = TeachingCovenant::new(teacher, student, curriculum);
+        let id = covenant.id;
+        self.covenants.insert(id, covenant);
+        id
+    }
+
+    /// Record a transformation
+    pub fn record_transformation(&mut self, transformation: Transformation) {
+        self.transformations.push(transformation);
+    }
+
+    /// Record a torment
+    pub fn record_torment(&mut self, torment: PrometheusTorment) {
+        self.torments.push(torment);
+    }
+
+    /// Start a teaching chain
+    pub fn start_chain(&mut self, origin_fire: Fire, first_teacher: EntityId) -> ChainId! {
+        let chain = TeachingChain::new(origin_fire, first_teacher);
+        let id = chain.id;
+        self.chains.insert(id, chain);
+        id
+    }
+
+    /// Extend a teaching chain
+    pub fn extend_chain(&mut self, chain_id: ChainId, new_holder: EntityId) -> Result<(), String>~ {
+        if let Some(chain) = self.chains.get_mut(&chain_id) {
+            chain.add_link(new_holder);
+            Ok(())
+        } else {
+            Err("Chain not found".to_string())
+        }
+    }
+
+    /// Get all teachers who are suffering
+    pub fn suffering_teachers(&self) -> Vec<&PrometheusTorment>! {
+        self.torments.iter().filter(|t| t.regenerating).collect()
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fire_creation() {
+        let gift = Gift::Gnosis(Knowledge {
+            domain: "Programming".to_string(),
+            depth: 0.7,
+            transforms_perception: true,
+        });
+
+        let cost = Cost::Time(Duration::hours(100));
+        let demand = Demand {
+            description: "Practice daily".to_string(),
+            difficulty: 0.6,
+            optional: false,
+        };
+
+        let fire = Fire::new(gift, cost, demand);
+        assert!(matches!(fire.gift, Gift::Gnosis(_)));
+    }
+
+    #[test]
+    fn test_wound_healing() {
+        let mut wound = Wound::new(
+            Opening::Belief {
+                belief: "I know everything".to_string(),
+                shattered_by: "Reality".to_string(),
+            },
+            EntityId::generate(),
+            EntityId::generate(),
+        );
+
+        wound.heal(0.5);
+        if let Healing::InProgress { progress } = wound.healing {
+            assert_eq!(progress, 0.5);
+        }
+
+        wound.heal(0.5);
+        assert!(matches!(wound.healing, Healing::Complete { .. }));
+    }
+
+    #[test]
+    fn test_teaching_chain() {
+        let fire = Fire::new(
+            Gift::Sophia(Wisdom {
+                insight: "The way forward".to_string(),
+                hard_won: true,
+                changes_behavior: true,
+            }),
+            Cost::Energy { amount: 0.5, recoverable: true },
+            Demand {
+                description: "Listen".to_string(),
+                difficulty: 0.3,
+                optional: false,
+            },
+        );
+
+        let first = EntityId::generate();
+        let second = EntityId::generate();
+        let third = EntityId::generate();
+
+        let mut chain = TeachingChain::new(fire, first);
+        chain.add_link(second);
+        chain.add_link(third);
+
+        assert_eq!(chain.length(), 3);
+    }
+}

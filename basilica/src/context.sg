@@ -1,0 +1,88 @@
+//! Request Context
+//!
+//! The Context provides access to shared infrastructure during request handling.
+
+use shared::{Timestamp, AgentId, HumanId};
+use crate::evidence::EvidenceContext;
+use crate::service::{ServiceRegistry, Engram, Covenant, Oracle};
+
+/// Request context providing access to shared infrastructure
+pub struct Context<'a> {
+    /// Request ID
+    pub request_id: [u8; 16],
+
+    /// Request start time
+    pub started_at: Timestamp,
+
+    /// Shared memory
+    memory: Option<&'a Engram>,
+
+    /// Shared covenant
+    covenant: Option<&'a Covenant>,
+
+    /// Shared oracle
+    oracle: Option<&'a Oracle>,
+
+    /// Service registry
+    services: &'a ServiceRegistry,
+
+    /// Evidence tracking
+    evidence: EvidenceContext,
+}
+
+impl<'a> Context<'a> {
+    /// Create a new context
+    pub fn new(
+        request_id: [u8; 16],
+        memory: Option<&'a Engram>,
+        covenant: Option<&'a Covenant>,
+        oracle: Option<&'a Oracle>,
+        services: &'a ServiceRegistry,
+    ) -> Self {
+        Self {
+            request_id,
+            started_at: Timestamp::now(),
+            memory,
+            covenant,
+            oracle,
+            services,
+            evidence: EvidenceContext::new(),
+        }
+    }
+
+    /// Get shared memory
+    pub fn memory(&self) -> Option<&Engram> {
+        self.memory
+    }
+
+    /// Get shared covenant
+    pub fn covenant(&self) -> Option<&Covenant> {
+        self.covenant
+    }
+
+    /// Get shared oracle
+    pub fn oracle(&self) -> Option<&Oracle> {
+        self.oracle
+    }
+
+    /// Get a service by type
+    pub fn service<S: crate::service::Service + 'static>(&self) -> Option<&S> {
+        let name = std::any::type_name::<S>();
+        self.services.get(name)
+    }
+
+    /// Get evidence context
+    pub fn evidence(&self) -> &EvidenceContext {
+        &self.evidence
+    }
+
+    /// Get mutable evidence context
+    pub fn evidence_mut(&mut self) -> &mut EvidenceContext {
+        &mut self.evidence
+    }
+
+    /// Get request duration so far
+    pub fn elapsed(&self) -> shared::Duration {
+        self.started_at.elapsed()
+    }
+}

@@ -1,0 +1,16 @@
+// Test: If expression without else
+// Spec: 02-SYNTAX.md § 4.1 Conditional Expressions
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate if without else works correctly.
+//
+// Expected behavior:
+// Should print 42
+
+fn main() {
+    let x: !i32 = 42;
+    if x > 0 {
+        println(x);
+    }
+}

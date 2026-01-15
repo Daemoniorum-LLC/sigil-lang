@@ -1,0 +1,26 @@
+// Test: Inverse trigonometric functions
+// Spec: 05-MATHEMATICS.md § 2.2 Inverse Trigonometry
+// Priority: P1 - Standard Feature
+
+fn main() {
+    // asin(0) = 0
+    println(asin(0.0));
+
+    // acos(1) = 0
+    println(acos(1.0));
+
+    // atan(0) = 0
+    println(atan(0.0));
+
+    // asin(1) = PI/2
+    let result: !f64 = asin(1.0);
+    let pi: !f64 = PI();
+    let expected: !f64 = pi / 2.0;
+    // Check if close (within 0.0001)
+    let diff: !f64 = abs(result - expected);
+    if diff < 0.0001 {
+        println("pass");
+    } else {
+        println("fail");
+    }
+}

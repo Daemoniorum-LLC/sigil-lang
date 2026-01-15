@@ -1,0 +1,676 @@
+//! Morpheme Query Builder
+//!
+//! Queries compose from morpheme operators (τ, φ, σ, ρ), not SQL strings.
+//! The compiler generates parameterized SQL. Evidentiality prevents injection
+//! by construction.
+//!
+//! # Example
+//!
+//! ```sigil
+//! brain_dumps
+//!     |> φ{ .instance_id == id }     // WHERE instance_id = $1
+//!     |> φ{ .created_at > since }    // AND created_at > $2
+//!     |> σ{ .created_at.desc() }     // ORDER BY created_at DESC
+//!     |> ν{ 0..20 }                   // LIMIT 20
+//! ```
+
+use shared::{Timestamp, Duration, Value};
+use crate::evidence::{EvidenceLevel, Evidenced, HttpEvidence};
+
+// ============================================================================
+// Query Types
+// ============================================================================
+
+/// A query against a database table
+pub struct Query<T> {
+    /// Table name
+    table: String,
+
+    /// Filters (WHERE clauses)
+    filters: Vec<Filter>,
+
+    /// Ordering
+    ordering: Vec<Ordering>,
+
+    /// Limit and offset
+    pagination: Option<Pagination>,
+
+    /// Grouping
+    grouping: Vec<String>,
+
+    /// Projections (SELECT)
+    projections: Vec<Projection>,
+
+    /// Joins
+    joins: Vec<Join>,
+
+    /// Parameters (for prepared statements)
+    params: Vec<QueryParam>,
+
+    /// Phantom type for result
+    _marker: std::marker::PhantomData<T>,
+}
+
+/// A filter condition (WHERE clause)
+#[derive(Clone, Debug)]
+pub enum Filter {
+    /// Simple comparison: field op value
+    Compare {
+        field: String,
+        op: CompareOp,
+        value: QueryParam,
+    },
+
+    /// IS NULL / IS NOT NULL
+    IsNull {
+        field: String,
+        is_null: bool,
+    },
+
+    /// IN (list)
+    In {
+        field: String,
+        values: Vec<QueryParam>,
+    },
+
+    /// BETWEEN
+    Between {
+        field: String,
+        low: QueryParam,
+        high: QueryParam,
+    },
+
+    /// LIKE / ILIKE
+    Like {
+        field: String,
+        pattern: String,
+        case_insensitive: bool,
+    },
+
+    /// Compound: AND
+    And(Vec<Filter>),
+
+    /// Compound: OR
+    Or(Vec<Filter>),
+
+    /// Negation: NOT
+    Not(Box<Filter>),
+
+    /// Raw SQL (requires ! evidence on the string)
+    Raw {
+        sql: String,
+        params: Vec<QueryParam>,
+    },
+}
+
+/// Comparison operator
+#[derive(Clone, Copy, Debug)]
+pub enum CompareOp {
+    Eq,     // =
+    Ne,     // !=
+    Lt,     // <
+    Le,     // <=
+    Gt,     // >
+    Ge,     // >=
+}
+
+impl CompareOp {
+    pub fn as_sql(&self) -> &'static str {
+        match self {
+            CompareOp::Eq => "=",
+            CompareOp::Ne => "!=",
+            CompareOp::Lt => "<",
+            CompareOp::Le => "<=",
+            CompareOp::Gt => ">",
+            CompareOp::Ge => ">=",
+        }
+    }
+}
+
+/// Query parameter with evidence tracking
+#[derive(Clone, Debug)]
+pub struct QueryParam {
+    /// The value
+    pub value: Value,
+
+    /// Evidence level - MUST be ! for SQL parameters
+    pub evidence: EvidenceLevel,
+
+    /// Parameter name (for named params)
+    pub name: Option<String>,
+}
+
+impl QueryParam {
+    /// Create a known (!) parameter
+    pub fn known(value: Value) -> Self {
+        Self {
+            value,
+            evidence: EvidenceLevel::Known,
+            name: None,
+        }
+    }
+
+    /// Create from an evidenced value - will fail if not !
+    pub fn from_evidenced<T: Into<Value>>(evidenced: Evidenced<T>) -> Result<Self, QueryError> {
+        if evidenced.level() != EvidenceLevel::Known {
+            return Err(QueryError::EvidenceRequired {
+                actual: evidenced.level(),
+                message: "Query parameters must have ! evidence".to_string(),
+            });
+        }
+
+        Ok(Self {
+            value: evidenced.value.into(),
+            evidence: EvidenceLevel::Known,
+            name: None,
+        })
+    }
+
+    /// Named parameter
+    pub fn named(name: &str, value: Value) -> Self {
+        Self {
+            value,
+            evidence: EvidenceLevel::Known,
+            name: Some(name.to_string()),
+        }
+    }
+}
+
+/// Ordering specification
+#[derive(Clone, Debug)]
+pub struct Ordering {
+    pub field: String,
+    pub direction: OrderDirection,
+    pub nulls: NullsOrder,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum OrderDirection {
+    Asc,
+    Desc,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum NullsOrder {
+    First,
+    Last,
+    Default,
+}
+
+/// Pagination (LIMIT/OFFSET)
+#[derive(Clone, Debug)]
+pub struct Pagination {
+    pub limit: usize,
+    pub offset: usize,
+}
+
+/// Projection (SELECT)
+#[derive(Clone, Debug)]
+pub enum Projection {
+    /// All columns
+    All,
+
+    /// Specific column
+    Column(String),
+
+    /// Aliased expression
+    Aliased {
+        expr: String,
+        alias: String,
+    },
+
+    /// Aggregate function
+    Aggregate {
+        func: AggregateFunc,
+        column: String,
+        alias: Option<String>,
+    },
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum AggregateFunc {
+    Count,
+    Sum,
+    Avg,
+    Min,
+    Max,
+}
+
+/// Join specification
+#[derive(Clone, Debug)]
+pub struct Join {
+    pub join_type: JoinType,
+    pub table: String,
+    pub alias: Option<String>,
+    pub on: Filter,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum JoinType {
+    Inner,
+    Left,
+    Right,
+    Full,
+}
+
+// ============================================================================
+// Query Builder
+// ============================================================================
+
+impl<T> Query<T> {
+    /// Start a query on a table
+    pub fn from(table: &str) -> Self {
+        Self {
+            table: table.to_string(),
+            filters: vec![],
+            ordering: vec![],
+            pagination: None,
+            grouping: vec![],
+            projections: vec![Projection::All],
+            joins: vec![],
+            params: vec![],
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    // ========================================================================
+    // φ (Phi) - Filter
+    // ========================================================================
+
+    /// Add a filter (WHERE clause)
+    /// Symbol: φ
+    pub fn phi(mut self, filter: Filter) -> Self {
+        self.filters.push(filter);
+        self
+    }
+
+    /// Convenience: filter by field equals value
+    pub fn where_eq(self, field: &str, value: QueryParam) -> Self {
+        self.phi(Filter::Compare {
+            field: field.to_string(),
+            op: CompareOp::Eq,
+            value,
+        })
+    }
+
+    /// Convenience: filter by field greater than value
+    pub fn where_gt(self, field: &str, value: QueryParam) -> Self {
+        self.phi(Filter::Compare {
+            field: field.to_string(),
+            op: CompareOp::Gt,
+            value,
+        })
+    }
+
+    /// Convenience: filter where field is null
+    pub fn where_null(self, field: &str) -> Self {
+        self.phi(Filter::IsNull {
+            field: field.to_string(),
+            is_null: true,
+        })
+    }
+
+    /// Convenience: filter where field is not null
+    pub fn where_not_null(self, field: &str) -> Self {
+        self.phi(Filter::IsNull {
+            field: field.to_string(),
+            is_null: false,
+        })
+    }
+
+    // ========================================================================
+    // σ (Sigma) - Sort
+    // ========================================================================
+
+    /// Add ordering (ORDER BY)
+    /// Symbol: σ
+    pub fn sigma(mut self, ordering: Ordering) -> Self {
+        self.ordering.push(ordering);
+        self
+    }
+
+    /// Convenience: order by field ascending
+    pub fn order_by(self, field: &str) -> Self {
+        self.sigma(Ordering {
+            field: field.to_string(),
+            direction: OrderDirection::Asc,
+            nulls: NullsOrder::Default,
+        })
+    }
+
+    /// Convenience: order by field descending
+    pub fn order_by_desc(self, field: &str) -> Self {
+        self.sigma(Ordering {
+            field: field.to_string(),
+            direction: OrderDirection::Desc,
+            nulls: NullsOrder::Default,
+        })
+    }
+
+    // ========================================================================
+    // ν (Nu) - Limit/Offset (Nth)
+    // ========================================================================
+
+    /// Set pagination (LIMIT/OFFSET)
+    /// Symbol: ν
+    pub fn nu(mut self, limit: usize, offset: usize) -> Self {
+        self.pagination = Some(Pagination { limit, offset });
+        self
+    }
+
+    /// Convenience: limit results
+    pub fn limit(self, n: usize) -> Self {
+        self.nu(n, 0)
+    }
+
+    /// Convenience: skip first n results
+    pub fn offset(mut self, n: usize) -> Self {
+        if let Some(ref mut p) = self.pagination {
+            p.offset = n;
+        } else {
+            self.pagination = Some(Pagination { limit: usize::MAX, offset: n });
+        }
+        self
+    }
+
+    // ========================================================================
+    // τ (Tau) - Transform/Select
+    // ========================================================================
+
+    /// Set projections (SELECT)
+    /// Symbol: τ
+    pub fn tau(mut self, projections: Vec<Projection>) -> Self {
+        self.projections = projections;
+        self
+    }
+
+    /// Convenience: select specific columns
+    pub fn select(self, columns: &[&str]) -> Self {
+        self.tau(columns.iter().map(|c| Projection::Column(c.to_string())).collect())
+    }
+
+    // ========================================================================
+    // ρ (Rho) - Reduce/Aggregate
+    // ========================================================================
+
+    /// Add grouping (GROUP BY)
+    pub fn group_by(mut self, field: &str) -> Self {
+        self.grouping.push(field.to_string());
+        self
+    }
+
+    /// Add aggregate projection
+    pub fn aggregate(mut self, func: AggregateFunc, column: &str, alias: Option<&str>) -> Self {
+        self.projections.push(Projection::Aggregate {
+            func,
+            column: column.to_string(),
+            alias: alias.map(|s| s.to_string()),
+        });
+        self
+    }
+
+    // ========================================================================
+    // ζ (Zeta) - Join
+    // ========================================================================
+
+    /// Add a join
+    /// Symbol: ζ
+    pub fn zeta(mut self, join: Join) -> Self {
+        self.joins.push(join);
+        self
+    }
+
+    /// Convenience: inner join
+    pub fn inner_join(self, table: &str, on: Filter) -> Self {
+        self.zeta(Join {
+            join_type: JoinType::Inner,
+            table: table.to_string(),
+            alias: None,
+            on,
+        })
+    }
+
+    /// Convenience: left join
+    pub fn left_join(self, table: &str, on: Filter) -> Self {
+        self.zeta(Join {
+            join_type: JoinType::Left,
+            table: table.to_string(),
+            alias: None,
+            on,
+        })
+    }
+
+    // ========================================================================
+    // SQL Generation
+    // ========================================================================
+
+    /// Generate SQL and parameters
+    pub fn to_sql(&self) -> (String, Vec<Value>) {
+        let mut sql = String::new();
+        let mut params: Vec<Value> = vec![];
+        let mut param_idx = 1;
+
+        // SELECT
+        sql.push_str("SELECT ");
+        let proj_strs: Vec<String> = self.projections.iter().map(|p| {
+            match p {
+                Projection::All => "*".to_string(),
+                Projection::Column(c) => c.clone(),
+                Projection::Aliased { expr, alias } => format!("{} AS {}", expr, alias),
+                Projection::Aggregate { func, column, alias } => {
+                    let func_str = match func {
+                        AggregateFunc::Count => "COUNT",
+                        AggregateFunc::Sum => "SUM",
+                        AggregateFunc::Avg => "AVG",
+                        AggregateFunc::Min => "MIN",
+                        AggregateFunc::Max => "MAX",
+                    };
+                    match alias {
+                        Some(a) => format!("{}({}) AS {}", func_str, column, a),
+                        None => format!("{}({})", func_str, column),
+                    }
+                }
+            }
+        }).collect();
+        sql.push_str(&proj_strs.join(", "));
+
+        // FROM
+        sql.push_str(" FROM ");
+        sql.push_str(&self.table);
+
+        // JOINS
+        for join in &self.joins {
+            let join_type = match join.join_type {
+                JoinType::Inner => "INNER JOIN",
+                JoinType::Left => "LEFT JOIN",
+                JoinType::Right => "RIGHT JOIN",
+                JoinType::Full => "FULL JOIN",
+            };
+            sql.push_str(&format!(" {} {}", join_type, join.table));
+            if let Some(ref alias) = join.alias {
+                sql.push_str(&format!(" AS {}", alias));
+            }
+            sql.push_str(" ON ");
+            let (on_sql, on_params) = self.filter_to_sql(&join.on, &mut param_idx);
+            sql.push_str(&on_sql);
+            params.extend(on_params);
+        }
+
+        // WHERE
+        if !self.filters.is_empty() {
+            sql.push_str(" WHERE ");
+            let filter_strs: Vec<String> = self.filters.iter().map(|f| {
+                let (filter_sql, filter_params) = self.filter_to_sql(f, &mut param_idx);
+                params.extend(filter_params);
+                filter_sql
+            }).collect();
+            sql.push_str(&filter_strs.join(" AND "));
+        }
+
+        // GROUP BY
+        if !self.grouping.is_empty() {
+            sql.push_str(" GROUP BY ");
+            sql.push_str(&self.grouping.join(", "));
+        }
+
+        // ORDER BY
+        if !self.ordering.is_empty() {
+            sql.push_str(" ORDER BY ");
+            let order_strs: Vec<String> = self.ordering.iter().map(|o| {
+                let dir = match o.direction {
+                    OrderDirection::Asc => "ASC",
+                    OrderDirection::Desc => "DESC",
+                };
+                let nulls = match o.nulls {
+                    NullsOrder::First => " NULLS FIRST",
+                    NullsOrder::Last => " NULLS LAST",
+                    NullsOrder::Default => "",
+                };
+                format!("{} {}{}", o.field, dir, nulls)
+            }).collect();
+            sql.push_str(&order_strs.join(", "));
+        }
+
+        // LIMIT/OFFSET
+        if let Some(ref p) = self.pagination {
+            if p.limit < usize::MAX {
+                sql.push_str(&format!(" LIMIT {}", p.limit));
+            }
+            if p.offset > 0 {
+                sql.push_str(&format!(" OFFSET {}", p.offset));
+            }
+        }
+
+        (sql, params)
+    }
+
+    fn filter_to_sql(&self, filter: &Filter, param_idx: &mut usize) -> (String, Vec<Value>) {
+        let mut params = vec![];
+
+        let sql = match filter {
+            Filter::Compare { field, op, value } => {
+                params.push(value.value.clone());
+                let idx = *param_idx;
+                *param_idx += 1;
+                format!("{} {} ${}", field, op.as_sql(), idx)
+            }
+            Filter::IsNull { field, is_null } => {
+                if *is_null {
+                    format!("{} IS NULL", field)
+                } else {
+                    format!("{} IS NOT NULL", field)
+                }
+            }
+            Filter::In { field, values } => {
+                let placeholders: Vec<String> = values.iter().map(|v| {
+                    params.push(v.value.clone());
+                    let idx = *param_idx;
+                    *param_idx += 1;
+                    format!("${}", idx)
+                }).collect();
+                format!("{} IN ({})", field, placeholders.join(", "))
+            }
+            Filter::Between { field, low, high } => {
+                params.push(low.value.clone());
+                let low_idx = *param_idx;
+                *param_idx += 1;
+                params.push(high.value.clone());
+                let high_idx = *param_idx;
+                *param_idx += 1;
+                format!("{} BETWEEN ${} AND ${}", field, low_idx, high_idx)
+            }
+            Filter::Like { field, pattern, case_insensitive } => {
+                let op = if *case_insensitive { "ILIKE" } else { "LIKE" };
+                format!("{} {} '{}'", field, op, pattern)
+            }
+            Filter::And(filters) => {
+                let strs: Vec<String> = filters.iter().map(|f| {
+                    let (s, p) = self.filter_to_sql(f, param_idx);
+                    params.extend(p);
+                    s
+                }).collect();
+                format!("({})", strs.join(" AND "))
+            }
+            Filter::Or(filters) => {
+                let strs: Vec<String> = filters.iter().map(|f| {
+                    let (s, p) = self.filter_to_sql(f, param_idx);
+                    params.extend(p);
+                    s
+                }).collect();
+                format!("({})", strs.join(" OR "))
+            }
+            Filter::Not(f) => {
+                let (s, p) = self.filter_to_sql(f, param_idx);
+                params.extend(p);
+                format!("NOT ({})", s)
+            }
+            Filter::Raw { sql, params: raw_params } => {
+                for p in raw_params {
+                    params.push(p.value.clone());
+                }
+                sql.clone()
+            }
+        };
+
+        (sql, params)
+    }
+}
+
+// ============================================================================
+// Query Errors
+// ============================================================================
+
+#[derive(Debug)]
+pub enum QueryError {
+    /// Evidence level insufficient for query parameter
+    EvidenceRequired {
+        actual: EvidenceLevel,
+        message: String,
+    },
+
+    /// SQL generation error
+    SqlGeneration(String),
+
+    /// Execution error
+    Execution(String),
+}
+
+// ============================================================================
+// Query Results
+// ============================================================================
+
+/// Result of a query execution
+pub struct QueryResult<T> {
+    /// The rows returned
+    pub rows: Vec<Evidenced<T>>,
+
+    /// Total count (if requested)
+    pub total: Option<usize>,
+
+    /// Query execution time
+    pub duration: Duration,
+
+    /// SQL that was executed (for debugging)
+    pub sql: String,
+}
+
+impl<T> QueryResult<T> {
+    /// Check if empty
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+
+    /// Get first row
+    pub fn first(&self) -> Option<&Evidenced<T>> {
+        self.rows.first()
+    }
+
+    /// Get first row, consuming result
+    pub fn into_first(mut self) -> Option<Evidenced<T>> {
+        if self.rows.is_empty() {
+            None
+        } else {
+            Some(self.rows.remove(0))
+        }
+    }
+}

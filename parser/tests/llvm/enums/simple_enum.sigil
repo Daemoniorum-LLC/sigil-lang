@@ -1,0 +1,13 @@
+// Test: Simple unit enum - return variant directly
+// Expected output: 2
+
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+fn main() -> i64 {
+    let c = Color::Blue;
+    c
+}

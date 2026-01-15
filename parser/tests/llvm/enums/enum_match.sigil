@@ -1,0 +1,19 @@
+// Test: Enum match expression
+// Expected output: 20
+
+enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+fn main() -> i64 {
+    let d = Direction::Down;
+    match d {
+        Direction::Up => 10,
+        Direction::Down => 20,
+        Direction::Left => 30,
+        Direction::Right => 40,
+    }
+}

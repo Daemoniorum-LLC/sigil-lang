@@ -1,0 +1,15 @@
+// Test: Structs stored in Vec
+// Spec: Feature Interaction - Structs + Collections
+// Priority: P0 - Bootstrap Critical
+
+struct Item {
+    value: i32,
+}
+
+fn main() {
+    let mut items: Vec<Item> = Vec::new();
+    items.push(Item { value: 10 });
+    items.push(Item { value: 20 });
+    println(items.len());
+    println(items[0].value);
+}

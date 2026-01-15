@@ -1,0 +1,15 @@
+// Test: Bitwise AND operator (&)
+// Spec: 01-LEXICAL.md § 3.2 Operators
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate bitwise AND works correctly.
+//
+// Expected behavior:
+// Should print 2 (42 & 3 = 2)
+
+fn main() {
+    let x: !i32 = 42;
+    let y: !i32 = 3;
+    println(x & y);
+}

@@ -1,0 +1,19 @@
+// Test: Define enum with variants
+pub enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+fn color_value(c: !Color) -> !i32 {
+    match c {
+        Color::Red => 1,
+        Color::Green => 2,
+        Color::Blue => 3
+    }
+}
+
+fn main() {
+    let c: !Color = Color::Green;
+    println(color_value(c));
+}

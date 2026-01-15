@@ -1,0 +1,14 @@
+// Test: Holographic superposition
+// Spec: 13-QUANTUM-HOLOGRAPHIC.md § 2 Superposition
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let sup: Superposition<Hologram<i32, 3, 5>> = uniform([
+        Hologram::encode(1),
+        Hologram::encode(2),
+        Hologram::encode(3),
+    ]);
+    let observed! = sup|observe;
+    let value = observed!|∀;
+    println(value);
+}

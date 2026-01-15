@@ -1,0 +1,4 @@
+// Test: Compiler must emit main() wrapper in generated C
+fn main() {
+    println(42);
+}

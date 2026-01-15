@@ -1,0 +1,18 @@
+// Test: Documentation generator (Scribe)
+// Spec: 10-TOOLING.md § 8 Scribe
+// Priority: P0 - Bootstrap Critical
+
+/// Adds two numbers together.
+///
+/// # Examples
+/// ```
+/// let result = add(1, 2);
+/// assert_eq!(result, 3);
+/// ```
+fn add(a: !i32, b: !i32) -> !i32 {
+    a + b
+}
+
+fn main() {
+    println(add(2, 3));
+}

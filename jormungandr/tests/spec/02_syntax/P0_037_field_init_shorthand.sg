@@ -1,0 +1,19 @@
+// Test: Field init shorthand
+// Spec: 02-SYNTAX.md § 6.1 Struct Literals
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate field init shorthand works.
+//
+// Expected behavior:
+// Should print 42
+
+pub struct Value {
+    x: !i32
+}
+
+fn main() {
+    let x: !i32 = 42;
+    let v: !Value = Value { x };
+    println(v.x);
+}

@@ -1,0 +1,8 @@
+fn main() {
+    let data = 42;
+
+    // Try Rust-style closure syntax
+    let result = data|validate!(|x| x > 0);
+
+    println(result);
+}

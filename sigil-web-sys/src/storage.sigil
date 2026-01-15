@@ -1,0 +1,89 @@
+//! Web Storage API bindings
+
+/// Storage interface (localStorage/sessionStorage)
+#[wasm_bindgen]
+extern "js" {
+    pub type Storage;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn length(this: &Storage!) -> u32!;
+
+    #[wasm_bindgen(method)]
+    pub fn key(this: &Storage!, index: u32!) -> Option[String]?;
+
+    #[wasm_bindgen(method, js_name = "getItem")]
+    pub fn get_item(this: &Storage!, key: &str!) -> Result[Option[String], JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "setItem")]
+    pub fn set_item(this: &Storage!, key: &str!, value: &str!) -> Result[(), JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "removeItem")]
+    pub fn remove_item(this: &Storage!, key: &str!) -> Result[(), JsValue]?;
+
+    #[wasm_bindgen(method)]
+    pub fn clear(this: &Storage!) -> Result[(), JsValue]?;
+}
+
+impl Storage {
+    /// Get item as typed value (deserialize from JSON)
+    pub fn get_json[T: serde::de::DeserializeOwned](self: &Self!, key: &str!) -> Option[T]? {
+        self·get_item(key)
+            ·ok()
+            ·flatten()
+            ·and_then(|s| serde_json::from_str(&s)·ok())
+    }
+
+    /// Set item as typed value (serialize to JSON)
+    pub fn set_json[T: serde::Serialize](self: &Self!, key: &str!, value: &T!) -> Result[(), String]? {
+        let json! = serde_json::to_string(value)
+            ·map_err(|e| e·to_string())?;
+        self·set_item(key, &json)
+            ·map_err(|_| "Storage quota exceeded"·to_string())
+    }
+
+    /// Check if key exists
+    pub fn contains(self: &Self!, key: &str!) -> bool! {
+        self·get_item(key)·ok()·flatten()·is_some()
+    }
+
+    /// Get all keys
+    pub fn keys(self: &Self!) -> Vec[String]! {
+        (0..self·length())
+            |τ{i => self·key(i)}
+            |φ{k => k·is_some()}
+            |τ{k => k·unwrap()}
+            |σ()
+    }
+
+    /// Get number of stored items
+    pub fn len(self: &Self!) -> usize! {
+        self·length() as usize
+    }
+
+    /// Check if storage is empty
+    pub fn is_empty(self: &Self!) -> bool! {
+        self·length() == 0
+    }
+}
+
+/// StorageEvent for cross-tab storage changes
+#[wasm_bindgen]
+extern "js" {
+    #[wasm_bindgen(extends = Event)]
+    pub type StorageEvent;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn key(this: &StorageEvent!) -> Option[String]?;
+
+    #[wasm_bindgen(method, getter, js_name = "oldValue")]
+    pub fn old_value(this: &StorageEvent!) -> Option[String]?;
+
+    #[wasm_bindgen(method, getter, js_name = "newValue")]
+    pub fn new_value(this: &StorageEvent!) -> Option[String]?;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn url(this: &StorageEvent!) -> String!;
+
+    #[wasm_bindgen(method, getter, js_name = "storageArea")]
+    pub fn storage_area(this: &StorageEvent!) -> Option[Storage]?;
+}

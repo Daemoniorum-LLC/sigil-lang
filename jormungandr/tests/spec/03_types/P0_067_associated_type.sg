@@ -1,0 +1,31 @@
+// Test: Associated type in trait
+// Spec: 03-TYPES.md § 11.1 Associated Types
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate associated types work in traits.
+//
+// Expected behavior:
+// Should print 42
+
+pub trait Container {
+    type Item;
+    fn get(self) -> Self::Item;
+}
+
+pub struct Box {
+    value: !i32
+}
+
+impl Container for Box {
+    type Item = !i32;
+
+    fn get(self) -> !i32 {
+        self.value
+    }
+}
+
+fn main() {
+    let b: Box = Box { value: 42 };
+    println(b.get());
+}

@@ -92,6 +92,244 @@ pub fn lower_source_file(source: &str, ast: &SourceFile) -> IrModule {
     module
 }
 
+
+/// Collect free variables from an AST expression
+/// Returns variable names that are used but not bound in the expression
+fn collect_free_variables(expr: &ast::Expr, bound: &mut std::collections::HashSet<String>) -> Vec<String> {
+    let mut free = Vec::new();
+    collect_free_vars_inner(expr, bound, &mut free);
+    free
+}
+
+fn collect_free_vars_inner(
+    expr: &ast::Expr,
+    bound: &std::collections::HashSet<String>,
+    free: &mut Vec<String>,
+) {
+    match expr {
+        ast::Expr::Path(type_path) => {
+            // Check if this is a simple identifier (single segment path)
+            if type_path.segments.len() == 1 && type_path.segments[0].generics.is_none() {
+                let name = &type_path.segments[0].ident.name;
+                if !bound.contains(name) && !free.contains(name) {
+                    free.push(name.clone());
+                }
+            }
+        }
+        ast::Expr::Binary { left, right, .. } => {
+            collect_free_vars_inner(left, bound, free);
+            collect_free_vars_inner(right, bound, free);
+        }
+        ast::Expr::Unary { expr, .. } => {
+            collect_free_vars_inner(expr, bound, free);
+        }
+        ast::Expr::Call { func, args, .. } => {
+            collect_free_vars_inner(func, bound, free);
+            for arg in args {
+                collect_free_vars_inner(arg, bound, free);
+            }
+        }
+        ast::Expr::MethodCall { receiver, args, .. } => {
+            collect_free_vars_inner(receiver, bound, free);
+            for arg in args {
+                collect_free_vars_inner(arg, bound, free);
+            }
+        }
+        ast::Expr::Field { expr, .. } => {
+            collect_free_vars_inner(expr, bound, free);
+        }
+        ast::Expr::Index { expr, index, .. } => {
+            collect_free_vars_inner(expr, bound, free);
+            collect_free_vars_inner(index, bound, free);
+        }
+        ast::Expr::Block(block) => {
+            collect_free_vars_block(block, bound, free);
+        }
+        ast::Expr::If { condition, then_branch, else_branch, .. } => {
+            collect_free_vars_inner(condition, bound, free);
+            collect_free_vars_block(then_branch, bound, free);
+            if let Some(else_expr) = else_branch {
+                collect_free_vars_inner(else_expr, bound, free);
+            }
+        }
+        ast::Expr::Match { expr, arms, .. } => {
+            collect_free_vars_inner(expr, bound, free);
+            for arm in arms {
+                // Each arm pattern binds variables
+                let mut arm_bound = bound.clone();
+                collect_pattern_bindings(&arm.pattern, &mut arm_bound);
+                if let Some(guard) = &arm.guard {
+                    collect_free_vars_inner(guard, &arm_bound, free);
+                }
+                collect_free_vars_inner(&arm.body, &arm_bound, free);
+            }
+        }
+        ast::Expr::Closure { params, body, .. } => {
+            // Closure parameters are bound inside the closure
+            let mut closure_bound = bound.clone();
+            for param in params {
+                if let Some(name) = extract_pattern_name_opt(&param.pattern) {
+                    closure_bound.insert(name);
+                }
+            }
+            collect_free_vars_inner(body, &closure_bound, free);
+        }
+        ast::Expr::Tuple(elements) | ast::Expr::Array(elements) => {
+            for elem in elements {
+                collect_free_vars_inner(elem, bound, free);
+            }
+        }
+        ast::Expr::Struct { fields, rest, .. } => {
+            for field in fields {
+                if let Some(v) = &field.value { collect_free_vars_inner(v, bound, free); } else { let name = &field.name.name; if !bound.contains(name) && !free.contains(name) { free.push(name.clone()); } }
+            }
+            if let Some(r) = rest {
+                collect_free_vars_inner(r, bound, free);
+            }
+        }
+        ast::Expr::Range { start, end, .. } => {
+            if let Some(s) = start {
+                collect_free_vars_inner(s, bound, free);
+            }
+            if let Some(e) = end {
+                collect_free_vars_inner(e, bound, free);
+            }
+        }
+        ast::Expr::Return(Some(expr)) | ast::Expr::Try(expr) | ast::Expr::Deref(expr) => {
+            collect_free_vars_inner(expr, bound, free);
+        }
+        ast::Expr::Cast { expr, .. } => {
+            collect_free_vars_inner(expr, bound, free);
+        }
+        ast::Expr::Assign { target, value, .. } => {
+            collect_free_vars_inner(target, bound, free);
+            collect_free_vars_inner(value, bound, free);
+        }
+        ast::Expr::AddrOf { expr, .. } => {
+            collect_free_vars_inner(expr, bound, free);
+        }
+        ast::Expr::While { condition, body, .. } => {
+            collect_free_vars_inner(condition, bound, free);
+            collect_free_vars_block(body, bound, free);
+        }
+        ast::Expr::For { pattern, iter, body, .. } => {
+            collect_free_vars_inner(iter, bound, free);
+            let mut for_bound = bound.clone();
+            collect_pattern_bindings(pattern, &mut for_bound);
+            collect_free_vars_block(body, &for_bound, free);
+        }
+        ast::Expr::Loop { body: block, .. } | ast::Expr::Unsafe(block) | ast::Expr::Async { block, .. } => {
+            collect_free_vars_block(block, bound, free);
+        }
+        ast::Expr::Await { expr, .. } => {
+            collect_free_vars_inner(expr, bound, free);
+        }
+        ast::Expr::Evidential { expr, .. } => {
+            collect_free_vars_inner(expr, bound, free);
+        }
+        ast::Expr::Let { value, .. } => {
+            collect_free_vars_inner(value, bound, free);
+        }
+        ast::Expr::Break { value: Some(expr), .. } => {
+            collect_free_vars_inner(expr, bound, free);
+        }
+        // Literals and other leaf expressions have no free variables
+        ast::Expr::Literal(_)
+        | ast::Expr::Return(None)
+        | ast::Expr::Continue { .. }
+        | ast::Expr::Break { value: None, .. } => {}
+        // Skip complex expressions we don't need to analyze for self capture
+        _ => {}
+    }
+}
+
+fn collect_free_vars_block(
+    block: &ast::Block,
+    bound: &std::collections::HashSet<String>,
+    free: &mut Vec<String>,
+) {
+    let mut block_bound = bound.clone();
+    for stmt in &block.stmts {
+        collect_free_vars_stmt(stmt, &mut block_bound, free);
+    }
+    if let Some(expr) = &block.expr {
+        collect_free_vars_inner(expr, &block_bound, free);
+    }
+}
+
+fn collect_free_vars_stmt(
+    stmt: &ast::Stmt,
+    bound: &mut std::collections::HashSet<String>,
+    free: &mut Vec<String>,
+) {
+    match stmt {
+        ast::Stmt::Let { pattern, init, .. } => {
+            // First collect from the init value (before binding)
+            if let Some(v) = init {
+                collect_free_vars_inner(v, bound, free);
+            }
+            // Then bind the pattern variables
+            collect_pattern_bindings(pattern, bound);
+        }
+        ast::Stmt::LetElse { pattern, init, else_branch, .. } => {
+            collect_free_vars_inner(init, bound, free);
+            collect_free_vars_inner(else_branch, bound, free);
+            collect_pattern_bindings(pattern, bound);
+        }
+        ast::Stmt::Expr(expr) | ast::Stmt::Semi(expr) => {
+            collect_free_vars_inner(expr, bound, free);
+        }
+        ast::Stmt::Item(_) => {}
+    }
+}
+
+fn collect_pattern_bindings(pattern: &ast::Pattern, bound: &mut std::collections::HashSet<String>) {
+    match pattern {
+        ast::Pattern::Ident { name, .. } => {
+            bound.insert(name.name.clone());
+        }
+        ast::Pattern::Tuple(patterns) => {
+            for p in patterns {
+                collect_pattern_bindings(p, bound);
+            }
+        }
+        ast::Pattern::Struct { fields, .. } => {
+            for field in fields {
+                if let Some(p) = &field.pattern {
+                    collect_pattern_bindings(p, bound);
+                } else {
+                    // Shorthand: `Foo { x }` binds `x`
+                    bound.insert(field.name.name.clone());
+                }
+            }
+        }
+        ast::Pattern::TupleStruct { fields, .. } => {
+            for p in fields {
+                collect_pattern_bindings(p, bound);
+            }
+        }
+        ast::Pattern::Or(patterns) => {
+            // For or-patterns, all branches should bind the same names
+            for p in patterns {
+                collect_pattern_bindings(p, bound);
+            }
+        }
+        ast::Pattern::Slice(patterns) => {
+            for p in patterns {
+                collect_pattern_bindings(p, bound);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn extract_pattern_name_opt(pattern: &ast::Pattern) -> Option<String> {
+    match pattern {
+        ast::Pattern::Ident { name, .. } => Some(name.name.clone()),
+        _ => None,
+    }
+}
+
 fn lower_item(ctx: &mut LoweringContext, module: &mut IrModule, item: &ast::Item) {
     match item {
         ast::Item::Function(f) => {
@@ -127,8 +365,11 @@ fn lower_item(ctx: &mut LoweringContext, module: &mut IrModule, item: &ast::Item
         ast::Item::Static(_)
         | ast::Item::Actor(_)
         | ast::Item::Use(_)
-        | ast::Item::ExternBlock(_) => {
-            // TODO: Handle these items
+        | ast::Item::ExternBlock(_)
+        | ast::Item::Macro(_)
+        | ast::Item::MacroInvocation(_)
+        | ast::Item::Plurality(_) => {
+            // TODO: Handle these items (plurality lowering handled separately)
         }
     }
 }
@@ -218,7 +459,7 @@ fn lower_visibility(v: ast::Visibility) -> IrVisibility {
 fn lower_evidentiality(e: ast::Evidentiality) -> IrEvidence {
     match e {
         ast::Evidentiality::Known => IrEvidence::Known,
-        ast::Evidentiality::Uncertain => IrEvidence::Uncertain,
+        ast::Evidentiality::Uncertain | ast::Evidentiality::Predicted => IrEvidence::Uncertain,
         ast::Evidentiality::Reported => IrEvidence::Reported,
         ast::Evidentiality::Paradox => IrEvidence::Paradox,
     }
@@ -290,7 +531,8 @@ fn lower_type_expr(t: &ast::TypeExpr) -> IrType {
                 }
             }
         }
-        ast::TypeExpr::Reference { mutable, inner } => IrType::Reference {
+        ast::TypeExpr::Reference { lifetime, mutable, inner } => IrType::Reference {
+            lifetime: lifetime.clone(),
             mutable: *mutable,
             inner: Box::new(lower_type_expr(inner)),
         },
@@ -344,6 +586,52 @@ fn lower_type_expr(t: &ast::TypeExpr) -> IrType {
         },
         ast::TypeExpr::Never => IrType::Never,
         ast::TypeExpr::Infer => IrType::Infer,
+        ast::TypeExpr::Lifetime(name) => IrType::Lifetime { name: name.clone() },
+        ast::TypeExpr::TraitObject(bounds) => IrType::TraitObject {
+            bounds: bounds.iter().map(lower_type_expr).collect(),
+        },
+        ast::TypeExpr::Hrtb { lifetimes, bound } => IrType::Hrtb {
+            lifetimes: lifetimes.clone(),
+            bound: Box::new(lower_type_expr(bound)),
+        },
+        ast::TypeExpr::InlineStruct { fields } => IrType::InlineStruct {
+            fields: fields
+                .iter()
+                .map(|f| (f.name.name.clone(), lower_type_expr(&f.ty)))
+                .collect(),
+        },
+        ast::TypeExpr::ImplTrait(bounds) => IrType::ImplTrait {
+            bounds: bounds.iter().map(lower_type_expr).collect(),
+        },
+        ast::TypeExpr::InlineEnum { variants } => IrType::InlineEnum {
+            variants: variants.iter().map(|v| v.name.name.clone()).collect(),
+        },
+        ast::TypeExpr::AssocTypeBinding { name, ty } => IrType::AssocTypeBinding {
+            name: name.name.clone(),
+            ty: Box::new(lower_type_expr(ty)),
+        },
+        ast::TypeExpr::ConstExpr(_) => {
+            // Const expressions in type position are evaluated at compile time
+            // For now, lower as an inferred type (const eval happens later)
+            IrType::Infer
+        }
+        ast::TypeExpr::QualifiedPath { self_type, trait_path, item_path } => {
+            // Lower qualified path: <Type as Trait>::AssociatedType
+            // For now, represent as a named type with the full path
+            let trait_part = trait_path.as_ref()
+                .map(|tp| tp.segments.iter().map(|s| s.ident.name.clone()).collect::<Vec<_>>().join("::"))
+                .unwrap_or_default();
+            let item_part = item_path.segments.iter().map(|s| s.ident.name.clone()).collect::<Vec<_>>().join("::");
+            let name = if trait_part.is_empty() {
+                format!("<_>::{}", item_part)
+            } else {
+                format!("<_ as {}>::{}", trait_part, item_part)
+            };
+            IrType::Named {
+                name,
+                generics: vec![lower_type_expr(self_type)],
+            }
+        }
     }
 }
 
@@ -386,6 +674,20 @@ fn lower_stmt(ctx: &mut LoweringContext, stmt: &ast::Stmt) -> Option<IrOperation
                     })
                 });
 
+            Some(IrOperation::Let {
+                pattern: ir_pattern,
+                type_annotation,
+                init: init_expr,
+                evidence: IrEvidence::Known,
+            })
+        }
+        ast::Stmt::LetElse { pattern, ty, init, else_branch } => {
+            // LetElse: let PATTERN = EXPR else { ... }
+            // Lower as: let pattern = init; with conditional else handling
+            let ir_pattern = lower_pattern(ctx, pattern);
+            let type_annotation = ty.as_ref().map(lower_type_expr);
+            let init_expr = Box::new(lower_expr(ctx, init));
+            // TODO: Properly handle else_branch in IR
             Some(IrOperation::Let {
                 pattern: ir_pattern,
                 type_annotation,
@@ -468,6 +770,35 @@ fn lower_pattern(ctx: &mut LoweringContext, pattern: &ast::Pattern) -> IrPattern
             inclusive: *inclusive,
         },
         ast::Pattern::Wildcard | ast::Pattern::Rest => IrPattern::Wildcard,
+        ast::Pattern::Ref { mutable: _, pattern } => {
+            // Reference patterns - just lower the inner pattern
+            lower_pattern(ctx, pattern)
+        }
+        ast::Pattern::RefBinding {
+            mutable,
+            name,
+            evidentiality,
+        } => {
+            // Ref binding - bind by reference, lower as identifier
+            IrPattern::Ident {
+                name: name.name.clone(),
+                mutable: *mutable,
+                evidence: evidentiality.map(lower_evidentiality),
+            }
+        }
+        ast::Pattern::Path(path) => {
+            // Path pattern (unit variant matching) - use TupleStruct with empty fields
+            let name = path
+                .segments
+                .iter()
+                .map(|s| s.ident.name.clone())
+                .collect::<Vec<_>>()
+                .join("::");
+            IrPattern::TupleStruct {
+                path: name,
+                fields: vec![],
+            }
+        }
     }
 }
 
@@ -550,6 +881,7 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             receiver,
             method,
             args,
+            ..
         } => {
             let receiver_ir = lower_expr(ctx, receiver);
             let args_ir: Vec<IrOperation> = args.iter().map(|a| lower_expr(ctx, a)).collect();
@@ -625,7 +957,7 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             }
         }
 
-        ast::Expr::Loop(block) => IrOperation::Loop {
+        ast::Expr::Loop { body: block, .. } => IrOperation::Loop {
             variant: LoopVariant::Infinite,
             condition: None,
             iterator: None,
@@ -634,7 +966,7 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             evidence: IrEvidence::Known,
         },
 
-        ast::Expr::While { condition, body } => IrOperation::Loop {
+        ast::Expr::While { condition, body, .. } => IrOperation::Loop {
             variant: LoopVariant::While,
             condition: Some(Box::new(lower_expr(ctx, condition))),
             iterator: None,
@@ -647,6 +979,7 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             pattern,
             iter,
             body,
+            ..
         } => {
             ctx.push_scope();
             let pat = lower_pattern(ctx, pattern);
@@ -667,7 +1000,36 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             }
         }
 
-        ast::Expr::Closure { params, body } => {
+        ast::Expr::Closure { params, body, .. } => {
+            // Collect bound variables in current scope for capture analysis
+            let mut bound: std::collections::HashSet<String> = std::collections::HashSet::new();
+            for scope in &ctx.scope {
+                for name in scope.keys() {
+                    bound.insert(name.clone());
+                }
+            }
+            // Add closure parameters to bound set
+            for p in params {
+                if let Some(name) = extract_pattern_name_opt(&p.pattern) {
+                    bound.insert(name.clone());
+                }
+            }
+            // Collect free variables from the body
+            let free_vars = collect_free_variables(body, &mut bound.clone());
+            // Filter to only include variables that are in current scope (not closure params)
+            let captures: Vec<String> = free_vars
+                .into_iter()
+                .filter(|name| {
+                    // Check if this variable exists in the enclosing scope
+                    for scope in &ctx.scope {
+                        if scope.contains_key(name) {
+                            return true;
+                        }
+                    }
+                    false
+                })
+                .collect();
+
             ctx.push_scope();
             let params_ir: Vec<IrParam> = params
                 .iter()
@@ -687,7 +1049,7 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             IrOperation::Closure {
                 params: params_ir,
                 body: Box::new(body_ir),
-                captures: vec![],
+                captures,
                 ty: IrType::Infer,
                 evidence: IrEvidence::Known,
             }
@@ -774,12 +1136,12 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             evidence: IrEvidence::Known,
         },
 
-        ast::Expr::Break(value) => IrOperation::Break {
+        ast::Expr::Break { value, .. } => IrOperation::Break {
             value: value.as_ref().map(|v| Box::new(lower_expr(ctx, v))),
             evidence: IrEvidence::Known,
         },
 
-        ast::Expr::Continue => IrOperation::Continue {
+        ast::Expr::Continue { .. } => IrOperation::Continue {
             evidence: IrEvidence::Known,
         },
 
@@ -791,7 +1153,7 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             // Use the explicit evidentiality marker if provided, otherwise infer from inner
             let evidence = match evidentiality {
                 Some(ast::Evidentiality::Known) => IrEvidence::Known,
-                Some(ast::Evidentiality::Uncertain) => IrEvidence::Uncertain,
+                Some(ast::Evidentiality::Uncertain) | Some(ast::Evidentiality::Predicted) => IrEvidence::Uncertain,
                 Some(ast::Evidentiality::Reported) => IrEvidence::Reported,
                 Some(ast::Evidentiality::Paradox) => IrEvidence::Uncertain, // Trust boundary
                 None => get_operation_evidence(&inner_ir),
@@ -816,6 +1178,13 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             body: Box::new(lower_block(ctx, block)),
             ty: IrType::Infer,
             evidence: IrEvidence::Paradox, // Unsafe always produces paradox
+        },
+
+        ast::Expr::Async { block, is_move } => IrOperation::Async {
+            body: Box::new(lower_block(ctx, block)),
+            is_move: *is_move,
+            ty: IrType::Infer,
+            evidence: IrEvidence::Reported, // Async produces reported (external)
         },
 
         ast::Expr::Cast { expr: inner, ty } => {
@@ -967,6 +1336,23 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             evidence: IrEvidence::Reported,
         },
 
+        // Let expression (for if-let, while-let patterns): `let pattern = expr`
+        // Returns a boolean indicating if the pattern matches
+        ast::Expr::Let { pattern, value } => {
+            ctx.push_scope();
+            let pattern_ir = lower_pattern(ctx, pattern);
+            let value_ir = lower_expr(ctx, value);
+            let evidence = get_operation_evidence(&value_ir);
+            ctx.pop_scope();
+
+            IrOperation::LetMatch {
+                pattern: pattern_ir,
+                value: Box::new(value_ir),
+                ty: IrType::Primitive { name: "bool".to_string() },
+                evidence,
+            }
+        }
+
         // Handle remaining expression types with placeholders
         _ => IrOperation::Literal {
             variant: LiteralVariant::Null,
@@ -1097,7 +1483,7 @@ fn lower_pipe_op(ctx: &mut LoweringContext, op: &ast::PipeOp) -> IrPipelineStep 
             symbol: "ξ".to_string(),
             body: None,
         },
-        ast::PipeOp::Method { name, args } => IrPipelineStep::Method {
+        ast::PipeOp::Method { name, type_args: _, args } => IrPipelineStep::Method {
             name: name.name.clone(),
             args: args.iter().map(|a| lower_expr(ctx, a)).collect(),
         },
@@ -1200,7 +1586,7 @@ fn pipe_op_evidence(op: &ast::PipeOp) -> IrEvidence {
 fn ast_evidence_to_ir(ev: ast::Evidentiality) -> IrEvidence {
     match ev {
         ast::Evidentiality::Known => IrEvidence::Known,
-        ast::Evidentiality::Uncertain => IrEvidence::Uncertain,
+        ast::Evidentiality::Uncertain | ast::Evidentiality::Predicted => IrEvidence::Uncertain,
         ast::Evidentiality::Reported => IrEvidence::Reported,
         ast::Evidentiality::Paradox => IrEvidence::Paradox,
     }
@@ -1313,6 +1699,9 @@ fn lower_binop(op: ast::BinOp) -> BinaryOp {
         ast::BinOp::Gt => BinaryOp::Gt,
         ast::BinOp::Ge => BinaryOp::Ge,
         ast::BinOp::Concat => BinaryOp::Concat,
+        ast::BinOp::MatMul => BinaryOp::MatMul,
+        ast::BinOp::Hadamard => BinaryOp::Hadamard,
+        ast::BinOp::TensorProd => BinaryOp::TensorProd,
     }
 }
 
@@ -1388,6 +1777,7 @@ fn get_operation_evidence(op: &IrOperation) -> IrEvidence {
         | IrOperation::Closure { evidence, .. }
         | IrOperation::If { evidence, .. }
         | IrOperation::Match { evidence, .. }
+        | IrOperation::LetMatch { evidence, .. }
         | IrOperation::Loop { evidence, .. }
         | IrOperation::Block { evidence, .. }
         | IrOperation::Pipeline { evidence, .. }
@@ -1411,6 +1801,7 @@ fn get_operation_evidence(op: &IrOperation) -> IrEvidence {
         | IrOperation::KafkaOp { evidence, .. }
         | IrOperation::Await { evidence, .. }
         | IrOperation::Unsafe { evidence, .. }
+        | IrOperation::Async { evidence, .. }
         | IrOperation::Cast { evidence, .. }
         | IrOperation::Try { evidence, .. } => *evidence,
         IrOperation::EvidenceCoerce { to_evidence, .. } => *to_evidence,

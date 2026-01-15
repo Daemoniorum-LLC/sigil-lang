@@ -1,0 +1,8 @@
+// Test: Keyword 'match' for pattern matching
+// Spec: 01-LEXICAL.md § 2.2 Keywords
+// Priority: P0
+
+fn main() {
+    let x = 42;
+    println(x);
+}

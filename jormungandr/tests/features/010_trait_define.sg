@@ -1,0 +1,19 @@
+// Test: Define trait with method signatures
+pub trait Displayable {
+    fn display(&self) -> !String;
+}
+
+pub struct Message {
+    text: !String
+}
+
+impl Displayable for Message {
+    fn display(&self) -> !String {
+        self.text.clone()
+    }
+}
+
+fn main() {
+    let msg: !Message = Message { text: "Hello, Trait!" };
+    println(msg.display());
+}

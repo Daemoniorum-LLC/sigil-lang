@@ -1,0 +1,17 @@
+// Test: While loop basic usage
+// Spec: 02-SYNTAX.md § 4.2 Loop Expressions
+// Priority: P0
+//
+// Purpose:
+// Validates that while loops work with mutable variables.
+//
+// Expected behavior:
+// Should compile and print 5
+
+fn main() {
+    let mut x: !i32 = 0;
+    while x < 5 {
+        x = x + 1;
+    }
+    println(x);
+}

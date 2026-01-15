@@ -1,0 +1,11 @@
+// Test: Basic extern block declaration
+// Spec: 08-FFI.md § 1.1 Extern Blocks
+// Priority: P1 - Standard Feature
+
+extern "C" {
+    fn write(fd: !i32, buf: *const !u8, count: !usize) -> !isize;
+}
+
+fn main() {
+    println("extern block parsed");
+}

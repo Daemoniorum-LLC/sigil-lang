@@ -1,0 +1,13 @@
+// Test: String literal
+// Spec: 01-LEXICAL.md § 2.3 Literals
+// Priority: P0
+//
+// Purpose:
+// Validates that string literals work correctly.
+//
+// Expected behavior:
+// Should compile and print Hello
+
+fn main() {
+    println("Hello");
+}

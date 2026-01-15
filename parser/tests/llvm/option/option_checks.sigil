@@ -1,0 +1,13 @@
+// Test: Option with is_some, is_none checks
+// Expected output: 1 (for is_some) + 1 (for is_none) + 100 (unwrap) = 102
+
+fn main() -> i64 {
+    let some_val = Some(100);
+    let none_val = None();
+    
+    let a = is_some(some_val);  // 1
+    let b = is_none(none_val);  // 1
+    let c = unwrap(some_val);   // 100
+    
+    a + b + c
+}

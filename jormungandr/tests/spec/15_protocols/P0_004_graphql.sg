@@ -1,0 +1,16 @@
+// Test: GraphQL client
+// Spec: 15-PROTOCOLS.md § 6 GraphQL Support
+// Priority: P0 - Bootstrap Critical
+
+use protocol::graphql::{Client, query};
+
+async fn main() {
+    let client = Client::new("https://api.example.com/graphql");
+    let result~ = client.query(query! {
+        user(id: 1) {
+            name
+            email
+        }
+    })|await;
+    println(result~.data.user.name);
+}

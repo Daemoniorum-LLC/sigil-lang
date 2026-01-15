@@ -1,0 +1,9 @@
+// Test: Closure capturing variable
+// Spec: Feature Interaction - Closures + Variables
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let multiplier = 10;
+    let f = |x: i32| -> i32 { x * multiplier };
+    println(f(5));  // 50
+}

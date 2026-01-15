@@ -1,0 +1,14 @@
+// Test: Module representation in IR
+// Spec: 16-AI-IR.md § Top-Level Structure
+// Priority: P0 - Bootstrap Critical
+
+mod math {
+    pub fn square(x: !i32) -> !i32 {
+        x * x
+    }
+}
+
+fn main() {
+    let ir = __export_ir();
+    println(ir.modules.len());
+}

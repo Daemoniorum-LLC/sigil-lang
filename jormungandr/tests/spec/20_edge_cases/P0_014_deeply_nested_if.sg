@@ -1,0 +1,18 @@
+// Test: Deeply nested conditionals
+// Spec: Edge Cases - Control Flow Depth
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let x = 5;
+    if x > 0 {
+        if x > 1 {
+            if x > 2 {
+                if x > 3 {
+                    if x > 4 {
+                        println("deep");
+                    }
+                }
+            }
+        }
+    }
+}

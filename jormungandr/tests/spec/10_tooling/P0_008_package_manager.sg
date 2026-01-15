@@ -1,0 +1,8 @@
+// Test: Package manager dependency resolution
+// Spec: 10-TOOLING.md § 2.3 Dependencies
+// Priority: P0 - Bootstrap Critical
+
+// This would test `use external_crate::something`
+fn main() {
+    println(1);
+}

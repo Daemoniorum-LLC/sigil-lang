@@ -292,9 +292,9 @@ pub enum IrType {
     #[serde(rename = "named")]
     Named { name: String, generics: Vec<IrType> },
 
-    /// Reference &T or &mut T
+    /// Reference &T, &mut T, &'a T, &'static mut T
     #[serde(rename = "reference")]
-    Reference { mutable: bool, inner: Box<IrType> },
+    Reference { lifetime: Option<String>, mutable: bool, inner: Box<IrType> },
 
     /// Pointer *const T or *mut T
     #[serde(rename = "pointer")]
@@ -334,6 +334,39 @@ pub enum IrType {
     /// Infer placeholder _
     #[serde(rename = "infer")]
     Infer,
+
+    /// Lifetime bound 'static, 'a
+    #[serde(rename = "lifetime")]
+    Lifetime { name: String },
+
+    /// Trait object: dyn Trait
+    #[serde(rename = "trait_object")]
+    TraitObject { bounds: Vec<IrType> },
+
+    /// Higher-ranked trait bound: for<'a> Trait<'a>
+    #[serde(rename = "hrtb")]
+    Hrtb {
+        lifetimes: Vec<String>,
+        bound: Box<IrType>,
+    },
+
+    /// Inline struct type: struct { field: Type, ... }
+    #[serde(rename = "inline_struct")]
+    InlineStruct {
+        fields: Vec<(String, IrType)>,
+    },
+
+    /// Impl trait: impl Trait bounds
+    #[serde(rename = "impl_trait")]
+    ImplTrait { bounds: Vec<IrType> },
+
+    /// Inline enum type: enum { Variant1, Variant2, ... }
+    #[serde(rename = "inline_enum")]
+    InlineEnum { variants: Vec<String> },
+
+    /// Associated type binding: Output = Type
+    #[serde(rename = "assoc_type_binding")]
+    AssocTypeBinding { name: String, ty: Box<IrType> },
 
     /// Error recovery type
     #[serde(rename = "error")]
@@ -535,6 +568,18 @@ pub enum IrOperation {
     Match {
         scrutinee: Box<IrOperation>,
         arms: Vec<IrMatchArm>,
+        #[serde(rename = "type")]
+        ty: IrType,
+        evidence: IrEvidence,
+    },
+
+    /// Pattern match used as a boolean condition in if-let/while-let expressions.
+    /// Returns true if the pattern matches, false otherwise.
+    /// Pattern bindings are extracted in the then-branch.
+    #[serde(rename = "let_match")]
+    LetMatch {
+        pattern: IrPattern,
+        value: Box<IrOperation>,
         #[serde(rename = "type")]
         ty: IrType,
         evidence: IrEvidence,
@@ -777,6 +822,16 @@ pub enum IrOperation {
         evidence: IrEvidence,
     },
 
+    // === Async ===
+    #[serde(rename = "async")]
+    Async {
+        body: Box<IrOperation>,
+        is_move: bool,
+        #[serde(rename = "type")]
+        ty: IrType,
+        evidence: IrEvidence,
+    },
+
     // === Cast ===
     #[serde(rename = "cast")]
     Cast {
@@ -833,6 +888,9 @@ pub enum BinaryOp {
     Gt,
     Ge,
     Concat,
+    MatMul,
+    Hadamard,
+    TensorProd,
 }
 
 /// Unary operators

@@ -1,0 +1,591 @@
+//! Comprehensive Type Checker Traits Test Suite
+//!
+//! Tests trait definitions, implementations, bounds, associated types,
+//! supertraits, and method resolution.
+//! Target: 100% trait system coverage for regression detection.
+
+use crate::parser::Parser;
+use crate::typeck::TypeChecker;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+/// Parse and type check a source string
+fn check_source(source: !&str) -> !bool {
+    let mut parser = Parser::new(source.to_string());
+    let ast = match parser.parse_file() {
+        Result::Ok(a) => a,
+        Result::Err(_) => return false,
+    };
+    let mut checker = TypeChecker::new();
+    match checker.check_file(ast) {
+        Result::Ok(_) => true,
+        Result::Err(_) => false,
+    }
+}
+
+/// Assert that type checking succeeds
+fn assert_checks(source: !&str, name: !&str) {
+    if !check_source(source) {
+        panic(format!("FAIL {}: type check failed", name));
+    }
+}
+
+/// Assert that type checking fails
+fn assert_fails(source: !&str, name: !&str) {
+    if check_source(source) {
+        panic(format!("FAIL {}: type check should have failed", name));
+    }
+}
+
+// ============================================================================
+// 1. BASIC TRAIT DEFINITIONS
+// ============================================================================
+
+fn test_basic_traits() -> !bool {
+    print("  [1/10] Basic trait definitions... ");
+
+    // Empty marker trait
+    assert_checks("trait Marker {}", "empty_trait");
+
+    // Trait with method
+    assert_checks("
+        trait Greet {
+            fn greet(self) -> !String;
+        }
+    ", "trait_one_method");
+
+    // Trait with multiple methods
+    assert_checks("
+        trait Collection {
+            fn len(self) -> !usize;
+            fn is_empty(self) -> !bool;
+            fn clear(mut self);
+        }
+    ", "trait_multi_methods");
+
+    // Public trait
+    assert_checks("pub trait PublicTrait {}", "pub_trait");
+
+    // Trait with generic parameter
+    assert_checks("
+        trait Container<T> {
+            fn get(self) -> !T;
+            fn set(mut self, value: !T);
+        }
+    ", "generic_trait");
+
+    println("PASS (5 cases)");
+    true
+}
+
+// ============================================================================
+// 2. TRAIT IMPLEMENTATIONS
+// ============================================================================
+
+fn test_trait_impls() -> !bool {
+    print("  [2/10] Trait implementations... ");
+
+    // Basic implementation
+    assert_checks("
+        trait Greet {
+            fn greet(self) -> !String;
+        }
+        struct Person { name: !String }
+        impl Greet for Person {
+            fn greet(self) -> !String {
+                return format!(\"Hello, {}\", self.name);
+            }
+        }
+    ", "basic_impl");
+
+    // Implement for multiple types
+    assert_checks("
+        trait Show {
+            fn show(self) -> !String;
+        }
+        struct Foo {}
+        struct Bar {}
+        impl Show for Foo {
+            fn show(self) -> !String { return \"Foo\"; }
+        }
+        impl Show for Bar {
+            fn show(self) -> !String { return \"Bar\"; }
+        }
+    ", "impl_multiple_types");
+
+    // Generic implementation
+    assert_checks("
+        trait Default {
+            fn default() -> !Self;
+        }
+        struct Wrapper<T> { value: !T }
+        impl<T> Default for Wrapper<T> where T: Default {
+            fn default() -> !Wrapper<T> {
+                Wrapper { value: T::default() }
+            }
+        }
+    ", "generic_impl");
+
+    // Missing method should fail
+    assert_fails("
+        trait Required {
+            fn must_implement(self);
+        }
+        struct Missing {}
+        impl Required for Missing {}
+    ", "missing_method");
+
+    // Wrong method signature should fail
+    assert_fails("
+        trait Exact {
+            fn method(self) -> !i32;
+        }
+        struct Wrong {}
+        impl Exact for Wrong {
+            fn method(self) -> !String { return \"\"; }
+        }
+    ", "wrong_signature");
+
+    println("PASS (5 cases)");
+    true
+}
+
+// ============================================================================
+// 3. DEFAULT METHOD IMPLEMENTATIONS
+// ============================================================================
+
+fn test_default_methods() -> !bool {
+    print("  [3/10] Default method implementations... ");
+
+    // Trait with default implementation
+    assert_checks("
+        trait WithDefault {
+            fn required(self) -> !i32;
+            fn optional(self) -> !i32 {
+                return self.required() * 2;
+            }
+        }
+        struct Implementor {}
+        impl WithDefault for Implementor {
+            fn required(self) -> !i32 { return 21; }
+        }
+    ", "default_method");
+
+    // Override default implementation
+    assert_checks("
+        trait Overridable {
+            fn method(self) -> !i32 { return 0; }
+        }
+        struct Custom {}
+        impl Overridable for Custom {
+            fn method(self) -> !i32 { return 42; }
+        }
+    ", "override_default");
+
+    // Multiple defaults
+    assert_checks("
+        trait ManyDefaults {
+            fn a(self) -> !i32 { return 1; }
+            fn b(self) -> !i32 { return 2; }
+            fn c(self) -> !i32 { return self.a() + self.b(); }
+        }
+        struct User {}
+        impl ManyDefaults for User {}
+    ", "multiple_defaults");
+
+    println("PASS (3 cases)");
+    true
+}
+
+// ============================================================================
+// 4. ASSOCIATED TYPES
+// ============================================================================
+
+fn test_associated_types() -> !bool {
+    print("  [4/10] Associated types... ");
+
+    // Basic associated type
+    assert_checks("
+        trait Iterator {
+            type Item;
+            fn next(mut self) -> ?Self::Item;
+        }
+        struct RangeIter { current: !i32, end: !i32 }
+        impl Iterator for RangeIter {
+            type Item = i32;
+            fn next(mut self) -> ?i32 {
+                if self.current < self.end {
+                    let val = self.current;
+                    self.current = self.current + 1;
+                    return ?val;
+                }
+                return null;
+            }
+        }
+    ", "associated_type_basic");
+
+    // Multiple associated types
+    assert_checks("
+        trait Mapping {
+            type Key;
+            type Value;
+            fn get(self, key: !Self::Key) -> ?Self::Value;
+        }
+        struct StringMap {}
+        impl Mapping for StringMap {
+            type Key = String;
+            type Value = String;
+            fn get(self, key: !String) -> ?String { return null; }
+        }
+    ", "multiple_associated_types");
+
+    // Associated type with bounds
+    assert_checks("
+        trait Bounded {
+            type Output: Clone;
+            fn produce(self) -> !Self::Output;
+        }
+    ", "associated_type_bounded");
+
+    println("PASS (3 cases)");
+    true
+}
+
+// ============================================================================
+// 5. ASSOCIATED CONSTANTS
+// ============================================================================
+
+fn test_associated_constants() -> !bool {
+    print("  [5/10] Associated constants... ");
+
+    // Basic associated constant
+    assert_checks("
+        trait HasMax {
+            const MAX: i32;
+        }
+        struct SmallInt {}
+        impl HasMax for SmallInt {
+            const MAX: i32 = 127;
+        }
+    ", "associated_const_basic");
+
+    // Default associated constant
+    assert_checks("
+        trait WithDefault {
+            const DEFAULT: i32 = 0;
+        }
+        struct UseDefault {}
+        impl WithDefault for UseDefault {}
+    ", "associated_const_default");
+
+    // Multiple associated constants
+    assert_checks("
+        trait Limits {
+            const MIN: i32;
+            const MAX: i32;
+        }
+        struct Byte {}
+        impl Limits for Byte {
+            const MIN: i32 = 0;
+            const MAX: i32 = 255;
+        }
+    ", "multiple_consts");
+
+    println("PASS (3 cases)");
+    true
+}
+
+// ============================================================================
+// 6. TRAIT BOUNDS
+// ============================================================================
+
+fn test_trait_bounds() -> !bool {
+    print("  [6/10] Trait bounds... ");
+
+    // Single bound
+    assert_checks("
+        trait Clone { fn clone(self) -> !Self; }
+        fn duplicate<T: Clone>(x: !T) -> !(T, T) {
+            return (x.clone(), x);
+        }
+    ", "single_bound");
+
+    // Multiple bounds
+    assert_checks("
+        trait Clone { fn clone(self) -> !Self; }
+        trait Debug { fn debug(self) -> !String; }
+        fn debug_clone<T: Clone + Debug>(x: !T) -> !String {
+            return x.debug();
+        }
+    ", "multiple_bounds");
+
+    // Where clause
+    assert_checks("
+        trait Clone { fn clone(self) -> !Self; }
+        fn process<T>(items: ![T]) -> ![T] where T: Clone {
+            return items;
+        }
+    ", "where_clause");
+
+    // Complex where clause
+    assert_checks("
+        trait A {}
+        trait B {}
+        trait C {}
+        fn complex<T, U>(a: !T, b: !U) where T: A + B, U: C {
+        }
+    ", "complex_where");
+
+    // Bound on associated type
+    assert_checks("
+        trait Iterator { type Item; }
+        trait Clone {}
+        fn collect_clones<I>(iter: !I) where I: Iterator, I::Item: Clone {
+        }
+    ", "associated_type_bound");
+
+    // Unsatisfied bound should fail
+    assert_fails("
+        trait Required {}
+        fn needs_trait<T: Required>(x: !T) {}
+        struct NoImpl {}
+        fn main() { needs_trait(NoImpl {}); }
+    ", "unsatisfied_bound");
+
+    println("PASS (6 cases)");
+    true
+}
+
+// ============================================================================
+// 7. SUPERTRAITS
+// ============================================================================
+
+fn test_supertraits() -> !bool {
+    print("  [7/10] Supertraits... ");
+
+    // Single supertrait
+    assert_checks("
+        trait Base {
+            fn base_method(self) -> !i32;
+        }
+        trait Derived: Base {
+            fn derived_method(self) -> !i32;
+        }
+        struct Impl {}
+        impl Base for Impl {
+            fn base_method(self) -> !i32 { return 1; }
+        }
+        impl Derived for Impl {
+            fn derived_method(self) -> !i32 { return 2; }
+        }
+    ", "single_supertrait");
+
+    // Multiple supertraits
+    assert_checks("
+        trait A { fn a(self); }
+        trait B { fn b(self); }
+        trait C: A + B { fn c(self); }
+        struct Multi {}
+        impl A for Multi { fn a(self) {} }
+        impl B for Multi { fn b(self) {} }
+        impl C for Multi { fn c(self) {} }
+    ", "multiple_supertraits");
+
+    // Transitive supertraits
+    assert_checks("
+        trait First { fn first(self); }
+        trait Second: First { fn second(self); }
+        trait Third: Second { fn third(self); }
+    ", "transitive_supertraits");
+
+    // Missing supertrait impl should fail
+    assert_fails("
+        trait Base { fn base(self); }
+        trait Derived: Base { fn derived(self); }
+        struct Incomplete {}
+        impl Derived for Incomplete {
+            fn derived(self) {}
+        }
+    ", "missing_supertrait");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// 8. OBJECT SAFETY
+// ============================================================================
+
+fn test_object_safety() -> !bool {
+    print("  [8/10] Object safety... ");
+
+    // Object-safe trait
+    assert_checks("
+        trait ObjectSafe {
+            fn method(self);
+        }
+        fn use_dyn(obj: &dyn ObjectSafe) {
+            obj.method();
+        }
+    ", "object_safe_basic");
+
+    // Trait with Self in return is not object-safe
+    assert_checks("
+        trait NotObjectSafe {
+            fn clone(self) -> !Self;
+        }
+    ", "not_object_safe_clone");
+
+    // Trait object with multiple traits
+    assert_checks("
+        trait Read { fn read(self); }
+        trait Write { fn write(self); }
+        fn read_write(obj: &(dyn Read + Write)) {}
+    ", "multi_trait_object");
+
+    println("PASS (3 cases)");
+    true
+}
+
+// ============================================================================
+// 9. METHOD RESOLUTION
+// ============================================================================
+
+fn test_method_resolution() -> !bool {
+    print("  [9/10] Method resolution... ");
+
+    // Inherent method takes priority
+    assert_checks("
+        trait Trait {
+            fn method(self) -> !i32 { return 1; }
+        }
+        struct Type {}
+        impl Type {
+            fn method(self) -> !i32 { return 2; }
+        }
+        impl Trait for Type {}
+        fn main() {
+            let t = Type {};
+            let _x = t.method();  // Calls inherent, returns 2
+        }
+    ", "inherent_priority");
+
+    // Explicit trait method call
+    assert_checks("
+        trait A { fn method(self) -> !i32; }
+        trait B { fn method(self) -> !i32; }
+        struct Type {}
+        impl A for Type { fn method(self) -> !i32 { return 1; } }
+        impl B for Type { fn method(self) -> !i32 { return 2; } }
+        fn main() {
+            let t = Type {};
+            let _a = A::method(t);
+            let _b = B::method(t);
+        }
+    ", "explicit_trait_method");
+
+    // Auto-ref for method call
+    assert_checks("
+        struct Value { x: !i32 }
+        impl Value {
+            fn get(self) -> !i32 { self.x }
+            fn get_ref(&self) -> !i32 { self.x }
+        }
+        fn main() {
+            let v = Value { x: 42 };
+            let _a = v.get();
+            let _b = v.get_ref();
+        }
+    ", "auto_ref");
+
+    // Method on generic type
+    assert_checks("
+        trait Process {
+            fn process(self) -> !i32;
+        }
+        fn call_process<T: Process>(x: !T) -> !i32 {
+            return x.process();
+        }
+    ", "method_on_generic");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// 10. COHERENCE AND ORPHAN RULES
+// ============================================================================
+
+fn test_coherence() -> !bool {
+    print("  [10/10] Coherence rules... ");
+
+    // Local type implementing foreign trait (allowed)
+    assert_checks("
+        trait ForeignTrait {}
+        struct LocalType {}
+        impl ForeignTrait for LocalType {}
+    ", "local_for_foreign");
+
+    // Local trait for foreign type (allowed in same crate)
+    assert_checks("
+        trait LocalTrait {}
+        impl LocalTrait for i32 {}
+    ", "local_trait_foreign_type");
+
+    // Blanket implementation
+    assert_checks("
+        trait ToString {
+            fn to_string(self) -> !String;
+        }
+        impl<T> ToString for T where T: Debug {
+            fn to_string(self) -> !String { return \"\"; }
+        }
+    ", "blanket_impl");
+
+    // Negative impl marker (if supported)
+    assert_checks("
+        trait Marker {}
+        struct NotMarker {}
+        // NotMarker deliberately does not implement Marker
+    ", "no_impl");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+pub fn main() -> !i32 {
+    println("Testing Type Checker Traits...");
+    println("");
+
+    let mut passed: !i32 = 0;
+    let mut failed: !i32 = 0;
+
+    if test_basic_traits() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_trait_impls() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_default_methods() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_associated_types() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_associated_constants() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_trait_bounds() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_supertraits() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_object_safety() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_method_resolution() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_coherence() { passed = passed + 1; } else { failed = failed + 1; }
+
+    println("");
+    println("Results: {}/{} test groups passed", passed, passed + failed);
+
+    if failed > 0 {
+        println("FAILED: {} test groups failed", failed);
+        return 1;
+    }
+
+    println("");
+    println("All trait system tests passed! (~40 test cases)");
+    return 0;
+}

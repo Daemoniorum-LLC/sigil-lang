@@ -1,0 +1,19 @@
+// Closure syntax variants
+fn main() {
+    let nums = vec![1, 2, 3, 4, 5];
+
+    // Rust-style closure
+    let a = nums|map(|x| x * 2);
+    println("Rust-style:");
+    println(a);
+
+    // Sigil-style closure
+    let b = nums|map{x => x * 3};
+    println("Sigil-style:");
+    println(b);
+
+    // Multi-param closure
+    let sum = nums|fold(0, |acc, x| acc + x);
+    println("Fold sum:");
+    println(sum);
+}

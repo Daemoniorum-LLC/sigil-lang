@@ -1,0 +1,28 @@
+// Test: Impl block with multiple methods
+// Spec: 03-TYPES.md § 7.2 Implementation Blocks
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate impl blocks can have multiple methods.
+//
+// Expected behavior:
+// Should print 52 (42 + 10)
+
+pub struct Value {
+    x: !i32
+}
+
+impl Value {
+    pub fn get(self) -> !i32 {
+        self.x
+    }
+
+    pub fn add(self, y: !i32) -> !i32 {
+        self.x + y
+    }
+}
+
+fn main() {
+    let v: !Value = Value { x: 42 };
+    println(v.add(10));
+}

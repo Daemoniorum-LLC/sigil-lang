@@ -1,0 +1,22 @@
+// Test: Where clause in generics
+// Spec: 03-TYPES.md § 6.2 Where Clauses
+// Priority: P2 - Enhancement
+
+trait Display {
+    fn show(&self);
+}
+
+struct Wrapper<T> {
+    value: T,
+}
+
+impl<T> Wrapper<T> where T: Display {
+    fn display(&self) {
+        self.value.show();
+    }
+}
+
+fn main() {
+    // Just verify it parses
+    println(1);
+}

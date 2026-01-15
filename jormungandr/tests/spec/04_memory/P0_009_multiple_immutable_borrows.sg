@@ -1,0 +1,21 @@
+// Test: Multiple immutable borrows allowed
+// Spec: 04-MEMORY.md § 3.1 Shared References
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate multiple immutable borrows can coexist.
+//
+// Expected behavior:
+// Should print 42 twice
+
+fn print_value(x: &!i32) {
+    println(*x);
+}
+
+fn main() {
+    let val: !i32 = 42;
+    let r1: &!i32 = &val;
+    let r2: &!i32 = &val;
+    print_value(r1);
+    print_value(r2);
+}

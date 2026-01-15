@@ -1,0 +1,9 @@
+// Test: Semicolon-terminated statements
+// Spec: 02-SYNTAX.md § 3.4 Statements
+// Priority: P0
+
+fn main() {
+    let x: !i32 = 40;
+    let y: !i32 = 2;
+    println(x + y);
+}

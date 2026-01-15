@@ -1,0 +1,15 @@
+// Test: Basic recursion with base case
+// Spec: 18-COMPILER.md § 3.1 Recursion
+// Priority: P2 - Enhancement
+
+fn factorial(n: !i32) -> !i32 {
+    if n <= 1 {
+        1
+    } else {
+        n * factorial(n - 1)
+    }
+}
+
+fn main() {
+    println(factorial(5));
+}

@@ -1,0 +1,19 @@
+// Test: Mutex with value modification
+// Spec: 06-CONCURRENCY.md § 5.1 Mutex
+// Priority: P1 - Production Ready
+
+fn main() {
+    let mutex: Mutex<i32> = Mutex::new(10);
+
+    // Lock and read
+    {
+        let guard = mutex.lock();
+        println(*guard);
+    }
+
+    // Can lock again after unlock
+    {
+        let guard = mutex.lock();
+        println(*guard);
+    }
+}

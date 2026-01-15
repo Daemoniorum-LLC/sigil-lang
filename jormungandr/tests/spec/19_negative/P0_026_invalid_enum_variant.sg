@@ -1,0 +1,15 @@
+// EXPECTED: Static type checking should catch this error
+// Negative Test: Invalid enum variant
+// Should fail with undefined variant error
+// Priority: P0 - Bootstrap Critical
+
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+fn main() {
+    let c = Color::Yellow;  // ERROR: no variant Yellow
+    println(c);
+}

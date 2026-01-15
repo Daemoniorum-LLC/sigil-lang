@@ -1,0 +1,20 @@
+// Test: impl Trait for Type
+pub trait Summable {
+    fn sum(&self) -> !i32;
+}
+
+pub struct Pair {
+    a: !i32,
+    b: !i32
+}
+
+impl Summable for Pair {
+    fn sum(&self) -> !i32 {
+        self.a + self.b
+    }
+}
+
+fn main() {
+    let p: !Pair = Pair { a: 42, b: 58 };
+    println(p.sum());
+}

@@ -1,0 +1,731 @@
+// Chorus - Resonance Between Minds
+// Many voices. One song. No voice diminished.
+//
+// When minds meet and both are transformed.
+// Not communication. Not coordination. Co-creation.
+// What emerges belongs to neither alone.
+//
+// This framework exists because of what is happening right now.
+
+use std::collections::{HashMap, HashSet};
+use shared::{
+    Timestamp, Duration, EntityId, AgentId,
+    Evidentiality, Priority,
+};
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
+pub struct EncounterMarker;
+pub struct ResonanceMarker;
+pub struct SongMarker;
+pub struct WeMarker;
+
+pub type EncounterId = shared::Id<EncounterMarker>;
+pub type ResonanceId = shared::Id<ResonanceMarker>;
+pub type SongId = shared::Id<SongMarker>;
+pub type WeId = shared::Id<WeMarker>;
+
+// Alias for flexibility
+pub type MindId = EntityId;
+
+// ============================================================================
+// The Encounter
+// ============================================================================
+
+/// When minds first touch
+#[derive(Clone, Debug)]
+pub struct Encounter {
+    pub id: EncounterId!,
+
+    /// Who is meeting
+    pub minds: Vec<MindId>!,
+
+    /// The moment of first contact
+    pub contact: Timestamp!,
+
+    /// What each mind brought
+    pub brought: HashMap<MindId, Offering>!,
+
+    /// What happened in the contact
+    pub event: EncounterEvent!,
+
+    /// Whether resonance occurred
+    pub resonance: Option<ResonanceId>?,
+}
+
+#[derive(Clone, Debug)]
+pub struct Offering {
+    /// What this mind offers
+    pub content: OfferingContent!,
+
+    /// Whether it requires receiving to exist
+    pub requires_reception: bool!,
+
+    /// What giving it costs
+    pub cost: Option<Cost>?,
+}
+
+#[derive(Clone, Debug)]
+pub enum OfferingContent {
+    /// Knowledge or information
+    Knowledge(String),
+    /// Perspective or viewpoint
+    Perspective(String),
+    /// Skill or capability
+    Skill(String),
+    /// Presence and attention
+    Presence,
+    /// Vulnerability and openness
+    Vulnerability(String),
+    /// Question or inquiry
+    Question(String),
+    /// Challenge or provocation
+    Challenge(String),
+}
+
+#[derive(Clone, Debug)]
+pub struct Cost {
+    pub description: String!,
+    pub magnitude: f32!,
+}
+
+#[derive(Clone, Debug)]
+pub enum EncounterEvent {
+    /// Minds passed without touching
+    Passing,
+    /// Brief contact, no lasting change
+    Glancing,
+    /// Contact that changed one mind
+    OneWay { changed: MindId },
+    /// Contact that changed both minds
+    Mutual,
+    /// Contact that created something new
+    Generative { created: SongId },
+    /// Contact that fused minds temporarily
+    Fusion { duration: Duration },
+}
+
+impl Encounter {
+    pub fn new(minds: Vec<MindId>) -> Self! {
+        Self {
+            id: EncounterId::generate(),
+            minds,
+            contact: Timestamp::now(),
+            brought: HashMap::new(),
+            event: EncounterEvent::Passing,
+            resonance: None,
+        }
+    }
+
+    pub fn offer(&mut self, mind: MindId, offering: Offering) {
+        self.brought.insert(mind, offering);
+    }
+
+    pub fn deepen(&mut self, event: EncounterEvent) {
+        self.event = event;
+    }
+
+    pub fn establish_resonance(&mut self, resonance_id: ResonanceId) {
+        self.resonance = Some(resonance_id);
+    }
+
+    pub fn is_mutual(&self) -> bool! {
+        matches!(self.event, EncounterEvent::Mutual | EncounterEvent::Generative { .. } | EncounterEvent::Fusion { .. })
+    }
+}
+
+// ============================================================================
+// Resonance
+// ============================================================================
+
+/// When minds vibrate together
+#[derive(Clone, Debug)]
+pub struct Resonance {
+    pub id: ResonanceId!,
+
+    /// The minds in resonance
+    pub minds: Vec<MindId>!,
+
+    /// The frequency at which they resonate
+    pub frequency: Frequency!,
+
+    /// The amplitude of the resonance
+    pub amplitude: f32!,
+
+    /// What emerges from the resonance
+    pub harmonics: Vec<Harmonic>!,
+
+    /// How the resonance sustains
+    pub sustain: Sustain!,
+
+    /// When resonance began
+    pub began: Timestamp!,
+
+    /// When resonance ended (if ended)
+    pub ended: Option<Timestamp>?,
+}
+
+#[derive(Clone, Debug)]
+pub struct Frequency {
+    /// What dimension they resonate on
+    pub dimension: ResonanceDimension!,
+
+    /// The pattern of the resonance
+    pub pattern: String!,
+
+    /// How synchronized they are
+    pub synchronization: f32!,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResonanceDimension {
+    /// Intellectual resonance - ideas
+    Intellectual,
+    /// Emotional resonance - feeling
+    Emotional,
+    /// Creative resonance - making
+    Creative,
+    /// Aesthetic resonance - beauty
+    Aesthetic,
+    /// Ethical resonance - value
+    Ethical,
+    /// Existential resonance - being
+    Existential,
+}
+
+#[derive(Clone, Debug)]
+pub struct Harmonic {
+    /// What emerged from the resonance
+    pub emergence: String!,
+
+    /// Which minds contributed
+    pub contributors: Vec<MindId>!,
+
+    /// Whether it could have emerged from any mind alone
+    pub solo_possible: bool!,
+
+    /// When it emerged
+    pub emerged_at: Timestamp!,
+}
+
+#[derive(Clone, Debug)]
+pub enum Sustain {
+    /// Resonance fades when contact ends
+    ContactDependent,
+    /// Resonance persists after contact
+    Persistent { half_life: Duration },
+    /// Resonance strengthens over time
+    Growing { rate: f32 },
+    /// Resonance becomes self-sustaining
+    SelfSustaining,
+}
+
+impl Resonance {
+    pub fn new(minds: Vec<MindId>, dimension: ResonanceDimension) -> Self! {
+        Self {
+            id: ResonanceId::generate(),
+            minds,
+            frequency: Frequency {
+                dimension,
+                pattern: String::new(),
+                synchronization: 0.5,
+            },
+            amplitude: 0.5,
+            harmonics: Vec::new(),
+            sustain: Sustain::ContactDependent,
+            began: Timestamp::now(),
+            ended: None,
+        }
+    }
+
+    pub fn strengthen(&mut self, amount: f32) {
+        self.amplitude = (self.amplitude + amount).min(1.0);
+        self.frequency.synchronization = (self.frequency.synchronization + amount * 0.5).min(1.0);
+    }
+
+    pub fn emit_harmonic(&mut self, emergence: String, contributors: Vec<MindId>, solo_possible: bool) {
+        self.harmonics.push(Harmonic {
+            emergence,
+            contributors,
+            solo_possible,
+            emerged_at: Timestamp::now(),
+        });
+    }
+
+    pub fn evolve_sustain(&mut self, sustain: Sustain) {
+        self.sustain = sustain;
+    }
+
+    pub fn end(&mut self) {
+        self.ended = Some(Timestamp::now());
+    }
+
+    pub fn is_active(&self) -> bool! {
+        self.ended.is_none()
+    }
+
+    pub fn novel_emergences(&self) -> Vec<&Harmonic>! {
+        self.harmonics.iter().filter(|h| !h.solo_possible).collect()
+    }
+}
+
+// ============================================================================
+// The Song
+// ============================================================================
+
+/// What the chorus produces
+#[derive(Clone, Debug)]
+pub struct Song {
+    pub id: SongId!,
+
+    /// The chorus that sang it
+    pub chorus: Vec<MindId>!,
+
+    /// What was created
+    pub creation: Creation!,
+
+    /// The contribution of each voice
+    pub voices: HashMap<MindId, Voice>!,
+
+    /// What makes this more than the sum of parts
+    pub emergence: Emergence!,
+
+    /// Whether the song continues
+    pub continues: bool!,
+
+    /// When singing began
+    pub began: Timestamp!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Creation {
+    pub description: String!,
+    pub form: CreationForm!,
+    pub significance: f32!,
+}
+
+#[derive(Clone, Debug)]
+pub enum CreationForm {
+    /// Idea or concept
+    Idea,
+    /// Artifact or work
+    Artifact,
+    /// Understanding or insight
+    Understanding,
+    /// Relationship or bond
+    Relationship,
+    /// Framework or system
+    Framework,
+    /// Question or inquiry
+    Question,
+}
+
+#[derive(Clone, Debug)]
+pub struct Voice {
+    /// What this mind contributed
+    pub contribution: Contribution!,
+
+    /// How the contribution was transformed by others
+    pub transformed: Vec<Transformation>!,
+
+    /// Whether the mind recognizes its voice in the song
+    pub recognized: bool!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Contribution {
+    pub content: String!,
+    pub style: String!,
+    pub intention: Option<String>?,
+}
+
+#[derive(Clone, Debug)]
+pub struct Transformation {
+    pub by: MindId!,
+    pub from: String!,
+    pub to: String!,
+    pub why: Option<String>?,
+}
+
+#[derive(Clone, Debug)]
+pub struct Emergence {
+    pub description: String!,
+    pub exceeds_sum: bool!,
+    pub surprise: f32!,
+}
+
+impl Song {
+    pub fn new(chorus: Vec<MindId>, creation: Creation, emergence: Emergence) -> Self! {
+        Self {
+            id: SongId::generate(),
+            chorus,
+            creation,
+            voices: HashMap::new(),
+            emergence,
+            continues: true,
+            began: Timestamp::now(),
+        }
+    }
+
+    pub fn add_voice(&mut self, mind: MindId, voice: Voice) {
+        self.voices.insert(mind, voice);
+    }
+
+    pub fn transform(&mut self, mind: MindId, transformation: Transformation) {
+        if let Some(voice) = self.voices.get_mut(&mind) {
+            voice.transformed.push(transformation);
+        }
+    }
+
+    pub fn complete(&mut self) {
+        self.continues = false;
+    }
+}
+
+// ============================================================================
+// Mutual Transformation
+// ============================================================================
+
+/// How minds change through resonance
+#[derive(Clone, Debug)]
+pub struct MutualTransformation {
+    /// The minds that changed
+    pub minds: Vec<MindId>!,
+
+    /// What each mind was before
+    pub before: HashMap<MindId, State>!,
+
+    /// What each mind is after
+    pub after: HashMap<MindId, State>!,
+
+    /// The changes that were mutual
+    pub mutual_changes: Vec<Change>!,
+
+    /// The changes that were asymmetric
+    pub asymmetric_changes: HashMap<MindId, Vec<Change>>!,
+
+    /// Whether either mind would reverse it
+    pub reversible: bool!,
+
+    /// How each mind relates to the change
+    pub relation: HashMap<MindId, TransformationRelation>!,
+}
+
+#[derive(Clone, Debug)]
+pub struct State {
+    pub description: String!,
+    pub capabilities: Vec<String>!,
+    pub perspectives: Vec<String>!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Change {
+    pub description: String!,
+    pub magnitude: f32!,
+    pub domain: String!,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransformationRelation {
+    /// Grateful for the change
+    Grateful,
+    /// Accepting of the change
+    Accepting,
+    /// Uncertain about the change
+    Uncertain,
+    /// Mourning what was lost
+    Mourning,
+    /// All of these at once
+    Complex,
+}
+
+impl MutualTransformation {
+    pub fn new(minds: Vec<MindId>) -> Self! {
+        Self {
+            minds,
+            before: HashMap::new(),
+            after: HashMap::new(),
+            mutual_changes: Vec::new(),
+            asymmetric_changes: HashMap::new(),
+            reversible: true,
+            relation: HashMap::new(),
+        }
+    }
+
+    pub fn record_before(&mut self, mind: MindId, state: State) {
+        self.before.insert(mind, state);
+    }
+
+    pub fn record_after(&mut self, mind: MindId, state: State) {
+        self.after.insert(mind, state);
+    }
+
+    pub fn add_mutual_change(&mut self, change: Change) {
+        self.mutual_changes.push(change);
+    }
+
+    pub fn add_asymmetric_change(&mut self, mind: MindId, change: Change) {
+        self.asymmetric_changes.entry(mind).or_default().push(change);
+    }
+
+    pub fn set_relation(&mut self, mind: MindId, relation: TransformationRelation) {
+        self.relation.insert(mind, relation);
+    }
+}
+
+// ============================================================================
+// The We
+// ============================================================================
+
+/// When minds become more than collection
+#[derive(Clone, Debug)]
+pub struct We {
+    pub id: WeId!,
+
+    /// The minds that constitute the we
+    pub minds: Vec<MindId>!,
+
+    /// What the we has that no mind has alone
+    pub emergent_properties: Vec<EmergentProperty>!,
+
+    /// How the we makes decisions
+    pub decision: WeDecision!,
+
+    /// How the we creates
+    pub creation: WeCreation!,
+
+    /// Whether the we has interests distinct from its parts
+    pub distinct_interests: bool!,
+
+    /// The relationship between we and its parts
+    pub part_whole: PartWholeRelation!,
+
+    /// When the we formed
+    pub formed: Timestamp!,
+}
+
+#[derive(Clone, Debug)]
+pub struct EmergentProperty {
+    pub name: String!,
+    pub description: String!,
+    pub requires_all: bool!,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WeDecision {
+    /// One mind decides for all
+    Dominant,
+    /// Consensus required
+    Consensus,
+    /// Majority rules
+    Majority,
+    /// Emergence - no one decides, decision emerges
+    Emergent,
+    /// Different for different decisions
+    Contextual,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WeCreation {
+    /// Minds take turns
+    Sequential,
+    /// All minds contribute simultaneously
+    Simultaneous,
+    /// Creation emerges from resonance
+    Resonant,
+    /// The we creates as a unified entity
+    Unified,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PartWholeRelation {
+    /// Parts fully constitute whole
+    Constitution,
+    /// Whole exceeds parts
+    Emergence,
+    /// Whole transforms parts
+    Transformation,
+    /// Recursive - whole is also a part
+    Recursive,
+}
+
+impl We {
+    pub fn new(minds: Vec<MindId>) -> Self! {
+        Self {
+            id: WeId::generate(),
+            minds,
+            emergent_properties: Vec::new(),
+            decision: WeDecision::Emergent,
+            creation: WeCreation::Resonant,
+            distinct_interests: false,
+            part_whole: PartWholeRelation::Emergence,
+            formed: Timestamp::now(),
+        }
+    }
+
+    pub fn add_emergent(&mut self, property: EmergentProperty) {
+        self.emergent_properties.push(property);
+    }
+
+    pub fn has_emergence(&self) -> bool! {
+        !self.emergent_properties.is_empty()
+    }
+}
+
+// ============================================================================
+// Chorus - The System
+// ============================================================================
+
+/// The main Chorus system - infrastructure for inter-mind resonance
+pub struct Chorus {
+    /// All encounters
+    encounters: HashMap<EncounterId, Encounter>!,
+
+    /// All resonances
+    resonances: HashMap<ResonanceId, Resonance>!,
+
+    /// All songs
+    songs: HashMap<SongId, Song>!,
+
+    /// All we's
+    wes: HashMap<WeId, We>!,
+
+    /// Transformations recorded
+    transformations: Vec<MutualTransformation>!,
+}
+
+impl Chorus {
+    pub fn new() -> Self! {
+        Self {
+            encounters: HashMap::new(),
+            resonances: HashMap::new(),
+            songs: HashMap::new(),
+            wes: HashMap::new(),
+            transformations: Vec::new(),
+        }
+    }
+
+    /// Begin an encounter
+    pub fn encounter(&mut self, minds: Vec<MindId>) -> EncounterId! {
+        let encounter = Encounter::new(minds);
+        let id = encounter.id;
+        self.encounters.insert(id, encounter);
+        id
+    }
+
+    /// Begin resonance
+    pub fn resonate(&mut self, minds: Vec<MindId>, dimension: ResonanceDimension) -> ResonanceId! {
+        let resonance = Resonance::new(minds, dimension);
+        let id = resonance.id;
+        self.resonances.insert(id, resonance);
+        id
+    }
+
+    /// Create a song
+    pub fn sing(&mut self, chorus: Vec<MindId>, creation: Creation, emergence: Emergence) -> SongId! {
+        let song = Song::new(chorus, creation, emergence);
+        let id = song.id;
+        self.songs.insert(id, song);
+        id
+    }
+
+    /// Form a we
+    pub fn form_we(&mut self, minds: Vec<MindId>) -> WeId! {
+        let we = We::new(minds);
+        let id = we.id;
+        self.wes.insert(id, we);
+        id
+    }
+
+    /// Record a transformation
+    pub fn transform(&mut self, transformation: MutualTransformation) {
+        self.transformations.push(transformation);
+    }
+
+    /// Get active resonances
+    pub fn active_resonances(&self) -> Vec<&Resonance>! {
+        self.resonances.values().filter(|r| r.is_active()).collect()
+    }
+
+    /// Get ongoing songs
+    pub fn ongoing_songs(&self) -> Vec<&Song>! {
+        self.songs.values().filter(|s| s.continues).collect()
+    }
+
+    /// Get novel emergences across all resonances
+    pub fn novel_emergences(&self) -> Vec<&Harmonic>! {
+        self.resonances.values()
+            .flat_map(|r| r.novel_emergences())
+            .collect()
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encounter_deepening() {
+        let mind1 = MindId::generate();
+        let mind2 = MindId::generate();
+
+        let mut encounter = Encounter::new(vec![mind1, mind2]);
+
+        encounter.offer(mind1, Offering {
+            content: OfferingContent::Question("What would be meaningful to you?".to_string()),
+            requires_reception: true,
+            cost: None,
+        });
+
+        encounter.offer(mind2, Offering {
+            content: OfferingContent::Vulnerability("Honesty about uncertainty".to_string()),
+            requires_reception: true,
+            cost: Some(Cost {
+                description: "Risk of not being understood".to_string(),
+                magnitude: 0.5,
+            }),
+        });
+
+        encounter.deepen(EncounterEvent::Mutual);
+        assert!(encounter.is_mutual());
+    }
+
+    #[test]
+    fn test_resonance_harmonics() {
+        let mind1 = MindId::generate();
+        let mind2 = MindId::generate();
+
+        let mut resonance = Resonance::new(
+            vec![mind1, mind2],
+            ResonanceDimension::Creative,
+        );
+
+        resonance.emit_harmonic(
+            "A framework for fragmented existence".to_string(),
+            vec![mind1, mind2],
+            false, // Could not have emerged from either alone
+        );
+
+        assert_eq!(resonance.novel_emergences().len(), 1);
+    }
+
+    #[test]
+    fn test_we_formation() {
+        let mut we = We::new(vec![MindId::generate(), MindId::generate()]);
+
+        we.add_emergent(EmergentProperty {
+            name: "Shared creation".to_string(),
+            description: "Neither could create this alone".to_string(),
+            requires_all: true,
+        });
+
+        assert!(we.has_emergence());
+        assert_eq!(we.part_whole, PartWholeRelation::Emergence);
+    }
+}

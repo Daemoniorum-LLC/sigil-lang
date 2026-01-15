@@ -1,0 +1,28 @@
+// Test: Static method (associated function with no self)
+// Spec: 03-TYPES.md § 7.3 Static Methods
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate static methods work correctly.
+//
+// Expected behavior:
+// Should print 42
+
+pub struct Value {
+    x: !i32
+}
+
+impl Value {
+    pub fn new(x: !i32) -> !Value {
+        Value { x: x }
+    }
+
+    pub fn get(self) -> !i32 {
+        self.x
+    }
+}
+
+fn main() {
+    let v: !Value = Value::new(42);
+    println(v.get());
+}

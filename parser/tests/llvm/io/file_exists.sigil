@@ -1,0 +1,7 @@
+// Test: File existence check
+// Expected output: 1 (file exists)
+
+fn main() -> i64 {
+    // Check if the runtime file exists
+    file_exists("/home/crook/dev2/workspace/sigil/sigil-lang/parser/runtime/sigil_runtime.c")
+}

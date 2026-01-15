@@ -1,0 +1,8 @@
+// Negative Test: Break outside of loop
+// Should fail with syntax error
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    break;  // ERROR: break outside of loop
+    println("done");
+}

@@ -1,0 +1,20 @@
+// Test: Loop labels for break/continue
+// Spec: 02-SYNTAX.md § 4.7 Loop Labels
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate loop labels work with break.
+//
+// Expected behavior:
+// Should print 0, 1, 2
+
+fn main() {
+    let mut i: !i32 = 0;
+    'outer: while i < 5 {
+        if i >= 3 {
+            break 'outer;
+        }
+        println(i);
+        i = i + 1;
+    }
+}

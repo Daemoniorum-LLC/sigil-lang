@@ -1,0 +1,12 @@
+// Test: Result with pattern matching
+// Spec: Feature Interaction - Result + Match
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let ok_val: Result<i32, String> = Ok(100);
+    let result = match ok_val {
+        Ok(x) => x,
+        Err(_) => -1,
+    };
+    println(result);
+}

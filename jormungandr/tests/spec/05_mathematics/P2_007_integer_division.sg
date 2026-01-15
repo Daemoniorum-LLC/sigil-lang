@@ -1,0 +1,12 @@
+// Test: Integer division
+// Spec: 05-MATHEMATICS.md § 2.3 Operators
+// Priority: P2 - Enhancement
+
+fn main() {
+    let a: !i32 = 17;
+    let b: !i32 = 5;
+
+    println(a / b);
+    println(a % b);
+    println((-a) / b);
+}

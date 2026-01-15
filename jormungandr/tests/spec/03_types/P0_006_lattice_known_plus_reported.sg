@@ -1,0 +1,18 @@
+// Test: Evidence lattice rule - Known + Reported = Reported
+// Spec: 03-TYPES.md § 2.2 Evidence Lattice
+// Priority: P0
+//
+// Purpose:
+// Validates that combining Known (!) and Reported (~) evidence
+// follows the pessimistic lattice rule: ! + ~ = ~
+//
+// Expected behavior:
+// When adding a Known value and a Reported value, the result
+// should have Reported evidence. Should print 119 (42 + 77).
+
+fn main() {
+    let x: !i32 = 42;
+    let y: ~i32 = 77;
+    let z = x + y;  // Should be ~i32
+    println(z);
+}

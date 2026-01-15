@@ -1,0 +1,15 @@
+// Test: Line comments
+// Spec: 01-LEXICAL.md § 2.4 Comments
+// Priority: P0
+//
+// Purpose:
+// Validates that line comments are ignored.
+//
+// Expected behavior:
+// Should compile and print 42
+
+fn main() {
+    // This is a comment
+    let x: !i32 = 42; // Another comment
+    println(x);
+}

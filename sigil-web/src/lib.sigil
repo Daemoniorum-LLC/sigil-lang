@@ -1,0 +1,119 @@
+//! sigil-web - Reactive Web Framework for Sigil
+//!
+//! A VDOM-based web framework that compiles to WebAssembly, providing:
+//! - Reactive signals for state management
+//! - Virtual DOM with efficient diffing
+//! - Component-based architecture
+//! - Browser API bindings via sigil-web-sys
+//!
+//! ## Quick Start
+//!
+//! ```sigil
+//! use sigil_web::prelude::*;
+//!
+//! #[component]
+//! fn App() -> Element! {
+//!     let count! = use_signal(0);
+//!
+//!     html! {
+//!         <div>
+//!             <h1>"Count: " {count·get()}</h1>
+//!             <button on:click={|_| count·update(|c| *c += 1)}>
+//!                 "Increment"
+//!             </button>
+//!         </div>
+//!     }
+//! }
+//!
+//! fn main() {
+//!     sigil_web::mount[App]("app");
+//! }
+//! ```
+
+pub mod vdom;
+pub mod signals;
+pub mod component;
+pub mod hooks;
+pub mod events;
+pub mod runtime;
+
+// Re-export browser bindings
+pub use sigil_web_sys as web_sys;
+
+/// Prelude - import everything commonly needed
+pub mod prelude {
+    pub use crate::vdom::{Element, Node, Attribute, VNode};
+    pub use crate::signals::{Signal, create_signal, use_signal};
+    pub use crate::component::{Component, component};
+    pub use crate::hooks::*;
+    pub use crate::events::*;
+    pub use crate::mount;
+    pub use crate::html;
+}
+
+/// Mount a component to a DOM element by ID
+pub fn mount[C: Component](element_id: &str!) {
+    let window! = web_sys::window()·expect("no window");
+    let document! = window·document()·expect("no document");
+    let root! = document·get_element_by_id(element_id)·expect("element not found");
+
+    runtime::mount_to_element[C](root);
+}
+
+/// Mount a component to a specific DOM element
+pub fn mount_to[C: Component](element: web_sys::Element!) {
+    runtime::mount_to_element[C](element);
+}
+
+/// HTML macro for JSX-like syntax
+///
+/// Transforms at compile time into VNode tree construction
+#[macro]
+pub macro html {
+    // Empty element
+    (<$tag:ident />) => {
+        Element::new(stringify!($tag))
+    };
+
+    // Element with children
+    (<$tag:ident $($attr:tt)*> $($children:tt)* </$tag2:ident>) => {{
+        debug_assert!(stringify!($tag) == stringify!($tag2));
+        let mut el! = Element::new(stringify!($tag));
+        html!(@attrs el $($attr)*);
+        html!(@children el $($children)*);
+        el
+    }};
+
+    // Attribute parsing
+    (@attrs $el:ident) => {};
+    (@attrs $el:ident $name:ident = $value:expr $($rest:tt)*) => {
+        $el·set_attr(stringify!($name), $value);
+        html!(@attrs $el $($rest)*);
+    };
+    (@attrs $el:ident on:$event:ident = $handler:expr $($rest:tt)*) => {
+        $el·on(stringify!($event), $handler);
+        html!(@attrs $el $($rest)*);
+    };
+    (@attrs $el:ident class = $value:expr $($rest:tt)*) => {
+        $el·set_class($value);
+        html!(@attrs $el $($rest)*);
+    };
+    (@attrs $el:ident style = $value:expr $($rest:tt)*) => {
+        $el·set_style($value);
+        html!(@attrs $el $($rest)*);
+    };
+
+    // Children parsing
+    (@children $el:ident) => {};
+    (@children $el:ident $text:literal $($rest:tt)*) => {
+        $el·append_text($text);
+        html!(@children $el $($rest)*);
+    };
+    (@children $el:ident { $expr:expr } $($rest:tt)*) => {
+        $el·append($expr);
+        html!(@children $el $($rest)*);
+    };
+    (@children $el:ident <$($child:tt)*) => {
+        $el·append_child(html!(<$($child)*));
+    };
+}

@@ -1,0 +1,10 @@
+// Test: Softmax activation
+// Spec: 14-NEURAL.md § 4 Activation Functions
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let logits: Tensor<[3]> = Tensor::from([1.0, 2.0, 3.0]);
+    let probs = logits|softmax;
+    let sum = probs|Σ;  // Should sum to 1.0
+    println(sum);
+}

@@ -1,0 +1,23 @@
+// Test: Min and max functions
+// Spec: 05-MATHEMATICS.md § 3.2 Comparison
+// Priority: P1 - Standard Feature
+
+fn main() {
+    // min with integers
+    println(min(5, 3));
+    println(min(3, 5));
+    println(min(-10, 10));
+
+    // max with integers
+    println(max(5, 3));
+    println(max(3, 5));
+    println(max(-10, 10));
+
+    // min/max with floats
+    println(min(3.14, 2.71));
+    println(max(3.14, 2.71));
+
+    // Equal values
+    println(min(42, 42));
+    println(max(42, 42));
+}

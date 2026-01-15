@@ -67,8 +67,8 @@ secrets.yaml
 **/*.credentials
 
 # Ignore root-level test directories created accidentally
-/src/
-/test/
+# /src/  # REMOVED - was preventing source code from being committed!
+# /test/ # REMOVED - was preventing tests from being committed!
 
 # Autonomous development logs and artifacts
 autonomous-logs/
@@ -110,3 +110,12 @@ vite.config.d.ts
 # Rust
 **/target/
 moloch/target/
+
+# Self-hosted Sigil compiler bootstrap (must be at end to override build/ ignore)
+# Jormungandr is the canonical self-hosted compiler (renamed from self-hosted/)
+!jormungandr/build/
+!jormungandr/build/sigil_bootstrap.c
+# But ignore compiled binaries and intermediate files
+jormungandr/build/sigil
+jormungandr/build/sigil_debug
+jormungandr/build/c/

@@ -1,0 +1,12 @@
+// Test: Phantom data pattern
+// Spec: 03-TYPES.md § 3.5 PhantomData
+// Priority: P2 - Enhancement
+
+struct Wrapper {
+    value: !i32
+}
+
+fn main() {
+    let w: Wrapper = Wrapper { value: 42 };
+    println(w.value);
+}
