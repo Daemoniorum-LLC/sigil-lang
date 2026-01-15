@@ -1,34 +1,32 @@
 ---
 name: Feature Request
-about: Suggest a new feature for Sigil
-title: '[FEATURE] '
+about: Suggest something
+title: ''
 labels: enhancement
 assignees: ''
 ---
 
-## Problem
+## The Problem
 
-What problem does this feature solve? What's the use case?
+What are you trying to do that you can't?
 
-## Proposed Solution
+## Your Idea
 
-Describe the feature you'd like to see.
+How would you solve it?
 
 ```sigil
-// Example syntax if applicable
-fn example() {
-    // ...
-}
+// Example syntax if it's a language feature
 ```
 
-## Alternatives Considered
+## Evidentiality
 
-Have you considered alternative approaches? Why is this the best solution?
+If this is a language feature: how does it interact with `!`, `?`, `~`, `‽`?
 
-## Evidentiality Considerations
+Does it:
+- Preserve trust levels?
+- Transform them?
+- Need special handling?
 
-If this is a language feature, how does it interact with evidentiality markers (`!`, `?`, `~`, `‽`)?
+## Alternatives
 
-## Additional Context
-
-Any other relevant information, links to similar features in other languages, etc.
+What else did you consider? Why is this better?
