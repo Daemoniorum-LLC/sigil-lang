@@ -17,18 +17,11 @@ env:
 jobs:
   build:
     name: Build ${{ matrix.target }}
-    runs-on:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to release'
-        required: true
-        default: 'v1.0.0' ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Linux
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: sigil
@@ -38,8 +31,6 @@ jobs:
             artifact_name: sigil
             asset_name: sigil-linux-aarch64
             cross: true
-
-          # macOS
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact_name: sigil
@@ -48,8 +39,6 @@ jobs:
             target: aarch64-apple-darwin
             artifact_name: sigil
             asset_name: sigil-macos-aarch64
-
-          # Windows
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: sigil.exe
@@ -107,13 +96,7 @@ jobs:
   release:
     name: Create Release
     needs: build
-    runs-on:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to release'
-        required: true
-        default: 'v1.0.0' ubuntu-latest
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
@@ -135,6 +118,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ github.ref_name }}
           name: Sigil ${{ github.ref_name }}
           draft: false
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
@@ -145,95 +129,3 @@ jobs:
             artifacts/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Update Homebrew formula with new version
-  homebrew:
-    name: Update Homebrew
-    needs: release
-    runs-on:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to release'
-        required: true
-        default: 'v1.0.0' ubuntu-latest
-    if: ${{ !contains(github.ref_name, 'alpha') && !contains(github.ref_name, 'beta') && !contains(github.ref_name, 'rc') }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Get release info
-        id: release
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-          # Download source tarball and compute SHA256
-          curl -sL "https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.ref_name }}.tar.gz" -o source.tar.gz
-          SHA256=$(sha256sum source.tar.gz | cut -d' ' -f1)
-          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
-
-      - name: Update Homebrew formula
-        run: |
-          cat > homebrew/Formula/sigil.rb << 'FORMULA'
-          class Sigil < Formula
-            desc "Polysynthetic programming language with epistemic types for AI"
-            homepage "https://github.com/Daemoniorum-LLC/sigil-lang"
-            url "https://github.com/Daemoniorum-LLC/sigil-lang/archive/refs/tags/v${{ steps.release.outputs.version }}.tar.gz"
-            sha256 "${{ steps.release.outputs.sha256 }}"
-            license "LicenseRef-Daemoniorum"
-            head "https://github.com/Daemoniorum-LLC/sigil-lang.git", branch: "main"
-
-            depends_on "rust" => :build
-
-            def install
-              cd "parser" do
-                system "cargo", "install", *std_cargo_args
-              end
-            end
-
-            def caveats
-              <<~EOS
-                Sigil is a polysynthetic programming language designed for AI systems.
-
-                Evidence markers:
-                  !  Known (verified/computed)
-                  ?  Uncertain (validated)
-                  ~  Reported (external data)
-                  ‽  Paradox (self-referential)
-
-                Quick start:
-                  sigil run hello.sigil    # Run a program
-                  sigil check hello.sigil  # Type check
-                  sigil repl               # Interactive REPL
-
-                Documentation:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to release'
-        required: true
-        default: 'v1.0.0' https://github.com/Daemoniorum-LLC/sigil-lang/tree/main/docs
-              EOS
-            end
-
-            test do
-              assert_match "sigil", shell_output("#{bin}/sigil --version")
-
-              (testpath/"hello.sigil").write <<~EOS
-                fn main() {
-                  print("Hello from Sigil!");
-                }
-              EOS
-              assert_match "Hello from Sigil!", shell_output("#{bin}/sigil run #{testpath}/hello.sigil")
-            end
-          end
-          FORMULA
-
-      - name: Commit formula update
-        run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add homebrew/Formula/sigil.rb
-          git commit -m "chore(homebrew): Update formula to v${{ steps.release.outputs.version }}" || exit 0
-          git push origin HEAD:main
