@@ -2,9 +2,7 @@
 
 A polysynthetic programming language with evidentiality types, morpheme operators, and native performance through LLVM. Now with comprehensive **Agent Infrastructure** for building intelligent, self-aware systems.
 
-> Part of the [Persona Framework](https://github.com/Daemoniorum-LLC/persona-framework) ecosystem
-
-## 🆕 v0.2.0 - Agent Infrastructure Release
+## v1.0.0 - Production Ready
 
 This release introduces a complete suite of agent frameworks and memory systems:
 
