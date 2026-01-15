@@ -1,0 +1,2 @@
+fn hello() -> i64 { 42 }
+fn main() { hello(); }

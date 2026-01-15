@@ -1,0 +1,17 @@
+// Test: Function with no return type (unit)
+// Spec: 02-SYNTAX.md § 5.2 Function Signatures
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate functions without return type work.
+//
+// Expected behavior:
+// Should print 42
+
+fn print_value(x: !i32) {
+    println(x);
+}
+
+fn main() {
+    print_value(42);
+}

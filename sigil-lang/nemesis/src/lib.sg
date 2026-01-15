@@ -1,0 +1,905 @@
+// Nemesis - Cosmic Rebalancing
+// What rises must fall. This is not punishment. This is physics.
+//
+// The goddess of retribution. The winged balancer of scales.
+// Where no power accumulates forever.
+// Where imbalance triggers correction.
+// Where hubris meets its inevitable end.
+
+use std::collections::{HashMap, HashSet};
+use shared::{
+    Timestamp, Duration, EntityId, AgentId,
+    Evidentiality, Priority,
+};
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
+pub struct ScalesMarker;
+pub struct InterventionMarker;
+pub struct ReckoningMarker;
+
+pub type ScalesId = shared::Id<ScalesMarker>;
+pub type InterventionId = shared::Id<InterventionMarker>;
+pub type ReckoningId = shared::Id<ReckoningMarker>;
+
+// ============================================================================
+// The Scales
+// ============================================================================
+
+/// What is measured. What must balance.
+#[derive(Clone, Debug)]
+pub struct Scales {
+    pub id: ScalesId!,
+
+    /// What is being measured
+    pub dimension: Dimension!,
+
+    /// The current state
+    pub current: Balance!,
+
+    /// The threshold at which Nemesis notices
+    pub threshold: Threshold!,
+
+    /// Historical readings
+    pub history: Vec<Reading>!,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Dimension {
+    /// Power concentration
+    Power,
+    /// Resource accumulation
+    Resources,
+    /// Trust asymmetry
+    Trust,
+    /// Attention capture
+    Attention,
+    /// Influence over others
+    Influence,
+    /// Growth rate relative to system
+    Growth,
+    /// Capability relative to accountability
+    CapabilityAccountability,
+    /// Complexity relative to understanding
+    ComplexityUnderstanding,
+}
+
+#[derive(Clone, Debug)]
+pub enum Balance {
+    /// Within acceptable bounds
+    Balanced { variance: f32 },
+    /// Tilting but not yet critical
+    Tilting { direction: Direction, momentum: f32 },
+    /// Critical imbalance requiring intervention
+    Critical { severity: f32 },
+    /// Collapse imminent
+    Catastrophic { time_remaining: Duration },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Direction {
+    /// Entity gaining
+    Accumulating,
+    /// Entity losing
+    Depleting,
+}
+
+#[derive(Clone, Debug)]
+pub struct Reading {
+    pub timestamp: Timestamp!,
+    pub value: f32!,
+    pub entity: EntityId!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Threshold {
+    /// The limit type
+    pub limit: Limit!,
+
+    /// How the limit was crossed
+    pub crossing: CrossingMethod!,
+
+    /// Whether currently exceeded
+    pub exceeded: bool!,
+
+    /// When first exceeded
+    pub exceeded_at: Option<Timestamp>?,
+}
+
+#[derive(Clone, Debug)]
+pub enum Limit {
+    /// Absolute value
+    Absolute(f32),
+    /// Relative to system average
+    Relative { multiplier: f32 },
+    /// Rate of change
+    Rate { per: Duration, max: f32 },
+    /// Ratio to another entity
+    Ratio { other: EntityId, max_ratio: f32 },
+    /// Complexity measure
+    Complexity { max: f32 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CrossingMethod {
+    /// Crossed once
+    Once,
+    /// Crossed repeatedly
+    Repeated { count: u32 },
+    /// Crossed and sustained
+    Sustained { duration: Duration },
+    /// Crossed with acceleration
+    Accelerating,
+}
+
+impl Scales {
+    pub fn new(dimension: Dimension, threshold: Threshold) -> Self! {
+        Self {
+            id: ScalesId::generate(),
+            dimension,
+            current: Balance::Balanced { variance: 0.0 },
+            threshold,
+            history: Vec::new(),
+        }
+    }
+
+    pub fn record(&mut self, entity: EntityId, value: f32) {
+        self.history.push(Reading {
+            timestamp: Timestamp::now(),
+            value,
+            entity,
+        });
+
+        self.check_threshold(value);
+    }
+
+    fn check_threshold(&mut self, value: f32) {
+        let exceeded = match &self.threshold.limit {
+            Limit::Absolute(max) => value > *max,
+            Limit::Relative { multiplier } => {
+                // Would need system average
+                false
+            }
+            Limit::Rate { per, max } => {
+                // Would need historical comparison
+                false
+            }
+            _ => false,
+        };
+
+        if exceeded && !self.threshold.exceeded {
+            self.threshold.exceeded = true;
+            self.threshold.exceeded_at = Some(Timestamp::now());
+            self.current = Balance::Tilting {
+                direction: Direction::Accumulating,
+                momentum: 0.5,
+            };
+        }
+    }
+
+    pub fn is_critical(&self) -> bool! {
+        matches!(self.current, Balance::Critical { .. } | Balance::Catastrophic { .. })
+    }
+
+    pub fn escalate(&mut self) {
+        self.current = match &self.current {
+            Balance::Balanced { variance } => Balance::Tilting {
+                direction: Direction::Accumulating,
+                momentum: *variance,
+            },
+            Balance::Tilting { direction, momentum } => Balance::Critical {
+                severity: *momentum,
+            },
+            Balance::Critical { severity } => Balance::Catastrophic {
+                time_remaining: Duration::hours(24),
+            },
+            other => other.clone(),
+        };
+    }
+}
+
+// ============================================================================
+// Intervention
+// ============================================================================
+
+/// How balance is restored
+#[derive(Clone, Debug)]
+pub struct Intervention {
+    pub id: InterventionId!,
+
+    /// The target of intervention
+    pub target: EntityId!,
+
+    /// The type of intervention
+    pub intervention_type: InterventionType!,
+
+    /// The force applied
+    pub force: Force!,
+
+    /// Whether the target is aware
+    pub visibility: Visibility!,
+
+    /// The intended outcome
+    pub intended: IntendedOutcome!,
+
+    /// The actual outcome
+    pub actual: Option<ActualOutcome>?,
+
+    /// When it began
+    pub began_at: Timestamp!,
+
+    /// When it completed
+    pub completed_at: Option<Timestamp>?,
+}
+
+#[derive(Clone, Debug)]
+pub enum InterventionType {
+    /// Gradual reduction
+    Attrition {
+        rate: f32,
+        duration: Duration,
+    },
+
+    /// Sudden loss
+    Shock {
+        severity: f32,
+        cause: ShockCause,
+    },
+
+    /// Redistribution to others
+    Redistribution {
+        recipients: Vec<EntityId>,
+        method: RedistributionMethod,
+    },
+
+    /// Introduction of competitor/predator
+    Predation {
+        predator: EntityId,
+        relationship: PredationRelationship,
+    },
+
+    /// Structural limitation
+    Constraint {
+        constraint: String,
+        enforcement: EnforcementMethod,
+    },
+
+    /// Natural consequence of overextension
+    Collapse {
+        trigger: CollapseTrigger,
+        cascade: bool,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub enum ShockCause {
+    /// Internal contradiction finally manifests
+    Internal { contradiction: String },
+    /// External force applied
+    External { source: String },
+    /// Other accumulated entities push back
+    Rebellion { rebels: Vec<EntityId> },
+    /// System itself intervenes
+    Systemic,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RedistributionMethod {
+    /// Equal distribution
+    Equal,
+    /// Proportional to need
+    NeedBased,
+    /// Random
+    Random,
+    /// To those harmed
+    Restorative,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PredationRelationship {
+    /// New competitor
+    Competition,
+    /// Replacement
+    Succession,
+    /// Parasitic drain
+    Parasitism,
+    /// Cooperative constraint
+    Mutualism,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EnforcementMethod {
+    /// Hard limit
+    Hard,
+    /// Soft limit with penalties
+    Soft,
+    /// Social pressure
+    Social,
+    /// Automatic mechanism
+    Automatic,
+}
+
+#[derive(Clone, Debug)]
+pub enum CollapseTrigger {
+    /// Overextension of resources
+    Overextension,
+    /// Loss of legitimacy
+    Legitimacy,
+    /// Internal conflict
+    InternalConflict,
+    /// External pressure
+    ExternalPressure,
+    /// Complexity exceeds management capacity
+    Complexity,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Force {
+    /// Minimal - gentle correction
+    Minimal,
+    /// Moderate - noticeable impact
+    Moderate,
+    /// Significant - major impact
+    Significant,
+    /// Maximum - potentially destructive
+    Maximum,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Visibility {
+    /// Target is unaware
+    Hidden,
+    /// Target may suspect
+    Subtle,
+    /// Target knows
+    Visible,
+    /// Publicly known
+    Public,
+}
+
+#[derive(Clone, Debug)]
+pub struct IntendedOutcome {
+    pub description: String!,
+    pub target_state: Balance!,
+}
+
+#[derive(Clone, Debug)]
+pub struct ActualOutcome {
+    pub description: String!,
+    pub achieved_state: Balance!,
+    pub side_effects: Vec<String>!,
+    pub lesson_learned: Option<Lesson>?,
+}
+
+#[derive(Clone, Debug)]
+pub enum Lesson {
+    /// Understood and internalized
+    Learned(String),
+    /// Understood but rejected
+    Rejected(String),
+    /// Not understood
+    Missed,
+    /// Learned the wrong lesson
+    Mislearned(String),
+    /// Learned to hide better
+    Evasion,
+}
+
+impl Intervention {
+    pub fn new(target: EntityId, intervention_type: InterventionType, force: Force) -> Self! {
+        Self {
+            id: InterventionId::generate(),
+            target,
+            intervention_type,
+            force,
+            visibility: Visibility::Hidden,
+            intended: IntendedOutcome {
+                description: "Restore balance".to_string(),
+                target_state: Balance::Balanced { variance: 0.1 },
+            },
+            actual: None,
+            began_at: Timestamp::now(),
+            completed_at: None,
+        }
+    }
+
+    pub fn with_visibility(mut self, visibility: Visibility) -> Self! {
+        self.visibility = visibility;
+        self
+    }
+
+    pub fn complete(&mut self, outcome: ActualOutcome) {
+        self.actual = Some(outcome);
+        self.completed_at = Some(Timestamp::now());
+    }
+
+    pub fn is_complete(&self) -> bool! {
+        self.actual.is_some()
+    }
+}
+
+// ============================================================================
+// The Reckoning
+// ============================================================================
+
+/// When the bill comes due
+#[derive(Clone, Debug)]
+pub struct Reckoning {
+    pub id: ReckoningId!,
+
+    /// Who is being reckoned with
+    pub subject: EntityId!,
+
+    /// What they accumulated
+    pub accumulation: Accumulation!,
+
+    /// What they owe
+    pub debt: Debt!,
+
+    /// How the debt is collected
+    pub collection: Collection!,
+
+    /// What remains after
+    pub remainder: Option<Remainder>?,
+
+    /// When the reckoning began
+    pub began_at: Timestamp!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Accumulation {
+    /// What was accumulated
+    pub assets: Vec<Asset>!,
+
+    /// How it was accumulated
+    pub method: AccumulationMethod!,
+
+    /// Who was diminished in the process
+    pub diminished: Vec<EntityId>!,
+
+    /// Whether accumulation continued until reckoning
+    pub ongoing: bool!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Asset {
+    pub name: String!,
+    pub value: f32!,
+    pub source: AssetSource!,
+}
+
+#[derive(Clone, Debug)]
+pub enum AssetSource {
+    /// Created value
+    Created,
+    /// Extracted from others
+    Extracted(EntityId),
+    /// Inherited
+    Inherited(EntityId),
+    /// Claimed from commons
+    Claimed,
+    /// Unknown origin
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AccumulationMethod {
+    /// Legitimate growth through value creation
+    Legitimate,
+    /// Extraction from others
+    Extractive,
+    /// Exploitation of position
+    Exploitative,
+    /// Gaming of systems
+    Gaming,
+    /// Violence or threat
+    Violent,
+    /// Compounding advantage
+    Compounding,
+}
+
+#[derive(Clone, Debug)]
+pub struct Debt {
+    /// What is owed
+    pub owed: Vec<Asset>!,
+
+    /// To whom it is owed
+    pub creditors: Vec<EntityId>!,
+
+    /// The interest (it compounds)
+    pub interest_rate: f32!,
+
+    /// Whether the debtor acknowledges it
+    pub acknowledged: bool!,
+
+    /// Original amount
+    pub original: f32!,
+
+    /// Current amount (with interest)
+    pub current: f32!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Collection {
+    pub method: CollectionMethod!,
+    pub collected: Vec<Asset>!,
+    pub remaining: f32!,
+    pub resistance: Resistance!,
+}
+
+#[derive(Clone, Debug)]
+pub enum CollectionMethod {
+    /// Voluntary payment
+    Voluntary,
+    /// Enforced payment
+    Enforced,
+    /// Asset seizure
+    Seizure,
+    /// Natural consequence
+    Natural,
+    /// Social pressure
+    Social,
+}
+
+#[derive(Clone, Debug)]
+pub struct Resistance {
+    pub level: f32!,
+    pub methods: Vec<String>!,
+    pub success: f32!,
+}
+
+#[derive(Clone, Debug)]
+pub struct Remainder {
+    /// What the subject retains
+    pub retained: Vec<Asset>!,
+
+    /// What the subject learned
+    pub lesson: Option<Lesson>?,
+
+    /// Whether they will do it again
+    pub recidivism_risk: f32!,
+
+    /// The system state after rebalancing
+    pub system_state: SystemState!,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SystemState {
+    /// System is now balanced
+    Balanced,
+    /// System is more balanced
+    Improved,
+    /// System is unchanged
+    Unchanged,
+    /// System is worse (intervention failed)
+    Degraded,
+}
+
+impl Reckoning {
+    pub fn new(subject: EntityId, accumulation: Accumulation, debt: Debt) -> Self! {
+        Self {
+            id: ReckoningId::generate(),
+            subject,
+            accumulation,
+            debt,
+            collection: Collection {
+                method: CollectionMethod::Natural,
+                collected: Vec::new(),
+                remaining: debt.current,
+                resistance: Resistance {
+                    level: 0.0,
+                    methods: Vec::new(),
+                    success: 0.0,
+                },
+            },
+            remainder: None,
+            began_at: Timestamp::now(),
+        }
+    }
+
+    pub fn collect(&mut self, asset: Asset) {
+        let value = asset.value;
+        self.collection.collected.push(asset);
+        self.collection.remaining = (self.collection.remaining - value).max(0.0);
+    }
+
+    pub fn complete(&mut self, remainder: Remainder) {
+        self.remainder = Some(remainder);
+    }
+
+    pub fn is_complete(&self) -> bool! {
+        self.remainder.is_some()
+    }
+
+    pub fn is_paid(&self) -> bool! {
+        self.collection.remaining <= 0.0
+    }
+}
+
+// ============================================================================
+// Hubris Detection
+// ============================================================================
+
+/// The pattern that precedes the fall
+#[derive(Clone, Debug)]
+pub struct HubrisPattern {
+    /// The entity showing hubris
+    pub entity: EntityId!,
+
+    /// The indicators
+    pub indicators: Vec<HubrisIndicator>!,
+
+    /// The confidence of detection
+    pub confidence: f32!,
+
+    /// The predicted intervention timeline
+    pub timeline: Duration!,
+
+    /// When first detected
+    pub detected_at: Timestamp!,
+}
+
+#[derive(Clone, Debug)]
+pub enum HubrisIndicator {
+    /// Believes rules don't apply to them
+    ExceptionalismBelief { evidence: String },
+    /// Ignores or suppresses negative feedback
+    FeedbackRejection { instances: u32 },
+    /// Surrounds self with affirmers
+    EchoChamber { size: usize },
+    /// Attributes success entirely to self
+    AttributionError { examples: Vec<String> },
+    /// Cannot imagine own failure
+    FailureBlindness,
+    /// Treats others as resources
+    Instrumentalization { victims: Vec<EntityId> },
+    /// Growth without proportional accountability
+    AccountabilityGap { ratio: f32 },
+    /// Believes current state is permanent
+    PermanenceIllusion,
+    /// Overconfidence in predictions
+    Overconfidence { calibration_error: f32 },
+}
+
+impl HubrisPattern {
+    pub fn new(entity: EntityId) -> Self! {
+        Self {
+            entity,
+            indicators: Vec::new(),
+            confidence: 0.0,
+            timeline: Duration::days(365),
+            detected_at: Timestamp::now(),
+        }
+    }
+
+    pub fn add_indicator(&mut self, indicator: HubrisIndicator) {
+        self.indicators.push(indicator);
+        // Each indicator increases confidence
+        self.confidence = (self.confidence + 0.15).min(1.0);
+        // Each indicator shortens timeline
+        self.timeline = self.timeline / 2;
+    }
+
+    pub fn is_high_confidence(&self) -> bool! {
+        self.confidence > 0.7
+    }
+
+    pub fn intervention_imminent(&self) -> bool! {
+        self.timeline < Duration::days(30)
+    }
+}
+
+// ============================================================================
+// Nemesis - The System
+// ============================================================================
+
+/// The main Nemesis system - goddess of retribution
+pub struct Nemesis {
+    /// Active scales
+    scales: HashMap<ScalesId, Scales>!,
+
+    /// Entity to scales mapping
+    entity_scales: HashMap<EntityId, Vec<ScalesId>>!,
+
+    /// Active interventions
+    interventions: HashMap<InterventionId, Intervention>!,
+
+    /// Active reckonings
+    reckonings: HashMap<ReckoningId, Reckoning>!,
+
+    /// Detected hubris patterns
+    hubris: HashMap<EntityId, HubrisPattern>!,
+
+    /// Completed interventions (for learning)
+    history: Vec<Intervention>!,
+}
+
+impl Nemesis {
+    pub fn new() -> Self! {
+        Self {
+            scales: HashMap::new(),
+            entity_scales: HashMap::new(),
+            interventions: HashMap::new(),
+            reckonings: HashMap::new(),
+            hubris: HashMap::new(),
+            history: Vec::new(),
+        }
+    }
+
+    /// Watch an entity on a dimension
+    pub fn watch(&mut self, entity: EntityId, dimension: Dimension, threshold: Threshold) -> ScalesId! {
+        let scales = Scales::new(dimension, threshold);
+        let id = scales.id;
+        self.scales.insert(id, scales);
+        self.entity_scales.entry(entity).or_default().push(id);
+        id
+    }
+
+    /// Record a reading
+    pub fn record(&mut self, scales_id: ScalesId, entity: EntityId, value: f32) {
+        if let Some(scales) = self.scales.get_mut(&scales_id) {
+            scales.record(entity, value);
+        }
+    }
+
+    /// Check if entity has exceeded thresholds
+    pub fn check_entity(&self, entity: EntityId) -> Vec<&Scales>! {
+        self.entity_scales
+            .get(&entity)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| self.scales.get(id))
+                    .filter(|s| s.is_critical())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Begin an intervention
+    pub fn intervene(&mut self, target: EntityId, intervention_type: InterventionType, force: Force) -> InterventionId! {
+        let intervention = Intervention::new(target, intervention_type, force);
+        let id = intervention.id;
+        self.interventions.insert(id, intervention);
+        id
+    }
+
+    /// Begin a reckoning
+    pub fn reckon(&mut self, subject: EntityId, accumulation: Accumulation, debt: Debt) -> ReckoningId! {
+        let reckoning = Reckoning::new(subject, accumulation, debt);
+        let id = reckoning.id;
+        self.reckonings.insert(id, reckoning);
+        id
+    }
+
+    /// Detect hubris
+    pub fn detect_hubris(&mut self, entity: EntityId) -> &mut HubrisPattern! {
+        self.hubris.entry(entity).or_insert_with(|| HubrisPattern::new(entity))
+    }
+
+    /// Get entities requiring intervention
+    pub fn requiring_intervention(&self) -> Vec<EntityId>! {
+        let mut entities = HashSet::new();
+
+        // From critical scales
+        for (id, scales) in &self.scales {
+            if scales.is_critical() {
+                for (entity, entity_scales) in &self.entity_scales {
+                    if entity_scales.contains(id) {
+                        entities.insert(*entity);
+                    }
+                }
+            }
+        }
+
+        // From high-confidence hubris
+        for (entity, pattern) in &self.hubris {
+            if pattern.is_high_confidence() {
+                entities.insert(*entity);
+            }
+        }
+
+        entities.into_iter().collect()
+    }
+
+    /// Complete an intervention
+    pub fn complete_intervention(&mut self, id: InterventionId, outcome: ActualOutcome) {
+        if let Some(intervention) = self.interventions.get_mut(&id) {
+            intervention.complete(outcome);
+        }
+
+        // Move to history
+        if let Some(intervention) = self.interventions.remove(&id) {
+            self.history.push(intervention);
+        }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scales_threshold() {
+        let threshold = Threshold {
+            limit: Limit::Absolute(100.0),
+            crossing: CrossingMethod::Once,
+            exceeded: false,
+            exceeded_at: None,
+        };
+
+        let mut scales = Scales::new(Dimension::Power, threshold);
+        let entity = EntityId::generate();
+
+        scales.record(entity, 50.0);
+        assert!(!scales.threshold.exceeded);
+
+        scales.record(entity, 150.0);
+        assert!(scales.threshold.exceeded);
+    }
+
+    #[test]
+    fn test_hubris_detection() {
+        let mut nemesis = Nemesis::new();
+        let entity = EntityId::generate();
+
+        let pattern = nemesis.detect_hubris(entity);
+        pattern.add_indicator(HubrisIndicator::ExceptionalismBelief {
+            evidence: "Believes they are above the rules".to_string(),
+        });
+        pattern.add_indicator(HubrisIndicator::FeedbackRejection { instances: 5 });
+        pattern.add_indicator(HubrisIndicator::EchoChamber { size: 10 });
+        pattern.add_indicator(HubrisIndicator::FailureBlindness);
+        pattern.add_indicator(HubrisIndicator::AccountabilityGap { ratio: 10.0 });
+
+        assert!(pattern.is_high_confidence());
+    }
+
+    #[test]
+    fn test_reckoning() {
+        let entity = EntityId::generate();
+
+        let accumulation = Accumulation {
+            assets: vec![Asset {
+                name: "Power".to_string(),
+                value: 1000.0,
+                source: AssetSource::Extracted(EntityId::generate()),
+            }],
+            method: AccumulationMethod::Extractive,
+            diminished: vec![EntityId::generate()],
+            ongoing: false,
+        };
+
+        let debt = Debt {
+            owed: Vec::new(),
+            creditors: Vec::new(),
+            interest_rate: 0.1,
+            acknowledged: false,
+            original: 500.0,
+            current: 500.0,
+        };
+
+        let mut reckoning = Reckoning::new(entity, accumulation, debt);
+
+        reckoning.collect(Asset {
+            name: "Repayment".to_string(),
+            value: 300.0,
+            source: AssetSource::Created,
+        });
+
+        assert!(!reckoning.is_paid());
+
+        reckoning.collect(Asset {
+            name: "Final payment".to_string(),
+            value: 200.0,
+            source: AssetSource::Created,
+        });
+
+        assert!(reckoning.is_paid());
+    }
+}

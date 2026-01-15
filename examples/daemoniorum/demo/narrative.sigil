@@ -1,0 +1,721 @@
+//! # Narrative Events
+//!
+//! Story events, scene transitions, and narrative triggers for the demo.
+//! This module handles the "story beats" that connect gameplay segments.
+//!
+//! ## Story Flow
+//!
+//! ```
+//! Opening → Exterior → [Explore] → Enter Church → Marcus Dialogue
+//!     ↓                                               ↓
+//! [Tutorial Hints]                              [Reality Shifts]
+//!                                                     ↓
+//!                                            Combat Encounter
+//!                                                     ↓
+//!                                              Demo Ending
+//! ```
+
+use crate::system::*;
+use crate::scenes::scene::*;
+use crate::dialogue::DialogueManager;
+use crate::events::events::*;
+use qliphoth::prelude::*;
+
+// ============================================================================
+// NARRATIVE BEATS
+// ============================================================================
+
+/// Major story beats in the demo
+type NarrativeBeat = enum {
+    /// Arrival at the church
+    Arrival,
+    /// First look at the church exterior
+    ExteriorFirst,
+    /// Discovering the iron gate
+    GateDiscovery,
+    /// Gate opens mysteriously
+    GateOpens,
+    /// Approaching the church door
+    ApproachDoor,
+    /// Entering the church nave
+    EnterNave,
+    /// First sight of Marcus
+    MarcusSighted,
+    /// Marcus approaches
+    MarcusApproach,
+    /// Marcus dialogue begins
+    MarcusGreeting,
+    /// Marcus reveals something wrong
+    MarcusWarning,
+    /// Reality begins to fracture
+    RealityFractures,
+    /// Shadows emerge
+    ShadowsEmerge,
+    /// Combat begins
+    CombatStart,
+    /// Victory over shadows
+    CombatVictory,
+    /// Marcus aftermath
+    MarcusAftermath,
+    /// Demo conclusion
+    Conclusion,
+};
+
+/// Narrative beat definition
+type BeatDefinition = struct {
+    beat: NarrativeBeat!,
+    /// Scene description override
+    scene_text: Option<LayeredDescription>?,
+    /// Internal dialogue
+    internal: Vec<InternalLine>!,
+    /// External dialogue trigger
+    external_dialogue: Option<String>?,
+    /// Effects to apply
+    effects: Vec<NarrativeEffect>!,
+    /// Next beat (if automatic)
+    next: Option<NarrativeBeat>?,
+    /// Delay before next beat (ms)
+    delay_ms: u64!,
+};
+
+/// Internal system chatter
+type InternalLine = struct {
+    alter: &'static str!,
+    text: &'static str!,
+    delay_ms: u64!,
+};
+
+/// Narrative effects
+type NarrativeEffect = enum {
+    /// Play ambient sound
+    PlayAmbient(String),
+    /// Stop ambient sound
+    StopAmbient,
+    /// Play sound effect
+    PlaySfx(String),
+    /// Shift reality layer
+    ShiftReality(RealityLayer),
+    /// Modify system stability
+    ModifyStability(f32),
+    /// Increase dissociation
+    ModifyDissociation(f32),
+    /// Set game flag
+    SetFlag(String, bool),
+    /// Reveal scene element
+    RevealElement(String),
+    /// Hide scene element
+    HideElement(String),
+    /// Camera effect
+    CameraEffect(CameraEffect),
+    /// Screen effect
+    ScreenEffect(ScreenEffect),
+    /// Enable alter
+    EnableAlter(String),
+    /// Disable alter
+    DisableAlter(String),
+    /// Trigger co-consciousness
+    TriggerCocon(String),
+};
+
+type CameraEffect = enum {
+    Shake { intensity: f32, duration_ms: u64 },
+    Zoom { target: f32, duration_ms: u64 },
+    Pan { x: f32, y: f32, duration_ms: u64 },
+    Focus(String), // Focus on element
+};
+
+type ScreenEffect = enum {
+    Flash { color: String, duration_ms: u64 },
+    Vignette { intensity: f32 },
+    Distortion { intensity: f32 },
+    ColorShift { hue: f32 },
+};
+
+// ============================================================================
+// BEAT DEFINITIONS
+// ============================================================================
+
+/// All narrative beats for the demo
+pub fn get_demo_beats() -> Vec<BeatDefinition>! {
+    vec![
+        // ARRIVAL
+        BeatDefinition {
+            beat: NarrativeBeat::Arrival,
+            scene_text: None,
+            internal: vec![],
+            external_dialogue: None,
+            effects: vec![
+                NarrativeEffect::PlayAmbient("night_wind".to_string()),
+            ],
+            next: Some(NarrativeBeat::ExteriorFirst),
+            delay_ms: 1000,
+        },
+
+        // EXTERIOR FIRST LOOK
+        BeatDefinition {
+            beat: NarrativeBeat::ExteriorFirst,
+            scene_text: Some(LayeredDescription {
+                grounded: "The Church of St. Dymphna rises before you, its spire a black needle against the starless sky.".to_string(),
+                fractured: "The church... shifts. Its outline blurs like a memory you can't quite hold.".to_string(),
+                shattered: "THE CHURCH SEES YOU. Its windows are eyes, its door a hungry mouth.".to_string(),
+            }),
+            internal: vec![
+                InternalLine { alter: "Stolas", text: "St. Dymphna... patron saint of mental illness. Appropriate.", delay_ms: 0 },
+                InternalLine { alter: "Warden", text: "Stay vigilant. Something watches from within.", delay_ms: 2500 },
+            ],
+            external_dialogue: None,
+            effects: vec![
+                NarrativeEffect::SetFlag("saw_church".to_string(), true),
+            ],
+            next: None, // Player must interact with gate
+            delay_ms: 0,
+        },
+
+        // GATE DISCOVERY
+        BeatDefinition {
+            beat: NarrativeBeat::GateDiscovery,
+            scene_text: Some(LayeredDescription {
+                grounded: "The iron gate is rusted but stands firm. Strange symbols are etched into the metal - they look almost like letters, if letters could bleed.".to_string(),
+                fractured: "The symbols on the gate... move. Rearranging themselves when you look away.".to_string(),
+                shattered: "The gate SPEAKS. Its symbols are WORDS and they KNOW YOUR NAME.".to_string(),
+            }),
+            internal: vec![
+                InternalLine { alter: "Paimon", text: "These symbols... I recognize them. From before.", delay_ms: 0 },
+                InternalLine { alter: "Beleth", text: "Someone carved these in pain. I can feel it.", delay_ms: 2000 },
+                InternalLine { alter: "Abaddon", text: "Let me break it down.", delay_ms: 4000 },
+                InternalLine { alter: "Warden", text: "No. We don't know what we're dealing with.", delay_ms: 5500 },
+            ],
+            external_dialogue: None,
+            effects: vec![
+                NarrativeEffect::SetFlag("examined_gate".to_string(), true),
+            ],
+            next: None,
+            delay_ms: 0,
+        },
+
+        // GATE OPENS
+        BeatDefinition {
+            beat: NarrativeBeat::GateOpens,
+            scene_text: Some(LayeredDescription {
+                grounded: "The gate swings open on its own. The hinges don't make a sound.".to_string(),
+                fractured: "The gate... was it always open? You can't remember touching it.".to_string(),
+                shattered: "THE GATE WELCOMES YOU HOME.".to_string(),
+            }),
+            internal: vec![
+                InternalLine { alter: "Vessel", text: "Did I... did we open that?", delay_ms: 0 },
+                InternalLine { alter: "Stolas", text: "No. We didn't.", delay_ms: 1500 },
+            ],
+            external_dialogue: None,
+            effects: vec![
+                NarrativeEffect::PlaySfx("gate_creak".to_string()),
+                NarrativeEffect::ModifyDissociation(0.05),
+                NarrativeEffect::SetFlag("gate_open".to_string(), true),
+                NarrativeEffect::RevealElement("church_path".to_string()),
+            ],
+            next: None,
+            delay_ms: 0,
+        },
+
+        // APPROACH DOOR
+        BeatDefinition {
+            beat: NarrativeBeat::ApproachDoor,
+            scene_text: Some(LayeredDescription {
+                grounded: "The church doors are massive oak, carved with scenes from some saint's martyrdom. The wood is warm to the touch.".to_string(),
+                fractured: "The carvings... the faces in the wood are screaming. Or laughing. You can't tell anymore.".to_string(),
+                shattered: "THE DOORS ARE FLESH. THEY BREATHE. THEY WANT YOU INSIDE.".to_string(),
+            }),
+            internal: vec![
+                InternalLine { alter: "Beleth", text: "There's someone inside. Someone hurt.", delay_ms: 0 },
+                InternalLine { alter: "Warden", text: "Or something pretending to be hurt.", delay_ms: 2000 },
+                InternalLine { alter: "Vessel", text: "We came here for a reason. We have to go in.", delay_ms: 4000 },
+            ],
+            external_dialogue: None,
+            effects: vec![
+                NarrativeEffect::SetFlag("at_door".to_string(), true),
+            ],
+            next: None,
+            delay_ms: 0,
+        },
+
+        // ENTER NAVE
+        BeatDefinition {
+            beat: NarrativeBeat::EnterNave,
+            scene_text: Some(LayeredDescription {
+                grounded: "The nave stretches before you, pews askew like broken teeth. Candles flicker on the altar, though no one should be here to light them.".to_string(),
+                fractured: "The nave breathes. In... out... The shadows between the pews pulse with each exhale.".to_string(),
+                shattered: "THE NAVE IS A THROAT. YOU ARE BEING SWALLOWED. THE PEWS ARE TEETH AND THEY ARE CLOSING.".to_string(),
+            }),
+            internal: vec![
+                InternalLine { alter: "Stolas", text: "Those candles. Someone is here.", delay_ms: 1000 },
+            ],
+            external_dialogue: None,
+            effects: vec![
+                NarrativeEffect::PlayAmbient("church_interior".to_string()),
+                NarrativeEffect::SetFlag("entered_church".to_string(), true),
+            ],
+            next: Some(NarrativeBeat::MarcusSighted),
+            delay_ms: 3000,
+        },
+
+        // MARCUS SIGHTED
+        BeatDefinition {
+            beat: NarrativeBeat::MarcusSighted,
+            scene_text: Some(LayeredDescription {
+                grounded: "A figure stands near the altar. A man in priest's vestments, his back to you. He seems to be praying.".to_string(),
+                fractured: "The priest... flickers. For a moment, he has too many arms.".to_string(),
+                shattered: "THE THING WEARING A PRIEST IS WAITING FOR YOU. IT HAS ALWAYS BEEN WAITING.".to_string(),
+            }),
+            internal: vec![
+                InternalLine { alter: "Beleth", text: "He's in such pain... but also... joy?", delay_ms: 0 },
+                InternalLine { alter: "Abaddon", text: "I don't like this. Let me take over.", delay_ms: 2000 },
+                InternalLine { alter: "Paimon", text: "No. Let's hear what he has to say first.", delay_ms: 3500 },
+            ],
+            external_dialogue: None,
+            effects: vec![
+                NarrativeEffect::RevealElement("marcus".to_string()),
+                NarrativeEffect::SetFlag("saw_marcus".to_string(), true),
+            ],
+            next: Some(NarrativeBeat::MarcusApproach),
+            delay_ms: 5000,
+        },
+
+        // MARCUS APPROACHES
+        BeatDefinition {
+            beat: NarrativeBeat::MarcusApproach,
+            scene_text: Some(LayeredDescription {
+                grounded: "The priest turns. His face is kindly, weathered. He smiles as if greeting an old friend.".to_string(),
+                fractured: "His smile doesn't reach his eyes. Something behind his eyes smiles instead.".to_string(),
+                shattered: "HIS FACE IS A MASK. THE THING UNDERNEATH GRINS WITH TOO MANY TEETH.".to_string(),
+            }),
+            internal: vec![
+                InternalLine { alter: "Warden", text: "Something is very wrong here. Be ready.", delay_ms: 0 },
+            ],
+            external_dialogue: None,
+            effects: vec![
+                NarrativeEffect::CameraEffect(CameraEffect::Focus("marcus".to_string())),
+            ],
+            next: Some(NarrativeBeat::MarcusGreeting),
+            delay_ms: 2000,
+        },
+
+        // MARCUS GREETING
+        BeatDefinition {
+            beat: NarrativeBeat::MarcusGreeting,
+            scene_text: None,
+            internal: vec![],
+            external_dialogue: Some("marcus_greeting".to_string()),
+            effects: vec![
+                NarrativeEffect::SetFlag("marcus_dialogue_started".to_string(), true),
+            ],
+            next: None, // Dialogue system takes over
+            delay_ms: 0,
+        },
+
+        // REALITY FRACTURES
+        BeatDefinition {
+            beat: NarrativeBeat::RealityFractures,
+            scene_text: Some(LayeredDescription {
+                grounded: "".to_string(), // Not visible in grounded
+                fractured: "The air... tears. Like fabric. Something is pushing through from the other side.".to_string(),
+                shattered: "REALITY BREAKS. THE VEIL IS THIN. THEY ARE COMING THROUGH.".to_string(),
+            }),
+            internal: vec![
+                InternalLine { alter: "Vessel", text: "What's happening?!", delay_ms: 0 },
+                InternalLine { alter: "Stolas", text: "Reality is... fracturing. Hold on!", delay_ms: 1000 },
+                InternalLine { alter: "Warden", text: "Everyone, stay together. Stay focused.", delay_ms: 2500 },
+            ],
+            external_dialogue: None,
+            effects: vec![
+                NarrativeEffect::ShiftReality(RealityLayer::Fractured),
+                NarrativeEffect::ModifyStability(-0.2),
+                NarrativeEffect::ModifyDissociation(0.15),
+                NarrativeEffect::ScreenEffect(ScreenEffect::Distortion { intensity: 0.3 }),
+                NarrativeEffect::CameraEffect(CameraEffect::Shake { intensity: 0.5, duration_ms: 2000 }),
+                NarrativeEffect::PlaySfx("reality_tear".to_string()),
+            ],
+            next: Some(NarrativeBeat::ShadowsEmerge),
+            delay_ms: 3000,
+        },
+
+        // SHADOWS EMERGE
+        BeatDefinition {
+            beat: NarrativeBeat::ShadowsEmerge,
+            scene_text: Some(LayeredDescription {
+                grounded: "".to_string(),
+                fractured: "Shapes crawl from the shadows. They have too many limbs, too many eyes.".to_string(),
+                shattered: "THEY HUNGER. THEY HAVE ALWAYS HUNGERED. THEY HAVE BEEN WAITING SO LONG.".to_string(),
+            }),
+            internal: vec![
+                InternalLine { alter: "Abaddon", text: "FINALLY. Something I can fight.", delay_ms: 0 },
+                InternalLine { alter: "Paimon", text: "Two of them. Flanking. Watch the left.", delay_ms: 1500 },
+            ],
+            external_dialogue: None,
+            effects: vec![
+                NarrativeEffect::RevealElement("shadow_crawler_1".to_string()),
+                NarrativeEffect::RevealElement("shadow_crawler_2".to_string()),
+                NarrativeEffect::PlaySfx("shadow_emerge".to_string()),
+            ],
+            next: Some(NarrativeBeat::CombatStart),
+            delay_ms: 2000,
+        },
+
+        // COMBAT START
+        BeatDefinition {
+            beat: NarrativeBeat::CombatStart,
+            scene_text: None,
+            internal: vec![
+                InternalLine { alter: "Warden", text: "Vessel, switch! Let someone who can fight take over!", delay_ms: 0 },
+            ],
+            external_dialogue: None,
+            effects: vec![
+                NarrativeEffect::SetFlag("combat_tutorial".to_string(), true),
+            ],
+            next: None, // Combat system takes over
+            delay_ms: 0,
+        },
+
+        // COMBAT VICTORY
+        BeatDefinition {
+            beat: NarrativeBeat::CombatVictory,
+            scene_text: Some(LayeredDescription {
+                grounded: "The shadows... dissipate. Like smoke in wind. The church is silent once more.".to_string(),
+                fractured: "The shadows retreat. But they haven't left. They're just... watching now.".to_string(),
+                shattered: "THEY WILL RETURN. THEY ALWAYS RETURN. THIS WAS ONLY A TASTE.".to_string(),
+            }),
+            internal: vec![
+                InternalLine { alter: "Abaddon", text: "Hah. Is that all you've got?", delay_ms: 0 },
+                InternalLine { alter: "Beleth", text: "Are you okay? Is everyone okay?", delay_ms: 2000 },
+                InternalLine { alter: "Stolas", text: "That was... too easy. A test, perhaps.", delay_ms: 4000 },
+            ],
+            external_dialogue: None,
+            effects: vec![
+                NarrativeEffect::ShiftReality(RealityLayer::Grounded),
+                NarrativeEffect::ModifyStability(0.1),
+                NarrativeEffect::SetFlag("combat_won".to_string(), true),
+            ],
+            next: Some(NarrativeBeat::MarcusAftermath),
+            delay_ms: 5000,
+        },
+
+        // MARCUS AFTERMATH
+        BeatDefinition {
+            beat: NarrativeBeat::MarcusAftermath,
+            scene_text: Some(LayeredDescription {
+                grounded: "Father Marcus watches you with renewed interest. His smile has changed somehow.".to_string(),
+                fractured: "Marcus... or the thing wearing Marcus... seems pleased.".to_string(),
+                shattered: "IT IS SO PLEASED. YOU PASSED THE TEST. NOW THE REAL GAME BEGINS.".to_string(),
+            }),
+            internal: vec![
+                InternalLine { alter: "Paimon", text: "He knew. He knew they would come.", delay_ms: 0 },
+                InternalLine { alter: "Warden", text: "We need answers. And we need them now.", delay_ms: 2000 },
+            ],
+            external_dialogue: Some("marcus_aftermath".to_string()),
+            effects: vec![],
+            next: Some(NarrativeBeat::Conclusion),
+            delay_ms: 0,
+        },
+
+        // CONCLUSION
+        BeatDefinition {
+            beat: NarrativeBeat::Conclusion,
+            scene_text: Some(LayeredDescription {
+                grounded: "This is only the beginning. The church has many more secrets to reveal.".to_string(),
+                fractured: "The veil is thin here. Thin enough to slip through.".to_string(),
+                shattered: "HOME. YOU ARE FINALLY HOME.".to_string(),
+            }),
+            internal: vec![
+                InternalLine { alter: "Vessel", text: "There's no going back now, is there?", delay_ms: 0 },
+                InternalLine { alter: "All", text: "No. But we face it together.", delay_ms: 2500 },
+            ],
+            external_dialogue: None,
+            effects: vec![
+                NarrativeEffect::SetFlag("demo_complete".to_string(), true),
+            ],
+            next: None,
+            delay_ms: 0,
+        },
+    ]
+}
+
+// ============================================================================
+// NARRATIVE CONTROLLER
+// ============================================================================
+
+/// Controls narrative flow
+type NarrativeController = struct {
+    /// All beats
+    beats: Vec<BeatDefinition>!,
+    /// Current beat index
+    current_index: Option<usize>?,
+    /// Time in current beat
+    beat_time_ms: u64!,
+    /// Internal line index
+    internal_index: usize!,
+    /// Internal line time
+    internal_time_ms: u64!,
+    /// Active effects queue
+    pending_effects: Vec<NarrativeEffect>!,
+    /// Completed beats
+    completed: Vec<NarrativeBeat>!,
+};
+
+impl NarrativeController {
+    pub fn new() -> Self! {
+        Self {
+            beats: get_demo_beats(),
+            current_index: None,
+            beat_time_ms: 0,
+            internal_index: 0,
+            internal_time_ms: 0,
+            pending_effects: Vec::new(),
+            completed: Vec::new(),
+        }
+    }
+
+    /// Start narrative at a specific beat
+    pub fn start_at(mut self, beat: NarrativeBeat) {
+        if let Some(index) = self·find_beat_index(&beat) {
+            self.current_index = Some(index);
+            self.beat_time_ms = 0;
+            self.internal_index = 0;
+            self.internal_time_ms = 0;
+
+            // Queue initial effects
+            let beat_def = &self.beats[index];
+            self.pending_effects = beat_def.effects·clone();
+        }
+    }
+
+    /// Find beat index
+    fn find_beat_index(self, beat: &NarrativeBeat) -> Option<usize>? {
+        self.beats·iter()·position(|b| std::mem::discriminant(&b.beat) == std::mem::discriminant(beat))
+    }
+
+    /// Update narrative
+    pub fn update(mut self, delta_ms: u64) -> Vec<NarrativeEffect>! {
+        let mut effects = Vec::new();
+
+        // Return pending effects
+        effects·append(&mut self.pending_effects);
+
+        let index = match self.current_index {
+            Some(i) => i,
+            None => return effects,
+        };
+
+        let beat = &self.beats[index];
+
+        // Update timers
+        self.beat_time_ms += delta_ms;
+        self.internal_time_ms += delta_ms;
+
+        // Check for automatic transition
+        if beat.delay_ms > 0 && self.beat_time_ms >= beat.delay_ms {
+            if let Some(ref next) = beat.next {
+                self·trigger_beat(next·clone());
+            }
+        }
+
+        effects
+    }
+
+    /// Trigger a specific beat
+    pub fn trigger_beat(mut self, beat: NarrativeBeat) {
+        // Mark current as complete
+        if let Some(index) = self.current_index {
+            self.completed·push(self.beats[index].beat·clone());
+        }
+
+        // Start new beat
+        self·start_at(beat);
+    }
+
+    /// Get current beat
+    pub fn get_current_beat(self) -> Option<&BeatDefinition>? {
+        self.current_index·map(|i| &self.beats[i])
+    }
+
+    /// Get current internal lines that should be visible
+    pub fn get_visible_internal(self) -> Vec<&InternalLine>! {
+        let index = match self.current_index {
+            Some(i) => i,
+            None => return Vec::new(),
+        };
+
+        let beat = &self.beats[index];
+        let mut visible = Vec::new();
+        let mut accumulated_delay = 0u64;
+
+        for line in &beat.internal {
+            accumulated_delay += line.delay_ms;
+            if self.beat_time_ms >= accumulated_delay {
+                visible·push(line);
+            }
+        }
+
+        visible
+    }
+
+    /// Check if beat is complete
+    pub fn is_beat_complete(self, beat: &NarrativeBeat) -> bool! {
+        self.completed·iter()·any(|b| std::mem::discriminant(b) == std::mem::discriminant(beat))
+    }
+
+    /// Handle player triggering next step
+    pub fn advance(mut self) {
+        if let Some(index) = self.current_index {
+            let beat = &self.beats[index];
+            if let Some(ref next) = beat.next {
+                self·trigger_beat(next·clone());
+            }
+        }
+    }
+}
+
+// ============================================================================
+// NARRATIVE UI COMPONENTS
+// ============================================================================
+
+/// Internal dialogue overlay
+#[component]
+pub fn InternalDialogue(controller: &NarrativeController) -> Element! {
+    let lines = controller·get_visible_internal();
+
+    if lines·is_empty() {
+        return html! {};
+    }
+
+    html! {
+        <div class="internal-dialogue">
+            {lines·iter()·map(|line| {
+                let alter_class = format!("internal-alter-{}", line.alter·to_lowercase());
+                html! {
+                    <div class={format!("internal-line {}", alter_class)}>
+                        <span class="internal-speaker">{format!("[{}]", line.alter)}</span>
+                        <span class="internal-text">{line.text}</span>
+                    </div>
+                }
+            })·collect::<Vec<_>>()}
+        </div>
+    }
+}
+
+/// Narrative text overlay (scene descriptions)
+#[component]
+pub fn NarrativeText(
+    controller: &NarrativeController,
+    reality_layer: &RealityLayer
+) -> Element! {
+    let beat = match controller·get_current_beat() {
+        Some(b) => b,
+        None => return html! {},
+    };
+
+    let text = match &beat.scene_text {
+        Some(layered) => layered·for_layer(reality_layer),
+        None => return html! {},
+    };
+
+    if text·is_empty() {
+        return html! {};
+    }
+
+    html! {
+        <div class="narrative-text">
+            <div class="narrative-content">{text}</div>
+        </div>
+    }
+}
+
+/// Narrative styles
+pub const NARRATIVE_STYLES: &str! = r#"
+    .internal-dialogue {
+        position: fixed;
+        top: 15%;
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: 600px;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        z-index: 800;
+    }
+
+    .internal-line {
+        display: flex;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        background: rgba(20,20,35,0.85);
+        border-radius: 4px;
+        border-left: 3px solid #6a5acd;
+        animation: internal-fade-in 0.3s ease-out;
+    }
+
+    @keyframes internal-fade-in {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .internal-speaker {
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 0.75rem;
+        color: #6a5acd;
+        white-space: nowrap;
+    }
+
+    .internal-text {
+        font-family: 'Crimson Text', serif;
+        font-size: 0.9375rem;
+        color: #b0a0c0;
+        font-style: italic;
+    }
+
+    /* Alter-specific colors */
+    .internal-alter-vessel .internal-speaker { color: #a0a0c0; }
+    .internal-alter-vessel { border-left-color: #a0a0c0; }
+
+    .internal-alter-abaddon .internal-speaker { color: #ff4444; }
+    .internal-alter-abaddon { border-left-color: #ff4444; }
+
+    .internal-alter-stolas .internal-speaker { color: #44aaff; }
+    .internal-alter-stolas { border-left-color: #44aaff; }
+
+    .internal-alter-beleth .internal-speaker { color: #ff88cc; }
+    .internal-alter-beleth { border-left-color: #ff88cc; }
+
+    .internal-alter-paimon .internal-speaker { color: #ffcc44; }
+    .internal-alter-paimon { border-left-color: #ffcc44; }
+
+    .internal-alter-warden .internal-speaker { color: #44ff88; }
+    .internal-alter-warden { border-left-color: #44ff88; }
+
+    .internal-alter-all .internal-speaker { color: #ffffff; }
+    .internal-alter-all { border-left-color: #ffffff; }
+
+    .narrative-text {
+        position: fixed;
+        bottom: 20%;
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: 700px;
+        padding: 1.5rem 2rem;
+        background: linear-gradient(135deg, rgba(15,15,25,0.9), rgba(25,20,40,0.9));
+        border: 1px solid rgba(100,100,150,0.3);
+        border-radius: 8px;
+        z-index: 750;
+    }
+
+    .narrative-content {
+        font-family: 'Crimson Text', serif;
+        font-size: 1.125rem;
+        color: #d0c0e0;
+        line-height: 1.7;
+        text-align: center;
+    }
+"#;

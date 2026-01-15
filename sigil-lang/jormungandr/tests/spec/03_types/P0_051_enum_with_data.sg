@@ -1,0 +1,22 @@
+// Test: Enum variants with data
+// Spec: 03-TYPES.md § 8.2 Enum Variants with Data
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate enum variants can carry data.
+//
+// Expected behavior:
+// Should print 42
+
+pub enum Value {
+    Number(!i32),
+    Empty
+}
+
+fn main() {
+    let v: !Value = Value::Number(42);
+    match v {
+        Value::Number(x) => println(x),
+        Value::Empty => println(0)
+    }
+}

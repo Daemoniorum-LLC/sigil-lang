@@ -1,0 +1,16 @@
+// Test: Evidence marker Uncertain (?) basic usage
+// Spec: 03-TYPES.md § 2.1 Evidence Markers
+// Priority: P0
+//
+// Purpose:
+// Validates that the Uncertain (?) evidence marker can be applied to
+// basic types and that values with Uncertain evidence can be constructed
+// and used.
+//
+// Expected behavior:
+// Should compile and run successfully, printing 99
+
+fn main() {
+    let x: ?i32 = 99;
+    println(x);
+}

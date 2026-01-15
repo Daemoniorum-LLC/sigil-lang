@@ -1,0 +1,21 @@
+// Test: Nested struct initialization
+// Spec: 03-TYPES.md § 4.1 Structs
+// Priority: P2 - Enhancement
+
+struct Inner {
+    value: !i32,
+}
+
+struct Outer {
+    inner: Inner,
+    label: !i32,
+}
+
+fn main() {
+    let o = Outer {
+        inner: Inner { value: 42 },
+        label: 1,
+    };
+    println(o.inner.value);
+    println(o.label);
+}

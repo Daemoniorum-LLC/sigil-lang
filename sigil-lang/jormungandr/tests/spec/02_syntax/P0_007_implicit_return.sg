@@ -1,0 +1,17 @@
+// Test: Implicit return from function
+// Spec: 02-SYNTAX.md § 3.2 Return Statements
+// Priority: P0
+//
+// Purpose:
+// Validates that functions can return values implicitly (without return keyword).
+//
+// Expected behavior:
+// Should compile and print 42
+
+fn get_value() -> !i32 {
+    42
+}
+
+fn main() {
+    println(get_value());
+}

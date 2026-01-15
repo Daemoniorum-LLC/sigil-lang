@@ -1,0 +1,194 @@
+// async_patterns.sigil
+// Asynchronous programming patterns in Sigil
+//
+// This example demonstrates:
+// - Signal-based state machines
+// - Batch state updates
+// - Computed state patterns
+
+/// State machine using signals
+pub fn demo_state_machine() {
+    // State constants
+    let STATE_IDLE = 0;
+    let STATE_LOADING = 1;
+    let STATE_SUCCESS = 2;
+    let STATE_ERROR = 3;
+
+    // Create state signal
+    let state = signal::create(STATE_IDLE);
+    print(signal::get(state));  // 0 - IDLE
+
+    // Transition to loading
+    signal::set(state, STATE_LOADING);
+    print(signal::get(state));  // 1 - LOADING
+
+    // Simulate success
+    signal::set(state, STATE_SUCCESS);
+    print(signal::get(state));  // 2 - SUCCESS
+
+    // Could also handle error
+    signal::set(state, STATE_ERROR);
+    print(signal::get(state));  // 3 - ERROR
+}
+
+/// Batch signal updates (transaction pattern)
+pub fn demo_batch_updates() {
+    let sig1 = signal::create(0);
+    let sig2 = signal::create(0);
+    let sig3 = signal::create(0);
+
+    // Start batch
+    signal::batch_start();
+
+    // Multiple updates in batch
+    signal::set(sig1, 10);
+    signal::set(sig2, 20);
+    signal::set(sig3, 30);
+
+    // End batch
+    signal::batch_end();
+
+    // Verify updates
+    print(signal::get(sig1));  // 10
+    print(signal::get(sig2));  // 20
+    print(signal::get(sig3));  // 30
+}
+
+/// Loading state pattern
+pub fn demo_loading_state() {
+    // Create loading and data signals
+    let is_loading = signal::create(0);  // false
+    let data = signal::create(0);
+
+    // Start loading
+    signal::set(is_loading, 1);  // true
+    print(signal::get(is_loading));  // 1 - loading
+
+    // Simulate data arriving
+    signal::set(data, 42);
+    signal::set(is_loading, 0);  // done
+    print(signal::get(is_loading));  // 0 - not loading
+    print(signal::get(data));  // 42 - the data
+}
+
+/// Computed derived state
+pub fn demo_computed_state() {
+    let base_value = signal::create(10);
+    let val = signal::get(base_value);
+
+    // Compute derived values
+    let doubled = val * 2;
+    let squared = val * val;
+    let is_positive = val > 0;
+
+    print(val);       // 10
+    print(doubled);   // 20
+    print(squared);   // 100
+
+    if is_positive {
+        print(1);  // true
+    } else {
+        print(0);
+    }
+}
+
+/// Counter with multiple signals
+pub fn demo_multi_signal() {
+    let count = signal::create(0);
+    let step = signal::create(1);
+    let min_val = signal::create(0);
+    let max_val = signal::create(100);
+
+    // Increment by step
+    let current = signal::get(count);
+    let increment = signal::get(step);
+    signal::set(count, current + increment);
+    print(signal::get(count));  // 1
+
+    // Change step
+    signal::set(step, 5);
+    let current2 = signal::get(count);
+    let increment2 = signal::get(step);
+    signal::set(count, current2 + increment2);
+    print(signal::get(count));  // 6
+}
+
+/// Form state pattern
+pub fn demo_form_state() {
+    let username = signal::create(0);  // Would be string ref
+    let password = signal::create(0);
+    let is_valid = signal::create(0);
+    let is_submitting = signal::create(0);
+
+    // Simulate form input
+    signal::set(username, 1);  // Entered username
+    signal::set(password, 1);  // Entered password
+
+    // Validate
+    let has_user = signal::get(username) > 0;
+    let has_pass = signal::get(password) > 0;
+    if has_user {
+        if has_pass {
+            signal::set(is_valid, 1);
+        }
+    }
+
+    print(signal::get(is_valid));  // 1 - valid
+
+    // Submit
+    signal::set(is_submitting, 1);
+    print(signal::get(is_submitting));  // 1 - submitting
+
+    // Complete
+    signal::set(is_submitting, 0);
+    print(signal::get(is_submitting));  // 0 - done
+}
+
+/// History tracking with arrays
+pub fn demo_undo_redo() {
+    let history = morpheme::array_new();
+    let current_state = signal::create(0);
+
+    // Record state changes
+    morpheme::array_push(history, 0);
+    signal::set(current_state, 10);
+    morpheme::array_push(history, 10);
+    signal::set(current_state, 20);
+    morpheme::array_push(history, 20);
+    signal::set(current_state, 30);
+    morpheme::array_push(history, 30);
+
+    // Current state
+    print(signal::get(current_state));  // 30
+
+    // Could "undo" by getting previous from history
+    let len = morpheme::array_len(history);
+    let prev = morpheme::array_nth(history, len - 2);
+    signal::set(current_state, prev);
+    print(signal::get(current_state));  // 20
+}
+
+pub fn main() {
+    print(200);  // Async patterns start
+
+    demo_state_machine();
+    print(201);
+
+    demo_batch_updates();
+    print(202);
+
+    demo_loading_state();
+    print(203);
+
+    demo_computed_state();
+    print(204);
+
+    demo_multi_signal();
+    print(205);
+
+    demo_form_state();
+    print(206);
+
+    demo_undo_redo();
+    print(999);  // End marker
+}

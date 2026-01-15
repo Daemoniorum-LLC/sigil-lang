@@ -1,0 +1,660 @@
+//! # Ambient Audio System
+//!
+//! Atmospheric background audio for horror atmosphere.
+//! Manages layered ambient loops that respond to game state.
+//!
+//! ## Ambient Layers
+//!
+//! ```
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │                    AMBIENT STACK                             │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │  [Reality Layer]  Distortion/static based on perception     │
+//! │  [Weather]        Rain, wind, thunder                        │
+//! │  [Scene]          Location-specific (church creaks, etc)     │
+//! │  [Tension]        Heartbeat, breathing (stress response)     │
+//! │  [Base]           Core ambient bed (night sounds, etc)       │
+//! └─────────────────────────────────────────────────────────────┘
+//! ```
+
+use super::{AudioAsset, AudioChannel, AudioId};
+use crate::system::RealityLayer;
+use std::collections::HashMap;
+
+// ============================================================================
+// AMBIENT LOOP DEFINITIONS
+// ============================================================================
+
+/// All ambient audio loops
+pub const ALL_AMBIENT: &[AudioAsset]! = &[
+    // ========================================================================
+    // BASE AMBIENT
+    // ========================================================================
+    AudioAsset {
+        id: "ambient_night".to_string(),
+        name: "Night Atmosphere".to_string(),
+        path: "audio/ambient/base/night.ogg".to_string(),
+        duration_ms: 120000, // 2 minutes
+        default_volume: 0.4,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "ambient_silence".to_string(),
+        name: "Oppressive Silence".to_string(),
+        path: "audio/ambient/base/silence.ogg".to_string(),
+        duration_ms: 60000,
+        default_volume: 0.3,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+
+    // ========================================================================
+    // SCENE-SPECIFIC AMBIENT
+    // ========================================================================
+    AudioAsset {
+        id: "ambient_church_exterior".to_string(),
+        name: "Church Exterior".to_string(),
+        path: "audio/ambient/scene/church_exterior.ogg".to_string(),
+        duration_ms: 90000,
+        default_volume: 0.5,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "ambient_church_nave".to_string(),
+        name: "Church Nave".to_string(),
+        path: "audio/ambient/scene/church_nave.ogg".to_string(),
+        duration_ms: 90000,
+        default_volume: 0.5,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "ambient_church_crypt".to_string(),
+        name: "Church Crypt".to_string(),
+        path: "audio/ambient/scene/church_crypt.ogg".to_string(),
+        duration_ms: 90000,
+        default_volume: 0.55,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "ambient_basement".to_string(),
+        name: "Damp Basement".to_string(),
+        path: "audio/ambient/scene/basement.ogg".to_string(),
+        duration_ms: 90000,
+        default_volume: 0.5,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+
+    // ========================================================================
+    // WEATHER
+    // ========================================================================
+    AudioAsset {
+        id: "weather_wind_light".to_string(),
+        name: "Light Wind".to_string(),
+        path: "audio/ambient/weather/wind_light.ogg".to_string(),
+        duration_ms: 60000,
+        default_volume: 0.35,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "weather_wind_howl".to_string(),
+        name: "Howling Wind".to_string(),
+        path: "audio/ambient/weather/wind_howl.ogg".to_string(),
+        duration_ms: 60000,
+        default_volume: 0.45,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "weather_rain_light".to_string(),
+        name: "Light Rain".to_string(),
+        path: "audio/ambient/weather/rain_light.ogg".to_string(),
+        duration_ms: 120000,
+        default_volume: 0.4,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "weather_rain_heavy".to_string(),
+        name: "Heavy Rain".to_string(),
+        path: "audio/ambient/weather/rain_heavy.ogg".to_string(),
+        duration_ms: 120000,
+        default_volume: 0.5,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "weather_thunder".to_string(),
+        name: "Distant Thunder".to_string(),
+        path: "audio/ambient/weather/thunder.ogg".to_string(),
+        duration_ms: 180000,
+        default_volume: 0.55,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+
+    // ========================================================================
+    // TENSION LAYERS
+    // ========================================================================
+    AudioAsset {
+        id: "tension_heartbeat".to_string(),
+        name: "Heartbeat".to_string(),
+        path: "audio/ambient/tension/heartbeat.ogg".to_string(),
+        duration_ms: 2000,
+        default_volume: 0.5,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "tension_breathing".to_string(),
+        name: "Heavy Breathing".to_string(),
+        path: "audio/ambient/tension/breathing.ogg".to_string(),
+        duration_ms: 4000,
+        default_volume: 0.4,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "tension_drone_low".to_string(),
+        name: "Low Drone".to_string(),
+        path: "audio/ambient/tension/drone_low.ogg".to_string(),
+        duration_ms: 30000,
+        default_volume: 0.35,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "tension_drone_high".to_string(),
+        name: "High Tension Drone".to_string(),
+        path: "audio/ambient/tension/drone_high.ogg".to_string(),
+        duration_ms: 30000,
+        default_volume: 0.4,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "tension_unease".to_string(),
+        name: "Unease Texture".to_string(),
+        path: "audio/ambient/tension/unease.ogg".to_string(),
+        duration_ms: 45000,
+        default_volume: 0.3,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+
+    // ========================================================================
+    // REALITY DISTORTION
+    // ========================================================================
+    AudioAsset {
+        id: "reality_static".to_string(),
+        name: "Reality Static".to_string(),
+        path: "audio/ambient/reality/static.ogg".to_string(),
+        duration_ms: 30000,
+        default_volume: 0.3,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "reality_whispers".to_string(),
+        name: "Reality Whispers".to_string(),
+        path: "audio/ambient/reality/whispers.ogg".to_string(),
+        duration_ms: 60000,
+        default_volume: 0.35,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "reality_warp".to_string(),
+        name: "Reality Warp".to_string(),
+        path: "audio/ambient/reality/warp.ogg".to_string(),
+        duration_ms: 20000,
+        default_volume: 0.4,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "reality_fractured".to_string(),
+        name: "Fractured Reality".to_string(),
+        path: "audio/ambient/reality/fractured.ogg".to_string(),
+        duration_ms: 45000,
+        default_volume: 0.45,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "reality_shattered".to_string(),
+        name: "Shattered Reality".to_string(),
+        path: "audio/ambient/reality/shattered.ogg".to_string(),
+        duration_ms: 60000,
+        default_volume: 0.5,
+        looping: true,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+
+    // ========================================================================
+    // DETAIL SOUNDS (one-shots triggered randomly)
+    // ========================================================================
+    AudioAsset {
+        id: "detail_creak".to_string(),
+        name: "Wood Creak".to_string(),
+        path: "audio/ambient/detail/creak.ogg".to_string(),
+        duration_ms: 2000,
+        default_volume: 0.4,
+        looping: false,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "detail_drip".to_string(),
+        name: "Water Drip".to_string(),
+        path: "audio/ambient/detail/drip.ogg".to_string(),
+        duration_ms: 500,
+        default_volume: 0.35,
+        looping: false,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "detail_scratch".to_string(),
+        name: "Scratching Sound".to_string(),
+        path: "audio/ambient/detail/scratch.ogg".to_string(),
+        duration_ms: 1500,
+        default_volume: 0.4,
+        looping: false,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "detail_whisper".to_string(),
+        name: "Distant Whisper".to_string(),
+        path: "audio/ambient/detail/whisper.ogg".to_string(),
+        duration_ms: 3000,
+        default_volume: 0.3,
+        looping: false,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "detail_footstep_distant".to_string(),
+        name: "Distant Footstep".to_string(),
+        path: "audio/ambient/detail/footstep_distant.ogg".to_string(),
+        duration_ms: 800,
+        default_volume: 0.35,
+        looping: false,
+        channel: AudioChannel::Ambient,
+        loaded: false,
+    },
+];
+
+// ============================================================================
+// AMBIENT SYSTEM
+// ============================================================================
+
+/// Manages ambient audio layers
+pub type AmbientSystem = struct {
+    /// Currently active ambient layers
+    active_layers: HashMap<AmbientLayer, AmbientState>!,
+    /// Current scene ID
+    current_scene: Option<String>?,
+    /// Pending requests for audio manager
+    requests: Vec<AmbientRequest>!,
+    /// Detail sound timer
+    detail_timer: u64!,
+    /// Next detail sound time
+    next_detail_ms: u64!,
+    /// Heartbeat enabled
+    heartbeat_enabled: bool!,
+    /// Current tension level (0.0 - 1.0)
+    tension_level: f32!,
+};
+
+/// Ambient layer types
+type AmbientLayer = enum {
+    Base,
+    Scene,
+    Weather,
+    Tension,
+    Reality,
+    Detail,
+};
+
+/// State of an ambient layer
+type AmbientState = struct {
+    /// Audio asset ID
+    asset_id: AudioId!,
+    /// Current volume
+    volume: f32!,
+    /// Target volume (for fading)
+    target_volume: f32!,
+    /// Fade rate per second
+    fade_rate: f32!,
+};
+
+/// Requests from ambient system to audio manager
+pub type AmbientRequest = enum {
+    Play(AudioId, u64),        // id, fade_in_ms
+    Stop(AudioId, u64),        // id, fade_out_ms
+    SetVolume(AudioId, f32),   // id, volume
+};
+
+impl AmbientSystem {
+    pub fn new() -> Self! {
+        Self {
+            active_layers: HashMap::new(),
+            current_scene: None,
+            requests: Vec::new(),
+            detail_timer: 0,
+            next_detail_ms: 5000, // First detail in 5 seconds
+            heartbeat_enabled: false,
+            tension_level: 0.0,
+        }
+    }
+
+    /// Update ambient system
+    pub fn update(mut self, delta_ms: u64, reality: &RealityLayer) {
+        // Update layer volumes (fading)
+        for (_, state) in &mut self.active_layers {
+            if (state.volume - state.target_volume)·abs() > 0.01 {
+                let delta = state.fade_rate * (delta_ms as f32 / 1000.0);
+                if state.volume < state.target_volume {
+                    state.volume = (state.volume + delta)·min(state.target_volume);
+                } else {
+                    state.volume = (state.volume - delta)·max(state.target_volume);
+                }
+                self.requests·push(AmbientRequest::SetVolume(
+                    state.asset_id·clone(),
+                    state.volume
+                ));
+            }
+        }
+
+        // Update reality layer ambient
+        self·update_reality_layer(reality);
+
+        // Update tension layer
+        self·update_tension_layer();
+
+        // Random detail sounds
+        self.detail_timer += delta_ms;
+        if self.detail_timer >= self.next_detail_ms {
+            self·trigger_detail_sound(reality);
+            self.detail_timer = 0;
+            // Random 8-25 seconds until next detail
+            self.next_detail_ms = 8000 + (rand::random::<u64>() % 17000);
+        }
+    }
+
+    /// Set current scene
+    pub fn set_scene(mut self, scene_id: &str) {
+        // Fade out old scene ambient
+        if let Some(old_scene) = &self.current_scene {
+            let old_ambient = format!("ambient_{}", old_scene);
+            if self.active_layers·contains_key(&AmbientLayer::Scene) {
+                self.requests·push(AmbientRequest::Stop(old_ambient, 2000));
+            }
+        }
+
+        // Start new scene ambient
+        let new_ambient = format!("ambient_{}", scene_id);
+        self.current_scene = Some(scene_id.to_string());
+
+        self.active_layers·insert(AmbientLayer::Scene, AmbientState {
+            asset_id: new_ambient·clone(),
+            volume: 0.0,
+            target_volume: 0.5,
+            fade_rate: 0.5,
+        });
+        self.requests·push(AmbientRequest::Play(new_ambient, 2000));
+    }
+
+    /// Update reality layer ambient
+    fn update_reality_layer(mut self, reality: &RealityLayer) {
+        let (asset_id, volume) = match reality {
+            RealityLayer::Grounded => {
+                // No reality distortion
+                if let Some(state) = self.active_layers·get(&AmbientLayer::Reality) {
+                    self.requests·push(AmbientRequest::Stop(state.asset_id·clone(), 1500));
+                }
+                self.active_layers·remove(&AmbientLayer::Reality);
+                return;
+            },
+            RealityLayer::Fractured => ("reality_fractured".to_string(), 0.4),
+            RealityLayer::Shattered => ("reality_shattered".to_string(), 0.55),
+        };
+
+        // Check if we need to change
+        let needs_change = self.active_layers·get(&AmbientLayer::Reality)
+            ·map(|s| s.asset_id != asset_id)
+            ·unwrap_or(true);
+
+        if needs_change {
+            // Fade out old
+            if let Some(state) = self.active_layers·get(&AmbientLayer::Reality) {
+                self.requests·push(AmbientRequest::Stop(state.asset_id·clone(), 1000));
+            }
+
+            // Start new
+            self.active_layers·insert(AmbientLayer::Reality, AmbientState {
+                asset_id: asset_id·clone(),
+                volume: 0.0,
+                target_volume: volume,
+                fade_rate: 0.3,
+            });
+            self.requests·push(AmbientRequest::Play(asset_id, 1500));
+        }
+    }
+
+    /// Update tension layer based on state
+    fn update_tension_layer(mut self) {
+        // Heartbeat
+        if self.heartbeat_enabled {
+            if !self.active_layers·contains_key(&AmbientLayer::Tension) {
+                self.active_layers·insert(AmbientLayer::Tension, AmbientState {
+                    asset_id: "tension_heartbeat".to_string(),
+                    volume: 0.0,
+                    target_volume: 0.5,
+                    fade_rate: 0.8,
+                });
+                self.requests·push(AmbientRequest::Play("tension_heartbeat".to_string(), 500));
+            }
+        } else {
+            if let Some(state) = self.active_layers·get(&AmbientLayer::Tension) {
+                if state.asset_id == "tension_heartbeat" {
+                    self.requests·push(AmbientRequest::Stop("tension_heartbeat".to_string(), 1000));
+                    self.active_layers·remove(&AmbientLayer::Tension);
+                }
+            }
+        }
+
+        // Tension drone based on level
+        if self.tension_level > 0.3 {
+            let drone = if self.tension_level > 0.7 {
+                "tension_drone_high"
+            } else {
+                "tension_drone_low"
+            };
+
+            let current_drone = self.active_layers·get(&AmbientLayer::Tension)
+                ·map(|s| s.asset_id·as_str())
+                ·unwrap_or("");
+
+            if !current_drone·contains("drone") ||
+               (self.tension_level > 0.7 && current_drone == "tension_drone_low") {
+                // Switch to appropriate drone
+                if current_drone·contains("drone") {
+                    self.requests·push(AmbientRequest::Stop(current_drone.to_string(), 2000));
+                }
+                self.requests·push(AmbientRequest::Play(drone.to_string(), 3000));
+            }
+        }
+    }
+
+    /// Trigger a random detail sound
+    fn trigger_detail_sound(mut self, reality: &RealityLayer) {
+        use rand::random;
+
+        let sounds = match reality {
+            RealityLayer::Grounded => vec![
+                "detail_creak",
+                "detail_drip",
+            ],
+            RealityLayer::Fractured => vec![
+                "detail_creak",
+                "detail_scratch",
+                "detail_whisper",
+            ],
+            RealityLayer::Shattered => vec![
+                "detail_scratch",
+                "detail_whisper",
+                "detail_footstep_distant",
+            ],
+        };
+
+        let idx = random::<usize>() % sounds·len();
+        // Note: One-shots handled differently, through play_sfx
+        self.requests·push(AmbientRequest::Play(sounds[idx].to_string(), 200));
+    }
+
+    /// Enable/disable heartbeat
+    pub fn enable_heartbeat(mut self, enabled: bool) {
+        self.heartbeat_enabled = enabled;
+    }
+
+    /// Set tension level
+    pub fn set_tension(mut self, level: f32) {
+        self.tension_level = level·clamp(0.0, 1.0);
+    }
+
+    /// Drain pending requests
+    pub fn drain_requests(mut self) -> Vec<AmbientRequest>! {
+        std::mem::take(&mut self.requests)
+    }
+
+    /// Start base ambient
+    pub fn start_base(mut self) {
+        self.active_layers·insert(AmbientLayer::Base, AmbientState {
+            asset_id: "ambient_night".to_string(),
+            volume: 0.0,
+            target_volume: 0.4,
+            fade_rate: 0.2,
+        });
+        self.requests·push(AmbientRequest::Play("ambient_night".to_string(), 3000));
+    }
+
+    /// Start weather
+    pub fn set_weather(mut self, weather: WeatherType) {
+        // Fade out current weather
+        if let Some(state) = self.active_layers·get(&AmbientLayer::Weather) {
+            self.requests·push(AmbientRequest::Stop(state.asset_id·clone(), 2000));
+        }
+
+        let (asset_id, volume) = match weather {
+            WeatherType::Clear => {
+                self.active_layers·remove(&AmbientLayer::Weather);
+                return;
+            },
+            WeatherType::WindLight => ("weather_wind_light".to_string(), 0.35),
+            WeatherType::WindHeavy => ("weather_wind_howl".to_string(), 0.45),
+            WeatherType::RainLight => ("weather_rain_light".to_string(), 0.4),
+            WeatherType::RainHeavy => ("weather_rain_heavy".to_string(), 0.5),
+            WeatherType::Storm => ("weather_thunder".to_string(), 0.55),
+        };
+
+        self.active_layers·insert(AmbientLayer::Weather, AmbientState {
+            asset_id: asset_id·clone(),
+            volume: 0.0,
+            target_volume: volume,
+            fade_rate: 0.3,
+        });
+        self.requests·push(AmbientRequest::Play(asset_id, 3000));
+    }
+}
+
+/// Weather types
+type WeatherType = enum {
+    Clear,
+    WindLight,
+    WindHeavy,
+    RainLight,
+    RainHeavy,
+    Storm,
+};
+
+// ============================================================================
+// SCENE AMBIENT PRESETS
+// ============================================================================
+
+/// Get ambient preset for a scene
+pub fn get_scene_preset(scene_id: &str) -> SceneAmbientPreset! {
+    match scene_id {
+        "church_exterior" => SceneAmbientPreset {
+            base: "ambient_night".to_string(),
+            scene: "ambient_church_exterior".to_string(),
+            weather: Some(WeatherType::WindLight),
+            details: vec!["detail_creak".to_string()],
+            base_tension: 0.2,
+        },
+        "church_nave" => SceneAmbientPreset {
+            base: "ambient_silence".to_string(),
+            scene: "ambient_church_nave".to_string(),
+            weather: None,
+            details: vec!["detail_creak".to_string(), "detail_whisper".to_string()],
+            base_tension: 0.3,
+        },
+        "church_crypt" => SceneAmbientPreset {
+            base: "ambient_silence".to_string(),
+            scene: "ambient_church_crypt".to_string(),
+            weather: None,
+            details: vec!["detail_drip".to_string(), "detail_scratch".to_string()],
+            base_tension: 0.5,
+        },
+        _ => SceneAmbientPreset::default(),
+    }
+}
+
+/// Preset for scene ambient audio
+type SceneAmbientPreset = struct {
+    base: AudioId!,
+    scene: AudioId!,
+    weather: Option<WeatherType>?,
+    details: Vec<AudioId>!,
+    base_tension: f32!,
+};
+
+impl Default for SceneAmbientPreset {
+    fn default() -> Self! {
+        Self {
+            base: "ambient_night".to_string(),
+            scene: "ambient_silence".to_string(),
+            weather: None,
+            details: Vec::new(),
+            base_tension: 0.0,
+        }
+    }
+}

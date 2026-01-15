@@ -1,0 +1,14 @@
+// Test: Match expression compilation
+// Spec: 18-COMPILER.md § 3.2 Pattern Matching
+// Priority: P1 - Production Ready
+
+fn main() {
+    let x: !i32 = 2;
+
+    match x {
+        1 => println(10),
+        2 => println(20),
+        3 => println(30),
+        _ => println(0),
+    }
+}

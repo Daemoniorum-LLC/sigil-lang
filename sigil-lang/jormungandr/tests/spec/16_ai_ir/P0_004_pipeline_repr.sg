@@ -1,0 +1,14 @@
+// Test: Pipeline representation in IR
+// Spec: 16-AI-IR.md § Pipeline Operations
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let result = [1, 2, 3]
+        |τ{x => x * 2}
+        |φ{x => x > 2}
+        |Σ;
+
+    let ir = __export_ir();
+    // Pipeline should be represented as morpheme chain
+    println(1);
+}

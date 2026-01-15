@@ -1,0 +1,11 @@
+// Test: format! macro with arguments
+// Spec: 07-METAPROGRAMMING.md § 1.2 Format Arguments
+// Priority: P1 - Standard Feature
+
+fn main() {
+    let name = "Alice";
+    let age = 30;
+
+    let s = format!("Name: {}, Age: {}", name, age);
+    println(s);
+}

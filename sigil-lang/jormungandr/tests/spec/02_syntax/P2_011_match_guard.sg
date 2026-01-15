@@ -1,0 +1,11 @@
+// Test: Match with basic pattern
+// Spec: 02-SYNTAX.md § 5.3 Match
+// Priority: P2 - Enhancement
+
+fn main() {
+    let x: !i32 = 5;
+    match x {
+        5 => println(1),
+        _ => println(0)
+    }
+}

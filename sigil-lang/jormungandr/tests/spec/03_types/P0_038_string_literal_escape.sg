@@ -1,0 +1,8 @@
+// Test: String literal with escape sequences
+// Spec: 03-TYPES.md § 3.3 String Type
+// Priority: P0
+
+fn main() {
+    let s: !String = "Hello\nWorld";
+    println(s);
+}

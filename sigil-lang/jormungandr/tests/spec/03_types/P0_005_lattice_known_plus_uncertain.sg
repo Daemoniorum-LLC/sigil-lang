@@ -1,0 +1,18 @@
+// Test: Evidence lattice rule - Known + Uncertain = Uncertain
+// Spec: 03-TYPES.md § 2.2 Evidence Lattice
+// Priority: P0
+//
+// Purpose:
+// Validates that combining Known (!) and Uncertain (?) evidence
+// follows the pessimistic lattice rule: ! + ? = ?
+//
+// Expected behavior:
+// When adding a Known value and an Uncertain value, the result
+// should have Uncertain evidence. Should print 141 (42 + 99).
+
+fn main() {
+    let x: !i32 = 42;
+    let y: ?i32 = 99;
+    let z = x + y;  // Should be ?i32
+    println(z);
+}

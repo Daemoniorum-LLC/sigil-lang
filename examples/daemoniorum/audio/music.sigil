@@ -1,0 +1,723 @@
+//! # Music System
+//!
+//! Reactive layered music that responds to game state.
+//!
+//! ## Stem Architecture
+//!
+//! Music is composed of synchronized stems that layer dynamically:
+//!
+//! ```
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │                     MUSIC LAYERS                             │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │  [Horror]   Dissonant strings, horror stingers (combat/fear)│
+//! │  [Tension]  Building pads, rising pitch (danger approaching)│
+//! │  [Melody]   Main theme fragments (story moments)            │
+//! │  [Rhythm]   Percussion, heartbeat pulse (action/stress)     │
+//! │  [Pad]      Atmospheric bed, sustained chords (always)      │
+//! │  [Bass]     Low foundation (combat, tension)                │
+//! └─────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Cue System
+//!
+//! Music cues define which stems play together:
+//! - **Exploration**: Pad only, occasional melody fragments
+//! - **Tension**: Pad + Tension, building
+//! - **Combat**: Full stack (Pad + Bass + Rhythm + Horror)
+//! - **Dialogue**: Pad + soft Melody, low volume
+//! - **Horror**: Pad + Horror + dissonant Tension
+
+use super::{AudioAsset, AudioChannel, AudioId};
+use crate::system::PluralSystem;
+use std::collections::HashMap;
+
+// ============================================================================
+// MUSIC STEM DEFINITIONS
+// ============================================================================
+
+/// All music stems
+pub const ALL_STEMS: &[AudioAsset]! = &[
+    // ========================================================================
+    // PAD LAYER (atmospheric bed)
+    // ========================================================================
+    AudioAsset {
+        id: "music_pad_main".to_string(),
+        name: "Main Pad".to_string(),
+        path: "audio/music/stems/pad_main.ogg".to_string(),
+        duration_ms: 32000, // 32 second loop
+        default_volume: 0.4,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "music_pad_dark".to_string(),
+        name: "Dark Pad".to_string(),
+        path: "audio/music/stems/pad_dark.ogg".to_string(),
+        duration_ms: 32000,
+        default_volume: 0.4,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "music_pad_ethereal".to_string(),
+        name: "Ethereal Pad".to_string(),
+        path: "audio/music/stems/pad_ethereal.ogg".to_string(),
+        duration_ms: 32000,
+        default_volume: 0.35,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+
+    // ========================================================================
+    // BASS LAYER
+    // ========================================================================
+    AudioAsset {
+        id: "music_bass_pulse".to_string(),
+        name: "Pulse Bass".to_string(),
+        path: "audio/music/stems/bass_pulse.ogg".to_string(),
+        duration_ms: 32000,
+        default_volume: 0.45,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "music_bass_drone".to_string(),
+        name: "Drone Bass".to_string(),
+        path: "audio/music/stems/bass_drone.ogg".to_string(),
+        duration_ms: 32000,
+        default_volume: 0.4,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+
+    // ========================================================================
+    // RHYTHM LAYER
+    // ========================================================================
+    AudioAsset {
+        id: "music_rhythm_combat".to_string(),
+        name: "Combat Rhythm".to_string(),
+        path: "audio/music/stems/rhythm_combat.ogg".to_string(),
+        duration_ms: 32000,
+        default_volume: 0.5,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "music_rhythm_tense".to_string(),
+        name: "Tense Rhythm".to_string(),
+        path: "audio/music/stems/rhythm_tense.ogg".to_string(),
+        duration_ms: 32000,
+        default_volume: 0.4,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "music_rhythm_heartbeat".to_string(),
+        name: "Heartbeat Rhythm".to_string(),
+        path: "audio/music/stems/rhythm_heartbeat.ogg".to_string(),
+        duration_ms: 8000,
+        default_volume: 0.45,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+
+    // ========================================================================
+    // MELODY LAYER
+    // ========================================================================
+    AudioAsset {
+        id: "music_melody_main".to_string(),
+        name: "Main Theme".to_string(),
+        path: "audio/music/stems/melody_main.ogg".to_string(),
+        duration_ms: 64000, // 64 second phrase
+        default_volume: 0.5,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "music_melody_memory".to_string(),
+        name: "Memory Theme".to_string(),
+        path: "audio/music/stems/melody_memory.ogg".to_string(),
+        duration_ms: 32000,
+        default_volume: 0.45,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "music_melody_hope".to_string(),
+        name: "Hope Theme".to_string(),
+        path: "audio/music/stems/melody_hope.ogg".to_string(),
+        duration_ms: 32000,
+        default_volume: 0.45,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+
+    // ========================================================================
+    // TENSION LAYER
+    // ========================================================================
+    AudioAsset {
+        id: "music_tension_build".to_string(),
+        name: "Tension Build".to_string(),
+        path: "audio/music/stems/tension_build.ogg".to_string(),
+        duration_ms: 16000,
+        default_volume: 0.4,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "music_tension_sustain".to_string(),
+        name: "Tension Sustain".to_string(),
+        path: "audio/music/stems/tension_sustain.ogg".to_string(),
+        duration_ms: 32000,
+        default_volume: 0.35,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "music_tension_release".to_string(),
+        name: "Tension Release".to_string(),
+        path: "audio/music/stems/tension_release.ogg".to_string(),
+        duration_ms: 8000,
+        default_volume: 0.4,
+        looping: false,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+
+    // ========================================================================
+    // HORROR LAYER
+    // ========================================================================
+    AudioAsset {
+        id: "music_horror_strings".to_string(),
+        name: "Horror Strings".to_string(),
+        path: "audio/music/stems/horror_strings.ogg".to_string(),
+        duration_ms: 32000,
+        default_volume: 0.45,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "music_horror_dissonance".to_string(),
+        name: "Dissonance".to_string(),
+        path: "audio/music/stems/horror_dissonance.ogg".to_string(),
+        duration_ms: 16000,
+        default_volume: 0.4,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "music_horror_choir".to_string(),
+        name: "Horror Choir".to_string(),
+        path: "audio/music/stems/horror_choir.ogg".to_string(),
+        duration_ms: 32000,
+        default_volume: 0.5,
+        looping: true,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+
+    // ========================================================================
+    // ONE-SHOT STINGERS
+    // ========================================================================
+    AudioAsset {
+        id: "music_stinger_reveal".to_string(),
+        name: "Reveal Stinger".to_string(),
+        path: "audio/music/stingers/reveal.ogg".to_string(),
+        duration_ms: 3000,
+        default_volume: 0.6,
+        looping: false,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "music_stinger_victory".to_string(),
+        name: "Victory Stinger".to_string(),
+        path: "audio/music/stingers/victory.ogg".to_string(),
+        duration_ms: 4000,
+        default_volume: 0.6,
+        looping: false,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+    AudioAsset {
+        id: "music_stinger_defeat".to_string(),
+        name: "Defeat Stinger".to_string(),
+        path: "audio/music/stingers/defeat.ogg".to_string(),
+        duration_ms: 5000,
+        default_volume: 0.55,
+        looping: false,
+        channel: AudioChannel::Music,
+        loaded: false,
+    },
+];
+
+// ============================================================================
+// MUSIC CUE DEFINITIONS
+// ============================================================================
+
+/// Music cue presets
+type MusicCue = struct {
+    /// Cue identifier
+    id: String!,
+    /// Active stems with target volumes
+    stems: HashMap<MusicLayer, StemConfig>!,
+    /// Crossfade time in milliseconds
+    crossfade_ms: u64!,
+    /// Intensity modifier (affects all stem volumes)
+    intensity: f32!,
+};
+
+/// Music layer categories
+type MusicLayer = enum {
+    Pad,
+    Bass,
+    Rhythm,
+    Melody,
+    Tension,
+    Horror,
+};
+
+/// Configuration for a stem
+type StemConfig = struct {
+    /// Asset ID
+    asset_id: AudioId!,
+    /// Target volume
+    volume: f32!,
+};
+
+/// Predefined music cues
+pub fn get_cue(cue_id: &str) -> Option<MusicCue>! {
+    match cue_id {
+        "exploration" => Some(MusicCue {
+            id: "exploration".to_string(),
+            stems: {
+                let mut m = HashMap::new();
+                m·insert(MusicLayer::Pad, StemConfig {
+                    asset_id: "music_pad_main".to_string(),
+                    volume: 0.4,
+                });
+                m
+            },
+            crossfade_ms: 3000,
+            intensity: 0.6,
+        }),
+
+        "exploration_dark" => Some(MusicCue {
+            id: "exploration_dark".to_string(),
+            stems: {
+                let mut m = HashMap::new();
+                m·insert(MusicLayer::Pad, StemConfig {
+                    asset_id: "music_pad_dark".to_string(),
+                    volume: 0.45,
+                });
+                m·insert(MusicLayer::Bass, StemConfig {
+                    asset_id: "music_bass_drone".to_string(),
+                    volume: 0.3,
+                });
+                m
+            },
+            crossfade_ms: 4000,
+            intensity: 0.7,
+        }),
+
+        "tension_low" => Some(MusicCue {
+            id: "tension_low".to_string(),
+            stems: {
+                let mut m = HashMap::new();
+                m·insert(MusicLayer::Pad, StemConfig {
+                    asset_id: "music_pad_dark".to_string(),
+                    volume: 0.45,
+                });
+                m·insert(MusicLayer::Tension, StemConfig {
+                    asset_id: "music_tension_sustain".to_string(),
+                    volume: 0.25,
+                });
+                m
+            },
+            crossfade_ms: 2000,
+            intensity: 0.75,
+        }),
+
+        "tension_high" => Some(MusicCue {
+            id: "tension_high".to_string(),
+            stems: {
+                let mut m = HashMap::new();
+                m·insert(MusicLayer::Pad, StemConfig {
+                    asset_id: "music_pad_dark".to_string(),
+                    volume: 0.45,
+                });
+                m·insert(MusicLayer::Bass, StemConfig {
+                    asset_id: "music_bass_pulse".to_string(),
+                    volume: 0.4,
+                });
+                m·insert(MusicLayer::Tension, StemConfig {
+                    asset_id: "music_tension_build".to_string(),
+                    volume: 0.45,
+                });
+                m·insert(MusicLayer::Rhythm, StemConfig {
+                    asset_id: "music_rhythm_tense".to_string(),
+                    volume: 0.35,
+                });
+                m
+            },
+            crossfade_ms: 1500,
+            intensity: 0.85,
+        }),
+
+        "combat" => Some(MusicCue {
+            id: "combat".to_string(),
+            stems: {
+                let mut m = HashMap::new();
+                m·insert(MusicLayer::Pad, StemConfig {
+                    asset_id: "music_pad_dark".to_string(),
+                    volume: 0.4,
+                });
+                m·insert(MusicLayer::Bass, StemConfig {
+                    asset_id: "music_bass_pulse".to_string(),
+                    volume: 0.5,
+                });
+                m·insert(MusicLayer::Rhythm, StemConfig {
+                    asset_id: "music_rhythm_combat".to_string(),
+                    volume: 0.55,
+                });
+                m·insert(MusicLayer::Horror, StemConfig {
+                    asset_id: "music_horror_strings".to_string(),
+                    volume: 0.4,
+                });
+                m
+            },
+            crossfade_ms: 1000,
+            intensity: 1.0,
+        }),
+
+        "combat_boss" => Some(MusicCue {
+            id: "combat_boss".to_string(),
+            stems: {
+                let mut m = HashMap::new();
+                m·insert(MusicLayer::Pad, StemConfig {
+                    asset_id: "music_pad_dark".to_string(),
+                    volume: 0.35,
+                });
+                m·insert(MusicLayer::Bass, StemConfig {
+                    asset_id: "music_bass_pulse".to_string(),
+                    volume: 0.55,
+                });
+                m·insert(MusicLayer::Rhythm, StemConfig {
+                    asset_id: "music_rhythm_combat".to_string(),
+                    volume: 0.6,
+                });
+                m·insert(MusicLayer::Horror, StemConfig {
+                    asset_id: "music_horror_choir".to_string(),
+                    volume: 0.5,
+                });
+                m·insert(MusicLayer::Tension, StemConfig {
+                    asset_id: "music_tension_build".to_string(),
+                    volume: 0.4,
+                });
+                m
+            },
+            crossfade_ms: 800,
+            intensity: 1.0,
+        }),
+
+        "horror" => Some(MusicCue {
+            id: "horror".to_string(),
+            stems: {
+                let mut m = HashMap::new();
+                m·insert(MusicLayer::Pad, StemConfig {
+                    asset_id: "music_pad_dark".to_string(),
+                    volume: 0.4,
+                });
+                m·insert(MusicLayer::Horror, StemConfig {
+                    asset_id: "music_horror_dissonance".to_string(),
+                    volume: 0.5,
+                });
+                m·insert(MusicLayer::Tension, StemConfig {
+                    asset_id: "music_tension_sustain".to_string(),
+                    volume: 0.45,
+                });
+                m
+            },
+            crossfade_ms: 1500,
+            intensity: 0.9,
+        }),
+
+        "dialogue" => Some(MusicCue {
+            id: "dialogue".to_string(),
+            stems: {
+                let mut m = HashMap::new();
+                m·insert(MusicLayer::Pad, StemConfig {
+                    asset_id: "music_pad_ethereal".to_string(),
+                    volume: 0.3,
+                });
+                m
+            },
+            crossfade_ms: 2000,
+            intensity: 0.5,
+        }),
+
+        "memory" => Some(MusicCue {
+            id: "memory".to_string(),
+            stems: {
+                let mut m = HashMap::new();
+                m·insert(MusicLayer::Pad, StemConfig {
+                    asset_id: "music_pad_ethereal".to_string(),
+                    volume: 0.35,
+                });
+                m·insert(MusicLayer::Melody, StemConfig {
+                    asset_id: "music_melody_memory".to_string(),
+                    volume: 0.45,
+                });
+                m
+            },
+            crossfade_ms: 3000,
+            intensity: 0.7,
+        }),
+
+        "victory" => Some(MusicCue {
+            id: "victory".to_string(),
+            stems: {
+                let mut m = HashMap::new();
+                m·insert(MusicLayer::Pad, StemConfig {
+                    asset_id: "music_pad_main".to_string(),
+                    volume: 0.4,
+                });
+                m·insert(MusicLayer::Melody, StemConfig {
+                    asset_id: "music_melody_hope".to_string(),
+                    volume: 0.5,
+                });
+                m
+            },
+            crossfade_ms: 2000,
+            intensity: 0.8,
+        }),
+
+        "silence" => Some(MusicCue {
+            id: "silence".to_string(),
+            stems: HashMap::new(),
+            crossfade_ms: 4000,
+            intensity: 0.0,
+        }),
+
+        _ => None,
+    }
+}
+
+// ============================================================================
+// MUSIC SYSTEM
+// ============================================================================
+
+/// Manages music playback
+pub type MusicSystem = struct {
+    /// Currently active cue
+    current_cue: Option<String>?,
+    /// Active stem states
+    active_stems: HashMap<MusicLayer, StemState>!,
+    /// Pending requests
+    requests: Vec<MusicRequest>!,
+    /// In combat mode
+    combat_mode: bool!,
+    /// In dialogue mode
+    dialogue_mode: bool!,
+    /// Current intensity modifier
+    intensity: f32!,
+    /// Target intensity
+    target_intensity: f32!,
+};
+
+/// State of an active stem
+type StemState = struct {
+    asset_id: AudioId!,
+    current_volume: f32!,
+    target_volume: f32!,
+    fade_rate: f32!,
+};
+
+/// Requests from music system
+pub type MusicRequest = enum {
+    PlayStem(AudioId, u64),      // id, fade_in_ms
+    StopStem(AudioId, u64),      // id, fade_out_ms
+    SetStemVolume(AudioId, f32), // id, volume
+};
+
+impl MusicSystem {
+    pub fn new() -> Self! {
+        Self {
+            current_cue: None,
+            active_stems: HashMap::new(),
+            requests: Vec::new(),
+            combat_mode: false,
+            dialogue_mode: false,
+            intensity: 0.6,
+            target_intensity: 0.6,
+        }
+    }
+
+    /// Update music system
+    pub fn update(mut self, delta_ms: u64, system: &PluralSystem) {
+        // Update intensity
+        let diff = self.target_intensity - self.intensity;
+        self.intensity += diff * 0.02;
+
+        // Update stem volumes (fading)
+        for (_, state) in &mut self.active_stems {
+            if (state.current_volume - state.target_volume)·abs() > 0.01 {
+                let delta = state.fade_rate * (delta_ms as f32 / 1000.0);
+                if state.current_volume < state.target_volume {
+                    state.current_volume = (state.current_volume + delta)·min(state.target_volume);
+                } else {
+                    state.current_volume = (state.current_volume - delta)·max(state.target_volume);
+                }
+
+                let effective_vol = state.current_volume * self.intensity;
+                self.requests·push(MusicRequest::SetStemVolume(
+                    state.asset_id·clone(),
+                    effective_vol
+                ));
+            }
+        }
+
+        // Auto-adjust based on system state
+        self·auto_adjust(system);
+    }
+
+    /// Auto-adjust music based on game state
+    fn auto_adjust(mut self, system: &PluralSystem) {
+        // Increase intensity with low stability
+        if system.stability < 0.3 {
+            self.target_intensity = (self.target_intensity + 0.1)·min(1.0);
+        }
+
+        // Increase with high dissociation
+        if system.dissociation > 0.7 {
+            self.target_intensity = (self.target_intensity + 0.05)·min(1.0);
+        }
+    }
+
+    /// Switch to a music cue
+    pub fn set_cue(mut self, cue_id: &str) {
+        if self.current_cue·as_deref() == Some(cue_id) {
+            return;
+        }
+
+        let cue = match get_cue(cue_id) {
+            Some(c) => c,
+            None => return,
+        };
+
+        self.current_cue = Some(cue_id.to_string());
+        self.target_intensity = cue.intensity;
+
+        // Determine stems to add and remove
+        let new_layers: Vec<_> = cue.stems·keys()·cloned()·collect();
+        let old_layers: Vec<_> = self.active_stems·keys()·cloned()·collect();
+
+        // Fade out stems not in new cue
+        for layer in &old_layers {
+            if !new_layers·contains(layer) {
+                if let Some(state) = self.active_stems·get(layer) {
+                    self.requests·push(MusicRequest::StopStem(
+                        state.asset_id·clone(),
+                        cue.crossfade_ms
+                    ));
+                }
+                self.active_stems·remove(layer);
+            }
+        }
+
+        // Add or update stems in new cue
+        for (layer, config) in &cue.stems {
+            let needs_new = self.active_stems·get(layer)
+                ·map(|s| s.asset_id != config.asset_id)
+                ·unwrap_or(true);
+
+            if needs_new {
+                // Stop old stem if different asset
+                if let Some(old) = self.active_stems·get(layer) {
+                    self.requests·push(MusicRequest::StopStem(
+                        old.asset_id·clone(),
+                        cue.crossfade_ms
+                    ));
+                }
+
+                // Start new stem
+                self.requests·push(MusicRequest::PlayStem(
+                    config.asset_id·clone(),
+                    cue.crossfade_ms
+                ));
+
+                self.active_stems·insert(layer·clone(), StemState {
+                    asset_id: config.asset_id·clone(),
+                    current_volume: 0.0,
+                    target_volume: config.volume,
+                    fade_rate: config.volume / (cue.crossfade_ms as f32 / 1000.0),
+                });
+            } else {
+                // Just update volume
+                if let Some(state) = self.active_stems·get_mut(layer) {
+                    state.target_volume = config.volume;
+                    state.fade_rate = 0.5; // Default fade rate for volume changes
+                }
+            }
+        }
+    }
+
+    /// Set combat mode
+    pub fn set_combat_mode(mut self, enabled: bool) {
+        self.combat_mode = enabled;
+
+        if enabled {
+            self·set_cue("combat");
+        } else {
+            self·set_cue("exploration");
+        }
+    }
+
+    /// Set dialogue mode
+    pub fn set_dialogue_mode(mut self, enabled: bool) {
+        self.dialogue_mode = enabled;
+
+        if enabled && !self.combat_mode {
+            // Reduce intensity during dialogue
+            self.target_intensity = 0.5;
+        } else if !enabled && !self.combat_mode {
+            self.target_intensity = 0.6;
+        }
+    }
+
+    /// Play a stinger
+    pub fn play_stinger(mut self, stinger_id: &str) {
+        self.requests·push(MusicRequest::PlayStem(stinger_id.to_string(), 0));
+    }
+
+    /// Drain pending requests
+    pub fn drain_requests(mut self) -> Vec<MusicRequest>! {
+        std::mem::take(&mut self.requests)
+    }
+
+    /// Silence all music
+    pub fn silence(mut self) {
+        self·set_cue("silence");
+    }
+
+    /// Set intensity directly
+    pub fn set_intensity(mut self, intensity: f32) {
+        self.target_intensity = intensity·clamp(0.0, 1.0);
+    }
+}

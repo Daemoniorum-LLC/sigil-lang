@@ -154,6 +154,59 @@ export async function initSigil(wasmPath, options = {}) {
                 if (debug) console.log('[sigil:str]', str);
                 else console.log(str);
             },
+            // Alias for print builtin
+            print(value) {
+                const val = getValue(value);
+                if (debug) console.log('[sigil:print]', val.toString());
+                else console.log(Number(val));
+            },
+        },
+
+        // String operations
+        string: {
+            concat(aPtr, bPtr) {
+                const a = readString(aPtr);
+                const b = readString(bPtr);
+                return writeString(a + b);
+            },
+
+            length(strPtr) {
+                const str = readString(strPtr);
+                return str.length;
+            },
+
+            slice(strPtr, start, end) {
+                const str = readString(strPtr);
+                const sliced = str.slice(Number(start), Number(end));
+                return writeString(sliced);
+            },
+
+            eq(aPtr, bPtr) {
+                const a = readString(aPtr);
+                const b = readString(bPtr);
+                return a === b ? 1n : 0n;
+            },
+
+            from_int(value) {
+                const str = getValue(value).toString();
+                return writeString(str);
+            },
+
+            from_float(value) {
+                const str = value.toString();
+                return writeString(str);
+            },
+
+            parse_int(strPtr) {
+                const str = readString(strPtr);
+                const val = parseInt(str, 10);
+                return isNaN(val) ? 0n : BigInt(val);
+            },
+
+            parse_float(strPtr) {
+                const str = readString(strPtr);
+                return parseFloat(str) || 0.0;
+            },
         },
 
         // DOM operations
@@ -178,6 +231,20 @@ export async function initSigil(wasmPath, options = {}) {
                 elem.setAttribute(name, value);
             },
 
+            remove_attribute(elemHandle, namePtr, nameLen) {
+                const elem = getElement(elemHandle);
+                if (!elem) return;
+                const name = readString(namePtr, nameLen);
+                elem.removeAttribute(name);
+            },
+
+            set_property(elemHandle, namePtr, nameLen, value) {
+                const elem = getElement(elemHandle);
+                if (!elem) return;
+                const name = readString(namePtr, nameLen);
+                elem[name] = Number(getValue(value));
+            },
+
             append_child(parentHandle, childHandle) {
                 const parent = getElement(parentHandle);
                 const child = getElement(childHandle);
@@ -191,6 +258,24 @@ export async function initSigil(wasmPath, options = {}) {
                 const child = getElement(childHandle);
                 if (parent && child) {
                     parent.removeChild(child);
+                }
+            },
+
+            insert_before(parentHandle, newChildHandle, refChildHandle) {
+                const parent = getElement(parentHandle);
+                const newChild = getElement(newChildHandle);
+                const refChild = getElement(refChildHandle);
+                if (parent && newChild) {
+                    parent.insertBefore(newChild, refChild || null);
+                }
+            },
+
+            replace_child(parentHandle, newChildHandle, oldChildHandle) {
+                const parent = getElement(parentHandle);
+                const newChild = getElement(newChildHandle);
+                const oldChild = getElement(oldChildHandle);
+                if (parent && newChild && oldChild) {
+                    parent.replaceChild(newChild, oldChild);
                 }
             },
 
@@ -211,6 +296,13 @@ export async function initSigil(wasmPath, options = {}) {
                 const selector = readString(selectorPtr, selectorLen);
                 const elem = document.querySelector(selector);
                 return elem ? getElementHandle(elem) : 0;
+            },
+
+            clone_node(elemHandle, deep) {
+                const elem = getElement(elemHandle);
+                if (!elem) return 0;
+                const cloned = elem.cloneNode(Boolean(deep));
+                return getElementHandle(cloned);
             },
         },
 
@@ -337,6 +429,18 @@ export async function initSigil(wasmPath, options = {}) {
             free(ptr) {
                 allocations.delete(ptr);
                 // Note: Simple bump allocator doesn't actually free
+            },
+
+            // heap_alloc for i64 size/pointer (used by closures/structs)
+            heap_alloc(size) {
+                const sizeNum = Number(size);
+                const ptr = heapPointer;
+                heapPointer += sizeNum;
+                // Align to 8 bytes
+                heapPointer = (heapPointer + 7) & ~7;
+
+                allocations.set(ptr, sizeNum);
+                return BigInt(ptr);
             },
         },
 
@@ -474,6 +578,56 @@ export async function initSigil(wasmPath, options = {}) {
                 const arr = allocations.get(arrId);
                 return arr && n >= 0 && n < arr.length ? arr[n] : 0n;
             },
+
+            // Sum all elements
+            array_sum(arrId) {
+                const arr = allocations.get(arrId);
+                if (!arr || arr.length === 0) return 0n;
+                return arr.reduce((a, b) => BigInt(a) + BigInt(b), 0n);
+            },
+
+            // Product of all elements
+            array_product(arrId) {
+                const arr = allocations.get(arrId);
+                if (!arr || arr.length === 0) return 1n;
+                return arr.reduce((a, b) => BigInt(a) * BigInt(b), 1n);
+            },
+
+            // Minimum element
+            array_min(arrId) {
+                const arr = allocations.get(arrId);
+                if (!arr || arr.length === 0) return 0n;
+                return arr.reduce((a, b) => BigInt(a) < BigInt(b) ? BigInt(a) : BigInt(b));
+            },
+
+            // Maximum element
+            array_max(arrId) {
+                const arr = allocations.get(arrId);
+                if (!arr || arr.length === 0) return 0n;
+                return arr.reduce((a, b) => BigInt(a) > BigInt(b) ? BigInt(a) : BigInt(b));
+            },
+
+            // All elements truthy (non-zero)
+            array_all(arrId) {
+                const arr = allocations.get(arrId);
+                if (!arr || arr.length === 0) return 1;  // Empty is vacuously true
+                return arr.every(x => x !== 0n && x !== 0) ? 1 : 0;
+            },
+
+            // Any element truthy (non-zero)
+            array_any(arrId) {
+                const arr = allocations.get(arrId);
+                if (!arr || arr.length === 0) return 0;
+                return arr.some(x => x !== 0n && x !== 0) ? 1 : 0;
+            },
+
+            // Get random element
+            array_random_element(arrId) {
+                const arr = allocations.get(arrId);
+                if (!arr || arr.length === 0) return 0n;
+                const idx = Math.floor(Math.random() * arr.length);
+                return arr[idx];
+            },
         },
 
         // Router operations
@@ -535,14 +689,20 @@ export async function initSigil(wasmPath, options = {}) {
             VNODE_FRAGMENT: 3,
 
             /**
+             * Read string from I64 reference (pointer to length-prefixed data)
+             */
+            _readStrRef(strRef) {
+                const ptr = Number(BigInt.asUintN(32, strRef));
+                return readString(ptr);  // readString handles length prefix
+            },
+
+            /**
              * Create a VNode
-             * @param {number} typeCode - 0=element, 1=text, 2=component, 3=fragment
-             * @param {number} tagPtr - Pointer to tag/text string in WASM memory
-             * @param {number} tagLen - Length of tag string
+             * @param {bigint} tagStrRef - I64 pointer to tag string in WASM memory
              * @returns {number} VNode ID
              */
-            create_vnode(tagPtr, tagLen) {
-                const tag = readString(tagPtr, tagLen);
+            create_vnode(tagStrRef) {
+                const tag = this._readStrRef(tagStrRef);
                 const id = this._nextVnodeId++;
                 this._vnodes.set(id, {
                     id,
@@ -558,9 +718,10 @@ export async function initSigil(wasmPath, options = {}) {
 
             /**
              * Create a text VNode
+             * @param {bigint} textStrRef - I64 pointer to text string in WASM memory
              */
-            create_text_vnode(textPtr, textLen) {
-                const text = readString(textPtr, textLen);
+            create_text_vnode(textStrRef) {
+                const text = this._readStrRef(textStrRef);
                 const id = this._nextVnodeId++;
                 this._vnodes.set(id, {
                     id,
@@ -590,12 +751,15 @@ export async function initSigil(wasmPath, options = {}) {
 
             /**
              * Set property on VNode
+             * @param {number} vnodeId - VNode ID
+             * @param {bigint} nameStrRef - I64 pointer to property name
+             * @param {bigint} value - Property value (I64)
              */
-            set_vnode_prop(vnodeId, namePtr, nameLen, value) {
+            set_vnode_prop(vnodeId, nameStrRef, value) {
                 const vnode = this._vnodes.get(vnodeId);
                 if (!vnode) return;
 
-                const name = readString(namePtr, nameLen);
+                const name = this._readStrRef(nameStrRef);
 
                 // Handle special props
                 if (name === 'key') {
@@ -614,13 +778,16 @@ export async function initSigil(wasmPath, options = {}) {
 
             /**
              * Set string property on VNode
+             * @param {number} vnodeId - VNode ID
+             * @param {bigint} nameStrRef - I64 pointer to property name
+             * @param {bigint} valueStrRef - I64 pointer to property value
              */
-            set_vnode_str_prop(vnodeId, namePtr, nameLen, valuePtr, valueLen) {
+            set_vnode_str_prop(vnodeId, nameStrRef, valueStrRef) {
                 const vnode = this._vnodes.get(vnodeId);
                 if (!vnode) return;
 
-                const name = readString(namePtr, nameLen);
-                const value = readString(valuePtr, valueLen);
+                const name = this._readStrRef(nameStrRef);
+                const value = this._readStrRef(valueStrRef);
                 vnode.props[name] = value;
             },
 
@@ -638,14 +805,15 @@ export async function initSigil(wasmPath, options = {}) {
             /**
              * Mount VNode to real DOM
              * @param {number} vnodeId - VNode to mount
-             * @param {number} containerHandle - DOM element handle
+             * @param {bigint} selectorStrRef - I64 pointer to CSS selector string
              * @returns {number} Real DOM element handle
              */
-            mount_vnode(vnodeId, containerHandle) {
+            mount_vnode(vnodeId, selectorStrRef) {
                 const vnode = this._vnodes.get(vnodeId);
                 if (!vnode) return 0;
 
-                const container = getElement(containerHandle);
+                const selector = this._readStrRef(selectorStrRef);
+                const container = document.querySelector(selector);
                 if (!container) return 0;
 
                 const realElement = this._createRealElement(vnode);

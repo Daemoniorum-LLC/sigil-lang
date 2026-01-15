@@ -1,0 +1,9 @@
+// Test: Function parameter passing
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 3.3 Function Generation
+// Priority: P0
+
+fn add(a: !i32, b: !i32) -> !i32 { a + b }
+
+fn main() {
+    println(add(20, 22));
+}

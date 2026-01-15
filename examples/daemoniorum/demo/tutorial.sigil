@@ -1,0 +1,631 @@
+//! # Tutorial System
+//!
+//! In-game tutorials that teach mechanics through gameplay:
+//! - Movement and interaction
+//! - Alter switching and co-consciousness
+//! - Reality layer perception
+//! - Combat basics
+//! - Dialogue navigation
+//!
+//! Tutorials appear contextually and can be dismissed or disabled.
+
+use crate::system::*;
+use crate::combat::combat::*;
+use crate::runtime::state::*;
+use qliphoth::prelude::*;
+
+// ============================================================================
+// TUTORIAL DEFINITIONS
+// ============================================================================
+
+/// All tutorial definitions
+pub const TUTORIALS: &[Tutorial]! = &[
+    // Movement tutorial
+    Tutorial {
+        id: "movement",
+        title: "Exploration",
+        content: "Use WASD or Arrow Keys to move.\nPress E to interact with highlighted objects.\nPress TAB to open the menu.",
+        trigger: TutorialTrigger::SceneEntered("church_exterior"),
+        position: TutorialPosition::BottomCenter,
+        dismissable: true,
+        auto_dismiss_ms: Some(8000),
+        prerequisite: None,
+    },
+
+    // Alter switching
+    Tutorial {
+        id: "alter_switching",
+        title: "Plurality System",
+        content: "Press 1-6 to switch between alters.\nEach alter has unique abilities and perceptions.\nCurrent: Vessel (Host)",
+        trigger: TutorialTrigger::FlagSet("explored_gate"),
+        position: TutorialPosition::TopRight,
+        dismissable: true,
+        auto_dismiss_ms: Some(10000),
+        prerequisite: Some("movement"),
+    },
+
+    // First alter switch
+    Tutorial {
+        id: "first_switch",
+        title: "Switch Complete",
+        content: "You're now seeing through different eyes.\nNotice how the environment description changed.\nDifferent alters notice different details.",
+        trigger: TutorialTrigger::AlterSwitched,
+        position: TutorialPosition::TopRight,
+        dismissable: true,
+        auto_dismiss_ms: Some(6000),
+        prerequisite: Some("alter_switching"),
+    },
+
+    // Co-consciousness
+    Tutorial {
+        id: "cocon",
+        title: "Co-Consciousness",
+        content: "Hold SHIFT + number to bring an alter co-conscious.\nBoth alters contribute their abilities.\nUseful for combining skills in combat.",
+        trigger: TutorialTrigger::AbilityUnlocked("cocon"),
+        position: TutorialPosition::TopRight,
+        dismissable: true,
+        auto_dismiss_ms: Some(10000),
+        prerequisite: Some("first_switch"),
+    },
+
+    // Reality layers
+    Tutorial {
+        id: "reality_layers",
+        title: "Reality Shift",
+        content: "Reality is... unstable here.\nYou may see things that aren't there.\nOr fail to see things that are.\n\nTrust your system.",
+        trigger: TutorialTrigger::RealityShifted,
+        position: TutorialPosition::Center,
+        dismissable: true,
+        auto_dismiss_ms: None, // Must be dismissed manually
+        prerequisite: None,
+    },
+
+    // Dialogue
+    Tutorial {
+        id: "dialogue",
+        title: "Dialogue",
+        content: "Choose responses with 1-4 or click.\nDifferent alters unlock different options.\nYour choices affect the story.",
+        trigger: TutorialTrigger::DialogueStarted,
+        position: TutorialPosition::TopCenter,
+        dismissable: true,
+        auto_dismiss_ms: Some(8000),
+        prerequisite: None,
+    },
+
+    // Combat start
+    Tutorial {
+        id: "combat_start",
+        title: "Combat",
+        content: "Shadows emerge from the darkness!\n\nSelect actions for your fronting alter.\nSwitch alters mid-combat for different abilities.\nCoordinate your system to survive.",
+        trigger: TutorialTrigger::CombatStarted,
+        position: TutorialPosition::TopCenter,
+        dismissable: true,
+        auto_dismiss_ms: None,
+        prerequisite: None,
+    },
+
+    // Combat actions
+    Tutorial {
+        id: "combat_actions",
+        title: "Combat Actions",
+        content: "Each alter has unique abilities:\n• Strikers deal damage\n• Healers restore stability\n• Tanks draw attacks\n• Tacticians buff allies\n\nChoose wisely!",
+        trigger: TutorialTrigger::FirstCombatTurn,
+        position: TutorialPosition::Right,
+        dismissable: true,
+        auto_dismiss_ms: Some(12000),
+        prerequisite: Some("combat_start"),
+    },
+
+    // Stability warning
+    Tutorial {
+        id: "stability_warning",
+        title: "System Stability",
+        content: "WARNING: Stability is low!\n\nIf stability reaches zero, you'll dissociate.\nSwitch to Vessel to ground the system.\nUse healing abilities to restore stability.",
+        trigger: TutorialTrigger::StabilityLow,
+        position: TutorialPosition::Center,
+        dismissable: true,
+        auto_dismiss_ms: None,
+        prerequisite: None,
+    },
+
+    // Dissociation
+    Tutorial {
+        id: "dissociation",
+        title: "Dissociation",
+        content: "The system is fragmenting...\n\nHigh dissociation makes switches harder.\nReality perception becomes unreliable.\nFind a safe space to ground.",
+        trigger: TutorialTrigger::DissociationHigh,
+        position: TutorialPosition::Center,
+        dismissable: false,
+        auto_dismiss_ms: None,
+        prerequisite: None,
+    },
+];
+
+/// Tutorial definition
+type Tutorial = struct {
+    id: &'static str!,
+    title: &'static str!,
+    content: &'static str!,
+    trigger: TutorialTrigger!,
+    position: TutorialPosition!,
+    dismissable: bool!,
+    auto_dismiss_ms: Option<u64>?,
+    prerequisite: Option<&'static str>?,
+};
+
+/// What triggers a tutorial
+type TutorialTrigger = enum {
+    /// Scene entered
+    SceneEntered(&'static str),
+    /// Flag set
+    FlagSet(&'static str),
+    /// Alter switched
+    AlterSwitched,
+    /// Reality shifted
+    RealityShifted,
+    /// Dialogue started
+    DialogueStarted,
+    /// Combat started
+    CombatStarted,
+    /// First combat turn
+    FirstCombatTurn,
+    /// Stability below threshold
+    StabilityLow,
+    /// Dissociation above threshold
+    DissociationHigh,
+    /// Ability unlocked
+    AbilityUnlocked(&'static str),
+    /// Manual trigger
+    Manual,
+};
+
+/// Where tutorial appears
+type TutorialPosition = enum {
+    TopLeft,
+    TopCenter,
+    TopRight,
+    Center,
+    BottomLeft,
+    BottomCenter,
+    BottomRight,
+    Left,
+    Right,
+};
+
+// ============================================================================
+// TUTORIAL MANAGER
+// ============================================================================
+
+/// Manages tutorial display and progression
+type TutorialManager = struct {
+    /// Tutorials that have been shown
+    shown: Vec<String>!,
+    /// Currently active tutorial
+    active: Option<ActiveTutorial>?,
+    /// Tutorial queue
+    queue: Vec<String>!,
+    /// Tutorials disabled by user
+    disabled: bool!,
+};
+
+/// An active tutorial being displayed
+type ActiveTutorial = struct {
+    tutorial_id: String!,
+    elapsed_ms: u64!,
+    dismissed: bool!,
+};
+
+impl TutorialManager {
+    pub fn new() -> Self! {
+        Self {
+            shown: Vec::new(),
+            active: None,
+            queue: Vec::new(),
+            disabled: false,
+        }
+    }
+
+    /// Update tutorial state
+    pub fn update(mut self, delta_ms: u64) {
+        if self.disabled {
+            return;
+        }
+
+        // Update active tutorial
+        if let Some(ref mut active) = self.active {
+            active.elapsed_ms += delta_ms;
+
+            // Check auto-dismiss
+            if let Some(tutorial) = self·get_tutorial(&active.tutorial_id) {
+                if let Some(auto_dismiss) = tutorial.auto_dismiss_ms {
+                    if active.elapsed_ms >= auto_dismiss {
+                        active.dismissed = true;
+                    }
+                }
+            }
+
+            // Clear if dismissed
+            if active.dismissed {
+                self.active = None;
+            }
+        }
+
+        // Show next queued tutorial if none active
+        if self.active·is_none() && !self.queue·is_empty() {
+            let next_id = self.queue·remove(0);
+            self·show_tutorial(&next_id);
+        }
+    }
+
+    /// Check if a tutorial should trigger
+    pub fn check_trigger(mut self, trigger: &TutorialTrigger) {
+        if self.disabled {
+            return;
+        }
+
+        for tutorial in TUTORIALS {
+            // Skip if already shown
+            if self.shown·contains(&tutorial.id.to_string()) {
+                continue;
+            }
+
+            // Check prerequisite
+            if let Some(prereq) = tutorial.prerequisite {
+                if !self.shown·contains(&prereq.to_string()) {
+                    continue;
+                }
+            }
+
+            // Check trigger match
+            if self·trigger_matches(&tutorial.trigger, trigger) {
+                self·queue_tutorial(tutorial.id);
+            }
+        }
+    }
+
+    /// Check if triggers match
+    fn trigger_matches(self, tutorial_trigger: &TutorialTrigger, event_trigger: &TutorialTrigger) -> bool! {
+        match (tutorial_trigger, event_trigger) {
+            (TutorialTrigger::SceneEntered(a), TutorialTrigger::SceneEntered(b)) => a == b,
+            (TutorialTrigger::FlagSet(a), TutorialTrigger::FlagSet(b)) => a == b,
+            (TutorialTrigger::AlterSwitched, TutorialTrigger::AlterSwitched) => true,
+            (TutorialTrigger::RealityShifted, TutorialTrigger::RealityShifted) => true,
+            (TutorialTrigger::DialogueStarted, TutorialTrigger::DialogueStarted) => true,
+            (TutorialTrigger::CombatStarted, TutorialTrigger::CombatStarted) => true,
+            (TutorialTrigger::FirstCombatTurn, TutorialTrigger::FirstCombatTurn) => true,
+            (TutorialTrigger::StabilityLow, TutorialTrigger::StabilityLow) => true,
+            (TutorialTrigger::DissociationHigh, TutorialTrigger::DissociationHigh) => true,
+            (TutorialTrigger::AbilityUnlocked(a), TutorialTrigger::AbilityUnlocked(b)) => a == b,
+            _ => false,
+        }
+    }
+
+    /// Queue a tutorial to be shown
+    fn queue_tutorial(mut self, id: &str) {
+        if !self.queue·contains(&id.to_string()) {
+            self.queue·push(id.to_string());
+        }
+    }
+
+    /// Show a specific tutorial
+    fn show_tutorial(mut self, id: &str) {
+        self.shown·push(id.to_string());
+        self.active = Some(ActiveTutorial {
+            tutorial_id: id.to_string(),
+            elapsed_ms: 0,
+            dismissed: false,
+        });
+    }
+
+    /// Manually trigger a tutorial
+    pub fn trigger_manual(mut self, id: &str) {
+        if !self.shown·contains(&id.to_string()) {
+            self·show_tutorial(id);
+        }
+    }
+
+    /// Dismiss current tutorial
+    pub fn dismiss(mut self) {
+        if let Some(ref mut active) = self.active {
+            if let Some(tutorial) = self·get_tutorial(&active.tutorial_id) {
+                if tutorial.dismissable {
+                    active.dismissed = true;
+                }
+            }
+        }
+    }
+
+    /// Disable all tutorials
+    pub fn disable(mut self) {
+        self.disabled = true;
+        self.active = None;
+        self.queue·clear();
+    }
+
+    /// Enable tutorials
+    pub fn enable(mut self) {
+        self.disabled = false;
+    }
+
+    /// Get tutorial by ID
+    fn get_tutorial(self, id: &str) -> Option<&Tutorial>? {
+        TUTORIALS·iter()·find(|t| t.id == id)
+    }
+
+    /// Get active tutorial for rendering
+    pub fn get_active(self) -> Option<&Tutorial>? {
+        self.active·as_ref()·and_then(|a| self·get_tutorial(&a.tutorial_id))
+    }
+
+    /// Check if a specific tutorial was shown
+    pub fn was_shown(self, id: &str) -> bool! {
+        self.shown·contains(&id.to_string())
+    }
+}
+
+// ============================================================================
+// TUTORIAL UI COMPONENT
+// ============================================================================
+
+/// Tutorial popup component
+#[component]
+pub fn TutorialPopup(manager: &TutorialManager) -> Element! {
+    let tutorial = match manager·get_active() {
+        Some(t) => t,
+        None => return html! {},
+    };
+
+    let position_class = match tutorial.position {
+        TutorialPosition::TopLeft => "tutorial-top-left",
+        TutorialPosition::TopCenter => "tutorial-top-center",
+        TutorialPosition::TopRight => "tutorial-top-right",
+        TutorialPosition::Center => "tutorial-center",
+        TutorialPosition::BottomLeft => "tutorial-bottom-left",
+        TutorialPosition::BottomCenter => "tutorial-bottom-center",
+        TutorialPosition::BottomRight => "tutorial-bottom-right",
+        TutorialPosition::Left => "tutorial-left",
+        TutorialPosition::Right => "tutorial-right",
+    };
+
+    html! {
+        <div class={format!("tutorial-popup {}", position_class)}>
+            <div class="tutorial-header">
+                <span class="tutorial-icon">{"?"}</span>
+                <span class="tutorial-title">{tutorial.title}</span>
+            </div>
+            <div class="tutorial-content">
+                {tutorial.content}
+            </div>
+            {if tutorial.dismissable {
+                html! {
+                    <div class="tutorial-footer">
+                        <span class="tutorial-dismiss">{"Press SPACE to dismiss"}</span>
+                    </div>
+                }
+            } else {
+                html! {}
+            }}
+        </div>
+    }
+}
+
+/// Tutorial styles
+pub const TUTORIAL_STYLES: &str! = r#"
+    .tutorial-popup {
+        position: fixed;
+        background: linear-gradient(135deg, rgba(20,20,35,0.95), rgba(30,25,45,0.95));
+        border: 1px solid #4a4a6a;
+        border-radius: 8px;
+        padding: 1rem 1.5rem;
+        max-width: 350px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        z-index: 900;
+        animation: tutorial-fade-in 0.3s ease-out;
+    }
+
+    @keyframes tutorial-fade-in {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Position classes */
+    .tutorial-top-left { top: 1rem; left: 1rem; }
+    .tutorial-top-center { top: 1rem; left: 50%; transform: translateX(-50%); }
+    .tutorial-top-right { top: 1rem; right: 1rem; }
+    .tutorial-center { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+    .tutorial-bottom-left { bottom: 1rem; left: 1rem; }
+    .tutorial-bottom-center { bottom: 1rem; left: 50%; transform: translateX(-50%); }
+    .tutorial-bottom-right { bottom: 1rem; right: 1rem; }
+    .tutorial-left { top: 50%; left: 1rem; transform: translateY(-50%); }
+    .tutorial-right { top: 50%; right: 1rem; transform: translateY(-50%); }
+
+    .tutorial-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid rgba(100,100,150,0.3);
+    }
+
+    .tutorial-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        background: linear-gradient(135deg, #6a5acd, #483d8b);
+        border-radius: 50%;
+        font-weight: bold;
+        color: white;
+        font-size: 0.875rem;
+    }
+
+    .tutorial-title {
+        font-family: 'Cinzel', serif;
+        font-size: 1rem;
+        color: #d0c0f0;
+        font-weight: 600;
+    }
+
+    .tutorial-content {
+        font-family: 'Crimson Text', serif;
+        font-size: 0.9375rem;
+        color: #b0a0c0;
+        line-height: 1.6;
+        white-space: pre-line;
+    }
+
+    .tutorial-footer {
+        margin-top: 0.75rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid rgba(100,100,150,0.2);
+    }
+
+    .tutorial-dismiss {
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 0.75rem;
+        color: rgba(150,140,180,0.6);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+    }
+"#;
+
+// ============================================================================
+// COMBAT TUTORIAL
+// ============================================================================
+
+/// Combat tutorial helper
+type CombatTutorial = struct {
+    /// Current step
+    step: CombatTutorialStep!,
+    /// Highlighted element
+    highlight: Option<String>?,
+};
+
+type CombatTutorialStep = enum {
+    /// Show enemy info
+    EnemyIntro,
+    /// Explain actions
+    ActionExplain,
+    /// First attack
+    FirstAttack,
+    /// Show damage
+    DamageResult,
+    /// Enemy turn
+    EnemyTurn,
+    /// Explain switching
+    SwitchExplain,
+    /// Victory
+    Victory,
+    /// Complete
+    Complete,
+};
+
+impl CombatTutorial {
+    pub fn new() -> Self! {
+        Self {
+            step: CombatTutorialStep::EnemyIntro,
+            highlight: None,
+        }
+    }
+
+    /// Get current tutorial text
+    pub fn get_text(self) -> Option<(&'static str, &'static str)>? {
+        match self.step {
+            CombatTutorialStep::EnemyIntro => Some((
+                "Enemy Spotted!",
+                "Shadow Crawlers - weak but numerous.\nCheck their health in the enemy panel."
+            )),
+            CombatTutorialStep::ActionExplain => Some((
+                "Choose Your Action",
+                "Click an action or press 1-4.\nVessel can STRIKE for damage\nor GROUND to restore stability."
+            )),
+            CombatTutorialStep::FirstAttack => Some((
+                "Attack!",
+                "Select STRIKE to attack the enemy.\nWatch the combat log for results."
+            )),
+            CombatTutorialStep::DamageResult => Some((
+                "Hit!",
+                "You dealt damage. The enemy's\nhealth bar shows remaining HP."
+            )),
+            CombatTutorialStep::EnemyTurn => Some((
+                "Enemy Turn",
+                "The shadows strike back!\nWatch your stability meter."
+            )),
+            CombatTutorialStep::SwitchExplain => Some((
+                "Switch Alters",
+                "Press 1-6 to switch alters mid-combat.\nTry switching to Abaddon (2) for\nmore damage, or Beleth (4) to heal."
+            )),
+            CombatTutorialStep::Victory => Some((
+                "Victory!",
+                "The shadows disperse.\nYou've mastered the basics of combat."
+            )),
+            CombatTutorialStep::Complete => None,
+        }
+    }
+
+    /// Advance to next step
+    pub fn advance(mut self) {
+        self.step = match self.step {
+            CombatTutorialStep::EnemyIntro => CombatTutorialStep::ActionExplain,
+            CombatTutorialStep::ActionExplain => CombatTutorialStep::FirstAttack,
+            CombatTutorialStep::FirstAttack => CombatTutorialStep::DamageResult,
+            CombatTutorialStep::DamageResult => CombatTutorialStep::EnemyTurn,
+            CombatTutorialStep::EnemyTurn => CombatTutorialStep::SwitchExplain,
+            CombatTutorialStep::SwitchExplain => CombatTutorialStep::Victory,
+            CombatTutorialStep::Victory => CombatTutorialStep::Complete,
+            CombatTutorialStep::Complete => CombatTutorialStep::Complete,
+        };
+
+        // Update highlight
+        self.highlight = match self.step {
+            CombatTutorialStep::EnemyIntro => Some("enemy-panel".to_string()),
+            CombatTutorialStep::ActionExplain => Some("action-panel".to_string()),
+            CombatTutorialStep::FirstAttack => Some("action-strike".to_string()),
+            CombatTutorialStep::SwitchExplain => Some("alter-bar".to_string()),
+            _ => None,
+        };
+    }
+
+    /// Is tutorial complete
+    pub fn is_complete(self) -> bool! {
+        matches!(self.step, CombatTutorialStep::Complete)
+    }
+}
+
+/// Combat tutorial overlay component
+#[component]
+pub fn CombatTutorialOverlay(tutorial: &CombatTutorial) -> Element! {
+    let (title, content) = match tutorial·get_text() {
+        Some((t, c)) => (t, c),
+        None => return html! {},
+    };
+
+    html! {
+        <div class="combat-tutorial-overlay">
+            <div class="combat-tutorial-popup">
+                <div class="combat-tutorial-title">{title}</div>
+                <div class="combat-tutorial-content">{content}</div>
+                <div class="combat-tutorial-continue">
+                    {"Press SPACE to continue"}
+                </div>
+            </div>
+
+            // Highlight element if any
+            {if let Some(ref highlight) = tutorial.highlight {
+                html! {
+                    <div class={format!("tutorial-highlight highlight-{}", highlight)}></div>
+                }
+            } else {
+                html! {}
+            }}
+        </div>
+    }
+}

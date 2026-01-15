@@ -1,0 +1,17 @@
+// Test: Cell with multiple set operations
+// Spec: 04-MEMORY.md § 5.1 Cell
+// Priority: P1 - Production Ready
+
+fn main() {
+    let cell: Cell<i32> = Cell::new(10);
+
+    // Get initial value
+    println(cell.get());
+
+    // Set and get multiple times
+    cell.set(20);
+    println(cell.get());
+
+    cell.set(cell.get() * 2);
+    println(cell.get());
+}

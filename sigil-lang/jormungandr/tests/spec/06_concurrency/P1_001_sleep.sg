@@ -1,0 +1,12 @@
+// Test: Sleep function
+// Spec: 06-CONCURRENCY.md § 1.1 Sleep
+// Priority: P1 - Standard Feature
+
+fn main() {
+    println("before");
+
+    // Sleep for 10ms (short to keep tests fast)
+    sleep(10);
+
+    println("after");
+}

@@ -1,0 +1,30 @@
+// Test: Call method on struct instance
+pub struct Calculator {
+    result: !i32
+}
+
+impl Calculator {
+    fn new() -> !Calculator {
+        Calculator { result: 0 }
+    }
+
+    fn add(&mut self, value: !i32) {
+        self.result = self.result + value;
+    }
+
+    fn multiply(&mut self, value: !i32) {
+        self.result = self.result * value;
+    }
+
+    fn get_result(&self) -> !i32 {
+        self.result
+    }
+}
+
+fn main() {
+    let mut calc: !Calculator = Calculator::new();
+    calc.add(5);
+    calc.add(3);
+    calc.multiply(2);
+    println(calc.get_result());
+}

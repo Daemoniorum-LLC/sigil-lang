@@ -1,0 +1,8 @@
+// Test: Unicode in strings
+// Spec: Edge Cases - Unicode Support
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let s: String = "Hello, 世界! 🌍";
+    println(s);
+}

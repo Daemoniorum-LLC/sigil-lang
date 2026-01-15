@@ -1,0 +1,10 @@
+// Test: Associated function (no self)
+// Spec: 03-TYPES.md § 4.4 Associated Functions
+// Priority: P0
+
+pub struct Math {}
+impl Math { pub fn answer() -> !i32 { 42 } }
+
+fn main() {
+    println(Math::answer());
+}

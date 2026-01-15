@@ -1,0 +1,11 @@
+// Test: Source span information in IR
+// Spec: 16-AI-IR.md § Source Mapping
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let x = 42;
+    let ir = __export_ir();
+    let main_fn = ir.functions|find{f => f.name == "main"};
+    // Should have source span info
+    println(main_fn.span.start.line);
+}

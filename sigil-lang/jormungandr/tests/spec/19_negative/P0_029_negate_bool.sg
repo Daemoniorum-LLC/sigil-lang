@@ -1,0 +1,9 @@
+// Negative Test: Cannot negate bool with -
+// Should fail with type error
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let x = true;
+    let y = -x;  // ERROR: cannot negate bool
+    println(y);
+}

@@ -1,0 +1,14 @@
+// Test: While with continue
+// Spec: 02-SYNTAX.md § 5.5 While
+// Priority: P2 - Enhancement
+
+fn main() {
+    let mut i: !i32 = 0;
+    while i < 5 {
+        i = i + 1;
+        if i == 3 {
+            continue;
+        }
+        println(i);
+    }
+}

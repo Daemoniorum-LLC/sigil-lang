@@ -1,0 +1,325 @@
+//! Document API bindings
+
+use crate::element::Element;
+use crate::node::Node;
+
+/// The Document interface
+#[wasm_bindgen]
+extern "js" {
+    pub type Document;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn body(this: &Document!) -> Option[Element]?;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn head(this: &Document!) -> Option[Element]?;
+
+    #[wasm_bindgen(method, getter, js_name = "documentElement")]
+    pub fn document_element(this: &Document!) -> Option[Element]?;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn title(this: &Document!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_title(this: &Document!, title: &str!);
+
+    #[wasm_bindgen(method, getter, js_name = "readyState")]
+    pub fn ready_state(this: &Document!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn url(this: &Document!) -> String!;
+
+    #[wasm_bindgen(method, getter, js_name = "baseURI")]
+    pub fn base_uri(this: &Document!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn domain(this: &Document!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn referrer(this: &Document!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn cookie(this: &Document!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_cookie(this: &Document!, cookie: &str!);
+
+    #[wasm_bindgen(method, getter, js_name = "activeElement")]
+    pub fn active_element(this: &Document!) -> Option[Element]?;
+
+    #[wasm_bindgen(method, js_name = "getElementById")]
+    pub fn get_element_by_id(this: &Document!, id: &str!) -> Option[Element]?;
+
+    #[wasm_bindgen(method, js_name = "getElementsByClassName")]
+    pub fn get_elements_by_class_name(this: &Document!, class_name: &str!) -> HtmlCollection!;
+
+    #[wasm_bindgen(method, js_name = "getElementsByTagName")]
+    pub fn get_elements_by_tag_name(this: &Document!, tag_name: &str!) -> HtmlCollection!;
+
+    #[wasm_bindgen(method, js_name = "querySelector")]
+    pub fn query_selector(this: &Document!, selector: &str!) -> Result[Option[Element], JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "querySelectorAll")]
+    pub fn query_selector_all(this: &Document!, selector: &str!) -> Result[NodeList, JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "createElement")]
+    pub fn create_element(this: &Document!, tag_name: &str!) -> Result[Element, JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "createElementNS")]
+    pub fn create_element_ns(this: &Document!, namespace: &str!, tag_name: &str!) -> Result[Element, JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "createTextNode")]
+    pub fn create_text_node(this: &Document!, data: &str!) -> Text!;
+
+    #[wasm_bindgen(method, js_name = "createComment")]
+    pub fn create_comment(this: &Document!, data: &str!) -> Comment!;
+
+    #[wasm_bindgen(method, js_name = "createDocumentFragment")]
+    pub fn create_document_fragment(this: &Document!) -> DocumentFragment!;
+
+    #[wasm_bindgen(method, js_name = "createEvent")]
+    pub fn create_event(this: &Document!, event_type: &str!) -> Result[Event, JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "importNode")]
+    pub fn import_node(this: &Document!, node: &Node!, deep: bool!) -> Result[Node, JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "adoptNode")]
+    pub fn adopt_node(this: &Document!, node: &Node!) -> Result[Node, JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "addEventListener")]
+    pub fn add_event_listener(this: &Document!, event_type: &str!, callback: &Closure!);
+
+    #[wasm_bindgen(method, js_name = "removeEventListener")]
+    pub fn remove_event_listener(this: &Document!, event_type: &str!, callback: &Closure!);
+
+    #[wasm_bindgen(method, js_name = "dispatchEvent")]
+    pub fn dispatch_event(this: &Document!, event: &Event!) -> bool!;
+
+    #[wasm_bindgen(method, js_name = "hasFocus")]
+    pub fn has_focus(this: &Document!) -> bool!;
+
+    #[wasm_bindgen(method, js_name = "execCommand")]
+    pub fn exec_command(this: &Document!, command: &str!, show_ui: bool!, value: &str!) -> bool!;
+
+    #[wasm_bindgen(method, js_name = "write")]
+    pub fn write(this: &Document!, markup: &str!);
+
+    #[wasm_bindgen(method, js_name = "writeln")]
+    pub fn writeln(this: &Document!, markup: &str!);
+
+    #[wasm_bindgen(method)]
+    pub fn open(this: &Document!) -> Document!;
+
+    #[wasm_bindgen(method)]
+    pub fn close(this: &Document!);
+
+    #[wasm_bindgen(method, js_name = "elementFromPoint")]
+    pub fn element_from_point(this: &Document!, x: f64!, y: f64!) -> Option[Element]?;
+
+    #[wasm_bindgen(method, js_name = "elementsFromPoint")]
+    pub fn elements_from_point(this: &Document!, x: f64!, y: f64!) -> Vec[Element]!;
+
+    #[wasm_bindgen(method, js_name = "getSelection")]
+    pub fn get_selection(this: &Document!) -> Option[Selection]?;
+}
+
+/// HTMLCollection - live collection of elements
+#[wasm_bindgen]
+extern "js" {
+    pub type HtmlCollection;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn length(this: &HtmlCollection!) -> u32!;
+
+    #[wasm_bindgen(method)]
+    pub fn item(this: &HtmlCollection!, index: u32!) -> Option[Element]?;
+
+    #[wasm_bindgen(method, js_name = "namedItem")]
+    pub fn named_item(this: &HtmlCollection!, name: &str!) -> Option[Element]?;
+}
+
+/// NodeList - static list of nodes
+#[wasm_bindgen]
+extern "js" {
+    pub type NodeList;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn length(this: &NodeList!) -> u32!;
+
+    #[wasm_bindgen(method)]
+    pub fn item(this: &NodeList!, index: u32!) -> Option[Node]?;
+
+    #[wasm_bindgen(method)]
+    pub fn get(this: &NodeList!, index: u32!) -> Option[Node]?;
+}
+
+/// DocumentFragment
+#[wasm_bindgen]
+extern "js" {
+    #[wasm_bindgen(extends = Node)]
+    pub type DocumentFragment;
+
+    #[wasm_bindgen(method, getter, js_name = "childElementCount")]
+    pub fn child_element_count(this: &DocumentFragment!) -> u32!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn children(this: &DocumentFragment!) -> HtmlCollection!;
+
+    #[wasm_bindgen(method, getter, js_name = "firstElementChild")]
+    pub fn first_element_child(this: &DocumentFragment!) -> Option[Element]?;
+
+    #[wasm_bindgen(method, getter, js_name = "lastElementChild")]
+    pub fn last_element_child(this: &DocumentFragment!) -> Option[Element]?;
+
+    #[wasm_bindgen(method, js_name = "querySelector")]
+    pub fn query_selector(this: &DocumentFragment!, selector: &str!) -> Result[Option[Element], JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "querySelectorAll")]
+    pub fn query_selector_all(this: &DocumentFragment!, selector: &str!) -> Result[NodeList, JsValue]?;
+
+    #[wasm_bindgen(method)]
+    pub fn append(this: &DocumentFragment!, nodes: &[Node]!);
+
+    #[wasm_bindgen(method)]
+    pub fn prepend(this: &DocumentFragment!, nodes: &[Node]!);
+}
+
+/// Text node
+#[wasm_bindgen]
+extern "js" {
+    #[wasm_bindgen(extends = Node)]
+    pub type Text;
+
+    #[wasm_bindgen(method, getter, js_name = "wholeText")]
+    pub fn whole_text(this: &Text!) -> String!;
+
+    #[wasm_bindgen(method, js_name = "splitText")]
+    pub fn split_text(this: &Text!, offset: u32!) -> Result[Text, JsValue]?;
+}
+
+/// Comment node
+#[wasm_bindgen]
+extern "js" {
+    #[wasm_bindgen(extends = Node)]
+    pub type Comment;
+}
+
+/// Selection API
+#[wasm_bindgen]
+extern "js" {
+    pub type Selection;
+
+    #[wasm_bindgen(method, getter, js_name = "anchorNode")]
+    pub fn anchor_node(this: &Selection!) -> Option[Node]?;
+
+    #[wasm_bindgen(method, getter, js_name = "anchorOffset")]
+    pub fn anchor_offset(this: &Selection!) -> u32!;
+
+    #[wasm_bindgen(method, getter, js_name = "focusNode")]
+    pub fn focus_node(this: &Selection!) -> Option[Node]?;
+
+    #[wasm_bindgen(method, getter, js_name = "focusOffset")]
+    pub fn focus_offset(this: &Selection!) -> u32!;
+
+    #[wasm_bindgen(method, getter, js_name = "isCollapsed")]
+    pub fn is_collapsed(this: &Selection!) -> bool!;
+
+    #[wasm_bindgen(method, getter, js_name = "rangeCount")]
+    pub fn range_count(this: &Selection!) -> u32!;
+
+    #[wasm_bindgen(method, js_name = "getRangeAt")]
+    pub fn get_range_at(this: &Selection!, index: u32!) -> Range!;
+
+    #[wasm_bindgen(method, js_name = "addRange")]
+    pub fn add_range(this: &Selection!, range: &Range!);
+
+    #[wasm_bindgen(method, js_name = "removeAllRanges")]
+    pub fn remove_all_ranges(this: &Selection!);
+
+    #[wasm_bindgen(method)]
+    pub fn collapse(this: &Selection!, node: &Node!, offset: u32!);
+
+    #[wasm_bindgen(method, js_name = "selectAllChildren")]
+    pub fn select_all_children(this: &Selection!, node: &Node!);
+
+    #[wasm_bindgen(method, js_name = "deleteFromDocument")]
+    pub fn delete_from_document(this: &Selection!);
+}
+
+/// Range
+#[wasm_bindgen]
+extern "js" {
+    pub type Range;
+
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Range!;
+
+    #[wasm_bindgen(method, getter, js_name = "startContainer")]
+    pub fn start_container(this: &Range!) -> Node!;
+
+    #[wasm_bindgen(method, getter, js_name = "startOffset")]
+    pub fn start_offset(this: &Range!) -> u32!;
+
+    #[wasm_bindgen(method, getter, js_name = "endContainer")]
+    pub fn end_container(this: &Range!) -> Node!;
+
+    #[wasm_bindgen(method, getter, js_name = "endOffset")]
+    pub fn end_offset(this: &Range!) -> u32!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn collapsed(this: &Range!) -> bool!;
+
+    #[wasm_bindgen(method, js_name = "setStart")]
+    pub fn set_start(this: &Range!, node: &Node!, offset: u32!);
+
+    #[wasm_bindgen(method, js_name = "setEnd")]
+    pub fn set_end(this: &Range!, node: &Node!, offset: u32!);
+
+    #[wasm_bindgen(method)]
+    pub fn collapse(this: &Range!, to_start: bool!);
+
+    #[wasm_bindgen(method, js_name = "selectNode")]
+    pub fn select_node(this: &Range!, node: &Node!);
+
+    #[wasm_bindgen(method, js_name = "selectNodeContents")]
+    pub fn select_node_contents(this: &Range!, node: &Node!);
+
+    #[wasm_bindgen(method, js_name = "cloneContents")]
+    pub fn clone_contents(this: &Range!) -> DocumentFragment!;
+
+    #[wasm_bindgen(method, js_name = "deleteContents")]
+    pub fn delete_contents(this: &Range!);
+
+    #[wasm_bindgen(method, js_name = "getBoundingClientRect")]
+    pub fn get_bounding_client_rect(this: &Range!) -> DOMRect!;
+}
+
+/// DOMRect
+#[wasm_bindgen]
+extern "js" {
+    pub type DOMRect;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn x(this: &DOMRect!) -> f64!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn y(this: &DOMRect!) -> f64!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn width(this: &DOMRect!) -> f64!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn height(this: &DOMRect!) -> f64!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn top(this: &DOMRect!) -> f64!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn right(this: &DOMRect!) -> f64!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn bottom(this: &DOMRect!) -> f64!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn left(this: &DOMRect!) -> f64!;
+}

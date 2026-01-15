@@ -1,0 +1,14 @@
+// Test: Empty string literal
+// Spec: 09-STDLIB.md § 2.1 String Type
+// Priority: P0
+//
+// Purpose:
+// Validates that empty strings work correctly.
+//
+// Expected behavior:
+// Should compile and print empty line
+
+fn main() {
+    let s: !String = "";
+    println(s);
+}

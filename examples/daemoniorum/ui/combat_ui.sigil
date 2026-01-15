@@ -1,0 +1,790 @@
+//! DAEMONIORUM Game UI - Combat System
+//!
+//! Turn-based combat interface featuring:
+//! - Enemy display with health/status
+//! - Action selection (Attack, Abilities, Switch, Items, Defend, Escape)
+//! - Combat log with scrolling messages
+//! - Alter-aware mechanics
+
+use crate::system::{Alter, AlterAbility, CombatRole};
+use crate::combat::combat::{CombatState, Enemy, CombatAction, CombatLogEntry, ThreatLevel};
+use super::tokens::colors;
+use super::alter_card::{get_alter_color_scheme, AlterColorScheme};
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/// Item for combat use
+type Item = struct {
+    id: String!,
+    name: String!,
+    icon: String!,
+    quantity: u32!,
+    category: ItemCategory!,
+    usable: bool!,
+}
+
+type ItemCategory = enum {
+    Consumable,
+    Equipment,
+    Quest,
+    Memory,
+}
+
+/// Props for the main combat UI
+type CombatUIProps = struct {
+    combat_state: CombatState!,
+    current_alter: Alter!,
+    available_alters: Vec<Alter>!,
+    inventory: Vec<Item>!,
+    on_action: fn(CombatAction)!,
+    on_target_select: fn(String)!,
+}
+
+/// Combat menu state
+type CombatMenuState = enum {
+    Main,
+    Abilities,
+    Switch,
+    Items,
+}
+
+/// Props for EnemyCard
+type EnemyCardProps = struct {
+    enemy: Enemy!,
+    is_selected: bool!,
+    is_targetable: bool!,
+    on_click: fn()!,
+}
+
+/// Props for CurrentAlterDisplay
+type CurrentAlterDisplayProps = struct {
+    alter: Alter!,
+}
+
+/// Props for CombatLog
+type CombatLogProps = struct {
+    entries: Vec<CombatLogEntry>!,
+    max_visible: u32?,
+}
+
+/// Props for MainActionMenu
+type MainActionMenuProps = struct {
+    disabled: bool!,
+    on_attack: fn()!,
+    on_abilities: fn()!,
+    on_switch: fn()!,
+    on_items: fn()!,
+    on_defend: fn()!,
+    on_escape: fn()!,
+    alter_color: String!,
+}
+
+/// Props for AbilitiesMenu
+type AbilitiesMenuProps = struct {
+    abilities: Vec<AlterAbility>!,
+    alter_color: String!,
+    alter_glow: String!,
+    on_select: fn(AlterAbility)!,
+    on_back: fn()!,
+}
+
+/// Props for SwitchMenu
+type SwitchMenuProps = struct {
+    alters: Vec<Alter>!,
+    current_alter_id: String!,
+    on_select: fn(Alter)!,
+    on_back: fn()!,
+}
+
+/// Props for ItemsMenu
+type ItemsMenuProps = struct {
+    items: Vec<Item>!,
+    on_select: fn(Item)!,
+    on_back: fn()!,
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/// Get color for threat level
+fn get_threat_level_color(threat: ThreatLevel!) -> String! {
+    match threat {
+        ThreatLevel::Trivial => "#6b7280".to_string(),
+        ThreatLevel::Low => "#10b981".to_string(),
+        ThreatLevel::Medium => "#f59e0b".to_string(),
+        ThreatLevel::High => "#ef4444".to_string(),
+        ThreatLevel::Lethal => "#a855f7".to_string(),
+    }
+}
+
+// ============================================================================
+// MAIN COMBAT UI
+// ============================================================================
+
+#[component]
+pub fn CombatUI(props: CombatUIProps!) -> Element! {
+    let (selected_menu, set_selected_menu) = use_signal(CombatMenuState::Main);
+    let (selected_target, set_selected_target) = use_signal::<Option<String>>(None);
+
+    let combat_state! = &props.combat_state;
+    let current_alter! = &props.current_alter;
+    let colors! = get_alter_color_scheme(current_alter);
+
+    let handle_target_click = |enemy_id: String| {
+        set_selected_target(Some(enemy_id·clone()));
+        (props.on_target_select)(enemy_id);
+    };
+
+    let handle_ability_select = |ability: AlterAbility| {
+        if ability.current_cooldown > 0 { return; }
+        (props.on_action)(CombatAction::Ability { ability_id: ability.id });
+        set_selected_menu(CombatMenuState::Main);
+    };
+
+    let handle_switch_select = |alter: Alter| {
+        if !alter.is_available { return; }
+        (props.on_action)(CombatAction::Switch { alter_id: alter.id });
+        set_selected_menu(CombatMenuState::Main);
+    };
+
+    let handle_item_select = |item: Item| {
+        if !item.usable { return; }
+        (props.on_action)(CombatAction::Item { item_id: item.id });
+        set_selected_menu(CombatMenuState::Main);
+    };
+
+    html! {
+        <div style={format!(
+            "position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; \
+             background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.9) 100%);"
+        )}>
+            // Combat Arena - Top section
+            <div style="flex: 1; padding: 1rem;">
+                // Turn indicator
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <div style={format!(
+                        "padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.875rem; font-weight: bold; \
+                         background: {}; color: {}; box-shadow: 0 0 15px {}30;",
+                        if combat_state.is_player_turn { format!("{}30", colors.primary) } else { "rgba(239,68,68,0.2)".to_string() },
+                        if combat_state.is_player_turn { &colors.primary } else { "#ef4444" },
+                        if combat_state.is_player_turn { &colors.glow } else { "#ef4444" }
+                    )}>
+                        {if combat_state.is_player_turn { "YOUR TURN" } else { "ENEMY TURN" }}
+                    </div>
+                    <div style="font-size: 0.875rem; color: rgba(255,255,255,0.6);">
+                        {"Turn "}{combat_state.turn}
+                    </div>
+                </div>
+
+                // Enemy Display
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+                    {combat_state.enemies·iter()·|τ|enemy| {
+                        html! {
+                            <EnemyCard
+                                enemy={enemy·clone()}
+                                is_selected={selected_target() == Some(enemy.id·clone())}
+                                is_targetable={combat_state.is_player_turn}
+                                on_click={move || handle_target_click(enemy.id·clone())}
+                            />
+                        }
+                    }·collect::<Vec<_>>()}
+                </div>
+
+                // VS Divider
+                <div style="display: flex; align-items: center; justify-content: center; margin: 1.5rem 0;">
+                    <div style="flex: 1; height: 1px; background: linear-gradient(to right, transparent, rgba(255,255,255,0.2), transparent);"></div>
+                    <div style="padding: 0 1rem; color: rgba(255,255,255,0.4); font-size: 0.875rem; font-weight: bold;">{"VS"}</div>
+                    <div style="flex: 1; height: 1px; background: linear-gradient(to right, transparent, rgba(255,255,255,0.2), transparent);"></div>
+                </div>
+
+                // Current Alter Display
+                <CurrentAlterDisplay alter={current_alter·clone()} />
+            </div>
+
+            // Combat Log - Middle section
+            <CombatLog entries={combat_state.combat_log·clone()} />
+
+            // Action Menu - Bottom section
+            <div style="padding: 1rem; background: rgba(0,0,0,0.4); border-top: 1px solid rgba(255,255,255,0.1);">
+                {match selected_menu() {
+                    CombatMenuState::Main => html! {
+                        <MainActionMenu
+                            disabled={!combat_state.is_player_turn}
+                            on_attack={move || (props.on_action)(CombatAction::Attack)}
+                            on_abilities={move || set_selected_menu(CombatMenuState::Abilities)}
+                            on_switch={move || set_selected_menu(CombatMenuState::Switch)}
+                            on_items={move || set_selected_menu(CombatMenuState::Items)}
+                            on_defend={move || (props.on_action)(CombatAction::Defend)}
+                            on_escape={move || (props.on_action)(CombatAction::Escape)}
+                            alter_color={colors.primary·clone()}
+                        />
+                    },
+                    CombatMenuState::Abilities => html! {
+                        <AbilitiesMenu
+                            abilities={current_alter.abilities·clone()}
+                            alter_color={colors.primary·clone()}
+                            alter_glow={colors.glow·clone()}
+                            on_select={handle_ability_select}
+                            on_back={move || set_selected_menu(CombatMenuState::Main)}
+                        />
+                    },
+                    CombatMenuState::Switch => html! {
+                        <SwitchMenu
+                            alters={props.available_alters·clone()}
+                            current_alter_id={current_alter.id·clone()}
+                            on_select={handle_switch_select}
+                            on_back={move || set_selected_menu(CombatMenuState::Main)}
+                        />
+                    },
+                    CombatMenuState::Items => html! {
+                        <ItemsMenu
+                            items={props.inventory·iter()·|φ|i| i.category == ItemCategory::Consumable && i.usable·collect()}
+                            on_select={handle_item_select}
+                            on_back={move || set_selected_menu(CombatMenuState::Main)}
+                        />
+                    },
+                }}
+            </div>
+        </div>
+    }
+}
+
+// ============================================================================
+// ENEMY CARD
+// ============================================================================
+
+#[component]
+pub fn EnemyCard(props: EnemyCardProps!) -> Element! {
+    let enemy! = &props.enemy;
+    let health_percent! = (enemy.current_health as f32 / enemy.max_health as f32) * 100.0;
+    let threat_color! = get_threat_level_color(enemy.threat_level);
+    let is_defeated! = enemy.current_health <= 0;
+
+    let bg_style = if props.is_selected {
+        "linear-gradient(135deg, rgba(251,191,36,0.2), rgba(0,0,0,0.6))"
+    } else {
+        "linear-gradient(135deg, rgba(0,0,0,0.4), rgba(0,0,0,0.6))"
+    };
+
+    let health_color! = if health_percent > 50.0 { "#10b981" }
+        else if health_percent > 25.0 { "#f59e0b" }
+        else { "#ef4444" };
+
+    html! {
+        <button
+            onclick={props.on_click}
+            disabled={!props.is_targetable || is_defeated}
+            style={format!(
+                "position: relative; padding: 1rem; border-radius: 0.75rem; text-align: left; \
+                 background: {}; border: 1px solid rgba(255,255,255,0.1); \
+                 cursor: {}; transition: all 0.2s; \
+                 {} {}",
+                bg_style,
+                if props.is_targetable && !is_defeated { "pointer" } else { "default" },
+                if props.is_selected { "box-shadow: 0 0 20px rgba(251,191,36,0.3); outline: 2px solid #fbbf24;" } else { "" },
+                if is_defeated { "opacity: 0.4; filter: grayscale(100%);" } else { "" }
+            )}
+        >
+            // Boss indicator
+            {if enemy.is_boss {
+                html! {
+                    <div style="position: absolute; top: -0.5rem; right: -0.5rem; \
+                                padding: 0.125rem 0.5rem; border-radius: 9999px; \
+                                font-size: 0.75rem; font-weight: bold; \
+                                background: #9333ea; color: white;">
+                        {"BOSS"}
+                    </div>
+                }
+            } else { html! {} }}
+
+            // Threat level badge
+            <div style={format!(
+                "display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; \
+                 font-size: 0.75rem; font-weight: 500; margin-bottom: 0.5rem; \
+                 background: {}20; color: {};",
+                threat_color, threat_color
+            )}>
+                {format!("{:?}", enemy.threat_level)}
+            </div>
+
+            // Name
+            <h4 style="color: white; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                {&enemy.name}
+            </h4>
+
+            // Type
+            <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6);">
+                {format!("{:?}", enemy.enemy_type)}
+            </div>
+
+            // Health bar
+            <div style="margin-top: 0.75rem;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-bottom: 0.25rem;">
+                    <span>{"HP"}</span>
+                    <span>{enemy.current_health}{"/"}{enemy.max_health}</span>
+                </div>
+                <div style="height: 0.5rem; border-radius: 9999px; background: rgba(0,0,0,0.4); overflow: hidden;">
+                    <div style={format!(
+                        "height: 100%; border-radius: 9999px; transition: all 0.3s; \
+                         width: {}%; background: {};",
+                        health_percent, health_color
+                    )}></div>
+                </div>
+            </div>
+
+            // Status effects
+            {if !enemy.status_effects·is_empty() {
+                html! {
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.5rem;">
+                        {enemy.status_effects·iter()·|τ|effect| {
+                            html! {
+                                <span style="padding: 0.125rem 0.375rem; border-radius: 0.25rem; \
+                                             font-size: 0.75rem; background: rgba(0,0,0,0.4); \
+                                             color: rgba(255,255,255,0.8);">
+                                    {&effect.name}
+                                </span>
+                            }
+                        }·collect::<Vec<_>>()}
+                    </div>
+                }
+            } else { html! {} }}
+
+            // Selection indicator
+            {if props.is_selected && props.is_targetable && !is_defeated {
+                html! {
+                    <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;">
+                        <span style="font-size: 2.25rem; animation: pulse 1s ease-in-out infinite;">{"⬇"}</span>
+                    </div>
+                }
+            } else { html! {} }}
+
+            // Defeated overlay
+            {if is_defeated {
+                html! {
+                    <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; \
+                                background: rgba(0,0,0,0.6); border-radius: 0.75rem;">
+                        <span style="color: #ef4444; font-weight: bold;">{"DEFEATED"}</span>
+                    </div>
+                }
+            } else { html! {} }}
+        </button>
+    }
+}
+
+// ============================================================================
+// CURRENT ALTER DISPLAY
+// ============================================================================
+
+#[component]
+pub fn CurrentAlterDisplay(props: CurrentAlterDisplayProps!) -> Element! {
+    let alter! = &props.alter;
+    let colors! = get_alter_color_scheme(alter);
+    let health_percent! = (alter.stats.current_health as f32 / alter.stats.max_health as f32) * 100.0;
+    let energy_percent! = (alter.stats.current_energy as f32 / alter.stats.max_energy as f32) * 100.0;
+
+    let health_color! = if health_percent > 50.0 { "#10b981" }
+        else if health_percent > 25.0 { "#f59e0b" }
+        else { "#ef4444" };
+
+    html! {
+        <div style={format!(
+            "display: flex; align-items: center; gap: 1rem; padding: 1rem; border-radius: 0.75rem; \
+             background: linear-gradient(135deg, {} 0%, rgba(0,0,0,0.6) 100%); \
+             border: 1px solid {}; box-shadow: 0 0 20px {}20;",
+            colors.secondary, colors.border, colors.glow
+        )}>
+            // Avatar
+            <div style={format!(
+                "width: 4rem; height: 4rem; border-radius: 0.5rem; \
+                 display: flex; align-items: center; justify-content: center; \
+                 font-size: 1.5rem; font-weight: bold; \
+                 background: linear-gradient(135deg, {}, {}); \
+                 color: {}; box-shadow: 0 0 15px {}40;",
+                colors.primary, colors.secondary, colors.text, colors.glow
+            )}>
+                {alter.name·chars()·next()·unwrap_or('?')}
+            </div>
+
+            // Info section
+            <div style="flex: 1;">
+                // Name and role
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <h3 style={format!("font-size: 1.125rem; font-weight: bold; color: {};", colors.text)}>
+                        {&alter.name}
+                    </h3>
+                    <span style={format!(
+                        "padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; \
+                         background: {}; color: {};",
+                        colors.secondary, colors.text
+                    )}>
+                        {format!("{:?}", alter.role)}
+                    </span>
+                </div>
+
+                // Health and Energy bars
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 0.5rem;">
+                    // Health
+                    <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-bottom: 0.25rem;">
+                            <span>{"HP"}</span>
+                            <span>{alter.stats.current_health}{"/"}{alter.stats.max_health}</span>
+                        </div>
+                        <div style="height: 0.5rem; border-radius: 9999px; background: rgba(0,0,0,0.4); overflow: hidden;">
+                            <div style={format!(
+                                "height: 100%; border-radius: 9999px; width: {}%; background: {};",
+                                health_percent, health_color
+                            )}></div>
+                        </div>
+                    </div>
+
+                    // Energy
+                    <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-bottom: 0.25rem;">
+                            <span>{"Energy"}</span>
+                            <span>{alter.stats.current_energy}{"/"}{alter.stats.max_energy}</span>
+                        </div>
+                        <div style="height: 0.5rem; border-radius: 9999px; background: rgba(0,0,0,0.4); overflow: hidden;">
+                            <div style={format!(
+                                "height: 100%; border-radius: 9999px; width: {}%; \
+                                 background: linear-gradient(90deg, {}, {});",
+                                energy_percent, colors.primary, colors.glow
+                            )}></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+// ============================================================================
+// COMBAT LOG
+// ============================================================================
+
+#[component]
+pub fn CombatLog(props: CombatLogProps!) -> Element! {
+    let max_visible! = props.max_visible·unwrap_or(4);
+    let entries! = &props.entries;
+    let visible_entries! = if entries·len() > max_visible as usize {
+        entries[(entries·len() - max_visible as usize)..]·to_vec()
+    } else {
+        entries·clone()
+    };
+
+    html! {
+        <div style="height: 8rem; overflow-y: auto; padding: 0.5rem 1rem; \
+                    background: rgba(0,0,0,0.3); border-top: 1px solid rgba(255,255,255,0.1); \
+                    border-bottom: 1px solid rgba(255,255,255,0.1);">
+            {if visible_entries·is_empty() {
+                html! {
+                    <div style="color: rgba(255,255,255,0.4); text-align: center; padding: 1rem;">
+                        {"Combat begins..."}
+                    </div>
+                }
+            } else {
+                html! {
+                    <div>
+                        {visible_entries·iter()·|τ|entry| {
+                            html! {
+                                <div style="padding: 0.25rem 0; font-size: 0.875rem; \
+                                            border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <span style="color: rgba(255,255,255,0.4); margin-right: 0.5rem;">
+                                        {"["}{entry.turn}{"]"}
+                                    </span>
+                                    <span style="color: rgba(255,255,255,0.8);">
+                                        {&entry.message}
+                                    </span>
+                                    {if let Some(damage) = entry.damage {
+                                        html! { <span style="margin-left: 0.5rem; color: #ef4444;">{"-"}{damage}</span> }
+                                    } else { html! {} }}
+                                    {if let Some(healing) = entry.healing {
+                                        html! { <span style="margin-left: 0.5rem; color: #10b981;">{"+"}{healing}</span> }
+                                    } else { html! {} }}
+                                </div>
+                            }
+                        }·collect::<Vec<_>>()}
+                    </div>
+                }
+            }}
+        </div>
+    }
+}
+
+// ============================================================================
+// MAIN ACTION MENU
+// ============================================================================
+
+#[component]
+pub fn MainActionMenu(props: MainActionMenuProps!) -> Element! {
+    let actions = [
+        ("Attack", "⚔", props.on_attack·clone()),
+        ("Abilities", "✦", props.on_abilities·clone()),
+        ("Switch", "↻", props.on_switch·clone()),
+        ("Items", "◆", props.on_items·clone()),
+        ("Defend", "🛡", props.on_defend·clone()),
+        ("Escape", "↗", props.on_escape·clone()),
+    ];
+
+    html! {
+        <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.5rem;">
+            {actions·iter()·|τ|(label, icon, on_click)| {
+                html! {
+                    <ActionButton
+                        label={label.to_string()}
+                        icon={icon.to_string()}
+                        on_click={on_click·clone()}
+                        disabled={props.disabled}
+                        color={props.alter_color·clone()}
+                    />
+                }
+            }·collect::<Vec<_>>()}
+        </div>
+    }
+}
+
+/// Action button component
+type ActionButtonProps = struct {
+    label: String!,
+    icon: String!,
+    on_click: fn()!,
+    disabled: bool!,
+    color: String!,
+}
+
+#[component]
+pub fn ActionButton(props: ActionButtonProps!) -> Element! {
+    let bg = if props.disabled {
+        "rgba(0,0,0,0.3)".to_string()
+    } else {
+        format!("{}20", props.color)
+    };
+
+    html! {
+        <button
+            onclick={props.on_click}
+            disabled={props.disabled}
+            style={format!(
+                "display: flex; flex-direction: column; align-items: center; justify-content: center; \
+                 gap: 0.25rem; padding: 0.75rem; border-radius: 0.5rem; \
+                 background: {}; border: 1px solid rgba(255,255,255,0.1); \
+                 cursor: {}; opacity: {}; transition: all 0.2s;",
+                bg,
+                if props.disabled { "not-allowed" } else { "pointer" },
+                if props.disabled { "0.4" } else { "1" }
+            )}
+        >
+            <span style="font-size: 1.25rem;">{&props.icon}</span>
+            <span style="font-size: 0.75rem; font-weight: 500; color: white;">{&props.label}</span>
+        </button>
+    }
+}
+
+// ============================================================================
+// ABILITIES MENU
+// ============================================================================
+
+#[component]
+pub fn AbilitiesMenu(props: AbilitiesMenuProps!) -> Element! {
+    let unlocked_abilities! = props.abilities·iter()·|φ|a| a.unlocked·collect::<Vec<_>>();
+
+    html! {
+        <div>
+            // Header with back button
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                <button
+                    onclick={props.on_back}
+                    style="padding: 0.25rem; border-radius: 0.25rem; background: transparent; \
+                           cursor: pointer; color: white;"
+                >
+                    {"←"}
+                </button>
+                <span style="font-size: 0.875rem; font-weight: bold; color: white;">{"Abilities"}</span>
+            </div>
+
+            // Ability grid
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
+                {unlocked_abilities·iter()·|τ|ability| {
+                    let on_cooldown = ability.current_cooldown > 0;
+                    html! {
+                        <button
+                            onclick={move || (props.on_select)(ability.clone())}
+                            disabled={on_cooldown}
+                            style={format!(
+                                "position: relative; padding: 0.75rem; border-radius: 0.5rem; text-align: left; \
+                                 background: {}20; border: 1px solid rgba(255,255,255,0.1); \
+                                 cursor: {}; opacity: {}; transition: all 0.2s;",
+                                props.alter_color,
+                                if on_cooldown { "not-allowed" } else { "pointer" },
+                                if on_cooldown { "0.5" } else { "1" }
+                            )}
+                        >
+                            <div style="font-size: 1.125rem; margin-bottom: 0.25rem;">{&ability.icon}</div>
+                            <div style="font-size: 0.75rem; font-weight: 500; color: white; \
+                                        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                {&ability.name}
+                            </div>
+                            <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6);">
+                                {ability.energy_cost}{" EN"}
+                            </div>
+
+                            // Cooldown overlay
+                            {if on_cooldown {
+                                html! {
+                                    <div style="position: absolute; inset: 0; display: flex; \
+                                                align-items: center; justify-content: center; \
+                                                background: rgba(0,0,0,0.6); border-radius: 0.5rem;">
+                                        <span style="font-size: 1.25rem; font-weight: bold; color: white;">
+                                            {ability.current_cooldown}
+                                        </span>
+                                    </div>
+                                }
+                            } else { html! {} }}
+                        </button>
+                    }
+                }·collect::<Vec<_>>()}
+            </div>
+        </div>
+    }
+}
+
+// ============================================================================
+// SWITCH MENU
+// ============================================================================
+
+#[component]
+pub fn SwitchMenu(props: SwitchMenuProps!) -> Element! {
+    let available_alters! = props.alters·iter()
+        ·|φ|a| a.id != props.current_alter_id && a.is_available
+        ·collect::<Vec<_>>();
+
+    html! {
+        <div>
+            // Header with back button
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                <button
+                    onclick={props.on_back}
+                    style="padding: 0.25rem; border-radius: 0.25rem; background: transparent; \
+                           cursor: pointer; color: white;"
+                >
+                    {"←"}
+                </button>
+                <span style="font-size: 0.875rem; font-weight: bold; color: white;">{"Switch Alter"}</span>
+            </div>
+
+            // Alter grid
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
+                {if available_alters·is_empty() {
+                    html! {
+                        <div style="grid-column: span 3; text-align: center; padding: 1rem; \
+                                    color: rgba(255,255,255,0.4);">
+                            {"No other alters available to switch"}
+                        </div>
+                    }
+                } else {
+                    available_alters·iter()·|τ|alter| {
+                        let colors = get_alter_color_scheme(alter);
+                        let health_percent = (alter.stats.current_health as f32 / alter.stats.max_health as f32) * 100.0;
+
+                        html! {
+                            <button
+                                onclick={move || (props.on_select)(alter.clone())}
+                                style={format!(
+                                    "padding: 0.75rem; border-radius: 0.5rem; text-align: left; \
+                                     background: {}; border: 1px solid {}; \
+                                     cursor: pointer; transition: all 0.2s;",
+                                    colors.secondary, colors.border
+                                )}
+                            >
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    // Avatar
+                                    <div style={format!(
+                                        "width: 2rem; height: 2rem; border-radius: 0.25rem; \
+                                         display: flex; align-items: center; justify-content: center; \
+                                         font-weight: bold; background: {}; color: {};",
+                                        colors.primary, colors.text
+                                    )}>
+                                        {alter.name·chars()·next()·unwrap_or('?')}
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.875rem; font-weight: 500; color: white;">
+                                            {&alter.name}
+                                        </div>
+                                        <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6);">
+                                            {format!("{:?}", alter.role)}
+                                        </div>
+                                    </div>
+                                </div>
+                                // Health bar
+                                <div style="margin-top: 0.5rem; height: 0.375rem; border-radius: 9999px; \
+                                            background: rgba(0,0,0,0.4); overflow: hidden;">
+                                    <div style={format!(
+                                        "height: 100%; border-radius: 9999px; width: {}%; background: #10b981;",
+                                        health_percent
+                                    )}></div>
+                                </div>
+                            </button>
+                        }
+                    }·collect::<Vec<_>>()·into_iter()·map(|e| e)·collect::<Element>()
+                }}
+            </div>
+        </div>
+    }
+}
+
+// ============================================================================
+// ITEMS MENU
+// ============================================================================
+
+#[component]
+pub fn ItemsMenu(props: ItemsMenuProps!) -> Element! {
+    html! {
+        <div>
+            // Header with back button
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                <button
+                    onclick={props.on_back}
+                    style="padding: 0.25rem; border-radius: 0.25rem; background: transparent; \
+                           cursor: pointer; color: white;"
+                >
+                    {"←"}
+                </button>
+                <span style="font-size: 0.875rem; font-weight: bold; color: white;">{"Items"}</span>
+            </div>
+
+            // Item grid
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
+                {if props.items·is_empty() {
+                    html! {
+                        <div style="grid-column: span 4; text-align: center; padding: 1rem; \
+                                    color: rgba(255,255,255,0.4);">
+                            {"No usable items"}
+                        </div>
+                    }
+                } else {
+                    props.items·iter()·|τ|item| {
+                        html! {
+                            <button
+                                onclick={move || (props.on_select)(item.clone())}
+                                style="padding: 0.75rem; border-radius: 0.5rem; text-align: left; \
+                                       background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); \
+                                       cursor: pointer; transition: all 0.2s;"
+                            >
+                                <div style="font-size: 1.125rem; margin-bottom: 0.25rem;">{&item.icon}</div>
+                                <div style="font-size: 0.75rem; font-weight: 500; color: white; \
+                                            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                    {&item.name}
+                                </div>
+                                <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6);">
+                                    {"x"}{item.quantity}
+                                </div>
+                            </button>
+                        }
+                    }·collect::<Vec<_>>()·into_iter()·map(|e| e)·collect::<Element>()
+                }}
+            </div>
+        </div>
+    }
+}

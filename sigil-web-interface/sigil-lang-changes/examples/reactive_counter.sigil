@@ -1,0 +1,152 @@
+// reactive_counter.sigil
+// Advanced reactive counter using Sigil's signal system and VDOM
+//
+// This example demonstrates:
+// - Signal-based reactivity
+// - Virtual DOM construction
+// - State management patterns
+
+/// Reactive counter component with state management
+pub fn demo_reactive_counter() {
+    // Create reactive signals for state
+    let count = signal::create(0);
+
+    // Log initial state
+    print(signal::get(count));  // 0
+
+    // Build the UI using VDOM
+    let container = vdom::create_vnode("div");
+    vdom::set_vnode_str_prop(container, "class", "counter-container");
+
+    // Title
+    let title = vdom::create_vnode("h2");
+    let title_text = vdom::create_text_vnode("Reactive Counter");
+    vdom::append_vnode_child(title, title_text);
+    vdom::append_vnode_child(container, title);
+
+    // Counter display
+    let display = vdom::create_vnode("div");
+    vdom::set_vnode_str_prop(display, "class", "counter-display");
+    let count_text = vdom::create_text_vnode("Count: 0");
+    vdom::append_vnode_child(display, count_text);
+    vdom::append_vnode_child(container, display);
+
+    // Button container
+    let buttons = vdom::create_vnode("div");
+    vdom::set_vnode_str_prop(buttons, "class", "button-group");
+
+    // Decrement button
+    let dec_btn = vdom::create_vnode("button");
+    vdom::set_vnode_str_prop(dec_btn, "class", "btn-danger");
+    let dec_text = vdom::create_text_vnode("-");
+    vdom::append_vnode_child(dec_btn, dec_text);
+    vdom::append_vnode_child(buttons, dec_btn);
+
+    // Increment button
+    let inc_btn = vdom::create_vnode("button");
+    vdom::set_vnode_str_prop(inc_btn, "class", "btn-success");
+    let inc_text = vdom::create_text_vnode("+");
+    vdom::append_vnode_child(inc_btn, inc_text);
+    vdom::append_vnode_child(buttons, inc_btn);
+
+    vdom::append_vnode_child(container, buttons);
+
+    // Print container ID
+    print(container);
+
+    // Simulate state changes
+    signal::set(count, 5);
+    print(signal::get(count));  // 5
+
+    signal::set(count, 10);
+    print(signal::get(count));  // 10
+}
+
+/// Counter with computed derived state
+pub fn demo_computed_counter() {
+    // Base count
+    let count = signal::create(10);
+    let base = signal::get(count);
+
+    // Compute derived values
+    let doubled = base * 2;
+    let squared = base * base;
+
+    print(base);      // 10
+    print(doubled);   // 20
+    print(squared);   // 100
+
+    // Check if even
+    if base % 2 == 0 {
+        print(1);  // true
+    } else {
+        print(0);
+    }
+}
+
+/// Counter with history tracking using morphemes
+pub fn demo_counter_history() {
+    // Create history array
+    let history = morpheme::array_new();
+
+    // Record counter history
+    morpheme::array_push(history, 0);
+    morpheme::array_push(history, 1);
+    morpheme::array_push(history, 2);
+    morpheme::array_push(history, 5);
+    morpheme::array_push(history, 10);
+    morpheme::array_push(history, 7);
+    morpheme::array_push(history, 15);
+
+    // Get history statistics
+    let first_val = morpheme::array_first(history);
+    let last_val = morpheme::array_last(history);
+    let total = morpheme::array_sum(history);
+    let min_val = morpheme::array_min(history);
+    let max_val = morpheme::array_max(history);
+
+    print(first_val);  // 0
+    print(last_val);   // 15
+    print(total);      // 40
+    print(min_val);    // 0
+    print(max_val);    // 15
+}
+
+/// Batch updates demonstration
+pub fn demo_batch_updates() {
+    let sig1 = signal::create(0);
+    let sig2 = signal::create(0);
+    let sig3 = signal::create(0);
+
+    // Start batch
+    signal::batch_start();
+
+    // Multiple updates
+    signal::set(sig1, 10);
+    signal::set(sig2, 20);
+    signal::set(sig3, 30);
+
+    // End batch
+    signal::batch_end();
+
+    // Verify updates
+    print(signal::get(sig1));  // 10
+    print(signal::get(sig2));  // 20
+    print(signal::get(sig3));  // 30
+}
+
+pub fn main() {
+    print(1);  // Start marker
+
+    demo_reactive_counter();
+    print(2);
+
+    demo_computed_counter();
+    print(3);
+
+    demo_counter_history();
+    print(4);
+
+    demo_batch_updates();
+    print(999);  // End marker
+}

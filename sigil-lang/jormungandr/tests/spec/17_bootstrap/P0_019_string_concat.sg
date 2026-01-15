@@ -1,0 +1,16 @@
+// Test: String concatenation in C codegen
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § String Handling
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate string concatenation generates correct C.
+//
+// Expected behavior:
+// Should print: Hello World
+
+fn main() {
+    let s1: !String = "Hello ";
+    let s2: !String = "World";
+    let result: !String = s1.concat(s2);
+    println(result);
+}

@@ -1,0 +1,25 @@
+// Test: impl block with methods
+pub struct Counter {
+    value: !i32
+}
+
+impl Counter {
+    fn new() -> !Counter {
+        Counter { value: 0 }
+    }
+
+    fn increment(&mut self) {
+        self.value = self.value + 1;
+    }
+
+    fn get(&self) -> !i32 {
+        self.value
+    }
+}
+
+fn main() {
+    let mut c: !Counter = Counter::new();
+    c.increment();
+    c.increment();
+    println(c.get());
+}

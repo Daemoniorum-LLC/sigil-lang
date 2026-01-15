@@ -1,0 +1,16 @@
+// Test: Boolean operations
+// Spec: 09-STDLIB.md § 1.1 Boolean Type
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate boolean operations work correctly.
+//
+// Expected behavior:
+// Should print true
+
+fn main() {
+    let a: !bool = true;
+    let b: !bool = false;
+    let result: !bool = a && !b;
+    println(result);
+}

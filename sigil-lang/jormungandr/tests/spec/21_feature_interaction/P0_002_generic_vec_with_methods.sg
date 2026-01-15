@@ -1,0 +1,12 @@
+// Test: Generic Vec with method calls
+// Spec: Feature Interaction - Generics + Methods
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let mut v: Vec<i32> = Vec::new();
+    v.push(10);
+    v.push(20);
+    v.push(30);
+    println(v.len());
+    println(v[1]);
+}

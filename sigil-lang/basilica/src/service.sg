@@ -1,0 +1,463 @@
+//! Daemon-Based Services
+//!
+//! Services in Basilica are not stateless beans. They are daemons with:
+//! - Memory (Engram) - episodic, semantic, procedural, instant
+//! - Lifecycle - init, heartbeat, suspend, resume
+//! - Covenant - boundaries and trust
+//! - Oracle - explainability
+
+use shared::{Timestamp, Duration, Confidence, TrustLevel, AgentId, Priority};
+use crate::evidence::{HttpEvidence, EvidenceLevel, Evidenced};
+use crate::error::{BasilicaError, BasilicaResult};
+
+// Re-export daemon types
+pub use daemon::{
+    Daemon, DaemonConfig, DaemonState,
+    Goal, GoalStack, GoalStatus,
+};
+
+pub use engram::{
+    Engram, EngramConfig,
+    Event, Memory, MemorySource,
+    Query as MemoryQuery, RecallResult,
+};
+
+pub use covenant::{
+    Covenant, Pact, Mode, Boundary, BoundaryCheck,
+    HandoffType, HandoffId, HumanResponse,
+    Satisfaction,
+};
+
+pub use oracle::{
+    Oracle, OracleConfig,
+    Explanation, ExplanationLevel,
+    ReasoningStep, StepType, Evidence as OracleEvidence,
+};
+
+// ============================================================================
+// Service Trait
+// ============================================================================
+
+/// A daemon-based service with memory and lifecycle
+///
+/// Services implement the perceive → remember → reflect → decide → act → learn cycle.
+pub trait Service: Sized {
+    /// Service configuration type
+    type Config: Default;
+
+    /// Initialize the service with configuration
+    fn init(config: Self::Config) -> BasilicaResult<Self>;
+
+    /// Called when service is ready to start
+    fn on_ready(&mut self) {}
+
+    /// Heartbeat - called periodically for proactive work
+    /// Default: memory consolidation
+    fn on_heartbeat(&mut self) {
+        if let Some(memory) = self.memory_mut() {
+            // Consolidate episodic to semantic
+            memory.consolidate();
+        }
+    }
+
+    /// Called before service suspends (for snapshots)
+    fn on_suspend(&mut self) -> Option<ServiceSnapshot> {
+        None
+    }
+
+    /// Called when service resumes from snapshot
+    fn on_resume(&mut self, _snapshot: ServiceSnapshot) {}
+
+    /// Called when service is terminating
+    fn on_terminate(&mut self) {}
+
+    // ========================================================================
+    // Infrastructure Accessors
+    // ========================================================================
+
+    /// Get the service's memory (if any)
+    fn memory(&self) -> Option<&Engram> { None }
+
+    /// Get mutable memory
+    fn memory_mut(&mut self) -> Option<&mut Engram> { None }
+
+    /// Get the service's covenant (if any)
+    fn covenant(&self) -> Option<&Covenant> { None }
+
+    /// Get mutable covenant
+    fn covenant_mut(&mut self) -> Option<&mut Covenant> { None }
+
+    /// Get the service's oracle (if any)
+    fn oracle(&self) -> Option<&Oracle> { None }
+
+    /// Get mutable oracle
+    fn oracle_mut(&mut self) -> Option<&mut Oracle> { None }
+
+    // ========================================================================
+    // Convenience Methods
+    // ========================================================================
+
+    /// Remember an experience
+    fn experience(&mut self, event: Event) {
+        if let Some(memory) = self.memory_mut() {
+            memory.experience(event);
+        }
+    }
+
+    /// Recall from memory
+    fn recall(&self, query: MemoryQuery) -> Option<RecallResult> {
+        self.memory().map(|m| m.recall(query))
+    }
+
+    /// Check if an action is permitted by covenant
+    fn permits(&self, action: &str) -> bool {
+        self.covenant()
+            .map(|c| c.permits(action))
+            .unwrap_or(true) // No covenant = all permitted
+    }
+
+    /// Record success for trust building
+    fn record_success(&mut self, task: &str, satisfaction: Satisfaction) {
+        if let Some(covenant) = self.covenant_mut() {
+            covenant.record_success(task, satisfaction);
+        }
+    }
+}
+
+/// Snapshot of service state for suspend/resume
+#[derive(Clone, Debug)]
+pub struct ServiceSnapshot {
+    pub state: Vec<u8>,
+    pub timestamp: Timestamp,
+    pub memory_checkpoint: Option<[u8; 16]>, // EngramId
+}
+
+// ============================================================================
+// Service Configuration
+// ============================================================================
+
+/// Configuration for a daemon service
+#[derive(Clone, Debug)]
+pub struct ServiceConfig {
+    /// Service name
+    pub name: String,
+
+    /// Heartbeat interval
+    pub heartbeat_interval: Duration,
+
+    /// Memory configuration
+    pub memory: Option<EngramConfig>,
+
+    /// Covenant mode
+    pub covenant_mode: Mode,
+
+    /// Oracle enabled
+    pub oracle_enabled: bool,
+
+    /// Maximum concurrent requests
+    pub max_concurrent: usize,
+}
+
+impl Default for ServiceConfig {
+    fn default() -> Self {
+        Self {
+            name: "service".to_string(),
+            heartbeat_interval: Duration::from_secs(60),
+            memory: Some(EngramConfig::default()),
+            covenant_mode: Mode::Collaborative,
+            oracle_enabled: true,
+            max_concurrent: 100,
+        }
+    }
+}
+
+impl ServiceConfig {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            ..Default::default()
+        }
+    }
+
+    pub fn with_heartbeat(mut self, interval: Duration) -> Self {
+        self.heartbeat_interval = interval;
+        self
+    }
+
+    pub fn with_memory(mut self, config: EngramConfig) -> Self {
+        self.memory = Some(config);
+        self
+    }
+
+    pub fn without_memory(mut self) -> Self {
+        self.memory = None;
+        self
+    }
+
+    pub fn with_mode(mut self, mode: Mode) -> Self {
+        self.covenant_mode = mode;
+        self
+    }
+
+    pub fn without_oracle(mut self) -> Self {
+        self.oracle_enabled = false;
+        self
+    }
+}
+
+// ============================================================================
+// Base Service Implementation
+// ============================================================================
+
+/// A base service implementation that provides common infrastructure
+pub struct BaseService {
+    /// Service configuration
+    config: ServiceConfig,
+
+    /// Memory system
+    memory: Option<Engram>,
+
+    /// Human-agent collaboration
+    covenant: Option<Covenant>,
+
+    /// Explainability
+    oracle: Option<Oracle>,
+
+    /// Service state
+    state: ServiceState,
+
+    /// Metrics
+    metrics: ServiceMetrics,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ServiceState {
+    Initializing,
+    Ready,
+    Running,
+    Suspended,
+    Terminating,
+    Terminated,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ServiceMetrics {
+    pub requests_handled: u64,
+    pub errors: u64,
+    pub avg_response_time_ms: f64,
+    pub memory_operations: u64,
+    pub covenant_checks: u64,
+    pub handoffs_requested: u64,
+}
+
+impl BaseService {
+    /// Create a new base service
+    pub fn new(config: ServiceConfig) -> BasilicaResult<Self> {
+        // Initialize memory if configured
+        let memory = config.memory.as_ref().map(|mc| {
+            Engram::new(mc.clone())
+        });
+
+        // Initialize covenant
+        let covenant = Some(
+            Covenant::new()
+                .with_mode(config.covenant_mode)
+                .establish()
+                .map_err(|e| BasilicaError::Initialization(format!("Covenant: {:?}", e)))?
+        );
+
+        // Initialize oracle if enabled
+        let oracle = if config.oracle_enabled {
+            Some(Oracle::new())
+        } else {
+            None
+        };
+
+        Ok(Self {
+            config,
+            memory,
+            covenant,
+            oracle,
+            state: ServiceState::Initializing,
+            metrics: ServiceMetrics::default(),
+        })
+    }
+
+    /// Get service name
+    pub fn name(&self) -> &str {
+        &self.config.name
+    }
+
+    /// Get current state
+    pub fn state(&self) -> ServiceState {
+        self.state
+    }
+
+    /// Set state
+    pub fn set_state(&mut self, state: ServiceState) {
+        self.state = state;
+    }
+
+    /// Get metrics
+    pub fn metrics(&self) -> &ServiceMetrics {
+        &self.metrics
+    }
+
+    /// Record a request
+    pub fn record_request(&mut self, response_time_ms: f64) {
+        self.metrics.requests_handled += 1;
+        // Update rolling average
+        let n = self.metrics.requests_handled as f64;
+        self.metrics.avg_response_time_ms =
+            self.metrics.avg_response_time_ms * (n - 1.0) / n +
+            response_time_ms / n;
+    }
+
+    /// Record an error
+    pub fn record_error(&mut self) {
+        self.metrics.errors += 1;
+    }
+}
+
+impl Service for BaseService {
+    type Config = ServiceConfig;
+
+    fn init(config: Self::Config) -> BasilicaResult<Self> {
+        BaseService::new(config)
+    }
+
+    fn on_ready(&mut self) {
+        self.state = ServiceState::Ready;
+    }
+
+    fn on_heartbeat(&mut self) {
+        if let Some(ref mut memory) = self.memory {
+            memory.consolidate();
+            self.metrics.memory_operations += 1;
+        }
+    }
+
+    fn on_suspend(&mut self) -> Option<ServiceSnapshot> {
+        self.state = ServiceState::Suspended;
+        // Would serialize state
+        Some(ServiceSnapshot {
+            state: vec![],
+            timestamp: Timestamp::now(),
+            memory_checkpoint: None,
+        })
+    }
+
+    fn on_resume(&mut self, _snapshot: ServiceSnapshot) {
+        self.state = ServiceState::Ready;
+    }
+
+    fn on_terminate(&mut self) {
+        self.state = ServiceState::Terminating;
+        // Cleanup
+        self.state = ServiceState::Terminated;
+    }
+
+    fn memory(&self) -> Option<&Engram> {
+        self.memory.as_ref()
+    }
+
+    fn memory_mut(&mut self) -> Option<&mut Engram> {
+        self.memory.as_mut()
+    }
+
+    fn covenant(&self) -> Option<&Covenant> {
+        self.covenant.as_ref()
+    }
+
+    fn covenant_mut(&mut self) -> Option<&mut Covenant> {
+        self.covenant.as_mut()
+    }
+
+    fn oracle(&self) -> Option<&Oracle> {
+        self.oracle.as_ref()
+    }
+
+    fn oracle_mut(&mut self) -> Option<&mut Oracle> {
+        self.oracle.as_mut()
+    }
+}
+
+// ============================================================================
+// Service Events (for Engram)
+// ============================================================================
+
+/// Extension trait for creating service-related events
+pub trait ServiceEvent {
+    /// Create an event for request handled
+    fn request_handled(
+        request_id: [u8; 16],
+        method: &str,
+        path: &str,
+        status: u16,
+        duration_ms: f64,
+    ) -> Event;
+
+    /// Create an event for error occurred
+    fn error_occurred(
+        request_id: [u8; 16],
+        error_type: &str,
+        message: &str,
+    ) -> Event;
+
+    /// Create an event for covenant check
+    fn covenant_checked(
+        action: &str,
+        result: BoundaryCheck,
+    ) -> Event;
+
+    /// Create an event for learning
+    fn learning_recorded(
+        topic: &str,
+        insight: &str,
+        confidence: Confidence,
+    ) -> Event;
+}
+
+// ============================================================================
+// Service Registry
+// ============================================================================
+
+/// Registry of active services
+pub struct ServiceRegistry {
+    services: std::collections::HashMap<String, Box<dyn std::any::Any>>,
+}
+
+impl ServiceRegistry {
+    pub fn new() -> Self {
+        Self {
+            services: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Register a service
+    pub fn register<S: Service + 'static>(&mut self, name: &str, service: S) {
+        self.services.insert(name.to_string(), Box::new(service));
+    }
+
+    /// Get a service by name
+    pub fn get<S: Service + 'static>(&self, name: &str) -> Option<&S> {
+        self.services.get(name)
+            .and_then(|s| s.downcast_ref::<S>())
+    }
+
+    /// Get mutable service by name
+    pub fn get_mut<S: Service + 'static>(&mut self, name: &str) -> Option<&mut S> {
+        self.services.get_mut(name)
+            .and_then(|s| s.downcast_mut::<S>())
+    }
+
+    /// List service names
+    pub fn names(&self) -> Vec<&String> {
+        self.services.keys().collect()
+    }
+
+    /// Run heartbeat on all services
+    pub fn heartbeat_all(&mut self) {
+        // Would iterate and call on_heartbeat
+    }
+}

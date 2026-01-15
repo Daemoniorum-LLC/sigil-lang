@@ -1,0 +1,26 @@
+// Math functions from stdlib
+fn main() {
+    // Basic math
+    println("sqrt(16):");
+    println(sqrt(16.0));
+
+    println("abs(-5):");
+    println(abs(-5));
+
+    println("pow(2, 10):");
+    println(pow(2.0, 10.0));
+
+    // Trig
+    println("sin(0):");
+    println(sin(0.0));
+
+    println("cos(0):");
+    println(cos(0.0));
+
+    // Min/max
+    println("min(3, 7):");
+    println(min(3, 7));
+
+    println("max(3, 7):");
+    println(max(3, 7));
+}

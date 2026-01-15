@@ -1315,7 +1315,7 @@ pub mod jit {
                 else_branch.as_deref(),
             ),
 
-            Expr::While { condition, body } => compile_while(
+            Expr::While { condition, body, .. } => compile_while(
                 module, functions, extern_fns, builder, scope, condition, body,
             ),
 
@@ -1569,7 +1569,7 @@ pub mod jit {
                             result
                         }
                         // Method calls, await, and named morphemes
-                        PipeOp::Method { name, args } => {
+                        PipeOp::Method { name, type_args: _, args } => {
                             // Compile as a method call on the result
                             let mut call_args = vec![result];
                             for arg in args {
@@ -1593,6 +1593,19 @@ pub mod jit {
                         PipeOp::TryMap(_) => {
                             // Try/error transformation not supported in JIT
                             result
+                        }
+                        PipeOp::Call(callee) => {
+                            // Call an arbitrary expression (like self.layer)
+                            // Compile the callee expression, then call it with result as argument
+                            let callee_val = compile_expr(
+                                module, functions, extern_fns, builder, scope, callee,
+                            )?;
+                            // For now, treat as function call with result as first arg
+                            compile_call(
+                                module, functions, extern_fns, builder,
+                                "sigil_call",
+                                &[callee_val, result],
+                            )?
                         }
                         PipeOp::Named { prefix, body } => {
                             // Named morphemes like ·map{f} - try to call as function
@@ -1999,6 +2012,19 @@ pub mod jit {
                 )
             }
 
+            // Async blocks - compile the inner block (async execution handled at runtime)
+            Expr::Async { block, .. } => {
+                let mut inner_scope = scope.child();
+                compile_block(
+                    module,
+                    functions,
+                    extern_fns,
+                    builder,
+                    &mut inner_scope,
+                    block,
+                )
+            }
+
             // Pointer dereference - load from address
             Expr::Deref(inner) => {
                 let ptr = compile_expr(module, functions, extern_fns, builder, scope, inner)?;
@@ -2095,6 +2121,9 @@ pub mod jit {
             BinOp::And => builder.ins().band(lhs, rhs),
             BinOp::Or => builder.ins().bor(lhs, rhs),
             BinOp::Concat => return Err("Concat not supported".into()),
+            BinOp::MatMul => return Err("MatMul not supported in JIT (use runtime)".into()),
+            BinOp::Hadamard => return Err("Hadamard not supported in JIT (use runtime)".into()),
+            BinOp::TensorProd => return Err("TensorProd not supported in JIT (use runtime)".into()),
         };
         Ok(result)
     }

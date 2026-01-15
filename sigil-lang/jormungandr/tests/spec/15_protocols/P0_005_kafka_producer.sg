@@ -1,0 +1,12 @@
+// Test: Kafka producer
+// Spec: 15-PROTOCOLS.md § 7 Kafka Support
+// Priority: P0 - Bootstrap Critical
+
+use protocol::kafka::{Producer, Topic};
+
+async fn main() {
+    let producer = Producer::connect("localhost:9092")|await~;
+    let topic = Topic::new("events");
+    producer.send(topic, "key", "value")|await;
+    println(1);
+}

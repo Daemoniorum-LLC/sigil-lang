@@ -1,0 +1,100 @@
+//! Routing with Evidentiality
+
+use crate::request::{Request, Method};
+use crate::response::Response;
+use crate::context::Context;
+use crate::error::BasilicaResult;
+
+/// A route definition
+pub struct Route {
+    /// HTTP method
+    pub method: Method,
+
+    /// Path pattern (e.g., "/api/brain-dumps/{id}")
+    pub path: String,
+
+    /// Route name (for logging/debugging)
+    pub name: String,
+
+    /// Handler function
+    handler: Box<dyn Fn(&Request, &Context) -> Response<Vec<u8>> + Send + Sync>,
+}
+
+impl Route {
+    /// Create a new route
+    pub fn new<F>(method: Method, path: &str, handler: F) -> Self
+    where
+        F: Fn(&Request, &Context) -> Response<Vec<u8>> + Send + Sync + 'static,
+    {
+        Self {
+            method,
+            path: path.to_string(),
+            name: format!("{} {}", method.as_str(), path),
+            handler: Box::new(handler),
+        }
+    }
+
+    /// Add a prefix to the path
+    pub fn prefix(&mut self, prefix: &str) {
+        self.path = format!("{}{}", prefix, self.path);
+        self.name = format!("{} {}", self.method.as_str(), self.path);
+    }
+
+    /// Check if this route matches a request
+    pub fn matches(&self, req: &Request) -> bool {
+        if self.method != req.method {
+            return false;
+        }
+        self.match_path(&req.path)
+    }
+
+    fn match_path(&self, path: &str) -> bool {
+        // Simple matching - would need full path parameter extraction
+        let pattern_parts: Vec<&str> = self.path.split('/').collect();
+        let path_parts: Vec<&str> = path.split('/').collect();
+
+        if pattern_parts.len() != path_parts.len() {
+            return false;
+        }
+
+        pattern_parts.iter().zip(path_parts.iter()).all(|(p, a)| {
+            p.starts_with('{') && p.ends_with('}') || *p == *a
+        })
+    }
+
+    /// Handle a request
+    pub fn handle(&self, req: &Request, ctx: &Context) -> Response<Vec<u8>> {
+        (self.handler)(req, ctx)
+    }
+}
+
+/// Registry of routes
+pub struct RouteRegistry {
+    routes: Vec<Route>,
+}
+
+impl RouteRegistry {
+    pub fn new() -> Self {
+        Self { routes: vec![] }
+    }
+
+    /// Register a route
+    pub fn register(&mut self, route: Route) {
+        self.routes.push(route);
+    }
+
+    /// Find a matching route
+    pub fn find(&self, req: &Request) -> Option<&Route> {
+        self.routes.iter().find(|r| r.matches(req))
+    }
+
+    /// List all routes
+    pub fn list(&self) -> &[Route] {
+        &self.routes
+    }
+}
+
+/// Trait for types that can be converted to a route
+pub trait IntoRoute {
+    fn into_route(self) -> Route;
+}

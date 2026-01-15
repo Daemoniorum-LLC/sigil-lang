@@ -421,6 +421,8 @@ impl Optimizer {
         ast::Function {
             visibility: Visibility::default(),
             is_async: false,
+            is_const: false,
+            is_unsafe: false,
             attrs: FunctionAttrs::default(),
             name: Ident {
                 name: name.to_string(),
@@ -496,6 +498,8 @@ impl Optimizer {
         ast::Function {
             visibility: original.visibility,
             is_async: original.is_async,
+            is_const: original.is_const,
+            is_unsafe: original.is_unsafe,
             attrs: original.attrs.clone(),
             name: Ident {
                 name: name.to_string(),
@@ -555,6 +559,8 @@ impl Optimizer {
         let impl_func = ast::Function {
             visibility: Visibility::default(),
             is_async: func.is_async,
+            is_const: func.is_const,
+            is_unsafe: func.is_unsafe,
             attrs: func.attrs.clone(),
             name: Ident {
                 name: impl_name.clone(),
@@ -600,6 +606,8 @@ impl Optimizer {
         let cache_init_func = ast::Function {
             visibility: Visibility::default(),
             is_async: false,
+            is_const: false,
+            is_unsafe: false,
             attrs: FunctionAttrs::default(),
             name: Ident {
                 name: init_name.clone(),
@@ -868,6 +876,8 @@ impl Optimizer {
         ast::Function {
             visibility: original.visibility,
             is_async: original.is_async,
+            is_const: original.is_const,
+            is_unsafe: original.is_unsafe,
             attrs: original.attrs.clone(),
             name: original.name.clone(),
             aspect: original.aspect,
@@ -945,7 +955,7 @@ impl Optimizer {
                         .map(|e| self.expr_calls_function(name, e))
                         .unwrap_or(false)
             }
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 self.expr_calls_function(name, condition) || self.block_calls_function(name, body)
             }
             Expr::Block(block) => self.block_calls_function(name, block),
@@ -1000,6 +1010,8 @@ impl Optimizer {
         ast::Function {
             visibility: func.visibility.clone(),
             is_async: func.is_async,
+            is_const: func.is_const,
+            is_unsafe: func.is_unsafe,
             attrs: func.attrs.clone(),
             name: func.name.clone(),
             aspect: func.aspect,
@@ -1121,7 +1133,7 @@ impl Optimizer {
                     else_branch,
                 }
             }
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 let condition = Box::new(self.pass_constant_fold_expr(condition));
                 let body = self.pass_constant_fold_block(body);
 
@@ -1134,7 +1146,7 @@ impl Optimizer {
                     });
                 }
 
-                Expr::While { condition, body }
+                Expr::While { label: label.clone(), condition, body }
             }
             Expr::Block(block) => Expr::Block(self.pass_constant_fold_block(block)),
             Expr::Call { func, args } => {
@@ -1394,10 +1406,10 @@ impl Optimizer {
                     else_branch,
                 }
             }
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 let condition = Box::new(self.pass_strength_reduce_expr(condition));
                 let body = self.pass_strength_reduce_block(body);
-                Expr::While { condition, body }
+                Expr::While { label: label.clone(), condition, body }
             }
             Expr::Block(block) => Expr::Block(self.pass_strength_reduce_block(block)),
             Expr::Call { func, args } => {
@@ -1501,10 +1513,10 @@ impl Optimizer {
                     else_branch,
                 }
             }
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 let condition = Box::new(self.pass_dead_code_expr(condition));
                 let body = self.pass_dead_code_block(body);
-                Expr::While { condition, body }
+                Expr::While { label: label.clone(), condition, body }
             }
             Expr::Block(block) => Expr::Block(self.pass_dead_code_block(block)),
             other => other.clone(),
@@ -1614,10 +1626,10 @@ impl Optimizer {
                     else_branch,
                 }
             }
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 let condition = Box::new(self.pass_simplify_branches_expr(condition));
                 let body = self.pass_simplify_branches_block(body);
-                Expr::While { condition, body }
+                Expr::While { label: label.clone(), condition, body }
             }
             Expr::Block(block) => Expr::Block(self.pass_simplify_branches_block(block)),
             Expr::Binary { op, left, right } => {
@@ -1818,7 +1830,8 @@ impl Optimizer {
                     .as_ref()
                     .map(|e| Box::new(self.substitute_params_in_expr(e, param_map))),
             },
-            Expr::While { condition, body } => Expr::While {
+            Expr::While { label, condition, body } => Expr::While {
+                label: label.clone(),
                 condition: Box::new(self.substitute_params_in_expr(condition, param_map)),
                 body: self.substitute_params_in_block(body, param_map),
             },
@@ -1931,7 +1944,8 @@ impl Optimizer {
                     .as_ref()
                     .map(|e| Box::new(self.pass_inline_expr(e))),
             },
-            Expr::While { condition, body } => Expr::While {
+            Expr::While { label, condition, body } => Expr::While {
+                label: label.clone(),
                 condition: Box::new(self.pass_inline_expr(condition)),
                 body: self.pass_inline_block(body),
             },
@@ -1991,7 +2005,7 @@ impl Optimizer {
 
     fn pass_loop_unroll_expr(&mut self, expr: &Expr) -> Expr {
         match expr {
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 // Try to unroll if this is a countable loop
                 if let Some(unrolled) = self.try_unroll_loop(condition, body) {
                     self.stats.loops_optimized += 1;
@@ -1999,6 +2013,7 @@ impl Optimizer {
                 }
                 // Otherwise, just recurse
                 Expr::While {
+                    label: label.clone(),
                     condition: Box::new(self.pass_loop_unroll_expr(condition)),
                     body: self.pass_loop_unroll_block(body),
                 }
@@ -2222,7 +2237,8 @@ impl Optimizer {
                     .as_ref()
                     .map(|e| Box::new(self.substitute_loop_var_in_expr(e, var_name, value))),
             },
-            Expr::While { condition, body } => Expr::While {
+            Expr::While { label, condition, body } => Expr::While {
+                label: label.clone(),
                 condition: Box::new(self.substitute_loop_var_in_expr(condition, var_name, value)),
                 body: self.substitute_loop_var_in_block(body, var_name, value),
             },
@@ -2284,7 +2300,7 @@ impl Optimizer {
 
     fn pass_licm_expr(&mut self, expr: &Expr) -> Expr {
         match expr {
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 // Find variables modified in the loop
                 let mut modified_vars = HashSet::new();
                 self.collect_modified_vars_block(body, &mut modified_vars);
@@ -2299,6 +2315,7 @@ impl Optimizer {
                 if invariant_exprs.is_empty() {
                     // No LICM opportunities, just recurse
                     return Expr::While {
+                        label: label.clone(),
                         condition: Box::new(self.pass_licm_expr(condition)),
                         body: self.pass_licm_block(body),
                     };
@@ -2323,6 +2340,7 @@ impl Optimizer {
 
                 // Recurse into the modified loop
                 let new_while = Expr::While {
+                    label: label.clone(),
                     condition: Box::new(self.pass_licm_expr(condition)),
                     body: self.pass_licm_block(&new_body),
                 };
@@ -2422,7 +2440,7 @@ impl Optimizer {
                     self.collect_modified_vars_expr(e, modified);
                 }
             }
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 self.collect_modified_vars_expr(condition, modified);
                 self.collect_modified_vars_block(body, modified);
             }
@@ -2627,7 +2645,8 @@ impl Optimizer {
                     .as_ref()
                     .map(|e| Box::new(self.replace_invariants_in_expr(e, invariants, subs))),
             },
-            Expr::While { condition, body } => Expr::While {
+            Expr::While { label, condition, body } => Expr::While {
+                label: label.clone(),
                 condition: Box::new(self.replace_invariants_in_expr(condition, invariants, subs)),
                 body: self.replace_invariants_in_block(body, invariants, subs),
             },
@@ -2766,7 +2785,8 @@ impl Optimizer {
                     .as_ref()
                     .map(|e| Box::new(self.pass_cse_expr(e))),
             },
-            Expr::While { condition, body } => Expr::While {
+            Expr::While { label, condition, body } => Expr::While {
+                label: label.clone(),
                 condition: Box::new(self.pass_cse_expr(condition)),
                 body: self.pass_cse_block(body),
             },
@@ -2993,7 +3013,7 @@ fn collect_exprs_from_expr(expr: &Expr, out: &mut Vec<CollectedExpr>) {
                 collect_exprs_from_expr(else_expr, out);
             }
         }
-        Expr::While { condition, body } => {
+        Expr::While { label, condition, body } => {
             collect_exprs_from_expr(condition, out);
             collect_exprs_from_block(body, out);
         }
@@ -3087,7 +3107,8 @@ fn replace_in_expr(expr: &Expr, target: &Expr, var_name: &str) -> Expr {
                 .as_ref()
                 .map(|e| Box::new(replace_in_expr(e, target, var_name))),
         },
-        Expr::While { condition, body } => Expr::While {
+        Expr::While { label, condition, body } => Expr::While {
+                label: label.clone(),
             condition: Box::new(replace_in_expr(condition, target, var_name)),
             body: replace_in_block(body, target, var_name),
         },

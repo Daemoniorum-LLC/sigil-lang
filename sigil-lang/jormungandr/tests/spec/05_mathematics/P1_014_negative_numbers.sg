@@ -1,0 +1,28 @@
+// Test: Negative number operations
+// Spec: 05-MATHEMATICS.md § 5.3 Negative Numbers
+// Priority: P1 - Standard Feature
+
+fn main() {
+    // Negative literals
+    let a: !i32 = -42;
+    println(a);
+
+    // Negation operator
+    let b: !i32 = 10;
+    let c: !i32 = -b;
+    println(c);
+
+    // Negative * negative = positive
+    println(-3 * -4);
+
+    // Negative * positive = negative
+    println(-3 * 4);
+
+    // Double negation
+    let d: !i32 = --5;
+    println(d);
+
+    // Negative in expressions
+    println(10 + -3);
+    println(10 - -3);
+}

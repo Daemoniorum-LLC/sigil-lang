@@ -1,0 +1,22 @@
+// Test: Enum discriminant values
+// Spec: 03-TYPES.md § 8.3 Enum Discriminants
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate enums have correct discriminant values.
+//
+// Expected behavior:
+// Should print 42 (matches first variant)
+
+pub enum Status {
+    Ok,
+    Error
+}
+
+fn main() {
+    let s: !Status = Status::Ok;
+    match s {
+        Status::Ok => println(42),
+        Status::Error => println(99)
+    }
+}

@@ -1,0 +1,287 @@
+//! Comprehensive SIMD Operations Test Suite
+//!
+//! Tests SIMD vector types, intrinsics, and operations.
+//! Target: 100% SIMD coverage for regression detection.
+
+use crate::parser::Parser;
+use crate::typeck::TypeChecker;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+fn check_source(source: !&str) -> !bool {
+    let mut parser = Parser::new(source.to_string());
+    let ast = match parser.parse_file() {
+        Result::Ok(a) => a,
+        Result::Err(_) => return false,
+    };
+    let mut checker = TypeChecker::new();
+    match checker.check_file(ast) {
+        Result::Ok(_) => true,
+        Result::Err(_) => false,
+    }
+}
+
+fn assert_checks(source: !&str, name: !&str) {
+    if !check_source(source) {
+        panic(format!("FAIL {}: check failed", name));
+    }
+}
+
+// ============================================================================
+// 1. SIMD TYPE DECLARATIONS
+// ============================================================================
+
+fn test_simd_types() -> !bool {
+    print("  [1/6] SIMD type declarations... ");
+
+    // Basic SIMD types
+    assert_checks("fn test() { let v: simd<f32, 4>; }", "simd_f32x4");
+    assert_checks("fn test() { let v: simd<f64, 2>; }", "simd_f64x2");
+    assert_checks("fn test() { let v: simd<i32, 4>; }", "simd_i32x4");
+    assert_checks("fn test() { let v: simd<i64, 2>; }", "simd_i64x2");
+    assert_checks("fn test() { let v: simd<u8, 16>; }", "simd_u8x16");
+    assert_checks("fn test() { let v: simd<i16, 8>; }", "simd_i16x8");
+
+    println("PASS (6 cases)");
+    true
+}
+
+// ============================================================================
+// 2. SIMD LITERALS
+// ============================================================================
+
+fn test_simd_literals() -> !bool {
+    print("  [2/6] SIMD literals... ");
+
+    // Splat literal
+    assert_checks("fn test() -> !simd<f32, 4> { return simd::splat(1.0f32); }", "simd_splat");
+
+    // Array-style literal
+    assert_checks("fn test() -> !simd<f32, 4> { return simd[1.0, 2.0, 3.0, 4.0]; }", "simd_array");
+
+    // From array
+    assert_checks("
+        fn test() -> !simd<i32, 4> {
+            let arr: ![i32; 4] = [1, 2, 3, 4];
+            return simd::from_array(arr);
+        }
+    ", "simd_from_array");
+
+    // Zero vector
+    assert_checks("fn test() -> !simd<f32, 4> { return simd::zeros(); }", "simd_zeros");
+
+    // Ones vector
+    assert_checks("fn test() -> !simd<f32, 4> { return simd::ones(); }", "simd_ones");
+
+    println("PASS (5 cases)");
+    true
+}
+
+// ============================================================================
+// 3. SIMD ARITHMETIC
+// ============================================================================
+
+fn test_simd_arithmetic() -> !bool {
+    print("  [3/6] SIMD arithmetic... ");
+
+    // Addition
+    assert_checks("
+        fn test(a: !simd<f32, 4>, b: !simd<f32, 4>) -> !simd<f32, 4> {
+            return a + b;
+        }
+    ", "simd_add");
+
+    // Subtraction
+    assert_checks("
+        fn test(a: !simd<f32, 4>, b: !simd<f32, 4>) -> !simd<f32, 4> {
+            return a - b;
+        }
+    ", "simd_sub");
+
+    // Multiplication
+    assert_checks("
+        fn test(a: !simd<f32, 4>, b: !simd<f32, 4>) -> !simd<f32, 4> {
+            return a * b;
+        }
+    ", "simd_mul");
+
+    // Division
+    assert_checks("
+        fn test(a: !simd<f32, 4>, b: !simd<f32, 4>) -> !simd<f32, 4> {
+            return a / b;
+        }
+    ", "simd_div");
+
+    // Fused multiply-add
+    assert_checks("
+        fn test(a: !simd<f32, 4>, b: !simd<f32, 4>, c: !simd<f32, 4>) -> !simd<f32, 4> {
+            return simd::fma(a, b, c);
+        }
+    ", "simd_fma");
+
+    println("PASS (5 cases)");
+    true
+}
+
+// ============================================================================
+// 4. SIMD COMPARISONS
+// ============================================================================
+
+fn test_simd_comparison() -> !bool {
+    print("  [4/6] SIMD comparisons... ");
+
+    // Element-wise comparison
+    assert_checks("
+        fn test(a: !simd<f32, 4>, b: !simd<f32, 4>) -> !simd<bool, 4> {
+            return a < b;
+        }
+    ", "simd_lt");
+
+    assert_checks("
+        fn test(a: !simd<f32, 4>, b: !simd<f32, 4>) -> !simd<bool, 4> {
+            return a == b;
+        }
+    ", "simd_eq");
+
+    // Min/max
+    assert_checks("
+        fn test(a: !simd<f32, 4>, b: !simd<f32, 4>) -> !simd<f32, 4> {
+            return simd::min(a, b);
+        }
+    ", "simd_min");
+
+    assert_checks("
+        fn test(a: !simd<f32, 4>, b: !simd<f32, 4>) -> !simd<f32, 4> {
+            return simd::max(a, b);
+        }
+    ", "simd_max");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// 5. SIMD REDUCTIONS
+// ============================================================================
+
+fn test_simd_reductions() -> !bool {
+    print("  [5/6] SIMD reductions... ");
+
+    // Horizontal sum
+    assert_checks("
+        fn test(v: !simd<f32, 4>) -> !f32 {
+            return v.reduce_sum();
+        }
+    ", "simd_reduce_sum");
+
+    // Horizontal product
+    assert_checks("
+        fn test(v: !simd<f32, 4>) -> !f32 {
+            return v.reduce_product();
+        }
+    ", "simd_reduce_product");
+
+    // Horizontal min
+    assert_checks("
+        fn test(v: !simd<f32, 4>) -> !f32 {
+            return v.reduce_min();
+        }
+    ", "simd_reduce_min");
+
+    // Horizontal max
+    assert_checks("
+        fn test(v: !simd<f32, 4>) -> !f32 {
+            return v.reduce_max();
+        }
+    ", "simd_reduce_max");
+
+    // All/any for masks
+    assert_checks("
+        fn test(mask: !simd<bool, 4>) -> !bool {
+            return mask.all();
+        }
+    ", "simd_all");
+
+    assert_checks("
+        fn test(mask: !simd<bool, 4>) -> !bool {
+            return mask.any();
+        }
+    ", "simd_any");
+
+    println("PASS (6 cases)");
+    true
+}
+
+// ============================================================================
+// 6. SIMD SHUFFLES AND SWIZZLES
+// ============================================================================
+
+fn test_simd_shuffle() -> !bool {
+    print("  [6/6] SIMD shuffles... ");
+
+    // Extract element
+    assert_checks("
+        fn test(v: !simd<f32, 4>) -> !f32 {
+            return v[0];
+        }
+    ", "simd_extract");
+
+    // Insert element
+    assert_checks("
+        fn test(v: !simd<f32, 4>, val: !f32) -> !simd<f32, 4> {
+            let mut result = v;
+            result[0] = val;
+            return result;
+        }
+    ", "simd_insert");
+
+    // Shuffle
+    assert_checks("
+        fn test(a: !simd<f32, 4>, b: !simd<f32, 4>) -> !simd<f32, 4> {
+            return simd::shuffle(a, b, [0, 4, 1, 5]);
+        }
+    ", "simd_shuffle");
+
+    // Swizzle
+    assert_checks("
+        fn test(v: !simd<f32, 4>) -> !simd<f32, 4> {
+            return v.swizzle([3, 2, 1, 0]);  // Reverse
+        }
+    ", "simd_swizzle");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+pub fn main() -> !i32 {
+    println("Testing SIMD Operations...");
+    println("");
+
+    let mut passed: !i32 = 0;
+    let mut failed: !i32 = 0;
+
+    if test_simd_types() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_simd_literals() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_simd_arithmetic() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_simd_comparison() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_simd_reductions() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_simd_shuffle() { passed = passed + 1; } else { failed = failed + 1; }
+
+    println("");
+    println("Results: {}/{} test groups passed", passed, passed + failed);
+
+    if failed > 0 {
+        println("FAILED: {} test groups failed", failed);
+        return 1;
+    }
+
+    println("");
+    println("All SIMD tests passed! (~30 test cases)");
+    return 0;
+}

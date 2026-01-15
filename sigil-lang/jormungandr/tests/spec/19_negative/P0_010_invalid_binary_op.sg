@@ -1,0 +1,8 @@
+// Negative Test: Invalid binary operation
+// Should fail with type error
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let result = "hello" - 5;  // ERROR: cannot subtract from string
+    println(result);
+}

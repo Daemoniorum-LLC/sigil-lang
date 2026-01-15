@@ -1,0 +1,11 @@
+// Test: Universal reconstruction operator (∀)
+// Spec: 11-HOLOGRAPHIC.md § 2.3 Universal Reconstruction
+// Priority: P0 - Bootstrap Critical
+//
+// The ∀ operator reconstructs whole from parts
+
+fn main() {
+    let shards: Vec<i32> = vec![1, 2, 3, 4];
+    let whole = shards|∀;  // Universal reconstruction
+    println(whole);
+}

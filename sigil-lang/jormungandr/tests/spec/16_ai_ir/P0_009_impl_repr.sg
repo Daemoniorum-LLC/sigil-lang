@@ -1,0 +1,20 @@
+// Test: Impl block representation in IR
+// Spec: 16-AI-IR.md § Type Representation
+// Priority: P0 - Bootstrap Critical
+
+struct Vec2 { x: !f64, y: !f64 }
+
+impl Vec2 {
+    fn length(&self) -> !f64 {
+        (self.x * self.x + self.y * self.y).sqrt()
+    }
+
+    fn dot(&self, other: &Vec2) -> !f64 {
+        self.x * other.x + self.y * other.y
+    }
+}
+
+fn main() {
+    let ir = __export_ir();
+    println(ir.impls.len());
+}

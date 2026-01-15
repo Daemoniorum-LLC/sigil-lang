@@ -1,0 +1,10 @@
+// Test: ReLU activation function
+// Spec: 14-NEURAL.md § 4 Activation Functions
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let x: Tensor<[4]> = Tensor::from([-1.0, 0.0, 1.0, 2.0]);
+    let y = x|relu;
+    println(y[0]);  // max(0, -1) = 0
+    println(y[2]);  // max(0, 1) = 1
+}

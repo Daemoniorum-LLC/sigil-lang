@@ -1,0 +1,12 @@
+// Test: Interference in QH systems
+// Spec: 13-QUANTUM-HOLOGRAPHIC.md § 6 Interference
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let a: QHState<i32> = QHState::superpose([1, 2]);
+    let b: QHState<i32> = QHState::superpose([2, 3]);
+    let combined = a|interfere(b);
+    // Interference can cause constructive/destructive effects
+    let result! = combined|measure;
+    println(result!);
+}

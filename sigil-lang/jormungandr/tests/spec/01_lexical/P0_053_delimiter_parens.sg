@@ -1,0 +1,17 @@
+// Test: Parenthesis delimiters ()
+// Spec: 01-LEXICAL.md § 3.3 Delimiters
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate parentheses work for grouping and function calls.
+//
+// Expected behavior:
+// Should print 42
+
+fn id(x: !i32) -> !i32 {
+    x
+}
+
+fn main() {
+    println(id(42));
+}

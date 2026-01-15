@@ -1,0 +1,22 @@
+// Test: Power/exponent function
+// Spec: 05-MATHEMATICS.md § 1.4 Exponentiation
+// Priority: P1 - Standard Feature
+
+fn main() {
+    // Integer powers
+    println(pow(2, 3));
+    println(pow(2, 10));
+    println(pow(10, 2));
+
+    // Power of 1
+    println(pow(5, 1));
+
+    // Power of 0
+    println(pow(5, 0));
+
+    // Float base
+    println(pow(2.5, 2));
+
+    // Negative exponent (returns float)
+    println(pow(2, -1));
+}

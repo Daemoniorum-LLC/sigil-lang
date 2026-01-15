@@ -1,0 +1,33 @@
+// Test: Method chaining
+// Spec: 03-TYPES.md § 7.5 Method Chaining
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate method chaining works correctly.
+//
+// Expected behavior:
+// Should print 52 (42 + 10)
+
+pub struct Value {
+    x: !i32
+}
+
+impl Value {
+    pub fn new(x: !i32) -> Self {
+        Self { x: x }
+    }
+
+    pub fn add(mut self, y: !i32) -> Self {
+        self.x = self.x + y;
+        self
+    }
+
+    pub fn get(self) -> !i32 {
+        self.x
+    }
+}
+
+fn main() {
+    let result: !i32 = Value::new(42).add(10).get();
+    println(result);
+}

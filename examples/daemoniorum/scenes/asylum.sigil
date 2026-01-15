@@ -1,0 +1,730 @@
+//! # Blackwood Asylum
+//!
+//! An abandoned psychiatric facility with a dark history.
+//! The asylum represents society's misunderstanding of plurality,
+//! and holds secrets about the system's past.
+
+use super·scene·*
+use super·super·system·*
+use std·collections·HashMap
+
+// ============================================================================
+// ASYLUM EXTERIOR
+// ============================================================================
+
+fn create_asylum_exterior() -> Scene! {
+    SceneBuilder·new("asylum_exterior")
+        ·name(
+            "Blackwood Asylum",
+            "Blackwood... Asylum?",
+            "T̷H̸E̵ ̵C̷A̷G̸E̵"
+        )
+        ·description(
+            "The asylum looms against the grey sky, its Victorian Gothic architecture both grand and oppressive. Broken windows stare down like hollow eyes. A rusted sign reads 'Blackwood Psychiatric Institute - Est. 1891'. The front gates hang open, chains long since broken.",
+
+            "The building breathes. You're certain of it. Each broken window exhales mist that shouldn't exist. The sign flickers between 'Psychiatric Institute' and 'Processing Facility'. The gates didn't break - they were opened from inside.",
+
+            "W̸E̵ ̶R̷E̸M̵E̸M̷B̵E̴R̵ ̴T̶H̷I̴S̸ ̷P̷L̴A̶C̵E̵.̸ The asylum peels back its skin to show us what it really is: a machine for breaking minds, for separating selves, for making the many into none. WE WERE HERE BEFORE. WE WILL NOT BE HERE AGAIN."
+        )
+        ·scene_type(SceneType·Exploration)
+        ·time(TimeOfDay·Afternoon)
+        ·weather(Weather·Cloudy)
+        ·element(SceneElement {
+            id: "asylum_sign"·to_string(),
+            name: LayeredDescription {
+                grounded: "Asylum Sign"·to_string(),
+                fractured: "The Lie"·to_string()~,
+                shattered: "THE BRAND"·to_string()‽,
+            },
+            description: LayeredDescription {
+                grounded: "A weathered brass sign. 'Blackwood Psychiatric Institute - Where Troubled Minds Find Peace.'"·to_string(),
+                fractured: "The words shift when you're not looking directly at them. 'Where Troubled Minds Are Made Piece.' No - 'Pieces.' The brass is stained with something that wasn't weather."·to_string()~,
+                shattered: "BRANDED LIKE CATTLE. Every patient who entered was marked. The sign doesn't name them - it claims them. YOU WERE CLAIMED HERE."·to_string()‽,
+            },
+            alter_observations: [
+                AlterObservation {
+                    alter_id: "vessel"·to_string(),
+                    text: "*A cold dread fills you. You've been here before. You don't remember when.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: ["memory_fragment"·to_string()],
+                },
+                AlterObservation {
+                    alter_id: "stolas"·to_string(),
+                    text: "*1891 to 1967. Closed after the incident. 847 patients admitted. 312 discharged. The math doesn't work.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: [],
+                },
+                AlterObservation {
+                    alter_id: "warden"·to_string(),
+                    text: "*Every instinct screams to leave. But we need answers. And they're inside.*"·to_string()~,
+                    grants_insight: false,
+                    triggers: [],
+                },
+            ]~,
+            interactions: [
+                Interaction {
+                    id: "read_sign"·to_string(),
+                    verb: "read"·to_string(),
+                    description: "As you read, smaller text becomes visible at the bottom: 'Integration Therapy Wing - Dr. H. Vance, Director.' The name triggers something. A flash of white coat. Cold hands. 'We're going to make you whole.'"·to_string()~,
+                    conditions: [],
+                    effects: [
+                        InteractionEffect·GrantInsight { id: "vance_name"·to_string(), amount: 10.0 },
+                        InteractionEffect·ModifyStability(-0.05),
+                        InteractionEffect·SetFlag("vance_mentioned"·to_string()),
+                    ],
+                },
+            ],
+            hidden_until: None,
+            contains_items: [],
+        })
+        ·element(SceneElement {
+            id: "broken_gates"·to_string(),
+            name: LayeredDescription {
+                grounded: "Iron Gates"·to_string(),
+                fractured: "The Maw"·to_string()~,
+                shattered: "WELCOME HOME"·to_string()‽,
+            },
+            description: LayeredDescription {
+                grounded: "Massive iron gates, once impressive, now rusted and hanging askew. The lock has been broken."·to_string(),
+                fractured: "The gates weren't broken from outside. The metal is bent outward. Something inside wanted out. Or something inside wanted you to come in."·to_string()~,
+                shattered: "THE GATES NEVER CLOSED. They were always open for you. Waiting. Patient. They knew you'd return."·to_string()‽,
+            },
+            alter_observations: [
+                AlterObservation {
+                    alter_id: "abaddon"·to_string(),
+                    text: "*Bent from inside. Whatever broke out was strong. And angry. Good.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: [],
+                },
+            ]~,
+            interactions: [],
+            hidden_until: None,
+            contains_items: [],
+        })
+        ·element(SceneElement {
+            id: "overgrown_garden"·to_string(),
+            name: LayeredDescription {
+                grounded: "Overgrown Gardens"·to_string(),
+                fractured: "The Burial Ground"·to_string()~,
+                shattered: "THE COMPOST"·to_string()‽,
+            },
+            description: LayeredDescription {
+                grounded: "What was once a manicured garden is now a tangle of weeds and dead roses. Stone benches peek through the undergrowth."·to_string(),
+                fractured: "The plants grow in patterns. Circles. Spirals. They're not random - they're marking something underneath. The roses aren't dead. They're a color that dead things become."·to_string()~,
+                shattered: "FERTILIZER. So many bodies beneath the flowers. They made the gardens beautiful with what was left when 'treatment' failed. The roses remember every name."·to_string()‽,
+            },
+            alter_observations: [
+                AlterObservation {
+                    alter_id: "beleth"·to_string(),
+                    text: "*So much grief soaked into this soil. They walked here, hoping. They never walked out.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: ["emotional_resonance"·to_string()],
+                },
+            ]~,
+            interactions: [
+                Interaction {
+                    id: "examine_roses"·to_string(),
+                    verb: "examine"·to_string(),
+                    description: "You reach toward a rose. It turns toward you. Not with the sun - toward you specifically. Its petals part like lips, and for a moment you hear whispered names. Too many names."·to_string()~,
+                    conditions: [],
+                    effects: [
+                        InteractionEffect·ModifyDissociation(0.1),
+                        InteractionEffect·ShiftReality { target: RealityLayer·Fractured, rate: 0.2 },
+                        InteractionEffect·PlaySound("whispered_names"·to_string()),
+                    ],
+                },
+            ],
+            hidden_until: None,
+            contains_items: [],
+        })
+        // Exits
+        ·exit(Exit {
+            id: "enter_asylum"·to_string(),
+            direction: Direction·Inside,
+            target_scene: "asylum_lobby"·to_string(),
+            description: LayeredDescription {
+                grounded: "The asylum's main entrance, doors hanging open."·to_string(),
+                fractured: "The doors don't hang - they gape. The darkness inside is too complete. It swallows light."·to_string()~,
+                shattered: "COME IN COME IN COME IN. We've kept your room ready. We've kept the straps oiled. We've kept the needles sharp."·to_string()‽,
+            },
+            locked: false,
+            lock_condition: None,
+            alter_observations: []~,
+        })
+        ·exit(Exit {
+            id: "to_forest"·to_string(),
+            direction: Direction·Back,
+            target_scene: "forest_path"·to_string(),
+            description: LayeredDescription {
+                grounded: "The forest path leads away from the asylum."·to_string(),
+                fractured: "The path seems longer now. The trees have leaned in, watching."·to_string()~,
+                shattered: "THERE IS NO LEAVING. You came here willingly. That was your last choice."·to_string()‽,
+            },
+            locked: false,
+            lock_condition: None,
+            alter_observations: []~,
+        })
+        ·alter_memory("vessel", "I've been here. I know I've been here. Why can't I remember?")
+        ·alter_memory("warden", "This is where they tried to 'fix' us. We escaped once. We can escape again.")
+        ·alter_memory("stolas", "Records indicate multiple stays. 1987. 1992. 1995. Each time, fewer of us came out.")
+        ·on_enter(InteractionEffect·PlaySound("asylum_wind"·to_string()))
+        ·on_enter(InteractionEffect·ModifyStability(-0.05))
+        ·ambiance(Ambiance {
+            background_sound: "wind_hollow"·to_string(),
+            music_track: Some("dread_institutional"·to_string())?,
+            layer_sounds: {
+                RealityLayer·Fractured => "distant_screams_subtle",
+                RealityLayer·Shattered => "chorus_of_patients",
+            }~,
+            weather_sounds: HashMap·new()~,
+            lighting: Lighting {
+                base_level: 0.5,
+                color: (0.7, 0.7, 0.75),
+                layer_modifiers: {
+                    RealityLayer·Fractured => LightingMod {
+                        level_delta: -0.15,
+                        color_shift: (-0.1, -0.15, 0.0),
+                        flicker: false,
+                    },
+                    RealityLayer·Shattered => LightingMod {
+                        level_delta: -0.2,
+                        color_shift: (-0.2, -0.2, -0.1),
+                        flicker: true,
+                    },
+                }~,
+            },
+        })
+        ·build()
+}
+
+// ============================================================================
+// ASYLUM LOBBY
+// ============================================================================
+
+fn create_asylum_lobby() -> Scene! {
+    SceneBuilder·new("asylum_lobby")
+        ·name(
+            "Asylum Lobby",
+            "The Processing Center",
+            "T̸H̵E̷ ̴S̵O̷R̵T̷I̸N̶G̴ ̵R̵O̷O̴M̷"
+        )
+        ·description(
+            "The lobby retains hints of its former grandeur - marble floors now cracked, a reception desk covered in dust, faded portraits of stern doctors lining the walls. A grand staircase leads up, while corridors branch left and right. An old wheelchair sits in the corner, leather straps still attached.",
+
+            "The portraits' eyes follow you. All of them. The reception desk has deep scratches in the wood - fingernail marks. The wheelchair's straps are stained dark and the wheels turn slowly on their own, as if remembering the weight they once carried.",
+
+            "T̵H̷E̶Y̷ ̷S̵O̵R̵T̵E̴D̴ ̵U̶S̵ ̵H̸E̶R̴E̶.̸ Cooperative patients left. Difficult ones right. The ones they wanted to study - up. The portraits aren't paintings. They're windows. The doctors are still watching through dead eyes."
+        )
+        ·scene_type(SceneType·Exploration)
+        ·element(SceneElement {
+            id: "reception_desk"·to_string(),
+            name: LayeredDescription {
+                grounded: "Reception Desk"·to_string(),
+                fractured: "The Intake Station"·to_string()~,
+                shattered: "THE CLAIMING ALTAR"·to_string()‽,
+            },
+            description: LayeredDescription {
+                grounded: "A large oak reception desk, covered in dust and old papers. A logbook sits open, pages yellowed."·to_string(),
+                fractured: "The logbook is open to a page with your name on it. You didn't see it a moment ago. The ink is fresh."·to_string()~,
+                shattered: "YOUR NAME IS WRITTEN IN BLOOD. Written again and again, covering every page. You never left. YOU NEVER LEFT."·to_string()‽,
+            },
+            alter_observations: [
+                AlterObservation {
+                    alter_id: "stolas"·to_string(),
+                    text: "*Patient intake records. Many entries are redacted. The ones that aren't mention 'integration therapy' repeatedly.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: [],
+                },
+                AlterObservation {
+                    alter_id: "vessel"·to_string(),
+                    text: "*My handwriting. That's my signature. I signed myself in.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: ["memory_fragment"·to_string()],
+                },
+            ]~,
+            interactions: [
+                Interaction {
+                    id: "read_logbook"·to_string(),
+                    verb: "read"·to_string(),
+                    description: "The logbook contains patient records. One entry catches your eye: 'Patient displays remarkable resistance to integration. Multiple alters persist despite treatment. Dr. Vance recommends intensive electroconvulsive intervention.' The date is years ago. The patient... is you."·to_string()~,
+                    conditions: [],
+                    effects: [
+                        InteractionEffect·GrantInsight { id: "patient_record"·to_string(), amount: 25.0 },
+                        InteractionEffect·ModifyStability(-0.1),
+                        InteractionEffect·TriggerDialogue("memory_flashback_intake"·to_string()),
+                    ],
+                },
+                Interaction {
+                    id: "search_desk"·to_string(),
+                    verb: "search"·to_string(),
+                    description: "In a drawer, you find a rusted key labeled 'Records Room' and a faded photograph. The photo shows a woman in a white coat, smiling warmly. On the back: 'Dr. Helena Vance - Integration Therapy Pioneer.'"·to_string()~,
+                    conditions: [],
+                    effects: [
+                        InteractionEffect·GiveItem("records_room_key"·to_string()),
+                        InteractionEffect·GiveItem("vance_photo"·to_string()),
+                        InteractionEffect·SetFlag("has_records_key"·to_string()),
+                    ],
+                },
+            ],
+            hidden_until: None,
+            contains_items: ["records_room_key"·to_string(), "vance_photo"·to_string()],
+        })
+        ·element(SceneElement {
+            id: "portraits"·to_string(),
+            name: LayeredDescription {
+                grounded: "Doctor Portraits"·to_string(),
+                fractured: "The Watchers"·to_string()~,
+                shattered: "THE JURY"·to_string()‽,
+            },
+            description: LayeredDescription {
+                grounded: "Oil portraits of former asylum directors and doctors. Their expressions are uniformly stern but professional."·to_string(),
+                fractured: "Their eyes track you. All of them. When you look directly at one, it stares ahead - but in your peripheral vision, they all turn to watch."·to_string()~,
+                shattered: "GUILTY GUILTY GUILTY. They judged us insane for being many. They judged us broken for surviving. Their painted mouths move in silent condemnation. THEY ARE STILL HERE."·to_string()‽,
+            },
+            alter_observations: [
+                AlterObservation {
+                    alter_id: "abaddon"·to_string(),
+                    text: "*I remember their faces. They held us down. They said they were helping. I will tear down every one of these paintings.*"·to_string()~,
+                    grants_insight: false,
+                    triggers: ["rage_building"·to_string()],
+                },
+                AlterObservation {
+                    alter_id: "stolas"·to_string(),
+                    text: "*Dr. Hoffman, 1891-1923. Dr. Marsh, 1923-1951. Dr. Vance, 1951-1967. All directors. All promoted 'integration therapy.' All died here.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: [],
+                },
+            ]~,
+            interactions: [
+                Interaction {
+                    id: "examine_vance_portrait"·to_string(),
+                    verb: "examine"·to_string(),
+                    description: "Dr. Helena Vance's portrait is the newest. She's younger than expected, with kind eyes that somehow make her more unsettling. A brass plaque reads: 'Pioneer of Integration Therapy - May Her Work Continue.' The last three words were added later, in different lettering."·to_string()~,
+                    conditions: [],
+                    effects: [
+                        InteractionEffect·GrantInsight { id: "vance_portrait"·to_string(), amount: 15.0 },
+                        InteractionEffect·SetFlag("examined_vance"·to_string()),
+                    ],
+                },
+            ],
+            hidden_until: None,
+            contains_items: [],
+        })
+        ·element(SceneElement {
+            id: "wheelchair"·to_string(),
+            name: LayeredDescription {
+                grounded: "Old Wheelchair"·to_string(),
+                fractured: "The Restraint Chair"·to_string()~,
+                shattered: "THE THRONE OF COMPLIANCE"·to_string()‽,
+            },
+            description: LayeredDescription {
+                grounded: "An antique wheelchair with leather straps on the armrests. Standard for the era, if uncomfortable to look at."·to_string(),
+                fractured: "The straps are worn smooth from use. So much use. The seat has a permanent depression - someone sat here for a very long time. The wheels squeak, turning toward you."·to_string()~,
+                shattered: "SIT. SIT AND BE STILL. SIT AND BE QUIET. SIT AND BE ONE. The chair held hundreds. It broke dozens. It remembers every scream, every sob, every begged 'please no more.'"·to_string()‽,
+            },
+            alter_observations: [
+                AlterObservation {
+                    alter_id: "warden"·to_string(),
+                    text: "*We were strapped into something like this. Warden kept us from screaming. Warden kept us sane.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: ["protection_memory"·to_string()],
+                },
+                AlterObservation {
+                    alter_id: "beleth"·to_string(),
+                    text: "*So much fear soaked into the leather. They sat here alone and terrified while doctors discussed them like specimens.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: ["empathy_overload"·to_string()],
+                },
+            ]~,
+            interactions: [
+                Interaction {
+                    id: "touch_wheelchair"·to_string(),
+                    verb: "touch"·to_string(),
+                    description: "The moment your fingers brush the armrest, you're elsewhere. White walls. Fluorescent lights. Hands holding you down. A voice saying 'This is for your own good.' The injection. The electricity. The FORGETTING. You snap back, gasping."·to_string()~,
+                    conditions: [],
+                    effects: [
+                        InteractionEffect·TriggerDialogue("flashback_treatment"·to_string()),
+                        InteractionEffect·ModifyStability(-0.15),
+                        InteractionEffect·ModifyDissociation(0.2),
+                        InteractionEffect·ShiftReality { target: RealityLayer·Fractured, rate: 0.4 },
+                    ],
+                },
+            ],
+            hidden_until: None,
+            contains_items: [],
+        })
+        // Exits
+        ·exit(Exit {
+            id: "to_exterior"·to_string(),
+            direction: Direction·Outside,
+            target_scene: "asylum_exterior"·to_string(),
+            description: LayeredDescription {
+                grounded: "The main entrance leads back outside."·to_string(),
+                fractured: "The doors seem farther than before. The outside light looks wrong."·to_string()~,
+                shattered: "THERE IS NO OUTSIDE ANYMORE."·to_string()‽,
+            },
+            locked: false,
+            lock_condition: None,
+            alter_observations: []~,
+        })
+        ·exit(Exit {
+            id: "to_east_wing"·to_string(),
+            direction: Direction·East,
+            target_scene: "asylum_east_wing"·to_string(),
+            description: LayeredDescription {
+                grounded: "A corridor leads to the East Wing - Patient Wards."·to_string(),
+                fractured: "The corridor stretches impossibly long. Doors line both sides, all closed. All listening."·to_string()~,
+                shattered: "THE CELLS. WHERE THEY KEPT THE DIFFICULT ONES. WHERE THEY KEPT US."·to_string()‽,
+            },
+            locked: false,
+            lock_condition: None,
+            alter_observations: []~,
+        })
+        ·exit(Exit {
+            id: "to_west_wing"·to_string(),
+            direction: Direction·West,
+            target_scene: "asylum_west_wing"·to_string(),
+            description: LayeredDescription {
+                grounded: "A corridor leads to the West Wing - Treatment Rooms."·to_string(),
+                fractured: "The air from this corridor is cold. Too cold. It smells of antiseptic and something else. Something burned."·to_string()~,
+                shattered: "THE BREAKING ROOMS. WHERE THEY UNMADE US. WHERE THEY TRIED TO KILL THE MANY."·to_string()‽,
+            },
+            locked: false,
+            lock_condition: None,
+            alter_observations: []~,
+        })
+        ·exit(Exit {
+            id: "upstairs"·to_string(),
+            direction: Direction·Up,
+            target_scene: "asylum_upper_floor"·to_string(),
+            description: LayeredDescription {
+                grounded: "The grand staircase leads to the upper floors."·to_string(),
+                fractured: "The stairs seem to shift when you're not looking directly at them. More stairs than there should be."·to_string()~,
+                shattered: "UP TO WHERE THEY WATCHED. UP TO WHERE VANCE WAITED. UP TO WHERE THE ANSWERS ARE BURIED."·to_string()‽,
+            },
+            locked: false,
+            lock_condition: None,
+            alter_observations: []~,
+        })
+        ·alter_memory("vessel", "The smell. That antiseptic smell. I can't get it out of my head.")
+        ·alter_memory("abaddon", "We walked through here in chains. Chains they said were 'for our safety.'")
+        ·alter_memory("paimon", "This is where we learned to cooperate. Where we learned that being many was the only way to survive.")
+        ·ambiance(Ambiance {
+            background_sound: "asylum_echoes"·to_string(),
+            music_track: Some("creeping_dread"·to_string())?,
+            layer_sounds: {
+                RealityLayer·Fractured => "wheelchair_squeak_distant",
+                RealityLayer·Shattered => "electroshock_echoes",
+            }~,
+            weather_sounds: HashMap·new()~,
+            lighting: Lighting {
+                base_level: 0.3,
+                color: (0.8, 0.85, 0.8),  // Sickly institutional green-white
+                layer_modifiers: {
+                    RealityLayer·Fractured => LightingMod {
+                        level_delta: -0.1,
+                        color_shift: (-0.1, -0.05, -0.1),
+                        flicker: true,
+                    },
+                    RealityLayer·Shattered => LightingMod {
+                        level_delta: 0.2,  // Harsh fluorescents
+                        color_shift: (0.0, 0.1, -0.1),
+                        flicker: true,
+                    },
+                }~,
+            },
+        })
+        ·build()
+}
+
+// ============================================================================
+// ASYLUM EAST WING - PATIENT WARDS
+// ============================================================================
+
+fn create_asylum_east_wing() -> Scene! {
+    SceneBuilder·new("asylum_east_wing")
+        ·name(
+            "East Wing - Patient Wards",
+            "The Cells",
+            "T̸H̷E̶ ̵C̵A̶G̴E̴S̵"
+        )
+        ·description(
+            "A long corridor lined with patient rooms. The doors are heavy, each with a small viewing window. Name plates beside each door are faded but legible. The floor tiles are cracked, and old medical equipment lies abandoned along the walls.",
+
+            "The doors breathe. Inhale, exhale. Each one holds something that used to be a patient. The viewing windows are dark, but you see movement behind them. Faces pressing against glass that should be empty.",
+
+            "W̴E̵ ̵A̸R̸E̷ ̴S̷T̷I̸L̵L̴ ̸H̵E̷R̴E̸.̶ Every patient they 'cured' left a piece behind. Every integration that 'succeeded' just pushed the unwanted parts into the walls. They're still here. They never left. THEY ARE ALL AROUND YOU."
+        )
+        ·scene_type(SceneType·Exploration)
+        ·element(SceneElement {
+            id: "patient_room_47"·to_string(),
+            name: LayeredDescription {
+                grounded: "Room 47"·to_string(),
+                fractured: "Your Room"·to_string()~,
+                shattered: "HOME"·to_string()‽,
+            },
+            description: LayeredDescription {
+                grounded: "A patient room like the others. The nameplate is missing. The door stands slightly ajar."·to_string(),
+                fractured: "You know this room. The exact pattern of cracks in the ceiling. The way the light falls. This was yours."·to_string()~,
+                shattered: "WELCOME BACK. The room has been waiting. The bed is made. The straps are ready. WE NEVER FORGOT YOU."·to_string()‽,
+            },
+            alter_observations: [
+                AlterObservation {
+                    alter_id: "vessel"·to_string(),
+                    text: "*This was... this was our room. I remember staring at that ceiling for hours. Days. Trying to hold on to who we were.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: ["memory_fragment"·to_string()],
+                },
+                AlterObservation {
+                    alter_id: "warden"·to_string(),
+                    text: "*I kept watch here. Every night. I counted the footsteps in the hall. I knew when they were coming for us.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: [],
+                },
+            ]~,
+            interactions: [
+                Interaction {
+                    id: "enter_room_47"·to_string(),
+                    verb: "enter"·to_string(),
+                    description: "The room is exactly as you remember it - though you don't remember remembering. A bed with leather restraints. A barred window. Scratches on the wall, hundreds of them. Tally marks counting days. And in the corner, hidden behind the bed, childish handwriting: 'We are still here. They can't make us one. We are many and we are STRONG.'"·to_string()~,
+                    conditions: [],
+                    effects: [
+                        InteractionEffect·GrantInsight { id: "room_47_message"·to_string(), amount: 30.0 },
+                        InteractionEffect·ModifyStability(0.1),  // The message is empowering
+                        InteractionEffect·SetFlag("found_old_message"·to_string()),
+                        InteractionEffect·TriggerDialogue("council_meeting"·to_string()),
+                    ],
+                },
+            ],
+            hidden_until: None,
+            contains_items: [],
+        })
+        ·element(SceneElement {
+            id: "medical_cart"·to_string(),
+            name: LayeredDescription {
+                grounded: "Medical Cart"·to_string(),
+                fractured: "The Delivery System"·to_string()~,
+                shattered: "THE NEEDLE GARDEN"·to_string()‽,
+            },
+            description: LayeredDescription {
+                grounded: "An abandoned medical cart with rusted instruments. Old syringes, pill bottles, restraint straps."·to_string(),
+                fractured: "The syringes still have residue in them. Whatever they used, it wasn't standard sedative. The labels are in a language that shouldn't exist."·to_string()~,
+                shattered: "THEY PUMPED US FULL OF FORGETTING. Full of silence. Full of ONE. The needles remember our blood. They want more."·to_string()‽,
+            },
+            alter_observations: [
+                AlterObservation {
+                    alter_id: "stolas"·to_string(),
+                    text: "*Experimental compounds. Some of these chemical formulas don't appear in any medical literature. They were testing something new on us.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: [],
+                },
+            ]~,
+            interactions: [
+                Interaction {
+                    id: "examine_medications"·to_string(),
+                    verb: "examine"·to_string(),
+                    description: "Most labels are faded, but one bottle is clear: 'INTEGRATION COMPOUND V-7. For resistant cases. Administer with ECT for maximum effect.' A handwritten note adds: 'Promising results in fragmenting persistent alter states.'"·to_string()~,
+                    conditions: [],
+                    effects: [
+                        InteractionEffect·GrantInsight { id: "integration_compound"·to_string(), amount: 20.0 },
+                        InteractionEffect·GiveItem("compound_v7_sample"·to_string()),
+                    ],
+                },
+            ],
+            hidden_until: None,
+            contains_items: ["compound_v7_sample"·to_string()],
+        })
+        ·exit(Exit {
+            id: "to_lobby"·to_string(),
+            direction: Direction·West,
+            target_scene: "asylum_lobby"·to_string(),
+            description: LayeredDescription {
+                grounded: "The corridor leads back to the lobby."·to_string(),
+                fractured: "The lobby seems very far away now."·to_string()~,
+                shattered: "BACK TO THE SORTING ROOM. TO BE PROCESSED AGAIN."·to_string()‽,
+            },
+            locked: false,
+            lock_condition: None,
+            alter_observations: []~,
+        })
+        ·exit(Exit {
+            id: "to_solitary"·to_string(),
+            direction: Direction·North,
+            target_scene: "asylum_solitary"·to_string(),
+            description: LayeredDescription {
+                grounded: "A heavy door leads to the Solitary Confinement wing."·to_string(),
+                fractured: "The door is colder than the surrounding walls. Much colder. Something happened behind it."·to_string()~,
+                shattered: "WHERE THEY PUT THE ONES WHO WOULDN'T BREAK. WHERE THEY PUT US. THE SILENCE ROOM."·to_string()‽,
+            },
+            locked: true,
+            lock_condition: Some(LockCondition·RequiresFlag("has_solitary_key"·to_string()))?,
+            alter_observations: []~,
+        })
+        ·alter_memory("beleth", "I could feel their pain through the walls. Every patient. Every night. I couldn't block it out.")
+        ·ambiance(Ambiance {
+            background_sound: "ward_ambiance"·to_string(),
+            music_track: Some("isolation_dread"·to_string())?,
+            layer_sounds: {
+                RealityLayer·Fractured => "door_breathing",
+                RealityLayer·Shattered => "patient_whispers",
+            }~,
+            weather_sounds: HashMap·new()~,
+            lighting: Lighting {
+                base_level: 0.25,
+                color: (0.75, 0.8, 0.75),
+                layer_modifiers: {
+                    RealityLayer·Shattered => LightingMod {
+                        level_delta: -0.1,
+                        color_shift: (-0.15, -0.1, -0.1),
+                        flicker: true,
+                    },
+                }~,
+            },
+        })
+        ·build()
+}
+
+// ============================================================================
+// ASYLUM WEST WING - TREATMENT ROOMS
+// ============================================================================
+
+fn create_asylum_west_wing() -> Scene! {
+    SceneBuilder·new("asylum_west_wing")
+        ·name(
+            "West Wing - Treatment Rooms",
+            "The Breaking Rooms",
+            "T̵H̶E̴ ̶F̷O̷R̵G̷E̵"
+        )
+        ·description(
+            "The treatment wing has a different atmosphere than the rest of the asylum. The walls are lined with tiles, easier to clean. The rooms here have heavy doors with multiple locks. Signs indicate 'Electroconvulsive Therapy', 'Hydrotherapy', 'Insulin Therapy', and at the end of the hall, 'Integration Suite'.",
+
+            "The tiles are stained with things that won't wash out. The locks on the doors were meant to keep things in, not out. You can hear machinery humming behind some doors - impossible, as the power has been out for decades. The Integration Suite door is slightly open. Waiting.",
+
+            "THIS IS WHERE THEY TRIED TO MURDER US. Not the body - the SELVES. They called it treatment. They called it healing. They strapped us down and tried to ERASE us. THE FORGE WHERE THEY TRIED TO MELT US INTO ONE."
+        )
+        ·scene_type(SceneType·Exploration)
+        ·element(SceneElement {
+            id: "ect_room"·to_string(),
+            name: LayeredDescription {
+                grounded: "ECT Room"·to_string(),
+                fractured: "The Lightning Room"·to_string()~,
+                shattered: "THE ERASER"·to_string()‽,
+            },
+            description: LayeredDescription {
+                grounded: "An electroconvulsive therapy room. A padded table with straps, a large machine with dials and wires, a bite guard on the floor."·to_string(),
+                fractured: "The machine is on. Humming. The dials move on their own, calibrating for a patient that isn't there yet. The straps open and close like hands making fists."·to_string()~,
+                shattered: "THEY FRIED OUR CONNECTIONS. Tried to burn the bridges between us. Tried to make us forget each other. THE MACHINE REMEMBERS. IT WANTS TO FINISH."·to_string()‽,
+            },
+            alter_observations: [
+                AlterObservation {
+                    alter_id: "stolas"·to_string(),
+                    text: "*Modified equipment. Standard ECT uses 70-120 volts. This machine goes to 450. They weren't treating. They were erasing.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: [],
+                },
+                AlterObservation {
+                    alter_id: "warden"·to_string(),
+                    text: "*I protected us during this. I took the pain. I held us together while they tried to tear us apart.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: ["protection_memory"·to_string()],
+                },
+            ]~,
+            interactions: [
+                Interaction {
+                    id: "examine_machine"·to_string(),
+                    verb: "examine"·to_string(),
+                    description: "The machine's log book is still attached. Entry after entry of 'integration attempts'. Your name appears dozens of times. Notes: 'Alter persistence despite maximum voltage. Recommend compound enhancement.' The last entry: 'Patient escaped during transfer. Search ongoing.'"·to_string()~,
+                    conditions: [],
+                    effects: [
+                        InteractionEffect·GrantInsight { id: "treatment_records"·to_string(), amount: 25.0 },
+                        InteractionEffect·SetFlag("learned_escape"·to_string()),
+                    ],
+                },
+            ],
+            hidden_until: None,
+            contains_items: [],
+        })
+        ·element(SceneElement {
+            id: "integration_suite"·to_string(),
+            name: LayeredDescription {
+                grounded: "Integration Suite"·to_string(),
+                fractured: "Vance's Laboratory"·to_string()~,
+                shattered: "THE ALTAR OF UNMAKING"·to_string()‽,
+            },
+            description: LayeredDescription {
+                grounded: "A larger treatment room at the end of the hall. The door bears Dr. Vance's name. Inside, more sophisticated equipment than the other rooms."·to_string(),
+                fractured: "This room is different. Organized. Personal. Vance didn't just treat patients here - she lived here. Her presence soaks into the walls. She's still here, somehow."·to_string()~,
+                shattered: "HER MASTERWORK. Where she perfected the technique. Where she learned that you can't truly integrate a system - you can only CONSUME it. SHE CONSUMED SO MANY."·to_string()‽,
+            },
+            alter_observations: [
+                AlterObservation {
+                    alter_id: "paimon"·to_string(),
+                    text: "*This is where she made her choice. Where she became something else. The path forward splits here. We can learn what she learned - or reject it entirely.*"·to_string()~,
+                    grants_insight: true,
+                    triggers: [],
+                },
+            ]~,
+            interactions: [
+                Interaction {
+                    id: "enter_suite"·to_string(),
+                    verb: "enter"·to_string(),
+                    description: "The suite is a combination office and laboratory. Journals fill the shelves. A central chair, more throne than medical equipment, dominates the room. And standing in the corner, perfectly still, is a woman in a white coat. She turns. She smiles. 'I've been waiting for you to come back.'"·to_string()~,
+                    conditions: [],
+                    effects: [
+                        InteractionEffect·TriggerDialogue("vance_encounter"·to_string()),
+                        InteractionEffect·SetFlag("met_vance"·to_string()),
+                    ],
+                },
+            ],
+            hidden_until: None,
+            contains_items: [],
+        })
+        ·npc("dr_vance")
+        ·exit(Exit {
+            id: "to_lobby_west"·to_string(),
+            direction: Direction·East,
+            target_scene: "asylum_lobby"·to_string(),
+            description: LayeredDescription {
+                grounded: "The corridor leads back to the lobby."·to_string(),
+                fractured: "The path back seems to resist you."·to_string()~,
+                shattered: "YOU CANNOT LEAVE UNTIL YOU UNDERSTAND."·to_string()‽,
+            },
+            locked: false,
+            lock_condition: None,
+            alter_observations: []~,
+        })
+        ·alter_memory("abaddon", "I was born here. In the pain. In the rage against what they were doing to us. I am the scream they couldn't silence.")
+        ·ambiance(Ambiance {
+            background_sound: "machinery_hum"·to_string(),
+            music_track: Some("clinical_horror"·to_string())?,
+            layer_sounds: {
+                RealityLayer·Fractured => "electroshock_crackle",
+                RealityLayer·Shattered => "screaming_chorus",
+            }~,
+            weather_sounds: HashMap·new()~,
+            lighting: Lighting {
+                base_level: 0.4,
+                color: (0.9, 0.95, 1.0),  // Harsh clinical white
+                layer_modifiers: {
+                    RealityLayer·Shattered => LightingMod {
+                        level_delta: 0.3,  // Blinding
+                        color_shift: (0.1, 0.1, 0.0),
+                        flicker: true,
+                    },
+                }~,
+            },
+        })
+        ·build()
+}
+
+// ============================================================================
+// REGISTRATION
+// ============================================================================
+
+//! Register all asylum scenes
+fn register_asylum_scenes(manager: &mut SceneManager) {
+    manager·register_scene(create_asylum_exterior());
+    manager·register_scene(create_asylum_lobby());
+    manager·register_scene(create_asylum_east_wing());
+    manager·register_scene(create_asylum_west_wing());
+}

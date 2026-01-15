@@ -1,0 +1,24 @@
+// Test: Method implementation
+// Spec: 03-TYPES.md § 4.2 Implementations
+// Priority: P0
+//
+// Purpose:
+// Validates that methods can be implemented on structs.
+//
+// Expected behavior:
+// Should compile and print 84
+
+pub struct Counter {
+    value: !i32
+}
+
+impl Counter {
+    pub fn double(&self) -> !i32 {
+        self.value * 2
+    }
+}
+
+fn main() {
+    let c: !Counter = Counter { value: 42 };
+    println(c.double());
+}

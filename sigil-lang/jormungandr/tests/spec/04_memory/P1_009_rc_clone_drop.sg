@@ -1,0 +1,18 @@
+// Test: Rc reference counting with clone
+// Spec: 04-MEMORY.md § 4.2 Rc
+// Priority: P1 - Production Ready
+
+fn main() {
+    let rc1: Rc<i32> = Rc::new(42);
+
+    {
+        let rc2 = rc1.clone();
+        println(*rc2);
+
+        let rc3 = rc2.clone();
+        println(*rc3);
+    }
+
+    // After inner scope, rc1 still valid
+    println(*rc1);
+}

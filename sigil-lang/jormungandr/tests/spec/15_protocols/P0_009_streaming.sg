@@ -1,0 +1,15 @@
+// Test: gRPC streaming
+// Spec: 15-PROTOCOLS.md § 3.2 Streaming
+// Priority: P0 - Bootstrap Critical
+
+use protocol::grpc::streaming;
+
+async fn main() {
+    let client = StreamClient::new(channel);
+    let stream~ = client.server_stream(Request {})|await;
+    let count = 0;
+    stream~|for_each·flow{item =>
+        count = count + 1;
+    }
+    println(count);
+}

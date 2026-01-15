@@ -1,0 +1,1586 @@
+//! Lexer for the Sigil programming language.
+//!
+//! This is a hand-written lexer for bootstrapping - no external dependencies.
+//! Handles polysynthetic morphemes, evidentiality markers, and multi-base numerals.
+//!
+//! Self-hosted conversion: lexer.rs -> lexer.sg
+//! Original: 1355 lines of Rust (using logos crate)
+//! Status: Complete (hand-written for bootstrap)
+
+use crate::span::Span;
+use crate::token::Token;
+
+/// A lexer for Sigil source code.
+/// Produces a stream of tokens with source spans.
+pub struct Lexer {
+    /// The source code being lexed
+    source: !String,
+    /// Current byte position in the source
+    pos: !u64,
+    /// Start position of the current token
+    start: !u64,
+    /// Peeked token (for lookahead)
+    peeked: ?Token,
+    /// Peeked span
+    peeked_span: ?Span,
+}
+
+impl Lexer {
+    /// Create a new lexer for the given source code.
+    pub fn new(source: !String) -> !Self {
+        Self {
+            source,
+            pos: 0,
+            start: 0,
+            peeked: null,
+            peeked_span: null,
+        }
+    }
+
+    /// Get the next token and its span.
+    pub fn next_token(mut self) -> ?(Token, Span) {
+        // Return peeked token if available
+        // Use match instead of if != null to work around codegen issue
+        match self.peeked {
+            ?token => {
+                let span = self.peeked_span!;
+                self.peeked = null;
+                self.peeked_span = null;
+                return (token, span);
+            },
+            null => {},
+        }
+
+        self.skip_whitespace_and_comments();
+
+        if self.is_eof() {
+            return null;
+        }
+
+        self.start = self.pos;
+        let c = self.advance()!;
+
+        // Handle null character (unexpected EOF or invalid UTF-8)
+        if c == null {
+            return null;
+        }
+
+        let token = match c {
+            // Single-character tokens
+            '(' => Token::LParen,
+            ')' => Token::RParen,
+            '{' => Token::LBrace,
+            '}' => Token::RBrace,
+            '[' => Token::LBracket,
+            ']' => Token::RBracket,
+            ';' => Token::Semi,
+            ',' => Token::Comma,
+            '@' => Token::At,
+            '_' => self.lex_underscore_or_ident(),
+
+            // Operators that might be multi-character
+            '+' => self.lex_plus(),
+            '-' => self.lex_minus(),
+            '*' => self.lex_star(),
+            '/' => self.lex_slash(),
+            '%' => self.lex_percent(),
+            '=' => self.lex_eq(),
+            '!' => self.lex_bang(),
+            '?' => Token::Question,
+            '~' => Token::Tilde,
+            '◊' => Token::Lozenge,
+            '<' => self.lex_lt(),
+            '>' => self.lex_gt(),
+            '&' => self.lex_amp(),
+            '|' => self.lex_pipe(),
+            '^' => self.lex_caret(),
+            ':' => self.lex_colon(),
+            '.' => self.lex_dot(),
+            '#' => self.lex_hash(),
+
+            // String literals
+            '"' => self.lex_string(),
+            '\'' => self.lex_quote_or_char(),
+
+            // Numbers
+            '0'..='9' => self.lex_number(c),
+
+            // Identifiers and keywords
+            'a'..='z' | 'A'..='Z' => self.lex_ident_or_keyword(c),
+
+            // Handle null (EOF or invalid) - must be before wildcard
+            null => { return null; },
+
+            // Unicode morphemes and symbols
+            _ => self.lex_unicode(c),
+        };
+
+        let span = Span::new(self.start, self.pos);
+        (token, span)
+    }
+
+    /// Peek at the next token without consuming it.
+    pub fn peek(mut self) -> ?(Token, Span) {
+        match self.peeked {
+            null => {
+                match self.next_token() {
+                    ?(token, span) => {
+                        self.peeked = token;
+                        self.peeked_span = span;
+                    },
+                    null => return null,
+                }
+            },
+            _ => {},
+        }
+        // Return by value instead of reference for bootstrap compatibility
+        (self.peeked!, self.peeked_span!)
+    }
+
+    /// Check if peeked token indicates start of a closure (=>, comma, or colon).
+    pub fn peek_is_closure_indicator(mut self) -> !bool {
+        // Use match instead of if == null for bootstrap compatibility
+        match self.peeked {
+            null => {
+                match self.next_token() {
+                    ?(token, span) => {
+                        self.peeked = token;
+                        self.peeked_span = span;
+                    },
+                    null => return false,
+                }
+            },
+            _ => {},
+        }
+        match self.peeked {
+            ?Token::FatArrow => true,
+            ?Token::Comma => true,
+            // Don't treat : as closure indicator - it conflicts with struct init { field: value }
+            // Closures with typed params use => not | anyway
+            _ => false,
+        }
+    }
+
+    /// Check if peeked token is a macro delimiter (paren, bracket, brace).
+    pub fn peek_is_macro_delimiter(mut self) -> !bool {
+        // Use match instead of if == null for bootstrap compatibility
+        match self.peeked {
+            null => {
+                match self.next_token() {
+                    ?(token, span) => {
+                        self.peeked = token;
+                        self.peeked_span = span;
+                    },
+                    null => return false,
+                }
+            },
+            _ => {},
+        }
+        match self.peeked {
+            ?Token::LParen => true,
+            ?Token::LBracket => true,
+            ?Token::LBrace => true,
+            _ => false,
+        }
+    }
+
+    /// Get the current span (for error reporting).
+    pub fn span(self) -> !Span {
+        Span::new(self.start, self.pos)
+    }
+
+    // ========================================
+    // Helper Methods
+    // ========================================
+
+    /// Check if we've reached end of file.
+    fn is_eof(self) -> !bool {
+        self.pos >= self.source.len()
+    }
+
+    /// Get current character without advancing.
+    fn current(self) -> ?char {
+        if self.is_eof() {
+            null
+        } else {
+            self.source.char_at(self.pos)
+        }
+    }
+
+    /// Peek at the character after the current one.
+    fn peek_ahead(self) -> ?char {
+        if self.is_eof() {
+            return null;
+        }
+        // Skip current character
+        let curr_char = self.source.char_at(self.pos)?;
+        let next_pos = self.pos + curr_char.len_utf8();
+        if next_pos >= self.source.len() {
+            null
+        } else {
+            self.source.char_at(next_pos)
+        }
+    }
+
+    /// Advance and return the current character.
+    fn advance(mut self) -> ?char {
+        if self.is_eof() {
+            return null;
+        }
+        let c = self.source.char_at(self.pos)!;
+        self.pos += c.len_utf8();
+        c
+    }
+
+    /// Check if current char matches, and if so advance.
+    fn match_char(mut self, expected: !char) -> !bool {
+        match self.current() {
+            ?c => {
+                if c == expected {
+                    self.advance();
+                    true
+                } else {
+                    false
+                }
+            },
+            null => false,
+        }
+    }
+
+    /// Skip whitespace and comments.
+    fn skip_whitespace_and_comments(mut self) {
+        loop {
+            match self.current() {
+                // Whitespace
+                ' ' | '\t' | '\n' | '\r' => {
+                    self.advance();
+                }
+                // Line comment
+                '/' => {
+                    if self.peek_char(1) == '/' {
+                        self.skip_line_comment();
+                    } else {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+    }
+
+    /// Skip a line comment (// ...)
+    fn skip_line_comment(mut self) {
+        // Skip the //
+        self.advance();
+        self.advance();
+        // Skip until newline (use loop with break to avoid != comparison bug)
+        loop {
+            if self.is_eof() {
+                break;
+            }
+            let c = self.current();
+            if c == '\n' {
+                break;
+            }
+            self.advance();
+        }
+    }
+
+    /// Peek at a character at offset from current position.
+    fn peek_char(self, offset: !u64) -> ?char {
+        let mut pos = self.pos;
+        for _ in 0..offset {
+            if pos >= self.source.len() {
+                return null;
+            }
+            let c = self.source.char_at(pos)?;
+            pos += c.len_utf8();
+        }
+        if pos >= self.source.len() {
+            null
+        } else {
+            self.source.char_at(pos)
+        }
+    }
+
+    // ========================================
+    // Token Lexers
+    // ========================================
+
+    /// Lex + or += or ++
+    fn lex_plus(mut self) -> !Token {
+        if self.match_char('=') {
+            Token::PlusEq
+        } else if self.match_char('+') {
+            Token::PlusPlus
+        } else {
+            Token::Plus
+        }
+    }
+
+    /// Lex - or -= or ->
+    fn lex_minus(mut self) -> !Token {
+        if self.match_char('=') {
+            Token::MinusEq
+        } else if self.match_char('>') {
+            Token::Arrow
+        } else {
+            Token::Minus
+        }
+    }
+
+    /// Lex * or *= or **
+    fn lex_star(mut self) -> !Token {
+        if self.match_char('=') {
+            Token::StarEq
+        } else if self.match_char('*') {
+            Token::StarStar
+        } else {
+            Token::Star
+        }
+    }
+
+    /// Lex / or /= (comments handled in skip_whitespace)
+    fn lex_slash(mut self) -> !Token {
+        if self.match_char('=') {
+            Token::SlashEq
+        } else {
+            Token::Slash
+        }
+    }
+
+    /// Lex = or == or =>
+    fn lex_eq(mut self) -> !Token {
+        if self.match_char('=') {
+            Token::EqEq
+        } else if self.match_char('>') {
+            Token::FatArrow
+        } else {
+            Token::Eq
+        }
+    }
+
+    /// Lex ! or !=
+    fn lex_bang(mut self) -> !Token {
+        if self.match_char('=') {
+            Token::NotEq
+        } else {
+            Token::Bang
+        }
+    }
+
+    /// Lex < or <= or << or <<= or <-
+    fn lex_lt(mut self) -> !Token {
+        if self.match_char('=') {
+            Token::LtEq
+        } else if self.match_char('<') {
+            if self.match_char('=') {
+                Token::ShlEq
+            } else {
+                Token::Shl
+            }
+        } else if self.match_char('-') {
+            Token::LeftArrow
+        } else {
+            Token::Lt
+        }
+    }
+
+    /// Lex > or >= or >> or >>=
+    fn lex_gt(mut self) -> !Token {
+        if self.match_char('=') {
+            Token::GtEq
+        } else if self.match_char('>') {
+            if self.match_char('=') {
+                Token::ShrEq
+            } else {
+                Token::Shr
+            }
+        } else {
+            Token::Gt
+        }
+    }
+
+    /// Lex & or &&
+    fn lex_amp(mut self) -> !Token {
+        if self.match_char('&') {
+            Token::AndAnd
+        } else if self.match_char('=') {
+            Token::AmpEq
+        } else {
+            Token::Amp
+        }
+    }
+
+    /// Lex | or || or |=
+    fn lex_pipe(mut self) -> !Token {
+        if self.match_char('|') {
+            Token::OrOr
+        } else if self.match_char('=') {
+            Token::PipeEq
+        } else {
+            Token::Pipe
+        }
+    }
+
+    /// Lex ^ or ^=
+    fn lex_caret(mut self) -> !Token {
+        if self.match_char('=') {
+            Token::CaretEq
+        } else {
+            Token::Caret
+        }
+    }
+
+    /// Lex % or %=
+    fn lex_percent(mut self) -> !Token {
+        if self.match_char('=') {
+            Token::PercentEq
+        } else {
+            Token::Percent
+        }
+    }
+
+    /// Lex : or ::
+    fn lex_colon(mut self) -> !Token {
+        if self.match_char(':') {
+            Token::ColonColon
+        } else {
+            Token::Colon
+        }
+    }
+
+    /// Lex . or .. or ..=
+    fn lex_dot(mut self) -> !Token {
+        if self.match_char('.') {
+            if self.match_char('=') {
+                Token::DotDotEq
+            } else {
+                Token::DotDot
+            }
+        } else {
+            Token::Dot
+        }
+    }
+
+    /// Lex # or #!
+    fn lex_hash(mut self) -> !Token {
+        if self.match_char('!') {
+            Token::HashBang
+        } else {
+            Token::Hash
+        }
+    }
+
+    /// Lex _ as underscore or as identifier
+    fn lex_underscore_or_ident(mut self) -> !Token {
+        // Check if followed by alphanumeric (making it an identifier)
+        match self.current() {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {
+                self.lex_ident_rest()
+            }
+            _ => Token::Underscore,
+        }
+    }
+
+    /// Lex a string literal.
+    fn lex_string(mut self) -> !Token {
+        let mut value = String::new();
+
+        // Check for multi-line string (""")
+        if self.match_char('"') {
+            if self.match_char('"') {
+                // Multi-line string
+                return self.lex_multiline_string();
+            } else {
+                // Empty string
+                return Token::StringLit("".to_string());
+            }
+        }
+
+        // Regular string - use explicit loop for nullable char handling
+        loop {
+            if self.is_eof() {
+                break;
+            }
+            let curr = self.current();
+            // Check for closing quote - use explicit nullable check
+            match curr {
+                ?c => {
+                    if c == '"' {
+                        break;
+                    }
+                    self.advance();
+                    if c == '\\' {
+                        // Escape sequence
+                        value.push(self.lex_escape_sequence());
+                    } else {
+                        value.push(c);
+                    }
+                },
+                null => break,
+            }
+        }
+
+        // Consume closing quote
+        self.advance();
+
+        Token::StringLit(value)
+    }
+
+    /// Lex a multi-line string (""" ... """).
+    fn lex_multiline_string(mut self) -> !Token {
+        let mut value = String::new();
+
+        loop {
+            if self.is_eof() {
+                break;
+            }
+
+            // Check for closing """
+            if self.current() == '"' {
+                if self.peek_char(1) == '"' && self.peek_char(2) == '"' {
+                    self.advance();
+                    self.advance();
+                    self.advance();
+                    break;
+                }
+            }
+
+            let c = self.advance()!;
+            if c == '\\' {
+                value.push(self.lex_escape_sequence());
+            } else {
+                value.push(c);
+            }
+        }
+
+        Token::MultiLineStringLit(value)
+    }
+
+    /// Lex an escape sequence.
+    fn lex_escape_sequence(mut self) -> !char {
+        match self.advance() {
+            'n' => '\n',
+            't' => '\t',
+            'r' => '\r',
+            '\\' => '\\',
+            '"' => '"',
+            '\'' => '\'',
+            '0' => '\0',
+            'x' => self.lex_hex_escape(2),
+            'u' => self.lex_unicode_escape(),
+            c => c?, // Unknown escape, return as-is
+        }
+    }
+
+    /// Lex \xNN hex escape.
+    fn lex_hex_escape(mut self, digits: !u64) -> !char {
+        let mut value: u32 = 0;
+        for _ in 0..digits {
+            match self.current() {
+                '0'..='9' => {
+                    value = value * 16 + (self.advance()! as u32 - '0' as u32);
+                }
+                'a'..='f' => {
+                    value = value * 16 + (self.advance()! as u32 - 'a' as u32 + 10);
+                }
+                'A'..='F' => {
+                    value = value * 16 + (self.advance()! as u32 - 'A' as u32 + 10);
+                }
+                _ => break,
+            }
+        }
+        char::from_u32(value) ?? '?'
+    }
+
+    /// Lex \u{NNNN} unicode escape.
+    fn lex_unicode_escape(mut self) -> !char {
+        if !self.match_char('{') {
+            return '?';
+        }
+
+        let mut value: u32 = 0;
+        // Use loop with break instead of while != to avoid codegen bug
+        loop {
+            if self.is_eof() {
+                break;
+            }
+            match self.current() {
+                '}' => break,
+                '0'..='9' => {
+                    value = value * 16 + (self.advance()! as u32 - '0' as u32);
+                }
+                'a'..='f' => {
+                    value = value * 16 + (self.advance()! as u32 - 'a' as u32 + 10);
+                }
+                'A'..='F' => {
+                    value = value * 16 + (self.advance()! as u32 - 'A' as u32 + 10);
+                }
+                _ => break,
+            }
+        }
+
+        self.match_char('}');
+        char::from_u32(value) ?? '?'
+    }
+
+    /// Lex a quote (') which could be a char literal or lifetime marker.
+    fn lex_quote_or_char(mut self) -> !Token {
+        // Check what follows the opening quote
+        match self.current() {
+            // If followed by identifier start, check if it's a lifetime
+            'a'..='z' | 'A'..='Z' | '_' => {
+                // Peek one ahead: if next char after the letter is a closing quote,
+                // it's a char literal like 'a'; otherwise it's a lifetime
+                match self.peek_char(1) {
+                    '\'' => {
+                        // It's a char literal like 'a'
+                        self.lex_char()
+                    }
+                    _ => {
+                        // It's a lifetime like 'static or 'a
+                        self.lex_lifetime()
+                    }
+                }
+            }
+            // Escaped char is always a char literal
+            '\\' => self.lex_char(),
+            // Any other single char followed by ' is a char literal
+            _ => self.lex_char(),
+        }
+    }
+
+    /// Lex a lifetime identifier ('static, 'a, etc.)
+    fn lex_lifetime(mut self) -> !Token {
+        // Collect the lifetime name (we're positioned after the ')
+        let mut name = String::new();
+        while Lexer::is_alnum_or_underscore(self.current()) {
+            name.push(self.advance()!);
+        }
+        Token::Lifetime(name)
+    }
+
+    /// Lex a character literal.
+    fn lex_char(mut self) -> !Token {
+        let c = if self.current() == '\\' {
+            self.advance();
+            self.lex_escape_sequence()
+        } else {
+            self.advance()!
+        };
+
+        // Consume closing quote
+        self.match_char('\'');
+
+        Token::CharLit(c)
+    }
+
+    /// Helper to check if a char is an ASCII digit
+    fn is_digit(c: ?char) -> !bool {
+        match c {
+            '0'..='9' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check if a char is digit or underscore
+    fn is_digit_or_underscore(c: ?char) -> !bool {
+        match c {
+            '0'..='9' | '_' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check if char is hex digit
+    fn is_hex_digit(c: ?char) -> !bool {
+        match c {
+            '0'..='9' | 'a'..='f' | 'A'..='F' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check if char is hex digit or underscore
+    fn is_hex_or_underscore(c: ?char) -> !bool {
+        match c {
+            '0'..='9' | 'a'..='f' | 'A'..='F' | '_' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check if char is vigesimal digit (0-9, a-j)
+    fn is_vigesimal_or_underscore(c: ?char) -> !bool {
+        match c {
+            '0'..='9' | 'a'..='j' | 'A'..='J' | '_' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check if char is alphanumeric or underscore
+    fn is_alnum_or_underscore(c: ?char) -> !bool {
+        match c {
+            '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check if char is duodecimal digit (0-9, a-b)
+    fn is_duodecimal_or_underscore(c: ?char) -> !bool {
+        match c {
+            '0'..='9' | 'a'..='b' | 'A'..='B' | '_' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check if char is alphabetic (basic ASCII + common Unicode letters for bootstrap)
+    fn is_alpha(c: !char) -> !bool {
+        match c {
+            'a'..='z' | 'A'..='Z' => true,
+            // Greek letters used in Sigil morphemes
+            'α'..='ω' | 'Α'..='Ω' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check if char is alphanumeric
+    fn is_alphanumeric(c: ?char) -> !bool {
+        match c {
+            '0'..='9' | 'a'..='z' | 'A'..='Z' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check if char is alphanumeric or underscore (includes common Unicode)
+    fn is_unicode_alnum_or_underscore(c: ?char) -> !bool {
+        match c {
+            '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' => true,
+            // Greek letters
+            'α'..='ω' | 'Α'..='Ω' => true,
+            _ => false,
+        }
+    }
+
+    /// Lex a number (integer or float, various bases).
+    fn lex_number(mut self, first: !char) -> !Token {
+        // Check for base prefix
+        if first == '0' {
+            match self.current() {
+                'b' | 'B' => return self.lex_binary(),
+                'o' | 'O' => return self.lex_octal(),
+                'x' | 'X' => return self.lex_hex(),
+                'v' | 'V' => return self.lex_vigesimal(),
+                's' | 'S' => return self.lex_sexagesimal(),
+                'z' | 'Z' => return self.lex_duodecimal(),
+                _ => {}
+            }
+        }
+
+        // Decimal integer or float
+        let mut value = String::new();
+        value.push(first);
+
+        // Integer part - use loop to avoid is_ascii_digit() method call
+        loop {
+            if !Lexer::is_digit_or_underscore(self.current()) {
+                break;
+            }
+            let c = self.advance()!;
+            // Skip underscores in output
+            match c {
+                '_' => {},
+                _ => value.push(c),
+            }
+        }
+
+        // Check for float
+        if self.current() == '.' && Lexer::is_digit(self.peek_char(1)) {
+            value.push(self.advance()!); // '.'
+
+            // Fractional part
+            loop {
+                if !Lexer::is_digit_or_underscore(self.current()) {
+                    break;
+                }
+                let c = self.advance()!;
+                match c {
+                    '_' => {},
+                    _ => value.push(c),
+                }
+            }
+
+            // Exponent
+            if self.current() == 'e' || self.current() == 'E' {
+                value.push(self.advance()!);
+                if self.current() == '+' || self.current() == '-' {
+                    value.push(self.advance()!);
+                }
+                loop {
+                    if !Lexer::is_digit_or_underscore(self.current()) {
+                        break;
+                    }
+                    let c = self.advance()!;
+                    match c {
+                        '_' => {},
+                        _ => value.push(c),
+                    }
+                }
+            }
+
+            Token::FloatLit(value)
+        } else if self.current() == 'e' || self.current() == 'E' {
+            // Integer with exponent (e.g., 1e9) - also a float
+            value.push(self.advance()!);
+            if self.current() == '+' || self.current() == '-' {
+                value.push(self.advance()!);
+            }
+            loop {
+                if !Lexer::is_digit_or_underscore(self.current()) {
+                    break;
+                }
+                let c = self.advance()!;
+                match c {
+                    '_' => {},
+                    _ => value.push(c),
+                }
+            }
+            Token::FloatLit(value)
+        } else {
+            // Check for integer type suffix: u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize
+            if self.current() == 'u' || self.current() == 'i' {
+                let suffix_start = self.current();
+                self.advance();
+                // Consume the rest of the suffix
+                while Lexer::is_alphanumeric(self.current()) {
+                    self.advance();
+                }
+                // We don't need to track the suffix for parsing, just consume it
+            }
+            Token::IntLit(value)
+        }
+    }
+
+    /// Lex binary literal (0b...).
+    fn lex_binary(mut self) -> !Token {
+        self.advance(); // Skip 'b'
+        let mut value = "0b".to_string();
+
+        while self.current() == '0' || self.current() == '1' || self.current() == '_' {
+            let c = self.advance()!;
+            value.push(c);
+        }
+
+        Token::BinaryLit(value)
+    }
+
+    /// Lex octal literal (0o...).
+    fn lex_octal(mut self) -> !Token {
+        self.advance(); // Skip 'o'
+        let mut value = "0o".to_string();
+
+        while self.current() >= '0' && self.current() <= '7' || self.current() == '_' {
+            let c = self.advance()!;
+            value.push(c);
+        }
+
+        Token::OctalLit(value)
+    }
+
+    /// Lex hexadecimal literal (0x...).
+    fn lex_hex(mut self) -> !Token {
+        self.advance(); // Skip 'x'
+        let mut value = "0x".to_string();
+
+        // Use loop with helper to avoid method call issues
+        loop {
+            if !Lexer::is_hex_or_underscore(self.current()) {
+                break;
+            }
+            let c = self.advance()!;
+            value.push(c);
+        }
+
+        Token::HexLit(value)
+    }
+
+    /// Lex vigesimal literal (0v..., base 20).
+    fn lex_vigesimal(mut self) -> !Token {
+        self.advance(); // Skip 'v'
+        let mut value = "0v".to_string();
+
+        // Use loop with helper to avoid method call issues
+        loop {
+            if !Lexer::is_vigesimal_or_underscore(self.current()) {
+                break;
+            }
+            let c = self.advance()!;
+            value.push(c);
+        }
+
+        Token::VigesimalLit(value)
+    }
+
+    /// Lex sexagesimal literal (0s..., base 60).
+    fn lex_sexagesimal(mut self) -> !Token {
+        self.advance(); // Skip 's'
+        let mut value = "0s".to_string();
+
+        // Use loop with helper to avoid method call issues
+        loop {
+            if !Lexer::is_alnum_or_underscore(self.current()) {
+                break;
+            }
+            let c = self.advance()!;
+            value.push(c);
+        }
+
+        Token::SexagesimalLit(value)
+    }
+
+    /// Lex duodecimal literal (0z..., base 12).
+    fn lex_duodecimal(mut self) -> !Token {
+        self.advance(); // Skip 'z'
+        let mut value = "0z".to_string();
+
+        // Use loop with helper to avoid method call issues
+        loop {
+            if !Lexer::is_duodecimal_or_underscore(self.current()) {
+                break;
+            }
+            let c = self.advance()!;
+            value.push(c);
+        }
+
+        Token::DuodecimalLit(value)
+    }
+
+    /// Lex an identifier or keyword.
+    fn lex_ident_or_keyword(mut self, first: !char) -> !Token {
+        // Check for raw string literal (r#"..."# or r"...")
+        if first == 'r' && (self.current() == '#' || self.current() == '"') {
+            return self.lex_raw_string();
+        }
+
+        // Check for byte string literal (b"...")
+        if first == 'b' && self.current() == '"' {
+            return self.lex_byte_string();
+        }
+
+        // Check for byte literal (b'...')
+        if first == 'b' && self.current() == '\'' {
+            return self.lex_byte_literal();
+        }
+
+        let mut name = String::new();
+        name.push(first);
+
+        // Continue with alphanumeric and underscore
+        // Use loop with helper to avoid method call issues
+        loop {
+            if !Lexer::is_alnum_or_underscore(self.current()) {
+                break;
+            }
+            name.push(self.advance()!);
+        }
+
+        // Check for prime suffix: x', y', S' (mathematical notation)
+        // Only if followed by non-alphanumeric (to not confuse with char literals)
+        if self.current() == '\'' {
+            let next = self.peek_ahead();
+            // Prime if followed by non-alphabetic (like comma, bracket, space)
+            if !Lexer::is_alnum_or_underscore(next) {
+                name.push(self.advance()!);
+            }
+        }
+
+        // Check for keywords
+        self.keyword_or_ident(name)
+    }
+
+    /// Lex a raw string literal (r"..." or r#"..."#).
+    fn lex_raw_string(mut self) -> !Token {
+        // Count the number of # characters
+        let mut hash_count = 0;
+        while self.current() == '#' {
+            self.advance();
+            hash_count = hash_count + 1;
+        }
+
+        // Expect opening quote - use match to avoid != codegen bug
+        match self.current() {
+            '"' => {},
+            _ => {
+                // Not a valid raw string, return as identifier 'r' followed by hashes
+                // This shouldn't normally happen in valid Sigil code
+                return Token::Ident("r".to_string());
+            }
+        }
+        self.advance(); // consume opening quote
+
+        let mut value = String::new();
+
+        // Read until we find closing quote followed by same number of #
+        loop {
+            if self.is_eof() {
+                break;
+            }
+
+            let c = self.advance()!;
+            if c == '"' {
+                // Check for closing # sequence
+                let mut closing_hashes = 0;
+                while closing_hashes < hash_count && self.current() == '#' {
+                    self.advance();
+                    closing_hashes = closing_hashes + 1;
+                }
+                if closing_hashes == hash_count {
+                    // Found the closing sequence
+                    break;
+                } else {
+                    // Not the closing sequence, add the quote and hashes to value
+                    value.push('"');
+                    let mut i = 0;
+                    while i < closing_hashes {
+                        value.push('#');
+                        i = i + 1;
+                    }
+                }
+            } else {
+                value.push(c);
+            }
+        }
+
+        Token::RawStringLit(value)
+    }
+
+    /// Lex a byte string literal (b"...").
+    fn lex_byte_string(mut self) -> !Token {
+        // Consume the opening quote
+        self.advance();  // consume "
+
+        let mut bytes: ![u8] = [];
+
+        loop {
+            match self.current() {
+                '"' => {
+                    self.advance();
+                    break;
+                }
+                '\\' => {
+                    self.advance();
+                    let escaped = self.lex_escape_sequence();
+                    bytes.push(escaped as u8);
+                }
+                null => break,  // EOF
+                c => {
+                    bytes.push(c! as u8);
+                    self.advance();
+                }
+            }
+        }
+
+        Token::ByteStringLit(bytes)
+    }
+
+    /// Lex a byte literal (b'a').
+    fn lex_byte_literal(mut self) -> !Token {
+        self.advance();  // consume '
+
+        let byte = if self.current() == '\\' {
+            self.advance();
+            self.lex_escape_sequence() as u8
+        } else {
+            let c = self.advance()!;
+            c as u8
+        };
+
+        self.match_char('\'');
+
+        Token::ByteLit(byte)
+    }
+
+    /// Continue lexing identifier after initial character.
+    fn lex_ident_rest(mut self) -> !Token {
+        let mut name = "_".to_string();
+
+        // Use loop with helper to avoid method call issues
+        loop {
+            if !Lexer::is_alnum_or_underscore(self.current()) {
+                break;
+            }
+            name.push(self.advance()!);
+        }
+
+        self.keyword_or_ident(name)
+    }
+
+    /// Check if name is a keyword, otherwise return as identifier.
+    fn keyword_or_ident(self, name: !String) -> !Token {
+        match name.as_str() {
+            // Definition keywords
+            "fn" => Token::Fn,
+            "async" => Token::Async,
+            "let" => Token::Let,
+            "mut" => Token::Mut,
+            "const" => Token::Const,
+            "type" => Token::Type,
+            "struct" => Token::Struct,
+            "enum" => Token::Enum,
+            "trait" => Token::Trait,
+            "impl" => Token::Impl,
+            "mod" => Token::Mod,
+            "scroll" => Token::Mod,      // Sigil-native: scroll = mod (subdivision of a tome)
+            "use" => Token::Use,
+            "invoke" => Token::Use,      // Sigil-native: invoke = use (bring symbols into scope)
+            "pub" => Token::Pub,
+            "actor" => Token::Actor,
+            "saga" => Token::Saga,
+            // "scope" unreserved - not used by parser, field names need it
+            "rune" => Token::Rune,
+
+            // Control flow
+            "if" => Token::If,
+            "else" => Token::Else,
+            "match" => Token::Match,
+            "loop" => Token::Loop,
+            "while" => Token::While,
+            "for" => Token::For,
+            "in" => Token::In,
+            "break" => Token::Break,
+            "continue" => Token::Continue,
+            "return" => Token::Return,
+            "yield" => Token::Yield,
+            "await" => Token::Await,
+
+            // Other keywords
+            "self" => Token::SelfLower,
+            "Self" => Token::SelfUpper,
+            "super" => Token::Super,
+            "crate" => Token::Crate,
+            "where" => Token::Where,
+            "as" => Token::As,
+            "dyn" => Token::Dyn,
+            "move" => Token::Move,
+            "ref" => Token::Ref,
+            "static" => Token::Static,
+            "unsafe" => Token::Unsafe,
+            "extern" => Token::Extern,
+            "asm" => Token::Asm,
+            "volatile" => Token::Volatile,
+            "naked" => Token::Naked,
+            "packed" => Token::Packed,
+            "simd" => Token::Simd,
+            "atomic" => Token::Atomic,
+            "derive" => Token::Derive,
+            "on" => Token::On,
+
+            // Literals
+            "true" => Token::True,
+            "false" => Token::False,
+            "null" => Token::Null,
+
+            // Parallel/concurrency keywords
+            "parallel" => Token::Parallel,
+            "gpu" => Token::Gpu,
+
+            // Protocol keywords
+            // Note: "stream" removed - use ≋ (ProtoStream) morpheme instead
+            "send" => Token::Send,
+            "recv" => Token::Recv,
+            // "connect" unreserved - method/field names use it
+            "close" => Token::Close,
+            "timeout" => Token::Timeout,
+            "retry" => Token::Retry,
+            "header" => Token::Header,
+            "body" => Token::Body,
+            "http" => Token::Http,
+            "https" => Token::Https,
+            "ws" => Token::Ws,
+            "wss" => Token::Wss,
+            "grpc" => Token::Grpc,
+            "kafka" => Token::Kafka,
+            "amqp" => Token::Amqp,
+            "graphql" => Token::GraphQL,
+
+            // Identifier
+            _ => Token::Ident(name),
+        }
+    }
+
+    /// Lex Unicode symbols (morphemes, operators, etc.).
+    fn lex_unicode(mut self, c: !char) -> !Token {
+        match c {
+            // Morphemes (Greek letters)
+            'τ' | 'Τ' => Token::Tau,
+            'φ' | 'Φ' => Token::Phi,
+            'σ' | 'Σ' => Token::Sigma,
+            'ρ' | 'Ρ' => Token::Rho,
+            'λ' | 'Λ' => Token::Lambda,
+            'Π' => Token::Pi,
+            'δ' | 'Δ' => Token::Delta,
+            'ε' => Token::Epsilon,
+            'ω' | 'Ω' => Token::Omega,
+            'α' => Token::Alpha,
+            // Note: Using Combiner to avoid codegen bug with variant names containing 'Z'
+            'ζ' => Token::Combiner,
+            'μ' | 'Μ' => Token::Mu,
+            'χ' | 'Χ' => Token::Chi,
+            'ν' | 'Ν' => Token::Nu,
+            'ξ' | 'Ξ' => Token::Xi,
+
+            // Special symbols
+            '⌛' => Token::Hourglass,
+            '∥' => Token::Parallel,
+            '⊛' => Token::Gpu,
+
+            // Quantifiers
+            '∀' => Token::ForAll,
+            '∃' => Token::Exists,
+            '∈' => Token::ElementOf,
+            '∉' => Token::NotElementOf,
+
+            // Set operations
+            '∪' => Token::Union,
+            '∩' => Token::Intersection,
+            '∖' => Token::SetMinus,
+            '⊂' => Token::Subset,
+            '⊆' => Token::SubsetEq,
+            '⊃' => Token::Superset,
+            '⊇' => Token::SupersetEq,
+
+            // Logic operators
+            '∧' => Token::LogicAnd,
+            '∨' => Token::LogicOr,
+            '¬' => Token::LogicNot,
+            '⊻' => Token::LogicXor,
+            '⊤' => Token::Top,
+            '⊥' => Token::Bottom,
+
+            // Bitwise (Unicode)
+            '⋏' => Token::BitwiseAndSymbol,
+            '⋎' => Token::BitwiseOrSymbol,
+
+            // Type theory
+            '∷' => Token::TypeAnnotation,
+
+            // Analysis/Calculus
+            '∫' => Token::Integral,
+            '∂' => Token::Partial,
+            '√' => self.lex_sqrt_or_ident('√'),
+            '∛' => self.lex_sqrt_or_ident('∛'),
+            '∇' => Token::Nabla,
+
+            // APL-inspired
+            '⍋' => Token::GradeUp,
+            '⍒' => Token::GradeDown,
+            '⌽' => Token::Rotate,
+            '↻' => Token::CycleArrow,
+            '⌺' => Token::QuadDiamond,
+            '⊞' => Token::SquaredPlus,
+            '⍳' => Token::Iota,
+
+            // Category theory
+            '∘' => Token::Compose,
+            '⊗' => Token::Tensor,
+            '⊕' => Token::DirectSum,
+
+            // Data operations
+            '⋈' => Token::Bowtie,
+            '⋳' => Token::ElementSmallVerticalBar,
+            '⊔' => Token::SquareCup,
+            '⊓' => Token::SquareCap,
+
+            // Evidentiality
+            '‽' => Token::Interrobang,
+
+            // Affective markers
+            '⊖' => Token::AffectNegative,
+            '⊜' => Token::AffectNeutral,
+            '⸮' => Token::IronyMark,
+            '↑' => Token::IntensityUp,
+            '↓' => Token::IntensityDown,
+            '⇈' => Token::IntensityMax,
+            '♔' => Token::FormalRegister,
+            '♟' => Token::InformalRegister,
+            '☺' => Token::EmotionJoy,
+            '☹' => Token::EmotionSadness,
+            '⚡' => Token::EmotionAnger,
+            '❄' => Token::EmotionFear,
+            '✦' => Token::EmotionSurprise,
+            '♡' => Token::EmotionLove,
+            '◉' => Token::ConfidenceHigh,
+            '◎' => Token::ConfidenceMedium,
+            '○' => Token::ConfidenceLow,
+
+            // Special symbols
+            '∅' => Token::Empty,
+            '◯' => Token::Circle,
+            '∞' => Token::Infinity,
+
+            // Protocol operations
+            '⇒' => Token::ProtoSend,
+            '⇐' => Token::ProtoRecv,
+            '≋' => Token::ProtoStream,
+            '⊸' => Token::ProtoConnect,
+            '⏱' => Token::ProtoTimeout,
+
+            // Middle dot (incorporation)
+            '·' => self.lex_middle_dot(),
+
+            // Unknown - try as identifier
+            _ => {
+                // Use helper instead of method call for bootstrap compatibility
+                if Lexer::is_alpha(c) {
+                    self.lex_unicode_ident(c)
+                } else {
+                    // Skip unknown character
+                    Token::Ident(c.to_string())
+                }
+            }
+        }
+    }
+
+    /// Lex middle dot or aspect morpheme.
+    fn lex_middle_dot(mut self) -> !Token {
+        // Check for aspect markers: ·ing, ·ed, ·able, ·ive
+        let start = self.pos;
+
+        if self.match_str("ing") {
+            Token::AspectProgressive
+        } else if self.match_str("ed") {
+            Token::AspectPerfective
+        } else if self.match_str("able") {
+            Token::AspectPotential
+        } else if self.match_str("ive") {
+            Token::AspectResultative
+        } else {
+            Token::MiddleDot
+        }
+    }
+
+    /// Check if the next characters match a string.
+    fn match_str(mut self, s: !&str) -> !bool {
+        let start = self.pos;
+        for expected in s.chars() {
+            // Use == with negated result to avoid != codegen bug
+            if self.current() == expected {
+                self.advance();
+            } else {
+                self.pos = start;
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Lex a Unicode identifier.
+    fn lex_unicode_ident(mut self, first: !char) -> !Token {
+        let mut name = String::new();
+        name.push(first);
+
+        // Use loop with helper to avoid method call issues
+        loop {
+            if !Lexer::is_unicode_alnum_or_underscore(self.current()) {
+                break;
+            }
+            name.push(self.advance()!);
+        }
+
+        Token::Ident(name)
+    }
+
+    /// Lex sqrt symbol (√ or ∛) - if followed by digits, combine into identifier (e.g., √2)
+    fn lex_sqrt_or_ident(mut self, root_char: !char) -> !Token {
+        // Check if followed by a digit
+        match Lexer::is_digit(self.current()) {
+            true => {
+                // Combine root symbol with following digits to form identifier like √2
+                return self.lex_sqrt_with_digits(root_char);
+            }
+            false => {}
+        }
+        // Just the root symbol as operator
+        match root_char {
+            '√' => Token::Sqrt,
+            '∛' => Token::Cbrt,
+            _ => Token::Ident(root_char.to_string()),
+        }
+    }
+
+    /// Helper: lex √ followed by digits into identifier
+    fn lex_sqrt_with_digits(mut self, root_char: !char) -> !Token {
+        let mut name = String::new();
+        name.push(root_char);
+        // Use loop with helper to avoid method call issues (matching lex_unicode_ident pattern)
+        loop {
+            if !Lexer::is_digit(self.current()) {
+                break;
+            }
+            name.push(self.advance()!);
+        }
+        Token::Ident(name)
+    }
+}
+
+// ========================================
+// Character Classification Extensions
+// ========================================
+
+/// Extension trait for character classification.
+trait CharExt {
+    /// Check if character is a vigesimal digit (0-9, a-j).
+    fn is_vigesimal_digit(self) -> !bool;
+
+    /// Check if character is a duodecimal digit (0-9, a-b).
+    fn is_duodecimal_digit(self) -> !bool;
+}
+
+impl CharExt for char {
+    fn is_vigesimal_digit(self) -> !bool {
+        match self {
+            '0'..='9' | 'a'..='j' | 'A'..='J' => true,
+            _ => false,
+        }
+    }
+
+    fn is_duodecimal_digit(self) -> !bool {
+        match self {
+            '0'..='9' | 'a'..='b' | 'A'..='B' => true,
+            _ => false,
+        }
+    }
+}
+
+impl CharExt for ?char {
+    fn is_vigesimal_digit(self) -> !bool {
+        match self {
+            c => c.is_vigesimal_digit(),
+            null => false,
+        }
+    }
+
+    fn is_duodecimal_digit(self) -> !bool {
+        match self {
+            c => c.is_duodecimal_digit(),
+            null => false,
+        }
+    }
+}
+
+// ========================================
+// Tests
+// ========================================
+
+#[test]
+fn test_lexer_basic_tokens() {
+    let mut lexer = Lexer::new("fn main() { }".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token::Fn);
+    assert_eq!(lexer.next_token()?.0, Token::Ident("main".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::LParen);
+    assert_eq!(lexer.next_token()?.0, Token::RParen);
+    assert_eq!(lexer.next_token()?.0, Token::LBrace);
+    assert_eq!(lexer.next_token()?.0, Token::RBrace);
+    assert_eq!(lexer.next_token(), null);
+}
+
+#[test]
+fn test_lexer_morphemes() {
+    let mut lexer = Lexer::new("τ φ σ ρ".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token::Tau);
+    assert_eq!(lexer.next_token()?.0, Token::Phi);
+    assert_eq!(lexer.next_token()?.0, Token::Sigma);
+    assert_eq!(lexer.next_token()?.0, Token::Rho);
+}
+
+#[test]
+fn test_lexer_numbers() {
+    let mut lexer = Lexer::new("42 0b1010 0xDEAD 3.14".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token::IntLit("42".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::BinaryLit("0b1010".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::HexLit("0xDEAD".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::FloatLit("3.14".to_string()));
+}
+
+#[test]
+fn test_lexer_strings() {
+    let mut lexer = Lexer::new(r#""hello" "world\n""#.to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token::StringLit("hello".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::StringLit("world\n".to_string()));
+}
+
+#[test]
+fn test_lexer_operators() {
+    let mut lexer = Lexer::new("+ += ++ -> => == !=".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token::Plus);
+    assert_eq!(lexer.next_token()?.0, Token::PlusEq);
+    assert_eq!(lexer.next_token()?.0, Token::PlusPlus);
+    assert_eq!(lexer.next_token()?.0, Token::Arrow);
+    assert_eq!(lexer.next_token()?.0, Token::FatArrow);
+    assert_eq!(lexer.next_token()?.0, Token::EqEq);
+    assert_eq!(lexer.next_token()?.0, Token::NotEq);
+}
+
+#[test]
+fn test_lexer_evidentiality() {
+    let mut lexer = Lexer::new("value! uncertain? reported~ paradox‽".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token::Ident("value".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::Bang);
+    assert_eq!(lexer.next_token()?.0, Token::Ident("uncertain".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::Question);
+    assert_eq!(lexer.next_token()?.0, Token::Ident("reported".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::Tilde);
+    assert_eq!(lexer.next_token()?.0, Token::Ident("paradox".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::Interrobang);
+}
+
+#[test]
+fn test_lexer_incorporation() {
+    let mut lexer = Lexer::new("file·open·read".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token::Ident("file".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::MiddleDot);
+    assert_eq!(lexer.next_token()?.0, Token::Ident("open".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::MiddleDot);
+    assert_eq!(lexer.next_token()?.0, Token::Ident("read".to_string()));
+}
+
+#[test]
+fn test_lexer_pipe_chain() {
+    let mut lexer = Lexer::new("data|τ{f}|φ{p}".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token::Ident("data".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::Pipe);
+    assert_eq!(lexer.next_token()?.0, Token::Tau);
+    assert_eq!(lexer.next_token()?.0, Token::LBrace);
+    assert_eq!(lexer.next_token()?.0, Token::Ident("f".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::RBrace);
+    assert_eq!(lexer.next_token()?.0, Token::Pipe);
+    assert_eq!(lexer.next_token()?.0, Token::Phi);
+}
+
+#[test]
+fn test_lexer_aspects() {
+    let mut lexer = Lexer::new("process·ing complete·ed parse·able result·ive".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token::Ident("process".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::AspectProgressive);
+    assert_eq!(lexer.next_token()?.0, Token::Ident("complete".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::AspectPerfective);
+    assert_eq!(lexer.next_token()?.0, Token::Ident("parse".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::AspectPotential);
+    assert_eq!(lexer.next_token()?.0, Token::Ident("result".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::AspectResultative);
+}
+
+#[test]
+fn test_lexer_comments() {
+    let mut lexer = Lexer::new("a // comment\nb".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token::Ident("a".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token::Ident("b".to_string()));
+}

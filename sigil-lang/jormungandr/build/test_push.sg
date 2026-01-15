@@ -1,0 +1,5 @@
+fn test_push() {
+    let mut name: String = "hello".to_string();
+    let c: char = 'x';
+    name.push(c);
+}

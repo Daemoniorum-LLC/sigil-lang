@@ -1,0 +1,18 @@
+// Test: Generic struct basic usage
+// Spec: 03-TYPES.md § 5.1 Generic Types
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate generic structs work correctly.
+//
+// Expected behavior:
+// Should print 42
+
+pub struct Box<T> {
+    value: T
+}
+
+fn main() {
+    let b: !Box<!i32> = Box { value: 42 };
+    println(b.value);
+}

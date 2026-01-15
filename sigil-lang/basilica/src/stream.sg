@@ -1,0 +1,554 @@
+//! Server-Sent Events (SSE) Streaming Response
+//!
+//! Provides real-time streaming of events to clients with evidence metadata.
+//! Each event carries its own evidence level and confidence, enabling
+//! evidentiality-native real-time updates.
+//!
+//! # Example
+//!
+//! ```sigil
+//! use basilica::prelude::*;
+//! use basilica::stream::{SseStream, SseEvent};
+//!
+//! #[route(GET, "/stream")]
+//! fn wellness_stream(ctx: Context) -> SseStream {
+//!     SseStream::new()
+//!         .with_event(SseEvent::new("wellness:snapshot")
+//!             .data(json!({ "energy": 0.8 }))
+//!             .evidence(EvidenceLevel::Known, 0.95))
+//!         .on_connect(|client_id| {
+//!             // Handle new connection
+//!         })
+//! }
+//! ```
+
+use shared::{Timestamp, Duration, Confidence};
+use crate::evidence::{EvidenceLevel, HttpEvidence, Evidenced};
+use crate::response::{StatusCode, Headers};
+
+// ============================================================================
+// SSE Event
+// ============================================================================
+
+/// A single Server-Sent Event with evidence metadata
+#[derive(Clone, Debug)]
+pub struct SseEvent {
+    /// Event type (maps to EventSource event type)
+    pub event_type: String,
+
+    /// Event data (typically JSON)
+    pub data: String,
+
+    /// Unique event ID for reconnection
+    pub id: Option<String>,
+
+    /// Retry interval suggestion (ms)
+    pub retry: Option<u32>,
+
+    /// Evidence level for this event
+    pub evidence_level: EvidenceLevel,
+
+    /// Confidence in the event data
+    pub confidence: Confidence,
+
+    /// Source of the event data
+    pub source: String,
+
+    /// Timestamp when event was created
+    pub timestamp: Timestamp,
+
+    /// Correlation ID for tracing
+    pub correlation_id: Option<String>,
+
+    /// Instance ID (for multi-tenant systems)
+    pub instance_id: Option<String>,
+}
+
+impl SseEvent {
+    /// Create a new SSE event with a type
+    pub fn new(event_type: &str) -> Self {
+        Self {
+            event_type: event_type.to_string(),
+            data: String::new(),
+            id: None,
+            retry: None,
+            evidence_level: EvidenceLevel::Known,
+            confidence: Confidence::full(),
+            source: "server".to_string(),
+            timestamp: Timestamp::now(),
+            correlation_id: None,
+            instance_id: None,
+        }
+    }
+
+    /// Create a heartbeat/ping event
+    pub fn heartbeat() -> Self {
+        Self::new("heartbeat").data("")
+    }
+
+    /// Create a connection event
+    pub fn connected(client_id: &str) -> Self {
+        Self::new("connection")
+            .data(&format!(r#"{{"status":"connected","clientId":"{}"}}"#, client_id))
+    }
+
+    /// Set the event data (typically JSON)
+    pub fn data(mut self, data: &str) -> Self {
+        self.data = data.to_string();
+        self
+    }
+
+    /// Set event data from a serializable value
+    pub fn json<T: serde::Serialize>(mut self, value: &T) -> Self {
+        self.data = serde_json::to_string(value).unwrap_or_default();
+        self
+    }
+
+    /// Set event ID for reconnection
+    pub fn id(mut self, id: &str) -> Self {
+        self.id = Some(id.to_string());
+        self
+    }
+
+    /// Set retry interval (ms)
+    pub fn retry(mut self, retry_ms: u32) -> Self {
+        self.retry = Some(retry_ms);
+        self
+    }
+
+    /// Set evidence level and confidence
+    pub fn evidence(mut self, level: EvidenceLevel, confidence: f64) -> Self {
+        self.evidence_level = level;
+        self.confidence = Confidence::new(confidence);
+        self
+    }
+
+    /// Set as known/verified data
+    pub fn known(mut self) -> Self {
+        self.evidence_level = EvidenceLevel::Known;
+        self.confidence = Confidence::full();
+        self
+    }
+
+    /// Set as inferred/AI-generated data
+    pub fn inferred(mut self, confidence: f64) -> Self {
+        self.evidence_level = EvidenceLevel::Uncertain;
+        self.confidence = Confidence::new(confidence);
+        self
+    }
+
+    /// Set source description
+    pub fn source(mut self, source: &str) -> Self {
+        self.source = source.to_string();
+        self
+    }
+
+    /// Set correlation ID for tracing
+    pub fn correlation(mut self, id: &str) -> Self {
+        self.correlation_id = Some(id.to_string());
+        self
+    }
+
+    /// Set instance ID for multi-tenant
+    pub fn instance(mut self, id: &str) -> Self {
+        self.instance_id = Some(id.to_string());
+        self
+    }
+
+    /// Format as SSE wire format
+    ///
+    /// Format:
+    /// ```text
+    /// event: <type>
+    /// id: <id>
+    /// retry: <ms>
+    /// data: <json with evidence>
+    ///
+    /// ```
+    pub fn to_wire_format(&self) -> String {
+        let mut output = String::new();
+
+        // Event type
+        output.push_str(&format!("event: {}\n", self.event_type));
+
+        // Optional ID
+        if let Some(ref id) = self.id {
+            output.push_str(&format!("id: {}\n", id));
+        }
+
+        // Optional retry
+        if let Some(retry) = self.retry {
+            output.push_str(&format!("retry: {}\n", retry));
+        }
+
+        // Data with embedded evidence
+        let data_with_evidence = self.format_data_with_evidence();
+        for line in data_with_evidence.lines() {
+            output.push_str(&format!("data: {}\n", line));
+        }
+
+        // End with blank line
+        output.push('\n');
+
+        output
+    }
+
+    /// Format data with evidence metadata embedded
+    fn format_data_with_evidence(&self) -> String {
+        // Wrap the data in an envelope with evidence
+        format!(
+            r#"{{"type":"{}","data":{},"evidence":{{"level":"{}","confidence":{},"source":"{}"}},"timestamp":"{}"{}{}}}"#,
+            self.event_type,
+            if self.data.is_empty() { "null" } else { &self.data },
+            self.evidence_level.symbol(),
+            self.confidence.value(),
+            self.source,
+            self.timestamp.to_iso8601(),
+            self.correlation_id.as_ref()
+                .map(|id| format!(r#","correlationId":"{}""#, id))
+                .unwrap_or_default(),
+            self.instance_id.as_ref()
+                .map(|id| format!(r#","instanceId":"{}""#, id))
+                .unwrap_or_default(),
+        )
+    }
+}
+
+// ============================================================================
+// SSE Event Types
+// ============================================================================
+
+/// Standard event types for Sanctum real-time updates
+pub mod event_types {
+    // Wellness events
+    pub const WELLNESS_SNAPSHOT: &str = "wellness:snapshot";
+    pub const WELLNESS_CHECKIN: &str = "wellness:checkin";
+
+    // Fronting events
+    pub const FRONTING_CHANGE: &str = "fronting:change";
+    pub const INSTANCE_UPDATED: &str = "instance:updated";
+
+    // Brain dump events
+    pub const BRAINDUMP_CREATED: &str = "braindump:created";
+    pub const BRAINDUMP_PROCESSED: &str = "braindump:processed";
+
+    // Task events
+    pub const TASK_CREATED: &str = "task:created";
+    pub const TASK_COMPLETED: &str = "task:completed";
+
+    // AI events
+    pub const SUGGESTION_NEW: &str = "suggestion:new";
+    pub const PATTERN_DETECTED: &str = "pattern:detected";
+    pub const CONCERN_RAISED: &str = "concern:raised";
+
+    // Memory events
+    pub const MEMORY_RECALLED: &str = "memory:recalled";
+
+    // System events
+    pub const CONNECTION: &str = "connection";
+    pub const HEARTBEAT: &str = "heartbeat";
+}
+
+// ============================================================================
+// SSE Stream
+// ============================================================================
+
+/// A streaming SSE response
+///
+/// Provides a channel for sending events to connected clients with
+/// automatic heartbeat and reconnection support.
+pub struct SseStream {
+    /// Response headers
+    headers: Headers,
+
+    /// Event buffer for initial events
+    initial_events: Vec<SseEvent>,
+
+    /// Heartbeat interval
+    heartbeat_interval: Duration,
+
+    /// Retry interval suggestion (ms)
+    retry_ms: u32,
+
+    /// Instance filter (only receive events for this instance)
+    instance_filter: Option<String>,
+
+    /// Event type filter (only receive these event types)
+    event_filter: Option<Vec<String>>,
+}
+
+impl SseStream {
+    /// Create a new SSE stream
+    pub fn new() -> Self {
+        Self {
+            headers: Headers::new(),
+            initial_events: vec![],
+            heartbeat_interval: Duration::from_secs(30),
+            retry_ms: 3000,
+            instance_filter: None,
+            event_filter: None,
+        }
+    }
+
+    /// Set heartbeat interval
+    pub fn heartbeat_interval(mut self, interval: Duration) -> Self {
+        self.heartbeat_interval = interval;
+        self
+    }
+
+    /// Set retry interval (ms)
+    pub fn retry(mut self, retry_ms: u32) -> Self {
+        self.retry_ms = retry_ms;
+        self
+    }
+
+    /// Filter by instance ID
+    pub fn for_instance(mut self, instance_id: &str) -> Self {
+        self.instance_filter = Some(instance_id.to_string());
+        self
+    }
+
+    /// Filter by event types
+    pub fn event_types(mut self, types: &[&str]) -> Self {
+        self.event_filter = Some(types.iter().map(|s| s.to_string()).collect());
+        self
+    }
+
+    /// Add an initial event to send on connection
+    pub fn with_event(mut self, event: SseEvent) -> Self {
+        self.initial_events.push(event);
+        self
+    }
+
+    /// Set a custom header
+    pub fn header(mut self, key: &str, value: &str) -> Self {
+        self.headers.set(key.to_string(), value.to_string());
+        self
+    }
+
+    /// Get the response headers for SSE
+    pub fn response_headers(&self) -> Headers {
+        let mut headers = self.headers.clone();
+
+        // Required SSE headers
+        headers.set("content-type".to_string(), "text/event-stream".to_string());
+        headers.set("cache-control".to_string(), "no-cache".to_string());
+        headers.set("connection".to_string(), "keep-alive".to_string());
+
+        // CORS headers for browser clients
+        headers.set("access-control-allow-origin".to_string(), "*".to_string());
+        headers.set("access-control-allow-credentials".to_string(), "true".to_string());
+
+        // Disable buffering
+        headers.set("x-accel-buffering".to_string(), "no".to_string());
+
+        headers
+    }
+
+    /// Get initial data to send (connection event + buffered events)
+    pub fn initial_data(&self, client_id: &str) -> String {
+        let mut output = String::new();
+
+        // Send retry interval
+        output.push_str(&format!("retry: {}\n\n", self.retry_ms));
+
+        // Send connection event
+        output.push_str(&SseEvent::connected(client_id).to_wire_format());
+
+        // Send any buffered initial events
+        for event in &self.initial_events {
+            output.push_str(&event.to_wire_format());
+        }
+
+        output
+    }
+
+    /// Check if an event passes the filters
+    pub fn accepts(&self, event: &SseEvent) -> bool {
+        // Check instance filter
+        if let Some(ref filter) = self.instance_filter {
+            if let Some(ref instance) = event.instance_id {
+                if instance != filter {
+                    return false;
+                }
+            }
+        }
+
+        // Check event type filter
+        if let Some(ref types) = self.event_filter {
+            if !types.contains(&event.event_type) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+// ============================================================================
+// SSE Client Registry
+// ============================================================================
+
+/// Manages connected SSE clients
+pub struct SseClientRegistry {
+    /// Connected clients (client_id -> sender)
+    clients: std::collections::HashMap<String, SseClientHandle>,
+
+    /// Event type subscriptions
+    subscriptions: std::collections::HashMap<String, Vec<String>>,
+}
+
+/// Handle to a connected SSE client
+pub struct SseClientHandle {
+    /// Client ID
+    pub client_id: String,
+
+    /// Instance filter
+    pub instance_id: Option<String>,
+
+    /// Event types subscribed to
+    pub event_types: Vec<String>,
+
+    /// Connected at
+    pub connected_at: Timestamp,
+
+    /// Last activity
+    pub last_activity: Timestamp,
+}
+
+impl SseClientRegistry {
+    pub fn new() -> Self {
+        Self {
+            clients: std::collections::HashMap::new(),
+            subscriptions: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Register a new client
+    pub fn register(&mut self, stream: &SseStream) -> String {
+        let client_id = generate_client_id();
+
+        let handle = SseClientHandle {
+            client_id: client_id.clone(),
+            instance_id: stream.instance_filter.clone(),
+            event_types: stream.event_filter.clone().unwrap_or_default(),
+            connected_at: Timestamp::now(),
+            last_activity: Timestamp::now(),
+        };
+
+        // Register in main map
+        self.clients.insert(client_id.clone(), handle);
+
+        // Register in subscriptions
+        if let Some(ref types) = stream.event_filter {
+            for event_type in types {
+                self.subscriptions
+                    .entry(event_type.clone())
+                    .or_insert_with(Vec::new)
+                    .push(client_id.clone());
+            }
+        }
+
+        client_id
+    }
+
+    /// Unregister a client
+    pub fn unregister(&mut self, client_id: &str) {
+        if let Some(handle) = self.clients.remove(client_id) {
+            // Remove from subscriptions
+            for event_type in &handle.event_types {
+                if let Some(clients) = self.subscriptions.get_mut(event_type) {
+                    clients.retain(|id| id != client_id);
+                }
+            }
+        }
+    }
+
+    /// Get clients subscribed to an event type
+    pub fn clients_for(&self, event_type: &str) -> Vec<&SseClientHandle> {
+        self.subscriptions
+            .get(event_type)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| self.clients.get(id))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get all connected clients
+    pub fn all_clients(&self) -> Vec<&SseClientHandle> {
+        self.clients.values().collect()
+    }
+
+    /// Get client count
+    pub fn client_count(&self) -> usize {
+        self.clients.len()
+    }
+}
+
+/// Generate a unique client ID
+fn generate_client_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+
+    format!("sse-{:x}", timestamp)
+}
+
+// ============================================================================
+// Event Builder Helpers
+// ============================================================================
+
+/// Create a wellness snapshot event
+pub fn wellness_snapshot<T: serde::Serialize>(data: &T, confidence: f64) -> SseEvent {
+    SseEvent::new(event_types::WELLNESS_SNAPSHOT)
+        .json(data)
+        .evidence(EvidenceLevel::Known, confidence)
+        .source("wellness_service")
+}
+
+/// Create a fronting change event
+pub fn fronting_change(instance_id: &str, instance_name: &str, action: &str) -> SseEvent {
+    SseEvent::new(event_types::FRONTING_CHANGE)
+        .data(&format!(
+            r#"{{"instanceId":"{}","instanceName":"{}","action":"{}"}}"#,
+            instance_id, instance_name, action
+        ))
+        .known()
+        .source("instance_service")
+        .instance(instance_id)
+}
+
+/// Create a brain dump created event
+pub fn braindump_created(id: &str, preview: &str) -> SseEvent {
+    SseEvent::new(event_types::BRAINDUMP_CREATED)
+        .data(&format!(
+            r#"{{"id":"{}","preview":"{}"}}"#,
+            id, preview
+        ))
+        .known()
+        .source("braindump_service")
+}
+
+/// Create a suggestion event (AI-generated)
+pub fn suggestion_new<T: serde::Serialize>(data: &T, confidence: f64, model: &str) -> SseEvent {
+    SseEvent::new(event_types::SUGGESTION_NEW)
+        .json(data)
+        .inferred(confidence)
+        .source(model)
+}
+
+/// Create a pattern detected event (AI-generated)
+pub fn pattern_detected(pattern: &str, trend: &str, confidence: f64) -> SseEvent {
+    SseEvent::new(event_types::PATTERN_DETECTED)
+        .data(&format!(
+            r#"{{"pattern":"{}","trend":"{}"}}"#,
+            pattern, trend
+        ))
+        .inferred(confidence)
+        .source("pattern_analyzer")
+}

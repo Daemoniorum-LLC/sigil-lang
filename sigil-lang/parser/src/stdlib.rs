@@ -48,10 +48,59 @@ use crate::interpreter::{
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Write;
+use std::net::{TcpListener, TcpStream};
 use std::rc::Rc;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+// Native resource registry for TcpListeners
+static TCP_LISTENERS: OnceLock<Mutex<HashMap<u64, TcpListener>>> = OnceLock::new();
+static TCP_STREAMS: OnceLock<Mutex<HashMap<u64, TcpStream>>> = OnceLock::new();
+static BUF_READERS: OnceLock<Mutex<HashMap<u64, std::io::BufReader<TcpStream>>>> = OnceLock::new();
+static LISTENER_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+static STREAM_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+static BUFREADER_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+pub fn get_listener_registry() -> &'static Mutex<HashMap<u64, TcpListener>> {
+    TCP_LISTENERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn get_stream_registry() -> &'static Mutex<HashMap<u64, TcpStream>> {
+    TCP_STREAMS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn get_bufreader_registry() -> &'static Mutex<HashMap<u64, std::io::BufReader<TcpStream>>> {
+    BUF_READERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn store_bufreader(reader: std::io::BufReader<TcpStream>) -> u64 {
+    let id = BUFREADER_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+    get_bufreader_registry().lock().unwrap().insert(id, reader);
+    id
+}
+
+fn store_listener(listener: TcpListener) -> u64 {
+    let id = LISTENER_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+    get_listener_registry().lock().unwrap().insert(id, listener);
+    id
+}
+
+pub fn store_tcp_stream(stream: TcpStream) -> u64 {
+    let id = STREAM_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+    get_stream_registry().lock().unwrap().insert(id, stream);
+    id
+}
+
+pub fn get_tcp_stream(id: u64) -> Option<std::sync::MutexGuard<'static, HashMap<u64, TcpStream>>> {
+    let guard = get_stream_registry().lock().unwrap();
+    if guard.contains_key(&id) {
+        Some(guard)
+    } else {
+        None
+    }
+}
 
 // External crates for extended stdlib
 use base64::{engine::general_purpose, Engine as _};
@@ -154,6 +203,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     // Phase 19: Multi-Agent Coordination and Reasoning
     register_agent_swarm(interp);
     register_agent_reasoning(interp);
+    // Phase 20: Terminal/Console - ANSI styling, progress bars, tables
+    register_terminal(interp);
 }
 
 // Helper to define a builtin
@@ -197,6 +248,67 @@ fn values_equal_simple(a: &Value, b: &Value) -> bool {
 // ============================================================================
 
 fn register_core(interp: &mut Interpreter) {
+    // --- PRIMITIVE TYPE CONSTANTS ---
+    // u64::MAX, i64::MAX, etc.
+    interp.globals.borrow_mut().define("u64·MAX".to_string(), Value::Int(u64::MAX as i64));
+    interp.globals.borrow_mut().define("u64·MIN".to_string(), Value::Int(0));
+    interp.globals.borrow_mut().define("i64·MAX".to_string(), Value::Int(i64::MAX));
+    interp.globals.borrow_mut().define("i64·MIN".to_string(), Value::Int(i64::MIN));
+    interp.globals.borrow_mut().define("u32·MAX".to_string(), Value::Int(u32::MAX as i64));
+    interp.globals.borrow_mut().define("u32·MIN".to_string(), Value::Int(0));
+    interp.globals.borrow_mut().define("i32·MAX".to_string(), Value::Int(i32::MAX as i64));
+    interp.globals.borrow_mut().define("i32·MIN".to_string(), Value::Int(i32::MIN as i64));
+    interp.globals.borrow_mut().define("u16·MAX".to_string(), Value::Int(u16::MAX as i64));
+    interp.globals.borrow_mut().define("u8·MAX".to_string(), Value::Int(u8::MAX as i64));
+    interp.globals.borrow_mut().define("usize·MAX".to_string(), Value::Int(usize::MAX as i64));
+    interp.globals.borrow_mut().define("isize·MAX".to_string(), Value::Int(isize::MAX as i64));
+    interp.globals.borrow_mut().define("isize·MIN".to_string(), Value::Int(isize::MIN as i64));
+    interp.globals.borrow_mut().define("f64·INFINITY".to_string(), Value::Float(f64::INFINITY));
+    interp.globals.borrow_mut().define("f64·NEG_INFINITY".to_string(), Value::Float(f64::NEG_INFINITY));
+    interp.globals.borrow_mut().define("f64·NAN".to_string(), Value::Float(f64::NAN));
+
+    // SeekFrom enum variants for file seeking (register as variant constructors)
+    interp.variant_constructors.insert("SeekFrom·Start".to_string(), ("SeekFrom".to_string(), "Start".to_string(), 1));
+    interp.variant_constructors.insert("SeekFrom·End".to_string(), ("SeekFrom".to_string(), "End".to_string(), 1));
+    interp.variant_constructors.insert("SeekFrom·Current".to_string(), ("SeekFrom".to_string(), "Current".to_string(), 1));
+
+    // Atomic Ordering enum variants (used by std::sync::atomic)
+    let ordering_variants = ["SeqCst", "Acquire", "Release", "AcqRel", "Relaxed"];
+    for variant in ordering_variants {
+        let full_name = format!("std·sync·atomic·Ordering·{}", variant);
+        let short_name = format!("Ordering·{}", variant);
+        interp.globals.borrow_mut().define(full_name, Value::Variant {
+            enum_name: "Ordering".to_string(),
+            variant_name: variant.to_string(),
+            fields: None,
+        });
+        interp.globals.borrow_mut().define(short_name, Value::Variant {
+            enum_name: "Ordering".to_string(),
+            variant_name: variant.to_string(),
+            fields: None,
+        });
+    }
+
+    // IO ErrorKind enum variants (used by std::io::ErrorKind)
+    let error_kind_variants = ["NotFound", "PermissionDenied", "ConnectionRefused", "ConnectionReset",
+        "ConnectionAborted", "NotConnected", "AddrInUse", "AddrNotAvailable", "BrokenPipe",
+        "AlreadyExists", "WouldBlock", "InvalidInput", "InvalidData", "TimedOut", "WriteZero",
+        "Interrupted", "UnexpectedEof", "Other"];
+    for variant in error_kind_variants {
+        let full_name = format!("std·io·ErrorKind·{}", variant);
+        let short_name = format!("ErrorKind·{}", variant);
+        interp.globals.borrow_mut().define(full_name, Value::Variant {
+            enum_name: "ErrorKind".to_string(),
+            variant_name: variant.to_string(),
+            fields: None,
+        });
+        interp.globals.borrow_mut().define(short_name, Value::Variant {
+            enum_name: "ErrorKind".to_string(),
+            variant_name: variant.to_string(),
+            fields: None,
+        });
+    }
+
     // print - variadic print without newline
     define(interp, "print", None, |interp, args| {
         let output: Vec<String> = args.iter().map(|v| format!("{}", v)).collect();
@@ -212,6 +324,25 @@ fn register_core(interp: &mut Interpreter) {
         let output: Vec<String> = args.iter().map(|v| format!("{}", v)).collect();
         let line = output.join(" ");
         println!("{}", line);
+        interp.output.push(line);
+        Ok(Value::Null)
+    });
+
+    // eprint - print to stderr without newline
+    define(interp, "eprint", None, |interp, args| {
+        let output: Vec<String> = args.iter().map(|v| format!("{}", v)).collect();
+        let line = output.join(" ");
+        eprint!("{}", line);
+        std::io::stderr().flush().ok();
+        interp.output.push(line);
+        Ok(Value::Null)
+    });
+
+    // eprintln - print to stderr with newline
+    define(interp, "eprintln", None, |interp, args| {
+        let output: Vec<String> = args.iter().map(|v| format!("{}", v)).collect();
+        let line = output.join(" ");
+        eprintln!("{}", line);
         interp.output.push(line);
         Ok(Value::Null)
     });
@@ -257,6 +388,7 @@ fn register_core(interp: &mut Interpreter) {
             Value::Future(_) => "future",
             Value::VariantConstructor { .. } => "variant_constructor",
             Value::DefaultConstructor { .. } => "default_constructor",
+            Value::Range { .. } => "range",
         };
         Ok(Value::String(Rc::new(type_name.to_string())))
     });
@@ -321,21 +453,62 @@ fn register_core(interp: &mut Interpreter) {
     define(interp, "id", Some(1), |_, args| Ok(args[0].clone()));
 
     // default - return default value for a type
-    define(interp, "default", Some(1), |_, args| {
-        let type_name = match &args[0] {
-            Value::String(s) => s.as_str(),
-            _ => return Err(RuntimeError::new("default() requires type name string")),
+    // Can be called with 0 args (when context provides type) or 1 arg (type name string)
+    define(interp, "default", None, |interp, args| {
+        let type_name = if args.is_empty() {
+            // When called with 0 args (e.g., from TypeName::default() fallback),
+            // try to use current_self_type or return a generic empty struct
+            match &interp.current_self_type {
+                Some(t) => t.clone(),
+                None => return Ok(Value::Struct {
+                    name: "Default".to_string(),
+                    fields: Rc::new(RefCell::new(std::collections::HashMap::new())),
+                }),
+            }
+        } else {
+            match &args[0] {
+                Value::String(s) => s.to_string(),
+                _ => return Err(RuntimeError::new("default() requires type name string")),
+            }
         };
+        let type_name = type_name.as_str();
         match type_name {
             "bool" => Ok(Value::Bool(false)),
             "i64" | "int" => Ok(Value::Int(0)),
             "f64" | "float" => Ok(Value::Float(0.0)),
             "str" | "string" => Ok(Value::String(Rc::new(String::new()))),
             "array" => Ok(Value::Array(Rc::new(RefCell::new(Vec::new())))),
-            _ => Err(RuntimeError::new(format!(
-                "no default for type: {}",
-                type_name
-            ))),
+            _ => {
+                // Check if type is registered in default_structs
+                if let Some(struct_def) = interp.default_structs.get(type_name).cloned() {
+                    use crate::ast::StructFields;
+                    let mut fields = std::collections::HashMap::new();
+                    if let StructFields::Named(field_defs) = &struct_def.fields {
+                        for field in field_defs {
+                            // Use field default expression if available, otherwise Null
+                            let default_val = if let Some(ref default_expr) = field.default {
+                                match interp.evaluate(default_expr) {
+                                    Ok(v) => v,
+                                    Err(_) => Value::Null,
+                                }
+                            } else {
+                                Value::Null
+                            };
+                            fields.insert(field.name.name.clone(), default_val);
+                        }
+                    }
+                    Ok(Value::Struct {
+                        name: type_name.to_string(),
+                        fields: Rc::new(RefCell::new(fields)),
+                    })
+                } else {
+                    // For unknown types (e.g., from external crates), create empty struct
+                    Ok(Value::Struct {
+                        name: type_name.to_string(),
+                        fields: Rc::new(RefCell::new(std::collections::HashMap::new())),
+                    })
+                }
+            }
         }
     });
 
@@ -416,6 +589,42 @@ fn register_core(interp: &mut Interpreter) {
     // Map::new - create empty map
     define(interp, "Map·new", Some(0), |_, _| {
         Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
+    });
+
+    // HashMap::new
+    define(interp, "HashMap·new", Some(0), |_, _| {
+        Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
+    });
+
+    // HashMap::with_capacity
+    define(interp, "HashMap·with_capacity", Some(1), |_, _args| {
+        // Capacity hint is ignored in our implementation
+        Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
+    });
+
+    // std::collections::HashMap::new
+    define(interp, "std·collections·HashMap·new", Some(0), |_, _| {
+        Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
+    });
+
+    // std::collections::HashMap::with_capacity
+    define(interp, "std·collections·HashMap·with_capacity", Some(1), |_, _args| {
+        Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
+    });
+
+    // HashSet::new
+    define(interp, "HashSet·new", Some(0), |_, _| {
+        Ok(Value::Set(Rc::new(RefCell::new(std::collections::HashSet::new()))))
+    });
+
+    // HashSet::with_capacity
+    define(interp, "HashSet·with_capacity", Some(1), |_, _args| {
+        Ok(Value::Set(Rc::new(RefCell::new(std::collections::HashSet::new()))))
+    });
+
+    // std::collections::HashSet::new
+    define(interp, "std·collections·HashSet·new", Some(0), |_, _| {
+        Ok(Value::Set(Rc::new(RefCell::new(std::collections::HashSet::new()))))
     });
 
     // Vec::new - create empty vector/array
@@ -3443,6 +3652,27 @@ fn register_io(interp: &mut Interpreter) {
         }
     });
 
+    // env::var - Rust-style env::var that returns Result<String, VarError>
+    define(interp, "env·var", Some(1), |_, args| {
+        match &args[0] {
+            Value::String(name) => {
+                match std::env::var(name.as_str()) {
+                    Ok(value) => Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Ok".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new(value))])),
+                    }),
+                    Err(_) => Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new("environment variable not found".to_string()))])),
+                    }),
+                }
+            }
+            _ => Err(RuntimeError::new("env::var() requires variable name string")),
+        }
+    });
+
     // env_or - get environment variable with default
     define(interp, "env_or", Some(2), |_, args| {
         match (&args[0], &args[1]) {
@@ -3465,11 +3695,19 @@ fn register_io(interp: &mut Interpreter) {
         }
     });
 
-    // args - command line arguments
-    define(interp, "args", Some(0), |_, _| {
-        let args: Vec<Value> = std::env::args()
-            .map(|a| Value::String(Rc::new(a)))
-            .collect();
+    // args - command line arguments (filtered to exclude interpreter args)
+    define(interp, "args", Some(0), |interp, _| {
+        let args: Vec<Value> = if interp.program_args.as_ref().map(|v| v.is_empty()).unwrap_or(true) {
+            // Fallback: return all args if program_args not set
+            std::env::args()
+                .map(|a| Value::String(Rc::new(a)))
+                .collect()
+        } else {
+            // Return filtered program args
+            interp.program_args.as_ref().unwrap().iter()
+                .map(|a| Value::String(Rc::new(a.clone())))
+                .collect()
+        };
         Ok(Value::Array(Rc::new(RefCell::new(args))))
     });
 }
@@ -3517,6 +3755,29 @@ fn register_time(interp: &mut Interpreter) {
     // measure - measure execution time of a thunk (returns ms)
     // Note: This would need closure support to work properly
     // For now, we provide a simple timer API
+
+    // UNIX_EPOCH - constant representing Unix epoch (0 seconds)
+    define(interp, "UNIX_EPOCH", Some(0), |_, _| {
+        // Return a struct representing the Unix epoch
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("secs".to_string(), Value::Int(0));
+        fields.insert("nanos".to_string(), Value::Int(0));
+        Ok(Value::Struct {
+            name: "SystemTime".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // std::time::UNIX_EPOCH alias
+    define(interp, "std·time·UNIX_EPOCH", Some(0), |_, _| {
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("secs".to_string(), Value::Int(0));
+        fields.insert("nanos".to_string(), Value::Int(0));
+        Ok(Value::Struct {
+            name: "SystemTime".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
 
     // timer_start - start a timer (returns opaque handle)
     define(interp, "timer_start", Some(0), |_, _| {
@@ -5170,6 +5431,39 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Null)
     });
 
+    // std::thread::spawn - spawn a thread with a closure
+    // In interpreter mode, execute synchronously (Rc is not thread-safe)
+    // Returns a JoinHandle-like value
+    define(interp, "std·thread·spawn", Some(1), |interp, args| {
+        // The argument should be a closure/function
+        match &args[0] {
+            Value::Function(f) => {
+                // Execute the closure synchronously for now
+                // This makes the server work in single-threaded mode
+                match interp.call_function(f, vec![]) {
+                    Ok(_) => {}
+                    Err(e) => eprintln!("[Sigil thread] Error: {}", e),
+                }
+                // Return a mock JoinHandle
+                let mut map = HashMap::new();
+                map.insert("__type__".to_string(), Value::String(Rc::new("JoinHandle".to_string())));
+                map.insert("done".to_string(), Value::Bool(true));
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
+            Value::BuiltIn(b) => {
+                match (b.func)(interp, vec![]) {
+                    Ok(_) => {}
+                    Err(e) => eprintln!("[Sigil thread] Error: {}", e),
+                }
+                let mut map = HashMap::new();
+                map.insert("__type__".to_string(), Value::String(Rc::new("JoinHandle".to_string())));
+                map.insert("done".to_string(), Value::Bool(true));
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
+            _ => Err(RuntimeError::new("std::thread::spawn requires a closure")),
+        }
+    });
+
     // thread_join - placeholder for join semantics
     // In interpreter, actual work is done via channels
     define(interp, "thread_join", Some(1), |_, args| {
@@ -5218,6 +5512,701 @@ fn register_concurrency(interp: &mut Interpreter) {
     define(interp, "thread_id", Some(0), |_, _| {
         let id = thread::current().id();
         Ok(Value::String(Rc::new(format!("{:?}", id))))
+    });
+
+    // --- SYNCHRONIZATION PRIMITIVES ---
+    // parking_lot::Mutex::new - create a mutex wrapper
+    // Returns a Map with __type__="Mutex" and inner value
+    define(interp, "parking_lot·Mutex·new", Some(1), |_, args| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("Mutex".to_string())));
+        map.insert("inner".to_string(), args[0].clone());
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // Also register as std::sync::Mutex::new
+    define(interp, "std·sync·Mutex·new", Some(1), |_, args| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("Mutex".to_string())));
+        map.insert("inner".to_string(), args[0].clone());
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // parking_lot::RwLock::new - create a read-write lock wrapper
+    define(interp, "parking_lot·RwLock·new", Some(1), |_, args| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("RwLock".to_string())));
+        map.insert("inner".to_string(), args[0].clone());
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // std::sync::RwLock::new
+    define(interp, "std·sync·RwLock·new", Some(1), |_, args| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("RwLock".to_string())));
+        map.insert("inner".to_string(), args[0].clone());
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // RwLock::new (short form)
+    define(interp, "RwLock·new", Some(1), |_, args| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("RwLock".to_string())));
+        map.insert("inner".to_string(), args[0].clone());
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // AtomicU64::new - create atomic counter
+    define(interp, "AtomicU64·new", Some(1), |_, args| {
+        let val = match &args[0] {
+            Value::Int(i) => *i,
+            _ => 0,
+        };
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicU64".to_string())));
+        map.insert("value".to_string(), Value::Int(val));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // std::sync::atomic::AtomicU64::new
+    define(interp, "std·sync·atomic·AtomicU64·new", Some(1), |_, args| {
+        let val = match &args[0] {
+            Value::Int(i) => *i,
+            _ => 0,
+        };
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicU64".to_string())));
+        map.insert("value".to_string(), Value::Int(val));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // AtomicBool::new
+    define(interp, "AtomicBool·new", Some(1), |_, args| {
+        let val = match &args[0] {
+            Value::Bool(b) => *b,
+            _ => false,
+        };
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicBool".to_string())));
+        map.insert("value".to_string(), Value::Bool(val));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    define(interp, "std·sync·atomic·AtomicBool·new", Some(1), |_, args| {
+        let val = match &args[0] {
+            Value::Bool(b) => *b,
+            _ => false,
+        };
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicBool".to_string())));
+        map.insert("value".to_string(), Value::Bool(val));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // Arc::new - create atomic reference counted wrapper
+    define(interp, "Arc·new", Some(1), |_, args| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("Arc".to_string())));
+        map.insert("inner".to_string(), args[0].clone());
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    define(interp, "std·sync·Arc·new", Some(1), |_, args| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("Arc".to_string())));
+        map.insert("inner".to_string(), args[0].clone());
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // --- NETWORKING ---
+    // TCP/IP networking support for HTTP servers
+
+    // TcpListener::bind - bind to an address and create a listener
+    define(interp, "TcpListener·bind", Some(1), |_, args| {
+        let addr_str = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("TcpListener::bind requires string address"));
+                }
+            }
+            // Handle SocketAddr map (from parse())
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::String(addr)) = borrowed.get("addr") {
+                    addr.to_string()
+                } else if let Some(Value::String(_)) = borrowed.get("__type__") {
+                    // SocketAddr type, try addr field
+                    if let Some(Value::String(addr)) = borrowed.get("addr") {
+                        addr.to_string()
+                    } else {
+                        return Err(RuntimeError::new("SocketAddr missing addr field"));
+                    }
+                } else {
+                    return Err(RuntimeError::new("TcpListener::bind requires string or SocketAddr"));
+                }
+            }
+            _ => return Err(RuntimeError::new("TcpListener::bind requires string address")),
+        };
+
+        // Parse the address
+        let addr: std::net::SocketAddr = match addr_str.parse() {
+            Ok(a) => a,
+            Err(e) => return Err(RuntimeError::new(format!("Invalid address: {}", e))),
+        };
+
+        // Bind the listener
+        let listener = match std::net::TcpListener::bind(addr) {
+            Ok(l) => l,
+            Err(e) => return Err(RuntimeError::new(format!("Failed to bind: {}", e))),
+        };
+
+        let local_addr = listener.local_addr().map(|a| a.to_string()).unwrap_or_default();
+
+        // Store the listener in the global registry
+        let listener_id = store_listener(listener);
+
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("TcpListener".to_string())));
+        map.insert("addr".to_string(), Value::String(Rc::new(addr_str)));
+        map.insert("local_addr".to_string(), Value::String(Rc::new(local_addr)));
+        map.insert("__listener_id__".to_string(), Value::Int(listener_id as i64));
+
+        eprintln!("[Sigil] TcpListener bound to {} (id={})", addr, listener_id);
+
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
+        })
+    });
+
+    define(interp, "std·net·TcpListener·bind", Some(1), |_, args| {
+        let addr_str = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("TcpListener::bind requires string address"));
+                }
+            }
+            // Handle SocketAddr map (from parse())
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::String(addr)) = borrowed.get("addr") {
+                    addr.to_string()
+                } else {
+                    return Err(RuntimeError::new("TcpListener::bind requires string or SocketAddr"));
+                }
+            }
+            _ => return Err(RuntimeError::new("TcpListener::bind requires string address")),
+        };
+
+        let addr: std::net::SocketAddr = match addr_str.parse() {
+            Ok(a) => a,
+            Err(e) => return Err(RuntimeError::new(format!("Invalid address: {}", e))),
+        };
+
+        let _listener = match std::net::TcpListener::bind(addr) {
+            Ok(l) => l,
+            Err(e) => return Err(RuntimeError::new(format!("Failed to bind: {}", e))),
+        };
+
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("TcpListener".to_string())));
+        map.insert("addr".to_string(), Value::String(Rc::new(addr_str)));
+
+        eprintln!("[Sigil] TcpListener bound to {}", addr);
+
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
+        })
+    });
+
+    // SocketAddr::parse - parse a socket address string
+    define(interp, "SocketAddr·parse", Some(1), |_, args| {
+        let addr_str = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("SocketAddr::parse requires string")),
+        };
+
+        match addr_str.parse::<std::net::SocketAddr>() {
+            Ok(_) => {
+                let mut map = HashMap::new();
+                map.insert("__type__".to_string(), Value::String(Rc::new("SocketAddr".to_string())));
+                map.insert("addr".to_string(), Value::String(Rc::new(addr_str)));
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Ok".to_string(),
+                    fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
+                })
+            }
+            Err(e) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+            }),
+        }
+    });
+
+    // --- TcpStream Methods ---
+    // Methods for reading/writing from TcpStream connections
+
+    // TcpStream::peer_addr - get the remote address
+    define(interp, "TcpStream·peer_addr", Some(1), |_, args| {
+        let stream_id = match &args[0] {
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::Int(id)) = borrowed.get("__stream_id__") {
+                    *id as u64
+                } else {
+                    return Err(RuntimeError::new("TcpStream missing __stream_id__"));
+                }
+            }
+            _ => return Err(RuntimeError::new("peer_addr requires TcpStream")),
+        };
+
+        if let Some(guard) = get_stream_registry().lock().ok() {
+            if let Some(stream) = guard.get(&stream_id) {
+                match stream.peer_addr() {
+                    Ok(addr) => {
+                        let mut map = HashMap::new();
+                        map.insert("__type__".to_string(), Value::String(Rc::new("SocketAddr".to_string())));
+                        map.insert("addr".to_string(), Value::String(Rc::new(addr.to_string())));
+                        Ok(Value::Variant {
+                            enum_name: "Result".to_string(),
+                            variant_name: "Ok".to_string(),
+                            fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
+                        })
+                    }
+                    Err(e) => Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+                    }),
+                }
+            } else {
+                Err(RuntimeError::new("TcpStream not found in registry"))
+            }
+        } else {
+            Err(RuntimeError::new("Failed to lock stream registry"))
+        }
+    });
+
+    // TcpStream::read - read bytes from stream
+    define(interp, "TcpStream·read", Some(2), |_, args| {
+        use std::io::Read;
+
+        let stream_id = match &args[0] {
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::Int(id)) = borrowed.get("__stream_id__") {
+                    *id as u64
+                } else {
+                    return Err(RuntimeError::new("TcpStream missing __stream_id__"));
+                }
+            }
+            _ => return Err(RuntimeError::new("read requires TcpStream")),
+        };
+
+        let size = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("read requires size as integer")),
+        };
+
+        if let Some(mut guard) = get_stream_registry().lock().ok() {
+            if let Some(stream) = guard.get_mut(&stream_id) {
+                let mut buf = vec![0u8; size];
+                match stream.read(&mut buf) {
+                    Ok(n) => {
+                        buf.truncate(n);
+                        let bytes: Vec<Value> = buf.iter().map(|b| Value::Int(*b as i64)).collect();
+                        Ok(Value::Variant {
+                            enum_name: "Result".to_string(),
+                            variant_name: "Ok".to_string(),
+                            fields: Some(Rc::new(vec![Value::Array(Rc::new(RefCell::new(bytes)))])),
+                        })
+                    }
+                    Err(e) => Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+                    }),
+                }
+            } else {
+                Err(RuntimeError::new("TcpStream not found in registry"))
+            }
+        } else {
+            Err(RuntimeError::new("Failed to lock stream registry"))
+        }
+    });
+
+    // TcpStream::read_exact - read exact number of bytes
+    define(interp, "TcpStream·read_exact", Some(2), |_, args| {
+        use std::io::Read;
+
+        let stream_id = match &args[0] {
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::Int(id)) = borrowed.get("__stream_id__") {
+                    *id as u64
+                } else {
+                    return Err(RuntimeError::new("TcpStream missing __stream_id__"));
+                }
+            }
+            _ => return Err(RuntimeError::new("read_exact requires TcpStream")),
+        };
+
+        let size = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("read_exact requires size as integer")),
+        };
+
+        if let Some(mut guard) = get_stream_registry().lock().ok() {
+            if let Some(stream) = guard.get_mut(&stream_id) {
+                let mut buf = vec![0u8; size];
+                match stream.read_exact(&mut buf) {
+                    Ok(()) => {
+                        let bytes: Vec<Value> = buf.iter().map(|b| Value::Int(*b as i64)).collect();
+                        Ok(Value::Variant {
+                            enum_name: "Result".to_string(),
+                            variant_name: "Ok".to_string(),
+                            fields: Some(Rc::new(vec![Value::Array(Rc::new(RefCell::new(bytes)))])),
+                        })
+                    }
+                    Err(e) => Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+                    }),
+                }
+            } else {
+                Err(RuntimeError::new("TcpStream not found in registry"))
+            }
+        } else {
+            Err(RuntimeError::new("Failed to lock stream registry"))
+        }
+    });
+
+    // TcpStream::write_all - write all bytes to stream
+    define(interp, "TcpStream·write_all", Some(2), |_, args| {
+        use std::io::Write;
+
+        let stream_id = match &args[0] {
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::Int(id)) = borrowed.get("__stream_id__") {
+                    *id as u64
+                } else {
+                    return Err(RuntimeError::new("TcpStream missing __stream_id__"));
+                }
+            }
+            _ => return Err(RuntimeError::new("write_all requires TcpStream")),
+        };
+
+        // Handle various data types
+        let data: Vec<u8> = match &args[1] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            Value::Array(arr) => {
+                arr.borrow().iter().filter_map(|v| {
+                    if let Value::Int(n) = v { Some(*n as u8) } else { None }
+                }).collect()
+            }
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.as_bytes().to_vec()
+                } else {
+                    return Err(RuntimeError::new("write_all requires string or byte array"));
+                }
+            }
+            _ => return Err(RuntimeError::new("write_all requires string or byte array")),
+        };
+
+        if let Some(mut guard) = get_stream_registry().lock().ok() {
+            if let Some(stream) = guard.get_mut(&stream_id) {
+                match stream.write_all(&data) {
+                    Ok(()) => Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Ok".to_string(),
+                        fields: Some(Rc::new(vec![Value::Null])),
+                    }),
+                    Err(e) => Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+                    }),
+                }
+            } else {
+                Err(RuntimeError::new("TcpStream not found in registry"))
+            }
+        } else {
+            Err(RuntimeError::new("Failed to lock stream registry"))
+        }
+    });
+
+    // TcpStream::flush - flush the stream
+    define(interp, "TcpStream·flush", Some(1), |_, args| {
+        use std::io::Write;
+
+        let stream_id = match &args[0] {
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::Int(id)) = borrowed.get("__stream_id__") {
+                    *id as u64
+                } else {
+                    return Err(RuntimeError::new("TcpStream missing __stream_id__"));
+                }
+            }
+            _ => return Err(RuntimeError::new("flush requires TcpStream")),
+        };
+
+        if let Some(mut guard) = get_stream_registry().lock().ok() {
+            if let Some(stream) = guard.get_mut(&stream_id) {
+                match stream.flush() {
+                    Ok(()) => Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Ok".to_string(),
+                        fields: Some(Rc::new(vec![Value::Null])),
+                    }),
+                    Err(e) => Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+                    }),
+                }
+            } else {
+                Err(RuntimeError::new("TcpStream not found in registry"))
+            }
+        } else {
+            Err(RuntimeError::new("Failed to lock stream registry"))
+        }
+    });
+
+    // --- BufReader for HTTP parsing ---
+
+    // BufReader::new - create a buffered reader from a TcpStream
+    define(interp, "BufReader·new", Some(1), |_, args| {
+        use std::io::BufReader as StdBufReader;
+
+        // Handle both Map and Ref(Map) for &mut TcpStream
+        let stream_id = match &args[0] {
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::Int(id)) = borrowed.get("__stream_id__") {
+                    *id as u64
+                } else {
+                    return Err(RuntimeError::new("BufReader::new requires TcpStream"));
+                }
+            }
+            Value::Ref(r) => {
+                // Handle &mut TcpStream - unwrap the Ref to get the Map
+                let inner = r.borrow();
+                if let Value::Map(m) = &*inner {
+                    let borrowed = m.borrow();
+                    if let Some(Value::Int(id)) = borrowed.get("__stream_id__") {
+                        *id as u64
+                    } else {
+                        return Err(RuntimeError::new("BufReader::new requires TcpStream (missing stream_id in Ref)"));
+                    }
+                } else {
+                    return Err(RuntimeError::new("BufReader::new requires TcpStream (Ref does not contain Map)"));
+                }
+            }
+            _ => return Err(RuntimeError::new("BufReader::new requires TcpStream")),
+        };
+
+        // Clone the stream and create a BufReader that persists
+        let reader_id = if let Some(mut guard) = get_stream_registry().lock().ok() {
+            if let Some(stream) = guard.get_mut(&stream_id) {
+                let stream_clone = match stream.try_clone() {
+                    Ok(s) => s,
+                    Err(e) => return Err(RuntimeError::new(format!("Failed to clone stream: {}", e))),
+                };
+                let reader = StdBufReader::new(stream_clone);
+                store_bufreader(reader)
+            } else {
+                return Err(RuntimeError::new("Stream not found in registry"));
+            }
+        } else {
+            return Err(RuntimeError::new("Failed to lock stream registry"));
+        };
+
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("BufReader".to_string())));
+        map.insert("__stream_id__".to_string(), Value::Int(stream_id as i64));
+        map.insert("__reader_id__".to_string(), Value::Int(reader_id as i64));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // BufReader::read_line - read a line from the buffered reader
+    define(interp, "BufReader·read_line", Some(1), |_, args| {
+        use std::io::BufRead;
+
+        let reader_id = match &args[0] {
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::Int(id)) = borrowed.get("__reader_id__") {
+                    *id as u64
+                } else {
+                    return Err(RuntimeError::new("BufReader missing __reader_id__"));
+                }
+            }
+            _ => return Err(RuntimeError::new("read_line requires BufReader")),
+        };
+
+        if let Some(mut guard) = get_bufreader_registry().lock().ok() {
+            if let Some(reader) = guard.get_mut(&reader_id) {
+                let mut line = String::new();
+
+                match reader.read_line(&mut line) {
+                    Ok(n) => {
+                        if n == 0 {
+                            // EOF
+                            Ok(Value::Variant {
+                                enum_name: "Result".to_string(),
+                                variant_name: "Ok".to_string(),
+                                fields: Some(Rc::new(vec![Value::Null])),
+                            })
+                        } else {
+                            Ok(Value::Variant {
+                                enum_name: "Result".to_string(),
+                                variant_name: "Ok".to_string(),
+                                fields: Some(Rc::new(vec![Value::String(Rc::new(line))])),
+                            })
+                        }
+                    }
+                    Err(e) => Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+                    }),
+                }
+            } else {
+                Err(RuntimeError::new("BufReader not found in registry"))
+            }
+        } else {
+            Err(RuntimeError::new("Failed to lock bufreader registry"))
+        }
+    });
+
+    // --- HTTP MIDDLEWARE STUBS ---
+    // Stubs for Styx HTTP middleware until proper module path support is added
+
+    // Logger middleware
+    define(interp, "styx_http·middleware·Logger·new", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("Logger".to_string())));
+        map.insert("format".to_string(), Value::String(Rc::new("Common".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    define(interp, "Logger·new", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("Logger".to_string())));
+        map.insert("format".to_string(), Value::String(Rc::new("Common".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // CORS middleware
+    define(interp, "styx_http·middleware·Cors·new", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("Cors".to_string())));
+        map.insert("origins".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    define(interp, "Cors·new", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("Cors".to_string())));
+        map.insert("origins".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // Security headers middleware
+    define(interp, "styx_http·middleware·SecurityHeaders·new", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("SecurityHeaders".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    define(interp, "SecurityHeaders·new", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("SecurityHeaders".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // RateLimiter middleware
+    define(interp, "styx_http·middleware·RateLimiter·new", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("RateLimiter".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    define(interp, "RateLimiter·new", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("RateLimiter".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // RateLimit middleware (accepts rate and burst params)
+    define(interp, "styx_http·middleware·RateLimit·new", None, |_, args| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("RateLimit".to_string())));
+        if args.len() >= 2 {
+            map.insert("rate".to_string(), args[0].clone());
+            map.insert("burst".to_string(), args[1].clone());
+        }
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    define(interp, "RateLimit·new", None, |_, args| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("RateLimit".to_string())));
+        if args.len() >= 2 {
+            map.insert("rate".to_string(), args[0].clone());
+            map.insert("burst".to_string(), args[1].clone());
+        }
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // Compression middleware
+    define(interp, "styx_http·middleware·Compression·new", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("Compression".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    define(interp, "Compression·new", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("Compression".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // AuthMiddleware - authentication middleware with optional/required modes
+    define(interp, "AuthMiddleware·optional", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AuthMiddleware".to_string())));
+        map.insert("mode".to_string(), Value::String(Rc::new("optional".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    define(interp, "AuthMiddleware·required", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AuthMiddleware".to_string())));
+        map.insert("mode".to_string(), Value::String(Rc::new("required".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    define(interp, "AuthMiddleware·new", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AuthMiddleware".to_string())));
+        map.insert("mode".to_string(), Value::String(Rc::new("required".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
     // --- ACTORS ---
@@ -6261,6 +7250,349 @@ fn register_fs(interp: &mut Interpreter) {
                 Ok(Value::Int(output.len() as i64))
             }
             _ => Err(RuntimeError::new(format!("write() unsupported fd: {}", fd))),
+        }
+    });
+
+    // PathBuf::from - create PathBuf from string
+    define(interp, "PathBuf·from", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("PathBuf::from() requires string"));
+                }
+            }
+            _ => return Err(RuntimeError::new("PathBuf::from() requires string")),
+        };
+        Ok(Value::String(Rc::new(path)))
+    });
+
+    // std::path::PathBuf::from - full path variant
+    define(interp, "std·path·PathBuf·from", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("PathBuf::from() requires string"));
+                }
+            }
+            _ => return Err(RuntimeError::new("PathBuf::from() requires string")),
+        };
+        Ok(Value::String(Rc::new(path)))
+    });
+
+    // Path::new - create Path from string
+    define(interp, "Path·new", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("Path::new() requires string"));
+                }
+            }
+            _ => return Err(RuntimeError::new("Path::new() requires string")),
+        };
+        Ok(Value::String(Rc::new(path)))
+    });
+
+    // std::path::Path::new - full path variant
+    define(interp, "std·path·Path·new", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Path::new() requires string")),
+        };
+        Ok(Value::String(Rc::new(path)))
+    });
+
+    // std::fs::read_to_string - alias for fs_read
+    define(interp, "std·fs·read_to_string", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("read_to_string() requires string path")),
+        };
+        match std::fs::read_to_string(&path) {
+            Ok(content) => Ok(Value::String(Rc::new(content))),
+            Err(e) => Err(RuntimeError::new(format!("read_to_string() error: {}", e))),
+        }
+    });
+
+    // std::fs::write - alias for fs_write
+    define(interp, "std·fs·write", Some(2), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs::write() requires string path")),
+        };
+        let content = format!("{}", args[1]);
+        match std::fs::write(&path, content) {
+            Ok(()) => Ok(Value::Null),
+            Err(e) => Err(RuntimeError::new(format!("fs::write() error: {}", e))),
+        }
+    });
+
+    // std::fs::create_dir_all - create directory and all parents
+    define(interp, "std·fs·create_dir_all", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("create_dir_all() requires string path")),
+        };
+        match std::fs::create_dir_all(&path) {
+            Ok(()) => Ok(Value::Null),
+            Err(e) => Err(RuntimeError::new(format!("create_dir_all() error: {}", e))),
+        }
+    });
+
+    // OpenOptions::new - create file open options builder
+    // Returns a map that can be configured with .read(), .write(), etc.
+    define(interp, "OpenOptions·new", Some(0), |_, _| {
+        let mut opts = HashMap::new();
+        opts.insert("read".to_string(), Value::Bool(false));
+        opts.insert("write".to_string(), Value::Bool(false));
+        opts.insert("append".to_string(), Value::Bool(false));
+        opts.insert("truncate".to_string(), Value::Bool(false));
+        opts.insert("create".to_string(), Value::Bool(false));
+        opts.insert("create_new".to_string(), Value::Bool(false));
+        opts.insert("__type__".to_string(), Value::String(Rc::new("OpenOptions".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(opts))))
+    });
+
+    // std::fs::OpenOptions::new
+    define(interp, "std·fs·OpenOptions·new", Some(0), |_, _| {
+        let mut opts = HashMap::new();
+        opts.insert("read".to_string(), Value::Bool(false));
+        opts.insert("write".to_string(), Value::Bool(false));
+        opts.insert("append".to_string(), Value::Bool(false));
+        opts.insert("truncate".to_string(), Value::Bool(false));
+        opts.insert("create".to_string(), Value::Bool(false));
+        opts.insert("create_new".to_string(), Value::Bool(false));
+        opts.insert("__type__".to_string(), Value::String(Rc::new("OpenOptions".to_string())));
+        Ok(Value::Map(Rc::new(RefCell::new(opts))))
+    });
+
+    // File::create - create a file for writing
+    define(interp, "File·create", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("File::create() requires string path")),
+        };
+        // For interpreter, we just return the path as a "file handle"
+        let mut handle = HashMap::new();
+        handle.insert("path".to_string(), Value::String(Rc::new(path.clone())));
+        handle.insert("mode".to_string(), Value::String(Rc::new("write".to_string())));
+        handle.insert("__type__".to_string(), Value::String(Rc::new("File".to_string())));
+        // Actually create the file
+        match std::fs::File::create(&path) {
+            Ok(_) => Ok(Value::Map(Rc::new(RefCell::new(handle)))),
+            Err(e) => Err(RuntimeError::new(format!("File::create() error: {}", e))),
+        }
+    });
+
+    // std::fs::File::create
+    define(interp, "std·fs·File·create", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("File::create() requires string path")),
+        };
+        let mut handle = HashMap::new();
+        handle.insert("path".to_string(), Value::String(Rc::new(path.clone())));
+        handle.insert("mode".to_string(), Value::String(Rc::new("write".to_string())));
+        handle.insert("__type__".to_string(), Value::String(Rc::new("File".to_string())));
+        match std::fs::File::create(&path) {
+            Ok(_) => Ok(Value::Map(Rc::new(RefCell::new(handle)))),
+            Err(e) => Err(RuntimeError::new(format!("File::create() error: {}", e))),
+        }
+    });
+
+    // File::open - open a file for reading
+    define(interp, "File·open", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("File::open() requires string path")),
+        };
+        let mut handle = HashMap::new();
+        handle.insert("path".to_string(), Value::String(Rc::new(path.clone())));
+        handle.insert("mode".to_string(), Value::String(Rc::new("read".to_string())));
+        handle.insert("__type__".to_string(), Value::String(Rc::new("File".to_string())));
+        match std::fs::File::open(&path) {
+            Ok(_) => Ok(Value::Map(Rc::new(RefCell::new(handle)))),
+            Err(e) => Err(RuntimeError::new(format!("File::open() error: {}", e))),
+        }
+    });
+
+    // std::fs::File::open
+    define(interp, "std·fs·File·open", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("File::open() requires string path")),
+        };
+        let mut handle = HashMap::new();
+        handle.insert("path".to_string(), Value::String(Rc::new(path.clone())));
+        handle.insert("mode".to_string(), Value::String(Rc::new("read".to_string())));
+        handle.insert("__type__".to_string(), Value::String(Rc::new("File".to_string())));
+        match std::fs::File::open(&path) {
+            Ok(_) => Ok(Value::Map(Rc::new(RefCell::new(handle)))),
+            Err(e) => Err(RuntimeError::new(format!("File::open() error: {}", e))),
+        }
+    });
+
+    // BufWriter::new - create a buffered writer wrapper
+    define(interp, "BufWriter·new", Some(1), |_, args| {
+        // BufWriter wraps a file and provides buffering
+        // In our implementation, we pass through the underlying file handle with a buffer
+        match &args[0] {
+            Value::Map(file_map) => {
+                let mut wrapper = HashMap::new();
+                wrapper.insert("inner".to_string(), Value::Map(file_map.clone()));
+                wrapper.insert("buffer".to_string(), Value::Array(Rc::new(RefCell::new(Vec::new()))));
+                wrapper.insert("__type__".to_string(), Value::String(Rc::new("BufWriter".to_string())));
+                Ok(Value::Map(Rc::new(RefCell::new(wrapper))))
+            }
+            _ => Err(RuntimeError::new("BufWriter::new requires a file handle")),
+        }
+    });
+
+    // std::io::BufWriter::new
+    define(interp, "std·io·BufWriter·new", Some(1), |_, args| {
+        match &args[0] {
+            Value::Map(file_map) => {
+                let mut wrapper = HashMap::new();
+                wrapper.insert("inner".to_string(), Value::Map(file_map.clone()));
+                wrapper.insert("buffer".to_string(), Value::Array(Rc::new(RefCell::new(Vec::new()))));
+                wrapper.insert("__type__".to_string(), Value::String(Rc::new("BufWriter".to_string())));
+                Ok(Value::Map(Rc::new(RefCell::new(wrapper))))
+            }
+            _ => Err(RuntimeError::new("BufWriter::new requires a file handle")),
+        }
+    });
+
+    // BufReader::new - create a buffered reader wrapper (handles both file and TcpStream)
+    define(interp, "BufReader·new", Some(1), |_, args| {
+        use std::io::BufReader as StdBufReader;
+
+        // Helper to extract map from value, handling Ref wrappers
+        let get_map = |val: &Value| -> Option<Rc<RefCell<HashMap<String, Value>>>> {
+            match val {
+                Value::Map(m) => Some(m.clone()),
+                Value::Ref(r) => {
+                    let inner = r.borrow();
+                    if let Value::Map(m) = &*inner {
+                        Some(m.clone())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        };
+
+        if let Some(file_map) = get_map(&args[0]) {
+            let borrowed = file_map.borrow();
+            let mut wrapper = HashMap::new();
+
+            // Check if this is a TcpStream - if so, create a REAL BufReader
+            if let Some(Value::String(t)) = borrowed.get("__type__") {
+                if t.as_str() == "TcpStream" {
+                    if let Some(Value::Int(stream_id)) = borrowed.get("__stream_id__") {
+                        let stream_id_val = *stream_id as u64;
+                        drop(borrowed);
+
+                        // Create and store a real BufReader
+                        if let Some(mut guard) = get_stream_registry().lock().ok() {
+                            if let Some(stream) = guard.get_mut(&stream_id_val) {
+                                let stream_clone = match stream.try_clone() {
+                                    Ok(s) => s,
+                                    Err(e) => return Err(RuntimeError::new(format!("Failed to clone stream: {}", e))),
+                                };
+                                let reader = StdBufReader::new(stream_clone);
+                                let reader_id = store_bufreader(reader);
+
+                                wrapper.insert("__type__".to_string(), Value::String(Rc::new("BufReader".to_string())));
+                                wrapper.insert("__stream_id__".to_string(), Value::Int(stream_id_val as i64));
+                                wrapper.insert("__reader_id__".to_string(), Value::Int(reader_id as i64));
+                                return Ok(Value::Map(Rc::new(RefCell::new(wrapper))));
+                            }
+                        }
+                        return Err(RuntimeError::new("TcpStream not found in registry"));
+                    }
+                }
+            }
+
+            // For regular files, just wrap it
+            drop(borrowed);
+            wrapper.insert("inner".to_string(), Value::Map(file_map.clone()));
+            wrapper.insert("__type__".to_string(), Value::String(Rc::new("BufReader".to_string())));
+            Ok(Value::Map(Rc::new(RefCell::new(wrapper))))
+        } else {
+            Err(RuntimeError::new("BufReader::new requires a file handle or TcpStream"))
+        }
+    });
+
+    // std::io::BufReader::new
+    define(interp, "std·io·BufReader·new", Some(1), |_, args| {
+        // Helper to extract map from value, handling Ref wrappers
+        let get_map = |val: &Value| -> Option<Rc<RefCell<HashMap<String, Value>>>> {
+            match val {
+                Value::Map(m) => Some(m.clone()),
+                Value::Ref(r) => {
+                    let inner = r.borrow();
+                    if let Value::Map(m) = &*inner {
+                        Some(m.clone())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        };
+
+        if let Some(file_map) = get_map(&args[0]) {
+            let borrowed = file_map.borrow();
+            let mut wrapper = HashMap::new();
+
+            // Check if this is a TcpStream
+            if let Some(Value::String(t)) = borrowed.get("__type__") {
+                if t.as_str() == "TcpStream" {
+                    if let Some(Value::Int(stream_id)) = borrowed.get("__stream_id__") {
+                        wrapper.insert("__stream_id__".to_string(), Value::Int(*stream_id));
+                    }
+                }
+            }
+
+            drop(borrowed);
+            wrapper.insert("inner".to_string(), Value::Map(file_map.clone()));
+            wrapper.insert("__type__".to_string(), Value::String(Rc::new("BufReader".to_string())));
+            Ok(Value::Map(Rc::new(RefCell::new(wrapper))))
+        } else {
+            Err(RuntimeError::new("BufReader::new requires a file handle or TcpStream"))
+        }
+    });
+
+    // dirs_next::config_dir - get user config directory
+    define(interp, "dirs_next·config_dir", Some(0), |_, _| {
+        match dirs::config_dir() {
+            Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
+            None => Ok(Value::Null),
+        }
+    });
+
+    // dirs_next::data_dir - get user data directory
+    define(interp, "dirs_next·data_dir", Some(0), |_, _| {
+        match dirs::data_dir() {
+            Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
+            None => Ok(Value::Null),
+        }
+    });
+
+    // dirs_next::home_dir - get user home directory
+    define(interp, "dirs_next·home_dir", Some(0), |_, _| {
+        match dirs::home_dir() {
+            Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
+            None => Ok(Value::Null),
         }
     });
 }
@@ -7419,11 +8751,75 @@ fn register_system(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
-    // args - get command line arguments
-    define(interp, "args", Some(0), |_, _| {
-        let args: Vec<Value> = std::env::args()
-            .map(|s| Value::String(Rc::new(s)))
-            .collect();
+    // std::env::var - get single environment variable as Result<String, VarError>
+    define(interp, "std·env·var", Some(1), |_, args| {
+        let key = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("env::var expects string key")),
+        };
+        match std::env::var(&key) {
+            Ok(val) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Ok".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(val))])),
+            }),
+            Err(_) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new("environment variable not found".to_string()))])),
+            }),
+        }
+    });
+
+    // std::env::temp_dir - get system temp directory
+    define(interp, "std·env·temp_dir", Some(0), |_, _| {
+        let temp_dir = std::env::temp_dir();
+        Ok(Value::String(Rc::new(temp_dir.to_string_lossy().to_string())))
+    });
+
+    // Also register with alternate names
+    define(interp, "temp_dir", Some(0), |_, _| {
+        let temp_dir = std::env::temp_dir();
+        Ok(Value::String(Rc::new(temp_dir.to_string_lossy().to_string())))
+    });
+
+    // std::env::current_dir - get current working directory (alternate name)
+    define(interp, "std·env·current_dir", Some(0), |_, _| {
+        match std::env::current_dir() {
+            Ok(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
+            Err(e) => Err(RuntimeError::new(format!("current_dir() error: {}", e))),
+        }
+    });
+
+    // std::env::args - get command line arguments (filtered to exclude interpreter args)
+    define(interp, "std·env·args", Some(0), |interp, _| {
+        let args: Vec<Value> = if interp.program_args.as_ref().map(|v| v.is_empty()).unwrap_or(true) {
+            // Fallback: return all args if program_args not set
+            std::env::args()
+                .map(|s| Value::String(Rc::new(s)))
+                .collect()
+        } else {
+            // Return filtered program args
+            interp.program_args.as_ref().unwrap().iter()
+                .map(|a| Value::String(Rc::new(a.clone())))
+                .collect()
+        };
+        Ok(Value::Array(Rc::new(RefCell::new(args))))
+    });
+
+    // args - get command line arguments (filtered to exclude interpreter args)
+    define(interp, "args", Some(0), |interp, _| {
+        let args: Vec<Value> = if interp.program_args.as_ref().map(|v| v.is_empty()).unwrap_or(true) {
+            // Fallback: return all args if program_args not set
+            std::env::args()
+                .map(|s| Value::String(Rc::new(s)))
+                .collect()
+        } else {
+            // Return filtered program args
+            interp.program_args.as_ref().unwrap().iter()
+                .map(|a| Value::String(Rc::new(a.clone())))
+                .collect()
+        };
         Ok(Value::Array(Rc::new(RefCell::new(args))))
     });
 
@@ -7471,6 +8867,15 @@ fn register_system(interp: &mut Interpreter) {
         std::process::exit(code);
     });
 
+    // std::process::exit - exit the program with code (qualified name)
+    define(interp, "std·process·exit", Some(1), |_, args| {
+        let code = match &args[0] {
+            Value::Int(n) => *n as i32,
+            _ => 0,
+        };
+        std::process::exit(code);
+    });
+
     // shell - execute shell command and return output
     define(interp, "shell", Some(1), |_, args| {
         let cmd = match &args[0] {
@@ -7508,6 +8913,16 @@ fn register_system(interp: &mut Interpreter) {
     // arch - get CPU architecture
     define(interp, "arch", Some(0), |_, _| {
         Ok(Value::String(Rc::new(std::env::consts::ARCH.to_string())))
+    });
+
+    // num_cpus::get - get number of available CPUs
+    define(interp, "num_cpus·get", Some(0), |_, _| {
+        Ok(Value::Int(num_cpus::get() as i64))
+    });
+
+    // num_cpus::get_physical - get number of physical CPU cores
+    define(interp, "num_cpus·get_physical", Some(0), |_, _| {
+        Ok(Value::Int(num_cpus::get_physical() as i64))
     });
 }
 
@@ -9457,6 +10872,7 @@ fn register_pattern(interp: &mut Interpreter) {
             Value::Future(_) => "future",
             Value::VariantConstructor { .. } => "variant_constructor",
             Value::DefaultConstructor { .. } => "default_constructor",
+            Value::Range { .. } => "range",
         };
         Ok(Value::String(Rc::new(type_name.to_string())))
     });
@@ -10359,6 +11775,22 @@ fn register_devex(interp: &mut Interpreter) {
             Value::DefaultConstructor { type_name } => {
                 format!("<default {}>", type_name)
             }
+            Value::Range { start, end, inclusive } => {
+                match (start, end) {
+                    (Some(s), Some(e)) => if *inclusive {
+                        format!("range({}..={})", s, e)
+                    } else {
+                        format!("range({}..{})", s, e)
+                    },
+                    (Some(s), None) => format!("range({}..)", s),
+                    (None, Some(e)) => if *inclusive {
+                        format!("range(..={})", e)
+                    } else {
+                        format!("range(..{})", e)
+                    },
+                    (None, None) => "range(..)".to_string(),
+                }
+            }
         };
         let value_repr = format_value_debug(&args[0]);
         println!("[DEBUG] {}: {}", type_name, value_repr);
@@ -10978,6 +12410,22 @@ fn format_value_debug(value: &Value) -> String {
         Value::DefaultConstructor { type_name } => {
             format!("<default {}>", type_name)
         }
+        Value::Range { start, end, inclusive } => {
+            match (start, end) {
+                (Some(s), Some(e)) => if *inclusive {
+                    format!("{}..={}", s, e)
+                } else {
+                    format!("{}..{}", s, e)
+                },
+                (Some(s), None) => format!("{}..", s),
+                (None, Some(e)) => if *inclusive {
+                    format!("..={}", e)
+                } else {
+                    format!("..{}", e)
+                },
+                (None, None) => "..".to_string(),
+            }
+        }
     }
 }
 
@@ -11121,6 +12569,7 @@ fn get_type_name(value: &Value) -> String {
         Value::Future(_) => "future".to_string(),
         Value::VariantConstructor { enum_name, .. } => format!("{}_constructor", enum_name),
         Value::DefaultConstructor { type_name } => format!("{}_default", type_name),
+        Value::Range { .. } => "range".to_string(),
     }
 }
 
@@ -27660,6 +29109,420 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
     });
 }
 
+
+// =============================================================================
+// PHASE 20: TERMINAL/CONSOLE MODULE
+// =============================================================================
+// ANSI terminal styling, progress bars, spinners, and table formatting.
+// Designed for CLI applications like Ritualis.
+
+fn register_terminal(interp: &mut Interpreter) {
+    // ANSI escape code constants
+    const RESET: &str = "\x1b[0m";
+    const BOLD: &str = "\x1b[1m";
+    const DIM: &str = "\x1b[2m";
+    const ITALIC: &str = "\x1b[3m";
+    const UNDERLINE: &str = "\x1b[4m";
+
+    // Foreground colors
+    const FG_BLACK: &str = "\x1b[30m";
+    const FG_RED: &str = "\x1b[31m";
+    const FG_GREEN: &str = "\x1b[32m";
+    const FG_YELLOW: &str = "\x1b[33m";
+    const FG_BLUE: &str = "\x1b[34m";
+    const FG_MAGENTA: &str = "\x1b[35m";
+    const FG_CYAN: &str = "\x1b[36m";
+    const FG_WHITE: &str = "\x1b[37m";
+
+    // Bright foreground colors
+    const FG_BRIGHT_BLACK: &str = "\x1b[90m";
+    const FG_BRIGHT_RED: &str = "\x1b[91m";
+    const FG_BRIGHT_GREEN: &str = "\x1b[92m";
+    const FG_BRIGHT_YELLOW: &str = "\x1b[93m";
+    const FG_BRIGHT_BLUE: &str = "\x1b[94m";
+    const FG_BRIGHT_MAGENTA: &str = "\x1b[95m";
+    const FG_BRIGHT_CYAN: &str = "\x1b[96m";
+    const FG_BRIGHT_WHITE: &str = "\x1b[97m";
+
+    // term_reset - reset all styling
+    define(interp, "term_reset", Some(0), |_, _| {
+        Ok(Value::String(Rc::new(RESET.to_string())))
+    });
+
+    // term_bold - make text bold
+    define(interp, "term_bold", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", BOLD, text, RESET))))
+    });
+
+    // term_dim - make text dim
+    define(interp, "term_dim", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", DIM, text, RESET))))
+    });
+
+    // term_italic - make text italic
+    define(interp, "term_italic", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", ITALIC, text, RESET))))
+    });
+
+    // term_underline - underline text
+    define(interp, "term_underline", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", UNDERLINE, text, RESET))))
+    });
+
+    // term_red - red text
+    define(interp, "term_red", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", FG_RED, text, RESET))))
+    });
+
+    // term_green - green text
+    define(interp, "term_green", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", FG_GREEN, text, RESET))))
+    });
+
+    // term_yellow - yellow text
+    define(interp, "term_yellow", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", FG_YELLOW, text, RESET))))
+    });
+
+    // term_blue - blue text
+    define(interp, "term_blue", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", FG_BLUE, text, RESET))))
+    });
+
+    // term_magenta - magenta text
+    define(interp, "term_magenta", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", FG_MAGENTA, text, RESET))))
+    });
+
+    // term_cyan - cyan text
+    define(interp, "term_cyan", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", FG_CYAN, text, RESET))))
+    });
+
+    // term_white - white text
+    define(interp, "term_white", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", FG_WHITE, text, RESET))))
+    });
+
+    // term_black - black text
+    define(interp, "term_black", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", FG_BLACK, text, RESET))))
+    });
+
+    // term_bright_red - bright red text
+    define(interp, "term_bright_red", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", FG_BRIGHT_RED, text, RESET))))
+    });
+
+    // term_bright_green - bright green text
+    define(interp, "term_bright_green", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", FG_BRIGHT_GREEN, text, RESET))))
+    });
+
+    // term_bright_cyan - bright cyan text
+    define(interp, "term_bright_cyan", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+        Ok(Value::String(Rc::new(format!("{}{}{}", FG_BRIGHT_CYAN, text, RESET))))
+    });
+
+    // term_style - apply multiple styles: term_style(text, "bold", "red")
+    define(interp, "term_style", None, |_, args| {
+        if args.is_empty() {
+            return Err(RuntimeError::new("term_style requires at least text argument"));
+        }
+        let text = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            other => format!("{}", other),
+        };
+
+        let mut prefix = String::new();
+        for arg in &args[1..] {
+            if let Value::String(style) = arg {
+                match style.as_str() {
+                    "bold" => prefix.push_str(BOLD),
+                    "dim" => prefix.push_str(DIM),
+                    "italic" => prefix.push_str(ITALIC),
+                    "underline" => prefix.push_str(UNDERLINE),
+                    "red" => prefix.push_str(FG_RED),
+                    "green" => prefix.push_str(FG_GREEN),
+                    "yellow" => prefix.push_str(FG_YELLOW),
+                    "blue" => prefix.push_str(FG_BLUE),
+                    "magenta" => prefix.push_str(FG_MAGENTA),
+                    "cyan" => prefix.push_str(FG_CYAN),
+                    "white" => prefix.push_str(FG_WHITE),
+                    "black" => prefix.push_str(FG_BLACK),
+                    "bright_red" => prefix.push_str(FG_BRIGHT_RED),
+                    "bright_green" => prefix.push_str(FG_BRIGHT_GREEN),
+                    "bright_yellow" => prefix.push_str(FG_BRIGHT_YELLOW),
+                    "bright_blue" => prefix.push_str(FG_BRIGHT_BLUE),
+                    "bright_magenta" => prefix.push_str(FG_BRIGHT_MAGENTA),
+                    "bright_cyan" => prefix.push_str(FG_BRIGHT_CYAN),
+                    "bright_white" => prefix.push_str(FG_BRIGHT_WHITE),
+                    _ => {} // ignore unknown styles
+                }
+            }
+        }
+
+        Ok(Value::String(Rc::new(format!("{}{}{}", prefix, text, RESET))))
+    });
+
+    // term_progress_bar - create a progress bar string
+    // term_progress_bar(current, total, width) -> "[████████░░░░░░░░] 50%"
+    define(interp, "term_progress_bar", Some(3), |_, args| {
+        let current = match &args[0] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("term_progress_bar: current must be number")),
+        };
+        let total = match &args[1] {
+            Value::Int(n) => *n as f64,
+            Value::Float(f) => *f,
+            _ => return Err(RuntimeError::new("term_progress_bar: total must be number")),
+        };
+        let width = match &args[2] {
+            Value::Int(n) if *n > 0 => *n as usize,
+            _ => return Err(RuntimeError::new("term_progress_bar: width must be positive integer")),
+        };
+
+        let ratio = if total > 0.0 { (current / total).min(1.0).max(0.0) } else { 0.0 };
+        let filled = (ratio * width as f64).round() as usize;
+        let empty = width - filled;
+        let percent = (ratio * 100.0).round() as i64;
+
+        let bar = format!(
+            "[{}{}] {}%",
+            "█".repeat(filled),
+            "░".repeat(empty),
+            percent
+        );
+
+        Ok(Value::String(Rc::new(bar)))
+    });
+
+    // term_spinner_frames - get spinner animation frames
+    define(interp, "term_spinner_frames", Some(0), |_, _| {
+        let frames: Vec<Value> = vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+            .into_iter()
+            .map(|s| Value::String(Rc::new(s.to_string())))
+            .collect();
+        Ok(Value::Array(Rc::new(RefCell::new(frames))))
+    });
+
+    // term_check - green checkmark
+    define(interp, "term_check", Some(0), |_, _| {
+        Ok(Value::String(Rc::new(format!("{}✓{}", FG_GREEN, RESET))))
+    });
+
+    // term_cross - red cross
+    define(interp, "term_cross", Some(0), |_, _| {
+        Ok(Value::String(Rc::new(format!("{}✗{}", FG_RED, RESET))))
+    });
+
+    // term_arrow - arrow symbol
+    define(interp, "term_arrow", Some(0), |_, _| {
+        Ok(Value::String(Rc::new("→".to_string())))
+    });
+
+    // term_bullet - bullet point
+    define(interp, "term_bullet", Some(0), |_, _| {
+        Ok(Value::String(Rc::new("•".to_string())))
+    });
+
+    // term_emoji - common emoji lookup
+    define(interp, "term_emoji", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.to_lowercase(),
+            _ => return Err(RuntimeError::new("term_emoji requires string")),
+        };
+
+        let emoji = match name.as_str() {
+            "summon" | "install" => "🔮",
+            "banish" | "uninstall" => "👋",
+            "invoke" | "update" => "⚡",
+            "awaken" | "start" => "🌅",
+            "seal" | "stop" => "🔒",
+            "check" | "ok" | "success" => "✓",
+            "cross" | "error" | "fail" => "✗",
+            "arrow" | "right" => "→",
+            "warning" | "warn" => "⚠",
+            "info" | "information" => "ℹ",
+            "question" | "help" => "?",
+            "star" => "★",
+            "heart" => "❤",
+            "fire" => "🔥",
+            "rocket" => "🚀",
+            "package" | "box" => "📦",
+            "folder" | "directory" => "📁",
+            "file" | "document" => "📄",
+            "gear" | "settings" => "⚙",
+            "search" | "seek" => "🔍",
+            "download" => "⬇",
+            "upload" => "⬆",
+            "sync" | "refresh" => "🔄",
+            "lock" | "locked" => "🔒",
+            "unlock" | "unlocked" => "🔓",
+            "key" => "🔑",
+            "clock" | "time" => "🕐",
+            "calendar" | "date" => "📅",
+            "bell" | "notification" => "🔔",
+            _ => "•",
+        };
+
+        Ok(Value::String(Rc::new(emoji.to_string())))
+    });
+
+    // term_table_row - format a table row with column widths
+    define(interp, "term_table_row", Some(2), |_, args| {
+        let values = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("term_table_row: first arg must be array")),
+        };
+        let widths = match &args[1] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("term_table_row: second arg must be array")),
+        };
+
+        if values.len() != widths.len() {
+            return Err(RuntimeError::new("term_table_row: arrays must have same length"));
+        }
+
+        let mut parts: Vec<String> = Vec::new();
+        for (val, width) in values.iter().zip(widths.iter()) {
+            let text = match val {
+                Value::String(s) => (**s).clone(),
+                other => format!("{}", other),
+            };
+            let w = match width {
+                Value::Int(n) => *n as usize,
+                _ => 10,
+            };
+            let formatted = if text.chars().count() > w {
+                text.chars().take(w - 1).collect::<String>() + "…"
+            } else {
+                format!("{:<width$}", text, width = w)
+            };
+            parts.push(formatted);
+        }
+
+        Ok(Value::String(Rc::new(parts.join(" │ "))))
+    });
+
+    // term_table_separator - create a table separator line
+    define(interp, "term_table_separator", Some(1), |_, args| {
+        let widths = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("term_table_separator: arg must be array")),
+        };
+
+        let parts: Vec<String> = widths.iter().map(|w| {
+            let width = match w {
+                Value::Int(n) => *n as usize,
+                _ => 10,
+            };
+            "─".repeat(width)
+        }).collect();
+
+        Ok(Value::String(Rc::new(parts.join("─┼─"))))
+    });
+
+    // term_clear_line - ANSI escape to clear current line
+    define(interp, "term_clear_line", Some(0), |_, _| {
+        Ok(Value::String(Rc::new("\x1b[2K\r".to_string())))
+    });
+
+    // term_cursor_up - move cursor up n lines
+    define(interp, "term_cursor_up", Some(1), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) if *n > 0 => *n,
+            _ => 1,
+        };
+        Ok(Value::String(Rc::new(format!("\x1b[{}A", n))))
+    });
+
+    // term_cursor_down - move cursor down n lines
+    define(interp, "term_cursor_down", Some(1), |_, args| {
+        let n = match &args[0] {
+            Value::Int(n) if *n > 0 => *n,
+            _ => 1,
+        };
+        Ok(Value::String(Rc::new(format!("\x1b[{}B", n))))
+    });
+
+    // term_hide_cursor - hide cursor
+    define(interp, "term_hide_cursor", Some(0), |_, _| {
+        Ok(Value::String(Rc::new("\x1b[?25l".to_string())))
+    });
+
+    // term_show_cursor - show cursor
+    define(interp, "term_show_cursor", Some(0), |_, _| {
+        Ok(Value::String(Rc::new("\x1b[?25h".to_string())))
+    });
+
+    // term_is_tty - check if stdout is a terminal
+    define(interp, "term_is_tty", Some(0), |_, _| {
+        use std::io::IsTerminal;
+        Ok(Value::Bool(std::io::stdout().is_terminal()))
+    });
+}
 #[cfg(test)]
 mod tests {
     use super::*;

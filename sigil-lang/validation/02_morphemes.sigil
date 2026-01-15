@@ -1,0 +1,19 @@
+// From README - Morpheme Operators
+fn main() {
+    let data = vec![1, 2, 3, 4, 5];
+
+    // Test map (tau)
+    let doubled = data|map{|x| x * 2};
+    println("Doubled:");
+    println(doubled);
+
+    // Test filter (phi)
+    let big = doubled|filter{|x| x > 5};
+    println("Filtered > 5:");
+    println(big);
+
+    // Test fold (rho)
+    let sum = big|fold(0, |acc, x| acc + x);
+    println("Sum:");
+    println(sum);
+}

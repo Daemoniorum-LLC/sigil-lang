@@ -1,0 +1,11 @@
+// Test: Escape sequences in strings
+// Spec: 01-LEXICAL.md § 4.2 String Literals
+// Priority: P2 - Enhancement
+
+fn main() {
+    let s1: String = "line1\nline2";
+    println(s1);
+
+    let s2: String = "tab\there";
+    println(s2);
+}

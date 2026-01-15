@@ -1,0 +1,423 @@
+//! DOM Event Handling
+//!
+//! Type-safe event handlers and synthetic events.
+
+use std::rc::Rc;
+
+/// Event handler function type
+pub type EventHandler = Rc[dyn Fn(Event)];
+
+/// Synthetic event wrapper
+pub type Event = struct {
+    inner: crate::web_sys::Event!,
+}
+
+impl Event {
+    /// Wrap a native event
+    pub fn new(native: crate::web_sys::Event!) -> Self! {
+        Event { inner: native }
+    }
+
+    /// Prevent default behavior
+    pub fn prevent_default(self: &Self!) {
+        self.inner·prevent_default();
+    }
+
+    /// Stop propagation
+    pub fn stop_propagation(self: &Self!) {
+        self.inner·stop_propagation();
+    }
+
+    /// Stop immediate propagation
+    pub fn stop_immediate_propagation(self: &Self!) {
+        self.inner·stop_immediate_propagation();
+    }
+
+    /// Get event type
+    pub fn event_type(self: &Self!) -> String! {
+        self.inner·type_()
+    }
+
+    /// Get target element
+    pub fn target(self: &Self!) -> Option[crate::web_sys::Element]? {
+        self.inner·target()·and_then(|t| t·dyn_into()·ok())
+    }
+
+    /// Get current target element
+    pub fn current_target(self: &Self!) -> Option[crate::web_sys::Element]? {
+        self.inner·current_target()·and_then(|t| t·dyn_into()·ok())
+    }
+
+    /// Is default prevented?
+    pub fn default_prevented(self: &Self!) -> bool! {
+        self.inner·default_prevented()
+    }
+
+    /// Event phase
+    pub fn phase(self: &Self!) -> EventPhase! {
+        match self.inner·event_phase() {
+            1 => EventPhase::Capturing,
+            2 => EventPhase::AtTarget,
+            3 => EventPhase::Bubbling,
+            _ => EventPhase::None,
+        }
+    }
+
+    /// Get native event
+    pub fn native(self: &Self!) -> &crate::web_sys::Event! {
+        &self.inner
+    }
+}
+
+/// Event propagation phase
+pub type EventPhase = enum {
+    None,
+    Capturing,
+    AtTarget,
+    Bubbling,
+}
+
+/// Mouse event with position and button info
+pub type MouseEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::MouseEvent!,
+}
+
+impl MouseEvent {
+    pub fn new(native: crate::web_sys::MouseEvent!) -> Self! {
+        MouseEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    /// Client X coordinate
+    pub fn client_x(self: &Self!) -> i32! {
+        self.inner·client_x()
+    }
+
+    /// Client Y coordinate
+    pub fn client_y(self: &Self!) -> i32! {
+        self.inner·client_y()
+    }
+
+    /// Page X coordinate
+    pub fn page_x(self: &Self!) -> i32! {
+        self.inner·page_x()
+    }
+
+    /// Page Y coordinate
+    pub fn page_y(self: &Self!) -> i32! {
+        self.inner·page_y()
+    }
+
+    /// Screen X coordinate
+    pub fn screen_x(self: &Self!) -> i32! {
+        self.inner·screen_x()
+    }
+
+    /// Screen Y coordinate
+    pub fn screen_y(self: &Self!) -> i32! {
+        self.inner·screen_y()
+    }
+
+    /// Mouse button (0=left, 1=middle, 2=right)
+    pub fn button(self: &Self!) -> i16! {
+        self.inner·button()
+    }
+
+    /// Alt key pressed?
+    pub fn alt_key(self: &Self!) -> bool! {
+        self.inner·alt_key()
+    }
+
+    /// Ctrl key pressed?
+    pub fn ctrl_key(self: &Self!) -> bool! {
+        self.inner·ctrl_key()
+    }
+
+    /// Shift key pressed?
+    pub fn shift_key(self: &Self!) -> bool! {
+        self.inner·shift_key()
+    }
+
+    /// Meta key pressed? (Cmd on Mac)
+    pub fn meta_key(self: &Self!) -> bool! {
+        self.inner·meta_key()
+    }
+
+    /// Delegate to Event
+    pub fn prevent_default(self: &Self!) { self.event·prevent_default(); }
+    pub fn stop_propagation(self: &Self!) { self.event·stop_propagation(); }
+}
+
+/// Keyboard event
+pub type KeyboardEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::KeyboardEvent!,
+}
+
+impl KeyboardEvent {
+    pub fn new(native: crate::web_sys::KeyboardEvent!) -> Self! {
+        KeyboardEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    /// Key value
+    pub fn key(self: &Self!) -> String! {
+        self.inner·key()
+    }
+
+    /// Key code
+    pub fn code(self: &Self!) -> String! {
+        self.inner·code()
+    }
+
+    /// Is repeat?
+    pub fn repeat(self: &Self!) -> bool! {
+        self.inner·repeat()
+    }
+
+    /// Modifier keys
+    pub fn alt_key(self: &Self!) -> bool! { self.inner·alt_key() }
+    pub fn ctrl_key(self: &Self!) -> bool! { self.inner·ctrl_key() }
+    pub fn shift_key(self: &Self!) -> bool! { self.inner·shift_key() }
+    pub fn meta_key(self: &Self!) -> bool! { self.inner·meta_key() }
+
+    pub fn prevent_default(self: &Self!) { self.event·prevent_default(); }
+    pub fn stop_propagation(self: &Self!) { self.event·stop_propagation(); }
+}
+
+/// Input event (for form elements)
+pub type InputEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::InputEvent!,
+}
+
+impl InputEvent {
+    pub fn new(native: crate::web_sys::InputEvent!) -> Self! {
+        InputEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    /// Input data
+    pub fn data(self: &Self!) -> Option[String]? {
+        self.inner·data()
+    }
+
+    /// Input type
+    pub fn input_type(self: &Self!) -> String! {
+        self.inner·input_type()
+    }
+
+    /// Is composing?
+    pub fn is_composing(self: &Self!) -> bool! {
+        self.inner·is_composing()
+    }
+
+    /// Get current input value
+    pub fn value(self: &Self!) -> String! {
+        self.event·target()
+            ·and_then(|t| t·dyn_into[crate::web_sys::HtmlInputElement]()·ok())
+            ·map(|el| el·value())
+            ·unwrap_or_default()
+    }
+
+    pub fn prevent_default(self: &Self!) { self.event·prevent_default(); }
+}
+
+/// Focus event
+pub type FocusEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::FocusEvent!,
+}
+
+impl FocusEvent {
+    pub fn new(native: crate::web_sys::FocusEvent!) -> Self! {
+        FocusEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    /// Related target (element losing/gaining focus)
+    pub fn related_target(self: &Self!) -> Option[crate::web_sys::Element]? {
+        self.inner·related_target()·and_then(|t| t·dyn_into()·ok())
+    }
+
+    pub fn prevent_default(self: &Self!) { self.event·prevent_default(); }
+}
+
+/// Form submit event
+pub type SubmitEvent = struct {
+    event: Event!,
+}
+
+impl SubmitEvent {
+    pub fn new(native: crate::web_sys::Event!) -> Self! {
+        SubmitEvent { event: Event::new(native) }
+    }
+
+    /// Get form data
+    pub fn form_data(self: &Self!) -> crate::web_sys::FormData! {
+        let form! = self.event·target()
+            ·unwrap()
+            ·dyn_into[crate::web_sys::HtmlFormElement]()
+            ·unwrap();
+        crate::web_sys::FormData::new_with_form(&form)·unwrap()
+    }
+
+    pub fn prevent_default(self: &Self!) { self.event·prevent_default(); }
+}
+
+/// Touch event
+pub type TouchEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::TouchEvent!,
+}
+
+impl TouchEvent {
+    pub fn new(native: crate::web_sys::TouchEvent!) -> Self! {
+        TouchEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    /// Active touches
+    pub fn touches(self: &Self!) -> Vec[Touch]! {
+        let list! = self.inner·touches();
+        (0..list·length())
+            |τ{i => Touch::new(list·get(i)·unwrap())}
+            |σ()
+    }
+
+    /// Changed touches
+    pub fn changed_touches(self: &Self!) -> Vec[Touch]! {
+        let list! = self.inner·changed_touches();
+        (0..list·length())
+            |τ{i => Touch::new(list·get(i)·unwrap())}
+            |σ()
+    }
+
+    pub fn prevent_default(self: &Self!) { self.event·prevent_default(); }
+}
+
+/// Individual touch point
+pub type Touch = struct {
+    inner: crate::web_sys::Touch!,
+}
+
+impl Touch {
+    pub fn new(native: crate::web_sys::Touch!) -> Self! {
+        Touch { inner: native }
+    }
+
+    pub fn identifier(self: &Self!) -> i32! { self.inner·identifier() }
+    pub fn client_x(self: &Self!) -> i32! { self.inner·client_x() }
+    pub fn client_y(self: &Self!) -> i32! { self.inner·client_y() }
+    pub fn page_x(self: &Self!) -> i32! { self.inner·page_x() }
+    pub fn page_y(self: &Self!) -> i32! { self.inner·page_y() }
+}
+
+/// Wheel/scroll event
+pub type WheelEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::WheelEvent!,
+}
+
+impl WheelEvent {
+    pub fn new(native: crate::web_sys::WheelEvent!) -> Self! {
+        WheelEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    pub fn delta_x(self: &Self!) -> f64! { self.inner·delta_x() }
+    pub fn delta_y(self: &Self!) -> f64! { self.inner·delta_y() }
+    pub fn delta_z(self: &Self!) -> f64! { self.inner·delta_z() }
+
+    pub fn delta_mode(self: &Self!) -> DeltaMode! {
+        match self.inner·delta_mode() {
+            0 => DeltaMode::Pixel,
+            1 => DeltaMode::Line,
+            2 => DeltaMode::Page,
+            _ => DeltaMode::Pixel,
+        }
+    }
+
+    pub fn prevent_default(self: &Self!) { self.event·prevent_default(); }
+}
+
+pub type DeltaMode = enum {
+    Pixel,
+    Line,
+    Page,
+}
+
+/// Drag event
+pub type DragEvent = struct {
+    event: Event!,
+    mouse: MouseEvent!,
+    inner: crate::web_sys::DragEvent!,
+}
+
+impl DragEvent {
+    pub fn new(native: crate::web_sys::DragEvent!) -> Self! {
+        DragEvent {
+            event: Event::new(native·clone()·into()),
+            mouse: MouseEvent::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    /// Get data transfer object
+    pub fn data_transfer(self: &Self!) -> Option[crate::web_sys::DataTransfer]? {
+        self.inner·data_transfer()
+    }
+
+    pub fn prevent_default(self: &Self!) { self.event·prevent_default(); }
+}
+
+/// Animation event
+pub type AnimationEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::AnimationEvent!,
+}
+
+impl AnimationEvent {
+    pub fn new(native: crate::web_sys::AnimationEvent!) -> Self! {
+        AnimationEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    pub fn animation_name(self: &Self!) -> String! { self.inner·animation_name() }
+    pub fn elapsed_time(self: &Self!) -> f32! { self.inner·elapsed_time() }
+    pub fn pseudo_element(self: &Self!) -> String! { self.inner·pseudo_element() }
+}
+
+/// Transition event
+pub type TransitionEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::TransitionEvent!,
+}
+
+impl TransitionEvent {
+    pub fn new(native: crate::web_sys::TransitionEvent!) -> Self! {
+        TransitionEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    pub fn property_name(self: &Self!) -> String! { self.inner·property_name() }
+    pub fn elapsed_time(self: &Self!) -> f32! { self.inner·elapsed_time() }
+    pub fn pseudo_element(self: &Self!) -> String! { self.inner·pseudo_element() }
+}

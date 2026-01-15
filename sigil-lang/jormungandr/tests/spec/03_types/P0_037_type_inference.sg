@@ -1,0 +1,8 @@
+// Test: Basic type inference
+// Spec: 03-TYPES.md § 7.1 Type Inference
+// Priority: P0
+
+fn main() {
+    let x = 42;
+    println(x);
+}

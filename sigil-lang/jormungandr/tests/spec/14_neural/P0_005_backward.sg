@@ -1,0 +1,12 @@
+// Test: Backward pass (autograd)
+// Spec: 14-NEURAL.md § 3.2 Backpropagation
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let w: Tensor<[2, 3]> = randn()|requires_grad(true);
+    let x: Tensor<[3, 1]> = randn();
+    let y = w @ x;
+    let loss = y|Σ;  // Sum all elements
+    loss|backward;
+    println(w.grad.is_some());
+}

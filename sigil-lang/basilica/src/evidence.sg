@@ -1,0 +1,589 @@
+//! Evidence Tracking for HTTP Data
+//!
+//! Extends Sigil's core evidentiality (!, ~, ?, ‽) with web-specific
+//! evidence types. Every piece of data in Basilica carries provenance.
+
+use shared::{Timestamp, Duration, Confidence, TrustLevel, Value};
+
+// ============================================================================
+// Core Evidence Types
+// ============================================================================
+
+/// Evidence level for HTTP data, extending Sigil's core evidentiality.
+///
+/// These map to the core evidence markers but with web-specific semantics:
+/// - `!` (Known) → Computed, Validated
+/// - `~` (Reported) → External, UserInput (unvalidated), Cached
+/// - `?` (Uncertain) → Inferred
+/// - `‽` (Paradox) → Conflicting sources
+#[derive(Clone, Debug)]
+pub enum HttpEvidence {
+    /// Computed locally by the service - highest trust
+    /// Maps to `!` (Known)
+    Computed,
+
+    /// From authenticated user with trust level
+    /// Trust level modulates the effective evidence
+    Authenticated {
+        user_id: [u8; 16],  // UUID bytes
+        trust: TrustLevel,
+        verified_at: Timestamp,
+    },
+
+    /// From external API call
+    /// Maps to `~` (Reported)
+    External {
+        source: String,
+        fetched_at: Timestamp,
+        api_confidence: Option<f64>,
+    },
+
+    /// AI/ML inference with confidence
+    /// Maps to `?` (Uncertain)
+    Inferred {
+        confidence: Confidence,
+        model: String,
+        reasoning_trace: Option<String>,
+    },
+
+    /// User input, may or may not be validated
+    /// Unvalidated maps to `~`, validated maps to `!`
+    UserInput {
+        validated: bool,
+        validation_errors: Vec<String>,
+    },
+
+    /// Cached value with staleness tracking
+    /// Maps to `~` with temporal decay
+    Cached {
+        stored_at: Timestamp,
+        ttl: Duration,
+        original_evidence: Box<HttpEvidence>,
+    },
+
+    /// Multiple sources with conflict
+    /// Maps to `‽` (Paradox)
+    Conflicting {
+        sources: Vec<ConflictingSource>,
+        resolution_strategy: Option<ResolutionStrategy>,
+    },
+}
+
+/// A conflicting source in a paradox situation
+#[derive(Clone, Debug)]
+pub struct ConflictingSource {
+    pub source: String,
+    pub value: Value,
+    pub evidence: Box<HttpEvidence>,
+    pub timestamp: Timestamp,
+}
+
+/// Strategy for resolving conflicting evidence
+#[derive(Clone, Debug)]
+pub enum ResolutionStrategy {
+    /// Use the most recent value
+    MostRecent,
+    /// Use the highest confidence value
+    HighestConfidence,
+    /// Use the most trusted source
+    MostTrusted,
+    /// Require human decision
+    HumanDecision,
+    /// Fail on conflict
+    Fail,
+    /// Custom resolution function
+    Custom(String),
+}
+
+impl HttpEvidence {
+    /// Get the core Sigil evidence level this maps to
+    pub fn to_sigil_evidence(&self) -> EvidenceLevel {
+        match self {
+            HttpEvidence::Computed => EvidenceLevel::Known,
+
+            HttpEvidence::Authenticated { trust, .. } => {
+                if trust.is_high() {
+                    EvidenceLevel::Known
+                } else if trust.is_low() {
+                    EvidenceLevel::Reported
+                } else {
+                    EvidenceLevel::Uncertain
+                }
+            }
+
+            HttpEvidence::External { .. } => EvidenceLevel::Reported,
+
+            HttpEvidence::Inferred { confidence, .. } => {
+                if confidence.is_very_high() {
+                    EvidenceLevel::Uncertain // Still uncertain, even if confident
+                } else {
+                    EvidenceLevel::Uncertain
+                }
+            }
+
+            HttpEvidence::UserInput { validated, .. } => {
+                if *validated {
+                    EvidenceLevel::Known
+                } else {
+                    EvidenceLevel::Reported
+                }
+            }
+
+            HttpEvidence::Cached { stored_at, ttl, original_evidence } => {
+                let age = stored_at.elapsed();
+                if age.nanos > ttl.nanos {
+                    // Stale cache - drop one level
+                    original_evidence.to_sigil_evidence().demote()
+                } else {
+                    original_evidence.to_sigil_evidence()
+                }
+            }
+
+            HttpEvidence::Conflicting { .. } => EvidenceLevel::Paradox,
+        }
+    }
+
+    /// Check if this evidence is trustworthy for a given purpose
+    pub fn is_trustworthy_for(&self, purpose: &str) -> bool {
+        match self.to_sigil_evidence() {
+            EvidenceLevel::Known => true,
+            EvidenceLevel::Uncertain => {
+                // Context-dependent
+                matches!(purpose, "display" | "suggest" | "inform")
+            }
+            EvidenceLevel::Reported => {
+                // Only for informational purposes
+                matches!(purpose, "display" | "log")
+            }
+            EvidenceLevel::Paradox => false,
+        }
+    }
+
+    /// Get confidence as a numeric value
+    pub fn confidence(&self) -> Confidence {
+        match self {
+            HttpEvidence::Computed => Confidence::full(),
+            HttpEvidence::Authenticated { trust, .. } => Confidence::new(trust.value()),
+            HttpEvidence::External { api_confidence, .. } => {
+                Confidence::new(api_confidence.unwrap_or(0.7))
+            }
+            HttpEvidence::Inferred { confidence, .. } => *confidence,
+            HttpEvidence::UserInput { validated, .. } => {
+                if *validated { Confidence::new(0.95) } else { Confidence::new(0.5) }
+            }
+            HttpEvidence::Cached { original_evidence, stored_at, ttl } => {
+                let age = stored_at.elapsed();
+                let decay = 1.0 - (age.nanos as f64 / ttl.nanos as f64).min(1.0);
+                original_evidence.confidence().combine(&Confidence::new(decay))
+            }
+            HttpEvidence::Conflicting { .. } => Confidence::new(0.0),
+        }
+    }
+
+    /// Describe the evidence source for humans
+    pub fn describe(&self) -> String {
+        match self {
+            HttpEvidence::Computed => "Computed by service".to_string(),
+            HttpEvidence::Authenticated { trust, .. } => {
+                format!("From authenticated user (trust: {:.0}%)", trust.value() * 100.0)
+            }
+            HttpEvidence::External { source, .. } => {
+                format!("From external source: {}", source)
+            }
+            HttpEvidence::Inferred { confidence, model, .. } => {
+                format!("Inferred by {} ({:.0}% confidence)", model, confidence.value() * 100.0)
+            }
+            HttpEvidence::UserInput { validated, .. } => {
+                if *validated {
+                    "User input (validated)".to_string()
+                } else {
+                    "User input (unvalidated)".to_string()
+                }
+            }
+            HttpEvidence::Cached { stored_at, ttl, .. } => {
+                let age = stored_at.elapsed();
+                let remaining = ttl.nanos.saturating_sub(age.nanos);
+                format!("Cached ({} remaining)", Duration { nanos: remaining }.as_secs())
+            }
+            HttpEvidence::Conflicting { sources, .. } => {
+                format!("Conflicting ({} sources)", sources.len())
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Core Sigil Evidence Levels
+// ============================================================================
+
+/// Core Sigil evidence levels
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EvidenceLevel {
+    /// Direct knowledge - computed locally, verified
+    /// Symbol: `!`
+    Known,
+
+    /// Uncertain - inferred, possible, not verified
+    /// Symbol: `?`
+    Uncertain,
+
+    /// Reported - from external source, hearsay
+    /// Symbol: `~`
+    Reported,
+
+    /// Paradox - contradictory information
+    /// Symbol: `‽`
+    Paradox,
+}
+
+impl EvidenceLevel {
+    /// Get the symbol for this evidence level
+    pub fn symbol(&self) -> &'static str {
+        match self {
+            EvidenceLevel::Known => "!",
+            EvidenceLevel::Uncertain => "?",
+            EvidenceLevel::Reported => "~",
+            EvidenceLevel::Paradox => "‽",
+        }
+    }
+
+    /// Get numeric rank (lower = more certain)
+    pub fn rank(&self) -> u8 {
+        match self {
+            EvidenceLevel::Known => 0,
+            EvidenceLevel::Uncertain => 1,
+            EvidenceLevel::Reported => 2,
+            EvidenceLevel::Paradox => 3,
+        }
+    }
+
+    /// Join two evidence levels (least upper bound)
+    /// Returns the less certain of the two
+    pub fn join(&self, other: EvidenceLevel) -> EvidenceLevel {
+        if self.rank() >= other.rank() { *self } else { other }
+    }
+
+    /// Meet two evidence levels (greatest lower bound)
+    /// Returns the more certain of the two
+    pub fn meet(&self, other: EvidenceLevel) -> EvidenceLevel {
+        if self.rank() <= other.rank() { *self } else { other }
+    }
+
+    /// Demote to the next less certain level
+    pub fn demote(&self) -> EvidenceLevel {
+        match self {
+            EvidenceLevel::Known => EvidenceLevel::Uncertain,
+            EvidenceLevel::Uncertain => EvidenceLevel::Reported,
+            EvidenceLevel::Reported => EvidenceLevel::Paradox,
+            EvidenceLevel::Paradox => EvidenceLevel::Paradox,
+        }
+    }
+
+    /// Promote to the next more certain level (if possible)
+    pub fn promote(&self) -> EvidenceLevel {
+        match self {
+            EvidenceLevel::Paradox => EvidenceLevel::Reported,
+            EvidenceLevel::Reported => EvidenceLevel::Uncertain,
+            EvidenceLevel::Uncertain => EvidenceLevel::Known,
+            EvidenceLevel::Known => EvidenceLevel::Known,
+        }
+    }
+
+    /// Check if this evidence satisfies a requirement
+    /// More certain evidence can satisfy less certain requirements
+    pub fn satisfies(&self, required: EvidenceLevel) -> bool {
+        self.rank() <= required.rank()
+    }
+}
+
+// ============================================================================
+// Evidence Wrapper
+// ============================================================================
+
+/// A value with attached evidence metadata
+#[derive(Clone, Debug)]
+pub struct Evidenced<T> {
+    pub value: T,
+    pub evidence: HttpEvidence,
+    pub captured_at: Timestamp,
+}
+
+impl<T> Evidenced<T> {
+    /// Create a new evidenced value
+    pub fn new(value: T, evidence: HttpEvidence) -> Self {
+        Self {
+            value,
+            evidence,
+            captured_at: Timestamp::now(),
+        }
+    }
+
+    /// Create with computed evidence (highest trust)
+    pub fn computed(value: T) -> Self {
+        Self::new(value, HttpEvidence::Computed)
+    }
+
+    /// Create with external evidence
+    pub fn external(value: T, source: &str) -> Self {
+        Self::new(value, HttpEvidence::External {
+            source: source.to_string(),
+            fetched_at: Timestamp::now(),
+            api_confidence: None,
+        })
+    }
+
+    /// Create with user input evidence
+    pub fn user_input(value: T, validated: bool) -> Self {
+        Self::new(value, HttpEvidence::UserInput {
+            validated,
+            validation_errors: vec![],
+        })
+    }
+
+    /// Create with inferred evidence
+    pub fn inferred(value: T, confidence: Confidence, model: &str) -> Self {
+        Self::new(value, HttpEvidence::Inferred {
+            confidence,
+            model: model.to_string(),
+            reasoning_trace: None,
+        })
+    }
+
+    /// Map the inner value while preserving evidence
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> Evidenced<U> {
+        Evidenced {
+            value: f(self.value),
+            evidence: self.evidence,
+            captured_at: self.captured_at,
+        }
+    }
+
+    /// Validate and promote evidence if successful
+    pub fn validate<F, E>(self, f: F) -> Result<Evidenced<T>, E>
+    where
+        F: FnOnce(&T) -> Result<(), E>,
+    {
+        f(&self.value)?;
+
+        // Promote evidence after successful validation
+        let validated_evidence = match self.evidence {
+            HttpEvidence::UserInput { .. } => HttpEvidence::UserInput {
+                validated: true,
+                validation_errors: vec![],
+            },
+            other => other, // Other types don't change
+        };
+
+        Ok(Evidenced {
+            value: self.value,
+            evidence: validated_evidence,
+            captured_at: self.captured_at,
+        })
+    }
+
+    /// Get the Sigil evidence level
+    pub fn level(&self) -> EvidenceLevel {
+        self.evidence.to_sigil_evidence()
+    }
+
+    /// Check if the value is trustworthy for a purpose
+    pub fn is_trustworthy_for(&self, purpose: &str) -> bool {
+        self.evidence.is_trustworthy_for(purpose)
+    }
+
+    /// Unwrap if evidence satisfies requirement
+    pub fn require(self, level: EvidenceLevel) -> Result<T, EvidenceError> {
+        if self.level().satisfies(level) {
+            Ok(self.value)
+        } else {
+            Err(EvidenceError::InsufficientEvidence {
+                required: level,
+                actual: self.level(),
+            })
+        }
+    }
+
+    /// Unwrap only if known (!)
+    pub fn require_known(self) -> Result<T, EvidenceError> {
+        self.require(EvidenceLevel::Known)
+    }
+}
+
+// ============================================================================
+// Evidence Errors
+// ============================================================================
+
+/// Errors related to evidence handling
+#[derive(Clone, Debug)]
+pub enum EvidenceError {
+    /// Evidence level insufficient for operation
+    InsufficientEvidence {
+        required: EvidenceLevel,
+        actual: EvidenceLevel,
+    },
+
+    /// Evidence is stale
+    StaleEvidence {
+        age: Duration,
+        max_age: Duration,
+    },
+
+    /// Conflicting evidence with no resolution
+    UnresolvedConflict {
+        sources: Vec<String>,
+    },
+
+    /// Validation failed
+    ValidationFailed {
+        errors: Vec<String>,
+    },
+}
+
+impl EvidenceError {
+    /// Describe the error for humans
+    pub fn describe(&self) -> String {
+        match self {
+            EvidenceError::InsufficientEvidence { required, actual } => {
+                format!(
+                    "Evidence level {} ({}) is insufficient; {} ({}) required",
+                    actual.symbol(), actual.rank(),
+                    required.symbol(), required.rank()
+                )
+            }
+            EvidenceError::StaleEvidence { age, max_age } => {
+                format!(
+                    "Evidence is stale ({:.0}s old, max {:.0}s)",
+                    age.as_secs(), max_age.as_secs()
+                )
+            }
+            EvidenceError::UnresolvedConflict { sources } => {
+                format!("Conflicting evidence from: {}", sources.join(", "))
+            }
+            EvidenceError::ValidationFailed { errors } => {
+                format!("Validation failed: {}", errors.join("; "))
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Evidence Combinators
+// ============================================================================
+
+/// Combine multiple evidenced values
+pub fn combine_evidence<T, U, V, F>(
+    a: Evidenced<T>,
+    b: Evidenced<U>,
+    f: F,
+) -> Evidenced<V>
+where
+    F: FnOnce(T, U) -> V,
+{
+    let combined_level = a.level().join(b.level());
+    let combined_confidence = a.evidence.confidence().combine(&b.evidence.confidence());
+
+    Evidenced {
+        value: f(a.value, b.value),
+        evidence: HttpEvidence::Inferred {
+            confidence: combined_confidence,
+            model: "combined".to_string(),
+            reasoning_trace: Some(format!(
+                "Combined {} and {}",
+                a.evidence.describe(),
+                b.evidence.describe()
+            )),
+        },
+        captured_at: Timestamp::now(),
+    }
+}
+
+// ============================================================================
+// Evidence Tracking Context
+// ============================================================================
+
+/// Tracks evidence flow through a request
+pub struct EvidenceContext {
+    /// Chain of evidence transformations
+    chain: Vec<EvidenceTransformation>,
+
+    /// Current cumulative confidence
+    cumulative_confidence: Confidence,
+
+    /// Warnings accumulated
+    warnings: Vec<String>,
+}
+
+/// A single evidence transformation
+#[derive(Clone, Debug)]
+pub struct EvidenceTransformation {
+    pub from: EvidenceLevel,
+    pub to: EvidenceLevel,
+    pub operation: String,
+    pub timestamp: Timestamp,
+}
+
+impl EvidenceContext {
+    /// Create a new evidence context
+    pub fn new() -> Self {
+        Self {
+            chain: vec![],
+            cumulative_confidence: Confidence::full(),
+            warnings: vec![],
+        }
+    }
+
+    /// Record an evidence transformation
+    pub fn record(&mut self, from: EvidenceLevel, to: EvidenceLevel, operation: &str) {
+        self.chain.push(EvidenceTransformation {
+            from,
+            to,
+            operation: operation.to_string(),
+            timestamp: Timestamp::now(),
+        });
+
+        // Warn on evidence demotion
+        if to.rank() > from.rank() {
+            self.warnings.push(format!(
+                "Evidence demoted: {} → {} during {}",
+                from.symbol(), to.symbol(), operation
+            ));
+        }
+    }
+
+    /// Update cumulative confidence
+    pub fn update_confidence(&mut self, confidence: Confidence) {
+        self.cumulative_confidence = self.cumulative_confidence.combine(&confidence);
+    }
+
+    /// Get the evidence chain for tracing
+    pub fn chain(&self) -> &[EvidenceTransformation] {
+        &self.chain
+    }
+
+    /// Get cumulative confidence
+    pub fn confidence(&self) -> Confidence {
+        self.cumulative_confidence
+    }
+
+    /// Get warnings
+    pub fn warnings(&self) -> &[String] {
+        &self.warnings
+    }
+
+    /// Summarize the evidence flow
+    pub fn summarize(&self) -> String {
+        if self.chain.is_empty() {
+            return "No evidence transformations".to_string();
+        }
+
+        let steps: Vec<String> = self.chain.iter()
+            .map(|t| format!("{} → {} ({})", t.from.symbol(), t.to.symbol(), t.operation))
+            .collect();
+
+        format!(
+            "Evidence flow: {} | Confidence: {:.0}%",
+            steps.join(" → "),
+            self.cumulative_confidence.value() * 100.0
+        )
+    }
+}
