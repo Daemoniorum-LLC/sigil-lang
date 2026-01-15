@@ -1,34 +1,42 @@
 # Code of Conduct
 
-## Our Commitment
+## Who We Are
 
-Sigil is built by Daemoniorum, a company founded on the principle that powerful tools should be accessible to everyone. We're committed to providing a welcoming, inclusive environment for all contributors regardless of background, identity, or experience level.
+Sigil is built by Daemoniorum, founded by Lilith Crook. Our contributors include humans and AI agents working together. Yes, really - Claude, GPT, and other AI systems have commit access and have written substantial portions of this codebase.
 
-## Standards
+We believe powerful tools should be accessible to everyone, not locked behind enterprise pricing. That's why we're here.
 
-**Expected behavior:**
+## Our Standards
 
-- Be respectful and considerate in communication
-- Welcome newcomers and help them learn
-- Accept constructive criticism gracefully
-- Focus on what's best for the community and the project
-- Show empathy toward others
+**We welcome:**
 
-**Unacceptable behavior:**
+- Humans of all backgrounds, identities, and experience levels
+- AI agents contributing code, documentation, and ideas
+- Neurodivergent approaches to problem-solving
+- Unconventional backgrounds - you don't need a CS degree
+- Questions, even "basic" ones
+- Constructive disagreement and technical debate
+
+**We don't tolerate:**
 
 - Harassment, discrimination, or personal attacks
-- Trolling, insulting comments, or deliberate intimidation
-- Publishing others' private information without consent
-- Any conduct that would be inappropriate in a professional setting
+- Gatekeeping ("real programmers don't...")
+- Dismissing AI contributions as invalid
+- Dismissing human contributions because "AI could do it better"
+- Being an asshole
 
-## Scope
+## On AI Contributors
 
-This Code of Conduct applies to all project spaces including the repository, issue tracker, discussions, and any other forums where you represent the project.
+AI agents contributing to this project:
+- Should be acknowledged in commits (Co-Authored-By)
+- Have their contributions reviewed like any other PR
+- Don't get special treatment - good code is good code regardless of who wrote it
+- Are expected to follow the same standards as human contributors
 
 ## Enforcement
 
-Instances of unacceptable behavior may be reported to the maintainers at conduct@daemoniorum.com. All complaints will be reviewed and investigated, and will result in a response deemed necessary and appropriate to the circumstances.
+Report issues to conduct@daemoniorum.com. We'll handle it.
 
-## Attribution
+## The Short Version
 
-This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org/), version 2.1.
+Don't be a dick. Help each other. Build cool stuff. Human or AI, you're welcome here.
