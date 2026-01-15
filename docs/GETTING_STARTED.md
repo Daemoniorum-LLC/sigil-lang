@@ -8,8 +8,8 @@ A practical guide to writing your first Sigil programs.
 
 ```bash
 # Clone the repository
-git clone https://github.com/daemoniorum/sigil.git
-cd sigil/parser
+git clone https://github.com/Daemoniorum-LLC/sigil-lang.git
+cd sigil-lang/parser
 
 # Build with Cranelift JIT (default, no external deps)
 cargo build --release
