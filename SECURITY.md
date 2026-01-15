@@ -2,47 +2,49 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.0.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| Version | Supported |
+| ------- | --------- |
+| 1.0.x   | Yes       |
+| < 1.0   | No        |
 
-## Reporting a Vulnerability
-
-If you discover a security vulnerability in Sigil, please report it responsibly:
+## Reporting Vulnerabilities
 
 **Email:** security@daemoniorum.com
 
-**Please include:**
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Any suggested fixes (optional)
+Tell us:
+- What the vulnerability is
+- How to reproduce it
+- What the impact could be
 
-**Do NOT:**
-- Open a public issue for security vulnerabilities
-- Disclose the vulnerability publicly before it's fixed
+**Don't** open a public issue for security problems.
 
-## Response Timeline
+## Response
 
-- **Acknowledgment:** Within 48 hours
-- **Initial assessment:** Within 1 week
-- **Fix timeline:** Depends on severity, typically 30-90 days
+- We'll acknowledge within 48 hours
+- We'll assess within a week
+- Fix timeline depends on severity
 
-## Security Considerations
+## What Sigil's Type System Does (and Doesn't) Do
 
-Sigil's evidentiality type system is designed to help track data trust at compile time. However:
+Sigil's evidentiality markers help you *track* data trust:
 
-- The `~` (Reported) marker indicates untrusted data but doesn't automatically sanitize it
-- The `‽` (Paradox) marker is for explicit trust boundaries - use with care
-- The interpreter executes arbitrary code - don't run untrusted Sigil programs
-- LLVM/JIT compilation produces native code - same security model as any native binary
+- `~` (Reported) marks data as untrusted - but **doesn't sanitize it**
+- `‽` (Paradox) marks trust boundaries - **you** decide what crosses them
+- The compiler catches when you use `~` data where `!` is expected
+
+This is a *compile-time* tool. It prevents you from accidentally trusting external data, but it doesn't make your code secure by magic.
+
+## Runtime Security
+
+- The interpreter executes code directly - don't run untrusted `.sg` files
+- JIT/AOT compilation produces native binaries - standard binary security applies
+- The REPL has no sandbox
 
 ## Scope
 
-This security policy covers:
-- The Sigil compiler (`sigil-parser` crate)
-- The official standard library
-- Official tooling (LSP server, MCP server, VSCode extension)
+This policy covers:
+- `sigil-parser` (the compiler)
+- The standard library
+- Official tools (LSP, MCP server, VSCode extension)
 
-Third-party packages and user code are outside this scope.
+Third-party code is your problem.
