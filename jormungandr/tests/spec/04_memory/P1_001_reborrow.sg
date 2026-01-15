@@ -1,0 +1,20 @@
+// Test: Reborrowing a mutable reference
+// Spec: 04-MEMORY.md § 3.3 Borrow Rules
+// Priority: P1 - Production Ready
+
+fn take_ref(r: &i32) -> !i32 {
+    *r
+}
+
+fn main() {
+    let mut x: !i32 = 42;
+    let r: &mut i32 = &mut x;
+
+    // Reborrow as immutable - should work
+    let val = take_ref(r);
+    println(val);
+
+    // Can still use mutable ref after reborrow ends
+    *r = 100;
+    println(*r);
+}

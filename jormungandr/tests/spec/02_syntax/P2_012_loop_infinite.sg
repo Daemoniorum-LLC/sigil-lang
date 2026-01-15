@@ -1,0 +1,14 @@
+// Test: Loop with break
+// Spec: 02-SYNTAX.md § 5.4 Loop
+// Priority: P2 - Enhancement
+
+fn main() {
+    let count: !i32 = 0;
+    loop {
+        count = count + 1;
+        if count >= 3 {
+            break;
+        }
+    }
+    println(count);
+}

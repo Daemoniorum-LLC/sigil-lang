@@ -1,0 +1,15 @@
+// Test: Compound assignment (+=)
+// Spec: 02-SYNTAX.md § 2.3 Compound Assignment
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate compound assignment operators work.
+//
+// Expected behavior:
+// Should print 52 (42 += 10)
+
+fn main() {
+    let mut x: !i32 = 42;
+    x += 10;
+    println(x);
+}

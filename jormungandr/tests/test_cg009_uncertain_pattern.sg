@@ -1,0 +1,41 @@
+/// Test CG-009: Uncertain pattern match should generate TAG_NULL check
+/// 
+/// This test verifies that match arms with ?name patterns (uncertain patterns)
+/// generate proper non-null checks in the C codegen, NOT "if (1)".
+///
+/// The bug: match self.peeked { ?token => ..., null => {} }
+/// Generates: if (1) { ... }  // WRONG - always true!
+/// Should generate: if (_t0.tag != TAG_NULL) { ... }
+
+pub struct Container {
+    pub value: ?i32,
+}
+
+/// This function uses a ?v pattern that MUST generate a TAG_NULL check
+pub fn extract_value(c: !Container) -> !i32 {
+    match c.value {
+        ?v => v,
+        null => 0,
+    }
+}
+
+pub fn main() -> !i32 {
+    let with_value = Container { value: ?42 };
+    let without_value = Container { value: null };
+    
+    let r1 = extract_value(with_value);
+    let r2 = extract_value(without_value);
+    
+    if r1 != 42 {
+        println("FAIL: with_value should return 42, got {}", r1);
+        return 1;
+    }
+    
+    if r2 != 0 {
+        println("FAIL: without_value should return 0, got {}", r2);
+        return 1;
+    }
+    
+    println("PASS: CG-009 uncertain pattern test");
+    return 0;
+}

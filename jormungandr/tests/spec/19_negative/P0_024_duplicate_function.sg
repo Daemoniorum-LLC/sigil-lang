@@ -1,0 +1,16 @@
+// EXPECTED: Static type checking should catch this error
+// Negative Test: Duplicate function definition
+// Should fail with duplicate error
+// Priority: P0 - Bootstrap Critical
+
+fn foo() -> i32 {
+    return 1;
+}
+
+fn foo() -> i32 {  // ERROR: duplicate function
+    return 2;
+}
+
+fn main() {
+    println(foo());
+}

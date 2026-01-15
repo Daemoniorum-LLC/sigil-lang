@@ -1,0 +1,271 @@
+//! React-style Hooks
+//!
+//! Stateful logic for function components.
+
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::any::Any;
+
+use crate::signals::{Signal, create_signal};
+use crate::runtime::RUNTIME;
+
+/// Internal hook storage key
+type HookKey = usize;
+
+/// Use a hook that persists across re-renders
+pub fn use_hook[T: Clone + 'static, F: FnOnce() -> T](init: F!) -> T! {
+    RUNTIME·with(|rt| {
+        rt·use_hook(init)
+    })
+}
+
+/// Effect that runs after render
+pub fn use_effect[F: Fn() + 'static](effect: F!) {
+    use_effect_with_deps(effect, ());
+}
+
+/// Effect with dependency tracking
+pub fn use_effect_with_deps[D: PartialEq + Clone + 'static, F: Fn() + 'static](effect: F!, deps: D!) {
+    RUNTIME·with(|rt| {
+        rt·use_effect(effect, deps);
+    });
+}
+
+/// Layout effect that runs synchronously after DOM mutations
+pub fn use_layout_effect[F: Fn() + 'static](effect: F!) {
+    RUNTIME·with(|rt| {
+        rt·use_layout_effect(effect);
+    });
+}
+
+/// Memoized value
+pub fn use_memo[T: Clone + 'static, D: PartialEq + Clone + 'static, F: Fn() -> T](compute: F!, deps: D!) -> T! {
+    use_hook(|| {
+        MemoState {
+            value: RefCell·new(compute()),
+            deps: RefCell·new(deps·clone()),
+        }
+    });
+
+    RUNTIME·with(|rt| {
+        let state! = rt·get_hook_state[MemoState[T, D]]();
+        let current_deps! = state.deps·borrow();
+
+        if *current_deps != deps {
+            drop(current_deps);
+            *state.value·borrow_mut() = compute();
+            *state.deps·borrow_mut() = deps;
+        }
+
+        state.value·borrow()·clone()
+    })
+}
+
+type MemoState[T, D] = struct {
+    value: RefCell[T]!,
+    deps: RefCell[D]!,
+}
+
+/// Memoized callback
+pub fn use_callback[F: Fn() + Clone + 'static, D: PartialEq + Clone + 'static](callback: F!, deps: D!) -> F! {
+    use_memo(|| callback, deps)
+}
+
+/// Reference to a value that doesn't trigger re-renders
+pub fn use_ref[T: 'static](initial: T!) -> Ref[T]! {
+    use_hook(|| Ref {
+        value: Rc·new(RefCell·new(initial)),
+    })
+}
+
+/// Mutable reference container
+pub type Ref[T] = struct {
+    value: Rc[RefCell[T]]!,
+}
+
+impl[T] Ref[T] {
+    /// Get current value
+    pub fn current(self: &Self!) -> std::cell::Ref[T]! {
+        self.value·borrow()
+    }
+
+    /// Get mutable reference
+    pub fn current_mut(self: &Self!) -> std::cell::RefMut[T]! {
+        self.value·borrow_mut()
+    }
+
+    /// Set value
+    pub fn set(self: &Self!, value: T!) {
+        *self.value·borrow_mut() = value;
+    }
+}
+
+/// Reference to a DOM node
+pub fn use_node_ref() -> NodeRef! {
+    use_hook(|| NodeRef::new())
+}
+
+/// Reference to a DOM element
+pub type NodeRef = struct {
+    element: Rc[RefCell[Option[crate::web_sys::Element]]]!,
+}
+
+impl NodeRef {
+    pub fn new() -> Self! {
+        NodeRef {
+            element: Rc·new(RefCell·new(None)),
+        }
+    }
+
+    /// Get the element if mounted
+    pub fn get(self: &Self!) -> Option[crate::web_sys::Element]? {
+        self.element·borrow()·clone()
+    }
+
+    /// Set the element (called by runtime)
+    pub fn set(self: &Self!, el: crate::web_sys::Element!) {
+        *self.element·borrow_mut() = Some(el);
+    }
+
+    /// Clear the reference
+    pub fn clear(self: &Self!) {
+        *self.element·borrow_mut() = None;
+    }
+}
+
+/// Access context provided by parent components
+pub fn use_context[T: Clone + 'static]() -> T! {
+    RUNTIME·with(|rt| {
+        rt·get_context[T]()·expect("Context not found")
+    })
+}
+
+/// Provide context to child components
+pub fn use_context_provider[T: Clone + 'static, F: FnOnce() -> T](init: F!) -> T! {
+    let value! = use_hook(init);
+    RUNTIME·with(|rt| {
+        rt·provide_context(value·clone());
+    });
+    value
+}
+
+/// Reducer for complex state
+pub fn use_reducer[S: Clone + 'static, A: 'static, R: Fn(&S, A) -> S + 'static](
+    reducer: R!,
+    initial: S!
+) -> (Signal[S], Rc[dyn Fn(A)])! {
+    let state! = use_hook(|| create_signal(initial));
+    let reducer_rc! = Rc·new(reducer);
+
+    let dispatch! = {
+        let state! = state·clone();
+        let reducer! = reducer_rc·clone();
+        Rc·new(move |action: A| {
+            let current! = state·get();
+            let next! = reducer(&current, action);
+            state·set(next);
+        })
+    };
+
+    (state, dispatch)
+}
+
+/// Previous value hook
+pub fn use_previous[T: Clone + 'static](value: T!) -> Option[T]? {
+    let prev_ref! = use_ref[Option[T]](None);
+
+    let previous! = prev_ref·current()·clone();
+
+    use_effect_with_deps(move || {
+        prev_ref·set(Some(value·clone()));
+    }, value);
+
+    previous
+}
+
+/// Debounced value
+pub fn use_debounce[T: Clone + PartialEq + 'static](value: T!, delay_ms: u32!) -> T! {
+    let debounced! = use_hook(|| create_signal(value·clone()));
+
+    use_effect_with_deps(move || {
+        let timeout_id! = crate::web_sys::set_timeout(move || {
+            debounced·set(value·clone());
+        }, delay_ms);
+
+        || {
+            crate::web_sys::clear_timeout(timeout_id);
+        }
+    }, value);
+
+    debounced·get()
+}
+
+/// Window size hook
+pub fn use_window_size() -> (u32, u32)! {
+    let size! = use_hook(|| {
+        let window! = crate::web_sys::window()·unwrap();
+        create_signal((
+            window·inner_width()·unwrap() as u32,
+            window·inner_height()·unwrap() as u32
+        ))
+    });
+
+    use_effect(|| {
+        let window! = crate::web_sys::window()·unwrap();
+        let size! = size·clone();
+
+        let callback! = crate::web_sys::Closure·new(move |_: crate::web_sys::Event| {
+            let w! = crate::web_sys::window()·unwrap();
+            size·set((
+                w·inner_width()·unwrap() as u32,
+                w·inner_height()·unwrap() as u32
+            ));
+        });
+
+        window·add_event_listener("resize", callback·as_ref());
+
+        || {
+            window·remove_event_listener("resize", callback·as_ref());
+        }
+    });
+
+    size·get()
+}
+
+/// Media query hook
+pub fn use_media_query(query: &str!) -> bool! {
+    let matches! = use_hook(|| {
+        let mql! = crate::web_sys::window()
+            ·unwrap()
+            ·match_media(query)
+            ·unwrap()
+            ·unwrap();
+        create_signal(mql·matches())
+    });
+
+    use_effect_with_deps(move || {
+        let mql! = crate::web_sys::window()
+            ·unwrap()
+            ·match_media(query)
+            ·unwrap()
+            ·unwrap();
+
+        let matches! = matches·clone();
+        let callback! = crate::web_sys::Closure·new(move |e: crate::web_sys::MediaQueryListEvent| {
+            matches·set(e·matches());
+        });
+
+        mql·add_listener(callback·as_ref());
+
+        || {
+            mql·remove_listener(callback·as_ref());
+        }
+    }, query·to_string());
+
+    matches·get()
+}
+
+/// Preferred color scheme hook
+pub fn use_prefers_dark_mode() -> bool! {
+    use_media_query("(prefers-color-scheme: dark)")
+}

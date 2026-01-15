@@ -1,0 +1,10 @@
+// Test: Rc single value access
+// Spec: 04-MEMORY.md § 2.3 Rc
+// Priority: P2 - Enhancement
+
+fn main() {
+    let a: Rc<i32> = Rc::new(42);
+    println(*a);
+    println(*a);
+    println(*a);
+}

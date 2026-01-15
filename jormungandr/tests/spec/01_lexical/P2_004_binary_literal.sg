@@ -1,0 +1,10 @@
+// Test: Binary literals
+// Spec: 01-LEXICAL.md § 4.1 Integer Literals
+// Priority: P2 - Enhancement
+
+fn main() {
+    let x: !i32 = 0b1010;
+    let y: !i32 = 0b11111111;
+    println(x);
+    println(y);
+}

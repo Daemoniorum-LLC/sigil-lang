@@ -421,8 +421,9 @@ impl Optimizer {
         ast::Function {
             visibility: Visibility::default(),
             is_async: false,
+            is_const: false,
+            is_unsafe: false,
             attrs: FunctionAttrs::default(),
-            doc_comment: None,
             name: Ident {
                 name: name.to_string(),
                 evidentiality: None,
@@ -497,8 +498,9 @@ impl Optimizer {
         ast::Function {
             visibility: original.visibility,
             is_async: original.is_async,
+            is_const: original.is_const,
+            is_unsafe: original.is_unsafe,
             attrs: original.attrs.clone(),
-            doc_comment: original.doc_comment.clone(),
             name: Ident {
                 name: name.to_string(),
                 evidentiality: None,
@@ -557,8 +559,9 @@ impl Optimizer {
         let impl_func = ast::Function {
             visibility: Visibility::default(),
             is_async: func.is_async,
+            is_const: func.is_const,
+            is_unsafe: func.is_unsafe,
             attrs: func.attrs.clone(),
-            doc_comment: func.doc_comment.clone(),
             name: Ident {
                 name: impl_name.clone(),
                 evidentiality: None,
@@ -603,8 +606,9 @@ impl Optimizer {
         let cache_init_func = ast::Function {
             visibility: Visibility::default(),
             is_async: false,
+            is_const: false,
+            is_unsafe: false,
             attrs: FunctionAttrs::default(),
-            doc_comment: None,
             name: Ident {
                 name: init_name.clone(),
                 evidentiality: None,
@@ -660,7 +664,6 @@ impl Optimizer {
 
         // let __cache = sigil_memo_new(65536);
         stmts.push(Stmt::Let {
-            attrs: Vec::new(),
             pattern: Pattern::Ident {
                 mutable: false,
                 name: cache_var.clone(),
@@ -714,7 +717,6 @@ impl Optimizer {
         }
 
         stmts.push(Stmt::Let {
-            attrs: Vec::new(),
             pattern: Pattern::Ident {
                 mutable: false,
                 name: cached_var.clone(),
@@ -789,7 +791,6 @@ impl Optimizer {
         }
 
         stmts.push(Stmt::Let {
-            attrs: Vec::new(),
             pattern: Pattern::Ident {
                 mutable: false,
                 name: result_var.clone(),
@@ -875,8 +876,9 @@ impl Optimizer {
         ast::Function {
             visibility: original.visibility,
             is_async: original.is_async,
+            is_const: original.is_const,
+            is_unsafe: original.is_unsafe,
             attrs: original.attrs.clone(),
-            doc_comment: original.doc_comment.clone(),
             name: original.name.clone(),
             aspect: original.aspect,
             generics: original.generics.clone(),
@@ -953,7 +955,7 @@ impl Optimizer {
                         .map(|e| self.expr_calls_function(name, e))
                         .unwrap_or(false)
             }
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 self.expr_calls_function(name, condition) || self.block_calls_function(name, body)
             }
             Expr::Block(block) => self.block_calls_function(name, block),
@@ -1008,8 +1010,9 @@ impl Optimizer {
         ast::Function {
             visibility: func.visibility.clone(),
             is_async: func.is_async,
+            is_const: func.is_const,
+            is_unsafe: func.is_unsafe,
             attrs: func.attrs.clone(),
-            doc_comment: func.doc_comment.clone(),
             name: func.name.clone(),
             aspect: func.aspect,
             generics: func.generics.clone(),
@@ -1040,12 +1043,17 @@ impl Optimizer {
     fn pass_constant_fold_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
             Stmt::Let {
-                attrs, pattern, ty, init,
+                pattern, ty, init, ..
             } => Stmt::Let {
-                attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_constant_fold_expr(e)),
+            },
+            Stmt::LetElse { pattern, ty, init, else_branch } => Stmt::LetElse {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: self.pass_constant_fold_expr(init),
+                else_branch: Box::new(self.pass_constant_fold_expr(else_branch)),
             },
             Stmt::Expr(expr) => Stmt::Expr(self.pass_constant_fold_expr(expr)),
             Stmt::Semi(expr) => Stmt::Semi(self.pass_constant_fold_expr(expr)),
@@ -1125,7 +1133,7 @@ impl Optimizer {
                     else_branch,
                 }
             }
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 let condition = Box::new(self.pass_constant_fold_expr(condition));
                 let body = self.pass_constant_fold_block(body);
 
@@ -1138,7 +1146,7 @@ impl Optimizer {
                     });
                 }
 
-                Expr::While { condition, body }
+                Expr::While { label: label.clone(), condition, body }
             }
             Expr::Block(block) => Expr::Block(self.pass_constant_fold_block(block)),
             Expr::Call { func, args } => {
@@ -1246,12 +1254,17 @@ impl Optimizer {
     fn pass_strength_reduce_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
             Stmt::Let {
-                attrs, pattern, ty, init,
+                pattern, ty, init, ..
             } => Stmt::Let {
-                attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_strength_reduce_expr(e)),
+            },
+            Stmt::LetElse { pattern, ty, init, else_branch } => Stmt::LetElse {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: self.pass_strength_reduce_expr(init),
+                else_branch: Box::new(self.pass_strength_reduce_expr(else_branch)),
             },
             Stmt::Expr(expr) => Stmt::Expr(self.pass_strength_reduce_expr(expr)),
             Stmt::Semi(expr) => Stmt::Semi(self.pass_strength_reduce_expr(expr)),
@@ -1393,10 +1406,10 @@ impl Optimizer {
                     else_branch,
                 }
             }
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 let condition = Box::new(self.pass_strength_reduce_expr(condition));
                 let body = self.pass_strength_reduce_block(body);
-                Expr::While { condition, body }
+                Expr::While { label: label.clone(), condition, body }
             }
             Expr::Block(block) => Expr::Block(self.pass_strength_reduce_block(block)),
             Expr::Call { func, args } => {
@@ -1464,12 +1477,17 @@ impl Optimizer {
     fn pass_dead_code_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
             Stmt::Let {
-                attrs, pattern, ty, init,
+                pattern, ty, init, ..
             } => Stmt::Let {
-                attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_dead_code_expr(e)),
+            },
+            Stmt::LetElse { pattern, ty, init, else_branch } => Stmt::LetElse {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: self.pass_dead_code_expr(init),
+                else_branch: Box::new(self.pass_dead_code_expr(else_branch)),
             },
             Stmt::Expr(expr) => Stmt::Expr(self.pass_dead_code_expr(expr)),
             Stmt::Semi(expr) => Stmt::Semi(self.pass_dead_code_expr(expr)),
@@ -1495,10 +1513,10 @@ impl Optimizer {
                     else_branch,
                 }
             }
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 let condition = Box::new(self.pass_dead_code_expr(condition));
                 let body = self.pass_dead_code_block(body);
-                Expr::While { condition, body }
+                Expr::While { label: label.clone(), condition, body }
             }
             Expr::Block(block) => Expr::Block(self.pass_dead_code_block(block)),
             other => other.clone(),
@@ -1547,12 +1565,17 @@ impl Optimizer {
     fn pass_simplify_branches_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
             Stmt::Let {
-                attrs, pattern, ty, init,
+                pattern, ty, init, ..
             } => Stmt::Let {
-                attrs: attrs.clone(),
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_simplify_branches_expr(e)),
+            },
+            Stmt::LetElse { pattern, ty, init, else_branch } => Stmt::LetElse {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: self.pass_simplify_branches_expr(init),
+                else_branch: Box::new(self.pass_simplify_branches_expr(else_branch)),
             },
             Stmt::Expr(expr) => Stmt::Expr(self.pass_simplify_branches_expr(expr)),
             Stmt::Semi(expr) => Stmt::Semi(self.pass_simplify_branches_expr(expr)),
@@ -1603,10 +1626,10 @@ impl Optimizer {
                     else_branch,
                 }
             }
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 let condition = Box::new(self.pass_simplify_branches_expr(condition));
                 let body = self.pass_simplify_branches_block(body);
-                Expr::While { condition, body }
+                Expr::While { label: label.clone(), condition, body }
             }
             Expr::Block(block) => Expr::Block(self.pass_simplify_branches_block(block)),
             Expr::Binary { op, left, right } => {
@@ -1756,12 +1779,18 @@ impl Optimizer {
 
     fn substitute_params_in_stmt(&self, stmt: &Stmt, param_map: &HashMap<String, Expr>) -> Stmt {
         match stmt {
-            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init
                     .as_ref()
                     .map(|e| self.substitute_params_in_expr(e, param_map)),
+            },
+            Stmt::LetElse { pattern, ty, init, else_branch } => Stmt::LetElse {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: self.substitute_params_in_expr(init, param_map),
+                else_branch: Box::new(self.substitute_params_in_expr(else_branch, param_map)),
             },
             Stmt::Expr(e) => Stmt::Expr(self.substitute_params_in_expr(e, param_map)),
             Stmt::Semi(e) => Stmt::Semi(self.substitute_params_in_expr(e, param_map)),
@@ -1801,7 +1830,8 @@ impl Optimizer {
                     .as_ref()
                     .map(|e| Box::new(self.substitute_params_in_expr(e, param_map))),
             },
-            Expr::While { condition, body } => Expr::While {
+            Expr::While { label, condition, body } => Expr::While {
+                label: label.clone(),
                 condition: Box::new(self.substitute_params_in_expr(condition, param_map)),
                 body: self.substitute_params_in_block(body, param_map),
             },
@@ -1850,10 +1880,16 @@ impl Optimizer {
 
     fn pass_inline_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
-            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_inline_expr(e)),
+            },
+            Stmt::LetElse { pattern, ty, init, else_branch } => Stmt::LetElse {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: self.pass_inline_expr(init),
+                else_branch: Box::new(self.pass_inline_expr(else_branch)),
             },
             Stmt::Expr(e) => Stmt::Expr(self.pass_inline_expr(e)),
             Stmt::Semi(e) => Stmt::Semi(self.pass_inline_expr(e)),
@@ -1908,7 +1944,8 @@ impl Optimizer {
                     .as_ref()
                     .map(|e| Box::new(self.pass_inline_expr(e))),
             },
-            Expr::While { condition, body } => Expr::While {
+            Expr::While { label, condition, body } => Expr::While {
+                label: label.clone(),
                 condition: Box::new(self.pass_inline_expr(condition)),
                 body: self.pass_inline_block(body),
             },
@@ -1949,10 +1986,16 @@ impl Optimizer {
 
     fn pass_loop_unroll_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
-            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_loop_unroll_expr(e)),
+            },
+            Stmt::LetElse { pattern, ty, init, else_branch } => Stmt::LetElse {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: self.pass_loop_unroll_expr(init),
+                else_branch: Box::new(self.pass_loop_unroll_expr(else_branch)),
             },
             Stmt::Expr(e) => Stmt::Expr(self.pass_loop_unroll_expr(e)),
             Stmt::Semi(e) => Stmt::Semi(self.pass_loop_unroll_expr(e)),
@@ -1962,7 +2005,7 @@ impl Optimizer {
 
     fn pass_loop_unroll_expr(&mut self, expr: &Expr) -> Expr {
         match expr {
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 // Try to unroll if this is a countable loop
                 if let Some(unrolled) = self.try_unroll_loop(condition, body) {
                     self.stats.loops_optimized += 1;
@@ -1970,6 +2013,7 @@ impl Optimizer {
                 }
                 // Otherwise, just recurse
                 Expr::While {
+                    label: label.clone(),
                     condition: Box::new(self.pass_loop_unroll_expr(condition)),
                     body: self.pass_loop_unroll_block(body),
                 }
@@ -2135,12 +2179,18 @@ impl Optimizer {
 
     fn substitute_loop_var_in_stmt(&self, stmt: &Stmt, var_name: &str, value: i64) -> Stmt {
         match stmt {
-            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init
                     .as_ref()
                     .map(|e| self.substitute_loop_var_in_expr(e, var_name, value)),
+            },
+            Stmt::LetElse { pattern, ty, init, else_branch } => Stmt::LetElse {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: self.substitute_loop_var_in_expr(init, var_name, value),
+                else_branch: Box::new(self.substitute_loop_var_in_expr(else_branch, var_name, value)),
             },
             Stmt::Expr(e) => Stmt::Expr(self.substitute_loop_var_in_expr(e, var_name, value)),
             Stmt::Semi(e) => Stmt::Semi(self.substitute_loop_var_in_expr(e, var_name, value)),
@@ -2187,7 +2237,8 @@ impl Optimizer {
                     .as_ref()
                     .map(|e| Box::new(self.substitute_loop_var_in_expr(e, var_name, value))),
             },
-            Expr::While { condition, body } => Expr::While {
+            Expr::While { label, condition, body } => Expr::While {
+                label: label.clone(),
                 condition: Box::new(self.substitute_loop_var_in_expr(condition, var_name, value)),
                 body: self.substitute_loop_var_in_block(body, var_name, value),
             },
@@ -2230,10 +2281,16 @@ impl Optimizer {
 
     fn pass_licm_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
-            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_licm_expr(e)),
+            },
+            Stmt::LetElse { pattern, ty, init, else_branch } => Stmt::LetElse {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: self.pass_licm_expr(init),
+                else_branch: Box::new(self.pass_licm_expr(else_branch)),
             },
             Stmt::Expr(e) => Stmt::Expr(self.pass_licm_expr(e)),
             Stmt::Semi(e) => Stmt::Semi(self.pass_licm_expr(e)),
@@ -2243,7 +2300,7 @@ impl Optimizer {
 
     fn pass_licm_expr(&mut self, expr: &Expr) -> Expr {
         match expr {
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 // Find variables modified in the loop
                 let mut modified_vars = HashSet::new();
                 self.collect_modified_vars_block(body, &mut modified_vars);
@@ -2258,6 +2315,7 @@ impl Optimizer {
                 if invariant_exprs.is_empty() {
                     // No LICM opportunities, just recurse
                     return Expr::While {
+                        label: label.clone(),
                         condition: Box::new(self.pass_licm_expr(condition)),
                         body: self.pass_licm_block(body),
                     };
@@ -2282,6 +2340,7 @@ impl Optimizer {
 
                 // Recurse into the modified loop
                 let new_while = Expr::While {
+                    label: label.clone(),
                     condition: Box::new(self.pass_licm_expr(condition)),
                     body: self.pass_licm_block(&new_body),
                 };
@@ -2381,7 +2440,7 @@ impl Optimizer {
                     self.collect_modified_vars_expr(e, modified);
                 }
             }
-            Expr::While { condition, body } => {
+            Expr::While { label, condition, body } => {
                 self.collect_modified_vars_expr(condition, modified);
                 self.collect_modified_vars_block(body, modified);
             }
@@ -2512,12 +2571,18 @@ impl Optimizer {
         subs: &HashMap<String, String>,
     ) -> Stmt {
         match stmt {
-            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init
                     .as_ref()
                     .map(|e| self.replace_invariants_in_expr(e, invariants, subs)),
+            },
+            Stmt::LetElse { pattern, ty, init, else_branch } => Stmt::LetElse {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: self.replace_invariants_in_expr(init, invariants, subs),
+                else_branch: Box::new(self.replace_invariants_in_expr(else_branch, invariants, subs)),
             },
             Stmt::Expr(e) => Stmt::Expr(self.replace_invariants_in_expr(e, invariants, subs)),
             Stmt::Semi(e) => Stmt::Semi(self.replace_invariants_in_expr(e, invariants, subs)),
@@ -2580,7 +2645,8 @@ impl Optimizer {
                     .as_ref()
                     .map(|e| Box::new(self.replace_invariants_in_expr(e, invariants, subs))),
             },
-            Expr::While { condition, body } => Expr::While {
+            Expr::While { label, condition, body } => Expr::While {
+                label: label.clone(),
                 condition: Box::new(self.replace_invariants_in_expr(condition, invariants, subs)),
                 body: self.replace_invariants_in_block(body, invariants, subs),
             },
@@ -2689,10 +2755,16 @@ impl Optimizer {
 
     fn pass_cse_stmt(&mut self, stmt: &Stmt) -> Stmt {
         match stmt {
-            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| self.pass_cse_expr(e)),
+            },
+            Stmt::LetElse { pattern, ty, init, else_branch } => Stmt::LetElse {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: self.pass_cse_expr(init),
+                else_branch: Box::new(self.pass_cse_expr(else_branch)),
             },
             Stmt::Expr(e) => Stmt::Expr(self.pass_cse_expr(e)),
             Stmt::Semi(e) => Stmt::Semi(self.pass_cse_expr(e)),
@@ -2713,7 +2785,8 @@ impl Optimizer {
                     .as_ref()
                     .map(|e| Box::new(self.pass_cse_expr(e))),
             },
-            Expr::While { condition, body } => Expr::While {
+            Expr::While { label, condition, body } => Expr::While {
+                label: label.clone(),
                 condition: Box::new(self.pass_cse_expr(condition)),
                 body: self.pass_cse_block(body),
             },
@@ -2940,7 +3013,7 @@ fn collect_exprs_from_expr(expr: &Expr, out: &mut Vec<CollectedExpr>) {
                 collect_exprs_from_expr(else_expr, out);
             }
         }
-        Expr::While { condition, body } => {
+        Expr::While { label, condition, body } => {
             collect_exprs_from_expr(condition, out);
             collect_exprs_from_block(body, out);
         }
@@ -3034,7 +3107,8 @@ fn replace_in_expr(expr: &Expr, target: &Expr, var_name: &str) -> Expr {
                 .as_ref()
                 .map(|e| Box::new(replace_in_expr(e, target, var_name))),
         },
-        Expr::While { condition, body } => Expr::While {
+        Expr::While { label, condition, body } => Expr::While {
+                label: label.clone(),
             condition: Box::new(replace_in_expr(condition, target, var_name)),
             body: replace_in_block(body, target, var_name),
         },
@@ -3063,10 +3137,16 @@ fn replace_in_block(block: &Block, target: &Expr, var_name: &str) -> Block {
         .stmts
         .iter()
         .map(|stmt| match stmt {
-            Stmt::Let { attrs, pattern, ty, init } => Stmt::Let { attrs: attrs.clone(),
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 init: init.as_ref().map(|e| replace_in_expr(e, target, var_name)),
+            },
+            Stmt::LetElse { pattern, ty, init, else_branch } => Stmt::LetElse {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: replace_in_expr(init, target, var_name),
+                else_branch: Box::new(replace_in_expr(else_branch, target, var_name)),
             },
             Stmt::Expr(e) => Stmt::Expr(replace_in_expr(e, target, var_name)),
             Stmt::Semi(e) => Stmt::Semi(replace_in_expr(e, target, var_name)),
@@ -3085,7 +3165,6 @@ fn replace_in_block(block: &Block, target: &Expr, var_name: &str) -> Block {
 /// Create a let statement for a CSE variable
 fn make_cse_let(var_name: &str, expr: Expr) -> Stmt {
     Stmt::Let {
-        attrs: Vec::new(),
         pattern: Pattern::Ident {
             mutable: false,
             name: Ident {
@@ -3220,7 +3299,6 @@ mod tests {
         let block = Block {
             stmts: vec![
                 Stmt::Let {
-                    attrs: Vec::new(),
                     pattern: Pattern::Ident {
                         mutable: false,
                         name: Ident {
@@ -3235,7 +3313,6 @@ mod tests {
                     init: Some(a_plus_b.clone()),
                 },
                 Stmt::Let {
-                    attrs: Vec::new(),
                     pattern: Pattern::Ident {
                         mutable: false,
                         name: Ident {
@@ -3278,7 +3355,6 @@ mod tests {
         let block = Block {
             stmts: vec![
                 Stmt::Let {
-                    attrs: Vec::new(),
                     pattern: Pattern::Ident {
                         mutable: false,
                         name: Ident {
@@ -3293,7 +3369,6 @@ mod tests {
                     init: Some(add(var("a"), var("b"))),
                 },
                 Stmt::Let {
-                    attrs: Vec::new(),
                     pattern: Pattern::Ident {
                         mutable: false,
                         name: Ident {

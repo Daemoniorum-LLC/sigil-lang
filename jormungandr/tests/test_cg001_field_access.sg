@@ -1,0 +1,101 @@
+//! CG-001: Field Access Space Bug Test
+//!
+//! Tests that field access generates proper C without spurious spaces.
+//! Bug: codegen emits "x. field" instead of "sigil_struct_field(x, field)"
+
+use crate::lexer::Lexer;
+use crate::parser::Parser;
+use crate::typeck::TypeChecker;
+use crate::lower::lower_file;
+use crate::codegen::CodeGen;
+
+/// Compile source to C code
+fn compile_to_c(source: !String) -> !String {
+    let mut parser = Parser::new(source.clone());
+    let ast = parser.parse_file().unwrap();
+
+    let mut checker = TypeChecker::new();
+    checker.check_file(ast.clone()).unwrap();
+
+    let ir = lower_file(ast, checker, "test.sg".to_string()).unwrap();
+
+    let mut codegen = CodeGen::new();
+    codegen.generate(ir)
+}
+
+/// Check for buggy pattern "word. word" (space after dot)
+fn has_bug_pattern(c_code: !String) -> !bool {
+    // Simple check: look for ". " followed by letter
+    let s = c_code.as_str();
+    let len = s.len();
+    let mut i: !i32 = 0;
+
+    while i < len - 2 {
+        let c1 = s.char_at(i);
+        let c2 = s.char_at(i + 1);
+        let c3 = s.char_at(i + 2);
+
+        // Look for ". x" pattern (dot, space, letter)
+        if c1 == '.' && c2 == ' ' {
+            if (c3 >= 'a' && c3 <= 'z') || (c3 >= 'A' && c3 <= 'Z') || c3 == '_' {
+                // Check previous char is identifier char
+                if i > 0 {
+                    let prev = s.char_at(i - 1);
+                    if (prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') ||
+                       (prev >= '0' && prev <= '9') || prev == '_' {
+                        return true;
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+    false
+}
+
+fn test_simple_field() -> !bool {
+    print("  [CG-001.1] Simple field access... ");
+
+    let source = "
+pub struct Point {
+    pub x: !i32,
+    pub y: !i32,
+}
+
+pub fn get_x(p: !Point) -> !i32 {
+    p.x
+}
+".to_string();
+
+    let c_code = compile_to_c(source);
+
+    if has_bug_pattern(c_code.clone()) {
+        println("FAIL - has space after dot");
+        return false;
+    }
+
+    if !c_code.contains("sigil_struct_field") {
+        println("FAIL - missing sigil_struct_field");
+        return false;
+    }
+
+    println("PASS");
+    true
+}
+
+pub fn main() -> !i32 {
+    println("CG-001: Field Access Bug Test");
+    println("==============================");
+
+    let passed = test_simple_field();
+
+    if !passed {
+        println("");
+        println("Bug CG-001 confirmed. Fix codegen.sg then re-run.");
+        return 1;
+    }
+
+    println("");
+    println("All tests passed!");
+    return 0;
+}

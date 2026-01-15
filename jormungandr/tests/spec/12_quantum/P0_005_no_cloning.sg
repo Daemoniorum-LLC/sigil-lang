@@ -1,0 +1,11 @@
+// Test: No-cloning theorem enforcement
+// Spec: 12-QUANTUM.md § 2.1 The No-Cloning Theorem
+// Priority: P0 - Bootstrap Critical
+// EXPECT: Compile error - cannot use linear value twice
+
+fn main() {
+    let q: linear Qubit = Qubit::zero();
+    let a = q|H;
+    let b = q|X;  // ERROR: q already consumed
+    println(0);
+}

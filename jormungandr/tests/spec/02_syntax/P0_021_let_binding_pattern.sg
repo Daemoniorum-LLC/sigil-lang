@@ -1,0 +1,14 @@
+// Test: Let binding with pattern matching
+// Spec: 02-SYNTAX.md § 2.1 Let Bindings
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate let binding works with simple identifier.
+//
+// Expected behavior:
+// Should print 42
+
+fn main() {
+    let x: !i32 = 42;
+    println(x);
+}

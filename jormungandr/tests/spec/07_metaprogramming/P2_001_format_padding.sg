@@ -1,0 +1,9 @@
+// Test: Format with padding
+// Spec: 07-METAPROGRAMMING.md § 3.2 Format Spec
+// Priority: P2 - Enhancement
+
+fn main() {
+    let x: !i32 = 42;
+    let s = format!("value: {}", x);
+    println(s);
+}

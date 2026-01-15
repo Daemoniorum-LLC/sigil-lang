@@ -1,0 +1,11 @@
+// Test: For loop counting
+// Spec: 02-SYNTAX.md § 5.5 For
+// Priority: P2 - Enhancement
+
+fn main() {
+    let sum: !i32 = 0;
+    for i in 1..4 {
+        sum = sum + i;
+    }
+    println(sum);
+}

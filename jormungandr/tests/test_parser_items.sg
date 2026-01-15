@@ -1,0 +1,465 @@
+//! Comprehensive Parser Items Test Suite
+//!
+//! Tests all top-level item forms: functions, structs, enums, traits, impls,
+//! modules, use declarations, constants, statics, actors, and extern blocks.
+//! Target: 100% item parsing coverage for regression detection.
+
+use crate::parser::Parser;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+/// Parse a file containing the given item
+fn parse_item(source: !&str) -> !bool {
+    let mut parser = Parser::new(source.to_string());
+    match parser.parse_file() {
+        Result::Ok(_) => true,
+        Result::Err(_) => false,
+    }
+}
+
+/// Assert that item parsing succeeds
+fn assert_item(source: !&str, name: !&str) {
+    if !parse_item(source) {
+        panic(format!("FAIL {}: failed to parse item", name));
+    }
+}
+
+/// Assert that item parsing fails
+fn assert_item_fails(source: !&str, name: !&str) {
+    if parse_item(source) {
+        panic(format!("FAIL {}: should have failed to parse", name));
+    }
+}
+
+// ============================================================================
+// 1. FUNCTION DEFINITIONS
+// ============================================================================
+
+fn test_function_items() -> !bool {
+    print("  [1/12] Function definitions... ");
+
+    // Basic function
+    assert_item("fn foo() {}", "fn_empty");
+    assert_item("fn foo() -> !i32 { return 42; }", "fn_return");
+    assert_item("fn foo(x: !i32) -> !i32 { return x; }", "fn_one_param");
+    assert_item("fn foo(x: !i32, y: !i32) -> !i32 { return x + y; }", "fn_two_params");
+
+    // Visibility
+    assert_item("pub fn foo() {}", "fn_pub");
+    assert_item("pub(crate) fn foo() {}", "fn_pub_crate");
+    assert_item("pub(super) fn foo() {}", "fn_pub_super");
+
+    // Generic functions
+    assert_item("fn identity<T>(x: !T) -> !T { return x; }", "fn_generic_one");
+    assert_item("fn swap<A, B>(a: !A, b: !B) -> !(B, A) { return (b, a); }", "fn_generic_two");
+
+    // Where clauses
+    assert_item("fn foo<T>(x: !T) where T: Clone { }", "fn_where_single");
+    assert_item("fn foo<T, U>(x: !T, y: !U) where T: Clone, U: Debug { }", "fn_where_multi");
+
+    // Async functions
+    assert_item("async fn fetch() -> !String { return \"\"; }", "fn_async");
+    assert_item("pub async fn fetch_data() -> !Response { }", "fn_pub_async");
+
+    // Unsafe functions
+    assert_item("unsafe fn dangerous() {}", "fn_unsafe");
+    assert_item("pub unsafe fn raw_ptr() -> !*const u8 { }", "fn_pub_unsafe");
+
+    // Const functions
+    assert_item("const fn value() -> !i32 { return 42; }", "fn_const");
+
+    // Extern functions
+    assert_item("extern \"C\" fn callback() {}", "fn_extern_c");
+
+    println("PASS (17 cases)");
+    true
+}
+
+// ============================================================================
+// 2. STRUCT DEFINITIONS
+// ============================================================================
+
+fn test_struct_items() -> !bool {
+    print("  [2/12] Struct definitions... ");
+
+    // Unit struct
+    assert_item("struct Unit;", "struct_unit");
+    assert_item("pub struct PublicUnit;", "struct_pub_unit");
+
+    // Tuple struct
+    assert_item("struct Pair(i32, i32);", "struct_tuple_pair");
+    assert_item("struct Wrapper(!String);", "struct_tuple_wrapper");
+    assert_item("pub struct Color(u8, u8, u8);", "struct_tuple_color");
+
+    // Named struct
+    assert_item("struct Point { x: !i32, y: !i32 }", "struct_named_basic");
+    assert_item("struct Point { x: !i32, y: !i32, }", "struct_trailing_comma");
+    assert_item("pub struct User { pub name: !String, age: !u32 }", "struct_pub_fields");
+
+    // Generic structs
+    assert_item("struct Box<T> { value: !T }", "struct_generic_one");
+    assert_item("struct Pair<A, B> { first: !A, second: !B }", "struct_generic_two");
+    assert_item("struct Option<T> { value: ?T }", "struct_generic_optional");
+
+    // With where clause
+    assert_item("struct Container<T> where T: Clone { value: !T }", "struct_where");
+
+    // Evidentiality in fields
+    assert_item("struct Data { known: !i32, uncertain: ?i32, reported: ~String }", "struct_evidential");
+
+    // Repr attribute
+    assert_item("#[repr(C)] struct FFI { x: !i32 }", "struct_repr_c");
+    assert_item("#[repr(packed)] struct Packed { a: !u8, b: !u32 }", "struct_repr_packed");
+
+    println("PASS (15 cases)");
+    true
+}
+
+// ============================================================================
+// 3. ENUM DEFINITIONS
+// ============================================================================
+
+fn test_enum_items() -> !bool {
+    print("  [3/12] Enum definitions... ");
+
+    // Unit variants
+    assert_item("enum Direction { North, South, East, West }", "enum_unit_variants");
+    assert_item("pub enum Status { Active, Inactive }", "enum_pub");
+
+    // Tuple variants
+    assert_item("enum Option<T> { Some(T), None }", "enum_option");
+    assert_item("enum Result<T, E> { Ok(T), Err(E) }", "enum_result");
+
+    // Struct variants
+    assert_item("enum Shape { Circle { radius: !f64 }, Rectangle { width: !f64, height: !f64 } }", "enum_struct_variants");
+
+    // Mixed variants
+    assert_item("enum Message { Quit, Move { x: !i32, y: !i32 }, Write(!String), Color(u8, u8, u8) }", "enum_mixed");
+
+    // With discriminants
+    assert_item("enum Code { A = 0, B = 1, C = 2 }", "enum_discriminants");
+
+    // Generic
+    assert_item("enum Either<L, R> { Left(L), Right(R) }", "enum_generic_either");
+
+    // With where clause
+    assert_item("enum Container<T> where T: Clone { Value(T), Empty }", "enum_where");
+
+    // Repr attribute
+    assert_item("#[repr(u8)] enum Small { A, B, C }", "enum_repr_u8");
+    assert_item("#[repr(C)] enum FFIEnum { X, Y }", "enum_repr_c");
+
+    println("PASS (11 cases)");
+    true
+}
+
+// ============================================================================
+// 4. TRAIT DEFINITIONS
+// ============================================================================
+
+fn test_trait_items() -> !bool {
+    print("  [4/12] Trait definitions... ");
+
+    // Empty trait
+    assert_item("trait Marker {}", "trait_empty");
+    assert_item("pub trait PublicMarker {}", "trait_pub");
+
+    // Method declarations
+    assert_item("trait Greet { fn greet(self); }", "trait_method_decl");
+    assert_item("trait Clone { fn clone(self) -> !Self; }", "trait_clone");
+
+    // Default implementations
+    assert_item("trait Default { fn default() -> !Self { Self {} } }", "trait_default_impl");
+    assert_item("trait ToString { fn to_string(self) -> !String { return \"\"; } }", "trait_default_method");
+
+    // Associated types
+    assert_item("trait Iterator { type Item; fn next(mut self) -> ?Self::Item; }", "trait_assoc_type");
+
+    // Associated constants
+    assert_item("trait Constants { const MAX: i32; }", "trait_assoc_const");
+    assert_item("trait WithDefault { const DEFAULT: i32 = 0; }", "trait_const_default");
+
+    // Generic trait
+    assert_item("trait From<T> { fn from(value: !T) -> !Self; }", "trait_generic");
+    assert_item("trait Into<T> { fn into(self) -> !T; }", "trait_generic_into");
+
+    // Supertraits
+    assert_item("trait Ord: Eq + PartialOrd {}", "trait_supertrait");
+    assert_item("trait Debug: Display {}", "trait_single_super");
+
+    // Where clause
+    assert_item("trait Container<T> where T: Clone { fn get(self) -> !T; }", "trait_where");
+
+    println("PASS (14 cases)");
+    true
+}
+
+// ============================================================================
+// 5. IMPL BLOCKS
+// ============================================================================
+
+fn test_impl_items() -> !bool {
+    print("  [5/12] Impl blocks... ");
+
+    // Inherent impl
+    assert_item("struct Foo {} impl Foo { fn new() -> !Foo { Foo {} } }", "impl_inherent");
+    assert_item("struct Counter { value: !i32 } impl Counter { fn inc(mut self) { self.value = self.value + 1; } }", "impl_method");
+
+    // Trait impl
+    assert_item("trait Greet {} struct Person {} impl Greet for Person {}", "impl_trait_empty");
+    assert_item("trait Clone { fn clone(self) -> !Self; } struct Data {} impl Clone for Data { fn clone(self) -> !Data { Data {} } }", "impl_trait_method");
+
+    // Generic impl
+    assert_item("struct Box<T> { value: !T } impl<T> Box<T> { fn new(v: !T) -> !Box<T> { Box { value: v } } }", "impl_generic");
+
+    // Impl for generic type
+    assert_item("trait Default {} struct Option<T> {} impl<T> Default for Option<T> {}", "impl_generic_trait");
+
+    // Where clause
+    assert_item("struct Wrapper<T> {} impl<T> Wrapper<T> where T: Clone {}", "impl_where");
+
+    // Associated functions (no self)
+    assert_item("struct Math {} impl Math { fn add(a: !i32, b: !i32) -> !i32 { return a + b; } }", "impl_assoc_fn");
+
+    // Multiple methods
+    assert_item("struct Point { x: !i32, y: !i32 } impl Point { fn x(self) -> !i32 { self.x } fn y(self) -> !i32 { self.y } fn sum(self) -> !i32 { self.x + self.y } }", "impl_multi_methods");
+
+    println("PASS (9 cases)");
+    true
+}
+
+// ============================================================================
+// 6. TYPE ALIAS
+// ============================================================================
+
+fn test_type_alias_items() -> !bool {
+    print("  [6/12] Type aliases... ");
+
+    // Simple alias
+    assert_item("type Int = i32;", "type_simple");
+    assert_item("pub type String = std::string::String;", "type_pub");
+
+    // Generic alias
+    assert_item("type Result<T> = std::result::Result<T, Error>;", "type_generic_one");
+    assert_item("type Map<K, V> = std::collections::HashMap<K, V>;", "type_generic_two");
+
+    // With where clause
+    assert_item("type Container<T> where T: Clone = Vec<T>;", "type_where");
+
+    // Complex types
+    assert_item("type Callback = fn(!i32) -> !i32;", "type_fn");
+    assert_item("type OptionalList<T> = ?[T];", "type_optional_list");
+
+    println("PASS (7 cases)");
+    true
+}
+
+// ============================================================================
+// 7. MODULE DEFINITIONS
+// ============================================================================
+
+fn test_module_items() -> !bool {
+    print("  [7/12] Module definitions... ");
+
+    // Inline module
+    assert_item("mod inner {}", "mod_empty");
+    assert_item("mod inner { fn foo() {} }", "mod_with_fn");
+    assert_item("pub mod public {}", "mod_pub");
+
+    // Nested modules
+    assert_item("mod outer { mod inner {} }", "mod_nested");
+    assert_item("mod a { mod b { mod c {} } }", "mod_deeply_nested");
+
+    // Module with items
+    assert_item("mod math { pub fn add(a: !i32, b: !i32) -> !i32 { a + b } pub struct Vec2 { x: !f64, y: !f64 } }", "mod_with_items");
+
+    // External module declaration
+    assert_item("mod external;", "mod_external");
+
+    println("PASS (7 cases)");
+    true
+}
+
+// ============================================================================
+// 8. USE DECLARATIONS
+// ============================================================================
+
+fn test_use_items() -> !bool {
+    print("  [8/12] Use declarations... ");
+
+    // Simple use
+    assert_item("use std::io;", "use_simple");
+    assert_item("use crate::module;", "use_crate");
+    assert_item("use super::parent;", "use_super");
+    assert_item("use self::local;", "use_self");
+
+    // Use with alias
+    assert_item("use std::io as stdio;", "use_alias");
+    assert_item("use std::collections::HashMap as Map;", "use_alias_long");
+
+    // Use glob
+    assert_item("use std::io::*;", "use_glob");
+    assert_item("use crate::prelude::*;", "use_glob_crate");
+
+    // Use group
+    assert_item("use std::{io, fs};", "use_group_two");
+    assert_item("use std::{io, fs, path};", "use_group_three");
+    assert_item("use std::collections::{HashMap, HashSet, BTreeMap};", "use_group_collections");
+
+    // Nested groups
+    assert_item("use std::{io::{Read, Write}, fs::File};", "use_nested_group");
+
+    // Pub use
+    assert_item("pub use crate::module::Item;", "use_pub");
+    assert_item("pub use super::*;", "use_pub_glob");
+
+    println("PASS (14 cases)");
+    true
+}
+
+// ============================================================================
+// 9. CONST AND STATIC
+// ============================================================================
+
+fn test_const_static_items() -> !bool {
+    print("  [9/12] Const and static definitions... ");
+
+    // Constants
+    assert_item("const PI: f64 = 3.14159;", "const_float");
+    assert_item("const MAX: i32 = 100;", "const_int");
+    assert_item("const NAME: &str = \"Sigil\";", "const_str");
+    assert_item("pub const VERSION: &str = \"1.0.0\";", "const_pub");
+
+    // Static variables
+    assert_item("static COUNTER: i32 = 0;", "static_int");
+    assert_item("static mut BUFFER: [u8; 1024] = [0; 1024];", "static_mut_array");
+    assert_item("pub static INSTANCE: Option<()> = None;", "static_pub");
+
+    // Complex const expressions
+    assert_item("const DOUBLED: i32 = 21 * 2;", "const_expr");
+    assert_item("const FLAGS: u32 = 0b1010 | 0b0101;", "const_bitwise");
+
+    println("PASS (9 cases)");
+    true
+}
+
+// ============================================================================
+// 10. ACTOR DEFINITIONS
+// ============================================================================
+
+fn test_actor_items() -> !bool {
+    print("  [10/12] Actor definitions... ");
+
+    // Basic actor
+    assert_item("actor Counter { value: !i32 }", "actor_basic");
+    assert_item("pub actor PublicCounter { count: !i32 }", "actor_pub");
+
+    // Actor with methods (in impl)
+    assert_item("actor Timer { elapsed: !u64 } impl Timer { fn tick(mut self) { self.elapsed = self.elapsed + 1; } }", "actor_with_impl");
+
+    // Generic actor
+    assert_item("actor Buffer<T> { data: ![T] }", "actor_generic");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// 11. EXTERN BLOCKS
+// ============================================================================
+
+fn test_extern_items() -> !bool {
+    print("  [11/12] Extern blocks... ");
+
+    // C extern block
+    assert_item("extern \"C\" { fn printf(fmt: *const u8, ...) -> i32; }", "extern_c_printf");
+    assert_item("extern \"C\" { fn malloc(size: u64) -> *mut u8; fn free(ptr: *mut u8); }", "extern_c_malloc_free");
+
+    // Static in extern
+    assert_item("extern \"C\" { static errno: i32; }", "extern_static");
+    assert_item("extern \"C\" { static mut buffer: [u8; 256]; }", "extern_static_mut");
+
+    // Other ABIs
+    assert_item("extern \"system\" { fn GetLastError() -> u32; }", "extern_system");
+
+    // Visibility
+    assert_item("extern \"C\" { pub fn public_fn(); }", "extern_pub_fn");
+
+    println("PASS (6 cases)");
+    true
+}
+
+// ============================================================================
+// 12. ATTRIBUTES
+// ============================================================================
+
+fn test_attributes() -> !bool {
+    print("  [12/12] Attributes... ");
+
+    // Derive
+    assert_item("#[derive(Debug)] struct Foo {}", "attr_derive_one");
+    assert_item("#[derive(Debug, Clone, Copy)] struct Bar {}", "attr_derive_multi");
+
+    // Repr
+    assert_item("#[repr(C)] struct FFI {}", "attr_repr_c");
+    assert_item("#[repr(transparent)] struct Wrapper(i32);", "attr_repr_transparent");
+
+    // Inline
+    assert_item("#[inline] fn fast() {}", "attr_inline");
+    assert_item("#[inline(always)] fn always_inline() {}", "attr_inline_always");
+    assert_item("#[inline(never)] fn never_inline() {}", "attr_inline_never");
+
+    // Cfg
+    assert_item("#[cfg(target_os = \"linux\")] fn linux_only() {}", "attr_cfg");
+    assert_item("#[cfg(feature = \"extra\")] mod extra {}", "attr_cfg_feature");
+
+    // Doc
+    assert_item("/// Documentation\nfn documented() {}", "attr_doc_line");
+    assert_item("#[doc = \"Documentation\"] fn also_documented() {}", "attr_doc_attr");
+
+    // Custom attributes
+    assert_item("#[test] fn test_something() {}", "attr_test");
+    assert_item("#[bench] fn benchmark() {}", "attr_bench");
+
+    println("PASS (13 cases)");
+    true
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+pub fn main() -> !i32 {
+    println("Testing Parser Items...");
+    println("");
+
+    let mut passed: !i32 = 0;
+    let mut failed: !i32 = 0;
+
+    if test_function_items() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_struct_items() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_enum_items() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_trait_items() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_impl_items() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_type_alias_items() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_module_items() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_use_items() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_const_static_items() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_actor_items() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_extern_items() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_attributes() { passed = passed + 1; } else { failed = failed + 1; }
+
+    println("");
+    println("Results: {}/{} test groups passed", passed, passed + failed);
+
+    if failed > 0 {
+        println("FAILED: {} test groups failed", failed);
+        return 1;
+    }
+
+    println("");
+    println("All parser item tests passed! (~126 test cases)");
+    return 0;
+}

@@ -1,0 +1,12 @@
+// Test: Bitwise operations
+// Spec: 05-MATHEMATICS.md § 3.2 Bitwise
+// Priority: P2 - Enhancement
+
+fn main() {
+    let a: !i32 = 12;  // 1100 in binary
+    let b: !i32 = 10;  // 1010 in binary
+
+    println(a & b);    // AND: 1000 = 8
+    println(a | b);    // OR: 1110 = 14
+    println(a ^ b);    // XOR: 0110 = 6
+}

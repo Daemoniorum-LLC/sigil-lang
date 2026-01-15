@@ -1,0 +1,20 @@
+// Test: Trait representation in IR
+// Spec: 16-AI-IR.md § Type Representation
+// Priority: P0 - Bootstrap Critical
+
+trait Display {
+    fn display(&self) -> String;
+}
+
+struct Num { value: !i32 }
+
+impl Display for Num {
+    fn display(&self) -> String {
+        self.value.to_string()
+    }
+}
+
+fn main() {
+    let ir = __export_ir();
+    println(ir.traits.len());
+}

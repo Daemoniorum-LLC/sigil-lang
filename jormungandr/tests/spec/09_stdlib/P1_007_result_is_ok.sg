@@ -1,0 +1,20 @@
+// Test: Result is_ok and is_err
+// Spec: 09-STDLIB.md § 3.2 Result
+// Priority: P1 - Production Ready
+
+fn main() {
+    let ok: Result<i32, String> = Result::Ok(42);
+    let err: Result<i32, String> = Result::Err("error");
+
+    if ok.is_ok() {
+        println(1);
+    } else {
+        println(0);
+    }
+
+    if err.is_err() {
+        println(1);
+    } else {
+        println(0);
+    }
+}

@@ -1,0 +1,21 @@
+// Test: Struct with mixed evidence fields
+// Spec: 03-TYPES.md § 2.5 Evidence in Struct Fields
+// Priority: P0
+//
+// Purpose:
+// Validates that struct fields can have different evidence markers
+// and that each field maintains its evidence independently.
+//
+// Expected behavior:
+// Should compile and print 42 then 99 on separate lines
+
+pub struct Data {
+    certain: !i32,
+    uncertain: ?i32
+}
+
+fn main() {
+    let d: !Data = Data { certain: 42, uncertain: 99 };
+    println(d.certain);
+    println(d.uncertain);
+}

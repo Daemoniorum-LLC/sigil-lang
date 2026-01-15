@@ -1,0 +1,19 @@
+// Test: Enum variants in match
+// Spec: Feature Interaction - Enum + Match
+// Priority: P0 - Bootstrap Critical
+
+enum Message {
+    Quit,
+    Move { x: i32, y: i32 },
+    Write(String),
+}
+
+fn main() {
+    let msg = Message::Move { x: 10, y: 20 };
+    let result = match msg {
+        Message::Quit => 0,
+        Message::Move { x, y } => x + y,
+        Message::Write(_) => -1,
+    };
+    println(result);
+}

@@ -1,0 +1,14 @@
+// Test: Primitive type bool
+// Spec: 03-TYPES.md § 3.2 Boolean Type
+// Priority: P0
+//
+// Purpose:
+// Validates that the bool type works correctly.
+//
+// Expected behavior:
+// Should compile and print true
+
+fn main() {
+    let x: !bool = true;
+    println(x);
+}

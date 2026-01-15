@@ -1,0 +1,7 @@
+// Test: Basic compiler functionality
+// Spec: 18-COMPILER.md § 1.1 Hello World
+// Priority: P1 - Standard Feature
+
+fn main() {
+    println("Hello, World!");
+}

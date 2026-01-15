@@ -1,0 +1,12 @@
+// Test: gRPC client
+// Spec: 15-PROTOCOLS.md § 3 gRPC Support
+// Priority: P0 - Bootstrap Critical
+
+use protocol::grpc::{Channel, Client};
+
+async fn main() {
+    let channel = Channel::connect("http://localhost:50051")|await~;
+    let client = GreeterClient::new(channel);
+    let response~ = client.say_hello(HelloRequest { name: "Sigil" })|await;
+    println(response~.message);
+}

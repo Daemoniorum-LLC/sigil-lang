@@ -1,0 +1,15 @@
+// Test: Vec::push() method
+// Spec: 09-STDLIB.md § 2.1 Vec Type
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate Vec push operation works.
+//
+// Expected behavior:
+// Should push 42 and print length (1)
+
+fn main() {
+    let mut v: !Vec<i32> = Vec::new();
+    v.push(42);
+    println(v.len());
+}

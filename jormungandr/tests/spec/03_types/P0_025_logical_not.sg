@@ -1,0 +1,14 @@
+// Test: Logical NOT operator
+// Spec: 03-TYPES.md § 3.5 Logical Operators
+// Priority: P0
+//
+// Purpose:
+// Validates that logical NOT (!) works correctly.
+//
+// Expected behavior:
+// Should compile and print false
+
+fn main() {
+    let x: !bool = !true;
+    println(x);
+}

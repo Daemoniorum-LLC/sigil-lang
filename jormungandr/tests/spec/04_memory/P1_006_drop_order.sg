@@ -1,0 +1,20 @@
+// Test: Drop trait is called
+// Spec: 04-MEMORY.md § 6.2 Drop
+// Priority: P1 - Production Ready
+
+struct Dropper {
+    id: !i32,
+}
+
+impl Drop for Dropper {
+    fn drop(&mut self) {
+        println(self.id);
+    }
+}
+
+fn main() {
+    let a = Dropper { id: 100 };
+
+    println(0);
+    // Drop happens at end of scope
+}

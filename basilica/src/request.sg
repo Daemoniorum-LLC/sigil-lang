@@ -1,0 +1,460 @@
+//! HTTP Request Types with Evidentiality
+//!
+//! Requests enter as `~` (external/reported) and carry evidence metadata
+//! throughout their lifecycle.
+
+use shared::{Timestamp, Duration, Value, AgentId, HumanId};
+use crate::evidence::{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext};
+
+// ============================================================================
+// HTTP Method
+// ============================================================================
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Method {
+    GET,
+    POST,
+    PUT,
+    DELETE,
+    PATCH,
+    HEAD,
+    OPTIONS,
+    CONNECT,
+    TRACE,
+}
+
+impl Method {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_uppercase().as_str() {
+            "GET" => Some(Method::GET),
+            "POST" => Some(Method::POST),
+            "PUT" => Some(Method::PUT),
+            "DELETE" => Some(Method::DELETE),
+            "PATCH" => Some(Method::PATCH),
+            "HEAD" => Some(Method::HEAD),
+            "OPTIONS" => Some(Method::OPTIONS),
+            "CONNECT" => Some(Method::CONNECT),
+            "TRACE" => Some(Method::TRACE),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Method::GET => "GET",
+            Method::POST => "POST",
+            Method::PUT => "PUT",
+            Method::DELETE => "DELETE",
+            Method::PATCH => "PATCH",
+            Method::HEAD => "HEAD",
+            Method::OPTIONS => "OPTIONS",
+            Method::CONNECT => "CONNECT",
+            Method::TRACE => "TRACE",
+        }
+    }
+
+    /// Check if this method is considered "safe" (no side effects)
+    pub fn is_safe(&self) -> bool {
+        matches!(self, Method::GET | Method::HEAD | Method::OPTIONS | Method::TRACE)
+    }
+
+    /// Check if this method is idempotent
+    pub fn is_idempotent(&self) -> bool {
+        matches!(self,
+            Method::GET | Method::HEAD | Method::PUT |
+            Method::DELETE | Method::OPTIONS | Method::TRACE
+        )
+    }
+}
+
+// ============================================================================
+// Request
+// ============================================================================
+
+/// An HTTP request with evidentiality tracking
+///
+/// All incoming data is marked as `~` (reported/external) by default.
+/// Validation and authentication can promote evidence levels.
+pub struct Request {
+    /// HTTP method - known (from parsing)
+    pub method: Method,
+
+    /// Request path - known (from parsing)
+    pub path: String,
+
+    /// Query parameters - reported (from client)
+    query: Evidenced<QueryParams>,
+
+    /// Request headers - reported (from client)
+    headers: Evidenced<Headers>,
+
+    /// Request body - reported (from client)
+    body: Option<Evidenced<Vec<u8>>>,
+
+    /// HTTP version
+    pub version: HttpVersion,
+
+    /// Remote address (if available)
+    pub remote_addr: Option<String>,
+
+    /// Request ID for tracing
+    pub request_id: [u8; 16],
+
+    /// Timestamp when request was received
+    pub received_at: Timestamp,
+
+    /// Evidence context for tracking transformations
+    evidence_ctx: EvidenceContext,
+
+    /// Authentication info (populated by auth middleware)
+    auth: Option<AuthInfo>,
+}
+
+/// Query parameters wrapper
+#[derive(Clone, Debug, Default)]
+pub struct QueryParams {
+    params: std::collections::HashMap<String, Vec<String>>,
+}
+
+impl QueryParams {
+    pub fn new() -> Self {
+        Self { params: std::collections::HashMap::new() }
+    }
+
+    pub fn get(&self, key: &str) -> Option<&String> {
+        self.params.get(key).and_then(|v| v.first())
+    }
+
+    pub fn get_all(&self, key: &str) -> Option<&Vec<String>> {
+        self.params.get(key)
+    }
+
+    pub fn set(&mut self, key: String, value: String) {
+        self.params.entry(key).or_default().push(value);
+    }
+
+    pub fn contains(&self, key: &str) -> bool {
+        self.params.contains_key(key)
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.params.keys()
+    }
+}
+
+/// HTTP headers wrapper
+#[derive(Clone, Debug, Default)]
+pub struct Headers {
+    headers: std::collections::HashMap<String, Vec<String>>,
+}
+
+impl Headers {
+    pub fn new() -> Self {
+        Self { headers: std::collections::HashMap::new() }
+    }
+
+    pub fn get(&self, key: &str) -> Option<&String> {
+        self.headers.get(&key.to_lowercase()).and_then(|v| v.first())
+    }
+
+    pub fn get_all(&self, key: &str) -> Option<&Vec<String>> {
+        self.headers.get(&key.to_lowercase())
+    }
+
+    pub fn set(&mut self, key: String, value: String) {
+        self.headers.entry(key.to_lowercase()).or_default().push(value);
+    }
+
+    pub fn contains(&self, key: &str) -> bool {
+        self.headers.contains_key(&key.to_lowercase())
+    }
+
+    pub fn content_type(&self) -> Option<&String> {
+        self.get("content-type")
+    }
+
+    pub fn authorization(&self) -> Option<&String> {
+        self.get("authorization")
+    }
+}
+
+/// HTTP version
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HttpVersion {
+    Http10,
+    Http11,
+    Http2,
+    Http3,
+}
+
+/// Authentication information
+#[derive(Clone, Debug)]
+pub struct AuthInfo {
+    /// The authenticated identity
+    pub identity: Identity,
+
+    /// How they authenticated
+    pub method: AuthMethod,
+
+    /// When authentication occurred
+    pub authenticated_at: Timestamp,
+
+    /// Trust level based on auth method and history
+    pub trust_level: shared::TrustLevel,
+}
+
+/// Identity of the requester
+#[derive(Clone, Debug)]
+pub enum Identity {
+    /// A human user
+    Human { id: HumanId, name: Option<String> },
+
+    /// An agent/service
+    Agent { id: AgentId, name: String },
+
+    /// Anonymous (unauthenticated)
+    Anonymous,
+
+    /// System/internal
+    System,
+}
+
+/// Authentication method used
+#[derive(Clone, Debug)]
+pub enum AuthMethod {
+    /// Bearer token (JWT, API key, etc.)
+    BearerToken { token_type: String },
+
+    /// Session cookie
+    Session { session_id: String },
+
+    /// mTLS client certificate
+    ClientCert { subject: String },
+
+    /// Basic auth (username/password)
+    Basic,
+
+    /// OAuth/OIDC
+    OAuth { provider: String },
+
+    /// No authentication
+    None,
+}
+
+impl Request {
+    /// Create a new request (typically done by the framework)
+    pub fn new(
+        method: Method,
+        path: String,
+        query: QueryParams,
+        headers: Headers,
+        body: Option<Vec<u8>>,
+    ) -> Self {
+        // All incoming data is ~ (external)
+        let external_evidence = HttpEvidence::External {
+            source: "http_request".to_string(),
+            fetched_at: Timestamp::now(),
+            api_confidence: None,
+        };
+
+        Self {
+            method,
+            path,
+            query: Evidenced::new(query, external_evidence.clone()),
+            headers: Evidenced::new(headers, external_evidence.clone()),
+            body: body.map(|b| Evidenced::new(b, external_evidence)),
+            version: HttpVersion::Http11,
+            remote_addr: None,
+            request_id: [0u8; 16], // Would be generated
+            received_at: Timestamp::now(),
+            evidence_ctx: EvidenceContext::new(),
+            auth: None,
+        }
+    }
+
+    // ========================================================================
+    // Accessors with Evidence
+    // ========================================================================
+
+    /// Get query parameters with evidence (~ by default)
+    pub fn query(&self) -> &Evidenced<QueryParams> {
+        &self.query
+    }
+
+    /// Get a specific query parameter
+    /// Returns ~ (reported) evidence
+    pub fn query_param(&self, key: &str) -> Option<Evidenced<String>> {
+        self.query.value.get(key).map(|v| {
+            Evidenced::new(v.clone(), self.query.evidence.clone())
+        })
+    }
+
+    /// Get headers with evidence (~ by default)
+    pub fn headers(&self) -> &Evidenced<Headers> {
+        &self.headers
+    }
+
+    /// Get a specific header
+    pub fn header(&self, key: &str) -> Option<Evidenced<String>> {
+        self.headers.value.get(key).map(|v| {
+            Evidenced::new(v.clone(), self.headers.evidence.clone())
+        })
+    }
+
+    /// Get body with evidence (~ by default)
+    pub fn body(&self) -> Option<&Evidenced<Vec<u8>>> {
+        self.body.as_ref()
+    }
+
+    /// Get body as bytes (raw, still ~)
+    pub fn body_bytes(&self) -> Option<&[u8]> {
+        self.body.as_ref().map(|b| b.value.as_slice())
+    }
+
+    // ========================================================================
+    // Authentication
+    // ========================================================================
+
+    /// Check if request is authenticated
+    pub fn is_authenticated(&self) -> bool {
+        self.auth.is_some() && !matches!(self.auth.as_ref().unwrap().identity, Identity::Anonymous)
+    }
+
+    /// Get authentication info
+    pub fn auth(&self) -> Option<&AuthInfo> {
+        self.auth.as_ref()
+    }
+
+    /// Set authentication info (called by auth middleware)
+    pub fn set_auth(&mut self, auth: AuthInfo) {
+        // Record evidence transformation
+        self.evidence_ctx.record(
+            EvidenceLevel::Reported,
+            EvidenceLevel::Known,
+            "authentication"
+        );
+        self.auth = Some(auth);
+    }
+
+    /// Get the identity if authenticated
+    pub fn identity(&self) -> Option<&Identity> {
+        self.auth.as_ref().map(|a| &a.identity)
+    }
+
+    // ========================================================================
+    // Evidence Context
+    // ========================================================================
+
+    /// Get the evidence context for this request
+    pub fn evidence_context(&self) -> &EvidenceContext {
+        &self.evidence_ctx
+    }
+
+    /// Get mutable evidence context
+    pub fn evidence_context_mut(&mut self) -> &mut EvidenceContext {
+        &mut self.evidence_ctx
+    }
+
+    // ========================================================================
+    // Path Parameters
+    // ========================================================================
+
+    /// Extract a path parameter by name
+    /// These are parsed from the route definition
+    pub fn path_param(&self, _name: &str) -> Option<Evidenced<String>> {
+        // Path parameters are extracted by the router
+        // They're still ~ because they come from the client
+        None // Router populates this
+    }
+
+    // ========================================================================
+    // Content Negotiation
+    // ========================================================================
+
+    /// Get the accepted content types
+    pub fn accepts(&self) -> Vec<String> {
+        self.headers.value.get("accept")
+            .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Check if the request accepts a specific content type
+    pub fn accepts_type(&self, content_type: &str) -> bool {
+        let accepts = self.accepts();
+        accepts.is_empty() ||
+        accepts.iter().any(|a| a == "*/*" || a == content_type || a.starts_with(&format!("{}/", content_type.split('/').next().unwrap_or(""))))
+    }
+
+    /// Get the content type of the request body
+    pub fn content_type(&self) -> Option<String> {
+        self.headers.value.content_type().cloned()
+    }
+}
+
+// ============================================================================
+// Request Extractors
+// ============================================================================
+
+/// Trait for extracting typed data from requests
+pub trait FromRequest: Sized {
+    type Error;
+
+    /// Extract from request, returning evidenced value
+    fn from_request(req: &Request) -> Result<Evidenced<Self>, Self::Error>;
+}
+
+/// JSON body extractor
+pub struct Json<T>(pub T);
+
+impl<T: serde::de::DeserializeOwned> FromRequest for Json<T> {
+    type Error = JsonError;
+
+    fn from_request(req: &Request) -> Result<Evidenced<Self>, Self::Error> {
+        let body = req.body()
+            .ok_or(JsonError::NoBody)?;
+
+        // Check content type
+        if !req.content_type().map(|ct| ct.contains("application/json")).unwrap_or(false) {
+            return Err(JsonError::WrongContentType);
+        }
+
+        // Parse JSON - result is still ~ (external data)
+        let value: T = serde_json::from_slice(&body.value)
+            .map_err(|e| JsonError::ParseError(e.to_string()))?;
+
+        // Evidence is UserInput (unvalidated) - needs validation gate
+        Ok(Evidenced::new(Json(value), HttpEvidence::UserInput {
+            validated: false,
+            validation_errors: vec![],
+        }))
+    }
+}
+
+#[derive(Debug)]
+pub enum JsonError {
+    NoBody,
+    WrongContentType,
+    ParseError(String),
+}
+
+/// Path parameter extractor
+pub struct Path<T>(pub T);
+
+/// Query parameter extractor
+pub struct Query<T>(pub T);
+
+// ============================================================================
+// Serde placeholder (would be proper integration)
+// ============================================================================
+
+pub mod serde {
+    pub mod de {
+        pub trait DeserializeOwned {}
+    }
+}
+
+pub mod serde_json {
+    pub fn from_slice<T>(_bytes: &[u8]) -> Result<T, String> {
+        Err("Not implemented".to_string())
+    }
+}

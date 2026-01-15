@@ -1,0 +1,16 @@
+// Test: Subtyping - Known (!) is subtype of Reported (~)
+// Spec: 03-TYPES.md § 2.3 Subtyping
+// Priority: P0
+//
+// Purpose:
+// Validates that a Known (!) value can be assigned to a Reported (~)
+// variable, demonstrating that T! <: T~
+//
+// Expected behavior:
+// Should compile successfully and print 42
+
+fn main() {
+    let x: !i32 = 42;
+    let y: ~i32 = x;  // Subtyping: !i32 <: ~i32
+    println(y);
+}

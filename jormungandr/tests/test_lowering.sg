@@ -1,0 +1,604 @@
+//! Comprehensive Lowering Test Suite
+//!
+//! Tests AST to IR lowering, including desugaring of high-level constructs,
+//! pipeline lowering, and evidence propagation.
+//! Target: 100% lowering coverage for regression detection.
+
+use crate::parser::Parser;
+use crate::typeck::TypeChecker;
+use crate::lower::lower_file;
+use crate::ir::*;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+/// Parse, type check, and lower source code to IR
+fn lower_source(source: !&str) -> ?IrModule {
+    let mut parser = Parser::new(source.to_string());
+    let ast = match parser.parse_file() {
+        Result::Ok(a) => a,
+        Result::Err(_) => return null,
+    };
+    let mut checker = TypeChecker::new();
+    match checker.check_file(ast.clone()) {
+        Result::Ok(_) => {},
+        Result::Err(_) => return null,
+    };
+    match lower_file(ast, checker, "test.sg".to_string()) {
+        Result::Ok(ir) => ?ir,
+        Result::Err(_) => null,
+    }
+}
+
+/// Assert that lowering succeeds
+fn assert_lowers(source: !&str, name: !&str) -> !IrModule {
+    match lower_source(source) {
+        ?module => module,
+        null => {
+            panic(format!("FAIL {}: lowering failed", name));
+        },
+    }
+}
+
+/// Assert that lowering produces expected number of functions
+fn assert_function_count(module: !IrModule, expected: !u64, name: !&str) {
+    if module.functions.len() != expected {
+        panic(format!("FAIL {}: expected {} functions, got {}", name, expected, module.functions.len()));
+    }
+}
+
+/// Find a function by name in the module
+fn find_function(module: !IrModule, name: !&str) -> ?IrFunction {
+    for func in module.functions {
+        if func.name == name {
+            return ?func;
+        }
+    }
+    null
+}
+
+// ============================================================================
+// 1. BASIC FUNCTION LOWERING
+// ============================================================================
+
+fn test_basic_function_lowering() -> !bool {
+    print("  [1/10] Basic function lowering... ");
+
+    // Simple function
+    let module = assert_lowers("fn foo() -> !i32 { return 42; }", "simple_fn");
+    assert_function_count(module, 1, "one_function");
+
+    // Function with params
+    let module2 = assert_lowers("fn add(a: !i32, b: !i32) -> !i32 { return a + b; }", "params_fn");
+    match find_function(module2, "add") {
+        ?func => {
+            assert(func.params.len() == 2, "two_params");
+        },
+        null => panic("FAIL: add function not found"),
+    }
+
+    // Multiple functions
+    let module3 = assert_lowers("
+        fn a() -> !i32 { return 1; }
+        fn b() -> !i32 { return 2; }
+        fn c() -> !i32 { return 3; }
+    ", "multi_fn");
+    assert_function_count(module3, 3, "three_functions");
+
+    // Async function
+    let module4 = assert_lowers("async fn fetch() -> !String { return \"\"; }", "async_fn");
+    match find_function(module4, "fetch") {
+        ?func => {
+            assert(func.is_async, "is_async");
+        },
+        null => panic("FAIL: fetch function not found"),
+    }
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// 2. LET BINDING LOWERING
+// ============================================================================
+
+fn test_let_lowering() -> !bool {
+    print("  [2/10] Let binding lowering... ");
+
+    // Simple let
+    let module = assert_lowers("
+        fn test() -> !i32 {
+            let x: !i32 = 42;
+            return x;
+        }
+    ", "simple_let");
+
+    // Let with pattern
+    let module2 = assert_lowers("
+        fn test() -> !i32 {
+            let (a, b): !(i32, i32) = (1, 2);
+            return a + b;
+        }
+    ", "let_tuple_pattern");
+
+    // Mutable let
+    let module3 = assert_lowers("
+        fn test() -> !i32 {
+            let mut x: !i32 = 0;
+            x = 42;
+            return x;
+        }
+    ", "let_mutable");
+
+    // Let with type inference
+    let module4 = assert_lowers("
+        fn test() -> !i32 {
+            let x = 42;
+            return x;
+        }
+    ", "let_inferred");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// 3. EXPRESSION LOWERING
+// ============================================================================
+
+fn test_expression_lowering() -> !bool {
+    print("  [3/10] Expression lowering... ");
+
+    // Binary expressions
+    let _module = assert_lowers("
+        fn test() -> !i32 {
+            return 1 + 2 * 3;
+        }
+    ", "binary_expr");
+
+    // Unary expressions
+    let _module2 = assert_lowers("
+        fn test() -> !i32 {
+            return -42;
+        }
+    ", "unary_expr");
+
+    // Comparison chain
+    let _module3 = assert_lowers("
+        fn test() -> !bool {
+            let x: !i32 = 5;
+            return x > 0 && x < 10;
+        }
+    ", "comparison_chain");
+
+    // Logical operators
+    let _module4 = assert_lowers("
+        fn test() -> !bool {
+            return true && false || true;
+        }
+    ", "logical_ops");
+
+    // Bitwise operators
+    let _module5 = assert_lowers("
+        fn test() -> !i32 {
+            return (1 << 4) | (1 << 2);
+        }
+    ", "bitwise_ops");
+
+    println("PASS (5 cases)");
+    true
+}
+
+// ============================================================================
+// 4. CONTROL FLOW LOWERING
+// ============================================================================
+
+fn test_control_flow_lowering() -> !bool {
+    print("  [4/10] Control flow lowering... ");
+
+    // If expression
+    let _module = assert_lowers("
+        fn test(x: !bool) -> !i32 {
+            if x {
+                return 1;
+            } else {
+                return 0;
+            }
+        }
+    ", "if_expr");
+
+    // If without else
+    let _module2 = assert_lowers("
+        fn test(x: !bool) -> !() {
+            if x {
+                println(\"yes\");
+            }
+        }
+    ", "if_no_else");
+
+    // Match expression
+    let _module3 = assert_lowers("
+        enum Option<T> { Some(T), None }
+        fn test(opt: !Option<i32>) -> !i32 {
+            match opt {
+                Option::Some(v) => v,
+                Option::None => 0,
+            }
+        }
+    ", "match_expr");
+
+    // Loop
+    let _module4 = assert_lowers("
+        fn test() -> !i32 {
+            loop {
+                break 42;
+            }
+        }
+    ", "loop_expr");
+
+    // While
+    let _module5 = assert_lowers("
+        fn test() -> !() {
+            let mut i: !i32 = 0;
+            while i < 10 {
+                i = i + 1;
+            }
+        }
+    ", "while_loop");
+
+    // For
+    let _module6 = assert_lowers("
+        fn test() -> !i32 {
+            let mut sum: !i32 = 0;
+            for i in 0..10 {
+                sum = sum + i;
+            }
+            return sum;
+        }
+    ", "for_loop");
+
+    println("PASS (6 cases)");
+    true
+}
+
+// ============================================================================
+// 5. STRUCT AND ENUM LOWERING
+// ============================================================================
+
+fn test_struct_enum_lowering() -> !bool {
+    print("  [5/10] Struct and enum lowering... ");
+
+    // Struct definition and usage
+    let module = assert_lowers("
+        struct Point { x: !i32, y: !i32 }
+        fn test() -> !Point {
+            return Point { x: 1, y: 2 };
+        }
+    ", "struct_basic");
+    assert(module.types.len() >= 1, "has_struct_type");
+
+    // Struct field access
+    let _module2 = assert_lowers("
+        struct Point { x: !i32, y: !i32 }
+        fn test() -> !i32 {
+            let p = Point { x: 1, y: 2 };
+            return p.x + p.y;
+        }
+    ", "struct_field");
+
+    // Enum definition
+    let module3 = assert_lowers("
+        enum Color { Red, Green, Blue }
+        fn test() -> !Color {
+            return Color::Red;
+        }
+    ", "enum_basic");
+    assert(module3.types.len() >= 1, "has_enum_type");
+
+    // Enum with data
+    let _module4 = assert_lowers("
+        enum Result<T, E> { Ok(T), Err(E) }
+        fn test() -> !Result<i32, String> {
+            return Result::Ok(42);
+        }
+    ", "enum_data");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// 6. METHOD AND IMPL LOWERING
+// ============================================================================
+
+fn test_method_lowering() -> !bool {
+    print("  [6/10] Method and impl lowering... ");
+
+    // Inherent impl
+    let module = assert_lowers("
+        struct Counter { value: !i32 }
+        impl Counter {
+            fn new() -> !Counter {
+                return Counter { value: 0 };
+            }
+            fn get(self) -> !i32 {
+                return self.value;
+            }
+            fn inc(mut self) {
+                self.value = self.value + 1;
+            }
+        }
+        fn test() -> !i32 {
+            let c = Counter::new();
+            return c.get();
+        }
+    ", "inherent_impl");
+    // Should have Counter::new, Counter::get, Counter::inc, and test
+    assert(module.functions.len() >= 4, "has_methods");
+
+    // Method call chain
+    let _module2 = assert_lowers("
+        struct Builder { value: !i32 }
+        impl Builder {
+            fn new() -> !Builder { Builder { value: 0 } }
+            fn add(mut self, x: !i32) -> !Builder {
+                self.value = self.value + x;
+                return self;
+            }
+            fn build(self) -> !i32 { self.value }
+        }
+        fn test() -> !i32 {
+            return Builder::new().add(1).add(2).build();
+        }
+    ", "method_chain");
+
+    println("PASS (2 cases)");
+    true
+}
+
+// ============================================================================
+// 7. CLOSURE LOWERING
+// ============================================================================
+
+fn test_closure_lowering() -> !bool {
+    print("  [7/10] Closure lowering... ");
+
+    // Simple closure
+    let _module = assert_lowers("
+        fn test() -> !i32 {
+            let f = |x: i32| x + 1;
+            return f(41);
+        }
+    ", "simple_closure");
+
+    // Closure with capture
+    let _module2 = assert_lowers("
+        fn test() -> !i32 {
+            let a: !i32 = 10;
+            let f = |x: i32| x + a;
+            return f(5);
+        }
+    ", "closure_capture");
+
+    // Move closure
+    let _module3 = assert_lowers("
+        fn test() -> !i32 {
+            let s = \"hello\".to_string();
+            let f = move || s.len();
+            return f();
+        }
+    ", "move_closure");
+
+    // Nested closure
+    let _module4 = assert_lowers("
+        fn test() -> !i32 {
+            let f = |x: i32| |y: i32| x + y;
+            let g = f(10);
+            return g(5);
+        }
+    ", "nested_closure");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// 8. PIPELINE LOWERING
+// ============================================================================
+
+fn test_pipeline_lowering() -> !bool {
+    print("  [8/10] Pipeline lowering... ");
+
+    // Simple pipeline
+    let _module = assert_lowers("
+        fn double(x: !i32) -> !i32 { return x * 2; }
+        fn test() -> !i32 {
+            return 21 |> double;
+        }
+    ", "simple_pipeline");
+
+    // Chained pipeline
+    let _module2 = assert_lowers("
+        fn add_one(x: !i32) -> !i32 { return x + 1; }
+        fn double(x: !i32) -> !i32 { return x * 2; }
+        fn test() -> !i32 {
+            return 10 |> add_one |> double;
+        }
+    ", "chained_pipeline");
+
+    // Pipeline with morpheme (tau)
+    let _module3 = assert_lowers("
+        fn test() -> ![i32] {
+            let arr: ![i32] = [1, 2, 3];
+            return arr |τ{x => x * 2};
+        }
+    ", "morpheme_tau");
+
+    // Pipeline with filter (phi)
+    let _module4 = assert_lowers("
+        fn test() -> ![i32] {
+            let arr: ![i32] = [1, 2, 3, 4, 5];
+            return arr |φ{x => x > 2};
+        }
+    ", "morpheme_phi");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// 9. EVIDENCE LOWERING
+// ============================================================================
+
+fn test_evidence_lowering() -> !bool {
+    print("  [9/10] Evidence lowering... ");
+
+    // Known evidence
+    let module = assert_lowers("
+        fn test() -> !i32 {
+            let x: !i32 = 42;
+            return x;
+        }
+    ", "known_evidence");
+    match find_function(module, "test") {
+        ?func => {
+            assert(func.return_evidence == IrEvidence::Known, "return_is_known");
+        },
+        null => panic("FAIL: test function not found"),
+    }
+
+    // Uncertain evidence
+    let module2 = assert_lowers("
+        fn test() -> ?i32 {
+            return ?42;
+        }
+    ", "uncertain_evidence");
+    match find_function(module2, "test") {
+        ?func => {
+            assert(func.return_evidence == IrEvidence::Uncertain, "return_is_uncertain");
+        },
+        null => panic("FAIL: test function not found"),
+    }
+
+    // Evidence propagation
+    let _module3 = assert_lowers("
+        fn test(x: ?i32, y: !i32) -> ?i32 {
+            return x + y;  // Result is uncertain
+        }
+    ", "evidence_propagation");
+
+    // Evidence coercion
+    let _module4 = assert_lowers("
+        fn test(x: ?i32) -> !i32 {
+            return x ?? 0;  // Coalesce to known
+        }
+    ", "evidence_coalesce");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// 10. DESUGARING
+// ============================================================================
+
+fn test_desugaring() -> !bool {
+    print("  [10/10] Desugaring... ");
+
+    // Method syntax to function call
+    let _module = assert_lowers("
+        struct S {}
+        impl S { fn method(self) -> !i32 { return 42; } }
+        fn test() -> !i32 {
+            let s = S {};
+            return s.method();  // Desugars to S::method(s)
+        }
+    ", "method_desugar");
+
+    // Field shorthand
+    let _module2 = assert_lowers("
+        struct Point { x: !i32, y: !i32 }
+        fn test(x: !i32, y: !i32) -> !Point {
+            return Point { x, y };  // Desugars to Point { x: x, y: y }
+        }
+    ", "field_shorthand");
+
+    // Range syntax
+    let _module3 = assert_lowers("
+        fn test() -> ![i32] {
+            let r = 0..10;  // Desugars to Range::new(0, 10)
+            return [];
+        }
+    ", "range_desugar");
+
+    // Try operator
+    let _module4 = assert_lowers("
+        enum Result<T, E> { Ok(T), Err(E) }
+        fn fallible() -> !Result<i32, String> { return Result::Ok(42); }
+        fn test() -> !Result<i32, String> {
+            let x = fallible()?;  // Desugars to match
+            return Result::Ok(x);
+        }
+    ", "try_desugar");
+
+    // If let
+    let _module5 = assert_lowers("
+        enum Option<T> { Some(T), None }
+        fn test(opt: !Option<i32>) -> !i32 {
+            if let Option::Some(x) = opt {
+                return x;
+            }
+            return 0;
+        }
+    ", "if_let_desugar");
+
+    // While let
+    let _module6 = assert_lowers("
+        enum Option<T> { Some(T), None }
+        fn next() -> !Option<i32> { return Option::None; }
+        fn test() -> !() {
+            while let Option::Some(x) = next() {
+                println(format!(\"{}\", x));
+            }
+        }
+    ", "while_let_desugar");
+
+    println("PASS (6 cases)");
+    true
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+pub fn main() -> !i32 {
+    println("Testing Lowering (AST -> IR)...");
+    println("");
+
+    let mut passed: !i32 = 0;
+    let mut failed: !i32 = 0;
+
+    if test_basic_function_lowering() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_let_lowering() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_expression_lowering() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_control_flow_lowering() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_struct_enum_lowering() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_method_lowering() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_closure_lowering() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_pipeline_lowering() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_evidence_lowering() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_desugaring() { passed = passed + 1; } else { failed = failed + 1; }
+
+    println("");
+    println("Results: {}/{} test groups passed", passed, passed + failed);
+
+    if failed > 0 {
+        println("FAILED: {} test groups failed", failed);
+        return 1;
+    }
+
+    println("");
+    println("All lowering tests passed! (~39 test cases)");
+    return 0;
+}

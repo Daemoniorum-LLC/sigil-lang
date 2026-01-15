@@ -33,9 +33,9 @@ The JSON output for AI agents (`--format=json`) is forward-thinking. This is the
 The progression from interpreter → Cranelift JIT → LLVM JIT → LLVM AOT is well-designed:
 
 ```
-Interpreter: 39.4s (development)
-JIT:         0.59s (67x faster)
-LLVM AOT:    0.011s (3,582x faster, beats Rust)
+Interpreter: (development)
+JIT:         (fast iteration)
+LLVM AOT:    (production deployment)
 ```
 
 This gives developers real choices based on their stage of development. The CLI is clean:

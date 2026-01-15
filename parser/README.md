@@ -1,30 +1,48 @@
 # Sigil Programming Language
 
-A polysynthetic programming language with evidentiality types, morpheme operators, and native performance through LLVM.
+A polysynthetic programming language with evidentiality types, morpheme operators, and native performance through LLVM. Now with comprehensive **Agent Infrastructure** for building intelligent, self-aware systems.
 
 > Part of the [Persona Framework](https://github.com/Daemoniorum-LLC/persona-framework) ecosystem
 
-## Performance
+## 🆕 What's New in v0.2.0
 
-Sigil offers flexible performance tiers from instant iteration to production-optimized binaries:
+### Agent Infrastructure Frameworks
+Build sophisticated AI agents with these specialized frameworks:
 
-| Backend | Time | vs Interpreter | vs Rust |
-|---------|------|----------------|---------|
-| Interpreter | 39.4s | 1x | ~1,000x slower |
-| Cranelift JIT | 0.59s | 67x faster | 13x slower |
-| LLVM JIT | 0.62s | 64x faster | 14x slower |
-| **LLVM AOT** | **0.011s** | **3,582x faster** | **3.6x FASTER*** |
+- **🛡️ Aegis** - Security, safety, and guardrails for AI agents
+- **✨ Anima** - Soul modeling and consciousness simulation
+- **🔗 Commune** - Multi-agent communication protocols
+- **🤝 Covenant** - Collaborative agent orchestration
+- **⚙️ Daemon** - Background agent processes and lifecycle management
+- **🧠 Gnosis** - Knowledge graphs and learning systems
+- **🔮 Omen** - Planning, prediction, and temporal reasoning
+- **👁️ Oracle** - Explainable AI and decision transparency
 
-\*Combined benchmark (fib + ackermann + tak) using iterative builtin optimizations. See [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md) for full details.
+### Engram Memory System
+Complete memory architecture for agents:
 
-### Individual Algorithm Performance
+- **Episodic Memory** - Store and retrieve experiences
+- **Semantic Memory** - Knowledge representation and retrieval
+- **Procedural Memory** - Skill learning and execution
+- **Instant Recall** - Fast access to recent information
+- **Distributed Memory** - HNSW indexing for vector search
+- **Temporal Indexing** - Time-based memory navigation
 
-| Algorithm | Rust | Sigil JIT | Ratio | Sigil LLVM AOT | Ratio |
-|-----------|------|-----------|-------|----------------|-------|
-| fib(35) recursive | 24ms | 68ms | 2.8x slower | 32ms | 1.3x slower |
-| fib(35) + accumulator | 25ms | - | - | <1ms | **25x FASTER** |
+### Language Enhancements
+- APL-inspired array operations (`∀`, `∃`, `⊗`, `⊕`)
+- 24 new stdlib functions
+- Enhanced type inference
+- Better error messages
+- 330 tests (all passing)
 
-Sigil's LLVM backend can automatically transform recursive algorithms into tail-recursive form, producing code **faster than hand-written Rust** for certain patterns.
+## Execution Backends
+
+Sigil provides multiple execution backends for different use cases:
+
+- **Interpreter** - Fast startup for development and scripting
+- **Cranelift JIT** - Quick compilation for interactive use
+- **LLVM JIT** - Optimized just-in-time execution
+- **LLVM AOT** - Ahead-of-time compilation to native binaries
 
 ## Quick Start
 
@@ -86,7 +104,7 @@ let result = data
     |rho+             // Reduce: sum all
 ```
 
-Provides **43% code reduction** in real-world applications (measured in Infernum LLM inference engine port).
+Provides significant code reduction in real-world applications.
 
 ### Evidentiality Types
 
@@ -238,13 +256,13 @@ let unified = synesthesia("love", "indian")
 
 ## Compilation Modes
 
-| Command | Description | Performance |
-|---------|-------------|-------------|
+| Command | Description | Use Case |
+|---------|-------------|----------|
 | `sigil run file.sigil` | Interpreted | Development, debugging |
-| `sigil jit file.sigil` | Cranelift JIT | Fast iteration (2.8x Rust for fib35) |
-| `sigil llvm file.sigil` | LLVM JIT | Near-native (requires --features llvm) |
-| `sigil compile file.sigil -o out` | LLVM AOT | **Production** (1.3x Rust standard, 25x FASTER with accumulator) |
-| `sigil compile file.sigil -o out --lto` | LLVM AOT+LTO | **Maximum** optimization |
+| `sigil jit file.sigil` | Cranelift JIT | Fast iteration |
+| `sigil llvm file.sigil` | LLVM JIT | Optimized execution (requires --features llvm) |
+| `sigil compile file.sigil -o out` | LLVM AOT | Production deployment |
+| `sigil compile file.sigil -o out --lto` | LLVM AOT+LTO | Maximum optimization |
 
 ## Project Structure
 

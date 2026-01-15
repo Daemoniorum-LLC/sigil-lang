@@ -1,0 +1,1342 @@
+//! Abstract Syntax Tree for Sigil.
+//!
+//! Represents the polysynthetic structure with evidentiality markers.
+//! This is the core data structure that all compiler phases work with.
+//!
+//! Self-hosted conversion: ast.rs -> ast.sg
+//! Original: 1592 lines of Rust
+//! Status: Complete
+
+use crate::span::{Span, Spanned};
+
+// ============================================
+// Attributes (for no_std, entry points, etc.)
+// ============================================
+
+/// An attribute applied to an item or crate.
+/// Outer: `#[name]` or `#[name(args)]`
+/// Inner: `#![name]` or `#![name(args)]`
+#[derive(Debug, Clone, PartialEq)]
+pub struct Attribute {
+    pub name: !Ident,
+    pub args: ?AttrArgs,
+    pub is_inner: !bool,  // true for #![...], false for #[...]
+}
+
+/// Arguments to an attribute.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AttrArgs {
+    /// Parenthesized arguments: `#[attr(a, b, c)]`
+    Paren(![AttrArg]),
+    /// Key-value: `#[attr = "value"]`
+    Eq(!Box<Expr>),
+}
+
+/// A single argument in an attribute.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AttrArg {
+    /// Simple identifier: `no_std`
+    Ident(!Ident),
+    /// Literal value: `"entry"`
+    Literal(!Literal),
+    /// Nested attribute: `cfg(target_os = "none")`
+    Nested(!Attribute),
+    /// Key-value pair: `target = "x86_64"`
+    KeyValue { key: !Ident, value: !Box<Expr> },
+}
+
+/// Crate-level configuration derived from inner attributes.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CrateConfig {
+    /// `#![no_std]` - disable standard library
+    pub no_std: !bool = false,
+    /// `#![no_main]` - custom entry point
+    pub no_main: !bool = false,
+    /// `#![feature(...)]` - enabled features
+    pub features: ![String] = [],
+    /// Target architecture
+    pub target: ?TargetConfig,
+    /// Linker configuration
+    pub linker: ?LinkerConfig,
+}
+
+/// Target-specific configuration.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct TargetConfig {
+    pub arch: ?String,      // "x86_64", "aarch64", "riscv64"
+    pub os: ?String,        // "none", "linux", "windows"
+    pub abi: ?String,       // "gnu", "musl", "msvc"
+    pub features: ![String] = [],
+}
+
+/// Linker configuration for bare-metal/OS development.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LinkerConfig {
+    pub script: ?String,
+    pub entry_point: ?String,
+    pub base_address: ?u64,
+    pub stack_size: ?u64,
+    pub flags: ![String] = [],
+    pub memory_regions: ![MemoryRegion] = [],
+    pub sections: ![SectionConfig] = [],
+}
+
+/// Memory region for linker scripts.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MemoryRegion {
+    pub name: !String,
+    pub origin: !u64,
+    pub length: !u64,
+    pub attributes: !MemoryAttributes,
+}
+
+/// Memory region attributes.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MemoryAttributes {
+    pub readable: !bool = false,
+    pub writable: !bool = false,
+    pub executable: !bool = false,
+}
+
+/// Output section configuration.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SectionConfig {
+    pub name: !String,
+    pub address: ?u64,
+    pub align: ?u64,
+    pub region: ?String,
+}
+
+// ============================================
+// SIMD Types
+// ============================================
+
+/// SIMD vector type.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SimdType {
+    pub element_type: !Box<TypeExpr>,
+    pub lanes: !u8,
+}
+
+/// SIMD intrinsic operations.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SimdOp {
+    // Arithmetic
+    Add, Sub, Mul, Div, Neg, Abs, Min, Max,
+    // Comparison
+    Eq, Ne, Lt, Le, Gt, Ge,
+    // Horizontal
+    HAdd, Dot,
+    // Shuffle/permute
+    Shuffle, Blend,
+    // Load/store
+    Load, Store, LoadAligned, StoreAligned,
+    // Conversions
+    Cast, Widen, Narrow,
+    // Math
+    Sqrt, Rsqrt, Rcp, Floor, Ceil, Round,
+    // Bitwise
+    And, Or, Xor, Not, Shl, Shr,
+}
+
+// ============================================
+// Atomic Types
+// ============================================
+
+/// Atomic memory ordering.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum MemoryOrdering {
+    Relaxed,
+    Acquire,
+    Release,
+    AcqRel,
+    #[default]
+    SeqCst,
+}
+
+/// Atomic operations.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AtomicOp {
+    Load, Store, Swap,
+    CompareExchange, CompareExchangeWeak,
+    FetchAdd, FetchSub, FetchAnd, FetchOr, FetchXor,
+    FetchMin, FetchMax,
+}
+
+// ============================================
+// Derive Macros
+// ============================================
+
+/// Built-in derivable traits.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DeriveTrait {
+    Debug, Clone, Copy, Default,
+    PartialEq, Eq, PartialOrd, Ord, Hash,
+    Component, Resource, Bundle,  // ECS
+    Serialize, Deserialize,
+    Custom(!String),
+}
+
+/// Struct attributes including derive.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StructAttrs {
+    pub repr: ?StructRepr,
+    pub packed: !bool = false,
+    pub align: ?u64,
+    pub simd: !bool = false,
+    pub derives: ![DeriveTrait] = [],
+    pub outer_attrs: ![Attribute] = [],
+}
+
+// ============================================
+// Core AST Types
+// ============================================
+
+/// A complete Sigil source file.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceFile {
+    pub path: ?String,  // Source file path (set by driver)
+    pub attrs: ![Attribute],
+    pub config: !CrateConfig,
+    pub items: ![Spanned<Item>],
+}
+
+/// Top-level items.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Item {
+    Function(!Function),
+    Struct(!StructDef),
+    Enum(!EnumDef),
+    Trait(!TraitDef),
+    Impl(!ImplBlock),
+    TypeAlias(!TypeAlias),
+    Module(!Module),
+    Use(!UseDecl),
+    Const(!ConstDef),
+    Static(!StaticDef),
+    Actor(!ActorDef),
+    ExternBlock(!ExternBlock),
+    /// macro_rules! definition (parsed but not expanded)
+    MacroRules(!MacroRulesDef),
+}
+
+/// Macro rules definition.
+/// We parse these to allow bootstrap but don't expand them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MacroRulesDef {
+    pub name: !Ident,
+    pub exported: !bool,
+}
+
+/// Foreign function interface block.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternBlock {
+    pub abi: !String,
+    pub items: ![ExternItem],
+}
+
+/// Items that can appear in an extern block.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExternItem {
+    Function(!ExternFunction),
+    Static(!ExternStatic),
+}
+
+/// Foreign function declaration.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternFunction {
+    pub visibility: !Visibility,
+    pub name: !Ident,
+    pub params: ![Param],
+    pub return_type: ?TypeExpr,
+    pub variadic: !bool,
+}
+
+/// Foreign static variable.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternStatic {
+    pub visibility: !Visibility,
+    pub mutable: !bool,
+    pub name: !Ident,
+    pub ty: !TypeExpr,
+}
+
+/// Function attributes.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FunctionAttrs {
+    pub naked: !bool = false,
+    pub inline_hint: ?InlineHint,
+    pub calling_convention: ?String,
+    pub no_mangle: !bool = false,
+    pub link_section: ?String,
+    pub export: !bool = false,
+    pub panic_handler: !bool = false,
+    pub entry: !bool = false,
+    pub interrupt: ?u32,
+    pub align: ?u64,
+    pub cold: !bool = false,
+    pub hot: !bool = false,
+    pub test: !bool = false,
+    pub outer_attrs: ![Attribute] = [],
+}
+
+/// Inline hints.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InlineHint {
+    Hint,
+    Always,
+    Never,
+}
+
+/// Verb aspect for function semantics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Aspect {
+    Progressive,    // ·ing
+    Perfective,     // ·ed
+    Potential,      // ·able
+    Resultative,    // ·ive
+}
+
+/// Function definition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Function {
+    pub visibility: !Visibility,
+    pub is_async: !bool,
+    pub attrs: !FunctionAttrs,
+    pub name: !Ident,
+    pub aspect: ?Aspect,
+    pub generics: ?Generics,
+    pub params: ![Param],
+    pub return_type: ?TypeExpr,
+    pub where_clause: ?WhereClause,
+    pub body: ?Block,
+}
+
+/// Visibility modifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Visibility {
+    #[default]
+    Private,
+    Public,
+    Crate,
+    Super,
+}
+
+/// Identifier with optional evidentiality and affect markers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Ident {
+    pub name: !String,
+    pub evidentiality: ?Evidentiality,
+    pub affect: ?Affect,
+    pub span: !Span,
+}
+
+impl Ident {
+    /// Create a simple identifier without markers.
+    pub fn new(name: !String, span: !Span) -> !Self {
+        Self {
+            name,
+            evidentiality: null,
+            affect: null,
+            span,
+        }
+    }
+
+    /// Create an identifier with evidentiality.
+    pub fn with_evidence(name: !String, evidence: !Evidentiality, span: !Span) -> !Self {
+        Self {
+            name,
+            evidentiality: evidence,
+            affect: null,
+            span,
+        }
+    }
+}
+
+/// Evidentiality markers from the type system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Evidentiality {
+    Known,      // !
+    Uncertain,  // ?
+    Reported,   // ~
+    Paradox,    // ‽
+    Prediction, // ◊
+}
+
+impl Evidentiality {
+    /// Get the symbol for this evidentiality level.
+    pub fn symbol(self) -> !char {
+        match self {
+            Evidentiality::Known => '!',
+            Evidentiality::Uncertain => '?',
+            Evidentiality::Reported => '~',
+            Evidentiality::Paradox => '‽',
+            Evidentiality::Prediction => '◊',
+        }
+    }
+
+    /// Lattice join (pessimistic - max uncertainty).
+    pub fn join(self, other: !Evidentiality) -> !Evidentiality {
+        match (self, other) {
+            (Evidentiality::Paradox, _) | (_, Evidentiality::Paradox) => Evidentiality::Paradox,
+            (Evidentiality::Prediction, _) | (_, Evidentiality::Prediction) => Evidentiality::Prediction,
+            (Evidentiality::Reported, _) | (_, Evidentiality::Reported) => Evidentiality::Reported,
+            (Evidentiality::Uncertain, _) | (_, Evidentiality::Uncertain) => Evidentiality::Uncertain,
+            (Evidentiality::Known, Evidentiality::Known) => Evidentiality::Known,
+        }
+    }
+
+    /// Lattice meet (optimistic - min uncertainty).
+    pub fn meet(self, other: !Evidentiality) -> !Evidentiality {
+        match (self, other) {
+            (Evidentiality::Known, _) | (_, Evidentiality::Known) => Evidentiality::Known,
+            (Evidentiality::Uncertain, _) | (_, Evidentiality::Uncertain) => Evidentiality::Uncertain,
+            (Evidentiality::Reported, _) | (_, Evidentiality::Reported) => Evidentiality::Reported,
+            (Evidentiality::Prediction, _) | (_, Evidentiality::Prediction) => Evidentiality::Prediction,
+            (Evidentiality::Paradox, Evidentiality::Paradox) => Evidentiality::Paradox,
+        }
+    }
+}
+
+/// Affective markers for sentiment and emotion tracking.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Affect {
+    pub sentiment: ?Sentiment,
+    pub sarcasm: !bool = false,
+    pub intensity: ?Intensity,
+    pub formality: ?Formality,
+    pub emotion: ?Emotion,
+    pub confidence: ?Confidence,
+}
+
+impl Affect {
+    pub fn is_empty(self) -> !bool {
+        self.sentiment == null &&
+        !self.sarcasm &&
+        self.intensity == null &&
+        self.formality == null &&
+        self.emotion == null &&
+        self.confidence == null
+    }
+}
+
+/// Sentiment polarity markers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sentiment {
+    Positive,   // ⊕
+    Negative,   // ⊖
+    Neutral,    // ⊜
+}
+
+/// Intensity modifiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Intensity {
+    Up,     // ↑
+    Down,   // ↓
+    Max,    // ⇈
+}
+
+/// Formality register.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Formality {
+    Formal,     // ♔
+    Informal,   // ♟
+}
+
+/// Emotion categories (Plutchik's wheel).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Emotion {
+    Joy,        // ☺
+    Sadness,    // ☹
+    Anger,      // ⚡
+    Fear,       // ❄
+    Surprise,   // ✦
+    Love,       // ♡
+}
+
+/// Confidence level markers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Confidence {
+    High,       // ◉
+    Medium,     // ◎
+    Low,        // ○
+}
+
+/// Function parameter.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Param {
+    pub pattern: !Pattern,
+    pub ty: !TypeExpr,
+}
+
+/// Generic parameters.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Generics {
+    pub params: ![GenericParam],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum GenericParam {
+    Type {
+        name: !Ident,
+        bounds: ![TypeExpr],
+        evidentiality: ?Evidentiality,
+        default: ?TypeExpr,
+    },
+    Const {
+        name: !Ident,
+        ty: !TypeExpr,
+    },
+    Lifetime(!String),
+}
+
+/// Where clause for bounds.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WhereClause {
+    pub predicates: ![WherePredicate],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WherePredicate {
+    pub ty: !TypeExpr,
+    pub bounds: ![TypeExpr],
+}
+
+/// Type expressions.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypeExpr {
+    /// Simple named type: `i32`, `String`
+    Path(!TypePath),
+    /// Reference: `&T`, `&mut T`, `&'a T`, `&'static T`
+    Reference { lifetime: ?String, mutable: !bool, inner: !Box<TypeExpr> },
+    /// Pointer: `*const T`, `*mut T`
+    Pointer { mutable: !bool, inner: !Box<TypeExpr> },
+    /// Array: `[T; N]`
+    Array { element: !Box<TypeExpr>, size: !Box<Expr> },
+    /// Slice: `[T]`
+    Slice(!Box<TypeExpr>),
+    /// Tuple: `(A, B, C)`
+    Tuple(![TypeExpr]),
+    /// Function: `fn(A, B) -> C`
+    Function {
+        params: ![TypeExpr],
+        return_type: ?Box<TypeExpr>,
+    },
+    /// With evidentiality: `T!`, `T?`, `T~`
+    Evidential {
+        inner: !Box<TypeExpr>,
+        evidentiality: !Evidentiality,
+        error_type: ?Box<TypeExpr>,
+    },
+    /// Cycle type: `Cycle<N>`
+    Cycle { modulus: !Box<Expr> },
+    /// SIMD vector type
+    Simd { element: !Box<TypeExpr>, lanes: !u8 },
+    /// Atomic type
+    Atomic(!Box<TypeExpr>),
+    /// Never type: `!`
+    Never,
+    /// Inferred: `_`
+    Infer,
+    /// Impl trait: `impl Trait` or `impl Trait<Assoc = T>`
+    ImplTrait {
+        bounds: ![TypeExpr],
+    },
+    /// Dynamic trait object: `dyn Trait`
+    DynTrait {
+        bounds: ![TypeExpr],
+    },
+    /// Qualified path: `<Type as Trait>::Item`
+    QualifiedPath {
+        base: !Box<TypeExpr>,
+        trait_path: !TypePath,
+        item: !String,
+        args: ![TypeExpr],
+    },
+}
+
+/// Type path with optional generics.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypePath {
+    pub segments: ![PathSegment],
+}
+
+impl TypePath {
+    /// Create a simple type path from a single name.
+    pub fn simple(name: !String, span: !Span) -> !Self {
+        Self {
+            segments: [PathSegment {
+                ident: Ident::new(name, span),
+                generics: null,
+            }],
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PathSegment {
+    pub ident: !Ident,
+    pub generics: ?[TypeExpr],
+}
+
+/// Memory representation for structs.
+#[derive(Debug, Clone, PartialEq)]
+pub enum StructRepr {
+    C,
+    Transparent,
+    Int(!String),
+}
+
+/// Struct definition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructDef {
+    pub visibility: !Visibility,
+    pub attrs: !StructAttrs,
+    pub name: !Ident,
+    pub generics: ?Generics,
+    pub fields: !StructFields,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StructFields {
+    Named(![FieldDef]),
+    Tuple(![TypeExpr]),
+    Unit,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldDef {
+    pub visibility: !Visibility,
+    pub name: !Ident,
+    pub ty: !TypeExpr,
+    pub default_value: ?Expr,
+}
+
+/// Enum definition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumDef {
+    pub visibility: !Visibility,
+    pub name: !Ident,
+    pub generics: ?Generics,
+    pub variants: ![EnumVariant],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumVariant {
+    pub name: !Ident,
+    pub fields: !StructFields,
+    pub discriminant: ?Expr,
+}
+
+/// Trait definition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitDef {
+    pub visibility: !Visibility,
+    pub name: !Ident,
+    pub generics: ?Generics,
+    pub supertraits: ![TypeExpr],
+    pub items: ![TraitItem],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TraitItem {
+    Function(!Function),
+    Type { name: !Ident, bounds: ![TypeExpr] },
+    Const { name: !Ident, ty: !TypeExpr },
+}
+
+/// Impl block.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImplBlock {
+    pub generics: ?Generics,
+    pub trait_: ?TypePath,
+    pub self_ty: !TypeExpr,
+    pub items: ![ImplItem],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImplItem {
+    Function(!Function),
+    Type(!TypeAlias),
+    Const(!ConstDef),
+}
+
+/// Type alias.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeAlias {
+    pub visibility: !Visibility,
+    pub name: !Ident,
+    pub generics: ?Generics,
+    pub ty: !TypeExpr,
+}
+
+/// Module.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Module {
+    pub visibility: !Visibility,
+    pub name: !Ident,
+    pub items: ?[Spanned<Item>],
+}
+
+/// Use declaration.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UseDecl {
+    pub visibility: !Visibility,
+    pub tree: !UseTree,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UseTree {
+    Path { prefix: !Ident, suffix: !Box<UseTree> },
+    Name(!Ident),
+    Rename { name: !Ident, alias: !Ident },
+    Glob,
+    Group(![UseTree]),
+}
+
+/// Const definition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConstDef {
+    pub visibility: !Visibility,
+    pub name: !Ident,
+    pub ty: !TypeExpr,
+    pub value: !Expr,
+}
+
+/// Static definition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StaticDef {
+    pub visibility: !Visibility,
+    pub mutable: !bool,
+    pub name: !Ident,
+    pub ty: !TypeExpr,
+    pub value: !Expr,
+}
+
+/// Actor definition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActorDef {
+    pub visibility: !Visibility,
+    pub name: !Ident,
+    pub generics: ?Generics,
+    pub state: ![FieldDef],
+    pub handlers: ![MessageHandler],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MessageHandler {
+    pub message: !Ident,
+    pub params: ![Param],
+    pub return_type: ?TypeExpr,
+    pub body: !Block,
+}
+
+/// Code block.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Block {
+    pub stmts: ![Stmt],
+    pub expr: ?Box<Expr>,
+}
+
+/// Statements.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Stmt {
+    Let {
+        pattern: !Pattern,
+        ty: ?TypeExpr,
+        init: ?Expr,
+    },
+    LetElse {
+        pattern: !Pattern,
+        ty: ?TypeExpr,
+        init: !Expr,
+        else_branch: !Box<Expr>,
+    },
+    Expr(!Expr),
+    Semi(!Expr),
+    Item(!Box<Item>),
+}
+
+/// Patterns.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    Ident {
+        mutable: !bool,
+        by_ref: !bool,
+        name: !Ident,
+        evidentiality: ?Evidentiality,
+    },
+    Tuple(![Pattern]),
+    Struct {
+        path: !TypePath,
+        fields: ![FieldPattern],
+        rest: !bool,
+    },
+    TupleStruct {
+        path: !TypePath,
+        fields: ![Pattern],
+    },
+    Slice(![Pattern]),
+    Or(![Pattern]),
+    Literal(!Literal),
+    Range {
+        start: ?Box<Pattern>,
+        end: ?Box<Pattern>,
+        inclusive: !bool,
+    },
+    Wildcard,
+    Rest,
+    /// With evidentiality marker
+    Evidential {
+        pattern: !Box<Pattern>,
+        evidentiality: !Evidentiality,
+    },
+    /// Path pattern (for enum unit variants like None)
+    Path(!TypePath),
+    /// Reference pattern: &x or &mut x
+    Ref {
+        mutable: !bool,
+        pattern: !Box<Pattern>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldPattern {
+    pub name: !Ident,
+    pub pattern: ?Pattern,
+}
+
+/// Expressions.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Expr {
+    /// Literal value
+    Literal(!Literal),
+    /// Variable reference
+    Path(!TypePath),
+    /// Binary operation
+    Binary {
+        left: !Box<Expr>,
+        op: !BinOp,
+        right: !Box<Expr>,
+    },
+    /// Unary operation
+    Unary {
+        op: !UnaryOp,
+        expr: !Box<Expr>,
+    },
+    /// Pipe expression: `x|f|g`
+    Pipe {
+        expr: !Box<Expr>,
+        operations: ![PipeOp],
+    },
+    /// Incorporation: `file·open·read`
+    Incorporation {
+        segments: ![IncorporationSegment],
+    },
+    /// Morpheme application: `τ{f}`
+    Morpheme {
+        kind: !MorphemeKind,
+        body: !Box<Expr>,
+    },
+    /// Function call
+    Call {
+        func: !Box<Expr>,
+        args: ![Expr],
+    },
+    /// Method call
+    MethodCall {
+        receiver: !Box<Expr>,
+        method: !Ident,
+        type_args: ?[TypeExpr],  // Turbofish: .method::<T, U>(args)
+        args: ![Expr],
+    },
+    /// Field access
+    Field {
+        expr: !Box<Expr>,
+        field: !Ident,
+    },
+    /// Index: `arr[i]`
+    Index {
+        expr: !Box<Expr>,
+        index: !Box<Expr>,
+    },
+    /// Array literal
+    Array(![Expr]),
+    /// Array repeat: [value; count]
+    Repeat {
+        value: !Box<Expr>,
+        count: !Box<Expr>,
+    },
+    /// Tuple literal
+    Tuple(![Expr]),
+    /// Struct literal
+    Struct {
+        path: !TypePath,
+        fields: ![FieldInit],
+        rest: ?Box<Expr>,
+    },
+    /// Block expression
+    Block(!Block),
+    /// If expression
+    If {
+        condition: !Box<Expr>,
+        then_branch: !Block,
+        else_branch: ?Box<Expr>,
+    },
+    /// Match expression
+    Match {
+        expr: !Box<Expr>,
+        arms: ![MatchArm],
+    },
+    /// Loop
+    Loop(!Block),
+    /// While loop
+    While {
+        condition: !Box<Expr>,
+        body: !Block,
+    },
+    /// While let loop
+    WhileLet {
+        pattern: !Pattern,
+        scrutinee: !Box<Expr>,
+        body: !Block,
+    },
+    /// For loop
+    For {
+        pattern: !Pattern,
+        iter: !Box<Expr>,
+        body: !Block,
+    },
+    /// Closure
+    Closure {
+        params: ![ClosureParam],
+        return_type: ?TypeExpr,
+        body: !Box<Expr>,
+    },
+    /// Await
+    Await {
+        expr: !Box<Expr>,
+        evidentiality: ?Evidentiality,
+    },
+    /// Try: `expr?`
+    Try(!Box<Expr>),
+    /// Return
+    Return(?Box<Expr>),
+    /// Break
+    Break(?Box<Expr>),
+    /// Continue
+    Continue,
+    /// Range: `a..b` or `a..=b`
+    Range {
+        start: ?Box<Expr>,
+        end: ?Box<Expr>,
+        inclusive: !bool,
+    },
+    /// With evidentiality marker
+    Evidential {
+        expr: !Box<Expr>,
+        evidentiality: !Evidentiality,
+    },
+    /// Assignment: `x = value`
+    Assign {
+        target: !Box<Expr>,
+        value: !Box<Expr>,
+    },
+    /// Let expression (for if-let patterns): `let pattern = expr`
+    Let {
+        pattern: !Box<Pattern>,
+        value: !Box<Expr>,
+    },
+    /// Unsafe block
+    Unsafe(!Block),
+    /// Extern block expression (for FFI declarations inside functions)
+    ExternBlockExpr(!ExternBlock),
+    /// Dereference: `*ptr`
+    Deref(!Box<Expr>),
+    /// Address-of: `&expr` or `&mut expr`
+    AddrOf {
+        mutable: !bool,
+        expr: !Box<Expr>,
+    },
+    /// Reference expression: `&expr` or `&mut expr` (alias for AddrOf)
+    Reference {
+        mutable: !bool,
+        expr: !Box<Expr>,
+    },
+    /// Cast: `expr as Type`
+    Cast {
+        expr: !Box<Expr>,
+        ty: !TypeExpr,
+    },
+    /// Inline assembly
+    InlineAsm(!InlineAsm),
+    /// Volatile read
+    VolatileRead {
+        ptr: !Box<Expr>,
+        ty: ?TypeExpr,
+    },
+    /// Volatile write
+    VolatileWrite {
+        ptr: !Box<Expr>,
+        value: !Box<Expr>,
+        ty: ?TypeExpr,
+    },
+    /// SIMD literal
+    SimdLiteral {
+        elements: ![Expr],
+        ty: ?TypeExpr,
+    },
+    /// SIMD intrinsic
+    SimdIntrinsic {
+        op: !SimdOp,
+        args: ![Expr],
+    },
+    /// Atomic operation
+    AtomicOp {
+        op: !AtomicOp,
+        ptr: !Box<Expr>,
+        value: ?Box<Expr>,
+        expected: ?Box<Expr>,
+        ordering: !MemoryOrdering,
+        failure_ordering: ?MemoryOrdering,
+    },
+    /// HTTP request
+    HttpRequest {
+        method: !HttpMethod,
+        url: !Box<Expr>,
+        headers: ![(Expr, Expr)],
+        body: ?Box<Expr>,
+        timeout_ms: ?Box<Expr>,
+    },
+    /// gRPC call
+    GrpcCall {
+        service: !Box<Expr>,
+        method: !Box<Expr>,
+        message: ?Box<Expr>,
+        metadata: ![(Expr, Expr)],
+        timeout_ms: ?Box<Expr>,
+    },
+    /// WebSocket connect
+    WebSocketConnect {
+        url: !Box<Expr>,
+        protocols: ![Expr],
+        headers: ![(Expr, Expr)],
+    },
+    /// Kafka operation
+    KafkaOp {
+        kind: !KafkaOpKind,
+        topic: !Box<Expr>,
+        payload: ?Box<Expr>,
+        key: ?Box<Expr>,
+        partition: ?Box<Expr>,
+    },
+    /// GraphQL operation
+    GraphQLOp {
+        kind: !GraphQLOpKind,
+        document: !Box<Expr>,
+        variables: ?Box<Expr>,
+        operation_name: ?Box<Expr>,
+    },
+    /// Macro invocation: `write!(buf, "...")`
+    Macro {
+        path: !TypePath,
+        tokens: !String,
+    },
+    // Note: Let variant is already defined above (line ~898)
+}
+
+/// Inline assembly.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InlineAsm {
+    pub template: !String,
+    pub outputs: ![AsmOperand],
+    pub inputs: ![AsmOperand],
+    pub clobbers: ![String],
+    pub options: !AsmOptions,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AsmOperand {
+    pub constraint: !String,
+    pub expr: !Expr,
+    pub kind: !AsmOperandKind,
+    pub output: ?Box<Expr>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AsmOperandKind {
+    Input,
+    Output,
+    InOut,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AsmOptions {
+    pub is_volatile: !bool = false,
+    pub pure_asm: !bool = false,
+    pub nomem: !bool = false,
+    pub nostack: !bool = false,
+    pub preserves_flags: !bool = false,
+    pub readonly: !bool = false,
+    pub att_syntax: !bool = false,
+}
+
+/// Pipe operation in a chain.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PipeOp {
+    Transform(!Box<Expr>),      // τ{f}
+    Filter(!Box<Expr>),         // φ{p}
+    Sort(?Ident),               // σ or σ.field
+    Reduce(!Box<Expr>),         // ρ{f}
+    ReduceSum,                  // ρ+
+    ReduceProd,                 // ρ*
+    ReduceMin,                  // ρ_min
+    ReduceMax,                  // ρ_max
+    ReduceConcat,               // ρ++
+    ReduceAll,                  // ρ&
+    ReduceAny,                  // ρ|
+    Middle,                     // μ
+    Choice,                     // χ
+    Nth(!Box<Expr>),            // ν{n}
+    Next,                       // ξ
+    First,                      // α
+    Last,                       // ω
+    Parallel(!Box<PipeOp>),     // ∥{op}
+    Gpu(!Box<PipeOp>),          // ⊛{op}
+    Method { name: !Ident, args: ![Expr] },
+    Await,
+    Match(![MatchArm]),
+    TryMap(?Box<Expr>),         // |‽ or |‽{mapper}
+    Named { prefix: ![Ident], body: ?Box<Expr> },
+    Send(!Box<Expr>),           // |send{data}
+    Recv,                       // |recv
+    Stream(!Box<Expr>),         // |stream{handler}
+    Connect(?Box<Expr>),        // |connect{config}
+    Close,                      // |close
+    Header { name: !Box<Expr>, value: !Box<Expr> },
+    Body(!Box<Expr>),
+    Timeout(!Box<Expr>),
+    Retry { count: !Box<Expr>, strategy: ?Box<Expr> },
+    Validate { predicate: !Box<Expr>, target_evidence: !Evidentiality },
+    Assume { reason: ?Box<Expr>, target_evidence: !Evidentiality },
+    AssertEvidence(!Evidentiality),
+    Also(!Box<Expr>),           // |also{f}
+    Apply(!Box<Expr>),          // |apply{block}
+    TakeIf(!Box<Expr>),         // |take_if{p}
+    TakeUnless(!Box<Expr>),     // |take_unless{p}
+    Let(!Box<Expr>),            // |let{f}
+    All(!Box<Expr>),            // |∀{p}
+    Any(!Box<Expr>),            // |∃{p}
+    Compose(!Box<Expr>),        // |∘{f}
+    Zip(!Box<Expr>),            // |⋈{other}
+    Scan(!Box<Expr>),           // |∫{f}
+    Diff,                       // |∂
+    Gradient(!Box<Expr>),       // |∇{var}
+    SortAsc,                    // |⍋
+    SortDesc,                   // |⍒
+    Reverse,                    // |⌽
+    Cycle(!Box<Expr>),          // |↻{n}
+    Windows(!Box<Expr>),        // |⌺{n}
+    Chunks(!Box<Expr>),         // |⊞{n}
+    Flatten,                    // |⋳
+    Unique,                     // |∪
+    Enumerate,                  // |⍳
+    Call(!Box<Expr>),           // |&expr or |expr (call expression with piped value)
+    Macro { name: !Ident, tokens: !String },  // |macro!{...} or |macro!(...)
+}
+
+/// Incorporation segment.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IncorporationSegment {
+    pub name: !Ident,
+    pub args: ?[Expr],
+}
+
+/// Morpheme kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MorphemeKind {
+    Transform,  // τ
+    Filter,     // φ
+    Sort,       // σ
+    Reduce,     // ρ
+    Lambda,     // λ
+    Sum,        // Σ
+    Product,    // Π
+    Middle,     // μ
+    Choice,     // χ
+    Nth,        // ν
+    Next,       // ξ
+    First,      // α
+    Last,       // ω
+}
+
+// ============================================
+// Protocol Types
+// ============================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HttpMethod {
+    Get, Post, Put, Delete, Patch, Head, Options, Connect, Trace,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WebSocketMessageKind {
+    Text, Binary, Ping, Pong, Close,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KafkaOpKind {
+    Produce, Consume, Subscribe, Unsubscribe, Commit, Seek,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphQLOpKind {
+    Query, Mutation, Subscription,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProtocolKind {
+    Http, Grpc, WebSocket, Kafka, Amqp, GraphQL,
+}
+
+// ============================================
+// Operators
+// ============================================
+
+/// Binary operators.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinOp {
+    Add, Sub, Mul, Div, Rem, Pow,
+    And, Or,
+    BitAnd, BitOr, BitXor, Shl, Shr,
+    Eq, Ne, Lt, Le, Gt, Ge,
+    Concat,
+    MatMul,  // Matrix multiplication @
+}
+
+/// Unary operators.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOp {
+    Neg,
+    Not,
+    Deref,
+    Ref,
+    RefMut,
+}
+
+/// Literal values.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Literal {
+    Int { value: !String, base: !NumBase, suffix: ?String },
+    Float { value: !String, suffix: ?String },
+    String(!String),
+    MultiLineString(!String),
+    RawString(!String),
+    ByteString(![u8]),
+    ByteChar(!u8),
+    InterpolatedString { parts: ![InterpolationPart] },
+    SigilStringSql(!String),
+    SigilStringRoute(!String),
+    Char(!char),
+    Bool(!bool),
+    Null,
+    Empty,      // ∅
+    Infinity,   // ∞
+    Circle,     // ◯
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum InterpolationPart {
+    Text(!String),
+    Expr(!Box<Expr>),
+}
+
+/// Number bases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NumBase {
+    Binary,         // 0b
+    Octal,          // 0o
+    Decimal,        // default
+    Hex,            // 0x
+    Vigesimal,      // 0v (base 20)
+    Sexagesimal,    // 0s (base 60)
+    Duodecimal,     // 0z (base 12)
+    Explicit(!u8),  // N:₆₀ etc.
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldInit {
+    pub name: !Ident,
+    pub value: ?Expr,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub pattern: !Pattern,
+    pub guard: ?Expr,
+    pub body: !Expr,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClosureParam {
+    pub pattern: !Pattern,
+    pub ty: ?TypeExpr,
+}
+
+// ============================================
+// Tests
+// ============================================
+
+#[test]
+fn test_evidentiality_join() {
+    // Pessimistic join: max uncertainty
+    assert_eq!(
+        Evidentiality::Known.join(Evidentiality::Known),
+        Evidentiality::Known
+    );
+    assert_eq!(
+        Evidentiality::Known.join(Evidentiality::Uncertain),
+        Evidentiality::Uncertain
+    );
+    assert_eq!(
+        Evidentiality::Uncertain.join(Evidentiality::Reported),
+        Evidentiality::Reported
+    );
+    assert_eq!(
+        Evidentiality::Reported.join(Evidentiality::Paradox),
+        Evidentiality::Paradox
+    );
+}
+
+#[test]
+fn test_evidentiality_meet() {
+    // Optimistic meet: min uncertainty
+    assert_eq!(
+        Evidentiality::Paradox.meet(Evidentiality::Paradox),
+        Evidentiality::Paradox
+    );
+    assert_eq!(
+        Evidentiality::Paradox.meet(Evidentiality::Known),
+        Evidentiality::Known
+    );
+    assert_eq!(
+        Evidentiality::Reported.meet(Evidentiality::Uncertain),
+        Evidentiality::Uncertain
+    );
+}
+
+#[test]
+fn test_ident_creation() {
+    let span = Span::new(0, 3);
+    let ident = Ident::new("foo".to_string(), span);
+    assert_eq!(ident.name, "foo");
+    assert_eq!(ident.evidentiality, null);
+}
+
+#[test]
+fn test_type_path_simple() {
+    let span = Span::new(0, 3);
+    let path = TypePath::simple("i32".to_string(), span);
+    assert_eq!(path.segments.len(), 1);
+    assert_eq!(path.segments[0].ident.name, "i32");
+}

@@ -1,0 +1,16 @@
+// Test: Nested struct access
+// Spec: Edge Cases - Deep Nesting
+// Priority: P0 - Bootstrap Critical
+
+struct Inner {
+    value: i32,
+}
+
+struct Outer {
+    inner: Inner,
+}
+
+fn main() {
+    let o = Outer { inner: Inner { value: 42 } };
+    println(o.inner.value);
+}

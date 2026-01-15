@@ -1,0 +1,9 @@
+// Test: Absolute value
+// Spec: 05-MATHEMATICS.md § 2.1 Math Functions
+// Priority: P2 - Enhancement
+
+fn main() {
+    let x: !i32 = -5;
+    let result: !i32 = if x < 0 { -x } else { x };
+    println(result);
+}

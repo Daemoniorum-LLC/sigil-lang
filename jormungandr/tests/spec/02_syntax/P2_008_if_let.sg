@@ -1,0 +1,13 @@
+// Test: If-let pattern matching
+// Spec: 02-SYNTAX.md § 5.2 If Let
+// Priority: P2 - Enhancement
+
+fn main() {
+    let opt: Option<i32> = Option::Some(42);
+
+    if let Option::Some(x) = opt {
+        println(x);
+    } else {
+        println(0);
+    }
+}

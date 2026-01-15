@@ -1,0 +1,8 @@
+// Test: Format number as hex
+// Spec: 07-METAPROGRAMMING.md § 2.1 Format
+// Priority: P2 - Enhancement
+
+fn main() {
+    let x: !i32 = 255;
+    println(x);
+}

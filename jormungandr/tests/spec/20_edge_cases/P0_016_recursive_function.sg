@@ -1,0 +1,14 @@
+// Test: Recursive function
+// Spec: Edge Cases - Recursion
+// Priority: P0 - Bootstrap Critical
+
+fn factorial(n: i32) -> i32 {
+    if n <= 1 {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+fn main() {
+    println(factorial(5));  // 120
+}

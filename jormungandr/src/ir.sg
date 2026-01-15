@@ -1,0 +1,1215 @@
+//! AI-Facing Intermediate Representation (IR)
+//!
+//! This module provides a JSON-serializable IR designed for consumption by
+//! AI agents, language servers, and external tooling. The IR captures:
+//!
+//! - Function definitions with typed parameters and bodies
+//! - Pipeline operations (morphemes, transformations, forks)
+//! - Evidentiality annotations throughout
+//! - Type information including the evidentiality lattice
+//! - Control flow and data flow structures
+//! - Protocol operations with their trust boundaries
+//!
+//! ## Design Principles
+//!
+//! 1. **AI-Consumable**: JSON-serializable for easy parsing by any agent
+//! 2. **Evidence-Aware**: Every operation carries its evidence level
+//! 3. **Pipeline-Native**: First-class representation of morpheme chains
+//! 4. **Protocol-Aware**: Network operations are explicit with trust boundaries
+
+use crate::span::Span;
+use crate::typeck::EvidenceLevel;
+
+// ============================================================================
+// Version
+// ============================================================================
+
+/// The version of the IR schema
+pub const IR_VERSION: !&str = "1.0.0";
+
+// ============================================================================
+// Top-Level Module
+// ============================================================================
+
+/// Top-level IR module representing a complete Sigil program
+pub struct IrModule {
+    /// Schema version
+    pub version: !String,
+    /// Source file path
+    pub source: !String,
+    /// All function definitions
+    pub functions: ![IrFunction],
+    /// Type definitions (structs, enums)
+    pub types: ![IrTypeDef],
+    /// Trait definitions
+    pub traits: ![IrTraitDef],
+    /// Impl blocks
+    pub impls: ![IrImplBlock],
+    /// Constants
+    pub constants: ![IrConstant],
+    /// The evidentiality lattice structure
+    pub evidentiality_lattice: !EvidentialityLattice,
+    /// CG-015: Method signatures for call-site lookup
+    /// Maps qualified method name (e.g., "Lexer::advance") to whether it has mut self
+    pub method_signatures: !Map<String, bool>,
+}
+
+impl IrModule {
+    /// Create a new empty IR module
+    pub fn new(source: !String) -> !IrModule {
+        IrModule {
+            version: IR_VERSION,
+            source,
+            functions: [],
+            types: [],
+            traits: [],
+            impls: [],
+            constants: [],
+            evidentiality_lattice: EvidentialityLattice::default(),
+            method_signatures: Map::new(),
+        }
+    }
+
+    /// Serialize to JSON string
+    pub fn to_json(self, pretty: !bool) -> !String {
+        // JSON serialization - placeholder for actual implementation
+        if pretty {
+            self.to_json_pretty()
+        } else {
+            self.to_json_compact()
+        }
+    }
+
+    fn to_json_pretty(self) -> !String {
+        // IR-JSON-FIX: Use display() to output full struct - simpler than manual JSON
+        // This will give us Rust debug output format which includes all fields
+        display(self)
+    }
+
+    fn to_json_compact(self) -> !String {
+        // IR-JSON-FIX: Use display() for compact output too
+        display(self)
+    }
+
+    /// Merge another module into this one
+    /// Combines all functions, types, traits, impls, constants, and method_signatures
+    pub fn merge(mut self, other: !IrModule) -> !IrModule {
+        // Merge functions
+        for func in other.functions {
+            self.functions.push(func);
+        }
+        // Merge types
+        for ty in other.types {
+            self.types.push(ty);
+        }
+        // Merge traits
+        for tr in other.traits {
+            self.traits.push(tr);
+        }
+        // Merge impls
+        for imp in other.impls {
+            self.impls.push(imp);
+        }
+        // Merge constants
+        for c in other.constants {
+            self.constants.push(c);
+        }
+        // Note: method_signatures are built per-file during typechecking
+        // so we don't need to merge them here (they're already in the shared checker)
+        self
+    }
+}
+
+// ============================================================================
+// Evidentiality Lattice
+// ============================================================================
+
+/// The evidentiality lattice with explicit join/meet rules
+pub struct EvidentialityLattice {
+    /// The four evidence levels in order
+    pub levels: ![LatticeLevel],
+    /// Join rules (pessimistic combination)
+    pub join_rules: ![LatticeRule],
+    /// Meet rules (optimistic combination)
+    pub meet_rules: ![LatticeRule],
+}
+
+impl EvidentialityLattice {
+    /// Create the default evidentiality lattice
+    pub fn default() -> !EvidentialityLattice {
+        EvidentialityLattice {
+            levels: [
+                LatticeLevel {
+                    name: "known",
+                    symbol: "!",
+                    order: 0,
+                    description: "Direct computation, verified",
+                },
+                LatticeLevel {
+                    name: "uncertain",
+                    symbol: "?",
+                    order: 1,
+                    description: "Inferred, possibly absent",
+                },
+                LatticeLevel {
+                    name: "reported",
+                    symbol: "~",
+                    order: 2,
+                    description: "External source, untrusted",
+                },
+                LatticeLevel {
+                    name: "paradox",
+                    symbol: "‽",
+                    order: 3,
+                    description: "Contradictory, trust boundary",
+                },
+            ],
+            join_rules: [
+                LatticeRule::new("known", "uncertain", "uncertain"),
+                LatticeRule::new("known", "reported", "reported"),
+                LatticeRule::new("known", "paradox", "paradox"),
+                LatticeRule::new("uncertain", "reported", "reported"),
+                LatticeRule::new("uncertain", "paradox", "paradox"),
+                LatticeRule::new("reported", "paradox", "paradox"),
+            ],
+            meet_rules: [
+                LatticeRule::new("known", "uncertain", "known"),
+                LatticeRule::new("known", "reported", "known"),
+                LatticeRule::new("known", "paradox", "known"),
+                LatticeRule::new("uncertain", "reported", "uncertain"),
+                LatticeRule::new("uncertain", "paradox", "uncertain"),
+                LatticeRule::new("reported", "paradox", "reported"),
+            ],
+        }
+    }
+}
+
+/// An evidence level in the lattice
+pub struct LatticeLevel {
+    pub name: !String,
+    pub symbol: !String,
+    pub order: !u8,
+    pub description: !String,
+}
+
+/// A join/meet rule in the lattice
+pub struct LatticeRule {
+    pub left: !String,
+    pub right: !String,
+    pub result: !String,
+}
+
+impl LatticeRule {
+    pub fn new(left: !&str, right: !&str, result: !&str) -> !LatticeRule {
+        LatticeRule {
+            left: left.to_string(),
+            right: right.to_string(),
+            result: result.to_string(),
+        }
+    }
+}
+
+// ============================================================================
+// Evidence in IR
+// ============================================================================
+
+/// Evidence marker enum for IR
+pub enum IrEvidence {
+    Known,
+    Uncertain,
+    Reported,
+    Paradox,
+}
+
+impl IrEvidence {
+    /// Convert from type checker evidence level
+    pub fn from_typeck(ev: !EvidenceLevel) -> !IrEvidence {
+        match ev {
+            EvidenceLevel::Known => IrEvidence::Known,
+            EvidenceLevel::Uncertain => IrEvidence::Uncertain,
+            EvidenceLevel::Reported => IrEvidence::Reported,
+            EvidenceLevel::Paradox => IrEvidence::Paradox,
+        }
+    }
+
+    /// Join two evidence levels (pessimistic)
+    pub fn join(self, other: !IrEvidence) -> !IrEvidence {
+        match (self, other) {
+            (IrEvidence::Paradox, _) | (_, IrEvidence::Paradox) => IrEvidence::Paradox,
+            (IrEvidence::Reported, _) | (_, IrEvidence::Reported) => IrEvidence::Reported,
+            (IrEvidence::Uncertain, _) | (_, IrEvidence::Uncertain) => IrEvidence::Uncertain,
+            (IrEvidence::Known, IrEvidence::Known) => IrEvidence::Known,
+        }
+    }
+
+    /// Meet two evidence levels (optimistic)
+    pub fn meet(self, other: !IrEvidence) -> !IrEvidence {
+        match (self, other) {
+            (IrEvidence::Known, _) | (_, IrEvidence::Known) => IrEvidence::Known,
+            (IrEvidence::Uncertain, _) | (_, IrEvidence::Uncertain) => IrEvidence::Uncertain,
+            (IrEvidence::Reported, _) | (_, IrEvidence::Reported) => IrEvidence::Reported,
+            (IrEvidence::Paradox, IrEvidence::Paradox) => IrEvidence::Paradox,
+        }
+    }
+
+    /// Get the symbol for this evidence level
+    pub fn symbol(self) -> !&str {
+        match self {
+            IrEvidence::Known => "!",
+            IrEvidence::Uncertain => "?",
+            IrEvidence::Reported => "~",
+            IrEvidence::Paradox => "‽",
+        }
+    }
+
+    /// Get the name for this evidence level
+    pub fn name(self) -> !&str {
+        match self {
+            IrEvidence::Known => "known",
+            IrEvidence::Uncertain => "uncertain",
+            IrEvidence::Reported => "reported",
+            IrEvidence::Paradox => "paradox",
+        }
+    }
+}
+
+// ============================================================================
+// Source Spans
+// ============================================================================
+
+/// Source location span in IR
+pub struct IrSpan {
+    pub start: !IrPosition,
+    pub end: !IrPosition,
+}
+
+pub struct IrPosition {
+    pub line: !u64,
+    pub column: !u64,
+}
+
+impl IrSpan {
+    pub fn from_span(span: !Span) -> !IrSpan {
+        // Span uses byte offsets, so we use those as placeholders
+        // A proper implementation would track line/column during parsing
+        IrSpan {
+            start: IrPosition { line: span.start, column: 0 },
+            end: IrPosition { line: span.end, column: 0 },
+        }
+    }
+}
+
+// ============================================================================
+// Visibility
+// ============================================================================
+
+/// Function/item visibility
+pub enum IrVisibility {
+    Public,
+    Private,
+    Crate,
+}
+
+impl IrVisibility {
+    pub fn default() -> !IrVisibility {
+        IrVisibility::Private
+    }
+}
+
+// ============================================================================
+// Functions
+// ============================================================================
+
+/// A function definition in IR
+pub struct IrFunction {
+    /// Function name
+    pub name: !String,
+    /// Unique identifier
+    pub id: !String,
+    /// Visibility
+    pub visibility: !IrVisibility,
+    /// Generic type parameters
+    pub generics: ![IrGenericParam],
+    /// Parameters
+    pub params: ![IrParam],
+    /// Return type
+    pub return_type: !IrType,
+    /// Function body
+    pub body: ?IrOperation,
+    /// Attributes
+    pub attributes: ![String],
+    /// Whether async
+    pub is_async: !bool,
+    /// Source span
+    pub span: ?IrSpan,
+}
+
+/// A generic type parameter
+pub struct IrGenericParam {
+    pub name: !String,
+    pub bounds: ![String],
+}
+
+/// A function parameter
+pub struct IrParam {
+    pub name: !String,
+    pub ty: !IrType,
+    pub evidence: !IrEvidence,
+    /// CG-015: Whether parameter is mutable (for `mut self`)
+    pub mutable: !bool,
+}
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/// Type representation in IR
+pub enum IrType {
+    /// Primitive types (i32, f64, bool, str, etc.)
+    Primitive { name: !String },
+
+    /// Unit type ()
+    Unit,
+
+    /// Never type !
+    Never,
+
+    /// Array type [T; N]
+    Array {
+        element: !Box<IrType>,
+        length: ?u64,
+    },
+
+    /// Slice type [T]
+    Slice { element: !Box<IrType> },
+
+    /// Tuple type (A, B, C)
+    Tuple { elements: ![IrType] },
+
+    /// Named struct/enum type
+    Named {
+        name: !String,
+        generics: ![IrType],
+    },
+
+    /// Reference &T or &mut T
+    Reference {
+        mutable: !bool,
+        inner: !Box<IrType>,
+    },
+
+    /// Pointer *const T or *mut T
+    Pointer {
+        mutable: !bool,
+        inner: !Box<IrType>,
+    },
+
+    /// Function type fn(A, B) -> C
+    Function {
+        params: ![IrType],
+        return_type: !Box<IrType>,
+        is_async: !bool,
+    },
+
+    /// Evidential wrapper with evidence level
+    Evidential {
+        inner: !Box<IrType>,
+        evidence: !IrEvidence,
+    },
+
+    /// Cyclic arithmetic type Z/nZ
+    Cycle { modulus: !u64 },
+
+    /// SIMD vector type
+    Simd {
+        element: !Box<IrType>,
+        lanes: !u64,
+    },
+
+    /// Atomic type
+    Atomic { inner: !Box<IrType> },
+
+    /// Type variable (for inference)
+    Var { id: !String },
+
+    /// Infer placeholder _
+    Infer,
+
+    /// Error recovery type
+    Error,
+
+    /// Any type (opaque/existential - for impl Trait)
+    Any,
+}
+
+impl IrType {
+    pub fn unit() -> !IrType {
+        IrType::Unit
+    }
+
+    pub fn never() -> !IrType {
+        IrType::Never
+    }
+
+    pub fn bool_type() -> !IrType {
+        IrType::Primitive { name: "bool" }
+    }
+
+    pub fn i64_type() -> !IrType {
+        IrType::Primitive { name: "i64" }
+    }
+
+    pub fn f64_type() -> !IrType {
+        IrType::Primitive { name: "f64" }
+    }
+
+    pub fn str_type() -> !IrType {
+        IrType::Primitive { name: "str" }
+    }
+}
+
+// ============================================================================
+// Type Definitions
+// ============================================================================
+
+/// Type definition (struct, enum, type alias)
+pub enum IrTypeDef {
+    Struct {
+        name: !String,
+        generics: ![IrGenericParam],
+        fields: ![IrField],
+        span: ?IrSpan,
+    },
+    Enum {
+        name: !String,
+        generics: ![IrGenericParam],
+        variants: ![IrVariant],
+        span: ?IrSpan,
+    },
+    TypeAlias {
+        name: !String,
+        generics: ![IrGenericParam],
+        target: !IrType,
+        span: ?IrSpan,
+    },
+}
+
+impl IrTypeDef {
+    /// Get the name of this type definition
+    pub fn get_name(self) -> !String {
+        match self {
+            IrTypeDef::Struct { name, .. } => name,
+            IrTypeDef::Enum { name, .. } => name,
+            IrTypeDef::TypeAlias { name, .. } => name,
+        }
+    }
+}
+
+/// Free function to get type name (avoids method dispatch issues)
+pub fn ir_typedef_name(tdef: !IrTypeDef) -> !String {
+    match tdef {
+        IrTypeDef::Struct { name, .. } => name,
+        IrTypeDef::Enum { name, .. } => name,
+        IrTypeDef::TypeAlias { name, .. } => name,
+    }
+}
+
+/// A struct field
+pub struct IrField {
+    pub name: !String,
+    pub ty: !IrType,
+    pub visibility: !IrVisibility,
+}
+
+/// An enum variant
+pub struct IrVariant {
+    pub name: !String,
+    pub fields: ?[IrField],
+    pub discriminant: ?i64,
+}
+
+/// Trait definition
+pub struct IrTraitDef {
+    pub name: !String,
+    pub generics: ![IrGenericParam],
+    pub super_traits: ![String],
+    pub methods: ![IrFunction],
+    pub span: ?IrSpan,
+}
+
+/// Impl block
+pub struct IrImplBlock {
+    pub trait_name: ?String,
+    pub target_type: !IrType,
+    pub generics: ![IrGenericParam],
+    pub methods: ![IrFunction],
+    pub span: ?IrSpan,
+}
+
+/// Constant definition
+pub struct IrConstant {
+    pub name: !String,
+    pub ty: !IrType,
+    pub value: !IrOperation,
+    pub visibility: !IrVisibility,
+    pub span: ?IrSpan,
+}
+
+// ============================================================================
+// Operations (Core IR Nodes)
+// ============================================================================
+
+/// Core operation node - the heart of the IR
+pub enum IrOperation {
+    // === Literals ===
+    Literal {
+        variant: !LiteralVariant,
+        value: !LiteralValue,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Variables ===
+    Var {
+        name: !String,
+        id: !String,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Bindings ===
+    Let {
+        pattern: !IrPattern,
+        type_annotation: ?IrType,
+        init: !Box<IrOperation>,
+        evidence: !IrEvidence,
+    },
+
+    /// Let-else binding: let pattern = init else { else_branch }
+    LetElse {
+        pattern: !IrPattern,
+        type_annotation: ?IrType,
+        init: !Box<IrOperation>,
+        else_branch: !Box<IrOperation>,
+        evidence: !IrEvidence,
+    },
+
+    // === Binary operations ===
+    Binary {
+        operator: !BinaryOp,
+        left: !Box<IrOperation>,
+        right: !Box<IrOperation>,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Unary operations ===
+    Unary {
+        operator: !UnaryOp,
+        operand: !Box<IrOperation>,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Function calls ===
+    Call {
+        function: !String,
+        function_id: !String,
+        args: ![IrOperation],
+        type_args: ![IrType],
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    MethodCall {
+        receiver: !Box<IrOperation>,
+        method: !String,
+        args: ![IrOperation],
+        type_args: ![IrType],
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Closures ===
+    Closure {
+        params: ![IrParam],
+        body: !Box<IrOperation>,
+        captures: ![String],
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Control flow ===
+    If {
+        condition: !Box<IrOperation>,
+        then_branch: !Box<IrOperation>,
+        else_branch: ?Box<IrOperation>,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    Match {
+        scrutinee: !Box<IrOperation>,
+        arms: ![IrMatchArm],
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    /// Pattern match used as a boolean condition in if-let/while-let expressions.
+    LetMatch {
+        pattern: !IrPattern,
+        value: !Box<IrOperation>,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    Loop {
+        variant: !LoopVariant,
+        condition: ?Box<IrOperation>,
+        iterator: ?IrForIterator,
+        body: !Box<IrOperation>,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    Break {
+        value: ?Box<IrOperation>,
+        evidence: !IrEvidence,
+    },
+
+    Continue {
+        evidence: !IrEvidence,
+    },
+
+    Return {
+        value: ?Box<IrOperation>,
+        evidence: !IrEvidence,
+    },
+
+    // === Blocks ===
+    Block {
+        statements: ![IrOperation],
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Pipeline operations (core Sigil feature) ===
+    Pipeline {
+        input: !Box<IrOperation>,
+        steps: ![IrPipelineStep],
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Morpheme operations ===
+    Morpheme {
+        morpheme: !MorphemeKind,
+        symbol: !String,
+        input: !Box<IrOperation>,
+        body: ?Box<IrOperation>,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Fork/Join ===
+    Fork {
+        branches: ![IrOperation],
+        join_strategy: !JoinStrategy,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    Identity {
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Data structures ===
+    Array {
+        elements: ![IrOperation],
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    /// Array repeat: [value; count]
+    Repeat {
+        value: !Box<IrOperation>,
+        count: !Box<IrOperation>,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    Tuple {
+        elements: ![IrOperation],
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    StructInit {
+        name: !String,
+        fields: ![(String, IrOperation)],
+        rest: ?Box<IrOperation>,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Field/Index access ===
+    Field {
+        expr: !Box<IrOperation>,
+        field: !String,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    Index {
+        expr: !Box<IrOperation>,
+        index: !Box<IrOperation>,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Assignment ===
+    Assign {
+        target: !Box<IrOperation>,
+        value: !Box<IrOperation>,
+        evidence: !IrEvidence,
+    },
+
+    // === Evidentiality operations ===
+    EvidenceCoerce {
+        operation: !EvidenceOp,
+        expr: !Box<IrOperation>,
+        from_evidence: !IrEvidence,
+        to_evidence: !IrEvidence,
+        ty: !IrType,
+    },
+
+    // === Incorporation (noun-verb fusion) ===
+    Incorporation {
+        segments: ![IncorporationSegment],
+        args: ![IrOperation],
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Protocol operations ===
+    HttpRequest {
+        method: !HttpMethod,
+        url: !Box<IrOperation>,
+        headers: ?Box<IrOperation>,
+        body: ?Box<IrOperation>,
+        timeout_ms: ?Box<IrOperation>,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    WebSocket {
+        operation: !WebSocketOp,
+        url: !Box<IrOperation>,
+        message: ?Box<IrOperation>,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Async ===
+    Await {
+        expr: !Box<IrOperation>,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Unsafe ===
+    Unsafe {
+        body: !Box<IrOperation>,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Cast ===
+    Cast {
+        expr: !Box<IrOperation>,
+        target_type: !IrType,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Macro expansion ===
+    MacroExpansion {
+        name: !String,
+        tokens: !String,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Format call (lowered format! macro) ===
+    // Unlike MacroExpansion which stores raw tokens, this stores lowered arguments
+    FormatCall {
+        format_string: !String,
+        args: ![IrOperation],
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Try (? operator) ===
+    Try {
+        expr: !Box<IrOperation>,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+
+    // === Range expression (a..b or a..=b) ===
+    Range {
+        start: ?Box<IrOperation>,
+        end: ?Box<IrOperation>,
+        inclusive: !bool,
+        ty: !IrType,
+        evidence: !IrEvidence,
+    },
+}
+
+// ============================================================================
+// Literal Values
+// ============================================================================
+
+/// Literal variants
+pub enum LiteralVariant {
+    Int,
+    Float,
+    Bool,
+    Char,
+    String,
+    Null,
+}
+
+/// Literal values
+pub enum LiteralValue {
+    Int(!i64),
+    Float(!f64),
+    Bool(!bool),
+    Char(!char),
+    String(!String),
+    Null,
+}
+
+// ============================================================================
+// Operators
+// ============================================================================
+
+/// Binary operators
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    Pow,
+    And,
+    Or,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Concat,
+}
+
+/// Unary operators
+pub enum UnaryOp {
+    Neg,
+    Not,
+    Deref,
+    Ref,
+    RefMut,
+}
+
+// ============================================================================
+// Control Flow
+// ============================================================================
+
+/// Loop variants
+pub enum LoopVariant {
+    Infinite,
+    While,
+    For,
+}
+
+/// For loop iterator
+pub struct IrForIterator {
+    pub pattern: !IrPattern,
+    pub iterable: !Box<IrOperation>,
+}
+
+/// Match arm
+pub struct IrMatchArm {
+    pub pattern: !IrPattern,
+    pub guard: ?IrOperation,
+    pub body: !IrOperation,
+}
+
+// ============================================================================
+// Patterns
+// ============================================================================
+
+/// Pattern in IR
+pub enum IrPattern {
+    Ident {
+        name: !String,
+        mutable: !bool,
+        by_ref: !bool,
+        evidence: ?IrEvidence,
+    },
+
+    Tuple { elements: ![IrPattern] },
+
+    Struct {
+        path: !String,
+        fields: ![(String, IrPattern)],
+        rest: !bool,
+    },
+
+    TupleStruct {
+        path: !String,
+        fields: ![IrPattern],
+    },
+
+    Slice { elements: ![IrPattern] },
+
+    Or { patterns: ![IrPattern] },
+
+    Literal { value: !LiteralValue },
+
+    Range {
+        start: ?Box<IrPattern>,
+        end: ?Box<IrPattern>,
+        inclusive: !bool,
+    },
+
+    Wildcard,
+
+    /// Path pattern for unit variants (e.g., None, MyEnum::Variant)
+    Path { path: !String },
+
+    /// Rest pattern (..)
+    Rest,
+}
+
+// ============================================================================
+// Pipeline Operations
+// ============================================================================
+
+/// Pipeline step
+pub enum IrPipelineStep {
+    Call {
+        function: !String,
+        args: ![IrOperation],
+    },
+
+    Morpheme {
+        morpheme: !MorphemeKind,
+        symbol: !String,
+        body: ?Box<IrOperation>,
+    },
+
+    Fork { branches: ![IrPipelineStep] },
+
+    Identity,
+
+    Method {
+        name: !String,
+        args: ![IrOperation],
+    },
+
+    Await,
+
+    Protocol {
+        operation: !ProtocolOp,
+        config: ?Box<IrOperation>,
+    },
+}
+
+/// Morpheme kinds
+pub enum MorphemeKind {
+    Transform,  // τ
+    Filter,     // φ
+    Sort,       // σ
+    Reduce,     // ρ
+    Lambda,     // λ
+    Sum,        // Σ
+    Product,    // Π
+    Min,
+    Max,
+    Concat,
+    All,
+    Any,
+    First,      // α
+    Last,       // ω
+    Middle,     // μ
+    Choice,     // χ
+    Nth,        // ν
+    Next,       // ξ
+}
+
+impl MorphemeKind {
+    pub fn symbol(self) -> !&str {
+        match self {
+            MorphemeKind::Transform => "τ",
+            MorphemeKind::Filter => "φ",
+            MorphemeKind::Sort => "σ",
+            MorphemeKind::Reduce => "ρ",
+            MorphemeKind::Lambda => "λ",
+            MorphemeKind::Sum => "Σ",
+            MorphemeKind::Product => "Π",
+            MorphemeKind::Min => "ρ_min",
+            MorphemeKind::Max => "ρ_max",
+            MorphemeKind::Concat => "ρ++",
+            MorphemeKind::All => "ρ&",
+            MorphemeKind::Any => "ρ|",
+            MorphemeKind::First => "α",
+            MorphemeKind::Last => "ω",
+            MorphemeKind::Middle => "μ",
+            MorphemeKind::Choice => "χ",
+            MorphemeKind::Nth => "ν",
+            MorphemeKind::Next => "ξ",
+        }
+    }
+}
+
+/// Join strategy for fork operations
+pub enum JoinStrategy {
+    Tuple,
+    First,
+    All,
+    Race,
+}
+
+/// Evidence operations
+pub enum EvidenceOp {
+    Trust,
+    Verify,
+    Mark,
+}
+
+/// Incorporation segment (noun-verb)
+pub enum IncorporationSegment {
+    Noun { name: !String },
+    Verb { name: !String },
+}
+
+// ============================================================================
+// Protocol Operations
+// ============================================================================
+
+/// HTTP methods
+pub enum HttpMethod {
+    Get,
+    Post,
+    Put,
+    Delete,
+    Patch,
+    Head,
+    Options,
+    Connect,
+    Trace,
+}
+
+/// WebSocket operations
+pub enum WebSocketOp {
+    Connect,
+    Send,
+    Receive,
+    Close,
+}
+
+/// Protocol operations for pipeline
+pub enum ProtocolOp {
+    Send,
+    Recv,
+    Stream,
+    Connect,
+    Close,
+    Timeout,
+    Retry,
+}
+
+// ============================================================================
+// Dump Options
+// ============================================================================
+
+/// Configuration options for IR dump
+pub struct IrDumpOptions {
+    /// Pretty-print JSON output
+    pub pretty: !bool,
+    /// Include full type information on every node
+    pub full_types: !bool,
+    /// Include source spans
+    pub include_spans: !bool,
+    /// Optimization level to apply before dumping
+    pub opt_level: ?u8,
+}
+
+impl IrDumpOptions {
+    pub fn default() -> !IrDumpOptions {
+        IrDumpOptions {
+            pretty: false,
+            full_types: false,
+            include_spans: false,
+            opt_level: null,
+        }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_evidence_join() {
+        assert_eq!(IrEvidence::Known.join(IrEvidence::Known), IrEvidence::Known);
+        assert_eq!(IrEvidence::Known.join(IrEvidence::Uncertain), IrEvidence::Uncertain);
+        assert_eq!(IrEvidence::Known.join(IrEvidence::Reported), IrEvidence::Reported);
+        assert_eq!(IrEvidence::Known.join(IrEvidence::Paradox), IrEvidence::Paradox);
+        assert_eq!(IrEvidence::Reported.join(IrEvidence::Paradox), IrEvidence::Paradox);
+    }
+
+    #[test]
+    fn test_evidence_meet() {
+        assert_eq!(IrEvidence::Paradox.meet(IrEvidence::Paradox), IrEvidence::Paradox);
+        assert_eq!(IrEvidence::Paradox.meet(IrEvidence::Reported), IrEvidence::Reported);
+        assert_eq!(IrEvidence::Paradox.meet(IrEvidence::Uncertain), IrEvidence::Uncertain);
+        assert_eq!(IrEvidence::Paradox.meet(IrEvidence::Known), IrEvidence::Known);
+    }
+
+    #[test]
+    fn test_ir_module_creation() {
+        let module = IrModule::new("test.sigil");
+        assert_eq!(module.version, IR_VERSION);
+        assert_eq!(module.source, "test.sigil");
+    }
+
+    #[test]
+    fn test_morpheme_symbols() {
+        assert_eq!(MorphemeKind::Transform.symbol(), "τ");
+        assert_eq!(MorphemeKind::Filter.symbol(), "φ");
+        assert_eq!(MorphemeKind::Reduce.symbol(), "ρ");
+        assert_eq!(MorphemeKind::First.symbol(), "α");
+        assert_eq!(MorphemeKind::Last.symbol(), "ω");
+    }
+
+    #[test]
+    fn test_lattice_default() {
+        let lattice = EvidentialityLattice::default();
+        assert_eq!(lattice.levels.len(), 4);
+        assert_eq!(lattice.levels[0].name, "known");
+        assert_eq!(lattice.levels[3].name, "paradox");
+    }
+}

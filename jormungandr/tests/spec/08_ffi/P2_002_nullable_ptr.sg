@@ -1,0 +1,12 @@
+// Test: Nullable pointer types
+// Spec: 08-FFI.md § 3.2 Pointers
+// Priority: P2 - Enhancement
+
+fn main() {
+    let ptr: *const i32 = 0 as *const i32;
+    if ptr.is_null() {
+        println(1);
+    } else {
+        println(0);
+    }
+}

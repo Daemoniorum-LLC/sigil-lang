@@ -1,0 +1,14 @@
+// Test: Unary minus operator
+// Spec: 02-SYNTAX.md § 3.4 Unary Operators
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate unary minus works correctly.
+//
+// Expected behavior:
+// Should print -42
+
+fn main() {
+    let x: !i32 = 42;
+    println(-x);
+}

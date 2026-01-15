@@ -1,0 +1,464 @@
+//! HTTP Response Types with Evidence Metadata
+//!
+//! Responses carry evidence about their data sources, enabling clients
+//! and observability systems to understand data provenance and confidence.
+
+use shared::{Timestamp, Confidence, Value};
+use crate::evidence::{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext};
+use crate::request::Headers;
+
+// ============================================================================
+// HTTP Status
+// ============================================================================
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StatusCode(u16);
+
+impl StatusCode {
+    // Success
+    pub const OK: StatusCode = StatusCode(200);
+    pub const CREATED: StatusCode = StatusCode(201);
+    pub const ACCEPTED: StatusCode = StatusCode(202);
+    pub const NO_CONTENT: StatusCode = StatusCode(204);
+
+    // Redirection
+    pub const MOVED_PERMANENTLY: StatusCode = StatusCode(301);
+    pub const FOUND: StatusCode = StatusCode(302);
+    pub const NOT_MODIFIED: StatusCode = StatusCode(304);
+
+    // Client Error
+    pub const BAD_REQUEST: StatusCode = StatusCode(400);
+    pub const UNAUTHORIZED: StatusCode = StatusCode(401);
+    pub const FORBIDDEN: StatusCode = StatusCode(403);
+    pub const NOT_FOUND: StatusCode = StatusCode(404);
+    pub const METHOD_NOT_ALLOWED: StatusCode = StatusCode(405);
+    pub const CONFLICT: StatusCode = StatusCode(409);
+    pub const UNPROCESSABLE_ENTITY: StatusCode = StatusCode(422);
+    pub const TOO_MANY_REQUESTS: StatusCode = StatusCode(429);
+
+    // Server Error
+    pub const INTERNAL_SERVER_ERROR: StatusCode = StatusCode(500);
+    pub const NOT_IMPLEMENTED: StatusCode = StatusCode(501);
+    pub const BAD_GATEWAY: StatusCode = StatusCode(502);
+    pub const SERVICE_UNAVAILABLE: StatusCode = StatusCode(503);
+
+    // Custom
+    pub const APPROVAL_REQUIRED: StatusCode = StatusCode(499); // Custom: Covenant handoff
+
+    pub fn as_u16(&self) -> u16 { self.0 }
+
+    pub fn is_success(&self) -> bool { self.0 >= 200 && self.0 < 300 }
+    pub fn is_redirect(&self) -> bool { self.0 >= 300 && self.0 < 400 }
+    pub fn is_client_error(&self) -> bool { self.0 >= 400 && self.0 < 500 }
+    pub fn is_server_error(&self) -> bool { self.0 >= 500 && self.0 < 600 }
+
+    pub fn reason_phrase(&self) -> &'static str {
+        match self.0 {
+            200 => "OK",
+            201 => "Created",
+            204 => "No Content",
+            400 => "Bad Request",
+            401 => "Unauthorized",
+            403 => "Forbidden",
+            404 => "Not Found",
+            409 => "Conflict",
+            422 => "Unprocessable Entity",
+            499 => "Approval Required",
+            500 => "Internal Server Error",
+            503 => "Service Unavailable",
+            _ => "Unknown",
+        }
+    }
+}
+
+// ============================================================================
+// Response
+// ============================================================================
+
+/// An HTTP response with evidence metadata
+///
+/// Responses carry information about the evidence level and confidence
+/// of the data they contain.
+pub struct Response<T> {
+    /// HTTP status code
+    pub status: StatusCode,
+
+    /// Response headers
+    headers: Headers,
+
+    /// Response body with evidence
+    body: Option<Evidenced<T>>,
+
+    /// Evidence summary for the entire response
+    evidence_summary: ResponseEvidence,
+
+    /// Timestamp when response was created
+    pub created_at: Timestamp,
+}
+
+/// Evidence metadata for the response
+#[derive(Clone, Debug)]
+pub struct ResponseEvidence {
+    /// Overall evidence level of the response data
+    pub level: EvidenceLevel,
+
+    /// Confidence in the response
+    pub confidence: Confidence,
+
+    /// Source description
+    pub source: String,
+
+    /// Evidence chain from request processing
+    pub chain: Vec<String>,
+
+    /// Warnings about evidence quality
+    pub warnings: Vec<String>,
+}
+
+impl ResponseEvidence {
+    /// Create a computed response (highest trust)
+    pub fn computed() -> Self {
+        Self {
+            level: EvidenceLevel::Known,
+            confidence: Confidence::full(),
+            source: "computed".to_string(),
+            chain: vec![],
+            warnings: vec![],
+        }
+    }
+
+    /// Create from an evidenced value
+    pub fn from_evidenced<T>(evidenced: &Evidenced<T>) -> Self {
+        Self {
+            level: evidenced.level(),
+            confidence: evidenced.evidence.confidence(),
+            source: evidenced.evidence.describe(),
+            chain: vec![],
+            warnings: vec![],
+        }
+    }
+
+    /// Create from evidence context
+    pub fn from_context(ctx: &EvidenceContext) -> Self {
+        Self {
+            level: ctx.chain().last()
+                .map(|t| t.to)
+                .unwrap_or(EvidenceLevel::Known),
+            confidence: ctx.confidence(),
+            source: "request_processing".to_string(),
+            chain: ctx.chain().iter()
+                .map(|t| format!("{} → {}", t.from.symbol(), t.to.symbol()))
+                .collect(),
+            warnings: ctx.warnings().to_vec(),
+        }
+    }
+
+    /// Add to evidence chain
+    pub fn with_chain(mut self, step: &str) -> Self {
+        self.chain.push(step.to_string());
+        self
+    }
+
+    /// Add warning
+    pub fn with_warning(mut self, warning: &str) -> Self {
+        self.warnings.push(warning.to_string());
+        self
+    }
+}
+
+impl<T> Response<T> {
+    /// Create a new response with status and body
+    pub fn new(status: StatusCode, body: T) -> Self {
+        Self {
+            status,
+            headers: Headers::new(),
+            body: Some(Evidenced::computed(body)),
+            evidence_summary: ResponseEvidence::computed(),
+            created_at: Timestamp::now(),
+        }
+    }
+
+    /// Create a response with evidenced body
+    pub fn with_evidence(status: StatusCode, body: Evidenced<T>) -> Self {
+        let evidence_summary = ResponseEvidence::from_evidenced(&body);
+        Self {
+            status,
+            headers: Headers::new(),
+            body: Some(body),
+            evidence_summary,
+            created_at: Timestamp::now(),
+        }
+    }
+
+    // ========================================================================
+    // Common Response Constructors
+    // ========================================================================
+
+    /// 200 OK response
+    pub fn ok(body: T) -> Self {
+        Self::new(StatusCode::OK, body)
+    }
+
+    /// 201 Created response
+    pub fn created(body: T) -> Self {
+        Self::new(StatusCode::CREATED, body)
+    }
+
+    /// 202 Accepted response
+    pub fn accepted(body: T) -> Self {
+        Self::new(StatusCode::ACCEPTED, body)
+    }
+
+    // ========================================================================
+    // Builder Methods
+    // ========================================================================
+
+    /// Set a header
+    pub fn header(mut self, key: &str, value: &str) -> Self {
+        self.headers.set(key.to_string(), value.to_string());
+        self
+    }
+
+    /// Set content type
+    pub fn content_type(self, content_type: &str) -> Self {
+        self.header("content-type", content_type)
+    }
+
+    /// Set JSON content type
+    pub fn json(self) -> Self {
+        self.content_type("application/json")
+    }
+
+    /// Set the evidence summary
+    pub fn with_evidence_summary(mut self, evidence: ResponseEvidence) -> Self {
+        self.evidence_summary = evidence;
+        self
+    }
+
+    /// Add evidence headers to response
+    pub fn with_evidence_headers(mut self) -> Self {
+        // Add evidence metadata as headers
+        self.headers.set(
+            "x-evidence-level".to_string(),
+            self.evidence_summary.level.symbol().to_string()
+        );
+        self.headers.set(
+            "x-evidence-confidence".to_string(),
+            format!("{:.2}", self.evidence_summary.confidence.value())
+        );
+        if !self.evidence_summary.warnings.is_empty() {
+            self.headers.set(
+                "x-evidence-warnings".to_string(),
+                self.evidence_summary.warnings.join("; ")
+            );
+        }
+        self
+    }
+
+    // ========================================================================
+    // Accessors
+    // ========================================================================
+
+    /// Get the response body
+    pub fn body(&self) -> Option<&Evidenced<T>> {
+        self.body.as_ref()
+    }
+
+    /// Get headers
+    pub fn headers(&self) -> &Headers {
+        &self.headers
+    }
+
+    /// Get evidence summary
+    pub fn evidence(&self) -> &ResponseEvidence {
+        &self.evidence_summary
+    }
+
+    /// Unwrap the body value, discarding evidence
+    pub fn into_body(self) -> Option<T> {
+        self.body.map(|b| b.value)
+    }
+}
+
+// ============================================================================
+// Empty Response
+// ============================================================================
+
+impl Response<()> {
+    /// 204 No Content response
+    pub fn no_content() -> Self {
+        Self {
+            status: StatusCode::NO_CONTENT,
+            headers: Headers::new(),
+            body: None,
+            evidence_summary: ResponseEvidence::computed(),
+            created_at: Timestamp::now(),
+        }
+    }
+}
+
+// ============================================================================
+// Error Responses
+// ============================================================================
+
+/// Error response body
+#[derive(Clone, Debug)]
+pub struct ErrorBody {
+    pub error: String,
+    pub message: String,
+    pub details: Option<Vec<String>>,
+    pub evidence: Option<String>,
+}
+
+impl Response<ErrorBody> {
+    /// 400 Bad Request
+    pub fn bad_request(message: &str) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, ErrorBody {
+            error: "bad_request".to_string(),
+            message: message.to_string(),
+            details: None,
+            evidence: None,
+        })
+    }
+
+    /// 401 Unauthorized
+    pub fn unauthorized(message: &str) -> Self {
+        Self::new(StatusCode::UNAUTHORIZED, ErrorBody {
+            error: "unauthorized".to_string(),
+            message: message.to_string(),
+            details: None,
+            evidence: None,
+        })
+    }
+
+    /// 403 Forbidden
+    pub fn forbidden(message: &str) -> Self {
+        Self::new(StatusCode::FORBIDDEN, ErrorBody {
+            error: "forbidden".to_string(),
+            message: message.to_string(),
+            details: None,
+            evidence: None,
+        })
+    }
+
+    /// 404 Not Found
+    pub fn not_found(message: &str) -> Self {
+        Self::new(StatusCode::NOT_FOUND, ErrorBody {
+            error: "not_found".to_string(),
+            message: message.to_string(),
+            details: None,
+            evidence: None,
+        })
+    }
+
+    /// 422 Unprocessable Entity (validation errors)
+    pub fn validation_error(errors: Vec<String>) -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, ErrorBody {
+            error: "validation_error".to_string(),
+            message: "Validation failed".to_string(),
+            details: Some(errors),
+            evidence: Some("Evidence level insufficient".to_string()),
+        })
+    }
+
+    /// 500 Internal Server Error
+    pub fn internal_error(message: &str) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, ErrorBody {
+            error: "internal_error".to_string(),
+            message: message.to_string(),
+            details: None,
+            evidence: None,
+        })
+    }
+
+    /// 499 Approval Required (custom Covenant status)
+    pub fn approval_required(action: &str, handoff_id: &str) -> Self {
+        Self::new(StatusCode::APPROVAL_REQUIRED, ErrorBody {
+            error: "approval_required".to_string(),
+            message: format!("Action '{}' requires human approval", action),
+            details: Some(vec![format!("handoff_id: {}", handoff_id)]),
+            evidence: Some("Covenant boundary reached".to_string()),
+        }).header("x-handoff-id", handoff_id)
+    }
+}
+
+// ============================================================================
+// IntoResponse Trait
+// ============================================================================
+
+/// Trait for types that can be converted into a response
+pub trait IntoResponse {
+    fn into_response(self) -> Response<Vec<u8>>;
+}
+
+impl IntoResponse for String {
+    fn into_response(self) -> Response<Vec<u8>> {
+        Response::ok(self.into_bytes())
+            .content_type("text/plain; charset=utf-8")
+    }
+}
+
+impl IntoResponse for &str {
+    fn into_response(self) -> Response<Vec<u8>> {
+        Response::ok(self.as_bytes().to_vec())
+            .content_type("text/plain; charset=utf-8")
+    }
+}
+
+impl IntoResponse for Vec<u8> {
+    fn into_response(self) -> Response<Vec<u8>> {
+        Response::ok(self)
+            .content_type("application/octet-stream")
+    }
+}
+
+impl<T> IntoResponse for Response<T>
+where
+    T: Into<Vec<u8>>,
+{
+    fn into_response(self) -> Response<Vec<u8>> {
+        Response {
+            status: self.status,
+            headers: self.headers,
+            body: self.body.map(|b| Evidenced {
+                value: b.value.into(),
+                evidence: b.evidence,
+                captured_at: b.captured_at,
+            }),
+            evidence_summary: self.evidence_summary,
+            created_at: self.created_at,
+        }
+    }
+}
+
+// ============================================================================
+// Response Extensions for Explanations
+// ============================================================================
+
+impl<T> Response<T> {
+    /// Add an explanation to the response (from Oracle)
+    pub fn with_explanation(mut self, explanation: &str) -> Self {
+        self.headers.set("x-explanation".to_string(), explanation.to_string());
+        self
+    }
+
+    /// Add reasoning trace
+    pub fn with_reasoning(mut self, steps: &[String]) -> Self {
+        self.headers.set(
+            "x-reasoning-steps".to_string(),
+            steps.len().to_string()
+        );
+        // Full reasoning would go in body or separate endpoint
+        self
+    }
+
+    /// Add confidence to response
+    pub fn with_confidence(mut self, confidence: Confidence) -> Self {
+        self.evidence_summary.confidence = confidence;
+        self.headers.set(
+            "x-confidence".to_string(),
+            format!("{:.2}", confidence.value())
+        );
+        self
+    }
+}

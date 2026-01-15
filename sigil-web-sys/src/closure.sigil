@@ -1,0 +1,158 @@
+//! Closure wrapper for JavaScript callbacks
+
+use std::rc::Rc;
+use std::cell::RefCell;
+
+/// Closure that wraps a Sigil function for JavaScript interop
+pub type Closure[F] = struct {
+    inner: Rc[ClosureInner[F]]!,
+}
+
+type ClosureInner[F] = struct {
+    func: RefCell[Option[F]]!,
+    handle: RefCell[Option[JsValue]]!,
+}
+
+impl[F: FnOnce() + 'static] Closure[F] {
+    /// Create a one-shot closure
+    pub fn once(f: F!) -> Self! {
+        Closure {
+            inner: Rc·new(ClosureInner {
+                func: RefCell·new(Some(f)),
+                handle: RefCell·new(None),
+            }),
+        }
+    }
+
+    /// Get as JS function reference
+    pub fn as_ref(self: &Self!) -> &Function! {
+        // Return reference to internal JS function
+        self.inner.handle·borrow()·as_ref()·unwrap()
+    }
+
+    /// Forget the closure (leak memory to prevent drop)
+    pub fn forget(self: Self!) {
+        std::mem::forget(self);
+    }
+}
+
+impl[F: Fn() + 'static] Closure[F] {
+    /// Create a reusable closure
+    pub fn new(f: F!) -> Self! {
+        Closure {
+            inner: Rc·new(ClosureInner {
+                func: RefCell·new(Some(f)),
+                handle: RefCell·new(None),
+            }),
+        }
+    }
+}
+
+impl[F: FnMut() + 'static] Closure[F] {
+    /// Create a mutable closure
+    pub fn new_mut(f: F!) -> Self! {
+        Closure {
+            inner: Rc·new(ClosureInner {
+                func: RefCell·new(Some(f)),
+                handle: RefCell·new(None),
+            }),
+        }
+    }
+}
+
+/// Typed closure variants for different signatures
+pub type Closure0 = Closure[Box[dyn FnOnce()]];
+pub type Closure1[A] = Closure[Box[dyn FnOnce(A)]];
+pub type Closure2[A, B] = Closure[Box[dyn FnOnce(A, B)]];
+
+impl Closure0 {
+    pub fn wrap(f: impl FnOnce() + 'static) -> Self! {
+        Closure::once(Box·new(f))
+    }
+}
+
+impl[A: 'static] Closure1[A] {
+    pub fn wrap(f: impl FnOnce(A) + 'static) -> Self! {
+        Closure::once(Box·new(f))
+    }
+}
+
+impl[A: 'static, B: 'static] Closure2[A, B] {
+    pub fn wrap(f: impl FnOnce(A, B) + 'static) -> Self! {
+        Closure::once(Box·new(f))
+    }
+}
+
+/// Convert to JS function
+impl[F] AsRef[Function] for Closure[F] {
+    fn as_ref(self: &Self!) -> &Function! {
+        self·as_ref()
+    }
+}
+
+/// JavaScript function reference
+#[wasm_bindgen]
+extern "js" {
+    pub type Function;
+
+    #[wasm_bindgen(method)]
+    pub fn call0(this: &Function!, context: &JsValue!) -> Result[JsValue, JsValue]?;
+
+    #[wasm_bindgen(method)]
+    pub fn call1(this: &Function!, context: &JsValue!, arg1: &JsValue!) -> Result[JsValue, JsValue]?;
+
+    #[wasm_bindgen(method)]
+    pub fn call2(this: &Function!, context: &JsValue!, arg1: &JsValue!, arg2: &JsValue!) -> Result[JsValue, JsValue]?;
+
+    #[wasm_bindgen(method)]
+    pub fn apply(this: &Function!, context: &JsValue!, args: &Array!) -> Result[JsValue, JsValue]?;
+
+    #[wasm_bindgen(method)]
+    pub fn bind(this: &Function!, context: &JsValue!) -> Function!;
+}
+
+/// Promise for async operations
+#[wasm_bindgen]
+extern "js" {
+    pub type Promise;
+
+    #[wasm_bindgen(constructor)]
+    pub fn new(executor: &Closure!) -> Promise!;
+
+    #[wasm_bindgen(method)]
+    pub fn then(this: &Promise!, on_fulfilled: &Closure!) -> Promise!;
+
+    #[wasm_bindgen(method, js_name = "then")]
+    pub fn then2(this: &Promise!, on_fulfilled: &Closure!, on_rejected: &Closure!) -> Promise!;
+
+    #[wasm_bindgen(method, js_name = "catch")]
+    pub fn catch_(this: &Promise!, on_rejected: &Closure!) -> Promise!;
+
+    #[wasm_bindgen(method)]
+    pub fn finally(this: &Promise!, on_finally: &Closure!) -> Promise!;
+
+    #[wasm_bindgen(static_method_of = Promise)]
+    pub fn resolve(value: &JsValue!) -> Promise!;
+
+    #[wasm_bindgen(static_method_of = Promise)]
+    pub fn reject(reason: &JsValue!) -> Promise!;
+
+    #[wasm_bindgen(static_method_of = Promise)]
+    pub fn all(iterable: &Array!) -> Promise!;
+
+    #[wasm_bindgen(static_method_of = Promise)]
+    pub fn race(iterable: &Array!) -> Promise!;
+
+    #[wasm_bindgen(static_method_of = Promise, js_name = "allSettled")]
+    pub fn all_settled(iterable: &Array!) -> Promise!;
+
+    #[wasm_bindgen(static_method_of = Promise)]
+    pub fn any(iterable: &Array!) -> Promise!;
+}
+
+/// Convert Promise to Future
+impl Promise {
+    pub fn into_future(self: Self!) -> impl std::future::Future[Output = Result[JsValue, JsValue]]! {
+        wasm_bindgen_futures::JsFuture::from(self)
+    }
+}

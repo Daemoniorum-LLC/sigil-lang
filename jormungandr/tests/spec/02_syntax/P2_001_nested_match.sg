@@ -1,0 +1,19 @@
+// Test: Nested match expressions
+// Spec: 02-SYNTAX.md § 5.3 Match
+// Priority: P2 - Enhancement
+
+fn main() {
+    let outer: !i32 = 1;
+    let inner: !i32 = 2;
+
+    match outer {
+        1 => {
+            match inner {
+                1 => println(11),
+                2 => println(12),
+                _ => println(10),
+            }
+        },
+        _ => println(0),
+    }
+}

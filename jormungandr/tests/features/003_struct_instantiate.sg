@@ -1,0 +1,11 @@
+// Test: Create struct instance with field access
+pub struct Rectangle {
+    width: !i32,
+    height: !i32
+}
+
+fn main() {
+    let r: !Rectangle = Rectangle { width: 30, height: 50 };
+    let area: !i32 = r.width * r.height;
+    println(area);
+}

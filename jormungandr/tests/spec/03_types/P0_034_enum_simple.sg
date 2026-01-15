@@ -1,0 +1,19 @@
+// Test: Simple enum without data
+// Spec: 03-TYPES.md § 6.1 Enum Types
+// Priority: P0
+//
+// Purpose:
+// Validates that simple enums work correctly.
+//
+// Expected behavior:
+// Should compile and print 1
+
+pub enum Status {
+    Success,
+    Failure
+}
+
+fn main() {
+    let s: !Status = Status::Success;
+    println(1);
+}

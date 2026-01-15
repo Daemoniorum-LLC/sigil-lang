@@ -18,7 +18,7 @@ cargo build --release
 export PATH="$PATH:$(pwd)/target/release"
 ```
 
-### With LLVM Backend (Maximum Performance)
+### With LLVM Backend (Production)
 
 For production deployment, build with LLVM support:
 
@@ -30,7 +30,7 @@ apt install llvm-18-dev libpolly-18-dev libzstd-dev clang-18
 CC=clang-18 cargo build --release --features llvm
 ```
 
-The LLVM backend produces native binaries **3.6x faster than equivalent Rust code**.
+The LLVM backend produces optimized native binaries suitable for production use.
 
 ### VS Code Extension
 
@@ -59,21 +59,12 @@ sigil run hello.sigil
 
 Sigil offers multiple execution backends for different use cases:
 
-| Command | Description | Performance |
-|---------|-------------|-------------|
+| Command | Description | Use Case |
+|---------|-------------|----------|
 | `sigil run file.sigil` | Interpreted | Development, debugging |
-| `sigil jit file.sigil` | Cranelift JIT | 67x faster, fast iteration |
-| `sigil llvm file.sigil` | LLVM JIT | 64x faster, near-native |
-| `sigil compile file.sigil -o out` | LLVM AOT | **3,582x faster**, production |
-
-### Benchmark Results
-
-| Backend | Time (fib+ackermann+tak) | vs Rust |
-|---------|--------------------------|---------|
-| Interpreter | 39.4s | 985x slower |
-| Cranelift JIT | 0.59s | 13x slower |
-| LLVM JIT | 0.62s | 14x slower |
-| **LLVM AOT** | **0.011s** | **3.6x FASTER** |
+| `sigil jit file.sigil` | Cranelift JIT | Fast iteration |
+| `sigil llvm file.sigil` | LLVM JIT | Optimized execution |
+| `sigil compile file.sigil -o out` | LLVM AOT | Production deployment |
 
 ### Compiling to Native Binary
 

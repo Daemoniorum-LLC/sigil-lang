@@ -1,0 +1,18 @@
+// Test: Enum with multiple variants
+// Spec: 03-TYPES.md § 2.3 Enum
+// Priority: P2 - Enhancement
+
+enum Status {
+    Active,
+    Inactive,
+    Pending
+}
+
+fn main() {
+    let s: Status = Status::Active;
+    match s {
+        Status::Active => println(1),
+        Status::Inactive => println(2),
+        Status::Pending => println(3)
+    }
+}

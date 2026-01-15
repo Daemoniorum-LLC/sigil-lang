@@ -1,0 +1,15 @@
+// Test: Slice type basic usage
+// Spec: 03-TYPES.md § 4.6 Slice Types
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate slice types work correctly.
+//
+// Expected behavior:
+// Should print 2 (length of slice)
+
+fn main() {
+    let arr: ![i32; 3] = [42, 99, 13];
+    let slice: &![i32] = &arr[0..2];
+    println(slice.len());
+}

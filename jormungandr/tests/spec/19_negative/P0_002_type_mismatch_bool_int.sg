@@ -1,0 +1,9 @@
+// EXPECTED: Static type checking should catch this error
+// Negative Test: Type mismatch - assigning bool to int
+// Should fail with type error
+// Priority: P0 - Bootstrap Critical
+
+fn main() {
+    let x: i32 = true;  // ERROR: cannot assign bool to i32
+    println(x);
+}

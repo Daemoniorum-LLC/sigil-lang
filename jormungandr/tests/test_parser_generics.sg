@@ -1,0 +1,157 @@
+//! Comprehensive Parser Generics Test Suite
+//!
+//! Tests generic syntax parsing for functions, structs, enums, traits, and impls.
+//! Target: 100% generic syntax coverage for regression detection.
+
+use crate::parser::Parser;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+fn parse_file(source: !&str) -> !bool {
+    let mut parser = Parser::new(source.to_string());
+    match parser.parse_file() {
+        Result::Ok(_) => true,
+        Result::Err(_) => false,
+    }
+}
+
+fn assert_parses(source: !&str, name: !&str) {
+    if !parse_file(source) {
+        panic(format!("FAIL {}: failed to parse", name));
+    }
+}
+
+// ============================================================================
+// 1. GENERIC FUNCTION SYNTAX
+// ============================================================================
+
+fn test_generic_functions() -> !bool {
+    print("  [1/4] Generic function syntax... ");
+
+    // Single type parameter
+    assert_parses("fn identity<T>(x: !T) -> !T { return x; }", "fn_single_generic");
+
+    // Multiple type parameters
+    assert_parses("fn pair<A, B>(a: !A, b: !B) -> !(A, B) { return (a, b); }", "fn_multi_generic");
+
+    // With bounds
+    assert_parses("fn clone<T: Clone>(x: !T) -> !T { return x.clone(); }", "fn_bounded_generic");
+
+    // Multiple bounds
+    assert_parses("fn debug_clone<T: Clone + Debug>(x: !T) -> !T { return x; }", "fn_multi_bounded");
+
+    // Where clause
+    assert_parses("fn process<T>(x: !T) where T: Clone { }", "fn_where_clause");
+
+    // Complex where clause
+    assert_parses("fn complex<T, U>(x: !T, y: !U) where T: Clone + Send, U: Debug { }", "fn_complex_where");
+
+    println("PASS (6 cases)");
+    true
+}
+
+// ============================================================================
+// 2. GENERIC STRUCT SYNTAX
+// ============================================================================
+
+fn test_generic_structs() -> !bool {
+    print("  [2/4] Generic struct syntax... ");
+
+    // Single parameter
+    assert_parses("struct Box<T> { value: !T }", "struct_single_generic");
+
+    // Multiple parameters
+    assert_parses("struct Pair<A, B> { first: !A, second: !B }", "struct_multi_generic");
+
+    // With bounds in definition
+    assert_parses("struct Clonable<T: Clone> { value: !T }", "struct_bounded");
+
+    // Nested generics
+    assert_parses("struct Nested<T> { inner: !Box<T> }", "struct_nested_generic");
+
+    // Where clause
+    assert_parses("struct Container<T> where T: Clone { value: !T }", "struct_where");
+
+    println("PASS (5 cases)");
+    true
+}
+
+// ============================================================================
+// 3. GENERIC ENUM SYNTAX
+// ============================================================================
+
+fn test_generic_enums() -> !bool {
+    print("  [3/4] Generic enum syntax... ");
+
+    // Option-like
+    assert_parses("enum Option<T> { Some(T), None }", "enum_option");
+
+    // Result-like
+    assert_parses("enum Result<T, E> { Ok(T), Err(E) }", "enum_result");
+
+    // With bounds
+    assert_parses("enum Bounded<T: Clone> { Value(T), Empty }", "enum_bounded");
+
+    // Complex variants
+    assert_parses("enum Tree<T> { Leaf(T), Node { left: Box<Tree<T>>, right: Box<Tree<T>> } }", "enum_tree");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// 4. GENERIC IMPL AND TRAIT SYNTAX
+// ============================================================================
+
+fn test_generic_impl_trait() -> !bool {
+    print("  [4/4] Generic impl/trait syntax... ");
+
+    // Generic trait
+    assert_parses("trait From<T> { fn from(value: !T) -> !Self; }", "trait_generic");
+
+    // Generic impl
+    assert_parses("struct Wrapper<T> { v: !T } impl<T> Wrapper<T> { fn new(v: !T) -> !Self { Self { v } } }", "impl_generic");
+
+    // Impl trait for generic
+    assert_parses("trait Clone {} struct Box<T> {} impl<T: Clone> Clone for Box<T> {}", "impl_trait_generic");
+
+    // Turbofish in expression
+    assert_parses("fn test() { let x = Vec::<i32>::new(); }", "turbofish_expr");
+
+    // Turbofish in method
+    assert_parses("fn test() { let x = iter.collect::<Vec<_>>(); }", "turbofish_method");
+
+    println("PASS (5 cases)");
+    true
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+pub fn main() -> !i32 {
+    println("Testing Parser Generics...");
+    println("");
+
+    let mut passed: !i32 = 0;
+    let mut failed: !i32 = 0;
+
+    if test_generic_functions() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_generic_structs() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_generic_enums() { passed = passed + 1; } else { failed = failed + 1; }
+    if test_generic_impl_trait() { passed = passed + 1; } else { failed = failed + 1; }
+
+    println("");
+    println("Results: {}/{} test groups passed", passed, passed + failed);
+
+    if failed > 0 {
+        println("FAILED: {} test groups failed", failed);
+        return 1;
+    }
+
+    println("");
+    println("All generic syntax tests passed! (~20 test cases)");
+    return 0;
+}

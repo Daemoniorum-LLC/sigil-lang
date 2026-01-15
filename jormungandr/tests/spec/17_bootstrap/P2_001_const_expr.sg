@@ -1,0 +1,11 @@
+// Test: Constant expressions
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 4.1 Constants
+// Priority: P2 - Enhancement
+
+const SIZE: !i32 = 10;
+const DOUBLE: !i32 = SIZE * 2;
+
+fn main() {
+    println(SIZE);
+    println(DOUBLE);
+}

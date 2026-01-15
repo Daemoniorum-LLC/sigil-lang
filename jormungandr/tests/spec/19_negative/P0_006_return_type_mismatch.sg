@@ -1,0 +1,12 @@
+// EXPECTED: Static type checking should catch this error
+// Negative Test: Return type mismatch
+// Should fail with type error
+// Priority: P0 - Bootstrap Critical
+
+fn get_number() -> i32 {
+    return "hello";  // ERROR: returning String but declared i32
+}
+
+fn main() {
+    println(get_number());
+}

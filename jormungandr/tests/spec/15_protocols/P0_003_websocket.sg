@@ -1,0 +1,15 @@
+// Test: WebSocket connection
+// Spec: 15-PROTOCOLS.md § 5 WebSocket Support
+// Priority: P0 - Bootstrap Critical
+
+use protocol::ws::{Connection, Message};
+
+async fn main() {
+    let ws = Connection::connect("ws://localhost:8080")|await~;
+    ws.send(Message::Text("hello"))|await;
+    let msg~ = ws.recv()|await;
+    match msg~ {
+        Message::Text(s) => println(s),
+        _ => println("unexpected"),
+    }
+}
