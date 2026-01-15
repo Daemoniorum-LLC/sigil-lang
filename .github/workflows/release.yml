@@ -1,6 +1,12 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release'
+        required: true
+        default: 'v1.0.0'
   push:
     tags:
       - 'v*'
@@ -11,7 +17,13 @@ env:
 jobs:
   build:
     name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
+    runs-on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release'
+        required: true
+        default: 'v1.0.0' ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -95,7 +107,13 @@ jobs:
   release:
     name: Create Release
     needs: build
-    runs-on: ubuntu-latest
+    runs-on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release'
+        required: true
+        default: 'v1.0.0' ubuntu-latest
     permissions:
       contents: write
 
@@ -132,7 +150,13 @@ jobs:
   homebrew:
     name: Update Homebrew
     needs: release
-    runs-on: ubuntu-latest
+    runs-on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release'
+        required: true
+        default: 'v1.0.0' ubuntu-latest
     if: ${{ !contains(github.ref_name, 'alpha') && !contains(github.ref_name, 'beta') && !contains(github.ref_name, 'rc') }}
 
     steps:
@@ -183,7 +207,13 @@ jobs:
                   sigil check hello.sigil  # Type check
                   sigil repl               # Interactive REPL
 
-                Documentation: https://github.com/Daemoniorum-LLC/sigil-lang/tree/main/docs
+                Documentation:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release'
+        required: true
+        default: 'v1.0.0' https://github.com/Daemoniorum-LLC/sigil-lang/tree/main/docs
               EOS
             end
 
