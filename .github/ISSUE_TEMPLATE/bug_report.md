@@ -1,42 +1,40 @@
 ---
 name: Bug Report
-about: Report a bug in the Sigil compiler or tooling
-title: '[BUG] '
+about: Something's broken
+title: ''
 labels: bug
 assignees: ''
 ---
 
-## Description
+## What's Wrong
 
-A clear description of what the bug is.
+Describe the bug.
 
-## To Reproduce
+## Reproduction
 
 ```sigil
-// Minimal code that reproduces the issue
+// Minimal code that breaks
 fn main() {
-    // ...
+
 }
 ```
 
-Steps:
-1. Run `sigil run file.sg`
-2. See error
+What you ran:
+```bash
+sigil run file.sg
+```
 
-## Expected Behavior
+## Expected vs Actual
 
-What you expected to happen.
-
-## Actual Behavior
-
-What actually happened. Include error messages if any.
+**Expected:** What should happen
+**Actual:** What actually happens (include error messages)
 
 ## Environment
 
-- **Sigil version:** `sigil --help` (e.g., v1.0.0)
-- **OS:** (e.g., Ubuntu 22.04, macOS 14, Windows 11)
-- **Installation method:** (cargo install, GitHub release, source)
+- Sigil version: (run `sigil` with no args)
+- OS:
+- How you installed it: (cargo, release binary, source)
 
-## Additional Context
+## Anything Else?
 
-Any other relevant information.
+Other context if relevant.
