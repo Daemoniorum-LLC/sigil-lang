@@ -1,29 +1,28 @@
-## Summary
+## What
 
-Brief description of what this PR does.
+What does this PR do?
 
-## Related Issue
+## Why
 
-Fixes #(issue number)
+Why is this change needed? Link to issue if applicable.
 
-## Changes
+Fixes #
 
-- Change 1
-- Change 2
-- Change 3
+## How
+
+Brief explanation of the approach, if not obvious from the code.
 
 ## Testing
 
-How was this tested?
+- [ ] Added/updated tests
+- [ ] `./run_tests_rust.sh` passes
+- [ ] `cargo clippy` clean
+- [ ] `cargo fmt` applied
 
-- [ ] Added/updated unit tests
-- [ ] Ran `./run_tests_rust.sh` - all tests pass
-- [ ] Ran `cargo clippy` - no warnings
-- [ ] Ran `cargo fmt` - code formatted
+## AI Disclosure
 
-## Checklist
+If AI assisted with this PR, note it here. Not required, but appreciated for transparency.
 
-- [ ] My code follows the project's style guidelines
-- [ ] I have updated documentation if needed
-- [ ] I have added tests covering my changes
-- [ ] All new and existing tests pass
+- [ ] Human-only
+- [ ] AI-assisted (which model?)
+- [ ] Primarily AI-generated
