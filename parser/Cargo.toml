@@ -1,13 +1,13 @@
 [package]
 name = "sigil-parser"
-version = "0.2.1"
+version = "1.0.0"
 edition = "2021"
-description = "Parser and native compiler for the Sigil programming language"
+description = "Parser and native compiler for the Sigil programming language - a language that tracks data trust at the type level"
 authors = ["Lilith Crook <lilith@daemoniorum.com>"]
 license-file = "LICENSE"
 repository = "https://github.com/Daemoniorum-LLC/sigil-lang"
-homepage = "https://www.daemoniorum.com"
-documentation = "https://github.com/Daemoniorum-LLC/sigil-lang/tree/main/docs"
+homepage = "https://sigil-lang.com"
+documentation = "https://sigil-lang.com/pages/docs.html"
 readme = "README.md"
 keywords = ["parser", "compiler", "programming-language", "jit", "ai"]
 categories = ["compilers", "development-tools"]
