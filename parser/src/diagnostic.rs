@@ -887,6 +887,9 @@ impl From<&RuntimeError> for Diagnostic {
             RuntimeErrorCode::ControlFlowError => {
                 diag = diag.with_note("control flow statements must be used in the correct context");
             }
+            RuntimeErrorCode::LinearTypeViolation => {
+                diag = diag.with_note("linear values can only be used once (no-cloning theorem)");
+            }
             RuntimeErrorCode::Generic => {}
         }
 

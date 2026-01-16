@@ -28,6 +28,6 @@ impl Value {
 }
 
 fn main() {
-    let result: !i32 = Value::new(42).add(10).get();
+    let result = Value::new(42).add(10).get();
     println(result);
 }

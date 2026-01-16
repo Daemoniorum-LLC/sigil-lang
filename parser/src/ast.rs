@@ -699,6 +699,8 @@ pub enum TypeExpr {
     Simd { element: Box<TypeExpr>, lanes: u8 },
     /// Atomic type: `atomic<T>`
     Atomic(Box<TypeExpr>),
+    /// Linear type: `linear T` - value can only be used once (no-cloning)
+    Linear(Box<TypeExpr>),
     /// Never type: `!` or `never`
     Never,
     /// Inferred: `_`

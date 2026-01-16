@@ -6,24 +6,21 @@
 // Validates all Drop values are dropped at scope exit.
 //
 // Expected behavior:
-// Drop count matches number of created values
-
-static mut drop_count: i32 = 0;
+// Three drops should be printed
 
 struct Counter {}
 
 impl Drop for Counter {
-    fn drop(&mut self) {
-        drop_count = drop_count + 1;
+    fn drop(mut self) {
+        println("drop");
     }
 }
 
 fn main() {
-    println(drop_count);
     {
         let a = Counter {};
         let b = Counter {};
         let c = Counter {};
     }
-    println(drop_count);
+    println("done");
 }

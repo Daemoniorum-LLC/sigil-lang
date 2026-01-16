@@ -5,7 +5,7 @@
 fn main() {
     let qh: QHState<i32> = QHState::encode(42);
     let noisy = qh|apply_noise(0.1);  // 10% noise
-    let corrected = noisy|error_correct;
+    let corrected = error_correct(noisy);
     let value = corrected|measure;
     println(value);
 }

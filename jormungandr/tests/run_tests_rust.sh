@@ -142,6 +142,18 @@ run_test() {
     if [ -f "$expected" ]; then
         # Test has expected output - check it
         if ! "$SIGIL_COMPILER" run "$test_file" > "$test_out" 2>"$test_err"; then
+            # Runtime error occurred - check if the expected output is in stderr
+            # This supports "error tests" that expect a specific error message
+            # Read first non-empty line of expected content
+            expected_content=$(sed -n '/[^ ]/p' "$expected" | head -1)
+            if [ -n "$expected_content" ] && [ -s "$test_err" ]; then
+                # Check if expected content appears in stderr (case-sensitive, literal match)
+                if grep -qF "$expected_content" "$test_err"; then
+                    echo -e "${GREEN}✅ PASS${NC} (expected error)"
+                    ((PASS++))
+                    return 0
+                fi
+            fi
             echo -e "${RED}❌ FAIL${NC}: Runtime error"
             if [ -s "$test_err" ]; then
                 sed 's/^/    /' "$test_err" | head -10

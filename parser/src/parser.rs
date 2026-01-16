@@ -2437,6 +2437,12 @@ impl<'a> Parser<'a> {
                     inner: Box::new(inner),
                 })
             }
+            Some(Token::Linear) => {
+                // Linear type: `linear T` - value can only be used once
+                self.advance();
+                let inner = self.parse_type()?;
+                Ok(TypeExpr::Linear(Box::new(inner)))
+            }
             Some(Token::LBracket) => {
                 self.advance();
                 // Check for empty brackets or array/shape syntax
@@ -3209,7 +3215,12 @@ impl<'a> Parser<'a> {
                 let no_args_pipe_methods = [
                     "collect", "observe", "len", "first", "last", "reverse",
                     "iter", "into_iter", "enumerate", "sum", "product",
-                    "min", "max", "count", "flatten", "unique"
+                    "min", "max", "count", "flatten", "unique",
+                    // Quantum gates
+                    "H", "X", "Y", "Z", "S", "T", "measure",
+                    "H_all", "measure_all",
+                    // Neural network activations and tensor operations
+                    "relu", "softmax", "reshape", "backward",
                 ];
                 if no_args_pipe_methods.contains(&name.as_str()) {
                     return true;

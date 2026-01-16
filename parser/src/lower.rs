@@ -618,6 +618,11 @@ fn lower_type_expr(t: &ast::TypeExpr) -> IrType {
         ast::TypeExpr::Atomic(inner) => IrType::Atomic {
             inner: Box::new(lower_type_expr(inner)),
         },
+        ast::TypeExpr::Linear(inner) => {
+            // Linear types - for now, lower as the inner type
+            // Linear tracking is done at runtime/type-check time
+            lower_type_expr(inner)
+        }
         ast::TypeExpr::Never => IrType::Never,
         ast::TypeExpr::Infer => IrType::Infer,
         ast::TypeExpr::Lifetime(name) => IrType::Lifetime { name: name.clone() },

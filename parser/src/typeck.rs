@@ -74,6 +74,9 @@ pub enum Type {
     /// Atomic type
     Atomic(Box<Type>),
 
+    /// Linear type - value can only be used once
+    Linear(Box<Type>),
+
     /// Type variable for inference
     Var(TypeVar),
 
@@ -3070,6 +3073,12 @@ impl TypeChecker {
             // Cycles
             (Type::Cycle { modulus: a }, Type::Cycle { modulus: b }) => a == b,
 
+            // Linear types: inner must unify
+            (Type::Linear(a), Type::Linear(b)) => self.unify(a, b),
+            // Allow linear to unify with non-linear for assignment
+            (Type::Linear(a), b) => self.unify(a, b),
+            (a, Type::Linear(b)) => self.unify(a, b),
+
             // For bootstrapping: treat type parameters (single uppercase letter names like T, U, E)
             // as compatible with any type. This allows generic functions to type check without
             // full generic instantiation support.
@@ -3247,6 +3256,11 @@ impl TypeChecker {
             TypeExpr::Atomic(inner) => {
                 let inner_ty = self.convert_type(inner);
                 Type::Atomic(Box::new(inner_ty))
+            }
+
+            TypeExpr::Linear(inner) => {
+                let inner_ty = self.convert_type(inner);
+                Type::Linear(Box::new(inner_ty))
             }
 
             TypeExpr::Never => Type::Never,
@@ -3440,6 +3454,7 @@ impl fmt::Display for Type {
             Type::Never => write!(f, "!"),
             Type::Simd { element, lanes } => write!(f, "simd<{}, {}>", element, lanes),
             Type::Atomic(inner) => write!(f, "atomic<{}>", inner),
+            Type::Linear(inner) => write!(f, "linear {}", inner),
             Type::Lifetime(name) => write!(f, "'{}", name),
             Type::TraitObject(bounds) => {
                 write!(f, "dyn ")?;

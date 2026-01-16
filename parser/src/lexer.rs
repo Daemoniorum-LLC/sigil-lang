@@ -282,6 +282,8 @@ pub enum Token {
     Mut,
     #[token("const")]
     Const,
+    #[token("linear")]
+    Linear,
     #[token("type")]
     Type,
     #[token("struct")]
