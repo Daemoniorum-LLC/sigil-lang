@@ -2758,8 +2758,9 @@ impl<'a> Parser<'a> {
                 self.advance();
 
                 // Build the first segment from the keyword
+                // Note: Sigil uses "tome" instead of Rust's "crate"
                 let keyword_name = match keyword {
-                    Some(Token::Crate) => "crate",
+                    Some(Token::Crate) => "tome",
                     Some(Token::SelfLower) => "self",
                     Some(Token::Super) => "super",
                     _ => unreachable!(),
@@ -2907,7 +2908,9 @@ impl<'a> Parser<'a> {
             Some(Token::Ident(name)) => {
                 // Check what follows the identifier
                 // Only treat as generic if the identifier looks like a type name (uppercase)
-                let is_type_name = name.chars().next().map_or(false, |c| c.is_uppercase());
+                // or is a primitive type (bool, i32, f64, etc.)
+                let is_type_name = name.chars().next().map_or(false, |c| c.is_uppercase())
+                    || Self::is_primitive_type(&name);
                 match self.peek_n(1) {
                     // [T] - only treat as generic if T looks like a type name (uppercase)
                     // This distinguishes HashMap[String] (generic) from array[index] (indexing)
@@ -2985,6 +2988,17 @@ impl<'a> Parser<'a> {
             // If it's for generics, there won't be a semicolon
             _ => false,
         }
+    }
+
+    /// Check if a name is a primitive type (lowercase but still a type)
+    fn is_primitive_type(name: &str) -> bool {
+        matches!(
+            name,
+            "bool" | "char" | "str"
+                | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
+                | "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
+                | "f32" | "f64"
+        )
     }
 
     /// Check if what follows < looks like it could be a generic type argument
@@ -3877,7 +3891,7 @@ impl<'a> Parser<'a> {
                     Token::Where => "where".to_string(),
                     Token::Dyn => "dyn".to_string(),
                     Token::Super => "super".to_string(),
-                    Token::Crate => "crate".to_string(),
+                    Token::Crate => "tome".to_string(),
                     _ => format!("{:?}", token),
                 };
                 // Don't add space before . :: ( [ { ) ] } , ;
@@ -6992,9 +7006,10 @@ impl<'a> Parser<'a> {
                     return Err(ParseError::Custom("expected :: after crate/super in path pattern".to_string()));
                 }
 
-                // Build the path starting with crate/self/super
+                // Build the path starting with tome/self/super
+                // Note: Sigil uses "tome" instead of Rust's "crate"
                 let keyword_name = match keyword {
-                    Some(Token::Crate) => "crate",
+                    Some(Token::Crate) => "tome",
                     Some(Token::SelfLower) => "self",
                     Some(Token::Super) => "super",
                     _ => unreachable!(),
@@ -7450,10 +7465,10 @@ impl<'a> Parser<'a> {
             Token::Packed => Some("packed"),
             Token::As => Some("as"),
             Token::Type => Some("type"),
-            Token::Crate => Some("crate"),
+            Token::Crate => Some("tome"),
             Token::Super => Some("super"),
-            Token::Mod => Some("mod"),
-            Token::Use => Some("use"),
+            Token::Mod => Some("scroll"),
+            Token::Use => Some("invoke"),
             Token::Pub => Some("pub"),
             Token::Const => Some("const"),
             Token::Static => Some("static"),
@@ -8280,7 +8295,7 @@ mod tests {
 
     #[test]
     fn test_parse_struct() {
-        let source = "struct Point { x: f64, y: f64 }";
+        let source = "sigil Point { x: f64, y: f64 }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -8423,7 +8438,7 @@ mod tests {
     #[test]
     fn test_parse_packed_struct() {
         let source = r#"
-            packed struct GDTEntry {
+            packed sigil GDTEntry {
                 limit_low: u16,
                 base_low: u16,
                 base_middle: u8,
@@ -8711,7 +8726,7 @@ mod tests {
     #[test]
     fn test_parse_atomic_type() {
         let source = r#"
-            struct Counter {
+            sigil Counter {
                 value: atomic<i64>,
             }
         "#;
@@ -8775,7 +8790,7 @@ mod tests {
     fn test_parse_derive_macro() {
         let source = r#"
             #[derive(Debug, Clone, Component)]
-            struct Position {
+            sigil Position {
                 x: f32,
                 y: f32,
                 z: f32,
@@ -8799,7 +8814,7 @@ mod tests {
     fn test_parse_repr_c_struct() {
         let source = r#"
             #[repr(C)]
-            struct FFIStruct {
+            sigil FFIStruct {
                 field: i32,
             }
         "#;
