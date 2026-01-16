@@ -1,0 +1,64 @@
+================================================================================
+Simple trait
+================================================================================
+
+trait Drawable {
+    fn draw();
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (trait_definition
+    name: (identifier)
+    (trait_body
+      (function_signature
+        name: (identifier)
+        (parameter_list)))))
+
+================================================================================
+Trait with default implementation
+================================================================================
+
+trait Greeter {
+    fn greet() {
+        return "hello";
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (trait_definition
+    name: (identifier)
+    (trait_body
+      (function_definition
+        name: (identifier)
+        (parameter_list)
+        (block
+          (return_statement
+            (literal
+              (string_literal))))))))
+
+================================================================================
+Trait with bounds
+================================================================================
+
+trait Serializable: Clone {
+    fn serialize() -> str;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (trait_definition
+    name: (identifier)
+    (trait_bounds
+      (trait_bound
+        (path
+          (identifier))))
+    (trait_body
+      (function_signature
+        name: (identifier)
+        (parameter_list)
+        (primitive_type)))))

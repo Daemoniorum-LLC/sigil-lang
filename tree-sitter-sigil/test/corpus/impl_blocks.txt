@@ -1,0 +1,96 @@
+================================================================================
+Simple impl block
+================================================================================
+
+impl Point {
+    fn new() -> Point {
+        return Point { x: 0, y: 0 };
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (impl_block
+    (path
+      (identifier))
+    (impl_body
+      (function_definition
+        name: (identifier)
+        (parameter_list)
+        (path
+          (identifier))
+        (block
+          (return_statement
+            (struct_expression
+              (path
+                (identifier))
+              (field_initializer
+                name: (identifier)
+                (literal
+                  (number_literal)))
+              (field_initializer
+                name: (identifier)
+                (literal
+                  (number_literal))))))))))
+
+================================================================================
+Impl with trait
+================================================================================
+
+impl Display for Point {
+    fn fmt() {
+        return;
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (impl_block
+    (path
+      (identifier))
+    (path
+      (identifier))
+    (impl_body
+      (function_definition
+        name: (identifier)
+        (parameter_list)
+        (block
+          (return_statement))))))
+
+================================================================================
+Impl with generics
+================================================================================
+
+impl<T> Container<T> {
+    fn get() -> T {
+        return self.value;
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (impl_block
+    (generic_parameters
+      (generic_parameter
+        (type_parameter
+          name: (identifier))))
+    (generic_type
+      (path
+        (identifier))
+      (type_arguments
+        (path
+          (identifier))))
+    (impl_body
+      (function_definition
+        name: (identifier)
+        (parameter_list)
+        (path
+          (identifier))
+        (block
+          (return_statement
+            (field_expression
+              (path)
+              field: (identifier))))))))
