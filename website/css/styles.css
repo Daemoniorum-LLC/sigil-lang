@@ -527,15 +527,11 @@ body:has(.announcement-banner) [id] {
   color: var(--accent);
 }
 
-.hero-problem {
-  font-size: 1.125rem;
+.hero-tagline {
+  font-size: 1.5rem;
   color: var(--text-secondary);
   margin-bottom: var(--space-2xl);
-  line-height: 1.8;
-}
-
-.hero-problem strong {
-  color: var(--text-primary);
+  line-height: 1.6;
 }
 
 .hero-solution {

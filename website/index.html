@@ -118,32 +118,25 @@
   </nav>
 
   <main id="main-content">
-    <!-- Hero: Problem Statement -->
+    <!-- Hero -->
     <header class="hero">
       <div class="hero-container">
-        <h1 class="hero-title">
-          Infrastructure for minds<br>
-          <span class="hero-highlight">that don't yet know what they are.</span>
-        </h1>
-
-        <p class="hero-problem">
-          AI systems hallucinate. APIs lie. Users enter garbage. Networks corrupt data.<br>
-          Traditional type systems can't tell trusted data from untrusted.<br>
-          <strong>Sigil makes epistemology a type-system concern.</strong>
-        </p>
+        <h1 class="hero-title">Sigil</h1>
+        <p class="hero-tagline">A programming language that knows which data to trust.</p>
 
         <div class="hero-solution">
-          <p>Sigil tracks <em>data provenance</em> in the type system. The compiler knows if data is:</p>
+          <p>Sigil tracks <em>data provenance</em> in the type system:</p>
           <ul class="evidence-list">
-            <li><span class="ev ev-known">!</span> <strong>Known</strong> — computed locally, verified</li>
-            <li><span class="ev ev-uncertain">?</span> <strong>Uncertain</strong> — might be absent or invalid</li>
-            <li><span class="ev ev-reported">~</span> <strong>Reported</strong> — from external source, untrusted</li>
+            <li><span class="ev ev-known">!</span> <strong>Known</strong> — verified, computed locally</li>
+            <li><span class="ev ev-uncertain">?</span> <strong>Uncertain</strong> — might be absent</li>
+            <li><span class="ev ev-reported">~</span> <strong>Reported</strong> — external source, untrusted</li>
+            <li><span class="ev ev-paradox">‽</span> <strong>Paradox</strong> — explicit trust boundary</li>
           </ul>
         </div>
 
         <div class="hero-actions">
           <a href="/pages/learn.html" class="btn btn-primary">Learn Sigil</a>
-          <a href="#the-pattern" class="btn btn-ghost">The deeper pattern</a>
+          <a href="#the-problem" class="btn btn-ghost">See the problem it solves</a>
         </div>
       </div>
     </header>
