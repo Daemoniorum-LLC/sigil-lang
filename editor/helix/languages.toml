@@ -1,0 +1,23 @@
+# Helix Editor Configuration for Sigil
+#
+# Add this to your ~/.config/helix/languages.toml
+# Ensure sigil-oracle is in your PATH
+
+[[language]]
+name = "sigil"
+scope = "source.sigil"
+injection-regex = "sigil"
+file-types = ["sigil", "sg"]
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
+indent = { tab-width = 4, unit = "    " }
+language-servers = ["sigil-oracle"]
+
+# LSP configuration
+[language-server.sigil-oracle]
+command = "sigil-oracle"
+
+# Grammar configuration (uses Rust grammar as fallback until tree-sitter-sigil exists)
+# [[grammar]]
+# name = "sigil"
+# source = { git = "https://github.com/Daemoniorum-LLC/tree-sitter-sigil", rev = "main" }
