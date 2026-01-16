@@ -699,6 +699,8 @@ pub enum TypeExpr {
     Simd { element: Box<TypeExpr>, lanes: u8 },
     /// Atomic type: `atomic<T>`
     Atomic(Box<TypeExpr>),
+    /// Linear type: `linear T` - value can only be used once (no-cloning)
+    Linear(Box<TypeExpr>),
     /// Never type: `!` or `never`
     Never,
     /// Inferred: `_`
@@ -1580,6 +1582,43 @@ pub enum PipeOp {
     /// Enumerate: `|⍳` or `|enumerate` - APL iota, pair with indices
     /// Example: `["a","b","c"]|⍳` -> [(0,"a"), (1,"b"), (2,"c")]
     Enumerate,
+
+    // ==========================================
+    // Holographic Operations - Sigil-native distributed computing
+    // ==========================================
+    /// Universal reconstruction: `|∀` - reconstruct whole from shards
+    /// For Vec<T>: sums all elements (numeric reconstruction)
+    /// For distributed data: merges fragments into coherent whole
+    /// Example: `vec![1, 2, 3, 4]|∀` -> 10
+    Universal,
+
+    /// Possibility extraction: `|◊` - extract approximate/speculative answer
+    /// For uncertain data: returns best-effort approximation
+    /// Preserves uncertainty markers in output
+    /// Example: `uncertain_data|◊` -> approximate value
+    Possibility,
+
+    /// Possibility method call: `|◊method` or `|◊method(args)`
+    /// Calls method with possibility semantics (returns approximate result)
+    /// Example: `hll|◊count` -> approximate cardinality
+    PossibilityMethod {
+        name: Ident,
+        args: Vec<Expr>,
+    },
+
+    /// Necessity verification: `|□` - verify and promote to certain
+    /// Validates data meets requirements, promotes evidence level
+    /// Fails if verification cannot be established
+    /// Example: `data|□` -> verified data with ! evidentiality
+    Necessity,
+
+    /// Necessity method call: `|□method` or `|□method(args)`
+    /// Calls method with necessity semantics (verifies and promotes evidence)
+    /// Example: `node~|□verify` -> verified with ! evidentiality
+    NecessityMethod {
+        name: Ident,
+        args: Vec<Expr>,
+    },
 }
 
 /// Incorporation segment.
@@ -1723,6 +1762,8 @@ pub enum BinOp {
     Hadamard,
     /// Tensor/outer product (⊗)
     TensorProd,
+    /// Convolution/merge (⊛) - holographic shard merging
+    Convolve,
 }
 
 /// Unary operators.

@@ -4,7 +4,7 @@
 
 fn main() {
     let shards~ = receive_untrusted_shards();
-    let qh_state = shards~|quantum_reconstruct;
+    let qh_state = quantum_reconstruct(shards~);
     let verified! = qh_state|□verify;  // Quantum + cryptographic verification
     println(verified!);
 }

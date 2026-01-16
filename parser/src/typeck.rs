@@ -74,6 +74,9 @@ pub enum Type {
     /// Atomic type
     Atomic(Box<Type>),
 
+    /// Linear type - value can only be used once
+    Linear(Box<Type>),
+
     /// Type variable for inference
     Var(TypeVar),
 
@@ -2231,7 +2234,8 @@ impl TypeChecker {
             // Matrix multiplication: tensor @ tensor -> tensor
             // Hadamard/element-wise: tensor ⊙ tensor -> tensor
             // Tensor product: tensor ⊗ tensor -> tensor
-            BinOp::MatMul | BinOp::Hadamard | BinOp::TensorProd => {
+            // Convolution: array ⊛ array -> array
+            BinOp::MatMul | BinOp::Hadamard | BinOp::TensorProd | BinOp::Convolve => {
                 // Return a fresh type variable for now (proper tensor type checking would go here)
                 self.fresh_var()
             }
@@ -2805,6 +2809,31 @@ impl TypeChecker {
             }
             PipeOp::Flatten | PipeOp::Unique => self.fresh_var(),
             PipeOp::Enumerate => self.fresh_var(), // Array of (index, value) tuples
+
+            // Holographic operations
+            PipeOp::Universal => self.fresh_var(), // Reconstructed value (sum/merge)
+            PipeOp::Possibility => self.fresh_var(), // Approximate value
+            PipeOp::Necessity => Type::Evidential {
+                inner: Box::new(self.fresh_var()),
+                evidence: EvidenceLevel::Known,
+            },
+            PipeOp::PossibilityMethod { args, .. } => {
+                // Type the arguments
+                for arg in args {
+                    let _ = self.infer_expr(arg);
+                }
+                self.fresh_var() // Returns predicted value
+            }
+            PipeOp::NecessityMethod { args, .. } => {
+                // Type the arguments
+                for arg in args {
+                    let _ = self.infer_expr(arg);
+                }
+                Type::Evidential {
+                    inner: Box::new(self.fresh_var()),
+                    evidence: EvidenceLevel::Known,
+                }
+            }
         };
 
         // Preserve evidence through pipe
@@ -3044,6 +3073,12 @@ impl TypeChecker {
             // Cycles
             (Type::Cycle { modulus: a }, Type::Cycle { modulus: b }) => a == b,
 
+            // Linear types: inner must unify
+            (Type::Linear(a), Type::Linear(b)) => self.unify(a, b),
+            // Allow linear to unify with non-linear for assignment
+            (Type::Linear(a), b) => self.unify(a, b),
+            (a, Type::Linear(b)) => self.unify(a, b),
+
             // For bootstrapping: treat type parameters (single uppercase letter names like T, U, E)
             // as compatible with any type. This allows generic functions to type check without
             // full generic instantiation support.
@@ -3221,6 +3256,11 @@ impl TypeChecker {
             TypeExpr::Atomic(inner) => {
                 let inner_ty = self.convert_type(inner);
                 Type::Atomic(Box::new(inner_ty))
+            }
+
+            TypeExpr::Linear(inner) => {
+                let inner_ty = self.convert_type(inner);
+                Type::Linear(Box::new(inner_ty))
             }
 
             TypeExpr::Never => Type::Never,
@@ -3414,6 +3454,7 @@ impl fmt::Display for Type {
             Type::Never => write!(f, "!"),
             Type::Simd { element, lanes } => write!(f, "simd<{}, {}>", element, lanes),
             Type::Atomic(inner) => write!(f, "atomic<{}>", inner),
+            Type::Linear(inner) => write!(f, "linear {}", inner),
             Type::Lifetime(name) => write!(f, "'{}", name),
             Type::TraitObject(bounds) => {
                 write!(f, "dyn ")?;

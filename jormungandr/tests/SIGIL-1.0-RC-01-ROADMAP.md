@@ -72,17 +72,17 @@ The Sigil Rust compiler has achieved **435/435 tests passing (100%)** across all
 
 ## Roadmap to 1.0
 
-### Phase 1: Core Stabilization (Current → rc-02)
+### Phase 1: Core Stabilization ✅ COMPLETE
 
 **Goal:** Ensure all core features are production-ready
 
-- [ ] Add 50 more edge-case tests for core language
-- [ ] Full error message coverage
-- [ ] Documentation for all stdlib functions
-- [ ] Performance benchmarks
-- [ ] Memory safety audit
+- [x] Add 50 more edge-case tests for core language (50/50)
+- [x] Full error message coverage (TypeErrorCode, RuntimeErrorCode enums)
+- [x] Documentation for all stdlib functions (docs/STDLIB.md - 1,400+ functions)
+- [x] Performance benchmarks (LLVM 72x faster than Python!)
+- [x] Memory safety audit (MEMORY_SAFETY_AUDIT.md)
 
-**Deliverable:** Sigil 1.0-rc-02
+**Deliverable:** Sigil 1.0-rc-02 - MERGED 2026-01-16
 
 ### Phase 2: Experimental Features (rc-02 → rc-03)
 
@@ -129,14 +129,14 @@ The Sigil Rust compiler has achieved **435/435 tests passing (100%)** across all
 - [x] Evidentiality system fully functional
 - [x] Memory safety (ownership, borrowing, Drop)
 - [x] Standard library (Vec, String, HashMap, Option, Result)
-- [ ] Documentation complete
-- [ ] No known critical bugs
+- [x] Documentation complete (docs/STDLIB.md)
+- [x] No known critical bugs
 
 ### Should Have (P1)
 - [ ] Holographic operators implemented
 - [ ] LSP server functional
 - [ ] Package manager functional
-- [ ] Benchmark suite
+- [x] Benchmark suite (benchmarks/RESULTS.md)
 
 ### Nice to Have (P2)
 - [ ] Quantum simulation support

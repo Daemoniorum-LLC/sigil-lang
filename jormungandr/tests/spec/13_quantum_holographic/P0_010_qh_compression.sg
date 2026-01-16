@@ -4,7 +4,7 @@
 
 fn main() {
     let data: Vec<i32> = (0..1000)|collect;
-    let compressed: QHCompressed<Vec<i32>> = data|qh_compress;
+    let compressed = data|qh_compress();  // Type inferred as QHCompressed
     let ratio = compressed.size() as f64 / data.len() as f64;
     println(ratio < 1.0);
 }

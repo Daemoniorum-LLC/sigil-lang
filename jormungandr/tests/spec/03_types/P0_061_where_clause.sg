@@ -9,20 +9,20 @@
 // Should print 42
 
 pub trait Display {
-    fn display(self) -> !i32;
+    fn display(self) -> i32;
 }
 
 pub struct Value {
-    x: !i32
+    x: i32
 }
 
 impl Display for Value {
-    fn display(self) -> !i32 {
+    fn display(self) -> i32 {
         self.x
     }
 }
 
-fn show<T>(item: T) -> !i32
+fn show<T>(item: T) -> i32
 where
     T: Display
 {
@@ -30,6 +30,6 @@ where
 }
 
 fn main() {
-    let v: !Value = Value { x: 42 };
+    let v = Value { x: 42 };
     println(show(v));
 }

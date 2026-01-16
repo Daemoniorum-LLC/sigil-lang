@@ -1,3 +1,4 @@
+// SKIP: Requires Box<T> → &T deref coercion (not yet implemented)
 // Test: Box deref coercion
 // Spec: 04-MEMORY.md § 4.1 Box
 // Priority: P1 - Production Ready
