@@ -1,0 +1,15 @@
+// Test: Negative array index (Python-style)
+// Spec: 03-TYPES.md § Arrays
+// Priority: P0
+//
+// Purpose:
+// Validates that negative indices work as expected (from end).
+//
+// Expected behavior:
+// Should print last element using -1 index
+
+fn main() {
+    let arr = [10, 20, 30, 40, 50];
+    println(arr[-1]);
+    println(arr[-2]);
+}

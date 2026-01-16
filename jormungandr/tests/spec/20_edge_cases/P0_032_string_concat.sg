@@ -1,0 +1,20 @@
+// Test: String concatenation
+// Spec: 03-TYPES.md § String Type
+// Priority: P0
+//
+// Purpose:
+// Validates string concatenation with ++ operator.
+//
+// Expected behavior:
+// Should concatenate strings correctly
+
+fn main() {
+    let a = "Hello";
+    let b = " World";
+    let c = a ++ b;
+    println(c);
+
+    // Chained concatenation
+    let d = "a" ++ "b" ++ "c";
+    println(d);
+}

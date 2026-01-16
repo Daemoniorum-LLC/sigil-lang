@@ -752,6 +752,289 @@ impl Diagnostics {
     }
 }
 
+// ============================================================================
+// Error Type Conversions
+// ============================================================================
+
+use crate::parser::ParseError;
+use crate::typeck::{TypeError, TypeErrorCode};
+
+impl From<ParseError> for Diagnostic {
+    fn from(err: ParseError) -> Self {
+        match err {
+            ParseError::UnexpectedToken {
+                expected,
+                found,
+                span,
+            } => {
+                let found_str = format_token(&found);
+                let message = format!("expected {}, found {}", expected, found_str);
+
+                let mut diag = Diagnostic::error(message, span)
+                    .with_code("E0001")
+                    .with_label(span, format!("expected {} here", expected));
+
+                // Add contextual suggestions based on common mistakes
+                diag = add_token_suggestions(diag, &expected, &found, span);
+                diag
+            }
+            ParseError::UnexpectedEof => {
+                Diagnostic::error("unexpected end of file", Span::new(0, 0))
+                    .with_code("E0002")
+                    .with_note("the file ended unexpectedly while parsing")
+                    .with_note("check for unclosed braces, brackets, or parentheses")
+            }
+            ParseError::InvalidNumber(msg) => {
+                Diagnostic::error(format!("invalid number literal: {}", msg), Span::new(0, 0))
+                    .with_code("E0003")
+                    .with_note("number literals must be valid integers or floats")
+            }
+            ParseError::Custom(msg) => {
+                Diagnostic::error(msg, Span::new(0, 0)).with_code("E0004")
+            }
+        }
+    }
+}
+
+impl From<&TypeError> for Diagnostic {
+    fn from(err: &TypeError) -> Self {
+        let span = err.span.unwrap_or_default();
+        let mut diag = Diagnostic::error(&err.message, span).with_code(err.code.code());
+
+        // Add contextual help based on error type
+        match err.code {
+            TypeErrorCode::TypeMismatch => {
+                diag = diag.with_note("types must match for this operation");
+            }
+            TypeErrorCode::UndefinedName => {
+                diag = diag.with_note("check spelling or add an import/definition");
+            }
+            TypeErrorCode::BorrowError => {
+                diag = diag.with_note("a value can only be borrowed once mutably, or multiple times immutably");
+            }
+            TypeErrorCode::EvidentialityError => {
+                diag = diag.with_note("evidentiality markers track the source and certainty of values");
+            }
+            TypeErrorCode::NonBoolCondition => {
+                diag = diag.with_note("conditions must evaluate to `true` or `false`");
+            }
+            TypeErrorCode::HeterogeneousArray => {
+                diag = diag.with_note("all elements in an array must have the same type");
+            }
+            TypeErrorCode::InvalidIndex => {
+                diag = diag.with_note("use integers like `0`, `1`, `2` to index arrays");
+            }
+            TypeErrorCode::InvalidOperand => {
+                diag = diag.with_note("check that the operand types are valid for this operator");
+            }
+            TypeErrorCode::MissingMatchArm => {
+                diag = diag.with_note("add at least one arm to handle the matched value");
+            }
+            TypeErrorCode::InvalidReduction => {
+                diag = diag.with_note("reduction operations work on arrays or slices");
+            }
+            TypeErrorCode::Generic => {}
+        }
+
+        // Add notes from the error
+        for note in &err.notes {
+            diag = diag.with_note(note);
+        }
+
+        diag
+    }
+}
+
+impl From<TypeError> for Diagnostic {
+    fn from(err: TypeError) -> Self {
+        Diagnostic::from(&err)
+    }
+}
+
+use crate::interpreter::{RuntimeError, RuntimeErrorCode};
+
+impl From<&RuntimeError> for Diagnostic {
+    fn from(err: &RuntimeError) -> Self {
+        let span = err.span.unwrap_or_default();
+        let mut diag = Diagnostic::error(&err.message, span).with_code(err.code.code());
+
+        // Add contextual help based on error type
+        match err.code {
+            RuntimeErrorCode::DivisionByZero => {
+                diag = diag.with_note("check that the divisor is not zero before dividing");
+            }
+            RuntimeErrorCode::IndexOutOfBounds => {
+                diag = diag.with_note("array indices must be between 0 and length - 1");
+            }
+            RuntimeErrorCode::UndefinedVariable => {
+                diag = diag.with_note("make sure the variable is defined before use");
+            }
+            RuntimeErrorCode::TypeError => {
+                diag = diag.with_note("values must have compatible types at runtime");
+            }
+            RuntimeErrorCode::InvalidOperation => {
+                diag = diag.with_note("this operation is not supported for this value");
+            }
+            RuntimeErrorCode::AssertionFailed => {
+                diag = diag.with_note("the assertion condition evaluated to false");
+            }
+            RuntimeErrorCode::Overflow => {
+                diag = diag.with_note("the result is too large to represent");
+            }
+            RuntimeErrorCode::StackOverflow => {
+                diag = diag.with_note("check for infinite recursion in your code");
+            }
+            RuntimeErrorCode::ControlFlowError => {
+                diag = diag.with_note("control flow statements must be used in the correct context");
+            }
+            RuntimeErrorCode::Generic => {}
+        }
+
+        diag
+    }
+}
+
+impl From<RuntimeError> for Diagnostic {
+    fn from(err: RuntimeError) -> Self {
+        Diagnostic::from(&err)
+    }
+}
+
+/// Format a token for display in error messages.
+fn format_token(token: &Token) -> String {
+    match token {
+        Token::Ident(s) => format!("identifier `{}`", s),
+        Token::IntLit(n) => format!("integer `{}`", n),
+        Token::FloatLit(f) => format!("float `{}`", f),
+        Token::StringLit(s) => format!("string {:?}", s),
+        Token::CharLit(c) => format!("character {:?}", c),
+        Token::LParen => "`(`".to_string(),
+        Token::RParen => "`)`".to_string(),
+        Token::LBrace => "`{`".to_string(),
+        Token::RBrace => "`}`".to_string(),
+        Token::LBracket => "`[`".to_string(),
+        Token::RBracket => "`]`".to_string(),
+        Token::Semi => "`;`".to_string(),
+        Token::Colon => "`:`".to_string(),
+        Token::ColonColon => "`::`".to_string(),
+        Token::Comma => "`,`".to_string(),
+        Token::Dot => "`.`".to_string(),
+        Token::DotDot => "`..`".to_string(),
+        Token::Arrow => "`->`".to_string(),
+        Token::FatArrow => "`=>`".to_string(),
+        Token::Eq => "`=`".to_string(),
+        Token::EqEq => "`==`".to_string(),
+        Token::NotEq => "`!=`".to_string(),
+        Token::Lt => "`<`".to_string(),
+        Token::LtEq => "`<=`".to_string(),
+        Token::Gt => "`>`".to_string(),
+        Token::GtEq => "`>=`".to_string(),
+        Token::Plus => "`+`".to_string(),
+        Token::Minus => "`-`".to_string(),
+        Token::Star => "`*`".to_string(),
+        Token::Slash => "`/`".to_string(),
+        Token::Percent => "`%`".to_string(),
+        Token::Amp => "`&`".to_string(),
+        Token::Pipe => "`|`".to_string(),
+        Token::AndAnd => "`&&`".to_string(),
+        Token::OrOr => "`||`".to_string(),
+        Token::Bang => "`!`".to_string(),
+        Token::Question => "`?`".to_string(),
+        Token::Tilde => "`~`".to_string(),
+        Token::Caret => "`^`".to_string(),
+        Token::Fn => "`fn`".to_string(),
+        Token::Let => "`let`".to_string(),
+        Token::Mut => "`mut`".to_string(),
+        Token::If => "`if`".to_string(),
+        Token::Else => "`else`".to_string(),
+        Token::While => "`while`".to_string(),
+        Token::For => "`for`".to_string(),
+        Token::In => "`in`".to_string(),
+        Token::Return => "`return`".to_string(),
+        Token::Break => "`break`".to_string(),
+        Token::Continue => "`continue`".to_string(),
+        Token::Struct => "`struct`".to_string(),
+        Token::Enum => "`enum`".to_string(),
+        Token::Impl => "`impl`".to_string(),
+        Token::Trait => "`trait`".to_string(),
+        Token::Pub => "`pub`".to_string(),
+        Token::Use => "`use`".to_string(),
+        Token::Mod => "`mod`".to_string(),
+        Token::True => "`true`".to_string(),
+        Token::False => "`false`".to_string(),
+        Token::Match => "`match`".to_string(),
+        Token::SelfLower => "`self`".to_string(),
+        Token::SelfUpper => "`Self`".to_string(),
+        Token::Const => "`const`".to_string(),
+        Token::Static => "`static`".to_string(),
+        Token::Type => "`type`".to_string(),
+        Token::Where => "`where`".to_string(),
+        Token::As => "`as`".to_string(),
+        Token::Async => "`async`".to_string(),
+        Token::Await => "`await`".to_string(),
+        Token::Unsafe => "`unsafe`".to_string(),
+        Token::Extern => "`extern`".to_string(),
+        Token::Crate => "`crate`".to_string(),
+        Token::Super => "`super`".to_string(),
+        Token::Dyn => "`dyn`".to_string(),
+        Token::Move => "`move`".to_string(),
+        Token::Ref => "`ref`".to_string(),
+        Token::Loop => "`loop`".to_string(),
+        _ => format!("`{:?}`", token),
+    }
+}
+
+/// Add contextual suggestions for common token mistakes.
+fn add_token_suggestions(mut diag: Diagnostic, expected: &str, found: &Token, span: Span) -> Diagnostic {
+    // Common mistake: missing semicolon
+    if expected.contains(';') && matches!(found, Token::RBrace | Token::Fn | Token::Let | Token::Struct) {
+        diag = diag
+            .with_note("statements must end with a semicolon")
+            .with_suggestion("add a semicolon", span, ";");
+    }
+
+    // Common mistake: using = instead of ==
+    if expected.contains("==") && matches!(found, Token::Eq) {
+        diag = diag
+            .with_note("use `==` for comparison, `=` is for assignment")
+            .with_suggestion("use comparison operator", span, "==");
+    }
+
+    // Common mistake: wrong brace type
+    if expected.contains('{') && matches!(found, Token::LParen) {
+        diag = diag
+            .with_note("blocks use curly braces `{}`")
+            .with_suggestion("use curly brace", span, "{");
+    }
+
+    // Common mistake: missing closing delimiter
+    if expected.contains(')') && matches!(found, Token::Semi | Token::RBrace) {
+        diag = diag.with_note("you may have unclosed parentheses");
+    }
+    if expected.contains(']') && matches!(found, Token::Semi | Token::RBrace) {
+        diag = diag.with_note("you may have unclosed brackets");
+    }
+    if expected.contains('}') && matches!(found, Token::RBracket | Token::RParen) {
+        diag = diag.with_note("you may have unclosed braces");
+    }
+
+    // Common mistake: using -> instead of =>
+    if expected.contains("=>") && matches!(found, Token::Arrow) {
+        diag = diag
+            .with_note("use `=>` for match arms, `->` is for return types")
+            .with_suggestion("use fat arrow for match arm", span, "=>");
+    }
+
+    // Common mistake: using => instead of ->
+    if expected.contains("->") && matches!(found, Token::FatArrow) {
+        diag = diag
+            .with_note("use `->` for return types, `=>` is for match arms")
+            .with_suggestion("use thin arrow for return type", span, "->");
+    }
+
+    diag
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,0 +1,16 @@
+// Test: For loop with range
+// Spec: 02-SYNTAX.md § For Expressions
+// Priority: P0
+//
+// Purpose:
+// Validates for loop iteration over ranges.
+//
+// Expected behavior:
+// Should iterate over range correctly
+
+fn main() {
+    // Exclusive range
+    for i in 0..5 {
+        println(i);
+    }
+}

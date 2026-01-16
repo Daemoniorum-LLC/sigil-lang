@@ -1,0 +1,29 @@
+// Test: Multiple drops in same scope
+// Spec: 04-MEMORY.md § 3.1 Drop Trait
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validates all Drop values are dropped at scope exit.
+//
+// Expected behavior:
+// Drop count matches number of created values
+
+static mut drop_count: i32 = 0;
+
+struct Counter {}
+
+impl Drop for Counter {
+    fn drop(&mut self) {
+        drop_count = drop_count + 1;
+    }
+}
+
+fn main() {
+    println(drop_count);
+    {
+        let a = Counter {};
+        let b = Counter {};
+        let c = Counter {};
+    }
+    println(drop_count);
+}

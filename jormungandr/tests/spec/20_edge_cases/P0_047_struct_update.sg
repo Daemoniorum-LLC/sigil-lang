@@ -1,0 +1,37 @@
+// Test: Struct field update
+// Spec: 03-TYPES.md § Structs
+// Priority: P0
+//
+// Purpose:
+// Validates updating struct fields.
+//
+// Expected behavior:
+// Should update mutable struct fields
+
+struct Counter {
+    value: i32,
+}
+
+impl Counter {
+    fn new() -> Counter {
+        Counter { value: 0 }
+    }
+
+    fn increment(&mut self) {
+        self.value = self.value + 1;
+    }
+
+    fn get(&self) -> i32 {
+        self.value
+    }
+}
+
+fn main() {
+    let mut c = Counter::new();
+    println(c.get());
+    c.increment();
+    println(c.get());
+    c.increment();
+    c.increment();
+    println(c.get());
+}

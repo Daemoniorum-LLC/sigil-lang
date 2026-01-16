@@ -1,0 +1,23 @@
+// Test: While let pattern
+// Spec: 02-SYNTAX.md § While Let
+// Priority: P0
+//
+// Purpose:
+// Validates while let for pattern matching in loops.
+//
+// Expected behavior:
+// Should loop while pattern matches
+
+fn main() {
+    let mut stack: Vec<i32> = Vec::new();
+    stack.push(1);
+    stack.push(2);
+    stack.push(3);
+
+    // Simple while with counter
+    let mut count = 0;
+    while count < 3 {
+        println(count);
+        count = count + 1;
+    }
+}

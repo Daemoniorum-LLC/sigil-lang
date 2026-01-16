@@ -1,0 +1,22 @@
+// Test: Comparison operators
+// Spec: 05-MATHEMATICS.md § Comparison
+// Priority: P0
+//
+// Purpose:
+// Validates all comparison operators.
+//
+// Expected behavior:
+// Should evaluate comparisons correctly
+
+fn main() {
+    let a = 5;
+    let b = 10;
+    let c = 5;
+
+    println(a < b);
+    println(a <= b);
+    println(a > b);
+    println(a >= b);
+    println(a == c);
+    println(a != b);
+}

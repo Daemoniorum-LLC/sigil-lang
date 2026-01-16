@@ -1,0 +1,29 @@
+// Test: Tuple destructuring in let
+// Spec: 02-SYNTAX.md § Patterns
+// Priority: P0
+//
+// Purpose:
+// Validates tuple destructuring in let bindings.
+//
+// Expected behavior:
+// Should correctly destructure tuples
+
+fn swap(a: i32, b: i32) -> (i32, i32) {
+    (b, a)
+}
+
+fn main() {
+    let (x, y) = (10, 20);
+    println(x);
+    println(y);
+
+    let (a, b) = swap(1, 2);
+    println(a);
+    println(b);
+
+    // Nested tuple
+    let ((p, q), r) = ((100, 200), 300);
+    println(p);
+    println(q);
+    println(r);
+}
