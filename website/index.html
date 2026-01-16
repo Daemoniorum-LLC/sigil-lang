@@ -1,14 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- Google tag (gtag.js) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-J7K2SF002F"></script>
+  <!-- Google Analytics - Consent Mode (opt-in) -->
   <script>
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'G-J7K2SF002F');
+
+    // Default: deny analytics until user consents
+    gtag('consent', 'default', {
+      'analytics_storage': 'denied'
+    });
+
+    // Initialize GA4 after consent is granted
+    function initGA4() {
+      gtag('consent', 'update', { 'analytics_storage': 'granted' });
+      gtag('js', new Date());
+      gtag('config', 'G-J7K2SF002F');
+    }
+
+    // Check for existing consent
+    if (localStorage.getItem('analytics_consent') === 'granted') {
+      initGA4();
+    }
   </script>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-J7K2SF002F"></script>
 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
