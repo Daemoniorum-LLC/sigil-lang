@@ -54,7 +54,7 @@
         "sigil.oracle.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable the Oracle language server for diagnostics, hover, and completions"
+          "description": "Enable the Oracle language server for diagnostics, hover, completions, go-to-definition, find references, and signature help"
         },
         "sigil.trace.server": {
           "type": "string",
