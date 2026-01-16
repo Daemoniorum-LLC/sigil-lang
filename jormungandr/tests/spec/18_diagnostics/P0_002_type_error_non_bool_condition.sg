@@ -1,0 +1,15 @@
+// Test: Type error - non-boolean condition
+// Spec: Diagnostics
+// Priority: P0
+//
+// Purpose:
+// Validates that using non-boolean in if condition produces error E0601.
+//
+// Expected behavior:
+// Should fail with E0601 type error
+
+fn main() {
+    if 42 {
+        println("hello");
+    }
+}

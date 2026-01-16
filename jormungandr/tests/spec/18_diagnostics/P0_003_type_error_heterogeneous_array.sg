@@ -1,0 +1,13 @@
+// Test: Type error - heterogeneous array
+// Spec: Diagnostics
+// Priority: P0
+//
+// Purpose:
+// Validates that mixing types in array produces error E0602.
+//
+// Expected behavior:
+// Should fail with E0602 type error
+
+fn main() {
+    let arr = [1, 2, "three"];
+}
