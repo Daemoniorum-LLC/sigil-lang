@@ -2053,6 +2053,7 @@ pre:hover .copy-btn,
    11/10 Features - Breadcrumbs
    ============================================ */
 .breadcrumbs {
+  grid-column: 2; /* Position in content column in docs-layout grid */
   padding: var(--space-md) var(--space-lg);
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--code-border);
