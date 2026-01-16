@@ -1,0 +1,35 @@
+// Test: Trait implementation
+// Spec: 03-TYPES.md § Traits
+// Priority: P0
+//
+// Purpose:
+// Validates trait definition and implementation.
+//
+// Expected behavior:
+// Should call trait methods through impl
+
+trait Greet {
+    fn greet(&self) -> &str;
+}
+
+struct English;
+struct Spanish;
+
+impl Greet for English {
+    fn greet(&self) -> &str {
+        "Hello"
+    }
+}
+
+impl Greet for Spanish {
+    fn greet(&self) -> &str {
+        "Hola"
+    }
+}
+
+fn main() {
+    let e = English;
+    let s = Spanish;
+    println(e.greet());
+    println(s.greet());
+}
