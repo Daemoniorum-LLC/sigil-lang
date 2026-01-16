@@ -3154,6 +3154,7 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Dyn) => true,       // [dyn Trait]
             Some(Token::Impl) => true,      // [impl Trait]
+            Some(Token::Underscore) => true, // [_] inferred type
             // Path-starting keywords that indicate type paths
             Some(Token::Crate) => true,     // [crate::Type]
             Some(Token::Super) => true,     // [super::Type]
