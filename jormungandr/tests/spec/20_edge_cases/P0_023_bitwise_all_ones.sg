@@ -1,0 +1,18 @@
+// Test: Bitwise operations with all ones
+// Spec: 05-MATHEMATICS.md § Bitwise Operations
+// Priority: P0
+//
+// Purpose:
+// Validates bitwise AND, OR, XOR with all bits set.
+//
+// Expected behavior:
+// Should correctly compute bitwise operations
+
+fn main() {
+    let all_ones: i64 = -1;  // All bits set to 1
+    let x: i64 = 0xFF;
+
+    println(x & all_ones);   // Should be x
+    println(x | all_ones);   // Should be all_ones
+    println(x ^ all_ones);   // Should be ~x
+}
