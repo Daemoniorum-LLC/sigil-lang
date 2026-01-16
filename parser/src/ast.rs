@@ -1580,6 +1580,27 @@ pub enum PipeOp {
     /// Enumerate: `|⍳` or `|enumerate` - APL iota, pair with indices
     /// Example: `["a","b","c"]|⍳` -> [(0,"a"), (1,"b"), (2,"c")]
     Enumerate,
+
+    // ==========================================
+    // Holographic Operations - Sigil-native distributed computing
+    // ==========================================
+    /// Universal reconstruction: `|∀` - reconstruct whole from shards
+    /// For Vec<T>: sums all elements (numeric reconstruction)
+    /// For distributed data: merges fragments into coherent whole
+    /// Example: `vec![1, 2, 3, 4]|∀` -> 10
+    Universal,
+
+    /// Possibility extraction: `|◊` - extract approximate/speculative answer
+    /// For uncertain data: returns best-effort approximation
+    /// Preserves uncertainty markers in output
+    /// Example: `uncertain_data|◊` -> approximate value
+    Possibility,
+
+    /// Necessity verification: `|□` - verify and promote to certain
+    /// Validates data meets requirements, promotes evidence level
+    /// Fails if verification cannot be established
+    /// Example: `data|□` -> verified data with ! evidentiality
+    Necessity,
 }
 
 /// Incorporation segment.
@@ -1723,6 +1744,8 @@ pub enum BinOp {
     Hadamard,
     /// Tensor/outer product (⊗)
     TensorProd,
+    /// Convolution/merge (⊛) - holographic shard merging
+    Convolve,
 }
 
 /// Unary operators.

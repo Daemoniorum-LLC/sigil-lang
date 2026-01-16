@@ -1770,6 +1770,7 @@ fn lower_binop(op: ast::BinOp) -> BinaryOp {
         ast::BinOp::MatMul => BinaryOp::MatMul,
         ast::BinOp::Hadamard => BinaryOp::Hadamard,
         ast::BinOp::TensorProd => BinaryOp::TensorProd,
+        ast::BinOp::Convolve => BinaryOp::Convolve,
     }
 }
 

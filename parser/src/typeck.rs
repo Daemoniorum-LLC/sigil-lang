@@ -2231,7 +2231,8 @@ impl TypeChecker {
             // Matrix multiplication: tensor @ tensor -> tensor
             // Hadamard/element-wise: tensor ⊙ tensor -> tensor
             // Tensor product: tensor ⊗ tensor -> tensor
-            BinOp::MatMul | BinOp::Hadamard | BinOp::TensorProd => {
+            // Convolution: array ⊛ array -> array
+            BinOp::MatMul | BinOp::Hadamard | BinOp::TensorProd | BinOp::Convolve => {
                 // Return a fresh type variable for now (proper tensor type checking would go here)
                 self.fresh_var()
             }
@@ -2805,6 +2806,14 @@ impl TypeChecker {
             }
             PipeOp::Flatten | PipeOp::Unique => self.fresh_var(),
             PipeOp::Enumerate => self.fresh_var(), // Array of (index, value) tuples
+
+            // Holographic operations
+            PipeOp::Universal => self.fresh_var(), // Reconstructed value (sum/merge)
+            PipeOp::Possibility => self.fresh_var(), // Approximate value
+            PipeOp::Necessity => Type::Evidential {
+                inner: Box::new(self.fresh_var()),
+                evidence: EvidenceLevel::Known,
+            },
         };
 
         // Preserve evidence through pipe

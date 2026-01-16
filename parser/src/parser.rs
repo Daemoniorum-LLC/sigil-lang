@@ -3646,6 +3646,7 @@ impl<'a> Parser<'a> {
                 // Tensor/array operators
                 Some(Token::CircledDot) => BinOp::Hadamard, // ⊙ element-wise multiply
                 Some(Token::Tensor) => BinOp::TensorProd,   // ⊗ tensor product
+                Some(Token::Gpu) => BinOp::Convolve,        // ⊛ convolution/merge
                 // Legion operators handled specially below
                 Some(Token::Interfere)
                 | Some(Token::Distribute)
@@ -6230,13 +6231,32 @@ impl<'a> Parser<'a> {
             // Mathematical & APL-Inspired Operations
             // ==========================================
 
-            // All/ForAll: |∀{p} or |all{p}
+            // All/ForAll: |∀{p} for predicate check, |∀ for universal reconstruction
             Some(Token::ForAll) => {
                 self.advance();
-                self.expect(Token::LBrace)?;
-                let pred = self.parse_expr()?;
-                self.expect(Token::RBrace)?;
-                Ok(PipeOp::All(Box::new(pred)))
+                // Check if followed by brace - if so, it's All(predicate)
+                // Otherwise, it's Universal (holographic reconstruction)
+                if self.check(&Token::LBrace) {
+                    self.advance(); // consume LBrace
+                    let pred = self.parse_expr()?;
+                    self.expect(Token::RBrace)?;
+                    Ok(PipeOp::All(Box::new(pred)))
+                } else {
+                    // No brace - universal reconstruction (sum/merge)
+                    Ok(PipeOp::Universal)
+                }
+            }
+
+            // Possibility: |◊ - extract approximate/speculative answer
+            Some(Token::Lozenge) => {
+                self.advance();
+                Ok(PipeOp::Possibility)
+            }
+
+            // Necessity: |□ - verify and promote to certain
+            Some(Token::BoxSymbol) => {
+                self.advance();
+                Ok(PipeOp::Necessity)
             }
 
             // Any/Exists: |∃{p} or |any{p}
@@ -8417,7 +8437,8 @@ fn infix_binding_power(op: BinOp) -> (u8, u8) {
         | BinOp::Rem
         | BinOp::MatMul
         | BinOp::Hadamard
-        | BinOp::TensorProd => (17, 18),
+        | BinOp::TensorProd
+        | BinOp::Convolve => (17, 18),
         BinOp::Pow => (20, 19), // Right associative
     }
 }

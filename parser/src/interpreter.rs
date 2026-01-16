@@ -3342,6 +3342,12 @@ impl Interpreter {
                     result.extend(b.borrow().iter().cloned());
                     Ok(Value::Array(Rc::new(RefCell::new(result))))
                 }
+                BinOp::Convolve => {
+                    // Convolution/merge of two arrays: concatenate them (shard merging)
+                    let mut result = a.borrow().clone();
+                    result.extend(b.borrow().iter().cloned());
+                    Ok(Value::Array(Rc::new(RefCell::new(result))))
+                }
                 BinOp::Eq => Ok(Value::Bool(Rc::ptr_eq(&a, &b))),
                 BinOp::Ne => Ok(Value::Bool(!Rc::ptr_eq(&a, &b))),
                 _ => Err(RuntimeError::new("Invalid array operation")),
@@ -9999,6 +10005,136 @@ impl Interpreter {
                         Ok(Value::Array(Rc::new(RefCell::new(enumerated))))
                     }
                     _ => Err(RuntimeError::new("Enumerate requires array")),
+                }
+            }
+
+            // ==========================================
+            // Holographic Operations
+            // ==========================================
+            PipeOp::Universal => {
+                // |∀ - universal reconstruction (sum all elements)
+                // Reconstructs whole from shards by summing numeric values
+                match value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        if arr.is_empty() {
+                            return Ok(Value::Int(0));
+                        }
+                        // Sum all elements
+                        let mut sum = 0i64;
+                        let mut has_float = false;
+                        let mut float_sum = 0.0f64;
+                        for elem in arr.iter() {
+                            match elem {
+                                Value::Int(i) => {
+                                    sum += i;
+                                    float_sum += *i as f64;
+                                }
+                                Value::Float(f) => {
+                                    has_float = true;
+                                    float_sum += f;
+                                }
+                                _ => return Err(RuntimeError::new(
+                                    "Universal reconstruction requires numeric array",
+                                )),
+                            }
+                        }
+                        if has_float {
+                            Ok(Value::Float(float_sum))
+                        } else {
+                            Ok(Value::Int(sum))
+                        }
+                    }
+                    _ => Err(RuntimeError::new("Universal requires array")),
+                }
+            }
+
+            PipeOp::Possibility => {
+                // |◊ - possibility extraction (get approximate value)
+                // For arrays: returns first element (best approximation)
+                // For optionals: extracts inner value or returns default
+                match &value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        if arr.is_empty() {
+                            Ok(Value::Null)
+                        } else {
+                            Ok(arr[0].clone())
+                        }
+                    }
+                    // Handle Option::Some and Option::None variants
+                    Value::Variant {
+                        enum_name,
+                        variant_name,
+                        fields,
+                    } if enum_name == "Option" => {
+                        if variant_name == "Some" {
+                            if let Some(fields) = fields {
+                                if !fields.is_empty() {
+                                    Ok(fields[0].clone())
+                                } else {
+                                    Ok(Value::Null)
+                                }
+                            } else {
+                                Ok(Value::Null)
+                            }
+                        } else {
+                            // None
+                            Ok(Value::Null)
+                        }
+                    }
+                    _ => Ok(value), // Pass through non-collection types
+                }
+            }
+
+            PipeOp::Necessity => {
+                // |□ - necessity verification (verify and promote evidence)
+                // Returns the value if valid, promotes to Known evidentiality
+                match &value {
+                    Value::Array(arr) => {
+                        if arr.borrow().is_empty() {
+                            Err(RuntimeError::new("Necessity verification failed: empty array"))
+                        } else {
+                            // Return with Known evidentiality
+                            Ok(Value::Evidential {
+                                value: Box::new(value),
+                                evidence: Evidence::Known,
+                            })
+                        }
+                    }
+                    // Handle Option::Some and Option::None variants
+                    Value::Variant {
+                        enum_name,
+                        variant_name,
+                        fields,
+                    } if enum_name == "Option" => {
+                        if variant_name == "Some" {
+                            if let Some(fields) = fields {
+                                if !fields.is_empty() {
+                                    Ok(Value::Evidential {
+                                        value: Box::new(fields[0].clone()),
+                                        evidence: Evidence::Known,
+                                    })
+                                } else {
+                                    Err(RuntimeError::new(
+                                        "Necessity verification failed: empty Some",
+                                    ))
+                                }
+                            } else {
+                                Err(RuntimeError::new(
+                                    "Necessity verification failed: empty Some",
+                                ))
+                            }
+                        } else {
+                            Err(RuntimeError::new(
+                                "Necessity verification failed: None value",
+                            ))
+                        }
+                    }
+                    _ => Ok(Value::Evidential {
+                        value: Box::new(value),
+                        evidence: Evidence::Known,
+                    }),
                 }
             }
         }

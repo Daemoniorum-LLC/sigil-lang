@@ -893,6 +893,7 @@ pub enum BinaryOp {
     MatMul,
     Hadamard,
     TensorProd,
+    Convolve,
 }
 
 /// Unary operators
