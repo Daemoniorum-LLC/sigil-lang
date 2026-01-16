@@ -1908,6 +1908,168 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Convert a token to its source text representation.
+    fn token_to_source(tok: &Token) -> String {
+        match tok {
+            // Keywords (Sigil uses different keyword names internally)
+            Token::Pub => "pub".to_string(),
+            Token::Static => "static".to_string(),
+            Token::Mut => "mut".to_string(),
+            Token::Const => "const".to_string(),
+            Token::Let => "let".to_string(),
+            Token::Fn => "fn".to_string(),
+            Token::Struct => "sigil".to_string(), // Sigil keyword for struct
+            Token::Enum => "enum".to_string(),
+            Token::Impl => "impl".to_string(),
+            Token::Trait => "trait".to_string(),
+            Token::Type => "type".to_string(),
+            Token::Mod => "scroll".to_string(), // Sigil keyword for mod
+            Token::Use => "invoke".to_string(), // Sigil keyword for use
+            Token::For => "for".to_string(),
+            Token::In => "in".to_string(),
+            Token::If => "if".to_string(),
+            Token::Else => "else".to_string(),
+            Token::Match => "match".to_string(),
+            Token::While => "while".to_string(),
+            Token::Loop => "loop".to_string(),
+            Token::Break => "break".to_string(),
+            Token::Continue => "continue".to_string(),
+            Token::Return => "return".to_string(),
+            Token::Yield => "yield".to_string(),
+            Token::True => "true".to_string(),
+            Token::False => "false".to_string(),
+            Token::SelfLower => "self".to_string(),
+            Token::SelfUpper => "Self".to_string(),
+            Token::Super => "super".to_string(),
+            Token::Crate => "tome".to_string(), // Sigil keyword for crate
+            Token::Where => "where".to_string(),
+            Token::As => "as".to_string(),
+            Token::Async => "async".to_string(),
+            Token::Await => "await".to_string(),
+            Token::Dyn => "dyn".to_string(),
+            Token::Extern => "extern".to_string(),
+            Token::Move => "move".to_string(),
+            Token::Ref => "ref".to_string(),
+            Token::Unsafe => "unsafe".to_string(),
+            Token::On => "on".to_string(),
+            Token::Actor => "actor".to_string(),
+            Token::Macro => "macro".to_string(),
+            Token::MacroRules => "macro_rules".to_string(),
+            Token::Null => "null".to_string(),
+            // Identifiers and literals
+            Token::Ident(s) => s.clone(),
+            Token::IntLit(s) => s.clone(),
+            Token::FloatLit(s) => s.clone(),
+            Token::HexLit(s) => s.clone(),
+            Token::OctalLit(s) => s.clone(),
+            Token::BinaryLit(s) => s.clone(),
+            Token::StringLit(s) => format!("\"{}\"", s),
+            Token::RawStringLit(s) => format!("r\"{}\"", s),
+            Token::RawStringDelimited(s) => format!("r#\"{}\"#", s),
+            Token::MultiLineStringLit(s) => format!("\"\"\"{}\"\"\"", s),
+            Token::CharLit(c) => format!("'{}'", c),
+            Token::ByteStringLit(bytes) => {
+                format!("b\"{}\"", String::from_utf8_lossy(bytes))
+            }
+            Token::ByteCharLit(b) => format!("b'{}'", *b as char),
+            Token::Lifetime(s) => format!("'{}", s),
+            Token::InterpolatedStringLit(s) => format!("f\"{}\"", s),
+            // Punctuation
+            Token::Colon => ":".to_string(),
+            Token::ColonColon => "::".to_string(),
+            Token::Semi => ";".to_string(),
+            Token::Comma => ",".to_string(),
+            Token::Dot => ".".to_string(),
+            Token::DotDot => "..".to_string(),
+            Token::DotDotEq => "..=".to_string(),
+            Token::Arrow => "->".to_string(),
+            Token::FatArrow => "=>".to_string(),
+            Token::LeftArrow => "<-".to_string(),
+            Token::Question => "?".to_string(),
+            Token::Bang => "!".to_string(),
+            Token::Hash => "#".to_string(),
+            Token::HashBang => "#!".to_string(),
+            Token::At => "@".to_string(),
+            Token::Underscore => "_".to_string(),
+            // Comparison operators
+            Token::Eq => "=".to_string(),
+            Token::EqEq => "==".to_string(),
+            Token::NotEq => "!=".to_string(),
+            Token::Lt => "<".to_string(),
+            Token::LtEq => "<=".to_string(),
+            Token::Gt => ">".to_string(),
+            Token::GtEq => ">=".to_string(),
+            // Arithmetic operators
+            Token::Plus => "+".to_string(),
+            Token::Minus => "-".to_string(),
+            Token::Star => "*".to_string(),
+            Token::Slash => "/".to_string(),
+            Token::Percent => "%".to_string(),
+            Token::StarStar => "**".to_string(),
+            Token::PlusPlus => "++".to_string(),
+            // Bitwise/logical operators
+            Token::Amp => "&".to_string(),
+            Token::AndAnd => "&&".to_string(),
+            Token::Pipe => "|".to_string(),
+            Token::OrOr => "||".to_string(),
+            Token::Caret => "^".to_string(),
+            Token::Tilde => "~".to_string(),
+            Token::Shl => "<<".to_string(),
+            Token::Shr => ">>".to_string(),
+            // Assignment operators
+            Token::PlusEq => "+=".to_string(),
+            Token::MinusEq => "-=".to_string(),
+            Token::StarEq => "*=".to_string(),
+            Token::SlashEq => "/=".to_string(),
+            Token::PercentEq => "%=".to_string(),
+            Token::AmpEq => "&=".to_string(),
+            Token::PipeEq => "|=".to_string(),
+            Token::CaretEq => "^=".to_string(),
+            Token::ShlEq => "<<=".to_string(),
+            Token::ShrEq => ">>=".to_string(),
+            // Delimiters
+            Token::LParen => "(".to_string(),
+            Token::RParen => ")".to_string(),
+            Token::LBrace => "{".to_string(),
+            Token::RBrace => "}".to_string(),
+            Token::LBracket => "[".to_string(),
+            Token::RBracket => "]".to_string(),
+            Token::MiddleDot => "·".to_string(),
+            // Morpheme operators
+            Token::Tau => "τ".to_string(),
+            Token::Phi => "φ".to_string(),
+            Token::Sigma => "σ".to_string(),
+            Token::Rho => "ρ".to_string(),
+            Token::Alpha => "α".to_string(),
+            Token::Omega => "ω".to_string(),
+            Token::Mu => "μ".to_string(),
+            Token::Lambda => "λ".to_string(),
+            Token::Pi => "Π".to_string(),
+            Token::Delta => "δ".to_string(),
+            Token::Epsilon => "ε".to_string(),
+            Token::Zeta => "ζ".to_string(),
+            Token::Chi => "χ".to_string(),
+            Token::Nu => "ν".to_string(),
+            Token::Xi => "ξ".to_string(),
+            Token::Psi => "ψ".to_string(),
+            Token::Theta => "θ".to_string(),
+            Token::Kappa => "κ".to_string(),
+            Token::Nabla => "∇".to_string(),
+            // Special symbols
+            Token::Empty => "∅".to_string(),
+            Token::Circle => "◯".to_string(),
+            Token::Infinity => "∞".to_string(),
+            Token::Hourglass => "⌛".to_string(),
+            // Comments
+            Token::LineComment(s) => format!("//{}", s),
+            Token::TildeComment(s) => format!("~~{}", s),
+            Token::BlockComment(s) => format!("/*{}*/", s),
+            Token::DocComment(s) => format!("///{}", s),
+            // For any other token, use debug format
+            _ => format!("{:?}", tok),
+        }
+    }
+
     /// Parse a macro invocation: `name! { ... }` or `path::to::macro! { ... }`
     fn parse_macro_invocation(&mut self) -> ParseResult<MacroInvocation> {
         use crate::ast::{MacroDelimiter, MacroInvocation};
@@ -1935,7 +2097,7 @@ impl<'a> Parser<'a> {
 
         self.advance(); // consume opening delimiter
 
-        // Collect body tokens as string
+        // Collect body tokens as source text
         let mut body = String::new();
         let mut depth = 1;
 
@@ -1944,19 +2106,19 @@ impl<'a> Parser<'a> {
             match &tok {
                 Some(t) if *t == open_tok => {
                     depth += 1;
-                    body.push_str(&format!("{:?} ", t));
+                    body.push_str(&Self::token_to_source(t));
+                    body.push(' ');
                 }
                 Some(t) if *t == close_tok => {
                     depth -= 1;
                     if depth > 0 {
-                        body.push_str(&format!("{:?} ", t));
+                        body.push_str(&Self::token_to_source(t));
+                        body.push(' ');
                     }
                 }
-                Some(Token::LineComment(s)) => {
-                    body.push_str(&format!("//{}\n", s));
-                }
                 Some(t) => {
-                    body.push_str(&format!("{:?} ", t));
+                    body.push_str(&Self::token_to_source(t));
+                    body.push(' ');
                 }
                 None => break,
             }
@@ -2807,9 +2969,24 @@ impl<'a> Parser<'a> {
         // Don't continue parsing path if there's a pending `>` from split `>>`
         // This handles cases like `<T as Trait<U>>::Assoc` where `>>` is split
         // and the `::Assoc` belongs to the outer qualified path, not the trait path
-        while !self.pending_gt.is_some()
-            && (self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot))
-        {
+        //
+        // MiddleDot (·) handling:
+        // - For type paths starting with uppercase (HashMap·new), allow · as separator
+        // - For variable paths starting with lowercase (tag·to_string), DON'T consume ·
+        //   because those are method calls handled by postfix expression parsing
+        let first_segment_is_type = segments
+            .first()
+            .map(|s| s.ident.name.chars().next().map_or(false, |c| c.is_uppercase()))
+            .unwrap_or(false);
+
+        while !self.pending_gt.is_some() {
+            // Always allow :: as path separator
+            // Only allow · for type paths (uppercase first letter)
+            let is_path_sep = self.consume_if(&Token::ColonColon)
+                || (first_segment_is_type && self.consume_if(&Token::MiddleDot));
+            if !is_path_sep {
+                break;
+            }
             // Check for turbofish syntax: path::<Type> instead of path::segment
             if self.check(&Token::Lt) {
                 // Parse turbofish generics for the last segment

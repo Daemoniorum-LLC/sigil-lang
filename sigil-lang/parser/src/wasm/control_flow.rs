@@ -176,6 +176,11 @@ impl WasmCompiler {
 
     /// Compile a for loop.
     pub fn compile_for(&mut self, pattern: &Pattern, iter: &Expr, body: &Block, label: Option<String>) -> WasmResult<()> {
+        // Check if iterating over a range (0..n or 0..=n)
+        if let Expr::Range { start, end, inclusive } = iter {
+            return self.compile_for_range(pattern, start.as_deref(), end.as_deref(), *inclusive, body, label);
+        }
+
         // For arrays: iterate using index
         // Structure:
         // let arr = <iter>
@@ -279,6 +284,129 @@ impl WasmCompiler {
         func.push(Instruction::I64Const(1));
         func.push(Instruction::I64Add);
         func.push(Instruction::LocalSet(idx_idx));
+
+        // Continue
+        func.push(Instruction::Br(0));
+
+        // End loop
+        func.push(Instruction::End);
+
+        // End block
+        func.push(Instruction::End);
+
+        // Result (unit) - for loops return unit
+        func.push(Instruction::I64Const(0));
+
+        // Pop loop context and scope
+        self.loop_stack.pop();
+        self.scope_vars.pop();
+
+        Ok(())
+    }
+
+    /// Compile a for loop over a range (start..end or start..=end).
+    fn compile_for_range(
+        &mut self,
+        pattern: &Pattern,
+        start: Option<&Expr>,
+        end: Option<&Expr>,
+        inclusive: bool,
+        body: &Block,
+        label: Option<String>,
+    ) -> WasmResult<()> {
+        // Structure:
+        // let i = <start> (or 0 if None)
+        // let end = <end>
+        // block $break
+        //   loop $continue
+        //     if i >= end (or > for exclusive): br $break
+        //     let <pattern> = i
+        //     <body>
+        //     i = i + 1
+        //     br $continue
+        //   end
+        // end
+
+        // Push new scope for loop variables
+        self.scope_vars.push(std::collections::HashMap::new());
+
+        // Compile start value (default to 0)
+        if let Some(start_expr) = start {
+            self.compile_expr(start_expr)?;
+        } else {
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I64Const(0));
+        }
+
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        // Store current value in a local
+        let idx_local = func.alloc_local("__range_idx".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(idx_local));
+
+        // Compile end value
+        if let Some(end_expr) = end {
+            self.compile_expr(end_expr)?;
+        } else {
+            // No end - this would be an infinite range, which we don't support in for loops
+            return Err(WasmError::unsupported("infinite ranges in for loops"));
+        }
+
+        let func = self.current_function_mut().unwrap();
+
+        let end_local = func.alloc_local("__range_end".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(end_local));
+
+        // Outer block for break
+        func.push(Instruction::Block(BlockType::Empty));
+
+        // Inner loop
+        func.push(Instruction::Loop(BlockType::Empty));
+
+        // Push loop context
+        self.loop_stack.push(LoopContext {
+            break_label: 1,
+            continue_label: 0,
+            name: label,
+        });
+
+        let func = self.current_function_mut().unwrap();
+
+        // Check termination condition
+        // For exclusive (..): if i >= end, break
+        // For inclusive (..=): if i > end, break
+        func.push(Instruction::LocalGet(idx_local));
+        func.push(Instruction::LocalGet(end_local));
+        if inclusive {
+            func.push(Instruction::I64GtS); // i > end
+        } else {
+            func.push(Instruction::I64GeS); // i >= end
+        }
+        func.push(Instruction::BrIf(1)); // Break if done
+
+        // Push current value for pattern binding
+        func.push(Instruction::LocalGet(idx_local));
+
+        // Bind pattern (e.g., `i` in `for i in 0..n`)
+        self.bind_pattern(pattern)?;
+
+        // Compile body
+        self.compile_block(body)?;
+
+        let func = self.current_function_mut().unwrap();
+
+        // Drop body result
+        func.push(Instruction::Drop);
+
+        // Increment index: i = i + 1
+        func.push(Instruction::LocalGet(idx_local));
+        func.push(Instruction::I64Const(1));
+        func.push(Instruction::I64Add);
+        func.push(Instruction::LocalSet(idx_local));
 
         // Continue
         func.push(Instruction::Br(0));
@@ -805,7 +933,7 @@ impl WasmCompiler {
     }
 
     /// Bind pattern variables from value on stack.
-    fn bind_pattern(&mut self, pattern: &Pattern) -> WasmResult<()> {
+    pub(crate) fn bind_pattern(&mut self, pattern: &Pattern) -> WasmResult<()> {
         match pattern {
             Pattern::Wildcard => {
                 // Discard value

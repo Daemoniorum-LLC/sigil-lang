@@ -129,6 +129,25 @@ impl ImportRegistry {
         self.register_vdom_imports();
         self.register_signal_imports();
         self.register_async_imports();
+        self.register_browser_imports();
+    }
+
+    fn register_browser_imports(&mut self) {
+        use ValType::*;
+        // Window and document access
+        self.add_import("browser", "window", vec![], vec![I32]);
+        self.add_import("browser", "document", vec![], vec![I32]);
+        // Window properties
+        self.add_import("browser", "inner_width", vec![I32], vec![I32]);
+        self.add_import("browser", "inner_height", vec![I32], vec![I32]);
+        // Event listeners on window
+        self.add_import("browser", "add_event_listener", vec![I32, I32, I32, I32], vec![I32]);
+        self.add_import("browser", "remove_event_listener", vec![I32, I32], vec![]);
+        // Media query
+        self.add_import("browser", "match_media", vec![I32, I32], vec![I32]);
+        self.add_import("browser", "mql_matches", vec![I32], vec![I32]);
+        self.add_import("browser", "mql_add_listener", vec![I32, I32], vec![I32]);
+        self.add_import("browser", "mql_remove_listener", vec![I32, I32], vec![]);
     }
 
     fn register_console_imports(&mut self) {

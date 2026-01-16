@@ -284,8 +284,7 @@ pub enum Token {
     Const,
     #[token("type")]
     Type,
-    #[token("struct")]
-    #[token("sigil")]  // Alternative syntax for struct
+    #[token("sigil")]
     Struct,
     #[token("enum")]
     Enum,
@@ -293,11 +292,9 @@ pub enum Token {
     Trait,
     #[token("impl")]
     Impl,
-    #[token("mod")]
-    #[token("scroll")]  // Sigil-native: scroll = mod
+    #[token("scroll")]
     Mod,
-    #[token("use")]
-    #[token("invoke")]  // Sigil-native: invoke = use
+    #[token("invoke")]
     Use,
     #[token("pub")]
     Pub,
@@ -347,8 +344,7 @@ pub enum Token {
     SelfUpper,
     #[token("super")]
     Super,
-    #[token("crate")]
-    #[token("tome")]  // Sigil-native: tome = crate
+    #[token("tome")]
     Crate,
     #[token("where")]
     Where,

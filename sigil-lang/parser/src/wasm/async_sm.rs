@@ -284,6 +284,8 @@ mod tests {
         Function {
             visibility: Visibility::Private,
             is_async,
+            is_const: false,
+            is_unsafe: false,
             attrs: FunctionAttrs::default(),
             name: make_ident(name),
             aspect: None,

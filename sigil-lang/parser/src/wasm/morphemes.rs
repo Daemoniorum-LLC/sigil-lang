@@ -152,6 +152,52 @@ impl WasmCompiler {
             PipeOp::Flatten => Err(WasmError::unsupported("flatten operation")),
             PipeOp::Unique => Err(WasmError::unsupported("unique operation")),
             PipeOp::Enumerate => Err(WasmError::unsupported("enumerate operation")),
+
+            // Function call in pipe
+            PipeOp::Call(call_expr) => {
+                // Check if this is a morpheme function like σ()
+                match call_expr.as_ref() {
+                    Expr::Call { func, args } => {
+                        // If function is a path like σ, treat as morpheme
+                        if let Expr::Path(path) = func.as_ref() {
+                            if let Some(seg) = path.segments.first() {
+                                let name = &seg.ident.name;
+                                match name.as_str() {
+                                    "σ" | "Σ" | "sort" | "collect" => {
+                                        // Sort/collect operation - Σ often used to materialize/collect
+                                        return self.compile_sort(None);
+                                    }
+                                    "τ" | "map" | "transform" => {
+                                        if let Some(body) = args.first() {
+                                            return self.compile_transform(body);
+                                        }
+                                    }
+                                    "φ" | "filter" => {
+                                        if let Some(pred) = args.first() {
+                                            return self.compile_filter(pred);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    // Simple path like σ (no call parens)
+                    Expr::Path(path) => {
+                        if let Some(seg) = path.segments.first() {
+                            let name = &seg.ident.name;
+                            match name.as_str() {
+                                "σ" | "sort" | "collect" => {
+                                    return self.compile_sort(None);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                Err(WasmError::unsupported("call in pipe"))
+            }
         }
     }
 
@@ -793,7 +839,7 @@ impl WasmCompiler {
     /// Compile a closure expression to a table entry and return its index.
     fn compile_closure_to_table(&mut self, expr: &Expr) -> WasmResult<u32> {
         match expr {
-            Expr::Closure { params, body, is_move: _ } => {
+            Expr::Closure { params, body, is_move: _, return_type: _ } => {
                 // Create a new function for this closure (is_move handled in closure compilation)
                 let fn_name = format!("__closure_{}", self.functions.len());
 
@@ -1088,7 +1134,7 @@ impl WasmCompiler {
     fn compile_apply_to_stack(&mut self, func_expr: &Expr) -> WasmResult<()> {
         // Store value, compile function call, apply
         match func_expr {
-            Expr::Closure { params, body, is_move: _ } => {
+            Expr::Closure { params, body, is_move: _, return_type: _ } => {
                 // Inline closure: bind parameter and compile body (is_move irrelevant for inline)
                 if params.len() != 1 {
                     return Err(WasmError::arity_mismatch(1, params.len()));
@@ -1138,7 +1184,7 @@ impl WasmCompiler {
     /// Helper: Apply a binary function to two values on stack.
     fn compile_apply_binary(&mut self, func_expr: &Expr) -> WasmResult<()> {
         match func_expr {
-            Expr::Closure { params, body, is_move: _ } => {
+            Expr::Closure { params, body, is_move: _, return_type: _ } => {
                 // is_move irrelevant for inline binary closure application
                 if params.len() != 2 {
                     return Err(WasmError::arity_mismatch(2, params.len()));
@@ -1321,6 +1367,8 @@ mod tests {
                 op: crate::ast::BinOp::Mul,
                 right: Box::new(make_int(2)),
             }),
+            is_move: false,
+            return_type: None,
         };
 
         // Simulate array on stack
@@ -1359,6 +1407,8 @@ mod tests {
                 op: crate::ast::BinOp::Gt,
                 right: Box::new(make_int(0)),
             }),
+            is_move: false,
+            return_type: None,
         };
 
         // Simulate array on stack
@@ -1407,6 +1457,8 @@ mod tests {
                 op: crate::ast::BinOp::Add,
                 right: Box::new(make_path("b")),
             }),
+            is_move: false,
+            return_type: None,
         };
 
         // Simulate array on stack

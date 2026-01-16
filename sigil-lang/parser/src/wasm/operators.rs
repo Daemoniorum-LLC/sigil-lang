@@ -72,6 +72,11 @@ impl WasmCompiler {
                 func.push(Instruction::I64ExtendI32U);
             }
 
+            // Matrix/tensor operations - not yet supported in WASM
+            BinOp::MatMul => return Err(WasmError::unsupported("matrix multiplication")),
+            BinOp::Hadamard => return Err(WasmError::unsupported("hadamard product")),
+            BinOp::TensorProd => return Err(WasmError::unsupported("tensor product")),
+
             // String concatenation - calls runtime function
             BinOp::Concat => {
                 // Both operands are on stack as i64 (string pointers extended)

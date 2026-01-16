@@ -1151,19 +1151,13 @@ fn find_linker() -> String {
 /// Compile a Sigil source file to WebAssembly.
 #[cfg(feature = "wasm")]
 fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
-    let source = match fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Error reading file '{}': {}", path, e);
-            return ExitCode::from(1);
-        }
-    };
+    use std::path::Path;
 
     println!("Compiling {} -> {} (WebAssembly)", path, output);
 
-    // Create WASM compiler and compile
+    // Create WASM compiler and compile from path (enables multi-file module resolution)
     let mut compiler = WasmCompiler::new();
-    match compiler.compile(&source) {
+    match compiler.compile_from_path(Path::new(path)) {
         Ok(wasm_bytes) => {
             // Write the WASM bytes to output file
             if let Err(e) = fs::write(output, &wasm_bytes) {

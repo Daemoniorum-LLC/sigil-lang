@@ -26,6 +26,8 @@ pub enum WasmErrorKind {
     Internal,
     /// Invalid WASM generation
     Codegen,
+    /// I/O error (file not found, etc.)
+    Io,
 }
 
 impl WasmError {
@@ -122,6 +124,28 @@ impl WasmError {
     pub fn div_by_zero() -> Self {
         Self::new(WasmErrorKind::Codegen, "division by zero")
     }
+
+    pub fn io(message: impl Into<String>) -> Self {
+        Self::new(WasmErrorKind::Io, message)
+    }
+
+    pub fn module_not_found(module: &str, paths_tried: &[String]) -> Self {
+        Self::new(
+            WasmErrorKind::Io,
+            format!(
+                "module '{}' not found, tried: {}",
+                module,
+                paths_tried.join(", ")
+            ),
+        )
+    }
+
+    pub fn circular_import(path: &str) -> Self {
+        Self::new(
+            WasmErrorKind::Io,
+            format!("circular import detected: {}", path),
+        )
+    }
 }
 
 impl fmt::Display for WasmError {
@@ -133,6 +157,7 @@ impl fmt::Display for WasmError {
             WasmErrorKind::Unsupported => "unsupported",
             WasmErrorKind::Internal => "internal error",
             WasmErrorKind::Codegen => "codegen error",
+            WasmErrorKind::Io => "i/o error",
         };
 
         if let Some(span) = &self.span {

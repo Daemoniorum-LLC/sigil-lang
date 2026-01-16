@@ -97,7 +97,7 @@ impl WasmCompiler {
             }
 
             // Closure
-            Expr::Closure { params, body, is_move } => self.compile_closure(params, body, *is_move),
+            Expr::Closure { params, body, is_move, return_type: _ } => self.compile_closure(params, body, *is_move),
 
             // Pipe expression (morphemes)
             Expr::Pipe { expr, operations } => self.compile_pipe(expr, operations),
@@ -150,9 +150,37 @@ impl WasmCompiler {
                 self.compile_evidential(expr, *evidentiality)
             }
 
-            // Unsupported for now
-            Expr::Incorporation { .. } => Err(WasmError::unsupported("incorporation expressions")),
-            Expr::Macro { .. } => Err(WasmError::unsupported("macro expressions")),
+            // Incorporation: expr·method(args) chains
+            // Handle simple method call patterns: obj·method(args) becomes method call
+            Expr::Incorporation { segments } => {
+                self.compile_incorporation(segments)
+            }
+            Expr::Macro { path, .. } => {
+                // Handle builtin macros
+                let macro_name = path.segments.last().map(|s| s.ident.name.as_str()).unwrap_or("");
+                match macro_name {
+                    // unreachable!(), panic!(), todo!() -> WASM unreachable instruction
+                    "unreachable" | "panic" | "todo" | "unimplemented" => {
+                        let func = self
+                            .current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::Unreachable);
+                        // Push a dummy value for type consistency
+                        func.push(Instruction::I64Const(0));
+                        Ok(())
+                    }
+                    // debug_assert!() -> no-op in release builds
+                    "debug_assert" | "debug_assert_eq" | "debug_assert_ne" => {
+                        let func = self
+                            .current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        // No-op, push unit
+                        func.push(Instruction::I64Const(0));
+                        Ok(())
+                    }
+                    _ => Err(WasmError::unsupported(&format!("macro: {}!", macro_name))),
+                }
+            }
             Expr::Unsafe(_) => Err(WasmError::unsupported("unsafe blocks")),
             Expr::Deref(_) => Err(WasmError::unsupported("raw pointer dereference")),
             Expr::AddrOf { .. } => Err(WasmError::unsupported("address-of expressions")),
@@ -185,12 +213,51 @@ impl WasmCompiler {
             Expr::LegionBroadcast { .. } => Err(WasmError::unsupported("Legion broadcast")),
             Expr::LegionConsensus { .. } => Err(WasmError::unsupported("Legion consensus")),
             Expr::LegionDecay { .. } => Err(WasmError::unsupported("Legion decay")),
+            Expr::NamedArg { .. } => Err(WasmError::unsupported("named argument expressions")),
         }
     }
 
     /// Compile a path (variable reference).
     fn compile_path(&mut self, path: &TypePath) -> WasmResult<()> {
-        let name = path.segments.first().map(|s| s.ident.name.as_str()).unwrap_or("");
+        // Extract and resolve path segments (handles tome:: prefix)
+        let segments: Vec<String> = path
+            .segments
+            .iter()
+            .map(|s| s.ident.name.clone())
+            .collect();
+        let resolved = self.resolve_path(&segments);
+        let name = resolved.first().map(|s| s.as_str()).unwrap_or("");
+
+        // Handle Option::None and Result::Ok/Err as builtins (single-segment shortcuts)
+        // None -> 0 (Option is represented as 0=None, non-zero=Some(value))
+        if name == "None" && resolved.len() == 1 {
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I64Const(0));
+            return Ok(());
+        }
+
+        // Check for unit enum variant (e.g., VNode::Empty or tome::vdom::VNode::Empty)
+        if resolved.len() >= 2 {
+            // Last two segments are [EnumName, VariantName]
+            let enum_name = &resolved[resolved.len() - 2];
+            let variant_name = &resolved[resolved.len() - 1];
+
+            if let Some(layout) = self.enum_layouts.get(enum_name).cloned() {
+                if let Some(tag) = layout.variant_tag(variant_name) {
+                    // Check if it's a unit variant (no payload)
+                    if let Some((_, _, None)) = layout.variants.iter().find(|(n, _, _)| n == variant_name) {
+                        // Unit variant - just push the tag
+                        let func = self
+                            .current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::I64Const(tag as i64));
+                        return Ok(());
+                    }
+                }
+            }
+        }
 
         // Check local variables first
         if let Some(func) = self.current_function() {
@@ -224,6 +291,37 @@ impl WasmCompiler {
                 .current_function_mut()
                 .ok_or_else(|| WasmError::internal("not in function context"))?;
             func.push(Instruction::GlobalGet(idx));
+            return Ok(());
+        }
+
+        // Handle known module/type paths as dummy values
+        // These occur when the parser splits qualified paths like tome::web_sys::Closure
+        // into separate path segments that need to be evaluated
+        let is_module_or_type = matches!(
+            name,
+            // Web/DOM types
+            "tome" | "web_sys" | "Closure" | "JsValue" | "Event" | "MediaQueryList"
+            | "MediaQueryListEvent" | "Window" | "Document" | "Element" | "Node"
+            | "HtmlElement" | "HtmlInputElement" | "HtmlButtonElement"
+            | "FocusEvent" | "KeyboardEvent" | "MouseEvent" | "WheelEvent"
+            | "TouchEvent" | "InputEvent" | "AnimationEvent" | "TransitionEvent"
+            | "DragEvent" | "ClipboardEvent" | "PointerEvent"
+            // Standard library types and modules
+            | "Vec" | "HashMap" | "HashSet" | "VecDeque" | "BTreeMap" | "BTreeSet"
+            | "Box" | "Rc" | "Arc" | "RefCell" | "Cell" | "Mutex" | "RwLock"
+            | "Option" | "Result" | "Some" | "None" | "Ok" | "Err"
+            | "String" | "str" | "char" | "bool" | "i8" | "i16" | "i32" | "i64"
+            | "u8" | "u16" | "u32" | "u64" | "f32" | "f64" | "usize" | "isize"
+            | "TypeId" | "Any" | "Clone" | "Copy" | "Debug" | "Default" | "PartialEq"
+            // Module paths
+            | "std" | "core" | "alloc" | "mem" | "collections" | "any" | "rc" | "cell"
+        );
+        if is_module_or_type {
+            // Push a dummy value (0) - these are used as type annotations or namespace prefixes
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I64Const(0));
             return Ok(());
         }
 
@@ -371,6 +469,58 @@ impl WasmCompiler {
                 index,
             } => self.compile_index_assign(array, index, value),
 
+            // Dereference assignment: *ptr = value
+            Expr::Deref(ptr_expr) => self.compile_deref_assign(ptr_expr, value),
+
+            // Dereference via Unary operator: *expr = value
+            Expr::Unary { op: crate::ast::UnaryOp::Deref, expr: ptr_expr } => {
+                self.compile_deref_assign(ptr_expr, value)
+            }
+
+            // Incorporation as assignment target (e.g., self.field·borrow_mut() for RefCell)
+            // We treat borrow_mut() as identity in WASM, so this becomes a field assignment
+            Expr::Incorporation { segments } => {
+                // Try to reduce incorporation to a field access for assignment
+                // This handles patterns like `self.value·borrow_mut()` -> assign to self.value
+                if segments.len() >= 2 {
+                    // Check if last segment is a RefCell borrowing method
+                    let last_name = &segments.last().unwrap().name.name;
+                    if last_name == "borrow_mut" || last_name == "get_mut" {
+                        // Build the receiver from all segments except the last
+                        let receiver = self.build_incorporation_receiver(&segments[..segments.len() - 1])?;
+                        // Compile receiver (struct pointer)
+                        self.compile_expr(&receiver)?;
+
+                        let func = self.current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        let ptr_local = func.alloc_local("__assign_ptr".to_string(), ValType::I64);
+                        func.push(Instruction::LocalSet(ptr_local));
+
+                        // Compile value
+                        self.compile_expr(value)?;
+
+                        let func = self.current_function_mut().unwrap();
+                        let value_local = func.alloc_local("__assign_val".to_string(), ValType::I64);
+                        func.push(Instruction::LocalTee(value_local));
+
+                        // Store: ptr in i32, value on stack
+                        func.push(Instruction::LocalGet(ptr_local));
+                        func.push(Instruction::I32WrapI64);
+                        func.push(Instruction::LocalGet(value_local));
+                        func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        }));
+
+                        // Return the assigned value
+                        func.push(Instruction::LocalGet(value_local));
+                        return Ok(());
+                    }
+                }
+                Err(WasmError::invalid_assignment_target())
+            }
+
             _ => Err(WasmError::invalid_assignment_target()),
         }
     }
@@ -449,6 +599,108 @@ impl WasmCompiler {
 
         // Return the value
         self.compile_expr(value)
+    }
+
+    /// Compile dereference assignment: *ptr = value
+    fn compile_deref_assign(&mut self, ptr_expr: &Expr, value: &Expr) -> WasmResult<()> {
+        // For *ptr = value where ptr points to memory:
+        // 1. Compile ptr expression to get address
+        // 2. Compile value
+        // 3. Store value at address
+
+        // Compile the pointer expression
+        self.compile_expr(ptr_expr)?;
+
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let ptr_local = func.alloc_local("__deref_ptr".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(ptr_local));
+
+        // Compile value
+        self.compile_expr(value)?;
+
+        let func = self.current_function_mut().unwrap();
+        let value_local = func.alloc_local("__deref_val".to_string(), ValType::I64);
+        func.push(Instruction::LocalTee(value_local));
+
+        // Store value at pointer address
+        func.push(Instruction::LocalGet(ptr_local));
+        func.push(Instruction::I32WrapI64);
+        func.push(Instruction::LocalGet(value_local));
+        func.push(Instruction::I64Store(wasm_encoder::MemArg {
+            offset: 0,
+            align: 3,
+            memory_index: 0,
+        }));
+
+        // Return the assigned value
+        func.push(Instruction::LocalGet(value_local));
+        Ok(())
+    }
+
+    /// Build an expression from incorporation segments for use as assignment receiver.
+    fn build_incorporation_receiver(
+        &self,
+        segments: &[crate::ast::IncorporationSegment],
+    ) -> WasmResult<Expr> {
+        if segments.is_empty() {
+            return Err(WasmError::internal("empty incorporation receiver"));
+        }
+
+        // Start with the first segment
+        let first = &segments[0];
+        let mut result = if let Some(args) = &first.args {
+            if args.len() == 1 && first.name.name == "__lit__" {
+                // Literal
+                args[0].clone()
+            } else if args.len() == 1 {
+                // Field access: { name: "field", args: [base] }
+                Expr::Field {
+                    expr: Box::new(args[0].clone()),
+                    field: first.name.clone(),
+                }
+            } else {
+                // Function call
+                Expr::Call {
+                    func: Box::new(Expr::Path(crate::ast::TypePath {
+                        segments: vec![crate::ast::PathSegment {
+                            ident: first.name.clone(),
+                            generics: None,
+                        }],
+                    })),
+                    args: args.clone(),
+                }
+            }
+        } else {
+            // Simple variable reference
+            Expr::Path(crate::ast::TypePath {
+                segments: vec![crate::ast::PathSegment {
+                    ident: first.name.clone(),
+                    generics: None,
+                }],
+            })
+        };
+
+        // Chain remaining segments as method calls/field accesses
+        for seg in &segments[1..] {
+            if let Some(args) = &seg.args {
+                // Method call
+                result = Expr::MethodCall {
+                    receiver: Box::new(result),
+                    method: seg.name.clone(),
+                    type_args: None,
+                    args: args.clone(),
+                };
+            } else {
+                // Field access
+                result = Expr::Field {
+                    expr: Box::new(result),
+                    field: seg.name.clone(),
+                };
+            }
+        }
+
+        Ok(result)
     }
 
     /// Get field offset from struct layout.
@@ -616,11 +868,47 @@ impl WasmCompiler {
 
     fn compile_range(
         &mut self,
-        _start: Option<&Expr>,
-        _end: Option<&Expr>,
-        _inclusive: bool,
+        start: Option<&Expr>,
+        end: Option<&Expr>,
+        inclusive: bool,
     ) -> WasmResult<()> {
-        Err(WasmError::unsupported("range expressions"))
+        // Create a range object as a two-element struct: (start, end)
+        // The morpheme system can use this to iterate
+
+        // Compile start (default to 0)
+        if let Some(s) = start {
+            self.compile_expr(s)?;
+        } else {
+            let func = self.current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I64Const(0));
+        }
+
+        // Compile end
+        if let Some(e) = end {
+            self.compile_expr(e)?;
+            // If inclusive, add 1 to include the end value
+            if inclusive {
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::I64Const(1));
+                func.push(Instruction::I64Add);
+            }
+        } else {
+            // Open range - use a large value
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::I64Const(i64::MAX));
+        }
+
+        // Create a packed range representation: pack start and end into locals
+        // For morpheme usage, the runtime will handle unpacking
+        // Stack has [start, end]. Pack them into a simple representation.
+
+        // For now, create an array handle via import (2 args: start, end)
+        let range_idx = self.get_or_add_external_import("morpheme", "range_new", 2);
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::Call(range_idx));
+
+        Ok(())
     }
 
     fn compile_cast(&mut self, expr: &Expr, _ty: &crate::ast::TypeExpr) -> WasmResult<()> {
@@ -630,10 +918,26 @@ impl WasmCompiler {
 
     fn compile_let_expr(
         &mut self,
-        _pattern: &crate::ast::Pattern,
-        _value: &Expr,
+        pattern: &crate::ast::Pattern,
+        value: &Expr,
     ) -> WasmResult<()> {
-        Err(WasmError::unsupported("let expressions"))
+        // Compile the value
+        self.compile_expr(value)?;
+
+        // Duplicate the value (one for binding, one for result)
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let temp = func.alloc_local("__let_tmp".to_string(), wasm_encoder::ValType::I64);
+        func.push(Instruction::LocalTee(temp));
+
+        // Bind the pattern (consumes the value on stack)
+        self.bind_pattern(pattern)?;
+
+        // Push the value again as the result of the let expression
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::LocalGet(temp));
+
+        Ok(())
     }
 
     fn compile_evidential(

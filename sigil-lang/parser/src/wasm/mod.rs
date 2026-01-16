@@ -117,6 +117,18 @@ pub struct WasmCompiler {
     /// Cell pointers for mutable captures: variable name -> heap address of cell
     pub(crate) capture_cells: HashMap<String, u32>,
 
+    /// External module imports: simple_name -> (module_name, qualified_name)
+    /// Used for cross-module WASM linking
+    pub(crate) external_imports: HashMap<String, (String, String)>,
+
+    /// Current module path (for nested module compilation)
+    /// e.g., ["vdom", "element"] when compiling vdom::element module
+    pub(crate) module_path: Vec<String>,
+
+    /// All items organized by qualified path
+    /// Maps "vdom::Element" -> function/type index
+    pub(crate) qualified_items: HashMap<String, QualifiedItem>,
+
     /// Optimization level
     pub(crate) opt_level: OptLevel,
 
@@ -128,6 +140,22 @@ pub struct WasmCompiler {
 
     /// Source file name for source maps
     pub(crate) source_file: String,
+
+    /// Source directory for resolving file-based modules (scroll foo;)
+    pub(crate) source_dir: std::path::PathBuf,
+
+    /// Already-loaded module files to prevent circular imports
+    pub(crate) loaded_modules: std::collections::HashSet<std::path::PathBuf>,
+
+    /// Cached parsed module items (keyed by canonical path)
+    pub(crate) module_cache: std::collections::HashMap<std::path::PathBuf, Vec<crate::span::Spanned<crate::ast::Item>>>,
+
+    /// Deferred static initializers: (global_index, init_expression)
+    /// These are statics with non-constant initializers that need runtime init
+    pub(crate) deferred_static_inits: Vec<(u32, crate::ast::Expr)>,
+
+    /// Start function index (for __wasm_start if we have deferred inits)
+    pub(crate) start_function_idx: Option<u32>,
 }
 
 impl WasmCompiler {
@@ -153,10 +181,18 @@ impl WasmCompiler {
             scope_vars: Vec::new(),
             mutable_captures: std::collections::HashSet::new(),
             capture_cells: HashMap::new(),
+            external_imports: HashMap::new(),
+            module_path: Vec::new(),
+            qualified_items: HashMap::new(),
             opt_level: OptLevel::Standard,
             debug_info: false,
             source_map: None,
             source_file: String::new(),
+            source_dir: std::path::PathBuf::new(),
+            loaded_modules: std::collections::HashSet::new(),
+            module_cache: std::collections::HashMap::new(),
+            deferred_static_inits: Vec::new(),
+            start_function_idx: None,
         };
 
         // Add heap pointer global
@@ -205,6 +241,11 @@ impl WasmCompiler {
         // Compile AST
         self.compile_file(&ast)?;
 
+        // Generate __wasm_start function if we have deferred static initializers
+        if !self.deferred_static_inits.is_empty() {
+            self.generate_start_function()?;
+        }
+
         // Generate WASM module
         self.generate_module()
     }
@@ -213,6 +254,31 @@ impl WasmCompiler {
     pub fn compile_file_named(&mut self, source: &str, file_name: &str) -> WasmResult<Vec<u8>> {
         self.source_file = file_name.to_string();
         self.compile(source)
+    }
+
+    /// Compile from a file path, enabling multi-file module resolution.
+    pub fn compile_from_path(&mut self, path: &std::path::Path) -> WasmResult<Vec<u8>> {
+        use std::fs;
+
+        // Set source directory for resolving file-based modules
+        if let Some(parent) = path.parent() {
+            self.source_dir = parent.to_path_buf();
+        }
+
+        // Track this file as loaded
+        let canonical = path.canonicalize()
+            .map_err(|e| WasmError::io(format!("cannot resolve path {}: {}", path.display(), e)))?;
+        self.loaded_modules.insert(canonical);
+
+        // Read and compile
+        let source = fs::read_to_string(path)
+            .map_err(|e| WasmError::io(format!("cannot read {}: {}", path.display(), e)))?;
+
+        self.source_file = path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "input.sigil".to_string());
+
+        self.compile(&source)
     }
 
     /// Get or create a type index.
@@ -296,9 +362,153 @@ impl WasmCompiler {
         }
     }
 
+    /// Get or add an external module import.
+    /// Returns the function index for calling the imported function.
+    pub fn get_or_add_external_import(&mut self, module: &str, name: &str, arg_count: usize) -> u32 {
+        // Check if already imported
+        let qualified = format!("{}_{}", module, name);
+        if let Some(idx) = self.imports.get_func(&qualified) {
+            return idx;
+        }
+
+        // Also check by simple name
+        if let Some(idx) = self.imports.get_func(name) {
+            return idx;
+        }
+
+        // Add as new import with generic signature:
+        // All args are i64, returns i64 (uniform type system)
+        let params: Vec<ValType> = vec![ValType::I64; arg_count];
+        let results = vec![ValType::I64];
+
+        self.imports.add_import(module, name, params, results)
+    }
+
+    /// Get the current qualified path prefix.
+    /// Returns "foo::bar" if we're currently compiling inside scroll foo { scroll bar { } }
+    pub fn current_module_prefix(&self) -> String {
+        self.module_path.join("::")
+    }
+
+    /// Build a qualified name from the current module path and an item name.
+    pub fn qualify_name(&self, name: &str) -> String {
+        if self.module_path.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}::{}", self.current_module_prefix(), name)
+        }
+    }
+
+    /// Look up a qualified item by path.
+    /// Handles paths like "foo::bar::Baz" or just "Baz".
+    pub fn lookup_qualified(&self, path: &[String]) -> Option<&QualifiedItem> {
+        let qualified = path.join("::");
+        self.qualified_items.get(&qualified)
+    }
+
+    /// Register an item with its qualified path.
+    pub fn register_qualified(&mut self, name: &str, item: QualifiedItem) {
+        let qualified = self.qualify_name(name);
+        self.qualified_items.insert(qualified, item);
+    }
+
+    /// Resolve a path that may start with "tome" (crate root).
+    /// Returns the resolved path segments.
+    pub fn resolve_path(&self, segments: &[String]) -> Vec<String> {
+        if segments.first().map(|s| s.as_str()) == Some("tome") {
+            // tome:: means crate root - skip the "tome" prefix
+            segments[1..].to_vec()
+        } else {
+            segments.to_vec()
+        }
+    }
+
+    /// Look up a function by qualified path.
+    /// Handles tome:: prefix and module-relative paths.
+    pub fn get_func_by_path(&self, segments: &[String]) -> Option<u32> {
+        let resolved = self.resolve_path(segments);
+
+        // If it's a single-segment path, check simple name first
+        if resolved.len() == 1 {
+            if let Some(idx) = self.func_map.get(&resolved[0]) {
+                return Some(*idx);
+            }
+        }
+
+        // Try qualified lookup
+        let qualified = resolved.join("::");
+        if let Some(idx) = self.func_map.get(&qualified) {
+            return Some(*idx);
+        }
+
+        // Check in qualified_items
+        if let Some(QualifiedItem::Function(idx)) = self.qualified_items.get(&qualified) {
+            return Some(*idx);
+        }
+
+        // Check imports
+        self.imports.get_func(&qualified)
+    }
+
     // compile_file is implemented in statements.rs
 
-    fn generate_module(&self) -> WasmResult<Vec<u8>> {
+    /// Generate the __wasm_start function for deferred static initialization.
+    /// This function runs automatically when the WASM module is instantiated.
+    fn generate_start_function(&mut self) -> WasmResult<()> {
+        use types::CompiledFunction;
+        use wasm_encoder::Instruction;
+
+        // Create __wasm_start function: () -> ()
+        let type_idx = self.get_or_create_type(vec![], vec![]);
+        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+
+        let mut start_func = CompiledFunction::new(
+            "__wasm_start".to_string(),
+            type_idx,
+            func_idx,
+            vec![],     // No params
+            vec![],     // No results
+            false,      // Not exported (internal)
+        );
+
+        // Take deferred inits to avoid borrow issues
+        let deferred_inits = std::mem::take(&mut self.deferred_static_inits);
+
+        // Set up for compilation
+        let fn_list_idx = self.functions.len();
+        self.functions.push(start_func);
+        self.current_fn_idx = Some(fn_list_idx);
+
+        // Push an empty scope for locals
+        self.scope_vars.push(std::collections::HashMap::new());
+
+        // For each deferred static init, compile the expression and store in global
+        for (global_idx, init_expr) in deferred_inits {
+            // Compile the initializer expression
+            self.compile_expr(&init_expr)?;
+
+            // Store in the global
+            let func = self.current_function_mut()
+                .ok_or_else(|| error::WasmError::internal("not in function context"))?;
+            func.push(Instruction::GlobalSet(global_idx));
+        }
+
+        // End the function
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::End);
+
+        // Pop scope
+        self.scope_vars.pop();
+        self.current_fn_idx = None;
+
+        // Record this as the start function
+        self.start_function_idx = Some(func_idx);
+        self.func_map.insert("__wasm_start".to_string(), func_idx);
+
+        Ok(())
+    }
+
+    fn generate_module(&mut self) -> WasmResult<Vec<u8>> {
         // TODO: Implement in codegen.rs
         use wasm_encoder::{
             CodeSection, DataSection, DataSegment, DataSegmentMode, ElementSection, Elements,
@@ -395,6 +605,12 @@ impl WasmCompiler {
         }
         module.section(&exports);
 
+        // Start section (for deferred static initialization)
+        if let Some(start_func_idx) = self.start_function_idx {
+            use wasm_encoder::StartSection;
+            module.section(&StartSection { function_index: start_func_idx });
+        }
+
         // Element section (for table initialization)
         if !self.table_elements.is_empty() {
             let mut elements = ElementSection::new();
@@ -434,19 +650,9 @@ impl WasmCompiler {
 
         // Source map custom section (if debug info enabled)
         if self.debug_info {
-            if let Some(ref builder) = self.source_map {
-                // Build a basic source map with function info
-                let mut source_map = SourceMap::new(&self.source_file);
-                // Add function locations from compiled functions
-                for func in &self.functions {
-                    let func_map = sourcemap::FunctionSourceMap {
-                        name: func.name.clone(),
-                        start: SourceLocation::new(1, 0), // Basic placeholder
-                        end: SourceLocation::new(1, 0),
-                        mappings: Vec::new(),
-                    };
-                    source_map.add_function(func_map);
-                }
+            if let Some(builder) = self.source_map.take() {
+                // Build source map from collected function data
+                let source_map = builder.build();
                 let json = source_map.to_compact_json();
                 let custom = wasm_encoder::CustomSection {
                     name: std::borrow::Cow::Borrowed("sigil_sourcemap"),
@@ -528,7 +734,7 @@ mod tests {
 
     #[test]
     fn test_generate_empty_module() {
-        let compiler = WasmCompiler::new();
+        let mut compiler = WasmCompiler::new();
         let result = compiler.generate_module();
         assert!(result.is_ok());
 
@@ -591,7 +797,7 @@ mod validation_tests {
 
     #[test]
     fn test_validate_empty_module() {
-        let compiler = WasmCompiler::new();
+        let mut compiler = WasmCompiler::new();
         let bytes = compiler.generate_module().unwrap();
 
         let result = validate_wasm(&bytes);
@@ -896,7 +1102,7 @@ mod validation_tests {
 
     #[test]
     fn test_module_has_required_sections() {
-        let compiler = WasmCompiler::new();
+        let mut compiler = WasmCompiler::new();
         let bytes = compiler.generate_module().unwrap();
 
         // Count sections - should have at least Type, Import, Memory, Export
@@ -906,7 +1112,7 @@ mod validation_tests {
 
     #[test]
     fn test_module_exports_memory() {
-        let compiler = WasmCompiler::new();
+        let mut compiler = WasmCompiler::new();
         let bytes = compiler.generate_module().unwrap();
 
         use wasmparser::{Parser, Payload};
@@ -1131,5 +1337,158 @@ mod validation_tests {
 
         let validation = validate_wasm(&bytes);
         assert!(validation.is_ok(), "Validation failed: {:?}", validation);
+    }
+
+    #[test]
+    fn test_source_map_generation() {
+        let mut compiler = WasmCompiler::new().with_debug_info();
+
+        let result = compiler.compile(r#"
+            pub fn add(a: i64, b: i64) -> i64 {
+                a + b
+            }
+
+            pub fn multiply(x: i64, y: i64) -> i64 {
+                x * y
+            }
+        "#);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        // Find the source map custom section
+        use wasmparser::{Parser, Payload};
+
+        let parser = Parser::new(0);
+        let mut found_source_map = false;
+        let mut source_map_json = String::new();
+
+        for payload in parser.parse_all(&bytes) {
+            if let Ok(Payload::CustomSection(reader)) = payload {
+                if reader.name() == "sigil_sourcemap" {
+                    found_source_map = true;
+                    source_map_json = String::from_utf8_lossy(reader.data()).to_string();
+                }
+            }
+        }
+
+        assert!(found_source_map, "Source map custom section not found");
+
+        // Verify the source map contains our functions
+        assert!(source_map_json.contains("\"add\""), "Source map should contain 'add' function");
+        assert!(source_map_json.contains("\"multiply\""), "Source map should contain 'multiply' function");
+
+        // Verify it has line/column information (not just placeholder 1,0)
+        let source_map: serde_json::Value = serde_json::from_str(&source_map_json)
+            .expect("Source map should be valid JSON");
+
+        let functions = source_map.get("functions").expect("Should have functions");
+        assert!(functions.is_object());
+
+        // Check that add function has real location data
+        let add_fn = functions.get("add").expect("Should have add function");
+        let start_line = add_fn.get("start").and_then(|s| s.get("line")).and_then(|l| l.as_u64());
+        assert!(start_line.is_some() && start_line.unwrap() > 0, "Add function should have valid start line");
+    }
+
+    #[test]
+    fn test_multi_module_import() {
+        let mut compiler = WasmCompiler::new();
+
+        // Compile code that imports from an external module
+        let result = compiler.compile(r#"
+            invoke math_utils::helper;
+
+            pub fn caller() -> i64 {
+                helper(10, 20)
+            }
+        "#);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        // Verify the WASM is valid
+        let validation = validate_wasm(&bytes);
+        assert!(validation.is_ok(), "Validation failed: {:?}", validation);
+
+        // Verify the import was generated
+        use wasmparser::{Parser, Payload};
+
+        let parser = Parser::new(0);
+        let mut found_helper_import = false;
+
+        for payload in parser.parse_all(&bytes) {
+            if let Ok(Payload::ImportSection(reader)) = payload {
+                for import in reader {
+                    if let Ok(imp) = import {
+                        if imp.module == "math_utils" && imp.name == "helper" {
+                            found_helper_import = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(found_helper_import, "Should have imported 'helper' from 'math_utils' module");
+    }
+
+    #[test]
+    fn test_multi_module_import_with_rename() {
+        let mut compiler = WasmCompiler::new();
+
+        // Compile code that imports with a rename
+        let result = compiler.compile(r#"
+            invoke external::original as renamed;
+
+            pub fn use_renamed() -> i64 {
+                renamed(42)
+            }
+        "#);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        let validation = validate_wasm(&bytes);
+        assert!(validation.is_ok(), "Validation failed: {:?}", validation);
+    }
+
+    #[test]
+    fn test_multi_module_nested_path() {
+        let mut compiler = WasmCompiler::new();
+
+        // Compile code with nested module path
+        let result = compiler.compile(r#"
+            invoke deeply::nested::module::function;
+
+            pub fn call_nested() -> i64 {
+                function()
+            }
+        "#);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        let validation = validate_wasm(&bytes);
+        assert!(validation.is_ok(), "Validation failed: {:?}", validation);
+
+        // Verify the import uses the first path segment as module name
+        use wasmparser::{Parser, Payload};
+
+        let parser = Parser::new(0);
+        let mut found_import = false;
+
+        for payload in parser.parse_all(&bytes) {
+            if let Ok(Payload::ImportSection(reader)) = payload {
+                for import in reader {
+                    if let Ok(imp) = import {
+                        if imp.module == "deeply" && imp.name == "function" {
+                            found_import = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(found_import, "Should have imported 'function' from 'deeply' module");
     }
 }

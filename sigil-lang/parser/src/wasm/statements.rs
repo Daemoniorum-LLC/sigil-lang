@@ -10,8 +10,8 @@ use super::error::{WasmError, WasmResult};
 use super::types::{CompiledFunction, EnumLayout, StructLayout};
 use super::WasmCompiler;
 use crate::ast::{
-    ConstDef, EnumDef, Function, ImplItem, Item, Module, Param, SourceFile, StaticDef, StructDef,
-    StructFields, UseDecl, UseTree, Visibility,
+    ConstDef, EnumDef, Function, ImplItem, Item, MacroInvocation, Module, Param, SourceFile,
+    StaticDef, StructDef, StructFields, UseDecl, UseTree, Visibility,
 };
 use crate::parser::Parser;
 
@@ -532,11 +532,15 @@ impl WasmCompiler {
             Item::Struct(_) | Item::Enum(_) => Ok(()),
             Item::Trait(_) => Ok(()), // Traits are compile-time only
             Item::Impl(impl_block) => {
+                // Push type name onto module path to match how we registered the functions
+                let type_name = self.type_path_to_string(&impl_block.self_ty);
+                self.module_path.push(type_name);
                 for item in &impl_block.items {
                     if let ImplItem::Function(func) = item {
                         self.compile_function(func)?;
                     }
                 }
+                self.module_path.pop();
                 Ok(())
             }
             Item::TypeAlias(_) => Ok(()), // Type aliases are compile-time only
@@ -545,7 +549,7 @@ impl WasmCompiler {
             Item::Actor(_) => Err(WasmError::unsupported("actors")),
             Item::ExternBlock(_) => Ok(()), // Extern functions are imports
             Item::Macro(_) => Ok(()), // Macro definitions are compile-time only
-            Item::MacroInvocation(_) => Err(WasmError::unsupported("macro invocations")),
+            Item::MacroInvocation(mac) => self.compile_macro_invocation(mac),
             Item::Plurality(_) => Err(WasmError::unsupported("plurality items")),
         }
     }
@@ -676,8 +680,16 @@ impl WasmCompiler {
                 func.name.name, qualified_name
             )))?;
 
-        // Find the function in our list
-        let fn_list_idx = (func_idx - self.imports.import_count()) as usize;
+        // Find the function in our list by matching func_idx
+        // NOTE: We can't use (func_idx - import_count) because import_count may have
+        // changed since registration due to dynamic import additions during compilation
+        let fn_list_idx = self.functions
+            .iter()
+            .position(|f| f.func_idx == func_idx)
+            .ok_or_else(|| WasmError::internal(format!(
+                "function not found in list: func_idx={}, qualified='{}'",
+                func_idx, qualified_name
+            )))?;
 
         // Set as current function
         self.current_fn_idx = Some(fn_list_idx);
@@ -805,14 +817,82 @@ impl WasmCompiler {
 
     /// Compile a static definition.
     fn compile_static(&mut self, def: &StaticDef) -> WasmResult<()> {
-        // Add as mutable global
-        let init_val = self.eval_const_expr(&def.value)?;
-
         let idx = self.globals.len() as u32;
-        self.globals.push((ValType::I64, def.mutable, init_val));
-        self.global_map.insert(def.name.name.clone(), idx);
 
+        // Try to evaluate as constant expression first
+        match self.eval_const_expr(&def.value) {
+            Ok(init_val) => {
+                // Constant initializer - add directly
+                self.globals.push((ValType::I64, def.mutable, init_val));
+            }
+            Err(_) => {
+                // Non-constant initializer - defer to __wasm_start
+                // Initialize to 0 for now, actual init happens at runtime
+                self.globals.push((ValType::I64, true, 0)); // Must be mutable for deferred init
+                self.deferred_static_inits.push((idx, def.value.clone()));
+            }
+        }
+
+        self.global_map.insert(def.name.name.clone(), idx);
         Ok(())
+    }
+
+    /// Compile a macro invocation at item level.
+    /// Handles `thread_local! { ... }` by treating it as a static declaration
+    /// (WASM is single-threaded, so thread-local storage is just a global).
+    fn compile_macro_invocation(&mut self, mac: &MacroInvocation) -> WasmResult<()> {
+        // Get the macro name from the path
+        let macro_name = mac
+            .path
+            .segments
+            .last()
+            .map(|s| s.ident.name.as_str())
+            .unwrap_or("");
+
+        match macro_name {
+            "thread_local" => {
+                // Parse the tokens to extract static definitions
+                // tokens looks like: "pub static RUNTIME: RefCell[Runtime] = RefCell·new(Runtime·new());"
+                let tokens = &mac.tokens;
+
+                // Create a synthetic source with a static declaration
+                let source = tokens.trim().to_string();
+
+                // Use the parser to parse this as an item
+                let mut parser = Parser::new(&source);
+                match parser.parse_file() {
+                    Ok(file) => {
+                        // Process each item in the macro body
+                        for item in &file.items {
+                            match &item.node {
+                                Item::Static(def) => {
+                                    self.compile_static(def)?;
+                                }
+                                _ => {
+                                    // thread_local! can only contain static definitions
+                                    return Err(WasmError::internal(format!(
+                                        "thread_local! macro can only contain static definitions, got: {:?}",
+                                        item.node
+                                    )));
+                                }
+                            }
+                        }
+                        Ok(())
+                    }
+                    Err(e) => Err(WasmError::parse(format!(
+                        "failed to parse thread_local! body: {}",
+                        e
+                    ))),
+                }
+            }
+            _ => {
+                // Unknown macro - return unsupported error
+                Err(WasmError::unsupported(&format!(
+                    "macro invocation: {}!",
+                    macro_name
+                )))
+            }
+        }
     }
 
     /// Compile a module (scroll declaration).
