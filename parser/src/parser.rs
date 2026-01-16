@@ -63,7 +63,12 @@ impl<'a> Parser<'a> {
             // Skip comments
             while matches!(
                 self.current_token(),
-                Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_) | Token::DocComment(_))
+                Some(
+                    Token::LineComment(_)
+                        | Token::TildeComment(_)
+                        | Token::BlockComment(_)
+                        | Token::DocComment(_)
+                )
             ) {
                 self.advance();
             }
@@ -681,7 +686,8 @@ impl<'a> Parser<'a> {
     pub(crate) fn skip_comments(&mut self) {
         while matches!(
             self.current_token(),
-            Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) | Some(Token::DocComment(_))
+            Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                | Some(Token::DocComment(_))
         ) {
             self.advance();
         }
@@ -888,7 +894,11 @@ impl<'a> Parser<'a> {
             Some(Token::Use) => Item::Use(self.parse_use(visibility)?),
             Some(Token::Const) => {
                 // Check if this is `const fn` (const function) or just `const X: T = ...`
-                if self.peek_next().map(|t| matches!(t, Token::Fn | Token::Async)) == Some(true) {
+                if self
+                    .peek_next()
+                    .map(|t| matches!(t, Token::Fn | Token::Async))
+                    == Some(true)
+                {
                     Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
                 } else {
                     Item::Const(self.parse_const(visibility)?)
@@ -897,7 +907,9 @@ impl<'a> Parser<'a> {
             Some(Token::Static) => Item::Static(self.parse_static(visibility)?),
             Some(Token::Actor) => Item::Actor(self.parse_actor(visibility)?),
             Some(Token::Extern) => Item::ExternBlock(self.parse_extern_block()?),
-            Some(Token::Macro) | Some(Token::MacroRules) => Item::Macro(self.parse_macro_def(visibility)?),
+            Some(Token::Macro) | Some(Token::MacroRules) => {
+                Item::Macro(self.parse_macro_def(visibility)?)
+            }
             Some(Token::Naked) => {
                 // naked fn -> function with naked attribute
                 Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
@@ -1070,11 +1082,18 @@ impl<'a> Parser<'a> {
                 // Otherwise it's an error
                 let valid_terminator = matches!(
                     self.current_token(),
-                    Some(Token::Fn) | Some(Token::Async) | Some(Token::Unsafe)
-                    | Some(Token::Const) | Some(Token::Type) | Some(Token::Pub)
-                    | Some(Token::DocComment(_)) | Some(Token::LineComment(_))
-                    | Some(Token::BlockComment(_)) | Some(Token::TildeComment(_))
-                    | Some(Token::RBrace) | Some(Token::Hash)
+                    Some(Token::Fn)
+                        | Some(Token::Async)
+                        | Some(Token::Unsafe)
+                        | Some(Token::Const)
+                        | Some(Token::Type)
+                        | Some(Token::Pub)
+                        | Some(Token::DocComment(_))
+                        | Some(Token::LineComment(_))
+                        | Some(Token::BlockComment(_))
+                        | Some(Token::TildeComment(_))
+                        | Some(Token::RBrace)
+                        | Some(Token::Hash)
                 );
                 if !valid_terminator {
                     return match self.current_token().cloned() {
@@ -1310,7 +1329,8 @@ impl<'a> Parser<'a> {
             // Skip doc comments, line comments, and attributes before variants
             while matches!(
                 self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                Some(Token::DocComment(_))
+                    | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
             ) {
                 self.advance();
             }
@@ -1321,7 +1341,8 @@ impl<'a> Parser<'a> {
             // Skip any additional comments after attributes
             while matches!(
                 self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                Some(Token::DocComment(_))
+                    | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
             ) {
                 self.advance();
             }
@@ -1335,7 +1356,8 @@ impl<'a> Parser<'a> {
             // Skip trailing comments after comma
             while matches!(
                 self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                Some(Token::DocComment(_))
+                    | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
             ) {
                 self.advance();
             }
@@ -1397,7 +1419,8 @@ impl<'a> Parser<'a> {
             // Skip doc comments and line comments before trait items
             while matches!(
                 self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                Some(Token::DocComment(_))
+                    | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
             ) {
                 self.advance();
             }
@@ -1437,7 +1460,11 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Const) => {
                 // Check if this is `const fn` or just `const NAME: TYPE;`
-                if self.peek_next().map(|t| matches!(t, Token::Fn | Token::Async)) == Some(true) {
+                if self
+                    .peek_next()
+                    .map(|t| matches!(t, Token::Fn | Token::Async))
+                    == Some(true)
+                {
                     Ok(TraitItem::Function(self.parse_function(visibility)?))
                 } else {
                     self.advance();
@@ -1484,7 +1511,9 @@ impl<'a> Parser<'a> {
             // Skip doc comments, line comments, and attributes before impl items
             while matches!(
                 self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) | Some(Token::Hash)
+                Some(Token::DocComment(_))
+                    | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                    | Some(Token::Hash)
             ) {
                 if self.check(&Token::Hash) {
                     // Skip attribute: #[...] or #![...]
@@ -1530,14 +1559,20 @@ impl<'a> Parser<'a> {
         let visibility = self.parse_visibility()?;
 
         match self.current_token() {
-            Some(Token::Fn) | Some(Token::Async) | Some(Token::Unsafe) => {
-                Ok(ImplItem::Function(self.parse_function_with_attrs(visibility, outer_attrs)?))
-            }
+            Some(Token::Fn) | Some(Token::Async) | Some(Token::Unsafe) => Ok(ImplItem::Function(
+                self.parse_function_with_attrs(visibility, outer_attrs)?,
+            )),
             Some(Token::Type) => Ok(ImplItem::Type(self.parse_type_alias(visibility)?)),
             Some(Token::Const) => {
                 // Check if this is `const fn` or just `const`
-                if self.peek_next().map(|t| matches!(t, Token::Fn | Token::Async)) == Some(true) {
-                    Ok(ImplItem::Function(self.parse_function_with_attrs(visibility, outer_attrs)?))
+                if self
+                    .peek_next()
+                    .map(|t| matches!(t, Token::Fn | Token::Async))
+                    == Some(true)
+                {
+                    Ok(ImplItem::Function(
+                        self.parse_function_with_attrs(visibility, outer_attrs)?,
+                    ))
                 } else {
                     Ok(ImplItem::Const(self.parse_const(visibility)?))
                 }
@@ -1581,7 +1616,10 @@ impl<'a> Parser<'a> {
                 // Skip doc comments and line comments before items
                 while matches!(
                     self.current_token(),
-                    Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                    Some(Token::DocComment(_))
+                        | Some(
+                            Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)
+                        )
                 ) {
                     self.advance();
                 }
@@ -1627,7 +1665,12 @@ impl<'a> Parser<'a> {
                 loop {
                     if matches!(
                         self.current_token(),
-                        Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                        Some(Token::DocComment(_))
+                            | Some(
+                                Token::LineComment(_)
+                                    | Token::TildeComment(_)
+                                    | Token::BlockComment(_)
+                            )
                     ) {
                         self.advance();
                     } else if self.check(&Token::Hash) {
@@ -1648,7 +1691,12 @@ impl<'a> Parser<'a> {
                 loop {
                     if matches!(
                         self.current_token(),
-                        Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                        Some(Token::DocComment(_))
+                            | Some(
+                                Token::LineComment(_)
+                                    | Token::TildeComment(_)
+                                    | Token::BlockComment(_)
+                            )
                     ) {
                         self.advance();
                     } else if self.check(&Token::Hash) {
@@ -2310,7 +2358,7 @@ impl<'a> Parser<'a> {
             Some(Token::Ident(_)) => true,
             Some(Token::SelfUpper) => true,
             Some(Token::Amp) => true,
-            Some(Token::AndAnd) => true,  // Double reference: &&T
+            Some(Token::AndAnd) => true, // Double reference: &&T
             Some(Token::Star) => true,
             Some(Token::LBracket) => true,
             Some(Token::LParen) => true,
@@ -2640,7 +2688,13 @@ impl<'a> Parser<'a> {
                     // Skip comments, doc comments, and attributes
                     while matches!(
                         self.current_token(),
-                        Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) | Some(Token::Hash)
+                        Some(Token::DocComment(_))
+                            | Some(
+                                Token::LineComment(_)
+                                    | Token::TildeComment(_)
+                                    | Token::BlockComment(_)
+                            )
+                            | Some(Token::Hash)
                     ) {
                         if self.check(&Token::Hash) {
                             // Skip attribute: #[...]
@@ -2690,7 +2744,12 @@ impl<'a> Parser<'a> {
                     // Skip comments and doc comments
                     while matches!(
                         self.current_token(),
-                        Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                        Some(Token::DocComment(_))
+                            | Some(
+                                Token::LineComment(_)
+                                    | Token::TildeComment(_)
+                                    | Token::BlockComment(_)
+                            )
                     ) {
                         self.advance();
                     }
@@ -2912,10 +2971,10 @@ impl<'a> Parser<'a> {
                     // [T] - only treat as generic if T looks like a type name (uppercase)
                     // This distinguishes HashMap[String] (generic) from array[index] (indexing)
                     Some(Token::RBracket) => is_type_name,
-                    Some(Token::Comma) => is_type_name,      // [T, U] - but not [a, b] which is array
-                    Some(Token::ColonColon) => true, // [T::U]
-                    Some(Token::Lt) => is_type_name,         // [T<U>]
-                    Some(Token::LBracket) => is_type_name,   // [T[U]] but not [a[b]] (nested index)
+                    Some(Token::Comma) => is_type_name, // [T, U] - but not [a, b] which is array
+                    Some(Token::ColonColon) => true,    // [T::U]
+                    Some(Token::Lt) => is_type_name,    // [T<U>]
+                    Some(Token::LBracket) => is_type_name, // [T[U]] but not [a[b]] (nested index)
                     // Evidentiality markers: [T!], [T?], [T~], [T◊], [T‽]
                     Some(Token::Question) => true,
                     Some(Token::Bang) => true,
@@ -2925,20 +2984,20 @@ impl<'a> Parser<'a> {
                     // Associated type binding: [Output = Type]
                     Some(Token::Eq) => true,
                     // Expression operators indicate index expression, not generics
-                    Some(Token::Plus) => false,      // [pos + 2]
-                    Some(Token::Minus) => false,     // [len - 1]
-                    Some(Token::Star) => false,      // [i * 2]
-                    Some(Token::Slash) => false,     // [i / 2]
-                    Some(Token::DotDot) => false,    // [pos..] range
-                    Some(Token::DotDotEq) => false,  // [0..=n]
-                    _ => false, // Default to not treating as generics
+                    Some(Token::Plus) => false,     // [pos + 2]
+                    Some(Token::Minus) => false,    // [len - 1]
+                    Some(Token::Star) => false,     // [i * 2]
+                    Some(Token::Slash) => false,    // [i / 2]
+                    Some(Token::DotDot) => false,   // [pos..] range
+                    Some(Token::DotDotEq) => false, // [0..=n]
+                    _ => false,                     // Default to not treating as generics
                 }
             }
             Some(Token::SelfUpper) => true, // [Self]
             Some(Token::Amp) => true,       // [&T]
             // Don't treat [*expr] as generic - could be dereference in index
             Some(Token::Star) => false,
-            Some(Token::Fn) => true,        // [fn(...)]
+            Some(Token::Fn) => true, // [fn(...)]
             Some(Token::LParen) => {
                 // [()] could be tuple type generic or parenthesized expression index
                 // Look inside the parens to decide:
@@ -2946,37 +3005,37 @@ impl<'a> Parser<'a> {
                 // - [(T, U)] uppercase identifiers - likely type
                 // - [(expr)] lowercase identifier or expression - likely index
                 match self.peek_n(1) {
-                    Some(Token::RParen) => true,  // [()] empty tuple type
+                    Some(Token::RParen) => true, // [()] empty tuple type
                     Some(Token::Ident(name)) => {
                         // If identifier starts uppercase, likely a type
                         // If lowercase followed by expression ops like 'as', it's an expression
                         if name.chars().next().map_or(false, |c| c.is_uppercase()) {
-                            true  // [(Type...)]
+                            true // [(Type...)]
                         } else {
                             // Check what follows the lowercase identifier
                             match self.peek_n(2) {
-                                Some(Token::As) => false,    // [(n as T)] cast expression
-                                Some(Token::Plus) => false,  // [(a + b)]
-                                Some(Token::Minus) => false, // [(a - b)]
-                                Some(Token::Star) => false,  // [(a * b)]
-                                Some(Token::Slash) => false, // [(a / b)]
-                                Some(Token::Dot) => false,   // [(a.b)]
+                                Some(Token::As) => false,       // [(n as T)] cast expression
+                                Some(Token::Plus) => false,     // [(a + b)]
+                                Some(Token::Minus) => false,    // [(a - b)]
+                                Some(Token::Star) => false,     // [(a * b)]
+                                Some(Token::Slash) => false,    // [(a / b)]
+                                Some(Token::Dot) => false,      // [(a.b)]
                                 Some(Token::LBracket) => false, // [(a[i])]
-                                Some(Token::LParen) => false, // [(f())]
+                                Some(Token::LParen) => false,   // [(f())]
                                 Some(Token::RParen) => false, // [(x)] single lowercase var - expression
-                                Some(Token::Comma) => true,   // [(a, b)] could be tuple type, try it
-                                _ => false  // Default to expression (index)
+                                Some(Token::Comma) => true, // [(a, b)] could be tuple type, try it
+                                _ => false,                 // Default to expression (index)
                             }
                         }
                     }
-                    _ => false  // Default to not treating as generics
+                    _ => false, // Default to not treating as generics
                 }
             }
-            Some(Token::Dyn) => true,       // [dyn Trait]
-            Some(Token::Impl) => true,      // [impl Trait]
+            Some(Token::Dyn) => true,  // [dyn Trait]
+            Some(Token::Impl) => true, // [impl Trait]
             // Path-starting keywords that indicate type paths
-            Some(Token::Crate) => true,     // [crate::Type]
-            Some(Token::Super) => true,     // [super::Type]
+            Some(Token::Crate) => true, // [crate::Type]
+            Some(Token::Super) => true, // [super::Type]
             // Literals indicate expressions, not types
             Some(Token::IntLit(_)) => false,
             Some(Token::FloatLit(_)) => false,
@@ -2995,29 +3054,29 @@ impl<'a> Parser<'a> {
         // Use peek_next (peek_n(0)) to see what's after <
         match self.peek_next().cloned() {
             // Clear type starts that don't look like expressions
-            Some(Token::Amp) => true,   // &T - references are type-like
+            Some(Token::Amp) => true, // &T - references are type-like
             Some(Token::Star) => {
                 // *const T or *mut T - pointer types
                 // *expr - dereference (not a type)
                 // Look at what follows * to distinguish
                 match self.peek_n(1) {
-                    Some(Token::Const) => true,  // *const T - pointer type
-                    Some(Token::Mut) => true,    // *mut T - pointer type
-                    _ => false,  // *expr - dereference, not a type
+                    Some(Token::Const) => true, // *const T - pointer type
+                    Some(Token::Mut) => true,   // *mut T - pointer type
+                    _ => false,                 // *expr - dereference, not a type
                 }
             }
-            Some(Token::LBracket) => true, // [T] - slices
-            Some(Token::LParen) => true, // () - tuple types including unit
-            Some(Token::Fn) => true,    // fn() - function types
-            Some(Token::Simd) => true,  // simd<T, N>
-            Some(Token::Atomic) => true, // atomic<T>
-            Some(Token::Dyn) => true,   // dyn Trait - trait objects
-            Some(Token::Impl) => true,  // impl Trait - existential types
-            Some(Token::SelfUpper) => true, // Self is a type
-            Some(Token::Crate) => true,     // crate::Type - path starting with crate
-            Some(Token::Super) => true,     // super::Type - path starting with super
+            Some(Token::LBracket) => true,    // [T] - slices
+            Some(Token::LParen) => true,      // () - tuple types including unit
+            Some(Token::Fn) => true,          // fn() - function types
+            Some(Token::Simd) => true,        // simd<T, N>
+            Some(Token::Atomic) => true,      // atomic<T>
+            Some(Token::Dyn) => true,         // dyn Trait - trait objects
+            Some(Token::Impl) => true,        // impl Trait - existential types
+            Some(Token::SelfUpper) => true,   // Self is a type
+            Some(Token::Crate) => true,       // crate::Type - path starting with crate
+            Some(Token::Super) => true,       // super::Type - path starting with super
             Some(Token::Lifetime(_)) => true, // 'a, 'static - lifetime type args
-            Some(Token::Underscore) => true, // _ - inferred type
+            Some(Token::Underscore) => true,  // _ - inferred type
             // Evidentiality prefixes on types: !T, ?T, ~T
             Some(Token::Bang) => true,
             Some(Token::Question) => true,
@@ -3031,22 +3090,36 @@ impl<'a> Parser<'a> {
                 // peek_n(1) looks at the token after the identifier
                 // (peek_n(0) = token after <, peek_n(1) = token after that)
                 let is_type_like = name.chars().next().map_or(false, |c| c.is_uppercase())
-                    || matches!(name.as_str(),
+                    || matches!(
+                        name.as_str(),
                         // Primitive types are lowercase but are type names
-                        "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
-                        | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
-                        | "f32" | "f64" | "bool" | "char" | "str"
+                        "u8" | "u16"
+                            | "u32"
+                            | "u64"
+                            | "u128"
+                            | "usize"
+                            | "i8"
+                            | "i16"
+                            | "i32"
+                            | "i64"
+                            | "i128"
+                            | "isize"
+                            | "f32"
+                            | "f64"
+                            | "bool"
+                            | "char"
+                            | "str"
                     );
                 match self.peek_n(1) {
                     // Only treat as generic if clearly followed by generic-context tokens
                     Some(Token::Gt) => true,
-                    Some(Token::Shr) => true,  // >> which may close nested generics
+                    Some(Token::Shr) => true, // >> which may close nested generics
                     // For comma: only treat as generic if identifier looks like a type name
                     // This distinguishes `HashMap<K, V>` (generic) from `x < y,` (comparison in match)
                     Some(Token::Comma) => is_type_like,
-                    Some(Token::ColonColon) => true,  // T::U path
-                    Some(Token::Lt) => true,   // T<U> nested generic
-                    Some(Token::LBracket) => true, // T[U] bracket generic
+                    Some(Token::ColonColon) => true, // T::U path
+                    Some(Token::Lt) => true,         // T<U> nested generic
+                    Some(Token::LBracket) => true,   // T[U] bracket generic
                     // Evidentiality markers after type name: T?, T!, T~, T◊, T‽
                     Some(Token::Question) => true,
                     Some(Token::Bang) => true,
@@ -3069,7 +3142,7 @@ impl<'a> Parser<'a> {
                     Some(Token::Comma) => true, // <50257, 1024, ...>
                     Some(Token::Gt) => true,    // <50257>
                     Some(Token::Shr) => true,   // <50257>> nested
-                    _ => false, // <5 + x> - comparison
+                    _ => false,                 // <5 + x> - comparison
                 }
             }
             Some(Token::FloatLit(_)) => false,
@@ -3085,46 +3158,46 @@ impl<'a> Parser<'a> {
     fn peek_looks_like_pipe_op(&mut self) -> bool {
         match self.peek_next() {
             // Greek letters for morpheme operations
-            Some(Token::Tau) => true,      // |τ{...} transform
-            Some(Token::Phi) => true,      // |φ{...} filter
-            Some(Token::Sigma) => true,    // |σ sort
-            Some(Token::Rho) => true,      // |ρ+ reduce
-            Some(Token::Pi) => true,       // |Π product
-            Some(Token::Alpha) => true,    // |α first
-            Some(Token::Omega) => true,    // |ω last
-            Some(Token::Mu) => true,       // |μ middle
-            Some(Token::Chi) => true,      // |χ choice
-            Some(Token::Nu) => true,       // |ν nth
-            Some(Token::Xi) => true,       // |ξ slice
-            Some(Token::Delta) => true,    // |δ diff
-            Some(Token::Iota) => true,     // |⍳ enumerate
-            Some(Token::ForAll) => true,   // |∀ forall
-            Some(Token::Exists) => true,   // |∃ exists
-            Some(Token::Compose) => true,  // |∘ compose
-            Some(Token::Bowtie) => true,   // |⋈ zip/join
-            Some(Token::Integral) => true, // |∫ scan
-            Some(Token::Partial) => true,  // |∂ diff
-            Some(Token::Nabla) => true,    // |∇ gradient
-            Some(Token::GradeUp) => true,  // |⍋ sort ascending
-            Some(Token::GradeDown) => true, // |⍒ sort descending
-            Some(Token::Rotate) => true,   // |⌽ reverse
-            Some(Token::CycleArrow) => true, // |↻ cycle
+            Some(Token::Tau) => true,         // |τ{...} transform
+            Some(Token::Phi) => true,         // |φ{...} filter
+            Some(Token::Sigma) => true,       // |σ sort
+            Some(Token::Rho) => true,         // |ρ+ reduce
+            Some(Token::Pi) => true,          // |Π product
+            Some(Token::Alpha) => true,       // |α first
+            Some(Token::Omega) => true,       // |ω last
+            Some(Token::Mu) => true,          // |μ middle
+            Some(Token::Chi) => true,         // |χ choice
+            Some(Token::Nu) => true,          // |ν nth
+            Some(Token::Xi) => true,          // |ξ slice
+            Some(Token::Delta) => true,       // |δ diff
+            Some(Token::Iota) => true,        // |⍳ enumerate
+            Some(Token::ForAll) => true,      // |∀ forall
+            Some(Token::Exists) => true,      // |∃ exists
+            Some(Token::Compose) => true,     // |∘ compose
+            Some(Token::Bowtie) => true,      // |⋈ zip/join
+            Some(Token::Integral) => true,    // |∫ scan
+            Some(Token::Partial) => true,     // |∂ diff
+            Some(Token::Nabla) => true,       // |∇ gradient
+            Some(Token::GradeUp) => true,     // |⍋ sort ascending
+            Some(Token::GradeDown) => true,   // |⍒ sort descending
+            Some(Token::Rotate) => true,      // |⌽ reverse
+            Some(Token::CycleArrow) => true,  // |↻ cycle
             Some(Token::QuadDiamond) => true, // |⌺ windows
             Some(Token::SquaredPlus) => true, // |⊞ chunks
             Some(Token::ElementSmallVerticalBar) => true, // |⋳ flatten
-            Some(Token::Union) => true,    // |∪ unique
+            Some(Token::Union) => true,       // |∪ unique
             // Keywords for pipe operations
-            Some(Token::Match) => true,    // |match{...}
-            Some(Token::Send) => true,     // |send{...}
-            Some(Token::Recv) => true,     // |recv
-            Some(Token::Stream) => true,   // |stream{...}
+            Some(Token::Match) => true,  // |match{...}
+            Some(Token::Send) => true,   // |send{...}
+            Some(Token::Recv) => true,   // |recv
+            Some(Token::Stream) => true, // |stream{...}
             // Protocol tokens
             Some(Token::ProtoSend) => true,   // |⇒{...}
             Some(Token::ProtoRecv) => true,   // |⇐
             Some(Token::ProtoStream) => true, // |≋{...}
             // Other pipe operation keywords
-            Some(Token::Header) => true,   // |header{...}
-            Some(Token::Body) => true,     // |body{...}
+            Some(Token::Header) => true,      // |header{...}
+            Some(Token::Body) => true,        // |body{...}
             Some(Token::Interrobang) => true, // |‽
             // Identifier could be pipe method: |collect, |take, etc.
             // But identifiers NOT followed by `(` or `{` are likely bitwise OR operands
@@ -3136,7 +3209,10 @@ impl<'a> Parser<'a> {
                 match after_ident {
                     Some(Token::LParen) | Some(Token::LBrace) => true,
                     // Evidentiality markers followed by call syntax
-                    Some(Token::Bang) | Some(Token::Question) | Some(Token::Tilde) | Some(Token::Lozenge) => {
+                    Some(Token::Bang)
+                    | Some(Token::Question)
+                    | Some(Token::Tilde)
+                    | Some(Token::Lozenge) => {
                         matches!(self.peek_n(2), Some(Token::LParen) | Some(Token::LBrace))
                     }
                     _ => false,
@@ -3399,8 +3475,10 @@ impl<'a> Parser<'a> {
     /// Parse a primary element for const expressions
     fn parse_const_expr_primary(&mut self) -> ParseResult<Expr> {
         match self.current_token().cloned() {
-            Some(Token::IntLit(_)) | Some(Token::HexLit(_))
-            | Some(Token::BinaryLit(_)) | Some(Token::OctalLit(_)) => {
+            Some(Token::IntLit(_))
+            | Some(Token::HexLit(_))
+            | Some(Token::BinaryLit(_))
+            | Some(Token::OctalLit(_)) => {
                 let lit = self.parse_literal()?;
                 Ok(Expr::Literal(lit))
             }
@@ -3566,11 +3644,15 @@ impl<'a> Parser<'a> {
                 // Logical/geometric algebra operators
                 Some(Token::LogicAnd) => BinOp::And, // ∧ (wedge/outer product, parsed as And)
                 // Tensor/array operators
-                Some(Token::CircledDot) => BinOp::Hadamard,     // ⊙ element-wise multiply
-                Some(Token::Tensor) => BinOp::TensorProd,       // ⊗ tensor product
+                Some(Token::CircledDot) => BinOp::Hadamard, // ⊙ element-wise multiply
+                Some(Token::Tensor) => BinOp::TensorProd,   // ⊗ tensor product
                 // Legion operators handled specially below
-                Some(Token::Interfere) | Some(Token::Distribute) | Some(Token::Broadcast)
-                | Some(Token::Gather) | Some(Token::Consensus) | Some(Token::ConfidenceHigh) => {
+                Some(Token::Interfere)
+                | Some(Token::Distribute)
+                | Some(Token::Broadcast)
+                | Some(Token::Gather)
+                | Some(Token::Consensus)
+                | Some(Token::ConfidenceHigh) => {
                     // Handle Legion operators specially
                     lhs = self.parse_legion_operator(lhs)?;
                     continue;
@@ -3802,7 +3884,9 @@ impl<'a> Parser<'a> {
                     Token::Ident(s) => s.clone(),
                     Token::IntLit(s) => s.clone(),
                     Token::FloatLit(s) => s.clone(),
-                    Token::StringLit(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
+                    Token::StringLit(s) => {
+                        format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+                    }
                     Token::CharLit(c) => format!("'{}'", c),
                     Token::Comma => ",".to_string(),
                     Token::Colon => ":".to_string(),
@@ -3881,13 +3965,27 @@ impl<'a> Parser<'a> {
                     _ => format!("{:?}", token),
                 };
                 // Don't add space before . :: ( [ { ) ] } , ;
-                let suppress_space_before = matches!(token,
-                    Token::Dot | Token::ColonColon | Token::LParen | Token::LBracket |
-                    Token::LBrace | Token::RParen | Token::RBracket | Token::RBrace |
-                    Token::Comma | Token::Semi);
-                if !tokens.is_empty() && !suppress_space_before && !tokens.ends_with('.') &&
-                   !tokens.ends_with("::") && !tokens.ends_with('(') && !tokens.ends_with('[') &&
-                   !tokens.ends_with('{') {
+                let suppress_space_before = matches!(
+                    token,
+                    Token::Dot
+                        | Token::ColonColon
+                        | Token::LParen
+                        | Token::LBracket
+                        | Token::LBrace
+                        | Token::RParen
+                        | Token::RBracket
+                        | Token::RBrace
+                        | Token::Comma
+                        | Token::Semi
+                );
+                if !tokens.is_empty()
+                    && !suppress_space_before
+                    && !tokens.ends_with('.')
+                    && !tokens.ends_with("::")
+                    && !tokens.ends_with('(')
+                    && !tokens.ends_with('[')
+                    && !tokens.ends_with('{')
+                {
                     tokens.push(' ');
                 }
                 tokens.push_str(&token_str);
@@ -4066,7 +4164,9 @@ impl<'a> Parser<'a> {
                         let peeked = self.peek_next();
                         // Peek at next token to see if it's a macro delimiter
                         let is_macro = match peeked {
-                            Some(Token::LParen) | Some(Token::LBracket) | Some(Token::LBrace) => true,
+                            Some(Token::LParen) | Some(Token::LBracket) | Some(Token::LBrace) => {
+                                true
+                            }
                             _ => false,
                         };
                         if is_macro {
@@ -4474,7 +4574,10 @@ impl<'a> Parser<'a> {
                     Some(Token::Loop) => {
                         self.advance();
                         let body = self.parse_block()?;
-                        Ok(Expr::Loop { label: Some(label), body })
+                        Ok(Expr::Loop {
+                            label: Some(label),
+                            body,
+                        })
                     }
                     Some(Token::While) => {
                         self.advance();
@@ -4514,7 +4617,7 @@ impl<'a> Parser<'a> {
                         expected: "loop, while, or for after label".to_string(),
                         found: other.unwrap_or(Token::Null),
                         span: self.current_span(),
-                    })
+                    }),
                 }
             }
             Some(Token::Loop) => {
@@ -5403,30 +5506,44 @@ impl<'a> Parser<'a> {
                 Token::SelfLower => true,
                 Token::SelfUpper => true,
                 // Morpheme operators (τ, φ, σ, ρ, Π, Σ, etc.)
-                Token::Tau | Token::Phi | Token::Sigma | Token::Rho
-                | Token::Lambda | Token::Delta | Token::Mu | Token::Chi
-                | Token::GradeUp | Token::GradeDown | Token::Rotate
-                | Token::Iota | Token::ForAll | Token::Exists
-                | Token::Pi | Token::Hourglass => true,
+                Token::Tau
+                | Token::Phi
+                | Token::Sigma
+                | Token::Rho
+                | Token::Lambda
+                | Token::Delta
+                | Token::Mu
+                | Token::Chi
+                | Token::GradeUp
+                | Token::GradeDown
+                | Token::Rotate
+                | Token::Iota
+                | Token::ForAll
+                | Token::Exists
+                | Token::Pi
+                | Token::Hourglass => true,
                 // Closure syntax |x| or || (lookahead for closure parameter list)
                 Token::Pipe => true,
-                Token::OrOr => true,  // Empty closure ||
+                Token::OrOr => true, // Empty closure ||
                 // Move closure
                 Token::Move => true,
                 // Block expression used as pipe target
                 Token::LBrace => true,
                 // These indicate bitwise OR (literals, grouping, conditionals)
-                Token::IntLit(_) | Token::FloatLit(_) | Token::HexLit(_)
-                | Token::BinaryLit(_) | Token::OctalLit(_) => false,
-                Token::LParen => false,  // Parenthesized expression = bitwise OR
+                Token::IntLit(_)
+                | Token::FloatLit(_)
+                | Token::HexLit(_)
+                | Token::BinaryLit(_)
+                | Token::OctalLit(_) => false,
+                Token::LParen => false, // Parenthesized expression = bitwise OR
                 Token::True | Token::False => false,
-                Token::If => false,  // if expression as bitwise OR operand
-                Token::Match => false,  // match expression as bitwise OR operand
+                Token::If => false,    // if expression as bitwise OR operand
+                Token::Match => false, // match expression as bitwise OR operand
                 // Default to pipe for unknown cases
                 _ => true,
             }
         } else {
-            false  // EOF after |, treat as bitwise OR (will error anyway)
+            false // EOF after |, treat as bitwise OR (will error anyway)
         }
     }
 
@@ -5549,7 +5666,10 @@ impl<'a> Parser<'a> {
                     self.expect(Token::RParen)?;
                     Ok(PipeOp::Call(Box::new(Expr::Call {
                         func: Box::new(Expr::Path(TypePath {
-                            segments: vec![PathSegment { ident: name, generics: None }],
+                            segments: vec![PathSegment {
+                                ident: name,
+                                generics: None,
+                            }],
                         })),
                         args,
                     })))
@@ -5662,7 +5782,10 @@ impl<'a> Parser<'a> {
                     // Create a call expression and return as PipeOp::Call
                     Ok(PipeOp::Call(Box::new(Expr::Call {
                         func: Box::new(Expr::Path(TypePath {
-                            segments: vec![PathSegment { ident: name, generics: None }],
+                            segments: vec![PathSegment {
+                                ident: name,
+                                generics: None,
+                            }],
                         })),
                         args,
                     })))
@@ -5842,7 +5965,6 @@ impl<'a> Parser<'a> {
 
                     // Check for args - either (args) or {closure}
                     if has_marker || self.check(&Token::LParen) || self.check(&Token::LBrace) {
-
                         let args = if self.check(&Token::LParen) {
                             self.advance();
                             let args = self.parse_expr_list()?;
@@ -5864,7 +5986,9 @@ impl<'a> Parser<'a> {
 
                         if name.name == "validate" {
                             if args.is_empty() {
-                                return Err(ParseError::Custom("validate requires a predicate".to_string()));
+                                return Err(ParseError::Custom(
+                                    "validate requires a predicate".to_string(),
+                                ));
                             }
                             return Ok(PipeOp::Validate {
                                 predicate: Box::new(args.into_iter().next().unwrap()),
@@ -5884,11 +6008,17 @@ impl<'a> Parser<'a> {
                 // Check for macro invocation: |macro_name!{ ... } or |macro_name!(...)
                 if self.check(&Token::Bang) {
                     let peek = self.peek_next();
-                    if matches!(peek, Some(Token::LBrace) | Some(Token::LParen) | Some(Token::LBracket)) {
+                    if matches!(
+                        peek,
+                        Some(Token::LBrace) | Some(Token::LParen) | Some(Token::LBracket)
+                    ) {
                         self.advance(); // consume !
                         let tokens = self.parse_macro_tokens()?;
                         let path = TypePath {
-                            segments: vec![PathSegment { ident: name, generics: None }],
+                            segments: vec![PathSegment {
+                                ident: name,
+                                generics: None,
+                            }],
                         };
                         return Ok(PipeOp::Call(Box::new(Expr::Macro { path, tokens })));
                     }
@@ -5897,7 +6027,10 @@ impl<'a> Parser<'a> {
                 // Check for path continuation or turbofish syntax:
                 // |Tensor::from_slice - path to associated function
                 // |collect::<String>() - turbofish generics
-                let mut path_segments = vec![PathSegment { ident: name.clone(), generics: None }];
+                let mut path_segments = vec![PathSegment {
+                    ident: name.clone(),
+                    generics: None,
+                }];
                 let type_args = loop {
                     if self.check(&Token::ColonColon) {
                         self.advance(); // consume ::
@@ -5910,11 +6043,14 @@ impl<'a> Parser<'a> {
                         } else if let Some(Token::Ident(_)) = self.current_token() {
                             // Path continuation: ::segment
                             let segment = self.parse_ident()?;
-                            path_segments.push(PathSegment { ident: segment, generics: None });
+                            path_segments.push(PathSegment {
+                                ident: segment,
+                                generics: None,
+                            });
                             // Continue to check for more segments or turbofish
                         } else {
                             return Err(ParseError::Custom(
-                                "expected identifier or '<' after '::'".to_string()
+                                "expected identifier or '<' after '::'".to_string(),
                             ));
                         }
                     } else {
@@ -5925,7 +6061,9 @@ impl<'a> Parser<'a> {
                 // If we have a multi-segment path, convert to a path call
                 let name = if path_segments.len() > 1 {
                     // Build a Call expression with the full path
-                    let path = TypePath { segments: path_segments };
+                    let path = TypePath {
+                        segments: path_segments,
+                    };
                     let args = if self.check(&Token::LParen) {
                         self.advance();
                         let args = self.parse_expr_list()?;
@@ -5966,7 +6104,9 @@ impl<'a> Parser<'a> {
                 if name.name == "validate" {
                     let target_evidence = name.evidentiality.unwrap_or(Evidentiality::Known);
                     if args.is_empty() {
-                        return Err(ParseError::Custom("validate requires a predicate: |validate!{predicate}".to_string()));
+                        return Err(ParseError::Custom(
+                            "validate requires a predicate: |validate!{predicate}".to_string(),
+                        ));
                     }
                     return Ok(PipeOp::Validate {
                         predicate: Box::new(args.into_iter().next().unwrap()),
@@ -5982,7 +6122,11 @@ impl<'a> Parser<'a> {
                     });
                 }
 
-                Ok(PipeOp::Method { name, type_args, args })
+                Ok(PipeOp::Method {
+                    name,
+                    type_args,
+                    args,
+                })
             }
 
             // ==========================================
@@ -6242,7 +6386,10 @@ impl<'a> Parser<'a> {
     /// Check if current position looks like a morpheme closure: ident => or (pattern) =>
     fn looks_like_morpheme_closure(&mut self) -> bool {
         // Simple closure: x => or _ => (may have evidentiality: x~ => or x◊ =>)
-        if matches!(self.current_token(), Some(Token::Ident(_)) | Some(Token::Underscore)) {
+        if matches!(
+            self.current_token(),
+            Some(Token::Ident(_)) | Some(Token::Underscore)
+        ) {
             // Check next token - could be => directly or evidentiality marker first
             match self.peek_next() {
                 Some(Token::FatArrow) => return true,
@@ -6341,7 +6488,8 @@ impl<'a> Parser<'a> {
                 }
                 if self.check(&Token::Let) {
                     stmts.push(self.parse_let_stmt()?);
-                } else if self.check(&Token::Return) || self.check(&Token::Break)
+                } else if self.check(&Token::Return)
+                    || self.check(&Token::Break)
                     || self.check(&Token::Continue)
                 {
                     // Control flow - treat as final expression
@@ -6547,7 +6695,9 @@ impl<'a> Parser<'a> {
             Ok(Stmt::LetElse {
                 pattern,
                 ty,
-                init: init.ok_or_else(|| ParseError::Custom("let-else requires initializer".to_string()))?,
+                init: init.ok_or_else(|| {
+                    ParseError::Custom("let-else requires initializer".to_string())
+                })?,
                 else_branch,
             })
         } else {
@@ -6613,7 +6763,10 @@ impl<'a> Parser<'a> {
             loop {
                 if matches!(
                     self.current_token(),
-                    Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                    Some(Token::DocComment(_))
+                        | Some(
+                            Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)
+                        )
                 ) {
                     self.advance();
                 } else if self.check(&Token::Hash) {
@@ -6645,7 +6798,8 @@ impl<'a> Parser<'a> {
             // Skip trailing comments after comma or block
             while matches!(
                 self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                Some(Token::DocComment(_))
+                    | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
             ) {
                 self.advance();
             }
@@ -6709,7 +6863,11 @@ impl<'a> Parser<'a> {
             // Parse the inner pattern and wrap it with evidentiality
             let inner_pattern = self.parse_pattern_base()?;
             return match inner_pattern {
-                Pattern::Ident { mutable, name, evidentiality: _ } => {
+                Pattern::Ident {
+                    mutable,
+                    name,
+                    evidentiality: _,
+                } => {
                     // Simple identifier pattern with evidentiality
                     Ok(Pattern::Ident {
                         mutable,
@@ -6747,7 +6905,6 @@ impl<'a> Parser<'a> {
 
     /// Parse a pattern without considering prefix evidentiality markers
     fn parse_pattern_base(&mut self) -> ParseResult<Pattern> {
-
         match self.current_token().cloned() {
             Some(Token::Underscore) => {
                 self.advance();
@@ -6867,8 +7024,11 @@ impl<'a> Parser<'a> {
                     // Parse end of range if present
                     let end = if matches!(
                         self.current_token(),
-                        Some(Token::IntLit(_)) | Some(Token::HexLit(_)) | Some(Token::OctalLit(_))
-                            | Some(Token::BinaryLit(_)) | Some(Token::CharLit(_))
+                        Some(Token::IntLit(_))
+                            | Some(Token::HexLit(_))
+                            | Some(Token::OctalLit(_))
+                            | Some(Token::BinaryLit(_))
+                            | Some(Token::CharLit(_))
                     ) {
                         let end_lit = self.parse_literal()?;
                         Some(Box::new(Pattern::Literal(end_lit)))
@@ -6933,7 +7093,12 @@ impl<'a> Parser<'a> {
                     while !self.check(&Token::RBrace) {
                         while matches!(
                             self.current_token(),
-                            Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                            Some(Token::DocComment(_))
+                                | Some(
+                                    Token::LineComment(_)
+                                        | Token::TildeComment(_)
+                                        | Token::BlockComment(_)
+                                )
                         ) {
                             self.advance();
                         }
@@ -6989,7 +7154,9 @@ impl<'a> Parser<'a> {
                             evidentiality: self.parse_evidentiality_opt(),
                         });
                     }
-                    return Err(ParseError::Custom("expected :: after crate/super in path pattern".to_string()));
+                    return Err(ParseError::Custom(
+                        "expected :: after crate/super in path pattern".to_string(),
+                    ));
                 }
 
                 // Build the path starting with crate/self/super
@@ -7046,7 +7213,12 @@ impl<'a> Parser<'a> {
                     while !self.check(&Token::RBrace) {
                         while matches!(
                             self.current_token(),
-                            Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                            Some(Token::DocComment(_))
+                                | Some(
+                                    Token::LineComment(_)
+                                        | Token::TildeComment(_)
+                                        | Token::BlockComment(_)
+                                )
                         ) {
                             self.advance();
                         }
@@ -7100,7 +7272,9 @@ impl<'a> Parser<'a> {
                             generics: None,
                         });
 
-                        if !self.consume_if(&Token::ColonColon) && !self.consume_if(&Token::MiddleDot) {
+                        if !self.consume_if(&Token::ColonColon)
+                            && !self.consume_if(&Token::MiddleDot)
+                        {
                             break;
                         }
                     }
@@ -7130,7 +7304,12 @@ impl<'a> Parser<'a> {
                             // Skip comments
                             while matches!(
                                 self.current_token(),
-                                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                                Some(Token::DocComment(_))
+                                    | Some(
+                                        Token::LineComment(_)
+                                            | Token::TildeComment(_)
+                                            | Token::BlockComment(_)
+                                    )
                             ) {
                                 self.advance();
                             }
@@ -7186,7 +7365,12 @@ impl<'a> Parser<'a> {
                     while !self.check(&Token::RBrace) {
                         while matches!(
                             self.current_token(),
-                            Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                            Some(Token::DocComment(_))
+                                | Some(
+                                    Token::LineComment(_)
+                                        | Token::TildeComment(_)
+                                        | Token::BlockComment(_)
+                                )
                         ) {
                             self.advance();
                         }
@@ -7368,12 +7552,10 @@ impl<'a> Parser<'a> {
                         ))
                     }
                     // Handle method calls like obj.method()·chain
-                    Expr::Field { expr, field } => {
-                        Ok(IncorporationSegment {
-                            name: field.clone(),
-                            args: Some(std::iter::once(*expr).chain(args).collect()),
-                        })
-                    }
+                    Expr::Field { expr, field } => Ok(IncorporationSegment {
+                        name: field.clone(),
+                        args: Some(std::iter::once(*expr).chain(args).collect()),
+                    }),
                     _ => Err(ParseError::Custom(
                         "incorporation chain must start with identifier or call".to_string(),
                     )),
@@ -7391,55 +7573,47 @@ impl<'a> Parser<'a> {
             }
             // For literals like "string"·to_string(), use a synthetic "__lit__" segment
             // The literal itself becomes the argument
-            Expr::Literal(_) => {
-                Ok(IncorporationSegment {
-                    name: Ident {
-                        name: "__lit__".to_string(),
-                        evidentiality: None,
-                        affect: None,
-                        span: crate::span::Span::default(),
-                    },
-                    args: Some(vec![expr]),
-                })
-            }
+            Expr::Literal(_) => Ok(IncorporationSegment {
+                name: Ident {
+                    name: "__lit__".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span: crate::span::Span::default(),
+                },
+                args: Some(vec![expr]),
+            }),
             // For unary expressions like *self.field·method(), use a synthetic segment
             // The unary expression becomes the argument
-            Expr::Unary { .. } => {
-                Ok(IncorporationSegment {
-                    name: Ident {
-                        name: "__unary__".to_string(),
-                        evidentiality: None,
-                        affect: None,
-                        span: crate::span::Span::default(),
-                    },
-                    args: Some(vec![expr]),
-                })
-            }
+            Expr::Unary { .. } => Ok(IncorporationSegment {
+                name: Ident {
+                    name: "__unary__".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span: crate::span::Span::default(),
+                },
+                args: Some(vec![expr]),
+            }),
             // For index expressions like arr[i]·method()
-            Expr::Index { expr: base, index } => {
-                Ok(IncorporationSegment {
-                    name: Ident {
-                        name: "__index__".to_string(),
-                        evidentiality: None,
-                        affect: None,
-                        span: crate::span::Span::default(),
-                    },
-                    args: Some(vec![*base, *index]),
-                })
-            }
+            Expr::Index { expr: base, index } => Ok(IncorporationSegment {
+                name: Ident {
+                    name: "__index__".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span: crate::span::Span::default(),
+                },
+                args: Some(vec![*base, *index]),
+            }),
             // For any other expression types (if, match, block, closure, etc.)
             // Use a synthetic segment to hold the expression as the receiver
-            other => {
-                Ok(IncorporationSegment {
-                    name: Ident {
-                        name: "__expr__".to_string(),
-                        evidentiality: None,
-                        affect: None,
-                        span: crate::span::Span::default(),
-                    },
-                    args: Some(vec![other]),
-                })
-            }
+            other => Ok(IncorporationSegment {
+                name: Ident {
+                    name: "__expr__".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span: crate::span::Span::default(),
+                },
+                args: Some(vec![other]),
+            }),
         }
     }
 
@@ -7502,7 +7676,7 @@ impl<'a> Parser<'a> {
             Token::Reality => Some("reality"),
             Token::Layer => Some("layer"),
             Token::Anima => Some("anima"),
-            Token::Struct => Some("sigil"),  // Allow 'sigil' as identifier (maps to Struct token)
+            Token::Struct => Some("sigil"), // Allow 'sigil' as identifier (maps to Struct token)
             // Greek morpheme tokens - allow as identifiers in type/variable contexts
             Token::Parallel => Some("Parallel"),
             Token::Nu => Some("Nu"),
@@ -7997,8 +8171,10 @@ impl<'a> Parser<'a> {
             // Skip doc comments, line comments, and attributes before fields
             while matches!(
                 self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
-            ) || self.check(&Token::Hash) || self.check(&Token::At)
+                Some(Token::DocComment(_))
+                    | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+            ) || self.check(&Token::Hash)
+                || self.check(&Token::At)
             {
                 if self.check(&Token::Hash) || self.check(&Token::At) {
                     self.skip_attribute()?;
@@ -8084,7 +8260,9 @@ impl<'a> Parser<'a> {
             // Skip comments and attributes before field
             while matches!(
                 self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) | Some(Token::Hash)
+                Some(Token::DocComment(_))
+                    | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                    | Some(Token::Hash)
             ) {
                 if self.check(&Token::Hash) {
                     // Skip attribute: #[...] or #![...]
@@ -8131,19 +8309,10 @@ impl<'a> Parser<'a> {
 
     fn is_item_start(&mut self) -> bool {
         match self.current_token() {
-            Some(Token::Fn)
-                | Some(Token::Struct)
-                | Some(Token::Enum)
-                | Some(Token::Trait)
-                | Some(Token::Impl)
-                | Some(Token::Type)
-                | Some(Token::Mod)
-                | Some(Token::Use)
-                | Some(Token::Const)
-                | Some(Token::Static)
-                | Some(Token::Actor)
-                | Some(Token::Pub)
-                | Some(Token::Extern) => true,
+            Some(Token::Fn) | Some(Token::Struct) | Some(Token::Enum) | Some(Token::Trait)
+            | Some(Token::Impl) | Some(Token::Type) | Some(Token::Mod) | Some(Token::Use)
+            | Some(Token::Const) | Some(Token::Static) | Some(Token::Actor) | Some(Token::Pub)
+            | Some(Token::Extern) => true,
             // async is only item start if followed by fn (async fn ...)
             // async move { } or async { } are block expressions, not items
             Some(Token::Async) => matches!(self.peek_next(), Some(Token::Fn)),
@@ -8243,8 +8412,12 @@ fn infix_binding_power(op: BinOp) -> (u8, u8) {
         BinOp::BitAnd => (11, 12),
         BinOp::Shl | BinOp::Shr => (13, 14),
         BinOp::Add | BinOp::Sub | BinOp::Concat => (15, 16),
-        BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::MatMul
-        | BinOp::Hadamard | BinOp::TensorProd => (17, 18),
+        BinOp::Mul
+        | BinOp::Div
+        | BinOp::Rem
+        | BinOp::MatMul
+        | BinOp::Hadamard
+        | BinOp::TensorProd => (17, 18),
         BinOp::Pow => (20, 19), // Right associative
     }
 }

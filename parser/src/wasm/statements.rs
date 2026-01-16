@@ -72,7 +72,7 @@ impl WasmCompiler {
             Item::Use(_) => Ok(()), // Use declarations are resolved during parsing
             Item::Actor(_) => Err(WasmError::unsupported("actors")),
             Item::ExternBlock(_) => Ok(()), // Extern functions are imports
-            Item::Macro(_) => Ok(()), // Macro definitions are compile-time only
+            Item::Macro(_) => Ok(()),       // Macro definitions are compile-time only
             Item::MacroInvocation(_) => Err(WasmError::unsupported("macro invocations")),
             Item::Plurality(_) => Err(WasmError::unsupported("plurality items")),
         }
@@ -385,7 +385,11 @@ impl WasmCompiler {
 
             Expr::Path(path) => {
                 // Look up const
-                let name = path.segments.first().map(|s| s.ident.name.as_str()).unwrap_or("");
+                let name = path
+                    .segments
+                    .first()
+                    .map(|s| s.ident.name.as_str())
+                    .unwrap_or("");
                 if let Some(&idx) = self.global_map.get(name) {
                     Ok(self.globals[idx as usize].2)
                 } else {
@@ -416,7 +420,10 @@ impl ParamExt for Param {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Block, BinOp, CrateConfig, EnumVariant, FieldDef, Ident, Literal, NumBase, StructAttrs, TypePath, UnaryOp};
+    use crate::ast::{
+        BinOp, Block, CrateConfig, EnumVariant, FieldDef, Ident, Literal, NumBase, StructAttrs,
+        TypePath, UnaryOp,
+    };
     use crate::span::{Span, Spanned};
 
     fn make_int(value: i64) -> crate::ast::Expr {
@@ -630,7 +637,9 @@ mod tests {
                 },
                 EnumVariant {
                     name: make_ident("Some"),
-                    fields: StructFields::Tuple(vec![crate::ast::TypeExpr::Path(TypePath { segments: vec![] })]),
+                    fields: StructFields::Tuple(vec![crate::ast::TypeExpr::Path(TypePath {
+                        segments: vec![],
+                    })]),
                     discriminant: None,
                 },
             ],
@@ -650,10 +659,14 @@ mod tests {
     fn test_eval_const_expr_bool() {
         let compiler = WasmCompiler::new();
 
-        let true_result = compiler.eval_const_expr(&crate::ast::Expr::Literal(Literal::Bool(true))).unwrap();
+        let true_result = compiler
+            .eval_const_expr(&crate::ast::Expr::Literal(Literal::Bool(true)))
+            .unwrap();
         assert_eq!(true_result, 1);
 
-        let false_result = compiler.eval_const_expr(&crate::ast::Expr::Literal(Literal::Bool(false))).unwrap();
+        let false_result = compiler
+            .eval_const_expr(&crate::ast::Expr::Literal(Literal::Bool(false)))
+            .unwrap();
         assert_eq!(false_result, 0);
     }
 
@@ -661,10 +674,14 @@ mod tests {
     fn test_eval_const_expr_null() {
         let compiler = WasmCompiler::new();
 
-        let null_result = compiler.eval_const_expr(&crate::ast::Expr::Literal(Literal::Null)).unwrap();
+        let null_result = compiler
+            .eval_const_expr(&crate::ast::Expr::Literal(Literal::Null))
+            .unwrap();
         assert_eq!(null_result, 0);
 
-        let empty_result = compiler.eval_const_expr(&crate::ast::Expr::Literal(Literal::Empty)).unwrap();
+        let empty_result = compiler
+            .eval_const_expr(&crate::ast::Expr::Literal(Literal::Empty))
+            .unwrap();
         assert_eq!(empty_result, 0);
     }
 

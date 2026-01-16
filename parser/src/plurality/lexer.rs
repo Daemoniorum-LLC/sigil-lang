@@ -202,7 +202,10 @@ pub struct PluralityTokenStream<'a> {
 
 impl<'a> PluralityTokenStream<'a> {
     pub fn new(tokens: &'a [(Token, Span)]) -> Self {
-        Self { tokens, position: 0 }
+        Self {
+            tokens,
+            position: 0,
+        }
     }
 
     /// Peek at the current token
@@ -223,7 +226,9 @@ impl<'a> PluralityTokenStream<'a> {
 
     /// Check if we're at a plurality keyword
     pub fn at_plurality_keyword(&self) -> bool {
-        self.peek().map(|(t, _)| is_plurality_keyword(t)).unwrap_or(false)
+        self.peek()
+            .map(|(t, _)| is_plurality_keyword(t))
+            .unwrap_or(false)
     }
 
     /// Try to consume an alter-source marker
@@ -368,40 +373,28 @@ mod tests {
     #[test]
     fn test_alter_source_markers() {
         // Test @! (fronting)
-        let tokens = vec![
-            make_token(Token::At),
-            make_token(Token::Bang),
-        ];
+        let tokens = vec![make_token(Token::At), make_token(Token::Bang)];
         assert_eq!(
             check_alter_source_sequence(&tokens),
             Some(AlterSourceMarker::Fronting)
         );
 
         // Test @~ (co-con)
-        let tokens = vec![
-            make_token(Token::At),
-            make_token(Token::Tilde),
-        ];
+        let tokens = vec![make_token(Token::At), make_token(Token::Tilde)];
         assert_eq!(
             check_alter_source_sequence(&tokens),
             Some(AlterSourceMarker::CoCon)
         );
 
         // Test @? (dormant)
-        let tokens = vec![
-            make_token(Token::At),
-            make_token(Token::Question),
-        ];
+        let tokens = vec![make_token(Token::At), make_token(Token::Question)];
         assert_eq!(
             check_alter_source_sequence(&tokens),
             Some(AlterSourceMarker::Dormant)
         );
 
         // Test @‽ (blended)
-        let tokens = vec![
-            make_token(Token::At),
-            make_token(Token::Interrobang),
-        ];
+        let tokens = vec![make_token(Token::At), make_token(Token::Interrobang)];
         assert_eq!(
             check_alter_source_sequence(&tokens),
             Some(AlterSourceMarker::Blended)

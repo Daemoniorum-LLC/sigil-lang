@@ -6,8 +6,8 @@
 use std::collections::HashMap;
 
 use super::runtime::{
-    Alter, AlterPresenceState, AnimaState, FrontingState, PluralSystem, RealityLayer,
-    SwitchResult, Trigger, TriggerCategory, TriggerResult,
+    Alter, AlterPresenceState, AnimaState, FrontingState, PluralSystem, RealityLayer, SwitchResult,
+    Trigger, TriggerCategory, TriggerResult,
 };
 
 // ============================================================================
@@ -40,7 +40,9 @@ pub struct CombatState {
 impl CombatState {
     /// Create a new combat encounter
     pub fn new(player_system: &PluralSystem, enemies: Vec<Enemy>) -> Self {
-        let mut combatants = vec![Combatant::Player(PlayerCombatant::from_system(player_system))];
+        let mut combatants = vec![Combatant::Player(PlayerCombatant::from_system(
+            player_system,
+        ))];
         combatants.extend(enemies.into_iter().map(Combatant::Enemy));
 
         let mut state = Self {
@@ -99,13 +101,15 @@ impl CombatState {
 
     /// Check if combat should end
     pub fn check_combat_end(&mut self) {
-        let player_alive = self.combatants.iter().any(|c| {
-            matches!(c, Combatant::Player(p) if p.health > 0.0)
-        });
+        let player_alive = self
+            .combatants
+            .iter()
+            .any(|c| matches!(c, Combatant::Player(p) if p.health > 0.0));
 
-        let enemies_alive = self.combatants.iter().any(|c| {
-            matches!(c, Combatant::Enemy(e) if e.health > 0.0)
-        });
+        let enemies_alive = self
+            .combatants
+            .iter()
+            .any(|c| matches!(c, Combatant::Enemy(e) if e.health > 0.0));
 
         if !player_alive {
             self.is_over = true;
@@ -215,7 +219,10 @@ impl PlayerCombatant {
             .alters
             .values()
             .filter(|a| {
-                !matches!(a.state, AlterPresenceState::Dormant | AlterPresenceState::Dissociating)
+                !matches!(
+                    a.state,
+                    AlterPresenceState::Dormant | AlterPresenceState::Dissociating
+                )
             })
             .map(|a| a.id.clone())
             .collect();
@@ -245,7 +252,11 @@ impl PlayerCombatant {
     }
 
     /// Execute an ability
-    pub fn execute_ability(&mut self, ability_index: usize, target: &mut Combatant) -> AbilityResult {
+    pub fn execute_ability(
+        &mut self,
+        ability_index: usize,
+        target: &mut Combatant,
+    ) -> AbilityResult {
         if ability_index >= self.abilities.len() {
             return AbilityResult::Failed("Invalid ability".to_string());
         }
@@ -282,7 +293,10 @@ impl PlayerCombatant {
                 damage *= 1.0 + (1.0 - self.anima.stability) * 0.5;
             }
             DamageType::Reality => {
-                if matches!(self.reality, RealityLayer::Fractured | RealityLayer::Shattered) {
+                if matches!(
+                    self.reality,
+                    RealityLayer::Fractured | RealityLayer::Shattered
+                ) {
                     damage *= 1.5;
                 }
             }
@@ -306,11 +320,18 @@ impl PlayerCombatant {
             }
         }
 
-        AbilityResult::Success { damage, effects: ability.applies_effects.clone() }
+        AbilityResult::Success {
+            damage,
+            effects: ability.applies_effects.clone(),
+        }
     }
 
     /// Attempt to switch alters mid-combat
-    pub fn combat_switch(&mut self, target_alter: &str, system: &mut PluralSystem) -> CombatSwitchResult {
+    pub fn combat_switch(
+        &mut self,
+        target_alter: &str,
+        system: &mut PluralSystem,
+    ) -> CombatSwitchResult {
         if self.switch_cooldown > 0 {
             return CombatSwitchResult::OnCooldown(self.switch_cooldown);
         }
@@ -341,20 +362,18 @@ impl PlayerCombatant {
 
                 CombatSwitchResult::Success
             }
-            SwitchResult::Resisted { resistance } => {
-                CombatSwitchResult::Resisted(resistance)
-            }
-            SwitchResult::Failed(reason) => {
-                CombatSwitchResult::Failed(format!("{:?}", reason))
-            }
-            SwitchResult::InProgress { eta } => {
-                CombatSwitchResult::InProgress(eta)
-            }
+            SwitchResult::Resisted { resistance } => CombatSwitchResult::Resisted(resistance),
+            SwitchResult::Failed(reason) => CombatSwitchResult::Failed(format!("{:?}", reason)),
+            SwitchResult::InProgress { eta } => CombatSwitchResult::InProgress(eta),
         }
     }
 
     /// Process a combat trigger
-    pub fn process_combat_trigger(&mut self, trigger: Trigger, system: &mut PluralSystem) -> CombatTriggerResult {
+    pub fn process_combat_trigger(
+        &mut self,
+        trigger: Trigger,
+        system: &mut PluralSystem,
+    ) -> CombatTriggerResult {
         let trigger_result = system.process_trigger(trigger.clone());
 
         match trigger_result {
@@ -377,9 +396,7 @@ impl PlayerCombatant {
                 self.anima.apply_trauma_response(0.5);
                 CombatTriggerResult::Dissociation
             }
-            TriggerResult::NoResponse => {
-                CombatTriggerResult::NoEffect
-            }
+            TriggerResult::NoResponse => CombatTriggerResult::NoEffect,
         }
     }
 }
@@ -521,7 +538,10 @@ pub enum DamageType {
 /// Result of using an ability
 #[derive(Debug, Clone)]
 pub enum AbilityResult {
-    Success { damage: f32, effects: Vec<StatusEffect> },
+    Success {
+        damage: f32,
+        effects: Vec<StatusEffect>,
+    },
     Failed(String),
     Blocked,
 }
@@ -721,7 +741,10 @@ fn generate_combat_abilities(alter: &Alter) -> Vec<CombatAbility> {
     }
 
     // Add reality-specific ability if alter prefers fractured
-    if matches!(alter.preferred_reality, RealityLayer::Fractured | RealityLayer::Shattered) {
+    if matches!(
+        alter.preferred_reality,
+        RealityLayer::Fractured | RealityLayer::Shattered
+    ) {
         abilities.push(CombatAbility {
             id: "fractured_assault".to_string(),
             name: "Fractured Assault".to_string(),

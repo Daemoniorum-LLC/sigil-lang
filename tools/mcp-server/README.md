@@ -60,7 +60,7 @@ Execute Sigil code and return the output.
 ```typescript
 {
   code: string,      // Sigil source code
-  backend?: string   // "interpreter" (default) or "jit"
+  backend?: string   // "interpreter" (default), "jit", or "llvm" (fastest)
 }
 ```
 
@@ -112,6 +112,19 @@ Analyzes code structure and describes:
 - What the code computes
 - How data flows through pipelines
 - What evidence levels are used and why
+
+### `sigil_lint`
+
+Run the Sigil linter to find code quality issues.
+
+```typescript
+{
+  code: string,    // Sigil source code
+  fix?: boolean    // If true, returns code with auto-fixes applied
+}
+```
+
+Catches common problems like unused variables, shadowed bindings, missing returns, unreachable code, and style issues.
 
 ## Example Session
 

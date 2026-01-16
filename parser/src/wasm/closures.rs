@@ -25,7 +25,12 @@ impl WasmCompiler {
     /// For WASM compilation, this means captured values are deep-copied into the
     /// closure's environment rather than storing references. In practice, since WASM
     /// uses value semantics for i64/f64, this mainly affects composite types.
-    pub fn compile_closure(&mut self, params: &[ClosureParam], body: &Expr, is_move: bool) -> WasmResult<()> {
+    pub fn compile_closure(
+        &mut self,
+        params: &[ClosureParam],
+        body: &Expr,
+        is_move: bool,
+    ) -> WasmResult<()> {
         // Analyze captures
         let captures = self.analyze_captures(body)?;
 
@@ -40,11 +45,7 @@ impl WasmCompiler {
     }
 
     /// Compile a closure with no captures.
-    fn compile_simple_closure(
-        &mut self,
-        params: &[ClosureParam],
-        body: &Expr,
-    ) -> WasmResult<()> {
+    fn compile_simple_closure(&mut self, params: &[ClosureParam], body: &Expr) -> WasmResult<()> {
         // Generate unique closure name
         let closure_name = format!("__closure_{}", self.closure_counter);
         self.closure_counter += 1;
@@ -174,7 +175,9 @@ impl WasmCompiler {
         {
             let func = self.current_function_mut().unwrap();
 
-            for (i, (capture, is_mutable)) in captures.iter().zip(mutable_captures.iter()).enumerate() {
+            for (i, (capture, is_mutable)) in
+                captures.iter().zip(mutable_captures.iter()).enumerate()
+            {
                 // env_ptr is local 0
                 func.push(Instruction::LocalGet(0)); // env_ptr
                 func.push(Instruction::I32WrapI64);
@@ -269,8 +272,6 @@ impl WasmCompiler {
 
         let env_idx = func.alloc_local("__env_ptr".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(env_idx));
-
-
 
         // Store each capture in environment using pre-resolved sources
         // For mutable captures, allocate a cell first
@@ -403,7 +404,11 @@ impl WasmCompiler {
                 let name = qualified_name.as_str();
 
                 // Also get just the simple name for local lookups
-                let simple_name = path.segments.first().map(|s| s.ident.name.as_str()).unwrap_or("");
+                let simple_name = path
+                    .segments
+                    .first()
+                    .map(|s| s.ident.name.as_str())
+                    .unwrap_or("");
 
                 // Check for import function first to get parameter types
                 if let Some(func_idx) = self.imports.get_func(name) {
@@ -525,8 +530,6 @@ impl WasmCompiler {
                 let closure_ptr = func.alloc_local("__call_closure".to_string(), ValType::I64);
                 func.push(Instruction::LocalSet(closure_ptr));
 
-        
-
                 // Compile arguments
                 for arg in args {
                     self.compile_expr(arg)?;
@@ -560,7 +563,10 @@ impl WasmCompiler {
                 let type_idx = self.get_or_create_type(param_types, vec![ValType::I64]);
 
                 let func = self.current_function_mut().unwrap();
-                func.push(Instruction::CallIndirect { type_index: type_idx, table_index: 0 });
+                func.push(Instruction::CallIndirect {
+                    type_index: type_idx,
+                    table_index: 0,
+                });
 
                 Ok(())
             }
@@ -619,8 +625,7 @@ impl WasmCompiler {
         arg_count: usize,
     ) -> WasmResult<()> {
         // No captures - direct call through table using known table index
-        let param_types: Vec<ValType> =
-            std::iter::repeat(ValType::I64).take(arg_count).collect();
+        let param_types: Vec<ValType> = std::iter::repeat(ValType::I64).take(arg_count).collect();
         let type_idx = self.get_or_create_type(param_types, vec![ValType::I64]);
 
         let func = self
@@ -697,8 +702,6 @@ impl WasmCompiler {
         let arr_idx = func.alloc_local("__index_arr".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(arr_idx));
 
-
-
         // Compile index
         self.compile_expr(index)?;
 
@@ -758,14 +761,11 @@ impl WasmCompiler {
             memory_index: 0,
         }));
 
-
-
         // Write elements
         for (i, elem) in elements.iter().enumerate() {
             let func = self.current_function_mut().unwrap();
             func.push(Instruction::LocalGet(arr_idx));
             func.push(Instruction::I32WrapI64);
-    
 
             self.compile_expr(elem)?;
 
@@ -806,14 +806,11 @@ impl WasmCompiler {
         let tuple_idx = func.alloc_local("__tuple".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(tuple_idx));
 
-
-
         // Write elements
         for (i, elem) in elements.iter().enumerate() {
             let func = self.current_function_mut().unwrap();
             func.push(Instruction::LocalGet(tuple_idx));
             func.push(Instruction::I32WrapI64);
-    
 
             self.compile_expr(elem)?;
 
@@ -875,14 +872,11 @@ impl WasmCompiler {
         let struct_idx = func.alloc_local("__struct".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(struct_idx));
 
-
-
         // Initialize fields
         for field in fields {
             let func = self.current_function_mut().unwrap();
             func.push(Instruction::LocalGet(struct_idx));
             func.push(Instruction::I32WrapI64);
-    
 
             // Compile field value
             if let Some(value) = &field.value {
@@ -925,7 +919,11 @@ impl<'a> CaptureAnalyzer<'a> {
     fn visit(&mut self, expr: &Expr) {
         match expr {
             Expr::Path(path) => {
-                let name = path.segments.first().map(|s| s.ident.name.as_str()).unwrap_or("");
+                let name = path
+                    .segments
+                    .first()
+                    .map(|s| s.ident.name.as_str())
+                    .unwrap_or("");
                 // If not bound locally and exists in enclosing scope, it's a capture
                 if !self.bound.contains(&name.to_string()) {
                     // Check if it's a local in the current function
@@ -939,7 +937,11 @@ impl<'a> CaptureAnalyzer<'a> {
                 }
             }
 
-            Expr::Closure { params, body, is_move: _ } => {
+            Expr::Closure {
+                params,
+                body,
+                is_move: _,
+            } => {
                 // Add parameters to bound set (is_move affects ownership, not capture analysis)
                 let prev_len = self.bound.len();
                 for param in params {
@@ -1010,7 +1012,9 @@ mod tests {
     use super::*;
     use crate::ast::{Ident, Literal, NumBase, PathSegment, TypePath};
     use crate::span::Span;
-    use crate::wasm::literals::{create_test_compiler_with_function, create_test_compiler_with_heap_alloc};
+    use crate::wasm::literals::{
+        create_test_compiler_with_function, create_test_compiler_with_heap_alloc,
+    };
 
     fn make_int(value: i64) -> Expr {
         Expr::Literal(Literal::Int {
@@ -1132,7 +1136,6 @@ mod tests {
         outer_func.push(Instruction::I64Const(0));
         outer_func.push(Instruction::LocalSet(counter_idx));
 
-
         // Create closure that modifies the captured variable:
         // |_| { counter = counter + 1; counter }
         let closure = Expr::Closure {
@@ -1179,7 +1182,6 @@ mod tests {
         outer_func.push(Instruction::I64Const(0));
         outer_func.push(Instruction::LocalSet(counter_idx));
 
-
         // Mark counter as mutable capture
         compiler.mutable_captures.insert("counter".to_string());
 
@@ -1223,7 +1225,6 @@ mod tests {
         outer_func.push(Instruction::I64Const(10));
         outer_func.push(Instruction::LocalSet(x_idx));
 
-
         // Create outer closure that captures x and creates inner closure:
         // |y| { |z| { x + y + z } }
         let inner_closure = Expr::Closure {
@@ -1262,7 +1263,7 @@ mod tests {
 
         // Should create two closure functions (outer and inner)
         assert!(compiler.functions.len() >= 3); // test + outer + inner
-        // Both should be in the function table
+                                                // Both should be in the function table
         assert!(compiler.table_elements.len() >= 2);
     }
 
@@ -1275,7 +1276,6 @@ mod tests {
         let outer_var_idx = outer_func.alloc_local("outer_var".to_string(), ValType::I64);
         outer_func.push(Instruction::I64Const(100));
         outer_func.push(Instruction::LocalSet(outer_var_idx));
-
 
         // Outer closure captures outer_var, returns inner closure
         // |a| { |b| { outer_var + a + b } }

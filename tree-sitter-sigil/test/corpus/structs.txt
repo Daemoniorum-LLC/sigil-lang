@@ -1,0 +1,60 @@
+================================================================================
+Simple struct
+================================================================================
+
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_definition
+    name: (identifier)
+    (struct_body
+      (struct_field
+        name: (identifier)
+        (primitive_type))
+      (struct_field
+        name: (identifier)
+        (primitive_type)))))
+
+================================================================================
+Tuple struct
+================================================================================
+
+struct Color(u8, u8, u8);
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_definition
+    name: (identifier)
+    (tuple_fields
+      (primitive_type)
+      (primitive_type)
+      (primitive_type))))
+
+================================================================================
+Generic struct
+================================================================================
+
+struct Container<T> {
+    value: T,
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_definition
+    name: (identifier)
+    (generic_parameters
+      (generic_parameter
+        (type_parameter
+          name: (identifier))))
+    (struct_body
+      (struct_field
+        name: (identifier)
+        (path
+          (identifier))))))

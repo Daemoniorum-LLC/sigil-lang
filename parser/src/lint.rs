@@ -90,11 +90,11 @@ impl Default for LintConfig {
     fn default() -> Self {
         let mut reserved = HashSet::new();
         for word in &[
-            "from", "split", "ref", "location", "save", "type", "move", "match",
-            "loop", "if", "else", "while", "for", "in", "return", "break",
-            "continue", "fn", "let", "mut", "const", "static", "struct", "enum",
-            "trait", "impl", "pub", "mod", "use", "as", "where", "async", "await",
-            "dyn", "unsafe", "extern", "crate", "self", "super", "true", "false",
+            "from", "split", "ref", "location", "save", "type", "move", "match", "loop", "if",
+            "else", "while", "for", "in", "return", "break", "continue", "fn", "let", "mut",
+            "const", "static", "struct", "enum", "trait", "impl", "pub", "mod", "use", "as",
+            "where", "async", "await", "dyn", "unsafe", "extern", "crate", "self", "super", "true",
+            "false",
         ] {
             reserved.insert(word.to_string());
         }
@@ -119,8 +119,8 @@ impl LintConfig {
 
     /// Parse configuration from TOML string.
     pub fn from_toml(content: &str) -> Result<Self, String> {
-        let file: LintConfigFile = toml::from_str(content)
-            .map_err(|e| format!("Failed to parse config: {}", e))?;
+        let file: LintConfigFile =
+            toml::from_str(content).map_err(|e| format!("Failed to parse config: {}", e))?;
 
         let mut config = Self::default();
         config.suggest_unicode = file.lint.suggest_unicode;
@@ -186,7 +186,8 @@ max_nesting_depth = 6
 # deep_nesting = "deny"
 # empty_block = "warn"
 # bool_comparison = "warn"
-"#.to_string()
+"#
+        .to_string()
     }
 }
 
@@ -254,9 +255,9 @@ pub enum LintId {
     // === Aether 2.0 Enhanced Linter Rules ===
 
     // Enhanced Evidentiality Rules (E06xx series)
-    EvidentialityMismatch,       // E0603 - Assignment between different evidence levels
-    UncertaintyUnhandled,        // E0604 - Using ? values without error handling
-    ReportedWithoutAttribution,  // E0605 - Using ~ without source attribution
+    EvidentialityMismatch, // E0603 - Assignment between different evidence levels
+    UncertaintyUnhandled,  // E0604 - Using ? values without error handling
+    ReportedWithoutAttribution, // E0605 - Using ~ without source attribution
 
     // Morpheme Pipeline Rules (W05xx series)
     BrokenMorphemePipeline,      // W0501 - Invalid morpheme chain
@@ -264,12 +265,12 @@ pub enum LintId {
     InconsistentMorphemeStyle,   // W0503 - Mixing |τ{} and method chains
 
     // Domain Validation Rules (W06xx series - Aether/esoteric patterns)
-    InvalidHexagramNumber,       // W0600 - I Ching hexagram outside 1-64
-    InvalidTarotNumber,          // W0601 - Major Arcana outside 0-21
-    InvalidChakraIndex,          // W0602 - Chakra index outside 0-6
-    InvalidZodiacIndex,          // W0603 - Zodiac sign outside 0-11
-    InvalidGematriaValue,        // W0604 - Negative or overflow gematria
-    FrequencyOutOfRange,         // W0605 - Audio frequency outside audible range
+    InvalidHexagramNumber, // W0600 - I Ching hexagram outside 1-64
+    InvalidTarotNumber,    // W0601 - Major Arcana outside 0-21
+    InvalidChakraIndex,    // W0602 - Chakra index outside 0-6
+    InvalidZodiacIndex,    // W0603 - Zodiac sign outside 0-11
+    InvalidGematriaValue,  // W0604 - Negative or overflow gematria
+    FrequencyOutOfRange,   // W0605 - Audio frequency outside audible range
 
     // Enhanced Pattern Rules (W07xx series)
     MissingEvidentialityMarker,  // W0700 - Type without !, ?, or ~ marker
@@ -413,20 +414,20 @@ impl LintId {
             LintId::DivisionByZero => LintLevel::Deny,
 
             // Aether 2.0 Enhanced Rules
-            LintId::EvidentialityMismatch => LintLevel::Deny,      // Critical: type safety
-            LintId::UncertaintyUnhandled => LintLevel::Warn,       // Should handle uncertain data
+            LintId::EvidentialityMismatch => LintLevel::Deny, // Critical: type safety
+            LintId::UncertaintyUnhandled => LintLevel::Warn,  // Should handle uncertain data
             LintId::ReportedWithoutAttribution => LintLevel::Warn, // Attribution expected
-            LintId::BrokenMorphemePipeline => LintLevel::Deny,     // Critical: syntax error
-            LintId::MorphemeTypeIncompatibility => LintLevel::Deny,// Critical: type safety
+            LintId::BrokenMorphemePipeline => LintLevel::Deny, // Critical: syntax error
+            LintId::MorphemeTypeIncompatibility => LintLevel::Deny, // Critical: type safety
             LintId::InconsistentMorphemeStyle => LintLevel::Allow, // Stylistic preference
-            LintId::InvalidHexagramNumber => LintLevel::Warn,      // Domain validation
-            LintId::InvalidTarotNumber => LintLevel::Warn,         // Domain validation
-            LintId::InvalidChakraIndex => LintLevel::Warn,         // Domain validation
-            LintId::InvalidZodiacIndex => LintLevel::Warn,         // Domain validation
-            LintId::InvalidGematriaValue => LintLevel::Warn,       // Domain validation
-            LintId::FrequencyOutOfRange => LintLevel::Warn,        // Domain validation
-            LintId::MissingEvidentialityMarker => LintLevel::Allow,// Opt-in strictness
-            LintId::PreferNamedEsotericConstant => LintLevel::Allow,// Stylistic preference
+            LintId::InvalidHexagramNumber => LintLevel::Warn, // Domain validation
+            LintId::InvalidTarotNumber => LintLevel::Warn,    // Domain validation
+            LintId::InvalidChakraIndex => LintLevel::Warn,    // Domain validation
+            LintId::InvalidZodiacIndex => LintLevel::Warn,    // Domain validation
+            LintId::InvalidGematriaValue => LintLevel::Warn,  // Domain validation
+            LintId::FrequencyOutOfRange => LintLevel::Warn,   // Domain validation
+            LintId::MissingEvidentialityMarker => LintLevel::Allow, // Opt-in strictness
+            LintId::PreferNamedEsotericConstant => LintLevel::Allow, // Stylistic preference
             LintId::EmotionIntensityOutOfRange => LintLevel::Warn, // Domain validation
         }
     }
@@ -447,7 +448,9 @@ impl LintId {
             LintId::UnusedParameter => "Function parameter is never used",
             LintId::MagicNumber => "Consider using a named constant instead of magic number",
             LintId::MissingDocComment => "Public item should have a documentation comment",
-            LintId::HighComplexity => "Function has high cyclomatic complexity, consider refactoring",
+            LintId::HighComplexity => {
+                "Function has high cyclomatic complexity, consider refactoring"
+            }
             LintId::ConstantCondition => "Condition is always true or always false",
             LintId::PreferIfLet => "Consider using if-let instead of match with single arm",
             LintId::TodoWithoutIssue => "TODO comment without issue reference",
@@ -455,7 +458,9 @@ impl LintId {
             LintId::TooManyParameters => "Function has too many parameters",
             LintId::NeedlessReturn => "Unnecessary return statement at end of function",
             LintId::MissingReturn => "Function may not return a value on all code paths",
-            LintId::PreferMorphemePipeline => "Consider using morpheme pipeline (|τ{}, |φ{}) instead of method chain",
+            LintId::PreferMorphemePipeline => {
+                "Consider using morpheme pipeline (|τ{}, |φ{}) instead of method chain"
+            }
             LintId::EvidentialityViolation => "Evidence level mismatch in assignment or call",
             LintId::UnvalidatedExternalData => "External data (~) used without validation",
             LintId::CertaintyDowngrade => "Certain (!) data being downgraded to uncertain (?)",
@@ -464,20 +469,30 @@ impl LintId {
             LintId::DivisionByZero => "Division by zero detected",
 
             // Aether 2.0 Enhanced Rules
-            LintId::EvidentialityMismatch => "Assigning between incompatible evidentiality levels (!, ?, ~)",
-            LintId::UncertaintyUnhandled => "Uncertain (?) value used without error handling or unwrap",
+            LintId::EvidentialityMismatch => {
+                "Assigning between incompatible evidentiality levels (!, ?, ~)"
+            }
+            LintId::UncertaintyUnhandled => {
+                "Uncertain (?) value used without error handling or unwrap"
+            }
             LintId::ReportedWithoutAttribution => "Reported (~) data lacks source attribution",
             LintId::BrokenMorphemePipeline => "Morpheme pipeline has invalid or missing operators",
             LintId::MorphemeTypeIncompatibility => "Type mismatch between morpheme pipeline stages",
-            LintId::InconsistentMorphemeStyle => "Mixing morpheme pipeline (|τ{}) with method chain (.map())",
+            LintId::InconsistentMorphemeStyle => {
+                "Mixing morpheme pipeline (|τ{}) with method chain (.map())"
+            }
             LintId::InvalidHexagramNumber => "I Ching hexagram number must be between 1 and 64",
             LintId::InvalidTarotNumber => "Major Arcana number must be between 0 and 21",
             LintId::InvalidChakraIndex => "Chakra index must be between 0 and 6",
             LintId::InvalidZodiacIndex => "Zodiac sign index must be between 0 and 11",
             LintId::InvalidGematriaValue => "Gematria value is negative or exceeds maximum",
             LintId::FrequencyOutOfRange => "Audio frequency outside audible range (20Hz-20kHz)",
-            LintId::MissingEvidentialityMarker => "Type declaration lacks evidentiality marker (!, ?, ~)",
-            LintId::PreferNamedEsotericConstant => "Use named constant for esoteric value (e.g., GOLDEN_RATIO)",
+            LintId::MissingEvidentialityMarker => {
+                "Type declaration lacks evidentiality marker (!, ?, ~)"
+            }
+            LintId::PreferNamedEsotericConstant => {
+                "Use named constant for esoteric value (e.g., GOLDEN_RATIO)"
+            }
             LintId::EmotionIntensityOutOfRange => "Emotion intensity must be between 0.0 and 1.0",
         }
     }
@@ -556,7 +571,8 @@ impl LintId {
     /// Get extended documentation for this lint rule.
     pub fn extended_docs(&self) -> &'static str {
         match self {
-            LintId::ReservedIdentifier => r#"
+            LintId::ReservedIdentifier => {
+                r#"
 This lint detects use of identifiers that are reserved words in Sigil.
 Reserved words have special meaning in the language and cannot be used
 as variable, function, or type names.
@@ -571,8 +587,10 @@ Common alternatives:
   - location -> place
   - save -> slot, store
   - from -> source, origin
-"#,
-            LintId::NestedGenerics => r#"
+"#
+            }
+            LintId::NestedGenerics => {
+                r#"
 This lint warns about nested generic parameters which may not parse
 correctly in the current version of Sigil.
 
@@ -582,8 +600,10 @@ Example:
 Fix:
     type OptInt = Option<i32>;
     fn process(data: Vec<OptInt>) { }  // Use type alias
-"#,
-            LintId::UnusedVariable => r#"
+"#
+            }
+            LintId::UnusedVariable => {
+                r#"
 This lint detects variables that are declared but never used.
 Unused variables may indicate incomplete code or typos.
 
@@ -597,8 +617,10 @@ Fix:
 
     // Or prefix with underscore to indicate intentionally unused:
     let _x = 42;
-"#,
-            LintId::Shadowing => r#"
+"#
+            }
+            LintId::Shadowing => {
+                r#"
 This lint warns when a variable shadows another variable from an
 outer scope. While sometimes intentional, shadowing can make code
 harder to understand.
@@ -617,8 +639,10 @@ Fix:
 
     // Or prefix with underscore if intentional:
     let _x = 2;
-"#,
-            LintId::DeepNesting => r#"
+"#
+            }
+            LintId::DeepNesting => {
+                r#"
 This lint warns about excessively nested code structures.
 Deep nesting makes code hard to read and maintain.
 
@@ -641,8 +665,10 @@ Fix:
 
     // Or extract into functions
     fn check_conditions() { ... }
-"#,
-            LintId::HighComplexity => r#"
+"#
+            }
+            LintId::HighComplexity => {
+                r#"
 This lint warns about functions with high cyclomatic complexity.
 High complexity makes code harder to test and maintain.
 
@@ -656,8 +682,10 @@ Fix:
     // Extract complex logic into smaller functions
     // Use early returns to reduce nesting
     // Consider using match instead of if-else chains
-"#,
-            LintId::DivisionByZero => r#"
+"#
+            }
+            LintId::DivisionByZero => {
+                r#"
 This lint detects division by a literal zero, which will cause
 a runtime panic.
 
@@ -668,8 +696,10 @@ Fix:
     if divisor != 0 {
         let result = x / divisor;
     }
-"#,
-            LintId::ConstantCondition => r#"
+"#
+            }
+            LintId::ConstantCondition => {
+                r#"
 This lint detects conditions that are always true or always false,
 indicating likely bugs or unnecessary code.
 
@@ -680,8 +710,10 @@ Example:
 Fix:
     // Remove unnecessary conditions
     // Or use the correct variable in the condition
-"#,
-            LintId::TodoWithoutIssue => r#"
+"#
+            }
+            LintId::TodoWithoutIssue => {
+                r#"
 This lint warns about TODO comments that don't reference an issue tracker.
 
 Example:
@@ -694,8 +726,10 @@ Fix:
 Configure via .sigillint.toml:
     [lint.levels]
     todo_without_issue = "warn"
-"#,
-            LintId::LongFunction => r#"
+"#
+            }
+            LintId::LongFunction => {
+                r#"
 This lint warns about functions that exceed a maximum line count.
 Long functions are harder to understand, test, and maintain.
 
@@ -705,8 +739,10 @@ Fix:
     // Break into smaller, focused functions
     // Extract helper functions for distinct operations
     // Use early returns to reduce nesting
-"#,
-            LintId::TooManyParameters => r#"
+"#
+            }
+            LintId::TooManyParameters => {
+                r#"
 This lint warns about functions with too many parameters.
 Many parameters indicate a function may be doing too much.
 
@@ -716,8 +752,10 @@ Fix:
     // Group related parameters into a struct
     // Use builder pattern for complex construction
     // Consider if function should be split
-"#,
-            LintId::NeedlessReturn => r#"
+"#
+            }
+            LintId::NeedlessReturn => {
+                r#"
 This lint suggests removing unnecessary return statements.
 In Sigil, the last expression is the return value.
 
@@ -730,8 +768,10 @@ Fix:
     fn add(a: i32, b: i32) -> i32 {
         a + b  // Implicit return
     }
-"#,
-            LintId::MissingReturn => r#"
+"#
+            }
+            LintId::MissingReturn => {
+                r#"
 This lint warns when a function with a return type may not return
 a value on all execution paths.
 
@@ -756,8 +796,10 @@ The linter checks:
   - If all branches return a value
   - If match arms all produce values
   - If loops with breaks produce consistent values
-"#,
-            LintId::PreferMorphemePipeline => r#"
+"#
+            }
+            LintId::PreferMorphemePipeline => {
+                r#"
 This lint suggests using Sigil's morpheme pipeline syntax instead
 of method chains. Morpheme pipelines are more idiomatic in Sigil
 and provide clearer data flow semantics.
@@ -783,7 +825,8 @@ Common morpheme operators:
 This lint is off by default. Enable with:
     [lint.levels]
     prefer_morpheme_pipeline = "warn"
-"#,
+"#
+            }
             _ => self.description(),
         }
     }
@@ -820,7 +863,6 @@ This lint is off by default. Enable with:
             LintId::UnreachableCode,
             LintId::InfiniteLoop,
             LintId::DivisionByZero,
-
             // Aether 2.0 Enhanced Rules
             LintId::EvidentialityMismatch,
             LintId::UncertaintyUnhandled,
@@ -1003,7 +1045,8 @@ impl BaselineEntry {
         source[..offset.min(source.len())]
             .chars()
             .filter(|&c| c == '\n')
-            .count() + 1
+            .count()
+            + 1
     }
 
     /// Simple hash of a message for comparison.
@@ -1080,15 +1123,13 @@ impl Baseline {
 
     /// Parse baseline from JSON string.
     pub fn from_json(content: &str) -> Result<Self, String> {
-        serde_json::from_str(content)
-            .map_err(|e| format!("Failed to parse baseline: {}", e))
+        serde_json::from_str(content).map_err(|e| format!("Failed to parse baseline: {}", e))
     }
 
     /// Save baseline to a JSON file.
     pub fn to_file(&self, path: &Path) -> Result<(), String> {
         let content = self.to_json()?;
-        std::fs::write(path, content)
-            .map_err(|e| format!("Failed to write baseline file: {}", e))
+        std::fs::write(path, content).map_err(|e| format!("Failed to write baseline file: {}", e))
     }
 
     /// Convert baseline to JSON string.
@@ -1118,7 +1159,12 @@ impl Baseline {
 
     /// Filter diagnostics, removing those in the baseline.
     /// Returns (filtered_diagnostics, baseline_matches).
-    pub fn filter(&self, file: &str, diagnostics: &Diagnostics, source: &str) -> (Diagnostics, usize) {
+    pub fn filter(
+        &self,
+        file: &str,
+        diagnostics: &Diagnostics,
+        source: &str,
+    ) -> (Diagnostics, usize) {
         let mut filtered = Diagnostics::new();
         let mut baseline_matches = 0;
 
@@ -1134,7 +1180,10 @@ impl Baseline {
     }
 
     /// Create a baseline from directory lint results.
-    pub fn from_directory_result(result: &DirectoryLintResult, sources: &HashMap<String, String>) -> Self {
+    pub fn from_directory_result(
+        result: &DirectoryLintResult,
+        sources: &HashMap<String, String>,
+    ) -> Self {
         let mut baseline = Self::new();
 
         for (path, diag_result) in &result.files {
@@ -1233,8 +1282,15 @@ fn chrono_lite_now() -> String {
     let minutes = (secs % 3600) / 60;
     let seconds = secs % 60;
 
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-            years, months.min(12), day.min(31), hours, minutes, seconds)
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        years,
+        months.min(12),
+        day.min(31),
+        hours,
+        minutes,
+        seconds
+    )
 }
 
 /// Find and load baseline from standard locations.
@@ -1385,21 +1441,27 @@ impl CliOverrides {
         for cat in &self.allow_category {
             for lint in LintId::all() {
                 if lint.category() == *cat {
-                    config.levels.insert(lint.name().to_string(), LintLevel::Allow);
+                    config
+                        .levels
+                        .insert(lint.name().to_string(), LintLevel::Allow);
                 }
             }
         }
         for cat in &self.warn_category {
             for lint in LintId::all() {
                 if lint.category() == *cat {
-                    config.levels.insert(lint.name().to_string(), LintLevel::Warn);
+                    config
+                        .levels
+                        .insert(lint.name().to_string(), LintLevel::Warn);
                 }
             }
         }
         for cat in &self.deny_category {
             for lint in LintId::all() {
                 if lint.category() == *cat {
-                    config.levels.insert(lint.name().to_string(), LintLevel::Deny);
+                    config
+                        .levels
+                        .insert(lint.name().to_string(), LintLevel::Deny);
                 }
             }
         }
@@ -1407,7 +1469,9 @@ impl CliOverrides {
         // Then, apply individual lint overrides (takes precedence)
         for lint_str in &self.allow {
             if let Some(lint) = LintId::from_str(lint_str) {
-                config.levels.insert(lint.name().to_string(), LintLevel::Allow);
+                config
+                    .levels
+                    .insert(lint.name().to_string(), LintLevel::Allow);
             } else {
                 // Try as a name directly
                 config.levels.insert(lint_str.clone(), LintLevel::Allow);
@@ -1415,14 +1479,18 @@ impl CliOverrides {
         }
         for lint_str in &self.warn {
             if let Some(lint) = LintId::from_str(lint_str) {
-                config.levels.insert(lint.name().to_string(), LintLevel::Warn);
+                config
+                    .levels
+                    .insert(lint.name().to_string(), LintLevel::Warn);
             } else {
                 config.levels.insert(lint_str.clone(), LintLevel::Warn);
             }
         }
         for lint_str in &self.deny {
             if let Some(lint) = LintId::from_str(lint_str) {
-                config.levels.insert(lint.name().to_string(), LintLevel::Deny);
+                config
+                    .levels
+                    .insert(lint.name().to_string(), LintLevel::Deny);
             } else {
                 config.levels.insert(lint_str.clone(), LintLevel::Deny);
             }
@@ -1600,21 +1668,18 @@ impl LintCache {
 
     /// Parse cache from JSON string.
     pub fn from_json(content: &str) -> Result<Self, String> {
-        serde_json::from_str(content)
-            .map_err(|e| format!("Failed to parse cache: {}", e))
+        serde_json::from_str(content).map_err(|e| format!("Failed to parse cache: {}", e))
     }
 
     /// Save cache to a JSON file.
     pub fn to_file(&self, path: &Path) -> Result<(), String> {
         let content = self.to_json()?;
-        std::fs::write(path, content)
-            .map_err(|e| format!("Failed to write cache file: {}", e))
+        std::fs::write(path, content).map_err(|e| format!("Failed to write cache file: {}", e))
     }
 
     /// Convert cache to JSON string.
     pub fn to_json(&self) -> Result<String, String> {
-        serde_json::to_string(self)
-            .map_err(|e| format!("Failed to serialize cache: {}", e))
+        serde_json::to_string(self).map_err(|e| format!("Failed to serialize cache: {}", e))
     }
 
     /// Compute BLAKE3 hash of file contents.
@@ -1629,7 +1694,12 @@ impl LintCache {
     /// - File is not in cache
     /// - File content has changed (different hash)
     /// - File metadata suggests change (mtime/size)
-    pub fn needs_lint(&self, path: &str, content: &str, metadata: Option<&std::fs::Metadata>) -> bool {
+    pub fn needs_lint(
+        &self,
+        path: &str,
+        content: &str,
+        metadata: Option<&std::fs::Metadata>,
+    ) -> bool {
         let Some(entry) = self.entries.get(path) else {
             return true; // Not in cache
         };
@@ -1684,10 +1754,12 @@ impl LintCache {
 
         let size = metadata.map(|m| m.len()).unwrap_or(0);
 
-        let warning_count = diagnostics.iter()
+        let warning_count = diagnostics
+            .iter()
             .filter(|d| d.severity == Severity::Warning)
             .count();
-        let error_count = diagnostics.iter()
+        let error_count = diagnostics
+            .iter()
             .filter(|d| d.severity == Severity::Error)
             .count();
 
@@ -1696,14 +1768,17 @@ impl LintCache {
             .map(CachedDiagnostic::from_diagnostic)
             .collect();
 
-        self.entries.insert(path.to_string(), CacheEntry {
-            content_hash,
-            mtime,
-            size,
-            warning_count,
-            error_count,
-            diagnostics: Some(cached_diags),
-        });
+        self.entries.insert(
+            path.to_string(),
+            CacheEntry {
+                content_hash,
+                mtime,
+                size,
+                warning_count,
+                error_count,
+                diagnostics: Some(cached_diags),
+            },
+        );
     }
 
     /// Remove stale entries (files that no longer exist).
@@ -1803,7 +1878,14 @@ pub fn lint_directory_incremental(
     let parse_errors = AtomicUsize::new(0);
 
     // Collect cache updates: (path, source, cached_diagnostics, metadata)
-    let cache_updates: Mutex<Vec<(String, String, Vec<CachedDiagnostic>, Option<std::fs::Metadata>)>> = Mutex::new(Vec::new());
+    let cache_updates: Mutex<
+        Vec<(
+            String,
+            String,
+            Vec<CachedDiagnostic>,
+            Option<std::fs::Metadata>,
+        )>,
+    > = Mutex::new(Vec::new());
 
     let file_results: Vec<(String, Result<Diagnostics, String>)> = files
         .par_iter()
@@ -1815,10 +1897,12 @@ pub fn lint_directory_incremental(
             // Check cache first
             if let Some(cached_diags) = cache.get_cached(&path_str, &source) {
                 cached_count.fetch_add(1, Ordering::Relaxed);
-                let warnings = cached_diags.iter()
+                let warnings = cached_diags
+                    .iter()
                     .filter(|d| d.severity == Severity::Warning)
                     .count();
-                let errors = cached_diags.iter()
+                let errors = cached_diags
+                    .iter()
                     .filter(|d| d.severity == Severity::Error)
                     .count();
                 total_warnings.fetch_add(warnings, Ordering::Relaxed);
@@ -1830,10 +1914,12 @@ pub fn lint_directory_incremental(
             linted_count.fetch_add(1, Ordering::Relaxed);
             match lint_source_with_config(&source, &path_str, config.clone()) {
                 Ok(diagnostics) => {
-                    let warnings = diagnostics.iter()
+                    let warnings = diagnostics
+                        .iter()
                         .filter(|d| d.severity == Severity::Warning)
                         .count();
-                    let errors = diagnostics.iter()
+                    let errors = diagnostics
+                        .iter()
                         .filter(|d| d.severity == Severity::Error)
                         .count();
                     total_warnings.fetch_add(warnings, Ordering::Relaxed);
@@ -1934,9 +2020,9 @@ impl Linter {
             nesting_depth: 0,
             current_fn_params: HashMap::new(),
             current_complexity: 0,
-            max_complexity: 10, // Default: warn if complexity > 10
+            max_complexity: 10,     // Default: warn if complexity > 10
             max_function_lines: 50, // Default: warn if function > 50 lines
-            max_parameters: 7, // Default: warn if > 7 parameters
+            max_parameters: 7,      // Default: warn if > 7 parameters
             current_fn_lines: 0,
             source_text: String::new(),
             suppressions: Vec::new(),
@@ -2018,7 +2104,10 @@ impl Linter {
         if self.nesting_depth > max_depth {
             self.emit(
                 LintId::DeepNesting,
-                format!("nesting depth {} exceeds maximum of {}", self.nesting_depth, max_depth),
+                format!(
+                    "nesting depth {} exceeds maximum of {}",
+                    self.nesting_depth, max_depth
+                ),
                 span,
             );
         }
@@ -2249,9 +2338,9 @@ impl Linter {
         match stmt {
             Stmt::Expr(e) | Stmt::Semi(e) => Self::expr_contains_break(e),
             Stmt::Let { init, .. } => init.as_ref().map_or(false, Self::expr_contains_break),
-            Stmt::LetElse { init, else_branch, .. } => {
-                Self::expr_contains_break(init) || Self::expr_contains_break(else_branch)
-            }
+            Stmt::LetElse {
+                init, else_branch, ..
+            } => Self::expr_contains_break(init) || Self::expr_contains_break(else_branch),
             Stmt::Item(_) => false,
         }
     }
@@ -2261,9 +2350,15 @@ impl Linter {
             Expr::Break { .. } => true,
             Expr::Return(_) => true,
             Expr::Block(b) => Self::block_contains_break(b),
-            Expr::If { then_branch, else_branch, .. } => {
+            Expr::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
                 Self::block_contains_break(then_branch)
-                    || else_branch.as_ref().map_or(false, |e| Self::expr_contains_break(e))
+                    || else_branch
+                        .as_ref()
+                        .map_or(false, |e| Self::expr_contains_break(e))
             }
             Expr::Match { arms, .. } => arms.iter().any(|arm| Self::expr_contains_break(&arm.body)),
             Expr::Loop { .. } | Expr::While { .. } | Expr::For { .. } => false,
@@ -2274,11 +2369,7 @@ impl Linter {
     /// Check for empty blocks (W0206)
     fn check_empty_block(&mut self, block: &Block, span: Span) {
         if block.stmts.is_empty() && block.expr.is_none() {
-            self.emit(
-                LintId::EmptyBlock,
-                "empty block",
-                span,
-            );
+            self.emit(LintId::EmptyBlock, "empty block", span);
         }
     }
 
@@ -2325,7 +2416,12 @@ impl Linter {
 
     /// Check for redundant else after terminating statement (W0208)
     /// e.g., `if cond { return x; } else { y }` - the else is redundant
-    fn check_redundant_else(&mut self, then_branch: &Block, else_branch: &Option<Box<Expr>>, span: Span) {
+    fn check_redundant_else(
+        &mut self,
+        then_branch: &Block,
+        else_branch: &Option<Box<Expr>>,
+        span: Span,
+    ) {
         if else_branch.is_none() {
             return;
         }
@@ -2352,7 +2448,9 @@ impl Linter {
     /// Allows common values: 0, 1, 2, -1, 10, 100, 1000, etc.
     fn check_magic_number(&mut self, value: &str, span: Span) {
         // Common allowed values
-        let allowed = ["0", "1", "2", "-1", "10", "100", "1000", "0.0", "1.0", "0.5"];
+        let allowed = [
+            "0", "1", "2", "-1", "10", "100", "1000", "0.0", "1.0", "0.5",
+        ];
         if allowed.contains(&value) {
             return;
         }
@@ -2393,7 +2491,8 @@ impl Linter {
     /// Check for unused function parameters.
     fn check_unused_params(&mut self) {
         // Collect unused params first to avoid borrow issues
-        let unused: Vec<(String, Span)> = self.current_fn_params
+        let unused: Vec<(String, Span)> = self
+            .current_fn_params
             .iter()
             .filter(|(name, (_, used))| !name.starts_with('_') && !used)
             .map(|(name, (span, _))| (name.clone(), *span))
@@ -2513,7 +2612,13 @@ impl Linter {
     /// - An if without else doesn't return in all branches
     /// - A match doesn't cover all cases with returns
     /// - Early returns leave some paths without values
-    fn check_missing_return(&mut self, body: &Block, has_return_type: bool, func_name: &str, span: Span) {
+    fn check_missing_return(
+        &mut self,
+        body: &Block,
+        has_return_type: bool,
+        func_name: &str,
+        span: Span,
+    ) {
         if !has_return_type {
             return; // Unit functions don't need return checks
         }
@@ -2522,7 +2627,10 @@ impl Linter {
         if !Self::block_always_returns(body) {
             self.emit(
                 LintId::MissingReturn,
-                format!("function `{}` may not return a value on all code paths", func_name),
+                format!(
+                    "function `{}` may not return a value on all code paths",
+                    func_name
+                ),
                 span,
             );
         }
@@ -2559,14 +2667,18 @@ impl Linter {
         match expr {
             // Direct terminators
             Expr::Return(_) => true,
-            Expr::Break { .. } => true, // In loop context
+            Expr::Break { .. } => true,    // In loop context
             Expr::Continue { .. } => true, // In loop context
 
             // Block: check if block returns
             Expr::Block(b) => Self::block_always_returns(b),
 
             // If: both branches must return
-            Expr::If { then_branch, else_branch, .. } => {
+            Expr::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
                 if let Some(ref else_expr) = else_branch {
                     Self::block_always_returns(then_branch) && Self::expr_always_returns(else_expr)
                 } else {
@@ -2651,20 +2763,26 @@ impl Linter {
     /// Count the length of a method call chain.
     fn method_chain_length(expr: &Expr) -> usize {
         match expr {
-            Expr::MethodCall { receiver, .. } => {
-                1 + Self::method_chain_length(receiver)
-            }
+            Expr::MethodCall { receiver, .. } => 1 + Self::method_chain_length(receiver),
             _ => 0,
         }
     }
 
     /// Count methods in a chain that could be replaced with morpheme operators.
     fn count_transformable_methods(expr: &Expr) -> usize {
-        let transformable = ["map", "filter", "fold", "reduce", "collect", "sort", "first", "last", "zip", "iter"];
+        let transformable = [
+            "map", "filter", "fold", "reduce", "collect", "sort", "first", "last", "zip", "iter",
+        ];
 
         match expr {
-            Expr::MethodCall { receiver, method, .. } => {
-                let count = if transformable.contains(&method.name.as_str()) { 1 } else { 0 };
+            Expr::MethodCall {
+                receiver, method, ..
+            } => {
+                let count = if transformable.contains(&method.name.as_str()) {
+                    1
+                } else {
+                    0
+                };
                 count + Self::count_transformable_methods(receiver)
             }
             _ => 0,
@@ -2701,9 +2819,9 @@ impl Linter {
     fn check_prefer_if_let(&mut self, arms: &[MatchArm], span: Span) {
         // If match has exactly 2 arms and one is a wildcard, suggest if-let
         if arms.len() == 2 {
-            let has_wildcard = arms.iter().any(|arm| {
-                matches!(&arm.pattern, Pattern::Wildcard)
-            });
+            let has_wildcard = arms
+                .iter()
+                .any(|arm| matches!(&arm.pattern, Pattern::Wildcard));
             if has_wildcard {
                 self.emit(
                     LintId::PreferIfLet,
@@ -2778,7 +2896,10 @@ impl Linter {
         if value < 20.0 || value > 20000.0 {
             self.emit(
                 LintId::FrequencyOutOfRange,
-                format!("frequency {:.2}Hz is outside audible range (20Hz-20kHz)", value),
+                format!(
+                    "frequency {:.2}Hz is outside audible range (20Hz-20kHz)",
+                    value
+                ),
                 span,
             );
         }
@@ -2789,7 +2910,10 @@ impl Linter {
         if value < 0.0 || value > 1.0 {
             self.emit(
                 LintId::EmotionIntensityOutOfRange,
-                format!("emotion intensity {:.2} is invalid (must be 0.0-1.0)", value),
+                format!(
+                    "emotion intensity {:.2} is invalid (must be 0.0-1.0)",
+                    value
+                ),
                 span,
             );
         }
@@ -2819,7 +2943,10 @@ impl Linter {
             if value.starts_with(pattern) {
                 self.emit(
                     LintId::PreferNamedEsotericConstant,
-                    format!("consider using named constant {} instead of {}", suggestion, value),
+                    format!(
+                        "consider using named constant {} instead of {}",
+                        suggestion, value
+                    ),
                     span,
                 );
                 return;
@@ -2876,7 +3003,10 @@ impl Linter {
     fn check_domain_float_literal(&mut self, func_name: &str, value: f64, span: Span) {
         let name_lower = func_name.to_lowercase();
 
-        if name_lower.contains("frequency") || name_lower.contains("hz") || name_lower.contains("hertz") {
+        if name_lower.contains("frequency")
+            || name_lower.contains("hz")
+            || name_lower.contains("hertz")
+        {
             self.check_frequency_range(value, span);
         } else if name_lower.contains("intensity") || name_lower.contains("emotion") {
             self.check_emotion_intensity(value, span);
@@ -2924,7 +3054,8 @@ impl Linter {
                     scope.insert(name.name.clone());
                 }
                 // Track parameter for unused detection
-                self.current_fn_params.insert(name.name.clone(), (name.span, false));
+                self.current_fn_params
+                    .insert(name.name.clone(), (name.span, false));
             }
             self.visit_pattern(&param.pattern);
         }
@@ -3085,18 +3216,25 @@ impl Linter {
                 if let Pattern::Ident { name, .. } = pattern {
                     self.check_reserved(&name.name, name.span);
                     self.check_shadowing(&name.name, name.span);
-                    self.declared_vars.insert(name.name.clone(), (name.span, false));
+                    self.declared_vars
+                        .insert(name.name.clone(), (name.span, false));
                 }
                 self.visit_pattern(pattern);
                 if let Some(ref e) = init {
                     self.visit_expr(e);
                 }
             }
-            Stmt::LetElse { pattern, init, else_branch, .. } => {
+            Stmt::LetElse {
+                pattern,
+                init,
+                else_branch,
+                ..
+            } => {
                 if let Pattern::Ident { name, .. } = pattern {
                     self.check_reserved(&name.name, name.span);
                     self.check_shadowing(&name.name, name.span);
-                    self.declared_vars.insert(name.name.clone(), (name.span, false));
+                    self.declared_vars
+                        .insert(name.name.clone(), (name.span, false));
                 }
                 self.visit_pattern(pattern);
                 self.visit_expr(init);
@@ -3131,7 +3269,9 @@ impl Linter {
                     _ => {}
                 }
             }
-            Expr::Binary { op, left, right, .. } => {
+            Expr::Binary {
+                op, left, right, ..
+            } => {
                 self.check_division(op, right, Span::default());
                 self.check_bool_comparison(op, left, right, Span::default());
                 // Count && and || as complexity points
@@ -3153,7 +3293,12 @@ impl Linter {
                 self.check_empty_block(b, Span::default());
                 self.visit_block(b);
             }
-            Expr::If { condition, then_branch, else_branch, .. } => {
+            Expr::If {
+                condition,
+                then_branch,
+                else_branch,
+                ..
+            } => {
                 self.push_nesting(Span::default());
                 self.add_complexity(1); // If adds complexity
                 self.check_constant_condition(condition, Span::default());
@@ -3166,7 +3311,11 @@ impl Linter {
                 }
                 self.pop_nesting();
             }
-            Expr::Match { expr: match_expr, arms, .. } => {
+            Expr::Match {
+                expr: match_expr,
+                arms,
+                ..
+            } => {
                 self.push_nesting(Span::default());
                 self.check_prefer_if_let(arms, Span::default());
                 // Each match arm adds complexity (minus 1 for the base)
@@ -3184,7 +3333,9 @@ impl Linter {
                 }
                 self.pop_nesting();
             }
-            Expr::While { condition, body, .. } => {
+            Expr::While {
+                condition, body, ..
+            } => {
                 self.push_nesting(Span::default());
                 self.add_complexity(1); // While adds complexity
                 self.check_constant_condition(condition, Span::default());
@@ -3192,7 +3343,12 @@ impl Linter {
                 self.visit_block(body);
                 self.pop_nesting();
             }
-            Expr::For { pattern, iter, body, .. } => {
+            Expr::For {
+                pattern,
+                iter,
+                body,
+                ..
+            } => {
                 self.push_nesting(Span::default());
                 self.add_complexity(1); // For adds complexity
                 self.visit_pattern(pattern);
@@ -3214,8 +3370,14 @@ impl Linter {
                     self.visit_expr(arg);
                 }
             }
-            Expr::Field { expr: field_expr, .. } => self.visit_expr(field_expr),
-            Expr::Index { expr: idx_expr, index, .. } => {
+            Expr::Field {
+                expr: field_expr, ..
+            } => self.visit_expr(field_expr),
+            Expr::Index {
+                expr: idx_expr,
+                index,
+                ..
+            } => {
                 self.visit_expr(idx_expr);
                 self.visit_expr(index);
             }
@@ -3256,22 +3418,32 @@ impl Linter {
                 self.visit_expr(target);
                 self.visit_expr(value);
             }
-            Expr::AddrOf { expr: addr_expr, .. } => self.visit_expr(addr_expr),
+            Expr::AddrOf {
+                expr: addr_expr, ..
+            } => self.visit_expr(addr_expr),
             Expr::Deref(e) => self.visit_expr(e),
-            Expr::Cast { expr: cast_expr, .. } => self.visit_expr(cast_expr),
+            Expr::Cast {
+                expr: cast_expr, ..
+            } => self.visit_expr(cast_expr),
             Expr::Closure { params, body, .. } => {
                 for param in params {
                     self.visit_pattern(&param.pattern);
                 }
                 self.visit_expr(body);
             }
-            Expr::Await { expr: await_expr, .. } => self.visit_expr(await_expr),
+            Expr::Await {
+                expr: await_expr, ..
+            } => self.visit_expr(await_expr),
             Expr::Try(e) => self.visit_expr(e),
             Expr::Morpheme { body, .. } => self.visit_expr(body),
-            Expr::Pipe { expr: pipe_expr, .. } => self.visit_expr(pipe_expr),
+            Expr::Pipe {
+                expr: pipe_expr, ..
+            } => self.visit_expr(pipe_expr),
             Expr::Unsafe(block) => self.visit_block(block),
             Expr::Async { block, .. } => self.visit_block(block),
-            Expr::Unary { expr: unary_expr, .. } => self.visit_expr(unary_expr),
+            Expr::Unary {
+                expr: unary_expr, ..
+            } => self.visit_expr(unary_expr),
             Expr::Evidential { expr: ev_expr, .. } => self.visit_expr(ev_expr),
             Expr::Let { value, pattern, .. } => {
                 self.visit_pattern(pattern);
@@ -3320,7 +3492,11 @@ pub fn lint_source(source: &str, filename: &str) -> Result<Diagnostics, String> 
 }
 
 /// Lint source code with custom configuration.
-pub fn lint_source_with_config(source: &str, filename: &str, config: LintConfig) -> Result<Diagnostics, String> {
+pub fn lint_source_with_config(
+    source: &str,
+    filename: &str,
+    config: LintConfig,
+) -> Result<Diagnostics, String> {
     use crate::parser::Parser;
 
     let mut parser = Parser::new(source);
@@ -3359,7 +3535,10 @@ fn collect_sigil_files(dir: &Path) -> Vec<std::path::PathBuf> {
                 let path = entry.path();
                 if path.is_dir() {
                     visit_dir(&path, files);
-                } else if path.extension().map_or(false, |ext| ext == "sigil" || ext == "sg") {
+                } else if path
+                    .extension()
+                    .map_or(false, |ext| ext == "sigil" || ext == "sg")
+                {
                     files.push(path);
                 }
             }
@@ -3387,10 +3566,12 @@ pub fn lint_directory(dir: &Path, config: LintConfig) -> DirectoryLintResult {
             let path_str = path.display().to_string();
             match lint_source_with_config(&source, &path_str, config.clone()) {
                 Ok(diagnostics) => {
-                    let warnings = diagnostics.iter()
+                    let warnings = diagnostics
+                        .iter()
                         .filter(|d| d.severity == crate::diagnostic::Severity::Warning)
                         .count();
-                    let errors = diagnostics.iter()
+                    let errors = diagnostics
+                        .iter()
                         .filter(|d| d.severity == crate::diagnostic::Severity::Error)
                         .count();
                     result.total_warnings += warnings;
@@ -3429,10 +3610,12 @@ pub fn lint_directory_parallel(dir: &Path, config: LintConfig) -> DirectoryLintR
             let path_str = path.display().to_string();
             match lint_source_with_config(&source, &path_str, config.clone()) {
                 Ok(diagnostics) => {
-                    let warnings = diagnostics.iter()
+                    let warnings = diagnostics
+                        .iter()
                         .filter(|d| d.severity == crate::diagnostic::Severity::Warning)
                         .count();
-                    let errors = diagnostics.iter()
+                    let errors = diagnostics
+                        .iter()
                         .filter(|d| d.severity == crate::diagnostic::Severity::Error)
                         .count();
                     total_warnings.fetch_add(warnings, Ordering::Relaxed);
@@ -3604,7 +3787,11 @@ pub fn apply_fixes(source: &str, diagnostics: &Diagnostics) -> FixResult {
 /// Lint and optionally apply fixes to source code.
 ///
 /// Returns (fixed_source, diagnostics, fix_result).
-pub fn lint_and_fix(source: &str, filename: &str, config: LintConfig) -> Result<(String, Diagnostics, FixResult), String> {
+pub fn lint_and_fix(
+    source: &str,
+    filename: &str,
+    config: LintConfig,
+) -> Result<(String, Diagnostics, FixResult), String> {
     let diagnostics = lint_source_with_config(source, filename, config)?;
     let fix_result = apply_fixes(source, &diagnostics);
     Ok((fix_result.source.clone(), diagnostics, fix_result))
@@ -3812,32 +3999,36 @@ impl SarifReport {
                 Severity::Info | Severity::Hint => "note",
             };
 
-            let fixes: Vec<SarifFix> = diag.suggestions.iter().map(|fix| {
-                let (fix_start_line, fix_start_col) = offset_to_line_col(fix.span.start);
-                let (fix_end_line, fix_end_col) = offset_to_line_col(fix.span.end);
+            let fixes: Vec<SarifFix> = diag
+                .suggestions
+                .iter()
+                .map(|fix| {
+                    let (fix_start_line, fix_start_col) = offset_to_line_col(fix.span.start);
+                    let (fix_end_line, fix_end_col) = offset_to_line_col(fix.span.end);
 
-                SarifFix {
-                    description: SarifMessage {
-                        text: fix.message.clone(),
-                    },
-                    artifact_changes: vec![SarifArtifactChange {
-                        artifact_location: SarifArtifactLocation {
-                            uri: filename.to_string(),
+                    SarifFix {
+                        description: SarifMessage {
+                            text: fix.message.clone(),
                         },
-                        replacements: vec![SarifReplacement {
-                            deleted_region: SarifRegion {
-                                start_line: fix_start_line,
-                                start_column: fix_start_col,
-                                end_line: fix_end_line,
-                                end_column: fix_end_col,
+                        artifact_changes: vec![SarifArtifactChange {
+                            artifact_location: SarifArtifactLocation {
+                                uri: filename.to_string(),
                             },
-                            inserted_content: SarifContent {
-                                text: fix.replacement.clone(),
-                            },
+                            replacements: vec![SarifReplacement {
+                                deleted_region: SarifRegion {
+                                    start_line: fix_start_line,
+                                    start_column: fix_start_col,
+                                    end_line: fix_end_line,
+                                    end_column: fix_end_col,
+                                },
+                                inserted_content: SarifContent {
+                                    text: fix.replacement.clone(),
+                                },
+                            }],
                         }],
-                    }],
-                }
-            }).collect();
+                    }
+                })
+                .collect();
 
             if let Some(ref mut run) = self.runs.first_mut() {
                 run.results.push(SarifResult {
@@ -3867,8 +4058,7 @@ impl SarifReport {
 
     /// Convert to JSON string.
     pub fn to_json(&self) -> Result<String, String> {
-        serde_json::to_string_pretty(self)
-            .map_err(|e| format!("Failed to serialize SARIF: {}", e))
+        serde_json::to_string_pretty(self).map_err(|e| format!("Failed to serialize SARIF: {}", e))
     }
 }
 
@@ -3886,7 +4076,10 @@ pub fn generate_sarif(filename: &str, diagnostics: &Diagnostics, source: &str) -
 }
 
 /// Generate a SARIF report for directory linting results.
-pub fn generate_sarif_for_directory(result: &DirectoryLintResult, sources: &HashMap<String, String>) -> SarifReport {
+pub fn generate_sarif_for_directory(
+    result: &DirectoryLintResult,
+    sources: &HashMap<String, String>,
+) -> SarifReport {
     let mut report = SarifReport::new();
 
     for (path, diag_result) in &result.files {
@@ -3951,7 +4144,8 @@ pub fn list_lints() -> String {
         by_category.entry(lint.category()).or_default().push(*lint);
     }
 
-    let mut output = String::from("\n╔══════════════════════════════════════════════════════════════╗\n");
+    let mut output =
+        String::from("\n╔══════════════════════════════════════════════════════════════╗\n");
     output.push_str("║              Sigil Linter Rules                              ║\n");
     output.push_str("╚══════════════════════════════════════════════════════════════╝\n\n");
 
@@ -4346,24 +4540,22 @@ pub fn lint_files(files: &[PathBuf], config: LintConfig) -> Result<DirectoryLint
         let path_str = path.display().to_string();
 
         match fs::read_to_string(path) {
-            Ok(source) => {
-                match lint_source_with_config(&source, &path_str, config.clone()) {
-                    Ok(diagnostics) => {
-                        for diag in diagnostics.iter() {
-                            match diag.severity {
-                                Severity::Error => total_errors += 1,
-                                Severity::Warning => total_warnings += 1,
-                                _ => {}
-                            }
+            Ok(source) => match lint_source_with_config(&source, &path_str, config.clone()) {
+                Ok(diagnostics) => {
+                    for diag in diagnostics.iter() {
+                        match diag.severity {
+                            Severity::Error => total_errors += 1,
+                            Severity::Warning => total_warnings += 1,
+                            _ => {}
                         }
-                        results.push((path_str, Ok(diagnostics)));
                     }
-                    Err(e) => {
-                        parse_errors += 1;
-                        results.push((path_str, Err(e)));
-                    }
+                    results.push((path_str, Ok(diagnostics)));
                 }
-            }
+                Err(e) => {
+                    parse_errors += 1;
+                    results.push((path_str, Err(e)));
+                }
+            },
             Err(e) => {
                 parse_errors += 1;
                 results.push((path_str, Err(format!("Failed to read file: {}", e))));
@@ -4479,7 +4671,10 @@ pub enum CustomPattern {
     /// Match string literals containing pattern
     StringContains { patterns: Vec<String> },
     /// Match based on AST node type
-    AstNode { node_type: String, conditions: HashMap<String, String> },
+    AstNode {
+        node_type: String,
+        conditions: HashMap<String, String>,
+    },
 }
 
 /// Custom rules configuration file.
@@ -4496,7 +4691,9 @@ pub struct CustomRulesFile {
     pub rulesets: HashMap<String, Vec<String>>,
 }
 
-fn default_version() -> u32 { 1 }
+fn default_version() -> u32 {
+    1
+}
 
 impl CustomRulesFile {
     /// Load custom rules from file.
@@ -4505,11 +4702,9 @@ impl CustomRulesFile {
             .map_err(|e| format!("Failed to read custom rules: {}", e))?;
 
         if path.extension().map(|e| e == "json").unwrap_or(false) {
-            serde_json::from_str(&content)
-                .map_err(|e| format!("Failed to parse JSON: {}", e))
+            serde_json::from_str(&content).map_err(|e| format!("Failed to parse JSON: {}", e))
         } else {
-            toml::from_str(&content)
-                .map_err(|e| format!("Failed to parse TOML: {}", e))
+            toml::from_str(&content).map_err(|e| format!("Failed to parse TOML: {}", e))
         }
     }
 
@@ -4783,15 +4978,15 @@ impl IgnorePatterns {
             }
         }
 
-        Ok(Self { patterns, raw_patterns })
+        Ok(Self {
+            patterns,
+            raw_patterns,
+        })
     }
 
     /// Find and load ignore file from standard locations.
     pub fn find_and_load() -> Option<Self> {
-        let names = [
-            ".sigillintignore",
-            ".lintignore",
-        ];
+        let names = [".sigillintignore", ".lintignore"];
 
         if let Ok(mut dir) = std::env::current_dir() {
             loop {
@@ -4885,10 +5080,12 @@ pub fn lint_directory_filtered(
 
             match lint_source_with_config(&source, &path_str, config.clone()) {
                 Ok(diagnostics) => {
-                    let warnings = diagnostics.iter()
+                    let warnings = diagnostics
+                        .iter()
                         .filter(|d| d.severity == Severity::Warning)
                         .count();
-                    let errors = diagnostics.iter()
+                    let errors = diagnostics
+                        .iter()
                         .filter(|d| d.severity == Severity::Error)
                         .count();
                     total_warnings.fetch_add(warnings, Ordering::Relaxed);
@@ -5022,16 +5219,14 @@ impl LintReport {
     pub fn save_json(&self, path: &Path) -> Result<(), String> {
         let content = serde_json::to_string_pretty(self)
             .map_err(|e| format!("Failed to serialize report: {}", e))?;
-        std::fs::write(path, content)
-            .map_err(|e| format!("Failed to write report: {}", e))
+        std::fs::write(path, content).map_err(|e| format!("Failed to write report: {}", e))
     }
 
     /// Load report from JSON file.
     pub fn load_json(path: &Path) -> Result<Self, String> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read report: {}", e))?;
-        serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse report: {}", e))
+        let content =
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read report: {}", e))?;
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse report: {}", e))
     }
 }
 
@@ -5057,16 +5252,14 @@ impl TrendData {
     pub fn from_file(path: &Path) -> Result<Self, String> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| format!("Failed to read trend data: {}", e))?;
-        serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse trend data: {}", e))
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse trend data: {}", e))
     }
 
     /// Save to file.
     pub fn save(&self, path: &Path) -> Result<(), String> {
         let content = serde_json::to_string_pretty(self)
             .map_err(|e| format!("Failed to serialize trend data: {}", e))?;
-        std::fs::write(path, content)
-            .map_err(|e| format!("Failed to write trend data: {}", e))
+        std::fs::write(path, content).map_err(|e| format!("Failed to write trend data: {}", e))
     }
 
     /// Add a report to the trend.
@@ -5148,7 +5341,8 @@ pub fn generate_html_report(result: &DirectoryLintResult, title: &str) -> String
     let mut html = String::new();
 
     // HTML header
-    html.push_str(&format!(r#"<!DOCTYPE html>
+    html.push_str(&format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -5294,14 +5488,16 @@ pub fn generate_html_report(result: &DirectoryLintResult, title: &str) -> String
         let mut rules: Vec<_> = report.by_rule.iter().collect();
         rules.sort_by(|a, b| b.1.cmp(a.1));
 
-        html.push_str(r#"        <div class="section">
+        html.push_str(
+            r#"        <div class="section">
             <h2>Issues by Rule</h2>
             <table>
                 <thead>
                     <tr><th>Rule</th><th>Count</th><th>Distribution</th></tr>
                 </thead>
                 <tbody>
-"#);
+"#,
+        );
 
         for (rule, count) in rules.iter().take(15) {
             let pct = (**count as f64 / max_count as f64) * 100.0;
@@ -5321,14 +5517,16 @@ pub fn generate_html_report(result: &DirectoryLintResult, title: &str) -> String
 
     // Top Files with Issues
     if !report.by_file.is_empty() {
-        html.push_str(r#"        <div class="section">
+        html.push_str(
+            r#"        <div class="section">
             <h2>Files with Most Issues</h2>
             <table>
                 <thead>
                     <tr><th>File</th><th>Issues</th></tr>
                 </thead>
                 <tbody>
-"#);
+"#,
+        );
 
         for (file, count) in report.by_file.iter().take(10) {
             let short_file = if file.len() > 60 {
@@ -5358,10 +5556,13 @@ pub fn generate_html_report(result: &DirectoryLintResult, title: &str) -> String
 }
 
 /// Save HTML report to file.
-pub fn save_html_report(result: &DirectoryLintResult, path: &Path, title: &str) -> Result<(), String> {
+pub fn save_html_report(
+    result: &DirectoryLintResult,
+    path: &Path,
+    title: &str,
+) -> Result<(), String> {
     let html = generate_html_report(result, title);
-    std::fs::write(path, html)
-        .map_err(|e| format!("Failed to write HTML report: {}", e))
+    std::fs::write(path, html).map_err(|e| format!("Failed to write HTML report: {}", e))
 }
 
 /// CI annotation format (for GitHub Actions, etc).
@@ -5406,7 +5607,11 @@ pub fn generate_ci_annotations(result: &DirectoryLintResult, format: CiFormat) -
                             "{}:{}:{}: {}\n",
                             path,
                             line,
-                            if diag.severity == Severity::Error { "error" } else { "warning" },
+                            if diag.severity == Severity::Error {
+                                "error"
+                            } else {
+                                "warning"
+                            },
                             diag.message
                         ));
                     }
@@ -5426,7 +5631,11 @@ pub fn generate_ci_annotations(result: &DirectoryLintResult, format: CiFormat) -
                             "{}:{}: {}: {}\n",
                             path,
                             line,
-                            if diag.severity == Severity::Error { "error" } else { "warning" },
+                            if diag.severity == Severity::Error {
+                                "error"
+                            } else {
+                                "warning"
+                            },
                             diag.message
                         ));
                     }
@@ -5449,8 +5658,14 @@ mod tests {
     #[test]
     fn test_lint_level_defaults() {
         assert_eq!(LintId::ReservedIdentifier.default_level(), LintLevel::Warn);
-        assert_eq!(LintId::EvidentialityViolation.default_level(), LintLevel::Deny);
-        assert_eq!(LintId::PreferUnicodeMorpheme.default_level(), LintLevel::Allow);
+        assert_eq!(
+            LintId::EvidentialityViolation.default_level(),
+            LintLevel::Deny
+        );
+        assert_eq!(
+            LintId::PreferUnicodeMorpheme.default_level(),
+            LintLevel::Allow
+        );
     }
 
     #[test]
@@ -5499,47 +5714,98 @@ mod tests {
 
     #[test]
     fn test_aether_lint_names() {
-        assert_eq!(LintId::EvidentialityMismatch.name(), "evidentiality_mismatch");
-        assert_eq!(LintId::InvalidHexagramNumber.name(), "invalid_hexagram_number");
+        assert_eq!(
+            LintId::EvidentialityMismatch.name(),
+            "evidentiality_mismatch"
+        );
+        assert_eq!(
+            LintId::InvalidHexagramNumber.name(),
+            "invalid_hexagram_number"
+        );
         assert_eq!(LintId::FrequencyOutOfRange.name(), "frequency_out_of_range");
-        assert_eq!(LintId::PreferNamedEsotericConstant.name(), "prefer_named_esoteric_constant");
+        assert_eq!(
+            LintId::PreferNamedEsotericConstant.name(),
+            "prefer_named_esoteric_constant"
+        );
     }
 
     #[test]
     fn test_aether_lint_levels() {
         // Critical rules should be Deny
-        assert_eq!(LintId::EvidentialityMismatch.default_level(), LintLevel::Deny);
-        assert_eq!(LintId::BrokenMorphemePipeline.default_level(), LintLevel::Deny);
-        assert_eq!(LintId::MorphemeTypeIncompatibility.default_level(), LintLevel::Deny);
+        assert_eq!(
+            LintId::EvidentialityMismatch.default_level(),
+            LintLevel::Deny
+        );
+        assert_eq!(
+            LintId::BrokenMorphemePipeline.default_level(),
+            LintLevel::Deny
+        );
+        assert_eq!(
+            LintId::MorphemeTypeIncompatibility.default_level(),
+            LintLevel::Deny
+        );
 
         // Domain validation should be Warn
-        assert_eq!(LintId::InvalidHexagramNumber.default_level(), LintLevel::Warn);
+        assert_eq!(
+            LintId::InvalidHexagramNumber.default_level(),
+            LintLevel::Warn
+        );
         assert_eq!(LintId::InvalidTarotNumber.default_level(), LintLevel::Warn);
         assert_eq!(LintId::InvalidChakraIndex.default_level(), LintLevel::Warn);
         assert_eq!(LintId::InvalidZodiacIndex.default_level(), LintLevel::Warn);
         assert_eq!(LintId::FrequencyOutOfRange.default_level(), LintLevel::Warn);
 
         // Style suggestions should be Allow
-        assert_eq!(LintId::InconsistentMorphemeStyle.default_level(), LintLevel::Allow);
-        assert_eq!(LintId::MissingEvidentialityMarker.default_level(), LintLevel::Allow);
-        assert_eq!(LintId::PreferNamedEsotericConstant.default_level(), LintLevel::Allow);
+        assert_eq!(
+            LintId::InconsistentMorphemeStyle.default_level(),
+            LintLevel::Allow
+        );
+        assert_eq!(
+            LintId::MissingEvidentialityMarker.default_level(),
+            LintLevel::Allow
+        );
+        assert_eq!(
+            LintId::PreferNamedEsotericConstant.default_level(),
+            LintLevel::Allow
+        );
     }
 
     #[test]
     fn test_aether_lint_categories() {
         // Sigil-specific rules
-        assert_eq!(LintId::EvidentialityMismatch.category(), LintCategory::Sigil);
+        assert_eq!(
+            LintId::EvidentialityMismatch.category(),
+            LintCategory::Sigil
+        );
         assert_eq!(LintId::UncertaintyUnhandled.category(), LintCategory::Sigil);
-        assert_eq!(LintId::BrokenMorphemePipeline.category(), LintCategory::Sigil);
-        assert_eq!(LintId::MissingEvidentialityMarker.category(), LintCategory::Sigil);
+        assert_eq!(
+            LintId::BrokenMorphemePipeline.category(),
+            LintCategory::Sigil
+        );
+        assert_eq!(
+            LintId::MissingEvidentialityMarker.category(),
+            LintCategory::Sigil
+        );
 
         // Domain validation as correctness
-        assert_eq!(LintId::InvalidHexagramNumber.category(), LintCategory::Correctness);
-        assert_eq!(LintId::InvalidTarotNumber.category(), LintCategory::Correctness);
-        assert_eq!(LintId::FrequencyOutOfRange.category(), LintCategory::Correctness);
+        assert_eq!(
+            LintId::InvalidHexagramNumber.category(),
+            LintCategory::Correctness
+        );
+        assert_eq!(
+            LintId::InvalidTarotNumber.category(),
+            LintCategory::Correctness
+        );
+        assert_eq!(
+            LintId::FrequencyOutOfRange.category(),
+            LintCategory::Correctness
+        );
 
         // Style rules
-        assert_eq!(LintId::InconsistentMorphemeStyle.category(), LintCategory::Style);
+        assert_eq!(
+            LintId::InconsistentMorphemeStyle.category(),
+            LintCategory::Style
+        );
     }
 
     #[test]
@@ -5550,12 +5816,18 @@ mod tests {
         assert!(!LintId::FrequencyOutOfRange.description().is_empty());
 
         // Descriptions should contain relevant keywords
-        assert!(LintId::InvalidHexagramNumber.description().contains("1") &&
-                LintId::InvalidHexagramNumber.description().contains("64"));
-        assert!(LintId::InvalidTarotNumber.description().contains("0") &&
-                LintId::InvalidTarotNumber.description().contains("21"));
-        assert!(LintId::FrequencyOutOfRange.description().contains("20Hz") ||
-                LintId::FrequencyOutOfRange.description().contains("20kHz"));
+        assert!(
+            LintId::InvalidHexagramNumber.description().contains("1")
+                && LintId::InvalidHexagramNumber.description().contains("64")
+        );
+        assert!(
+            LintId::InvalidTarotNumber.description().contains("0")
+                && LintId::InvalidTarotNumber.description().contains("21")
+        );
+        assert!(
+            LintId::FrequencyOutOfRange.description().contains("20Hz")
+                || LintId::FrequencyOutOfRange.description().contains("20kHz")
+        );
     }
 
     #[test]
@@ -5586,13 +5858,28 @@ mod tests {
     #[test]
     fn test_from_str_aether_rules() {
         // Should find by code
-        assert_eq!(LintId::from_str("E0603"), Some(LintId::EvidentialityMismatch));
-        assert_eq!(LintId::from_str("W0600"), Some(LintId::InvalidHexagramNumber));
+        assert_eq!(
+            LintId::from_str("E0603"),
+            Some(LintId::EvidentialityMismatch)
+        );
+        assert_eq!(
+            LintId::from_str("W0600"),
+            Some(LintId::InvalidHexagramNumber)
+        );
         assert_eq!(LintId::from_str("W0605"), Some(LintId::FrequencyOutOfRange));
 
         // Should find by name
-        assert_eq!(LintId::from_str("evidentiality_mismatch"), Some(LintId::EvidentialityMismatch));
-        assert_eq!(LintId::from_str("invalid_hexagram_number"), Some(LintId::InvalidHexagramNumber));
-        assert_eq!(LintId::from_str("frequency_out_of_range"), Some(LintId::FrequencyOutOfRange));
+        assert_eq!(
+            LintId::from_str("evidentiality_mismatch"),
+            Some(LintId::EvidentialityMismatch)
+        );
+        assert_eq!(
+            LintId::from_str("invalid_hexagram_number"),
+            Some(LintId::InvalidHexagramNumber)
+        );
+        assert_eq!(
+            LintId::from_str("frequency_out_of_range"),
+            Some(LintId::FrequencyOutOfRange)
+        );
     }
 }

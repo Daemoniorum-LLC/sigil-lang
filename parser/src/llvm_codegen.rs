@@ -14,7 +14,10 @@ pub mod llvm {
         CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
     };
     use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StructType};
-    use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, IntValue, PointerValue, StructValue};
+    use inkwell::values::{
+        BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, IntValue, PointerValue,
+        StructValue,
+    };
     use inkwell::{AddressSpace, IntPredicate, OptimizationLevel};
 
     use std::collections::HashMap;
@@ -95,11 +98,11 @@ pub mod llvm {
     // Evidence Tag Constants
     // ============================================
     // These match the Evidentiality enum in ast.rs
-    const EVIDENCE_KNOWN: u8 = 0;     // ! - verified ground truth
+    const EVIDENCE_KNOWN: u8 = 0; // ! - verified ground truth
     const EVIDENCE_UNCERTAIN: u8 = 1; // ? - unverified input
-    const EVIDENCE_REPORTED: u8 = 2;  // ~ - EMA, eventually consistent
+    const EVIDENCE_REPORTED: u8 = 2; // ~ - EMA, eventually consistent
     const EVIDENCE_PREDICTED: u8 = 3; // ◊ - model output, speculative
-    const EVIDENCE_PARADOX: u8 = 4;   // ‽ - contradiction detected
+    const EVIDENCE_PARADOX: u8 = 4; // ‽ - contradiction detected
 
     // Runtime helper: get current time in milliseconds
     extern "C" fn sigil_now() -> i64 {
@@ -165,12 +168,16 @@ pub mod llvm {
 
     extern "C" fn sigil_vec_push(vec_ptr: *mut Vec<i64>, value: i64) {
         if !vec_ptr.is_null() {
-            unsafe { (*vec_ptr).push(value); }
+            unsafe {
+                (*vec_ptr).push(value);
+            }
         }
     }
 
     extern "C" fn sigil_vec_get(vec_ptr: *mut Vec<i64>, index: i64) -> i64 {
-        if vec_ptr.is_null() { return 0; }
+        if vec_ptr.is_null() {
+            return 0;
+        }
         unsafe {
             let vec_ref = &*vec_ptr;
             vec_ref.get(index as usize).copied().unwrap_or(0)
@@ -178,13 +185,17 @@ pub mod llvm {
     }
 
     extern "C" fn sigil_vec_len(vec_ptr: *mut Vec<i64>) -> i64 {
-        if vec_ptr.is_null() { return 0; }
+        if vec_ptr.is_null() {
+            return 0;
+        }
         unsafe { (*vec_ptr).len() as i64 }
     }
 
     // String runtime functions
     extern "C" fn sigil_string_from(ptr: *const i8) -> *mut String {
-        if ptr.is_null() { return std::ptr::null_mut(); }
+        if ptr.is_null() {
+            return std::ptr::null_mut();
+        }
         unsafe {
             let cstr = std::ffi::CStr::from_ptr(ptr);
             let s = cstr.to_string_lossy().into_owned();
@@ -193,7 +204,9 @@ pub mod llvm {
     }
 
     extern "C" fn sigil_string_len(str_ptr: *mut String) -> i64 {
-        if str_ptr.is_null() { return 0; }
+        if str_ptr.is_null() {
+            return 0;
+        }
         unsafe {
             let str_ref = &*str_ptr;
             str_ref.len() as i64
@@ -202,12 +215,16 @@ pub mod llvm {
 
     extern "C" fn sigil_string_print(str_ptr: *mut String) {
         if !str_ptr.is_null() {
-            unsafe { print!("{}", *str_ptr); }
+            unsafe {
+                print!("{}", *str_ptr);
+            }
         }
     }
 
     extern "C" fn sigil_string_concat(a_ptr: *mut String, b_ptr: *mut String) -> *mut String {
-        if a_ptr.is_null() || b_ptr.is_null() { return std::ptr::null_mut(); }
+        if a_ptr.is_null() || b_ptr.is_null() {
+            return std::ptr::null_mut();
+        }
         unsafe {
             let result = format!("{}{}", *a_ptr, *b_ptr);
             Box::into_raw(Box::new(result))
@@ -224,11 +241,19 @@ pub mod llvm {
     }
 
     extern "C" fn sigil_option_is_some(opt_ptr: *mut i64) -> i64 {
-        if opt_ptr.is_null() { 0 } else { 1 }
+        if opt_ptr.is_null() {
+            0
+        } else {
+            1
+        }
     }
 
     extern "C" fn sigil_option_is_none(opt_ptr: *mut i64) -> i64 {
-        if opt_ptr.is_null() { 1 } else { 0 }
+        if opt_ptr.is_null() {
+            1
+        } else {
+            0
+        }
     }
 
     extern "C" fn sigil_option_unwrap(opt_ptr: *mut i64) -> i64 {
@@ -241,22 +266,36 @@ pub mod llvm {
     }
 
     extern "C" fn sigil_option_unwrap_or(opt_ptr: *mut i64, default: i64) -> i64 {
-        if opt_ptr.is_null() { default } else { unsafe { *opt_ptr } }
+        if opt_ptr.is_null() {
+            default
+        } else {
+            unsafe { *opt_ptr }
+        }
     }
 
     // File I/O runtime functions
     extern "C" fn sigil_file_exists(path_ptr: *const i8) -> i64 {
-        if path_ptr.is_null() { return 0; }
+        if path_ptr.is_null() {
+            return 0;
+        }
         unsafe {
             let cstr = std::ffi::CStr::from_ptr(path_ptr);
             if let Ok(path) = cstr.to_str() {
-                if std::path::Path::new(path).exists() { 1 } else { 0 }
-            } else { 0 }
+                if std::path::Path::new(path).exists() {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
         }
     }
 
     extern "C" fn sigil_file_read_all(path_ptr: *const i8) -> *mut String {
-        if path_ptr.is_null() { return std::ptr::null_mut(); }
+        if path_ptr.is_null() {
+            return std::ptr::null_mut();
+        }
         unsafe {
             let cstr = std::ffi::CStr::from_ptr(path_ptr);
             if let Ok(path) = cstr.to_str() {
@@ -269,7 +308,9 @@ pub mod llvm {
     }
 
     extern "C" fn sigil_file_write_all(path_ptr: *const i8, content_ptr: *mut String) -> i64 {
-        if path_ptr.is_null() || content_ptr.is_null() { return -1; }
+        if path_ptr.is_null() || content_ptr.is_null() {
+            return -1;
+        }
         unsafe {
             let cstr = std::ffi::CStr::from_ptr(path_ptr);
             let content_ref = &*content_ptr;
@@ -370,9 +411,15 @@ pub mod llvm {
             // Second pass: process modules and declare all functions
             for spanned_item in &optimized.items {
                 match &spanned_item.node {
-                    Item::Function(func) => { self.declare_function(func)?; }
-                    Item::Module(module) => { self.process_module(module)?; }
-                    Item::Use(use_decl) => { self.process_use(use_decl)?; }
+                    Item::Function(func) => {
+                        self.declare_function(func)?;
+                    }
+                    Item::Module(module) => {
+                        self.process_module(module)?;
+                    }
+                    Item::Use(use_decl) => {
+                        self.process_use(use_decl)?;
+                    }
                     _ => {}
                 }
             }
@@ -380,9 +427,15 @@ pub mod llvm {
             // Third pass: compile function bodies
             for spanned_item in &optimized.items {
                 match &spanned_item.node {
-                    Item::Function(func) => { self.compile_function(func)?; }
-                    Item::Module(module) => { self.compile_module_functions(module)?; }
-                    Item::Impl(impl_block) => { self.compile_impl_methods(impl_block)?; }
+                    Item::Function(func) => {
+                        self.compile_function(func)?;
+                    }
+                    Item::Module(module) => {
+                        self.compile_module_functions(module)?;
+                    }
+                    Item::Impl(impl_block) => {
+                        self.compile_impl_methods(impl_block)?;
+                    }
                     _ => {}
                 }
             }
@@ -434,75 +487,93 @@ pub mod llvm {
 
             // sigil_vec_new(capacity: i64) -> ptr
             let vec_new_type = ptr_type.fn_type(&[i64_type.into()], false);
-            self.module.add_function("sigil_vec_new", vec_new_type, None);
+            self.module
+                .add_function("sigil_vec_new", vec_new_type, None);
 
             // sigil_vec_push(vec: ptr, value: i64) -> void
             let vec_push_type = void_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
-            self.module.add_function("sigil_vec_push", vec_push_type, None);
+            self.module
+                .add_function("sigil_vec_push", vec_push_type, None);
 
             // sigil_vec_get(vec: ptr, index: i64) -> i64
             let vec_get_type = i64_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
-            self.module.add_function("sigil_vec_get", vec_get_type, None);
+            self.module
+                .add_function("sigil_vec_get", vec_get_type, None);
 
             // sigil_vec_len(vec: ptr) -> i64
             let vec_len_type = i64_type.fn_type(&[ptr_type.into()], false);
-            self.module.add_function("sigil_vec_len", vec_len_type, None);
+            self.module
+                .add_function("sigil_vec_len", vec_len_type, None);
 
             // String functions
             // sigil_string_from(const char* src) -> ptr
             // For now, pass i64 as pointer to string literal (global constant)
             let string_from_type = ptr_type.fn_type(&[ptr_type.into()], false);
-            self.module.add_function("sigil_string_from", string_from_type, None);
+            self.module
+                .add_function("sigil_string_from", string_from_type, None);
 
             // sigil_string_len(str: ptr) -> i64
             let string_len_type = i64_type.fn_type(&[ptr_type.into()], false);
-            self.module.add_function("sigil_string_len", string_len_type, None);
+            self.module
+                .add_function("sigil_string_len", string_len_type, None);
 
             // sigil_string_print(str: ptr) -> void
             let string_print_type = void_type.fn_type(&[ptr_type.into()], false);
-            self.module.add_function("sigil_string_print", string_print_type, None);
+            self.module
+                .add_function("sigil_string_print", string_print_type, None);
 
             // sigil_string_concat(str1: ptr, str2: ptr) -> ptr
             let string_concat_type = ptr_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
-            self.module.add_function("sigil_string_concat", string_concat_type, None);
+            self.module
+                .add_function("sigil_string_concat", string_concat_type, None);
 
             // Option functions
             // sigil_option_some(value: i64) -> ptr
             let option_some_type = ptr_type.fn_type(&[i64_type.into()], false);
-            self.module.add_function("sigil_option_some", option_some_type, None);
+            self.module
+                .add_function("sigil_option_some", option_some_type, None);
 
             // sigil_option_none() -> ptr (null)
             let option_none_type = ptr_type.fn_type(&[], false);
-            self.module.add_function("sigil_option_none", option_none_type, None);
+            self.module
+                .add_function("sigil_option_none", option_none_type, None);
 
             // sigil_option_is_some(opt: ptr) -> i64
             let option_is_some_type = i64_type.fn_type(&[ptr_type.into()], false);
-            self.module.add_function("sigil_option_is_some", option_is_some_type, None);
+            self.module
+                .add_function("sigil_option_is_some", option_is_some_type, None);
 
             // sigil_option_is_none(opt: ptr) -> i64
             let option_is_none_type = i64_type.fn_type(&[ptr_type.into()], false);
-            self.module.add_function("sigil_option_is_none", option_is_none_type, None);
+            self.module
+                .add_function("sigil_option_is_none", option_is_none_type, None);
 
             // sigil_option_unwrap(opt: ptr) -> i64
             let option_unwrap_type = i64_type.fn_type(&[ptr_type.into()], false);
-            self.module.add_function("sigil_option_unwrap", option_unwrap_type, None);
+            self.module
+                .add_function("sigil_option_unwrap", option_unwrap_type, None);
 
             // sigil_option_unwrap_or(opt: ptr, default: i64) -> i64
-            let option_unwrap_or_type = i64_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
-            self.module.add_function("sigil_option_unwrap_or", option_unwrap_or_type, None);
+            let option_unwrap_or_type =
+                i64_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
+            self.module
+                .add_function("sigil_option_unwrap_or", option_unwrap_or_type, None);
 
             // File I/O functions
             // sigil_file_exists(path: ptr) -> i64 (1 if exists, 0 otherwise)
             let file_exists_type = i64_type.fn_type(&[ptr_type.into()], false);
-            self.module.add_function("sigil_file_exists", file_exists_type, None);
+            self.module
+                .add_function("sigil_file_exists", file_exists_type, None);
 
             // sigil_file_read_all(path: ptr) -> ptr (returns String ptr or null)
             let file_read_all_type = ptr_type.fn_type(&[ptr_type.into()], false);
-            self.module.add_function("sigil_file_read_all", file_read_all_type, None);
+            self.module
+                .add_function("sigil_file_read_all", file_read_all_type, None);
 
             // sigil_file_write_all(path: ptr, content: ptr) -> i64 (bytes written or -1)
             let file_write_all_type = i64_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
-            self.module.add_function("sigil_file_write_all", file_write_all_type, None);
+            self.module
+                .add_function("sigil_file_write_all", file_write_all_type, None);
         }
 
         /// Register a struct type in the type registry
@@ -513,7 +584,9 @@ pub mod llvm {
             if let Some(ref generics) = struct_def.generics {
                 if !generics.params.is_empty() {
                     // Extract type parameter names
-                    let type_params: Vec<String> = generics.params.iter()
+                    let type_params: Vec<String> = generics
+                        .params
+                        .iter()
                         .filter_map(|p| match p {
                             ast::GenericParam::Type { name, .. } => Some(name.name.clone()),
                             ast::GenericParam::Const { name, .. } => Some(name.name.clone()),
@@ -522,10 +595,13 @@ pub mod llvm {
                         .collect();
 
                     // Store as generic struct for later monomorphization
-                    self.generic_structs.insert(name.clone(), GenericStructDef {
-                        def: struct_def.clone(),
-                        type_params,
-                    });
+                    self.generic_structs.insert(
+                        name.clone(),
+                        GenericStructDef {
+                            def: struct_def.clone(),
+                            type_params,
+                        },
+                    );
                     return Ok(());
                 }
             }
@@ -587,10 +663,13 @@ pub mod llvm {
             let struct_type = self.context.struct_type(&field_types_refs, false);
 
             // Store in registry with mangled name
-            self.struct_types.insert(mangled_name, StructInfo {
-                llvm_type: struct_type,
-                field_indices,
-            });
+            self.struct_types.insert(
+                mangled_name,
+                StructInfo {
+                    llvm_type: struct_type,
+                    field_indices,
+                },
+            );
 
             Ok(())
         }
@@ -632,8 +711,7 @@ pub mod llvm {
                         i64_type.into()
                     }
                 }
-                ast::TypeExpr::Reference { inner, .. } |
-                ast::TypeExpr::Pointer { inner, .. } => {
+                ast::TypeExpr::Reference { inner, .. } | ast::TypeExpr::Pointer { inner, .. } => {
                     // References and pointers are represented as i64 (pointer-sized)
                     i64_type.into()
                 }
@@ -674,14 +752,18 @@ pub mod llvm {
             type_args: &[ast::TypeExpr],
         ) -> Result<String, String> {
             // Look up the generic struct definition
-            let generic_def = self.generic_structs.get(base_name)
+            let generic_def = self
+                .generic_structs
+                .get(base_name)
                 .ok_or_else(|| format!("Unknown generic struct: {}", base_name))?
                 .clone();
 
             if type_args.len() != generic_def.type_params.len() {
                 return Err(format!(
                     "Wrong number of type arguments for {}: expected {}, got {}",
-                    base_name, generic_def.type_params.len(), type_args.len()
+                    base_name,
+                    generic_def.type_params.len(),
+                    type_args.len()
                 ));
             }
 
@@ -707,12 +789,12 @@ pub mod llvm {
         /// Convert a TypeExpr to a string name for mangling
         fn type_expr_to_name(&self, ty: &ast::TypeExpr) -> String {
             match ty {
-                ast::TypeExpr::Path(path) => {
-                    path.segments.iter()
-                        .map(|s| s.ident.name.clone())
-                        .collect::<Vec<_>>()
-                        .join("_")
-                }
+                ast::TypeExpr::Path(path) => path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.name.clone())
+                    .collect::<Vec<_>>()
+                    .join("_"),
                 ast::TypeExpr::Reference { inner, mutable, .. } => {
                     let prefix = if *mutable { "mut_ref" } else { "ref" };
                     format!("{}_{}", prefix, self.type_expr_to_name(inner))
@@ -725,14 +807,11 @@ pub mod llvm {
                     format!("arr_{}", self.type_expr_to_name(element))
                 }
                 ast::TypeExpr::Tuple(elements) => {
-                    let names: Vec<_> = elements.iter()
-                        .map(|e| self.type_expr_to_name(e))
-                        .collect();
+                    let names: Vec<_> =
+                        elements.iter().map(|e| self.type_expr_to_name(e)).collect();
                     format!("tup_{}", names.join("_"))
                 }
-                ast::TypeExpr::Evidential { inner, .. } => {
-                    self.type_expr_to_name(inner)
-                }
+                ast::TypeExpr::Evidential { inner, .. } => self.type_expr_to_name(inner),
                 _ => "unknown".to_string(),
             }
         }
@@ -753,12 +832,12 @@ pub mod llvm {
             let value_type = self.primitive_to_llvm(base_type_name);
 
             let struct_name = format!("Evidential_{}", base_type_name);
-            let struct_type = self.context.struct_type(
-                &[i8_type.into(), value_type],
-                false
-            );
+            let struct_type = self
+                .context
+                .struct_type(&[i8_type.into(), value_type], false);
 
-            self.evidential_types.insert(base_type_name.to_string(), struct_type);
+            self.evidential_types
+                .insert(base_type_name.to_string(), struct_type);
             struct_type
         }
 
@@ -775,21 +854,33 @@ pub mod llvm {
             let tag = self.context.i8_type().const_int(evidence as u64, false);
 
             // Allocate on stack and store fields
-            let ptr = self.builder.build_alloca(evidential_type, "evidential")
+            let ptr = self
+                .builder
+                .build_alloca(evidential_type, "evidential")
                 .map_err(|e| e.to_string())?;
 
             // Store the tag at index 0
-            let tag_ptr = self.builder.build_struct_gep(evidential_type, ptr, 0, "tag_ptr")
+            let tag_ptr = self
+                .builder
+                .build_struct_gep(evidential_type, ptr, 0, "tag_ptr")
                 .map_err(|e| e.to_string())?;
-            self.builder.build_store(tag_ptr, tag).map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(tag_ptr, tag)
+                .map_err(|e| e.to_string())?;
 
             // Store the value at index 1
-            let value_ptr = self.builder.build_struct_gep(evidential_type, ptr, 1, "value_ptr")
+            let value_ptr = self
+                .builder
+                .build_struct_gep(evidential_type, ptr, 1, "value_ptr")
                 .map_err(|e| e.to_string())?;
-            self.builder.build_store(value_ptr, value).map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(value_ptr, value)
+                .map_err(|e| e.to_string())?;
 
             // Load and return the complete struct
-            let result = self.builder.build_load(evidential_type, ptr, "evidential_val")
+            let result = self
+                .builder
+                .build_load(evidential_type, ptr, "evidential_val")
                 .map_err(|e| e.to_string())?;
 
             Ok(result.into_struct_value())
@@ -802,7 +893,8 @@ pub mod llvm {
             evidential_struct: StructValue<'ctx>,
         ) -> Result<IntValue<'ctx>, String> {
             // Extract value at index 1
-            let value = self.builder
+            let value = self
+                .builder
                 .build_extract_value(evidential_struct, 1, "unwrapped")
                 .map_err(|e| e.to_string())?;
 
@@ -814,7 +906,8 @@ pub mod llvm {
             &mut self,
             evidential_struct: StructValue<'ctx>,
         ) -> Result<IntValue<'ctx>, String> {
-            let tag = self.builder
+            let tag = self
+                .builder
                 .build_extract_value(evidential_struct, 0, "tag")
                 .map_err(|e| e.to_string())?;
 
@@ -841,11 +934,13 @@ pub mod llvm {
             tag2: IntValue<'ctx>,
         ) -> Result<IntValue<'ctx>, String> {
             // Use max(tag1, tag2) since higher values = weaker evidence
-            let cmp = self.builder
+            let cmp = self
+                .builder
                 .build_int_compare(IntPredicate::UGT, tag1, tag2, "ev_cmp")
                 .map_err(|e| e.to_string())?;
 
-            let result = self.builder
+            let result = self
+                .builder
                 .build_select(cmp, tag1, tag2, "ev_combined")
                 .map_err(|e| e.to_string())?;
 
@@ -871,11 +966,11 @@ pub mod llvm {
             // Get the type name from the impl path
             // Extract type name from self_ty (TypeExpr)
             let type_name = match &impl_block.self_ty {
-                ast::TypeExpr::Path(path) => {
-                    path.segments.last()
-                        .map(|s| s.ident.name.clone())
-                        .ok_or_else(|| "Empty impl type path".to_string())?
-                }
+                ast::TypeExpr::Path(path) => path
+                    .segments
+                    .last()
+                    .map(|s| s.ident.name.clone())
+                    .ok_or_else(|| "Empty impl type path".to_string())?,
                 _ => return Err("Unsupported impl type".to_string()),
             };
 
@@ -908,22 +1003,35 @@ pub mod llvm {
                     if has_explicit_self {
                         // self is in params, name them all
                         for (i, param) in func.params.iter().enumerate() {
-                            if let ast::Pattern::Ident { name: ref ident, .. } = param.pattern {
-                                fn_value.get_nth_param(i as u32).unwrap().set_name(&ident.name);
+                            if let ast::Pattern::Ident {
+                                name: ref ident, ..
+                            } = param.pattern
+                            {
+                                fn_value
+                                    .get_nth_param(i as u32)
+                                    .unwrap()
+                                    .set_name(&ident.name);
                             }
                         }
                     } else {
                         // self is implicit, name it first then other params
                         fn_value.get_nth_param(0).unwrap().set_name("self");
                         for (i, param) in func.params.iter().enumerate() {
-                            if let ast::Pattern::Ident { name: ref ident, .. } = param.pattern {
-                                fn_value.get_nth_param((i + 1) as u32).unwrap().set_name(&ident.name);
+                            if let ast::Pattern::Ident {
+                                name: ref ident, ..
+                            } = param.pattern
+                            {
+                                fn_value
+                                    .get_nth_param((i + 1) as u32)
+                                    .unwrap()
+                                    .set_name(&ident.name);
                             }
                         }
                     }
 
                     self.functions.insert(mangled_name.clone(), fn_value);
-                    self.impl_methods.insert((type_name.clone(), method_name.clone()), mangled_name);
+                    self.impl_methods
+                        .insert((type_name.clone(), method_name.clone()), mangled_name);
                 }
             }
             Ok(())
@@ -933,11 +1041,11 @@ pub mod llvm {
         fn compile_impl_methods(&mut self, impl_block: &ast::ImplBlock) -> Result<(), String> {
             // Extract type name from self_ty (TypeExpr)
             let type_name = match &impl_block.self_ty {
-                ast::TypeExpr::Path(path) => {
-                    path.segments.last()
-                        .map(|s| s.ident.name.clone())
-                        .ok_or_else(|| "Empty impl type path".to_string())?
-                }
+                ast::TypeExpr::Path(path) => path
+                    .segments
+                    .last()
+                    .map(|s| s.ident.name.clone())
+                    .ok_or_else(|| "Empty impl type path".to_string())?,
                 _ => return Err("Unsupported impl type".to_string()),
             };
 
@@ -946,7 +1054,9 @@ pub mod llvm {
                     let method_name = &func.name.name;
                     let mangled_name = format!("{}_{}", type_name, method_name);
 
-                    let fn_value = *self.functions.get(&mangled_name)
+                    let fn_value = *self
+                        .functions
+                        .get(&mangled_name)
                         .ok_or_else(|| format!("Method not declared: {}", mangled_name))?;
 
                     // Create entry block
@@ -964,32 +1074,47 @@ pub mod llvm {
                     if has_explicit_self {
                         // self is explicitly in params, add all params to scope
                         for (i, param) in func.params.iter().enumerate() {
-                            if let ast::Pattern::Ident { name: ref ident, .. } = param.pattern {
+                            if let ast::Pattern::Ident {
+                                name: ref ident, ..
+                            } = param.pattern
+                            {
                                 let param_value = fn_value.get_nth_param(i as u32).unwrap();
-                                let alloca = self.builder
+                                let alloca = self
+                                    .builder
                                     .build_alloca(self.context.i64_type(), &ident.name)
                                     .map_err(|e| e.to_string())?;
-                                self.builder.build_store(alloca, param_value).map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_store(alloca, param_value)
+                                    .map_err(|e| e.to_string())?;
                                 scope.vars.insert(ident.name.clone(), alloca);
                             }
                         }
                     } else {
                         // self is implicit (first parameter)
                         let self_param = fn_value.get_nth_param(0).unwrap();
-                        let self_alloca = self.builder
+                        let self_alloca = self
+                            .builder
                             .build_alloca(self.context.i64_type(), "self")
                             .map_err(|e| e.to_string())?;
-                        self.builder.build_store(self_alloca, self_param).map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_store(self_alloca, self_param)
+                            .map_err(|e| e.to_string())?;
                         scope.vars.insert("self".to_string(), self_alloca);
 
                         // Add other parameters to scope
                         for (i, param) in func.params.iter().enumerate() {
-                            if let ast::Pattern::Ident { name: ref ident, .. } = param.pattern {
+                            if let ast::Pattern::Ident {
+                                name: ref ident, ..
+                            } = param.pattern
+                            {
                                 let param_value = fn_value.get_nth_param((i + 1) as u32).unwrap();
-                                let alloca = self.builder
+                                let alloca = self
+                                    .builder
                                     .build_alloca(self.context.i64_type(), &ident.name)
                                     .map_err(|e| e.to_string())?;
-                                self.builder.build_store(alloca, param_value).map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_store(alloca, param_value)
+                                    .map_err(|e| e.to_string())?;
                                 scope.vars.insert(ident.name.clone(), alloca);
                             }
                         }
@@ -1002,15 +1127,21 @@ pub mod llvm {
                         let current_block = self.builder.get_insert_block().unwrap();
                         if current_block.get_terminator().is_none() {
                             if let Some(val) = result {
-                                self.builder.build_return(Some(&val)).map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_return(Some(&val))
+                                    .map_err(|e| e.to_string())?;
                             } else {
                                 let zero = self.context.i64_type().const_int(0, false);
-                                self.builder.build_return(Some(&zero)).map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_return(Some(&zero))
+                                    .map_err(|e| e.to_string())?;
                             }
                         }
                     } else {
                         let zero = self.context.i64_type().const_int(0, false);
-                        self.builder.build_return(Some(&zero)).map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_return(Some(&zero))
+                            .map_err(|e| e.to_string())?;
                     }
                 }
             }
@@ -1033,7 +1164,10 @@ pub mod llvm {
             };
 
             // In AOT mode, rename "main" to "main_sigil" so it doesn't conflict with C runtime
-            let actual_name = if self.compile_mode == CompileMode::Aot && name == "main" && self.current_module.len() == 1 {
+            let actual_name = if self.compile_mode == CompileMode::Aot
+                && name == "main"
+                && self.current_module.len() == 1
+            {
                 "main_sigil".to_string()
             } else {
                 mangled_name.clone()
@@ -1248,14 +1382,14 @@ pub mod llvm {
                     if path.segments.len() >= 2 {
                         let enum_name = &path.segments[path.segments.len() - 2].ident.name;
                         let variant_name = &path.segments[path.segments.len() - 1].ident.name;
-                        
+
                         if let Some(enum_info) = self.enum_types.get(enum_name) {
                             if let Some(&discriminant) = enum_info.variants.get(variant_name) {
                                 return Ok(self.context.i64_type().const_int(discriminant, false));
                             }
                         }
                     }
-                    
+
                     // Variable lookup
                     let name = path
                         .segments
@@ -1299,9 +1433,11 @@ pub mod llvm {
                     then_branch,
                     else_branch.as_deref(),
                 ),
-                Expr::While { label: _, condition, body } => {
-                    self.compile_while(fn_value, scope, condition, body)
-                }
+                Expr::While {
+                    label: _,
+                    condition,
+                    body,
+                } => self.compile_while(fn_value, scope, condition, body),
                 Expr::Call { func, args } => self.compile_call(fn_value, scope, func, args),
                 Expr::Return(val) => {
                     let ret_val = if let Some(ref e) = val {
@@ -1337,16 +1473,24 @@ pub mod llvm {
                             // Get struct pointer from the expression
                             let struct_ptr_int = self.compile_expr(fn_value, scope, expr)?;
                             let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
-                            let struct_ptr = self.builder
+                            let struct_ptr = self
+                                .builder
                                 .build_int_to_ptr(struct_ptr_int, ptr_type, "struct_ptr")
                                 .map_err(|e| e.to_string())?;
 
                             let field_name = &field.name;
                             // Find the struct type and field index
                             for (_name, struct_info) in &self.struct_types {
-                                if let Some(&field_idx) = struct_info.field_indices.get(field_name) {
-                                    let field_ptr = self.builder
-                                        .build_struct_gep(struct_info.llvm_type, struct_ptr, field_idx, &format!("{}_ptr", field_name))
+                                if let Some(&field_idx) = struct_info.field_indices.get(field_name)
+                                {
+                                    let field_ptr = self
+                                        .builder
+                                        .build_struct_gep(
+                                            struct_info.llvm_type,
+                                            struct_ptr,
+                                            field_idx,
+                                            &format!("{}_ptr", field_name),
+                                        )
                                         .map_err(|e| e.to_string())?;
                                     self.builder
                                         .build_store(field_ptr, val)
@@ -1356,7 +1500,7 @@ pub mod llvm {
                             }
                             Err(format!("Unknown field: {}", field_name))
                         }
-                        _ => Err("Invalid assignment target".to_string())
+                        _ => Err("Invalid assignment target".to_string()),
                     }
                 }
                 Expr::Block(block) => {
@@ -1365,9 +1509,7 @@ pub mod llvm {
                 }
                 Expr::Struct { path, fields, .. } => {
                     // Get struct name and potential generic arguments from path
-                    let last_segment = path.segments
-                        .last()
-                        .ok_or("Empty struct path")?;
+                    let last_segment = path.segments.last().ok_or("Empty struct path")?;
                     let base_name = last_segment.ident.name.as_str();
 
                     // Check if this is a generic struct instantiation
@@ -1376,25 +1518,33 @@ pub mod llvm {
                         self.monomorphize_struct(base_name, type_args)?
                     } else if self.generic_structs.contains_key(base_name) {
                         // Generic struct used without type args - error
-                        return Err(format!("Generic struct {} requires type arguments", base_name));
+                        return Err(format!(
+                            "Generic struct {} requires type arguments",
+                            base_name
+                        ));
                     } else {
                         base_name.to_string()
                     };
 
                     // Look up struct type (now with mangled name for generics)
-                    let struct_info = self.struct_types.get(&struct_name)
+                    let struct_info = self
+                        .struct_types
+                        .get(&struct_name)
                         .ok_or_else(|| format!("Unknown struct type: {}", struct_name))?
                         .clone();
 
                     // Allocate space for struct on stack
-                    let struct_ptr = self.builder
+                    let struct_ptr = self
+                        .builder
                         .build_alloca(struct_info.llvm_type, &struct_name)
                         .map_err(|e| e.to_string())?;
 
                     // Initialize each field
                     for field_init in fields {
                         let field_name = &field_init.name.name;
-                        let field_idx = *struct_info.field_indices.get(field_name)
+                        let field_idx = *struct_info
+                            .field_indices
+                            .get(field_name)
                             .ok_or_else(|| format!("Unknown field: {}", field_name))?;
 
                         // Get field value (or use field name as variable if no value)
@@ -1408,13 +1558,22 @@ pub mod llvm {
                                     .map_err(|e| e.to_string())?
                                     .into_int_value()
                             } else {
-                                return Err(format!("Unknown variable for field shorthand: {}", field_name));
+                                return Err(format!(
+                                    "Unknown variable for field shorthand: {}",
+                                    field_name
+                                ));
                             }
                         };
 
                         // Get pointer to field and store value
-                        let field_ptr = self.builder
-                            .build_struct_gep(struct_info.llvm_type, struct_ptr, field_idx, &format!("{}_ptr", field_name))
+                        let field_ptr = self
+                            .builder
+                            .build_struct_gep(
+                                struct_info.llvm_type,
+                                struct_ptr,
+                                field_idx,
+                                &format!("{}_ptr", field_name),
+                            )
                             .map_err(|e| e.to_string())?;
                         self.builder
                             .build_store(field_ptr, field_value)
@@ -1422,7 +1581,8 @@ pub mod llvm {
                     }
 
                     // Return struct pointer as i64
-                    let ptr_int = self.builder
+                    let ptr_int = self
+                        .builder
                         .build_ptr_to_int(struct_ptr, self.context.i64_type(), "struct_ptr")
                         .map_err(|e| e.to_string())?;
                     Ok(ptr_int)
@@ -1433,7 +1593,8 @@ pub mod llvm {
 
                     // Convert i64 back to pointer
                     let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
-                    let struct_ptr = self.builder
+                    let struct_ptr = self
+                        .builder
                         .build_int_to_ptr(struct_ptr_int, ptr_type, "struct_ptr")
                         .map_err(|e| e.to_string())?;
 
@@ -1442,10 +1603,17 @@ pub mod llvm {
                     let field_name = &field.name;
                     for (_name, struct_info) in &self.struct_types {
                         if let Some(&field_idx) = struct_info.field_indices.get(field_name) {
-                            let field_ptr = self.builder
-                                .build_struct_gep(struct_info.llvm_type, struct_ptr, field_idx, &format!("{}_ptr", field_name))
+                            let field_ptr = self
+                                .builder
+                                .build_struct_gep(
+                                    struct_info.llvm_type,
+                                    struct_ptr,
+                                    field_idx,
+                                    &format!("{}_ptr", field_name),
+                                )
                                 .map_err(|e| e.to_string())?;
-                            let field_value = self.builder
+                            let field_value = self
+                                .builder
                                 .build_load(self.context.i64_type(), field_ptr, field_name)
                                 .map_err(|e| e.to_string())?;
                             return Ok(field_value.into_int_value());
@@ -1458,7 +1626,10 @@ pub mod llvm {
                     let scrutinee = self.compile_expr(fn_value, scope, expr)?;
 
                     let merge_bb = self.context.append_basic_block(fn_value, "match_merge");
-                    let mut incoming: Vec<(IntValue<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> = Vec::new();
+                    let mut incoming: Vec<(
+                        IntValue<'ctx>,
+                        inkwell::basic_block::BasicBlock<'ctx>,
+                    )> = Vec::new();
 
                     // Build chain of if-else for each arm
                     for (i, arm) in arms.iter().enumerate() {
@@ -1466,25 +1637,36 @@ pub mod llvm {
                         let pattern_val = match &arm.pattern {
                             ast::Pattern::Path(path) => {
                                 if path.segments.len() >= 2 {
-                                    let enum_name = &path.segments[path.segments.len() - 2].ident.name;
-                                    let variant_name = &path.segments[path.segments.len() - 1].ident.name;
+                                    let enum_name =
+                                        &path.segments[path.segments.len() - 2].ident.name;
+                                    let variant_name =
+                                        &path.segments[path.segments.len() - 1].ident.name;
                                     if let Some(enum_info) = self.enum_types.get(enum_name) {
                                         enum_info.variants.get(variant_name).copied()
-                                    } else { None }
-                                } else { None }
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
                             }
                             ast::Pattern::Literal(lit) => {
                                 if let Ok(v) = self.compile_literal(lit) {
                                     Some(v.get_zero_extended_constant().unwrap_or(0))
-                                } else { None }
+                                } else {
+                                    None
+                                }
                             }
                             ast::Pattern::Wildcard => None,
                             _ => None,
                         };
 
-                        let then_bb = self.context.append_basic_block(fn_value, &format!("match_then_{}", i));
+                        let then_bb = self
+                            .context
+                            .append_basic_block(fn_value, &format!("match_then_{}", i));
                         let else_bb = if i + 1 < arms.len() {
-                            self.context.append_basic_block(fn_value, &format!("match_else_{}", i))
+                            self.context
+                                .append_basic_block(fn_value, &format!("match_else_{}", i))
                         } else {
                             merge_bb
                         };
@@ -1494,19 +1676,28 @@ pub mod llvm {
                         if let Some(disc) = pattern_val {
                             if is_last_arm {
                                 // Last arm - treat as default (exhaustive match assumed)
-                                self.builder.build_unconditional_branch(then_bb)
+                                self.builder
+                                    .build_unconditional_branch(then_bb)
                                     .map_err(|e| e.to_string())?;
                             } else {
                                 let pattern_const = self.context.i64_type().const_int(disc, false);
-                                let cond = self.builder
-                                    .build_int_compare(IntPredicate::EQ, scrutinee, pattern_const, "match_cmp")
+                                let cond = self
+                                    .builder
+                                    .build_int_compare(
+                                        IntPredicate::EQ,
+                                        scrutinee,
+                                        pattern_const,
+                                        "match_cmp",
+                                    )
                                     .map_err(|e| e.to_string())?;
-                                self.builder.build_conditional_branch(cond, then_bb, else_bb)
+                                self.builder
+                                    .build_conditional_branch(cond, then_bb, else_bb)
                                     .map_err(|e| e.to_string())?;
                             }
                         } else {
                             // Wildcard - unconditionally go to then block
-                            self.builder.build_unconditional_branch(then_bb)
+                            self.builder
+                                .build_unconditional_branch(then_bb)
                                 .map_err(|e| e.to_string())?;
                         }
 
@@ -1514,9 +1705,16 @@ pub mod llvm {
                         self.builder.position_at_end(then_bb);
                         let arm_val = self.compile_expr(fn_value, scope, &arm.body)?;
 
-                        if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                        if self
+                            .builder
+                            .get_insert_block()
+                            .unwrap()
+                            .get_terminator()
+                            .is_none()
+                        {
                             let current_bb = self.builder.get_insert_block().unwrap();
-                            self.builder.build_unconditional_branch(merge_bb)
+                            self.builder
+                                .build_unconditional_branch(merge_bb)
                                 .map_err(|e| e.to_string())?;
                             incoming.push((arm_val, current_bb));
                         }
@@ -1534,7 +1732,8 @@ pub mod llvm {
                         return Ok(self.context.i64_type().const_int(0, false));
                     }
 
-                    let phi = self.builder
+                    let phi = self
+                        .builder
                         .build_phi(self.context.i64_type(), "match_result")
                         .map_err(|e| e.to_string())?;
 
@@ -1544,7 +1743,12 @@ pub mod llvm {
 
                     Ok(phi.as_basic_value().into_int_value())
                 }
-                Expr::MethodCall { receiver, method, args, .. } => {
+                Expr::MethodCall {
+                    receiver,
+                    method,
+                    args,
+                    ..
+                } => {
                     // Compile the receiver
                     let receiver_val = self.compile_expr(fn_value, scope, receiver)?;
 
@@ -1554,13 +1758,15 @@ pub mod llvm {
                         if method_name == &method.name {
                             if let Some(callee) = self.module.get_function(mangled_name) {
                                 // Compile arguments
-                                let mut compiled_args: Vec<BasicMetadataValueEnum> = vec![receiver_val.into()];
+                                let mut compiled_args: Vec<BasicMetadataValueEnum> =
+                                    vec![receiver_val.into()];
                                 for arg in args {
                                     let arg_val = self.compile_expr(fn_value, scope, arg)?;
                                     compiled_args.push(arg_val.into());
                                 }
 
-                                let call = self.builder
+                                let call = self
+                                    .builder
                                     .build_call(callee, &compiled_args, "method_call")
                                     .map_err(|e| e.to_string())?;
 
@@ -1568,7 +1774,9 @@ pub mod llvm {
                                     .try_as_basic_value()
                                     .left()
                                     .map(|v| v.into_int_value())
-                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                                    .unwrap_or_else(|| {
+                                        self.context.i64_type().const_int(0, false)
+                                    }));
                             }
                         }
                     }
@@ -1581,7 +1789,10 @@ pub mod llvm {
                 // Evidentiality markers with runtime semantics
                 // Known (!) unwraps evidential values
                 // Other markers wrap values with evidence tags
-                Expr::Evidential { expr, evidentiality } => {
+                Expr::Evidential {
+                    expr,
+                    evidentiality,
+                } => {
                     let inner_val = self.compile_expr(fn_value, scope, expr)?;
 
                     match evidentiality {
@@ -1595,10 +1806,7 @@ pub mod llvm {
                             // The struct stores {tag, value} for runtime evidence tracking
                             let tag = Self::evidentiality_to_tag(evidentiality);
                             let evidential = self.create_evidential_value(
-                                fn_value,
-                                inner_val,
-                                tag,
-                                "i64"  // Default to i64 for now
+                                fn_value, inner_val, tag, "i64", // Default to i64 for now
                             )?;
 
                             // Extract and return the value portion for IntValue compatibility
@@ -1620,12 +1828,14 @@ pub mod llvm {
                 }
 
                 // Array/slice indexing
-                Expr::Index { expr, index } => {
-                    self.compile_index(fn_value, scope, expr, index)
-                }
+                Expr::Index { expr, index } => self.compile_index(fn_value, scope, expr, index),
 
                 // Range expressions
-                Expr::Range { start, end, inclusive: _ } => {
+                Expr::Range {
+                    start,
+                    end,
+                    inclusive: _,
+                } => {
                     // For now, ranges compile to their start value
                     // Full range support needs iterator infrastructure
                     if let Some(s) = start {
@@ -1638,7 +1848,9 @@ pub mod llvm {
                 }
 
                 // Closures - compile body with captured variables
-                Expr::Closure { params: _, body, .. } => {
+                Expr::Closure {
+                    params: _, body, ..
+                } => {
                     // For simple closures, just compile the body
                     // Full closure support needs lambda lifting
                     self.compile_expr(fn_value, scope, body)
@@ -1651,26 +1863,27 @@ pub mod llvm {
                 }
 
                 // Address-of: &expr, &mut expr
-                Expr::AddrOf { expr, .. } => {
-                    self.compile_expr(fn_value, scope, expr)
-                }
+                Expr::AddrOf { expr, .. } => self.compile_expr(fn_value, scope, expr),
 
                 // Dereference: *ptr
-                Expr::Deref(inner) => {
-                    self.compile_expr(fn_value, scope, inner)
-                }
+                Expr::Deref(inner) => self.compile_expr(fn_value, scope, inner),
 
                 // Macro invocation - compile the name as a call
                 Expr::Macro { path, .. } => {
                     // Treat macro! as a function call to the macro name
-                    let name = path.segments.last()
+                    let name = path
+                        .segments
+                        .last()
                         .map(|s| s.ident.name.trim_end_matches('!'))
                         .unwrap_or("unknown");
                     if let Some(f) = self.module.get_function(name) {
-                        let call = self.builder
+                        let call = self
+                            .builder
                             .build_call(f, &[], "macro_call")
                             .map_err(|e| e.to_string())?;
-                        Ok(call.try_as_basic_value().left()
+                        Ok(call
+                            .try_as_basic_value()
+                            .left()
                             .map(|v| v.into_int_value())
                             .unwrap_or_else(|| self.context.i64_type().const_int(0, false)))
                     } else {
@@ -1686,9 +1899,7 @@ pub mod llvm {
                 }
 
                 // Let expression (for if-let patterns)
-                Expr::Let { value, .. } => {
-                    self.compile_expr(fn_value, scope, value)
-                }
+                Expr::Let { value, .. } => self.compile_expr(fn_value, scope, value),
 
                 // Tuple: just return first element for now
                 Expr::Tuple(elements) => {
@@ -1700,9 +1911,7 @@ pub mod llvm {
                 }
 
                 // Array literal: allocate on stack and store elements
-                Expr::Array(elements) => {
-                    self.compile_array_literal(fn_value, scope, elements)
-                }
+                Expr::Array(elements) => self.compile_array_literal(fn_value, scope, elements),
 
                 // Loop expressions
                 Expr::Loop { body, .. } => {
@@ -1727,14 +1936,14 @@ pub mod llvm {
                 }
 
                 // Await - compile inner
-                Expr::Await { expr, .. } => {
-                    self.compile_expr(fn_value, scope, expr)
-                }
+                Expr::Await { expr, .. } => self.compile_expr(fn_value, scope, expr),
 
                 _ => {
                     // Unsupported expression - return error instead of silent 0
-                    Err(format!("LLVM codegen: unsupported expression {:?}",
-                        std::mem::discriminant(expr)))
+                    Err(format!(
+                        "LLVM codegen: unsupported expression {:?}",
+                        std::mem::discriminant(expr)
+                    ))
                 }
             }
         }
@@ -1766,25 +1975,22 @@ pub mod llvm {
                     let const_array = self.context.const_string(string_bytes, true);
 
                     // Create global variable
-                    let global = self.module.add_global(
-                        const_array.get_type(),
-                        None,
-                        &global_name,
-                    );
+                    let global = self
+                        .module
+                        .add_global(const_array.get_type(), None, &global_name);
                     global.set_initializer(&const_array);
                     global.set_constant(true);
                     global.set_linkage(inkwell::module::Linkage::Private);
 
                     // Return pointer as i64
                     let ptr = global.as_pointer_value();
-                    let ptr_as_int = self.builder
+                    let ptr_as_int = self
+                        .builder
                         .build_ptr_to_int(ptr, self.context.i64_type(), "str_ptr")
                         .map_err(|e| e.to_string())?;
                     Ok(ptr_as_int)
                 }
-                Literal::Char(c) => {
-                    Ok(self.context.i64_type().const_int(*c as u64, false))
-                }
+                Literal::Char(c) => Ok(self.context.i64_type().const_int(*c as u64, false)),
                 _ => Ok(self.context.i64_type().const_int(0, false)),
             }
         }
@@ -1811,7 +2017,8 @@ pub mod llvm {
                             return self.compile_array_product(fn_value, scope, elements);
                         }
                         PipeOp::Transform(closure) => {
-                            return self.compile_array_transform(fn_value, scope, elements, closure);
+                            return self
+                                .compile_array_transform(fn_value, scope, elements, closure);
                         }
                         PipeOp::Filter(predicate) => {
                             return self.compile_array_filter(fn_value, scope, elements, predicate);
@@ -1862,10 +2069,14 @@ pub mod llvm {
                     if let PipeOp::Transform(closure) = &operations[0] {
                         match &operations[1] {
                             PipeOp::ReduceSum => {
-                                return self.compile_array_transform_then_sum(fn_value, scope, elements, closure);
+                                return self.compile_array_transform_then_sum(
+                                    fn_value, scope, elements, closure,
+                                );
                             }
                             PipeOp::ReduceProd => {
-                                return self.compile_array_transform_then_product(fn_value, scope, elements, closure);
+                                return self.compile_array_transform_then_product(
+                                    fn_value, scope, elements, closure,
+                                );
                             }
                             _ => {}
                         }
@@ -1873,10 +2084,14 @@ pub mod llvm {
                     if let PipeOp::Filter(predicate) = &operations[0] {
                         match &operations[1] {
                             PipeOp::ReduceSum => {
-                                return self.compile_array_filter_then_sum(fn_value, scope, elements, predicate);
+                                return self.compile_array_filter_then_sum(
+                                    fn_value, scope, elements, predicate,
+                                );
                             }
                             PipeOp::ReduceProd => {
-                                return self.compile_array_filter_then_product(fn_value, scope, elements, predicate);
+                                return self.compile_array_filter_then_product(
+                                    fn_value, scope, elements, predicate,
+                                );
                             }
                             _ => {}
                         }
@@ -1903,7 +2118,8 @@ pub mod llvm {
                     PipeOp::Filter(predicate) => {
                         let pred_result = self.compile_expr(fn_value, scope, predicate)?;
                         let zero = self.context.i64_type().const_int(0, false);
-                        let is_true = self.builder
+                        let is_true = self
+                            .builder
                             .build_int_compare(IntPredicate::NE, pred_result, zero, "filter_cond")
                             .map_err(|e| e.to_string())?;
                         self.builder
@@ -1922,7 +2138,8 @@ pub mod llvm {
                     PipeOp::ReduceAll | PipeOp::ReduceAny => {
                         let zero = self.context.i64_type().const_int(0, false);
                         let one = self.context.i64_type().const_int(1, false);
-                        let is_true = self.builder
+                        let is_true = self
+                            .builder
                             .build_int_compare(IntPredicate::NE, current, zero, "is_true")
                             .map_err(|e| e.to_string())?;
                         self.builder
@@ -1974,7 +2191,8 @@ pub mod llvm {
                 let mut sum = self.compile_expr(fn_value, scope, &elements[0])?;
                 for elem in &elements[1..] {
                     let val = self.compile_expr(fn_value, scope, elem)?;
-                    sum = self.builder
+                    sum = self
+                        .builder
                         .build_int_add(sum, val, "sum")
                         .map_err(|e| e.to_string())?;
                 }
@@ -1983,7 +2201,8 @@ pub mod llvm {
 
             // For larger arrays, generate a proper loop
             let array_type = i64_type.array_type(len as u32);
-            let array_ptr = self.builder
+            let array_ptr = self
+                .builder
                 .build_alloca(array_type, "sum_array")
                 .map_err(|e| e.to_string())?;
 
@@ -1995,9 +2214,13 @@ pub mod llvm {
                     i64_type.const_int(i as u64, false),
                 ];
                 let elem_ptr = unsafe {
-                    self.builder.build_gep(array_type, array_ptr, &indices, "elem_ptr")
-                }.map_err(|e| e.to_string())?;
-                self.builder.build_store(elem_ptr, value).map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_gep(array_type, array_ptr, &indices, "elem_ptr")
+                }
+                .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(elem_ptr, value)
+                    .map_err(|e| e.to_string())?;
             }
 
             // Create loop blocks
@@ -2006,37 +2229,88 @@ pub mod llvm {
             let loop_exit = self.context.append_basic_block(fn_value, "sum_exit");
 
             // Initialize: sum = 0, i = 0
-            let sum_ptr = self.builder.build_alloca(i64_type, "sum_ptr").map_err(|e| e.to_string())?;
-            let idx_ptr = self.builder.build_alloca(i64_type, "idx_ptr").map_err(|e| e.to_string())?;
-            self.builder.build_store(sum_ptr, i64_type.const_int(0, false)).map_err(|e| e.to_string())?;
-            self.builder.build_store(idx_ptr, i64_type.const_int(0, false)).map_err(|e| e.to_string())?;
+            let sum_ptr = self
+                .builder
+                .build_alloca(i64_type, "sum_ptr")
+                .map_err(|e| e.to_string())?;
+            let idx_ptr = self
+                .builder
+                .build_alloca(i64_type, "idx_ptr")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(sum_ptr, i64_type.const_int(0, false))
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(idx_ptr, i64_type.const_int(0, false))
+                .map_err(|e| e.to_string())?;
 
             // Branch to header
-            self.builder.build_unconditional_branch(loop_header).map_err(|e| e.to_string())?;
+            self.builder
+                .build_unconditional_branch(loop_header)
+                .map_err(|e| e.to_string())?;
 
             // Loop header: check i < len
             self.builder.position_at_end(loop_header);
-            let idx = self.builder.build_load(i64_type, idx_ptr, "idx").map_err(|e| e.to_string())?.into_int_value();
+            let idx = self
+                .builder
+                .build_load(i64_type, idx_ptr, "idx")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
             let len_val = i64_type.const_int(len as u64, false);
-            let cond = self.builder.build_int_compare(IntPredicate::ULT, idx, len_val, "cmp").map_err(|e| e.to_string())?;
-            self.builder.build_conditional_branch(cond, loop_body, loop_exit).map_err(|e| e.to_string())?;
+            let cond = self
+                .builder
+                .build_int_compare(IntPredicate::ULT, idx, len_val, "cmp")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_conditional_branch(cond, loop_body, loop_exit)
+                .map_err(|e| e.to_string())?;
 
             // Loop body: sum += arr[i]; i++
             self.builder.position_at_end(loop_body);
             let elem_ptr = unsafe {
-                self.builder.build_gep(array_type, array_ptr, &[i64_type.const_int(0, false), idx], "elem_ptr")
-            }.map_err(|e| e.to_string())?;
-            let elem_val = self.builder.build_load(i64_type, elem_ptr, "elem").map_err(|e| e.to_string())?.into_int_value();
-            let sum = self.builder.build_load(i64_type, sum_ptr, "sum").map_err(|e| e.to_string())?.into_int_value();
-            let new_sum = self.builder.build_int_add(sum, elem_val, "new_sum").map_err(|e| e.to_string())?;
-            self.builder.build_store(sum_ptr, new_sum).map_err(|e| e.to_string())?;
-            let new_idx = self.builder.build_int_add(idx, i64_type.const_int(1, false), "new_idx").map_err(|e| e.to_string())?;
-            self.builder.build_store(idx_ptr, new_idx).map_err(|e| e.to_string())?;
-            self.builder.build_unconditional_branch(loop_header).map_err(|e| e.to_string())?;
+                self.builder.build_gep(
+                    array_type,
+                    array_ptr,
+                    &[i64_type.const_int(0, false), idx],
+                    "elem_ptr",
+                )
+            }
+            .map_err(|e| e.to_string())?;
+            let elem_val = self
+                .builder
+                .build_load(i64_type, elem_ptr, "elem")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+            let sum = self
+                .builder
+                .build_load(i64_type, sum_ptr, "sum")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+            let new_sum = self
+                .builder
+                .build_int_add(sum, elem_val, "new_sum")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(sum_ptr, new_sum)
+                .map_err(|e| e.to_string())?;
+            let new_idx = self
+                .builder
+                .build_int_add(idx, i64_type.const_int(1, false), "new_idx")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(idx_ptr, new_idx)
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_unconditional_branch(loop_header)
+                .map_err(|e| e.to_string())?;
 
             // Loop exit: return sum
             self.builder.position_at_end(loop_exit);
-            let final_sum = self.builder.build_load(i64_type, sum_ptr, "final_sum").map_err(|e| e.to_string())?.into_int_value();
+            let final_sum = self
+                .builder
+                .build_load(i64_type, sum_ptr, "final_sum")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
 
             Ok(final_sum)
         }
@@ -2057,7 +2331,8 @@ pub mod llvm {
             let mut product = self.compile_expr(fn_value, scope, &elements[0])?;
             for elem in &elements[1..] {
                 let val = self.compile_expr(fn_value, scope, elem)?;
-                product = self.builder
+                product = self
+                    .builder
                     .build_int_mul(product, val, "prod")
                     .map_err(|e| e.to_string())?;
             }
@@ -2082,7 +2357,8 @@ pub mod llvm {
             let array_type = i64_type.array_type(len as u32);
 
             // Allocate result array
-            let result_ptr = self.builder
+            let result_ptr = self
+                .builder
                 .build_alloca(array_type, "transform_result")
                 .map_err(|e| e.to_string())?;
 
@@ -2108,10 +2384,13 @@ pub mod llvm {
                 let elem_val = self.compile_expr(fn_value, scope, elem)?;
 
                 // Bind parameter to element value (store in alloca)
-                let param_ptr = self.builder
+                let param_ptr = self
+                    .builder
                     .build_alloca(i64_type, &param_name)
                     .map_err(|e| e.to_string())?;
-                self.builder.build_store(param_ptr, elem_val).map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(param_ptr, elem_val)
+                    .map_err(|e| e.to_string())?;
 
                 // Add to scope temporarily
                 let old_val = scope.vars.insert(param_name.to_string(), param_ptr);
@@ -2132,9 +2411,13 @@ pub mod llvm {
                     i64_type.const_int(i as u64, false),
                 ];
                 let out_ptr = unsafe {
-                    self.builder.build_gep(array_type, result_ptr, &indices, "out_elem")
-                }.map_err(|e| e.to_string())?;
-                self.builder.build_store(out_ptr, result).map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_gep(array_type, result_ptr, &indices, "out_elem")
+                }
+                .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(out_ptr, result)
+                    .map_err(|e| e.to_string())?;
             }
 
             // Return pointer as i64
@@ -2183,10 +2466,13 @@ pub mod llvm {
                 let elem_val = self.compile_expr(fn_value, scope, elem)?;
 
                 // Bind parameter
-                let param_ptr = self.builder
+                let param_ptr = self
+                    .builder
                     .build_alloca(i64_type, &param_name)
                     .map_err(|e| e.to_string())?;
-                self.builder.build_store(param_ptr, elem_val).map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(param_ptr, elem_val)
+                    .map_err(|e| e.to_string())?;
 
                 let old_val = scope.vars.insert(param_name.to_string(), param_ptr);
 
@@ -2201,7 +2487,8 @@ pub mod llvm {
                 }
 
                 // Add to sum
-                sum = self.builder
+                sum = self
+                    .builder
                     .build_int_add(sum, transformed, "sum")
                     .map_err(|e| e.to_string())?;
             }
@@ -2246,10 +2533,13 @@ pub mod llvm {
             for elem in elements.iter() {
                 let elem_val = self.compile_expr(fn_value, scope, elem)?;
 
-                let param_ptr = self.builder
+                let param_ptr = self
+                    .builder
                     .build_alloca(i64_type, &param_name)
                     .map_err(|e| e.to_string())?;
-                self.builder.build_store(param_ptr, elem_val).map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(param_ptr, elem_val)
+                    .map_err(|e| e.to_string())?;
 
                 let old_val = scope.vars.insert(param_name.to_string(), param_ptr);
 
@@ -2261,7 +2551,8 @@ pub mod llvm {
                     scope.vars.remove(&param_name);
                 }
 
-                product = self.builder
+                product = self
+                    .builder
                     .build_int_mul(product, transformed, "prod")
                     .map_err(|e| e.to_string())?;
             }
@@ -2289,7 +2580,8 @@ pub mod llvm {
             let array_type = i64_type.array_type(len as u32);
 
             // Allocate output array (max size = input size)
-            let out_ptr = self.builder
+            let out_ptr = self
+                .builder
                 .build_alloca(array_type, "filter_result")
                 .map_err(|e| e.to_string())?;
 
@@ -2317,10 +2609,13 @@ pub mod llvm {
                 let elem_val = self.compile_expr(fn_value, scope, elem)?;
 
                 // Bind parameter
-                let param_ptr = self.builder
+                let param_ptr = self
+                    .builder
                     .build_alloca(i64_type, &param_name)
                     .map_err(|e| e.to_string())?;
-                self.builder.build_store(param_ptr, elem_val).map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(param_ptr, elem_val)
+                    .map_err(|e| e.to_string())?;
 
                 let old_val = scope.vars.insert(param_name.to_string(), param_ptr);
 
@@ -2336,17 +2631,20 @@ pub mod llvm {
 
                 // Check if predicate is true (non-zero)
                 let zero = i64_type.const_int(0, false);
-                let is_true = self.builder
+                let is_true = self
+                    .builder
                     .build_int_compare(IntPredicate::NE, pred_result, zero, "is_passing")
                     .map_err(|e| e.to_string())?;
 
                 // Conditionally add 1 to count
                 let one = i64_type.const_int(1, false);
-                let inc = self.builder
+                let inc = self
+                    .builder
                     .build_select(is_true, one, zero, "inc")
                     .map_err(|e| e.to_string())?
                     .into_int_value();
-                count = self.builder
+                count = self
+                    .builder
                     .build_int_add(count, inc, "count")
                     .map_err(|e| e.to_string())?;
 
@@ -2356,15 +2654,20 @@ pub mod llvm {
                     i64_type.const_int(out_idx, false),
                 ];
                 let elem_ptr = unsafe {
-                    self.builder.build_gep(array_type, out_ptr, &indices, "out_elem")
-                }.map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_gep(array_type, out_ptr, &indices, "out_elem")
+                }
+                .map_err(|e| e.to_string())?;
 
                 // Use select: if passing, store element; otherwise store 0 (placeholder)
-                let value_to_store = self.builder
+                let value_to_store = self
+                    .builder
                     .build_select(is_true, elem_val, zero, "val_or_zero")
                     .map_err(|e| e.to_string())?
                     .into_int_value();
-                self.builder.build_store(elem_ptr, value_to_store).map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(elem_ptr, value_to_store)
+                    .map_err(|e| e.to_string())?;
 
                 out_idx += 1;
             }
@@ -2412,10 +2715,13 @@ pub mod llvm {
                 let elem_val = self.compile_expr(fn_value, scope, elem)?;
 
                 // Bind parameter
-                let param_ptr = self.builder
+                let param_ptr = self
+                    .builder
                     .build_alloca(i64_type, &param_name)
                     .map_err(|e| e.to_string())?;
-                self.builder.build_store(param_ptr, elem_val).map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(param_ptr, elem_val)
+                    .map_err(|e| e.to_string())?;
 
                 let old_val = scope.vars.insert(param_name.to_string(), param_ptr);
 
@@ -2430,16 +2736,19 @@ pub mod llvm {
                 }
 
                 // Check if predicate is true (non-zero)
-                let is_true = self.builder
+                let is_true = self
+                    .builder
                     .build_int_compare(IntPredicate::NE, pred_result, zero, "is_passing")
                     .map_err(|e| e.to_string())?;
 
                 // Add element to sum only if passing
-                let add_value = self.builder
+                let add_value = self
+                    .builder
                     .build_select(is_true, elem_val, zero, "add_if_pass")
                     .map_err(|e| e.to_string())?
                     .into_int_value();
-                sum = self.builder
+                sum = self
+                    .builder
                     .build_int_add(sum, add_value, "sum")
                     .map_err(|e| e.to_string())?;
             }
@@ -2487,10 +2796,13 @@ pub mod llvm {
                 let elem_val = self.compile_expr(fn_value, scope, elem)?;
 
                 // Bind parameter
-                let param_ptr = self.builder
+                let param_ptr = self
+                    .builder
                     .build_alloca(i64_type, &param_name)
                     .map_err(|e| e.to_string())?;
-                self.builder.build_store(param_ptr, elem_val).map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(param_ptr, elem_val)
+                    .map_err(|e| e.to_string())?;
 
                 let old_val = scope.vars.insert(param_name.to_string(), param_ptr);
 
@@ -2505,16 +2817,19 @@ pub mod llvm {
                 }
 
                 // Check if predicate is true (non-zero)
-                let is_true = self.builder
+                let is_true = self
+                    .builder
                     .build_int_compare(IntPredicate::NE, pred_result, zero, "is_passing")
                     .map_err(|e| e.to_string())?;
 
                 // Multiply by element only if passing, otherwise multiply by 1 (identity)
-                let mul_value = self.builder
+                let mul_value = self
+                    .builder
                     .build_select(is_true, elem_val, one, "mul_if_pass")
                     .map_err(|e| e.to_string())?
                     .into_int_value();
-                product = self.builder
+                product = self
+                    .builder
                     .build_int_mul(product, mul_value, "prod")
                     .map_err(|e| e.to_string())?;
             }
@@ -2581,7 +2896,8 @@ pub mod llvm {
             let i64_type = self.context.i64_type();
             let len = elements.len();
             let array_type = i64_type.array_type(len as u32);
-            let array_ptr = self.builder
+            let array_ptr = self
+                .builder
                 .build_alloca(array_type, "nth_array")
                 .map_err(|e| e.to_string())?;
 
@@ -2593,9 +2909,13 @@ pub mod llvm {
                     i64_type.const_int(i as u64, false),
                 ];
                 let elem_ptr = unsafe {
-                    self.builder.build_gep(array_type, array_ptr, &indices, "elem_ptr")
-                }.map_err(|e| e.to_string())?;
-                self.builder.build_store(elem_ptr, value).map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_gep(array_type, array_ptr, &indices, "elem_ptr")
+                }
+                .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(elem_ptr, value)
+                    .map_err(|e| e.to_string())?;
             }
 
             // Compute index
@@ -2604,21 +2924,27 @@ pub mod llvm {
             // Bounds check: clamp to valid range
             let len_val = i64_type.const_int(len as u64 - 1, false);
             let zero = i64_type.const_int(0, false);
-            let clamped_high = self.builder
+            let clamped_high = self
+                .builder
                 .build_select(
-                    self.builder.build_int_compare(IntPredicate::UGT, idx, len_val, "gt_len").map_err(|e| e.to_string())?,
+                    self.builder
+                        .build_int_compare(IntPredicate::UGT, idx, len_val, "gt_len")
+                        .map_err(|e| e.to_string())?,
                     len_val,
                     idx,
-                    "clamp_high"
+                    "clamp_high",
                 )
                 .map_err(|e| e.to_string())?
                 .into_int_value();
-            let clamped = self.builder
+            let clamped = self
+                .builder
                 .build_select(
-                    self.builder.build_int_compare(IntPredicate::SLT, clamped_high, zero, "lt_zero").map_err(|e| e.to_string())?,
+                    self.builder
+                        .build_int_compare(IntPredicate::SLT, clamped_high, zero, "lt_zero")
+                        .map_err(|e| e.to_string())?,
                     zero,
                     clamped_high,
-                    "clamp_low"
+                    "clamp_low",
                 )
                 .map_err(|e| e.to_string())?
                 .into_int_value();
@@ -2626,9 +2952,12 @@ pub mod llvm {
             // Load element at clamped index
             let indices = [i64_type.const_int(0, false), clamped];
             let elem_ptr = unsafe {
-                self.builder.build_gep(array_type, array_ptr, &indices, "nth_ptr")
-            }.map_err(|e| e.to_string())?;
-            let value = self.builder
+                self.builder
+                    .build_gep(array_type, array_ptr, &indices, "nth_ptr")
+            }
+            .map_err(|e| e.to_string())?;
+            let value = self
+                .builder
                 .build_load(i64_type, elem_ptr, "nth_val")
                 .map_err(|e| e.to_string())?;
 
@@ -2668,10 +2997,12 @@ pub mod llvm {
 
             for elem in &elements[1..] {
                 let val = self.compile_expr(fn_value, scope, elem)?;
-                let is_less = self.builder
+                let is_less = self
+                    .builder
                     .build_int_compare(IntPredicate::SLT, val, min_val, "is_less")
                     .map_err(|e| e.to_string())?;
-                min_val = self.builder
+                min_val = self
+                    .builder
                     .build_select(is_less, val, min_val, "min_sel")
                     .map_err(|e| e.to_string())?
                     .into_int_value();
@@ -2695,10 +3026,12 @@ pub mod llvm {
 
             for elem in &elements[1..] {
                 let val = self.compile_expr(fn_value, scope, elem)?;
-                let is_greater = self.builder
+                let is_greater = self
+                    .builder
                     .build_int_compare(IntPredicate::SGT, val, max_val, "is_greater")
                     .map_err(|e| e.to_string())?;
-                max_val = self.builder
+                max_val = self
+                    .builder
                     .build_select(is_greater, val, max_val, "max_sel")
                     .map_err(|e| e.to_string())?
                     .into_int_value();
@@ -2724,13 +3057,16 @@ pub mod llvm {
 
             for elem in elements {
                 let val = self.compile_expr(fn_value, scope, elem)?;
-                let is_true = self.builder
+                let is_true = self
+                    .builder
                     .build_int_compare(IntPredicate::NE, val, zero, "is_true")
                     .map_err(|e| e.to_string())?;
-                let as_int = self.builder
+                let as_int = self
+                    .builder
                     .build_int_z_extend(is_true, self.context.i64_type(), "as_int")
                     .map_err(|e| e.to_string())?;
-                result = self.builder
+                result = self
+                    .builder
                     .build_and(result, as_int, "all_and")
                     .map_err(|e| e.to_string())?;
             }
@@ -2755,13 +3091,16 @@ pub mod llvm {
 
             for elem in elements {
                 let val = self.compile_expr(fn_value, scope, elem)?;
-                let is_true = self.builder
+                let is_true = self
+                    .builder
                     .build_int_compare(IntPredicate::NE, val, zero, "is_true")
                     .map_err(|e| e.to_string())?;
-                let as_int = self.builder
+                let as_int = self
+                    .builder
                     .build_int_z_extend(is_true, self.context.i64_type(), "as_int")
                     .map_err(|e| e.to_string())?;
-                result = self.builder
+                result = self
+                    .builder
                     .build_or(result, as_int, "any_or")
                     .map_err(|e| e.to_string())?;
             }
@@ -2802,7 +3141,8 @@ pub mod llvm {
             let mut hash = self.compile_expr(fn_value, scope, &elements[0])?;
             for elem in &elements[1..] {
                 let val = self.compile_expr(fn_value, scope, elem)?;
-                hash = self.builder
+                hash = self
+                    .builder
                     .build_int_add(hash, val, "hash_acc")
                     .map_err(|e| e.to_string())?;
             }
@@ -2812,24 +3152,29 @@ pub mod llvm {
 
             // Get absolute value: (hash ^ (hash >> 63)) - (hash >> 63)
             let shift_amt = self.context.i64_type().const_int(63, false);
-            let sign = self.builder
+            let sign = self
+                .builder
                 .build_right_shift(hash, shift_amt, true, "sign")
                 .map_err(|e| e.to_string())?;
-            let xored = self.builder
+            let xored = self
+                .builder
                 .build_xor(hash, sign, "xored")
                 .map_err(|e| e.to_string())?;
-            let abs_hash = self.builder
+            let abs_hash = self
+                .builder
                 .build_int_sub(xored, sign, "abs")
                 .map_err(|e| e.to_string())?;
 
-            let index = self.builder
+            let index = self
+                .builder
                 .build_int_unsigned_rem(abs_hash, len_const, "choice_idx")
                 .map_err(|e| e.to_string())?;
 
             // Allocate array and select by index
             let i64_type = self.context.i64_type();
             let array_type = i64_type.array_type(len as u32);
-            let array_ptr = self.builder
+            let array_ptr = self
+                .builder
                 .build_alloca(array_type, "choice_arr")
                 .map_err(|e| e.to_string())?;
 
@@ -2841,9 +3186,13 @@ pub mod llvm {
                     i64_type.const_int(i as u64, false),
                 ];
                 let ptr = unsafe {
-                    self.builder.build_gep(array_type, array_ptr, &indices, "elem_ptr")
-                }.map_err(|e| e.to_string())?;
-                self.builder.build_store(ptr, val).map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_gep(array_type, array_ptr, &indices, "elem_ptr")
+                }
+                .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(ptr, val)
+                    .map_err(|e| e.to_string())?;
             }
 
             // Load element at computed index
@@ -2854,9 +3203,11 @@ pub mod llvm {
                     &[i64_type.const_int(0, false), index],
                     "choice_ptr",
                 )
-            }.map_err(|e| e.to_string())?;
+            }
+            .map_err(|e| e.to_string())?;
 
-            let result = self.builder
+            let result = self
+                .builder
                 .build_load(i64_type, result_ptr, "choice_val")
                 .map_err(|e| e.to_string())?
                 .into_int_value();
@@ -2877,7 +3228,8 @@ pub mod llvm {
             }
 
             // Extract closure params and body
-            let (acc_name, elem_name, body) = if let Expr::Closure { params, body, .. } = reduce_fn {
+            let (acc_name, elem_name, body) = if let Expr::Closure { params, body, .. } = reduce_fn
+            {
                 if params.len() != 2 {
                     return Err("Reduce closure must have exactly 2 parameters".to_string());
                 }
@@ -2900,16 +3252,20 @@ pub mod llvm {
             let i64_type = self.context.i64_type();
 
             // Allocate storage for accumulator and element
-            let acc_ptr = self.builder
+            let acc_ptr = self
+                .builder
                 .build_alloca(i64_type, &acc_name)
                 .map_err(|e| e.to_string())?;
-            let elem_ptr = self.builder
+            let elem_ptr = self
+                .builder
                 .build_alloca(i64_type, &elem_name)
                 .map_err(|e| e.to_string())?;
 
             // Initialize accumulator with first element
             let first = self.compile_expr(fn_value, scope, &elements[0])?;
-            self.builder.build_store(acc_ptr, first).map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(acc_ptr, first)
+                .map_err(|e| e.to_string())?;
 
             // Add bindings to scope
             scope.vars.insert(acc_name.clone(), acc_ptr);
@@ -2918,15 +3274,20 @@ pub mod llvm {
             // Fold over remaining elements
             for elem in &elements[1..] {
                 let val = self.compile_expr(fn_value, scope, elem)?;
-                self.builder.build_store(elem_ptr, val).map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(elem_ptr, val)
+                    .map_err(|e| e.to_string())?;
 
                 // Evaluate body
                 let new_acc = self.compile_expr(fn_value, scope, body)?;
-                self.builder.build_store(acc_ptr, new_acc).map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(acc_ptr, new_acc)
+                    .map_err(|e| e.to_string())?;
             }
 
             // Load final accumulator value
-            let result = self.builder
+            let result = self
+                .builder
                 .build_load(i64_type, acc_ptr, "reduce_result")
                 .map_err(|e| e.to_string())?
                 .into_int_value();
@@ -2952,7 +3313,8 @@ pub mod llvm {
             let array_type = i64_type.array_type(len as u32);
 
             // Allocate array on stack
-            let array_ptr = self.builder
+            let array_ptr = self
+                .builder
                 .build_alloca(array_type, "array")
                 .map_err(|e| e.to_string())?;
 
@@ -2966,8 +3328,10 @@ pub mod llvm {
                     self.context.i64_type().const_int(i as u64, false),
                 ];
                 let elem_ptr = unsafe {
-                    self.builder.build_gep(array_type, array_ptr, &indices, "elem_ptr")
-                }.map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_gep(array_type, array_ptr, &indices, "elem_ptr")
+                }
+                .map_err(|e| e.to_string())?;
 
                 // Store the value
                 self.builder
@@ -2977,7 +3341,8 @@ pub mod llvm {
 
             // Return pointer as i64 (we'll improve this later with proper fat pointers)
             // For now, pack ptr in low bits and len in high bits of a struct
-            let ptr_as_int = self.builder
+            let ptr_as_int = self
+                .builder
                 .build_ptr_to_int(array_ptr, i64_type, "arr_ptr")
                 .map_err(|e| e.to_string())?;
 
@@ -3003,17 +3368,25 @@ pub mod llvm {
             let i64_type = self.context.i64_type();
 
             // Convert i64 back to pointer
-            let base_ptr = self.builder
-                .build_int_to_ptr(base_ptr_int, i64_type.ptr_type(Default::default()), "arr_ptr")
+            let base_ptr = self
+                .builder
+                .build_int_to_ptr(
+                    base_ptr_int,
+                    i64_type.ptr_type(Default::default()),
+                    "arr_ptr",
+                )
                 .map_err(|e| e.to_string())?;
 
             // GEP to get element at index
             let elem_ptr = unsafe {
-                self.builder.build_gep(i64_type, base_ptr, &[idx], "elem_ptr")
-            }.map_err(|e| e.to_string())?;
+                self.builder
+                    .build_gep(i64_type, base_ptr, &[idx], "elem_ptr")
+            }
+            .map_err(|e| e.to_string())?;
 
             // Load and return the value
-            let value = self.builder
+            let value = self
+                .builder
                 .build_load(i64_type, elem_ptr, "elem")
                 .map_err(|e| e.to_string())?;
 
@@ -3340,7 +3713,11 @@ pub mod llvm {
         ) -> Result<IntValue<'ctx>, String> {
             // Get function name and full qualified path
             let (fn_name, full_path) = if let Expr::Path(path) = func {
-                let segments: Vec<&str> = path.segments.iter().map(|s| s.ident.name.as_str()).collect();
+                let segments: Vec<&str> = path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.name.as_str())
+                    .collect();
                 let short_name = segments.last().copied().ok_or("Empty path")?;
                 let full = segments.join("::");
                 (short_name, full)
@@ -3564,7 +3941,11 @@ pub mod llvm {
                         .ok_or("sigil_string_concat not declared")?;
                     let call = self
                         .builder
-                        .build_call(string_concat_fn, &[str1.into(), str2.into()], "string_concat")
+                        .build_call(
+                            string_concat_fn,
+                            &[str1.into(), str2.into()],
+                            "string_concat",
+                        )
                         .map_err(|e| e.to_string())?;
                     return Ok(call
                         .try_as_basic_value()
@@ -3725,7 +4106,9 @@ pub mod llvm {
                 }
                 "file_write_all" => {
                     if args.len() < 2 {
-                        return Err("file_write_all requires path and content arguments".to_string());
+                        return Err(
+                            "file_write_all requires path and content arguments".to_string()
+                        );
                     }
                     let path = self.compile_expr(fn_value, scope, &args[0])?;
                     let content = self.compile_expr(fn_value, scope, &args[1])?;
@@ -3801,9 +4184,16 @@ pub mod llvm {
         }
 
         /// Recursively process use tree to build import paths
-        fn process_use_tree(&mut self, tree: &ast::UseTree, prefix: &[String]) -> Result<(), String> {
+        fn process_use_tree(
+            &mut self,
+            tree: &ast::UseTree,
+            prefix: &[String],
+        ) -> Result<(), String> {
             match tree {
-                ast::UseTree::Path { prefix: ident, suffix } => {
+                ast::UseTree::Path {
+                    prefix: ident,
+                    suffix,
+                } => {
                     let mut new_prefix = prefix.to_vec();
                     new_prefix.push(ident.name.clone());
                     self.process_use_tree(suffix, &new_prefix)
@@ -3840,9 +4230,15 @@ pub mod llvm {
             if let Some(ref items) = module.items {
                 for spanned_item in items {
                     match &spanned_item.node {
-                        Item::Function(func) => { self.declare_function(func)?; }
-                        Item::Module(m) => { self.process_module(m)?; }
-                        Item::Use(u) => { self.process_use(u)?; }
+                        Item::Function(func) => {
+                            self.declare_function(func)?;
+                        }
+                        Item::Module(m) => {
+                            self.process_module(m)?;
+                        }
+                        Item::Use(u) => {
+                            self.process_use(u)?;
+                        }
                         _ => {}
                     }
                 }
@@ -3860,8 +4256,12 @@ pub mod llvm {
             if let Some(ref items) = module.items {
                 for spanned_item in items {
                     match &spanned_item.node {
-                        Item::Function(func) => { self.compile_function(func)?; }
-                        Item::Module(m) => { self.compile_module_functions(m)?; }
+                        Item::Function(func) => {
+                            self.compile_function(func)?;
+                        }
+                        Item::Module(m) => {
+                            self.compile_module_functions(m)?;
+                        }
                         _ => {}
                     }
                 }
@@ -4058,7 +4458,7 @@ pub mod llvm {
                     "generic",
                     "",
                     OptimizationLevel::Aggressive,
-                    RelocMode::PIC,  // Use PIC for PIE compatibility
+                    RelocMode::PIC, // Use PIC for PIE compatibility
                     CodeModel::Default,
                 )
                 .ok_or("Failed to create target machine")?;
@@ -4109,106 +4509,123 @@ pub mod llvm {
         #[test]
         fn test_evidential_known_unwrap() {
             // Known (!) just returns the inner value
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let x = 42!;
                     x
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 42);
         }
 
         #[test]
         fn test_evidential_uncertain() {
             // Uncertain (?) wraps and unwraps correctly
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let x = 100?;
                     x
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 100);
         }
 
         #[test]
         fn test_evidential_reported() {
             // Reported (~) wraps and unwraps correctly
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let x = 200~;
                     x
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 200);
         }
 
         #[test]
         fn test_evidential_predicted() {
             // Predicted (◊) wraps and unwraps correctly
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let x = 300◊;
                     x
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 300);
         }
 
         #[test]
         fn test_evidential_in_expression() {
             // Evidential values can be used in expressions
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let a = 10?;
                     let b = 20?;
                     a + b
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 30);
         }
 
         #[test]
         fn test_evidential_unwrap_chain() {
             // Chain: uncertain -> known (unwrap)
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let x = 42?;
                     let y = x!;
                     y
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 42);
         }
 
         #[test]
         fn test_evidential_nested() {
             // Nested evidential operations
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let x = (50?)!;
                     x + 5
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 55);
         }
 
         #[test]
         fn test_evidential_with_arithmetic() {
             // Evidential values with arithmetic
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let known = 100!;
                     let uncertain = 50?;
                     known + uncertain * 2
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 200);
         }
 
         #[test]
         fn test_evidential_function_return() {
             // Function returning evidential value
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn get_uncertain() -> i64 {
                     42?
                 }
@@ -4217,28 +4634,32 @@ pub mod llvm {
                     let x = get_uncertain();
                     x + 8
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 50);
         }
 
         #[test]
         fn test_evidential_mixed_markers() {
             // Mix different evidentiality markers
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let a = 10!;  // known
                     let b = 20?;  // uncertain
                     let c = 30~;  // reported
                     a + b + c
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 60);
         }
 
         #[test]
         fn test_evidential_in_if() {
             // Evidential in conditional
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let x = 1?;
                     if x == 1 {
@@ -4247,40 +4668,46 @@ pub mod llvm {
                         200?
                     }
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 100);
         }
 
         #[test]
         fn test_evidential_paradox() {
             // Paradox (‽) marker - contradiction detection
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let x = 42‽;
                     x
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 42);
         }
 
         #[test]
         fn test_evidential_multiple_unwraps() {
             // Multiple sequential unwraps
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let a = 10?;
                     let b = a!;
                     let c = b!;
                     c
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 10);
         }
 
         #[test]
         fn test_evidential_in_loop() {
             // Evidential values in a loop
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let mut sum = 0?;
                     let mut i = 0;
@@ -4290,14 +4717,16 @@ pub mod llvm {
                     }
                     sum!
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 10); // 0 + 1 + 2 + 3 + 4 = 10
         }
 
         #[test]
         fn test_evidential_comparison() {
             // Comparison of evidential values
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let a = 10?;
                     let b = 20?;
@@ -4307,27 +4736,31 @@ pub mod llvm {
                         0!
                     }
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 1);
         }
 
         #[test]
         fn test_evidential_negation() {
             // Negation with evidential values
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let x = 42?;
                     let y = -x;
                     y + 100
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 58); // -42 + 100 = 58
         }
 
         #[test]
         fn test_evidential_chain_operations() {
             // Chain of operations with mixed evidentiality
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let x = 10!;
                     let y = 20?;
@@ -4335,26 +4768,30 @@ pub mod llvm {
                     let w = 40◊;
                     x + y + z + w
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 100);
         }
 
         #[test]
         fn test_evidential_deeply_nested() {
             // Deeply nested evidential expressions
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let x = ((((42?)?)?)?)?;
                     x!
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 42);
         }
 
         #[test]
         fn test_evidential_struct_field() {
             // Evidential values as struct fields
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 struct Data {
                     value: i64,
                 }
@@ -4363,14 +4800,16 @@ pub mod llvm {
                     let d = Data { value: 100? };
                     d.value + 1
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 101);
         }
 
         #[test]
         fn test_evidential_function_param() {
             // Function with evidential parameter
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn double(x: i64) -> i64 {
                     x * 2
                 }
@@ -4379,14 +4818,16 @@ pub mod llvm {
                     let val = 25?;
                     double(val!)
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 50);
         }
 
         #[test]
         fn test_evidential_all_markers_chain() {
             // All 5 evidentiality markers in sequence
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let known = 1!;      // Known
                     let uncertain = 2?;  // Uncertain
@@ -4395,7 +4836,8 @@ pub mod llvm {
                     let paradox = 5‽;    // Paradox
                     known + uncertain + reported + predicted + paradox
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 15);
         }
 
@@ -4405,7 +4847,8 @@ pub mod llvm {
 
         #[test]
         fn test_generic_struct_basic() {
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 struct Container<T> {
                     value: T,
                     count: i32,
@@ -4415,13 +4858,15 @@ pub mod llvm {
                     let c = Container::<i32> { value: 42, count: 1 };
                     c.value + c.count
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 43);
         }
 
         #[test]
         fn test_generic_struct_two_params() {
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 struct Pair<A, B> {
                     first: A,
                     second: B,
@@ -4431,7 +4876,8 @@ pub mod llvm {
                     let p = Pair::<i32, i32> { first: 10, second: 20 };
                     p.first + p.second
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 30);
         }
 
@@ -4442,44 +4888,52 @@ pub mod llvm {
         #[test]
         fn test_morpheme_first() {
             // First element: [1, 2, 3] |α returns 1
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [10, 20, 30] |α
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 10);
         }
 
         #[test]
         fn test_morpheme_last() {
             // Last element: [1, 2, 3] |ω returns 3
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [10, 20, 30] |ω
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 30);
         }
 
         #[test]
         fn test_morpheme_middle() {
             // Middle element: [1, 2, 3, 4, 5] |μ returns 3
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [10, 20, 30, 40, 50] |μ
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 30);
         }
 
         #[test]
         fn test_morpheme_nth() {
             // Nth element: [1, 2, 3] |ν{1} returns 2
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [10, 20, 30] |ν{1}
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 20);
         }
 
@@ -4490,72 +4944,84 @@ pub mod llvm {
         #[test]
         fn test_morpheme_reduce_min() {
             // Simple min of two values
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn min2(a: i64, b: i64) -> i64 {
                     if a < b { a } else { b }
                 }
                 fn main() -> i64 {
                     min2(min2(5, 2), min2(8, 1))
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 1);
         }
 
         #[test]
         fn test_morpheme_reduce_max() {
             // Simple max of two values
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn max2(a: i64, b: i64) -> i64 {
                     if a > b { a } else { b }
                 }
                 fn main() -> i64 {
                     max2(max2(5, 2), max2(8, 9))
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 9);
         }
 
         #[test]
         fn test_morpheme_reduce_all_true() {
             // All: [1, 2, 3] |ρ& returns 1 (all non-zero)
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [1, 2, 3] |ρ&
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 1);
         }
 
         #[test]
         fn test_morpheme_reduce_all_false() {
             // All: [1, 0, 3] |ρ& returns 0 (not all non-zero)
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [1, 0, 3] |ρ&
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 0);
         }
 
         #[test]
         fn test_morpheme_reduce_any_true() {
             // Any: [0, 0, 1] |ρ| returns 1 (at least one non-zero)
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [0, 0, 1] |ρ|
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 1);
         }
 
         #[test]
         fn test_morpheme_reduce_any_false() {
             // Any: [0, 0, 0] |ρ| returns 0 (none non-zero)
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [0, 0, 0] |ρ|
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 0);
         }
 
@@ -4566,12 +5032,14 @@ pub mod llvm {
         #[test]
         fn test_morpheme_transform_then_first() {
             // Transform then first: [1, 2, 3] |τ{|x| x * 10} |α returns 10
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let arr = [1, 2, 3] |τ{|x| x * 10};
                     arr |α
                 }
-            "#);
+            "#,
+            );
             // Note: This tests that transform returns array, then first extracts
             // Current impl may need adjustment
             assert!(result.is_ok());
@@ -4580,11 +5048,13 @@ pub mod llvm {
         #[test]
         fn test_morpheme_filter_then_sum() {
             // Filter then sum: keep values > 3, sum them
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [1, 5, 2, 8, 3, 7] |φ{|x| x > 3} |ρ+
                 }
-            "#);
+            "#,
+            );
             // After filter: [5, 8, 7], sum = 20
             assert_eq!(result.unwrap(), 20);
         }
@@ -4596,55 +5066,65 @@ pub mod llvm {
         #[test]
         fn test_morpheme_sort_basic() {
             // Sort returns minimum (first after sort): [3, 1, 2] |σ returns 1
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [3, 1, 2] |σ
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 1);
         }
 
         #[test]
         fn test_morpheme_sort_already_sorted() {
             // Sort already sorted: [1, 2, 3] |σ returns 1
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [1, 2, 3] |σ
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 1);
         }
 
         #[test]
         fn test_morpheme_sort_reverse() {
             // Sort reverse: [5, 4, 3, 2, 1] |σ returns 1
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [5, 4, 3, 2, 1] |σ
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 1);
         }
 
         #[test]
         fn test_morpheme_sort_single() {
             // Sort single element: [42] |σ returns 42
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [42] |σ
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 42);
         }
 
         #[test]
         fn test_morpheme_choice_deterministic() {
             // Choice is deterministic based on array contents
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [10, 20, 30] |χ
                 }
-            "#);
+            "#,
+            );
             // Result should be one of 10, 20, or 30
             let val = result.unwrap();
             assert!(val == 10 || val == 20 || val == 30);
@@ -4653,67 +5133,79 @@ pub mod llvm {
         #[test]
         fn test_morpheme_choice_single() {
             // Choice with single element: [42] |χ returns 42
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [42] |χ
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 42);
         }
 
         #[test]
         fn test_morpheme_custom_reduce_sum() {
             // Custom reduce sum: [1, 2, 3, 4] |ρ{|a, x| a + x} = 10
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [1, 2, 3, 4] |ρ{|acc, x| acc + x}
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 10);
         }
 
         #[test]
         fn test_morpheme_custom_reduce_product() {
             // Custom reduce product: [1, 2, 3, 4] |ρ{|a, x| a * x} = 24
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [1, 2, 3, 4] |ρ{|acc, x| acc * x}
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 24);
         }
 
         #[test]
         fn test_morpheme_custom_reduce_difference() {
             // Custom reduce difference: [100, 20, 5] |ρ{|a, x| a - x} = 75
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [100, 20, 5] |ρ{|acc, x| acc - x}
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 75);
         }
 
         #[test]
         fn test_morpheme_custom_reduce_single() {
             // Custom reduce single element: [42] |ρ{|a, x| a + x} = 42
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     [42] |ρ{|acc, x| acc + x}
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 42);
         }
 
         #[test]
         fn test_morpheme_await_expr() {
             // Await expression form: expr⌛ (postfix syntax)
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let x = 42;
                     x⌛
                 }
-            "#);
+            "#,
+            );
             // In sync LLVM context, await is identity
             assert_eq!(result.unwrap(), 42);
         }
@@ -4721,13 +5213,15 @@ pub mod llvm {
         #[test]
         fn test_morpheme_await_nested() {
             // Nested await expressions
-            let result = run_sigil(r#"
+            let result = run_sigil(
+                r#"
                 fn main() -> i64 {
                     let x = 21;
                     let y = x⌛ + x⌛;
                     y
                 }
-            "#);
+            "#,
+            );
             assert_eq!(result.unwrap(), 42);
         }
     }

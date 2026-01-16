@@ -77,7 +77,11 @@ impl WasmCompiler {
             PipeOp::Next => self.compile_next(),
 
             // Method call in pipe
-            PipeOp::Method { name, type_args: _, args } => self.compile_pipe_method(&name.name, args),
+            PipeOp::Method {
+                name,
+                type_args: _,
+                args,
+            } => self.compile_pipe_method(&name.name, args),
 
             // Await in pipe
             PipeOp::Await => Err(WasmError::unsupported("await in pipe")),
@@ -89,7 +93,7 @@ impl WasmCompiler {
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
                 let temp = func.alloc_local("__pipe_match".to_string(), ValType::I64);
                 func.push(Instruction::LocalSet(temp));
-        
+
                 self.compile_match_arms(temp, arms, 0)
             }
 
@@ -268,8 +272,6 @@ impl WasmCompiler {
             memory_index: 0,
         }));
 
-
-
         // Apply function
         self.compile_apply_to_stack(func)?;
 
@@ -386,8 +388,6 @@ impl WasmCompiler {
         // Store element for predicate check
         let elem_idx = compiler_func.alloc_local("__filter_elem".to_string(), ValType::I64);
         compiler_func.push(Instruction::LocalTee(elem_idx));
-
-
 
         // Apply predicate
         self.compile_apply_to_stack(predicate)?;
@@ -534,8 +534,6 @@ impl WasmCompiler {
             memory_index: 0,
         }));
 
-
-
         // Apply reducer (takes acc, elem on stack, returns new acc)
         self.compile_apply_binary(reducer)?;
 
@@ -679,8 +677,6 @@ impl WasmCompiler {
         let arr_idx = func.alloc_local("__par_map_arr".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(arr_idx));
 
-
-
         // Compile the function to a table entry
         let func_table_idx = self.compile_closure_to_table(func_expr)?;
 
@@ -710,8 +706,6 @@ impl WasmCompiler {
         // Store input array
         let arr_idx = func.alloc_local("__par_filter_arr".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(arr_idx));
-
-
 
         // Compile the predicate to a table entry
         let pred_table_idx = self.compile_closure_to_table(pred_expr)?;
@@ -755,8 +749,6 @@ impl WasmCompiler {
         let init_idx = func.alloc_local("__par_reduce_init".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(init_idx));
 
-
-
         // Compile the reducer to a table entry
         let reducer_table_idx = self.compile_closure_to_table(reducer_expr)?;
 
@@ -793,7 +785,11 @@ impl WasmCompiler {
     /// Compile a closure expression to a table entry and return its index.
     fn compile_closure_to_table(&mut self, expr: &Expr) -> WasmResult<u32> {
         match expr {
-            Expr::Closure { params, body, is_move: _ } => {
+            Expr::Closure {
+                params,
+                body,
+                is_move: _,
+            } => {
                 // Create a new function for this closure (is_move handled in closure compilation)
                 let fn_name = format!("__closure_{}", self.functions.len());
 
@@ -974,8 +970,6 @@ impl WasmCompiler {
         let arr_idx = func.alloc_local("__nth_arr".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(arr_idx));
 
-
-
         // Compile index
         self.compile_expr(n)?;
 
@@ -1023,8 +1017,6 @@ impl WasmCompiler {
         let recv_idx = func.alloc_local("__pipe_recv".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(recv_idx));
 
-
-
         // Compile arguments
         for arg in args {
             self.compile_expr(arg)?;
@@ -1044,11 +1036,7 @@ impl WasmCompiler {
     }
 
     /// Compile a named morpheme.
-    fn compile_named_morpheme(
-        &mut self,
-        name: &str,
-        body: Option<&Expr>,
-    ) -> WasmResult<()> {
+    fn compile_named_morpheme(&mut self, name: &str, body: Option<&Expr>) -> WasmResult<()> {
         match name {
             "map" => {
                 if let Some(func) = body {
@@ -1088,7 +1076,11 @@ impl WasmCompiler {
     fn compile_apply_to_stack(&mut self, func_expr: &Expr) -> WasmResult<()> {
         // Store value, compile function call, apply
         match func_expr {
-            Expr::Closure { params, body, is_move: _ } => {
+            Expr::Closure {
+                params,
+                body,
+                is_move: _,
+            } => {
                 // Inline closure: bind parameter and compile body (is_move irrelevant for inline)
                 if params.len() != 1 {
                     return Err(WasmError::arity_mismatch(1, params.len()));
@@ -1109,7 +1101,11 @@ impl WasmCompiler {
 
             Expr::Path(path) => {
                 // Function reference - call it
-                let name = path.segments.first().map(|s| s.ident.name.as_str()).unwrap_or("");
+                let name = path
+                    .segments
+                    .first()
+                    .map(|s| s.ident.name.as_str())
+                    .unwrap_or("");
                 if let Some(func_idx) = self.get_func(name) {
                     let func = self.current_function_mut().unwrap();
                     func.push(Instruction::Call(func_idx));
@@ -1138,7 +1134,11 @@ impl WasmCompiler {
     /// Helper: Apply a binary function to two values on stack.
     fn compile_apply_binary(&mut self, func_expr: &Expr) -> WasmResult<()> {
         match func_expr {
-            Expr::Closure { params, body, is_move: _ } => {
+            Expr::Closure {
+                params,
+                body,
+                is_move: _,
+            } => {
                 // is_move irrelevant for inline binary closure application
                 if params.len() != 2 {
                     return Err(WasmError::arity_mismatch(2, params.len()));
@@ -1157,13 +1157,15 @@ impl WasmCompiler {
                 let idx1 = func.alloc_local(name1, ValType::I64);
                 func.push(Instruction::LocalSet(idx1));
 
-        
-
                 self.compile_expr(body)
             }
 
             Expr::Path(path) => {
-                let name = path.segments.first().map(|s| s.ident.name.as_str()).unwrap_or("");
+                let name = path
+                    .segments
+                    .first()
+                    .map(|s| s.ident.name.as_str())
+                    .unwrap_or("");
                 if let Some(func_idx) = self.get_func(name) {
                     let func = self.current_function_mut().unwrap();
                     func.push(Instruction::Call(func_idx));

@@ -150,7 +150,9 @@ pub(crate) fn create_test_compiler_with_heap_alloc() -> WasmCompiler {
     );
 
     // Record in func_map with the qualified name that get_func expects
-    compiler.func_map.insert("heap_alloc".to_string(), heap_alloc_idx);
+    compiler
+        .func_map
+        .insert("heap_alloc".to_string(), heap_alloc_idx);
 
     // Create a test function (func_idx = import_count since import takes earlier indices)
     let test_type = compiler.get_or_create_type(vec![], vec![ValType::I64]);

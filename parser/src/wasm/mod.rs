@@ -46,7 +46,7 @@ pub mod types;
 pub use constants::{evidence, memory, type_tag};
 pub use error::{WasmError, WasmErrorKind, WasmResult};
 pub use imports::ImportRegistry;
-pub use sourcemap::{SourceMap, SourceMapBuilder, SourceLocation};
+pub use sourcemap::{SourceLocation, SourceMap, SourceMapBuilder};
 pub use types::*;
 
 use std::collections::HashMap;
@@ -160,7 +160,9 @@ impl WasmCompiler {
         };
 
         // Add heap pointer global
-        compiler.globals.push((ValType::I32, true, memory::HEAP_START as i64));
+        compiler
+            .globals
+            .push((ValType::I32, true, memory::HEAP_START as i64));
         compiler.global_map.insert("__heap_ptr".to_string(), 0);
 
         compiler
@@ -193,7 +195,9 @@ impl WasmCompiler {
 
         // Parse source
         let mut parser = Parser::new(source);
-        let ast = parser.parse_file().map_err(|e| WasmError::parse(e.to_string()))?;
+        let ast = parser
+            .parse_file()
+            .map_err(|e| WasmError::parse(e.to_string()))?;
 
         // TODO: Optimize AST if opt_level != None
         // let ast = if self.opt_level != OptLevel::None {
@@ -312,7 +316,9 @@ impl WasmCompiler {
         // Type section
         let mut types = TypeSection::new();
         for (params, results) in self.imports.types() {
-            types.ty().function(params.iter().copied(), results.iter().copied());
+            types
+                .ty()
+                .function(params.iter().copied(), results.iter().copied());
         }
         module.section(&types);
 
@@ -385,7 +391,11 @@ impl WasmCompiler {
         exports.export("memory", wasm_encoder::ExportKind::Memory, 0);
 
         if !self.table_elements.is_empty() {
-            exports.export("__indirect_function_table", wasm_encoder::ExportKind::Table, 0);
+            exports.export(
+                "__indirect_function_table",
+                wasm_encoder::ExportKind::Table,
+                0,
+            );
         }
 
         for func in &self.functions {
@@ -574,17 +584,21 @@ mod validation_tests {
         let count = parser
             .parse_all(bytes)
             .filter_map(|p| p.ok())
-            .filter(|p| matches!(p, wasmparser::Payload::TypeSection { .. }
-                | wasmparser::Payload::ImportSection { .. }
-                | wasmparser::Payload::FunctionSection { .. }
-                | wasmparser::Payload::TableSection { .. }
-                | wasmparser::Payload::MemorySection { .. }
-                | wasmparser::Payload::GlobalSection { .. }
-                | wasmparser::Payload::ExportSection { .. }
-                | wasmparser::Payload::ElementSection { .. }
-                | wasmparser::Payload::CodeSectionStart { .. }
-                | wasmparser::Payload::DataSection { .. }
-            ))
+            .filter(|p| {
+                matches!(
+                    p,
+                    wasmparser::Payload::TypeSection { .. }
+                        | wasmparser::Payload::ImportSection { .. }
+                        | wasmparser::Payload::FunctionSection { .. }
+                        | wasmparser::Payload::TableSection { .. }
+                        | wasmparser::Payload::MemorySection { .. }
+                        | wasmparser::Payload::GlobalSection { .. }
+                        | wasmparser::Payload::ExportSection { .. }
+                        | wasmparser::Payload::ElementSection { .. }
+                        | wasmparser::Payload::CodeSectionStart { .. }
+                        | wasmparser::Payload::DataSection { .. }
+                )
+            })
             .count();
         Ok(count)
     }
@@ -595,18 +609,24 @@ mod validation_tests {
         let bytes = compiler.generate_module().unwrap();
 
         let result = validate_wasm(&bytes);
-        assert!(result.is_ok(), "Empty module validation failed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Empty module validation failed: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_validate_simple_function() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn answer() -> i64 {
                 42
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -619,11 +639,13 @@ mod validation_tests {
     fn test_validate_function_with_params() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn add(a: i64, b: i64) -> i64 {
                 a + b
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -636,14 +658,16 @@ mod validation_tests {
     fn test_validate_function_with_locals() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn compute() -> i64 {
                 let x = 10;
                 let y = 20;
                 let z = x + y;
                 z * 2
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -656,11 +680,13 @@ mod validation_tests {
     fn test_validate_if_expression() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn max(a: i64, b: i64) -> i64 {
                 if a > b { a } else { b }
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -673,7 +699,8 @@ mod validation_tests {
     fn test_validate_while_loop() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn sum_to_n(n: i64) -> i64 {
                 let mut sum = 0;
                 let mut i = 1;
@@ -683,7 +710,8 @@ mod validation_tests {
                 }
                 sum
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -696,7 +724,8 @@ mod validation_tests {
     fn test_validate_multiple_functions() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn double(x: i64) -> i64 {
                 x * 2
             }
@@ -704,7 +733,8 @@ mod validation_tests {
             pub fn quadruple(x: i64) -> i64 {
                 double(double(x))
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -717,12 +747,14 @@ mod validation_tests {
     fn test_validate_string_literal() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn greeting() -> i64 {
                 let s = "Hello, World!";
                 42
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -735,7 +767,8 @@ mod validation_tests {
     fn test_validate_nested_blocks() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn nested(x: i64) -> i64 {
                 let a = {
                     let b = x + 1;
@@ -743,7 +776,8 @@ mod validation_tests {
                 };
                 a + 10
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -756,13 +790,15 @@ mod validation_tests {
     fn test_validate_comparison_operators() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn compare(a: i64, b: i64) -> i64 {
                 if a == b { 0 }
                 else if a < b { -1 }
                 else { 1 }
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -775,11 +811,13 @@ mod validation_tests {
     fn test_validate_logical_operators() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn check(a: bool, b: bool) -> bool {
                 (a && b) || (!a && !b)
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -794,7 +832,8 @@ mod validation_tests {
 
         // Note: Using decimal literals to avoid parser issues with hex
         // Testing bitwise AND, XOR, shift operators
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn bits(x: i64) -> i64 {
                 let a = x & 255;
                 let c = x ^ 85;
@@ -802,7 +841,8 @@ mod validation_tests {
                 let e = x >> 2;
                 a + c + d + e
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -815,13 +855,15 @@ mod validation_tests {
     fn test_validate_const_definition() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             const MAX: i64 = 100;
 
             pub fn get_max() -> i64 {
                 MAX
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -834,13 +876,15 @@ mod validation_tests {
     fn test_validate_static_definition() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             static mut COUNTER: i64 = 0;
 
             pub fn get_counter() -> i64 {
                 COUNTER
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -853,14 +897,16 @@ mod validation_tests {
     fn test_validate_early_return() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn early(x: i64) -> i64 {
                 if x < 0 {
                     return -1;
                 }
                 x * 2
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -873,7 +919,8 @@ mod validation_tests {
     fn test_validate_break_continue() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn find_first_even(n: i64) -> i64 {
                 let mut i = 0;
                 while i < n {
@@ -885,7 +932,8 @@ mod validation_tests {
                 }
                 i
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -901,7 +949,11 @@ mod validation_tests {
 
         // Count sections - should have at least Type, Import, Memory, Export
         let section_count = count_sections(&bytes).unwrap();
-        assert!(section_count >= 4, "Module should have at least 4 sections, got {}", section_count);
+        assert!(
+            section_count >= 4,
+            "Module should have at least 4 sections, got {}",
+            section_count
+        );
     }
 
     #[test]
@@ -934,14 +986,18 @@ mod validation_tests {
     fn test_module_function_exports() {
         let mut compiler = WasmCompiler::new();
 
-        compiler.compile(r#"
+        compiler
+            .compile(
+                r#"
             pub fn public_fn() -> i64 { 1 }
             fn private_fn() -> i64 { 2 }
-        "#).unwrap();
+        "#,
+            )
+            .unwrap();
 
         let bytes = compiler.generate_module().unwrap();
 
-        use wasmparser::{Parser, Payload, ExternalKind};
+        use wasmparser::{ExternalKind, Parser, Payload};
 
         let parser = Parser::new(0);
         let mut exported_funcs = Vec::new();
@@ -958,15 +1014,22 @@ mod validation_tests {
             }
         }
 
-        assert!(exported_funcs.contains(&"public_fn".to_string()), "public_fn should be exported");
-        assert!(!exported_funcs.contains(&"private_fn".to_string()), "private_fn should not be exported");
+        assert!(
+            exported_funcs.contains(&"public_fn".to_string()),
+            "public_fn should be exported"
+        );
+        assert!(
+            !exported_funcs.contains(&"private_fn".to_string()),
+            "private_fn should not be exported"
+        );
     }
 
     #[test]
     fn test_validate_unary_operators() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn negate(x: i64) -> i64 {
                 -x
             }
@@ -974,7 +1037,8 @@ mod validation_tests {
             pub fn logical_not(x: bool) -> bool {
                 !x
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -987,11 +1051,13 @@ mod validation_tests {
     fn test_validate_complex_expression() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn complex(a: i64, b: i64, c: i64) -> i64 {
                 ((a + b) * c - a / b) % (c + 1)
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1005,7 +1071,8 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         // For loop iterates over an array
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn sum_array(arr: [i64]) -> i64 {
                 let mut sum = 0;
                 for x in arr {
@@ -1013,7 +1080,8 @@ mod validation_tests {
                 }
                 sum
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1026,7 +1094,8 @@ mod validation_tests {
     fn test_validate_match_expression() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn describe(x: i64) -> i64 {
                 match x {
                     0 => 100,
@@ -1034,7 +1103,8 @@ mod validation_tests {
                     _ => 300
                 }
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1051,11 +1121,13 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         // Test function parameter that accesses struct-like data
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn identity(x: i64) -> i64 {
                 x
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1068,7 +1140,8 @@ mod validation_tests {
     fn test_validate_recursive_function() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn factorial(n: i64) -> i64 {
                 if n <= 1 {
                     1
@@ -1076,7 +1149,8 @@ mod validation_tests {
                     n * factorial(n - 1)
                 }
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1089,7 +1163,8 @@ mod validation_tests {
     fn test_validate_nested_if() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn classify(x: i64) -> i64 {
                 if x < 0 {
                     -1
@@ -1101,7 +1176,8 @@ mod validation_tests {
                     2
                 }
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1114,7 +1190,8 @@ mod validation_tests {
     fn test_validate_mutable_variable() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(r#"
+        let result = compiler.compile(
+            r#"
             pub fn count_up(n: i64) -> i64 {
                 let mut count = 0;
                 let mut i = 0;
@@ -1124,7 +1201,8 @@ mod validation_tests {
                 }
                 count
             }
-        "#);
+        "#,
+        );
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();

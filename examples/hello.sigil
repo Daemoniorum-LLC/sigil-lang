@@ -4,7 +4,7 @@ fn greet(name) {
     print("Hello, " + name + "!");
 }
 
-fn main() {
+fn main() -> i64 {
     print("Welcome to Sigil!");
     greet("World");
 

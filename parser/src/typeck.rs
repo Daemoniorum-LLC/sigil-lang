@@ -103,7 +103,10 @@ pub enum Type {
     /// Inline enum type: enum { Variant1, Variant2, ... }
     InlineEnum(Vec<String>),
     /// Associated type binding: Output = Type
-    AssocTypeBinding { name: String, ty: Box<Type> },
+    AssocTypeBinding {
+        name: String,
+        ty: Box<Type>,
+    },
 }
 
 /// Integer sizes
@@ -741,9 +744,16 @@ impl TypeChecker {
             Type::Array { element, .. } => self.type_contains_var(element.as_ref()),
             Type::Slice(inner) => self.type_contains_var(inner.as_ref()),
             Type::Tuple(elems) => elems.iter().any(|e| self.type_contains_var(e)),
-            Type::Ref { inner, .. } | Type::Ptr { inner, .. } => self.type_contains_var(inner.as_ref()),
-            Type::Function { params, return_type, .. } => {
-                params.iter().any(|p| self.type_contains_var(p)) || self.type_contains_var(return_type.as_ref())
+            Type::Ref { inner, .. } | Type::Ptr { inner, .. } => {
+                self.type_contains_var(inner.as_ref())
+            }
+            Type::Function {
+                params,
+                return_type,
+                ..
+            } => {
+                params.iter().any(|p| self.type_contains_var(p))
+                    || self.type_contains_var(return_type.as_ref())
             }
             Type::Named { generics, .. } => generics.iter().any(|g| self.type_contains_var(g)),
             Type::Evidential { inner, .. } => self.type_contains_var(inner.as_ref()),
@@ -771,9 +781,11 @@ impl TypeChecker {
             Type::Slice(inner) => self.occurs_in(v, inner),
             Type::Tuple(elems) => elems.iter().any(|e| self.occurs_in(v, e)),
             Type::Ref { inner, .. } | Type::Ptr { inner, .. } => self.occurs_in(v, inner),
-            Type::Function { params, return_type, .. } => {
-                params.iter().any(|p| self.occurs_in(v, p)) || self.occurs_in(v, return_type)
-            }
+            Type::Function {
+                params,
+                return_type,
+                ..
+            } => params.iter().any(|p| self.occurs_in(v, p)) || self.occurs_in(v, return_type),
             Type::Named { generics, .. } => generics.iter().any(|g| self.occurs_in(v, g)),
             Type::Evidential { inner, .. } => self.occurs_in(v, inner),
             Type::Atomic(inner) => self.occurs_in(v, inner),
@@ -809,7 +821,11 @@ impl TypeChecker {
                 size: *size,
             },
             Type::Slice(inner) => Type::Slice(Box::new(self.freshen_inner(inner, mapping))),
-            Type::Ref { lifetime, mutable, inner } => Type::Ref {
+            Type::Ref {
+                lifetime,
+                mutable,
+                inner,
+            } => Type::Ref {
                 lifetime: lifetime.clone(),
                 mutable: *mutable,
                 inner: Box::new(self.freshen_inner(inner, mapping)),
@@ -1144,13 +1160,12 @@ impl TypeChecker {
     /// Convert a TypePath to a simple type name string
     fn type_path_to_name(&self, ty: &crate::ast::TypeExpr) -> String {
         match ty {
-            crate::ast::TypeExpr::Path(path) => {
-                path.segments
-                    .iter()
-                    .map(|s| s.ident.name.clone())
-                    .collect::<Vec<_>>()
-                    .join("::")
-            }
+            crate::ast::TypeExpr::Path(path) => path
+                .segments
+                .iter()
+                .map(|s| s.ident.name.clone())
+                .collect::<Vec<_>>()
+                .join("::"),
             _ => "Unknown".to_string(),
         }
     }
@@ -1271,7 +1286,10 @@ impl TypeChecker {
             // - For public functions, warn if evidence should be annotated at module boundary
             let type_has_evidence = self.type_has_explicit_evidence(func.return_type.as_ref());
             // Function name evidentiality (e.g., validate_model! has ! evidentiality)
-            let name_evidence = func.name.evidentiality.as_ref()
+            let name_evidence = func
+                .name
+                .evidentiality
+                .as_ref()
                 .map(|e| EvidenceLevel::from_ast(*e));
             let has_explicit_evidence = type_has_evidence || name_evidence.is_some();
             let actual_evidence = self.get_evidence(&body_type);
@@ -1369,7 +1387,9 @@ impl TypeChecker {
                     (Some(d), Some(i)) => {
                         if !self.unify(d, i) {
                             // Report type mismatch error
-                            let binding_name = pattern.binding_name().unwrap_or_else(|| "<pattern>".to_string());
+                            let binding_name = pattern
+                                .binding_name()
+                                .unwrap_or_else(|| "<pattern>".to_string());
                             let mut err = TypeError::new(format!(
                                 "type mismatch in let binding '{}': expected {:?}, found {:?}",
                                 binding_name, d, i
@@ -1407,7 +1427,12 @@ impl TypeChecker {
                 }
                 Type::Unit
             }
-            Stmt::LetElse { pattern, ty, init, else_branch } => {
+            Stmt::LetElse {
+                pattern,
+                ty,
+                init,
+                else_branch,
+            } => {
                 // Type check let-else similar to let
                 let declared_ty = ty.as_ref().map(|t| self.convert_type(t));
                 let init_ty = self.infer_expr(init);
@@ -1516,10 +1541,15 @@ impl TypeChecker {
                             // Allow implicit numeric coercion: int → float
                             let is_numeric_coercion = Self::is_numeric_coercion(param, arg);
                             // Only report error for concrete type mismatches, not type variables
-                            if !matches!(param, Type::Var(_)) && !matches!(arg, Type::Var(_)) && !is_numeric_coercion {
+                            if !matches!(param, Type::Var(_))
+                                && !matches!(arg, Type::Var(_))
+                                && !is_numeric_coercion
+                            {
                                 self.error(TypeError::new(format!(
                                     "type mismatch in argument {}: expected {}, found {}",
-                                    i + 1, param, arg
+                                    i + 1,
+                                    param,
+                                    arg
                                 )));
                             }
                         }
@@ -1628,9 +1658,7 @@ impl TypeChecker {
             }
 
             Expr::While {
-                condition,
-                body,
-                ..
+                condition, body, ..
             } => {
                 let cond_ty = self.infer_expr(condition);
                 if !self.unify(&Type::Bool, &cond_ty) {
@@ -1794,8 +1822,8 @@ impl TypeChecker {
                     "is_empty" | "contains" | "starts_with" | "ends_with" | "is_some"
                     | "is_none" | "is_ok" | "is_err" | "is_ascii" | "is_alphabetic"
                     | "is_numeric" | "is_alphanumeric" | "is_whitespace" | "is_uppercase"
-                    | "is_lowercase" | "exists" | "is_file" | "is_dir" | "is_match"
-                    | "matches" | "eq" | "ne" | "lt" | "le" | "gt" | "ge" => Type::Bool,
+                    | "is_lowercase" | "exists" | "is_file" | "is_dir" | "is_match" | "matches"
+                    | "eq" | "ne" | "lt" | "le" | "gt" | "ge" => Type::Bool,
 
                     // String methods returning String
                     "to_string" | "to_lowercase" | "to_uppercase" | "trim" | "trim_start"
@@ -1817,8 +1845,8 @@ impl TypeChecker {
                     "clone" | "cloned" | "copied" => recv_inner.clone(),
 
                     // Option/Result unwrapping - return inner type or fresh var
-                    "unwrap" | "unwrap_or" | "unwrap_or_default" | "unwrap_or_else"
-                    | "expect" | "ok" | "err" => {
+                    "unwrap" | "unwrap_or" | "unwrap_or_default" | "unwrap_or_else" | "expect"
+                    | "ok" | "err" => {
                         if let Type::Named { name, generics } = &recv_inner {
                             if (name == "Option" || name == "Result") && !generics.is_empty() {
                                 generics[0].clone()
@@ -1834,28 +1862,37 @@ impl TypeChecker {
                     "collect" => self.fresh_var(),
 
                     // Iterator/collection transformation methods - preserve receiver type
-                    "iter" | "into_iter" | "iter_mut" | "rev" | "skip" | "take"
-                    | "filter" | "map" | "filter_map" | "flat_map" | "enumerate"
-                    | "zip" | "chain" | "flatten" | "reverse" | "sorted"
-                    | "dedup" | "unique" | "peekable" | "fuse" | "cycle" | "step_by"
-                    | "take_while" | "skip_while" | "scan" | "inspect" => recv_inner.clone(),
+                    "iter" | "into_iter" | "iter_mut" | "rev" | "skip" | "take" | "filter"
+                    | "map" | "filter_map" | "flat_map" | "enumerate" | "zip" | "chain"
+                    | "flatten" | "reverse" | "sorted" | "dedup" | "unique" | "peekable"
+                    | "fuse" | "cycle" | "step_by" | "take_while" | "skip_while" | "scan"
+                    | "inspect" => recv_inner.clone(),
 
                     // String splitting/iteration - returns iterator (fresh var for proper chaining)
-                    "split" | "rsplit" | "splitn" | "rsplitn" | "split_whitespace"
-                    | "split_ascii_whitespace" | "lines" | "chars" | "bytes"
-                    | "char_indices" | "split_terminator" | "rsplit_terminator"
-                    | "split_inclusive" | "matches_iter" => self.fresh_var(),
+                    "split"
+                    | "rsplit"
+                    | "splitn"
+                    | "rsplitn"
+                    | "split_whitespace"
+                    | "split_ascii_whitespace"
+                    | "lines"
+                    | "chars"
+                    | "bytes"
+                    | "char_indices"
+                    | "split_terminator"
+                    | "rsplit_terminator"
+                    | "split_inclusive"
+                    | "matches_iter" => self.fresh_var(),
 
                     // HashMap/BTreeMap methods - return iterator-like fresh var
-                    "keys" | "values" | "values_mut" | "into_keys"
-                    | "into_values" | "entry" | "drain" => self.fresh_var(),
+                    "keys" | "values" | "values_mut" | "into_keys" | "into_values" | "entry"
+                    | "drain" => self.fresh_var(),
 
                     // Methods returning Option<T>
-                    "first" | "last" | "get" | "get_mut" | "pop" | "pop_front"
-                    | "pop_back" | "find" | "find_map" | "position" | "rposition"
-                    | "next" | "next_back" | "peek" | "nth" | "last_mut"
-                    | "binary_search" | "parent" | "file_name" | "file_stem"
-                    | "extension" => Type::Named {
+                    "first" | "last" | "get" | "get_mut" | "pop" | "pop_front" | "pop_back"
+                    | "find" | "find_map" | "position" | "rposition" | "next" | "next_back"
+                    | "peek" | "nth" | "last_mut" | "binary_search" | "parent" | "file_name"
+                    | "file_stem" | "extension" => Type::Named {
                         name: "Option".to_string(),
                         generics: vec![self.fresh_var()],
                     },
@@ -1867,18 +1904,17 @@ impl TypeChecker {
                     },
 
                     // Push/insert/mutating methods return unit
-                    "push" | "push_str" | "push_front" | "push_back" | "insert"
-                    | "remove" | "clear" | "sort" | "sort_by" | "sort_by_key"
-                    | "sort_unstable" | "truncate" | "resize" | "extend" | "append"
-                    | "retain" | "swap" | "swap_remove" => Type::Unit,
+                    "push" | "push_str" | "push_front" | "push_back" | "insert" | "remove"
+                    | "clear" | "sort" | "sort_by" | "sort_by_key" | "sort_unstable"
+                    | "truncate" | "resize" | "extend" | "append" | "retain" | "swap"
+                    | "swap_remove" => Type::Unit,
 
                     // Numeric methods
-                    "abs" | "floor" | "ceil" | "round" | "trunc" | "fract" | "sqrt"
-                    | "cbrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan"
-                    | "sinh" | "cosh" | "tanh" | "exp" | "exp2" | "ln" | "log"
-                    | "log2" | "log10" | "pow" | "powi" | "powf" | "min" | "max"
-                    | "clamp" | "signum" | "copysign" | "saturating_add"
-                    | "saturating_sub" | "saturating_mul" | "wrapping_add"
+                    "abs" | "floor" | "ceil" | "round" | "trunc" | "fract" | "sqrt" | "cbrt"
+                    | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
+                    | "tanh" | "exp" | "exp2" | "ln" | "log" | "log2" | "log10" | "pow"
+                    | "powi" | "powf" | "min" | "max" | "clamp" | "signum" | "copysign"
+                    | "saturating_add" | "saturating_sub" | "saturating_mul" | "wrapping_add"
                     | "wrapping_sub" | "wrapping_mul" | "checked_add" | "checked_sub"
                     | "checked_mul" | "checked_div" => recv_inner.clone(),
 
@@ -1893,12 +1929,10 @@ impl TypeChecker {
                     | "as_nanos" | "from_secs" | "from_millis" => recv_inner.clone(),
 
                     // Path methods returning PathBuf/String
-                    "to_path_buf" | "join" | "with_extension" | "with_file_name" => {
-                        Type::Named {
-                            name: "PathBuf".to_string(),
-                            generics: vec![],
-                        }
-                    }
+                    "to_path_buf" | "join" | "with_extension" | "with_file_name" => Type::Named {
+                        name: "PathBuf".to_string(),
+                        generics: vec![],
+                    },
 
                     // Path methods returning &str via OsStr
                     "to_str" => Type::Named {
@@ -1917,8 +1951,8 @@ impl TypeChecker {
                     },
 
                     // IO methods
-                    "read" | "write" | "flush" | "read_to_string" | "read_to_end"
-                    | "read_line" | "write_all" => Type::Named {
+                    "read" | "write" | "flush" | "read_to_string" | "read_to_end" | "read_line"
+                    | "write_all" => Type::Named {
                         name: "Result".to_string(),
                         generics: vec![self.fresh_var(), self.fresh_var()],
                     },
@@ -2078,9 +2112,7 @@ impl TypeChecker {
         let (right_inner, right_ev) = self.strip_evidence(right);
 
         // Helper to detect type variable or function types (incomplete inference)
-        let is_var_or_fn = |ty: &Type| {
-            matches!(ty, Type::Var(_) | Type::Function { .. })
-        };
+        let is_var_or_fn = |ty: &Type| matches!(ty, Type::Var(_) | Type::Function { .. });
 
         let result_ty = match op {
             // Arithmetic: numeric -> numeric
@@ -2206,7 +2238,9 @@ impl TypeChecker {
         // Also strip reference wrapper for pipe operations
         // This allows `&[T]` to be treated as `[T]` in pipes
         let inner = match inner_ev_stripped {
-            Type::Ref { inner: ref_inner, .. } => (*ref_inner).clone(),
+            Type::Ref {
+                inner: ref_inner, ..
+            } => (*ref_inner).clone(),
             other => other,
         };
 
@@ -2236,7 +2270,8 @@ impl TypeChecker {
                 } else if let Type::Named { name, generics } = &inner {
                     // Support Vec<T>, LinkedList<T>, etc.
                     if (name == "Vec" || name == "LinkedList" || name == "VecDeque")
-                        && !generics.is_empty() {
+                        && !generics.is_empty()
+                    {
                         generics[0].clone()
                     } else {
                         self.fresh_var()
@@ -2256,7 +2291,8 @@ impl TypeChecker {
                 } else if let Type::Named { name, generics } = &inner {
                     // Support Vec<T>, etc.
                     if (name == "Vec" || name == "LinkedList" || name == "VecDeque")
-                        && !generics.is_empty() {
+                        && !generics.is_empty()
+                    {
                         Some(Box::new(generics[0].clone()))
                     } else {
                         None
@@ -2363,7 +2399,11 @@ impl TypeChecker {
             }
 
             // Method call
-            PipeOp::Method { name, type_args: _, args: _ } => {
+            PipeOp::Method {
+                name,
+                type_args: _,
+                args: _,
+            } => {
                 // Look up method
                 if let Some(fn_ty) = self.functions.get(&name.name).cloned() {
                     // Freshen to get fresh type variables for polymorphic functions
@@ -2417,7 +2457,8 @@ impl TypeChecker {
                 } else if let Type::Named { name, generics } = &inner {
                     // Support Vec<T>, VecDeque<T>, etc.
                     if (name == "Vec" || name == "VecDeque" || name == "LinkedList")
-                        && !generics.is_empty() {
+                        && !generics.is_empty()
+                    {
                         generics[0].clone()
                     } else {
                         self.fresh_var()
@@ -2745,7 +2786,11 @@ impl TypeChecker {
                     self.bind_pattern(first, ty, evidence);
                 }
             }
-            Pattern::Wildcard | Pattern::Rest | Pattern::Literal(_) | Pattern::Range { .. } | Pattern::Path(_) => {
+            Pattern::Wildcard
+            | Pattern::Rest
+            | Pattern::Literal(_)
+            | Pattern::Range { .. }
+            | Pattern::Path(_) => {
                 // These don't introduce bindings
             }
             Pattern::Ref { pattern, .. } => {
@@ -2908,11 +2953,20 @@ impl TypeChecker {
     /// Check if a name looks like a type parameter (single uppercase letter or common generic names)
     fn is_type_parameter(name: &str) -> bool {
         // Single uppercase letter (T, U, E, K, V, etc.)
-        if name.len() == 1 && name.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false) {
+        if name.len() == 1
+            && name
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_uppercase())
+                .unwrap_or(false)
+        {
             return true;
         }
         // Common generic parameter names
-        matches!(name, "Item" | "Output" | "Error" | "Key" | "Value" | "Idx" | "Self")
+        matches!(
+            name,
+            "Item" | "Output" | "Error" | "Key" | "Value" | "Idx" | "Self"
+        )
     }
 
     /// Check if this is an allowed implicit numeric coercion (int → float)
@@ -2990,7 +3044,11 @@ impl TypeChecker {
                 Type::Named { name, generics }
             }
 
-            TypeExpr::Reference { lifetime, mutable, inner } => Type::Ref {
+            TypeExpr::Reference {
+                lifetime,
+                mutable,
+                inner,
+            } => Type::Ref {
                 lifetime: lifetime.clone(),
                 mutable: *mutable,
                 inner: Box::new(self.convert_type(inner)),
@@ -3091,13 +3149,29 @@ impl TypeChecker {
                 // For now, treat as an inferred/opaque type
                 Type::Var(TypeVar(0))
             }
-            TypeExpr::QualifiedPath { self_type, trait_path, item_path } => {
+            TypeExpr::QualifiedPath {
+                self_type,
+                trait_path,
+                item_path,
+            } => {
                 // Qualified path: <Type as Trait>::AssociatedType
                 // For now, represent as a named type with a synthesized name
-                let trait_part = trait_path.as_ref()
-                    .map(|tp| tp.segments.iter().map(|s| s.ident.name.clone()).collect::<Vec<_>>().join("::"))
+                let trait_part = trait_path
+                    .as_ref()
+                    .map(|tp| {
+                        tp.segments
+                            .iter()
+                            .map(|s| s.ident.name.clone())
+                            .collect::<Vec<_>>()
+                            .join("::")
+                    })
                     .unwrap_or_default();
-                let item_part = item_path.segments.iter().map(|s| s.ident.name.clone()).collect::<Vec<_>>().join("::");
+                let item_part = item_path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.name.clone())
+                    .collect::<Vec<_>>()
+                    .join("::");
                 let name = if trait_part.is_empty() {
                     format!("<_>::{}", item_part)
                 } else {
@@ -3211,8 +3285,15 @@ impl fmt::Display for Type {
                 }
                 write!(f, ") -> {}", return_type)
             }
-            Type::Ref { lifetime, mutable, inner } => {
-                let lt = lifetime.as_ref().map(|l| format!("'{} ", l)).unwrap_or_default();
+            Type::Ref {
+                lifetime,
+                mutable,
+                inner,
+            } => {
+                let lt = lifetime
+                    .as_ref()
+                    .map(|l| format!("'{} ", l))
+                    .unwrap_or_default();
                 write!(f, "&{}{}{}", lt, if *mutable { "mut " } else { "" }, inner)
             }
             Type::Ptr { mutable, inner } => {

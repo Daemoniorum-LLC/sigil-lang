@@ -1046,7 +1046,12 @@ pub mod jit {
 
                 Ok((val, false))
             }
-            ast::Stmt::LetElse { pattern, init, else_branch, .. } => {
+            ast::Stmt::LetElse {
+                pattern,
+                init,
+                else_branch,
+                ..
+            } => {
                 // For let-else, we evaluate the init and bind the pattern
                 // The else branch diverges (must return/break/panic)
                 let val = compile_expr(module, functions, extern_fns, builder, scope, init)?;
@@ -1315,7 +1320,9 @@ pub mod jit {
                 else_branch.as_deref(),
             ),
 
-            Expr::While { condition, body, .. } => compile_while(
+            Expr::While {
+                condition, body, ..
+            } => compile_while(
                 module, functions, extern_fns, builder, scope, condition, body,
             ),
 
@@ -1569,7 +1576,11 @@ pub mod jit {
                             result
                         }
                         // Method calls, await, and named morphemes
-                        PipeOp::Method { name, type_args: _, args } => {
+                        PipeOp::Method {
+                            name,
+                            type_args: _,
+                            args,
+                        } => {
                             // Compile as a method call on the result
                             let mut call_args = vec![result];
                             for arg in args {
@@ -1602,7 +1613,10 @@ pub mod jit {
                             )?;
                             // For now, treat as function call with result as first arg
                             compile_call(
-                                module, functions, extern_fns, builder,
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
                                 "sigil_call",
                                 &[callee_val, result],
                             )?

@@ -9,8 +9,8 @@ use std::path::Path;
 
 use super::game_loop::{FlagValue, GameState, Item, ItemType, SaveData, Scene};
 use super::runtime::{
-    Alter, AlterCategory, AlterPresenceState, AnimaState, FrontingState,
-    MemoryAccess, PluralSystem, RealityLayer, Trigger, TriggerCategory,
+    Alter, AlterCategory, AlterPresenceState, AnimaState, FrontingState, MemoryAccess,
+    PluralSystem, RealityLayer, Trigger, TriggerCategory,
 };
 
 // ============================================================================
@@ -224,7 +224,10 @@ impl SaveManager {
     /// Create a SaveFile from GameState
     fn create_save_file(&self, state: &GameState, name: &str) -> Result<SaveFile, SaveError> {
         let fronter_name = match &state.system.fronting {
-            FrontingState::Single(id) => state.system.alters.get(id)
+            FrontingState::Single(id) => state
+                .system
+                .alters
+                .get(id)
                 .map(|a| a.name.clone())
                 .unwrap_or_else(|| "Unknown".to_string()),
             FrontingState::Blended(ids) => {
@@ -270,16 +273,15 @@ impl SaveManager {
     fn write_save_file(&self, path: &str, save_file: &SaveFile) -> Result<(), SaveError> {
         // Ensure directory exists
         if let Some(parent) = Path::new(path).parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| SaveError::IoError(e.to_string()))?;
+            std::fs::create_dir_all(parent).map_err(|e| SaveError::IoError(e.to_string()))?;
         }
 
         // Serialize to binary format
         let data = serialize_save_file(save_file)?;
 
         // Write to file
-        let mut file = std::fs::File::create(path)
-            .map_err(|e| SaveError::IoError(e.to_string()))?;
+        let mut file =
+            std::fs::File::create(path).map_err(|e| SaveError::IoError(e.to_string()))?;
 
         file.write_all(&data)
             .map_err(|e| SaveError::IoError(e.to_string()))?;
@@ -290,8 +292,7 @@ impl SaveManager {
     /// Read save file from disk
     fn read_save_file(&self, path: &str) -> Result<SaveFile, SaveError> {
         // Read from file
-        let mut file = std::fs::File::open(path)
-            .map_err(|e| SaveError::IoError(e.to_string()))?;
+        let mut file = std::fs::File::open(path).map_err(|e| SaveError::IoError(e.to_string()))?;
 
         let mut data = Vec::new();
         file.read_to_end(&mut data)
@@ -658,7 +659,10 @@ fn deserialize_fronting_state(data: &[u8], cursor: &mut usize) -> Result<Frontin
             Ok(FrontingState::Rapid(ids))
         }
         4 => Ok(FrontingState::Unknown),
-        _ => Err(SaveError::InvalidFormat(format!("Unknown FrontingState tag: {}", tag))),
+        _ => Err(SaveError::InvalidFormat(format!(
+            "Unknown FrontingState tag: {}",
+            tag
+        ))),
     }
 }
 
@@ -681,7 +685,10 @@ fn deserialize_reality_layer(data: &[u8], cursor: &mut usize) -> Result<RealityL
         1 => Ok(RealityLayer::Fractured),
         2 => Ok(RealityLayer::Shattered),
         3 => Ok(RealityLayer::Custom(read_string(data, cursor)?)),
-        _ => Err(SaveError::InvalidFormat(format!("Unknown RealityLayer tag: {}", tag))),
+        _ => Err(SaveError::InvalidFormat(format!(
+            "Unknown RealityLayer tag: {}",
+            tag
+        ))),
     }
 }
 
@@ -710,7 +717,10 @@ fn deserialize_alter_category(data: &[u8], cursor: &mut usize) -> Result<AlterCa
         4 => Ok(AlterCategory::Persecutor),
         5 => Ok(AlterCategory::TraumaHolder),
         6 => Ok(AlterCategory::Custom(read_string(data, cursor)?)),
-        _ => Err(SaveError::InvalidFormat(format!("Unknown AlterCategory tag: {}", tag))),
+        _ => Err(SaveError::InvalidFormat(format!(
+            "Unknown AlterCategory tag: {}",
+            tag
+        ))),
     }
 }
 
@@ -728,7 +738,10 @@ fn serialize_alter_state(buffer: &mut Vec<u8>, state: &AlterPresenceState) {
     buffer.push(tag);
 }
 
-fn deserialize_alter_state(data: &[u8], cursor: &mut usize) -> Result<AlterPresenceState, SaveError> {
+fn deserialize_alter_state(
+    data: &[u8],
+    cursor: &mut usize,
+) -> Result<AlterPresenceState, SaveError> {
     let tag = read_u8(data, cursor)?;
     match tag {
         0 => Ok(AlterPresenceState::Dormant),
@@ -739,7 +752,10 @@ fn deserialize_alter_state(data: &[u8], cursor: &mut usize) -> Result<AlterPrese
         5 => Ok(AlterPresenceState::Receding),
         6 => Ok(AlterPresenceState::Triggered),
         7 => Ok(AlterPresenceState::Dissociating),
-        _ => Err(SaveError::InvalidFormat(format!("Unknown AlterPresenceState tag: {}", tag))),
+        _ => Err(SaveError::InvalidFormat(format!(
+            "Unknown AlterPresenceState tag: {}",
+            tag
+        ))),
     }
 }
 
@@ -772,7 +788,10 @@ fn deserialize_memory_access(data: &[u8], cursor: &mut usize) -> Result<MemoryAc
         }
         2 => Ok(MemoryAccess::Own),
         3 => Ok(MemoryAccess::None),
-        _ => Err(SaveError::InvalidFormat(format!("Unknown MemoryAccess tag: {}", tag))),
+        _ => Err(SaveError::InvalidFormat(format!(
+            "Unknown MemoryAccess tag: {}",
+            tag
+        ))),
     }
 }
 
@@ -827,7 +846,10 @@ fn deserialize_flag_value(data: &[u8], cursor: &mut usize) -> Result<FlagValue, 
         0 => Ok(FlagValue::Bool(read_u8(data, cursor)? != 0)),
         1 => Ok(FlagValue::Int(read_i32(data, cursor)?)),
         2 => Ok(FlagValue::String(read_string(data, cursor)?)),
-        _ => Err(SaveError::InvalidFormat(format!("Unknown FlagValue tag: {}", tag))),
+        _ => Err(SaveError::InvalidFormat(format!(
+            "Unknown FlagValue tag: {}",
+            tag
+        ))),
     }
 }
 
@@ -854,7 +876,12 @@ fn deserialize_item(data: &[u8], cursor: &mut usize) -> Result<Item, SaveError> 
         1 => ItemType::Consumable,
         2 => ItemType::Document,
         3 => ItemType::Memento,
-        _ => return Err(SaveError::InvalidFormat(format!("Unknown ItemType tag: {}", type_tag))),
+        _ => {
+            return Err(SaveError::InvalidFormat(format!(
+                "Unknown ItemType tag: {}",
+                type_tag
+            )))
+        }
     };
 
     Ok(Item {
@@ -931,8 +958,7 @@ fn read_string(data: &[u8], cursor: &mut usize) -> Result<String, SaveError> {
     }
     let bytes = &data[*cursor..*cursor + len];
     *cursor += len;
-    String::from_utf8(bytes.to_vec())
-        .map_err(|e| SaveError::InvalidFormat(e.to_string()))
+    String::from_utf8(bytes.to_vec()).map_err(|e| SaveError::InvalidFormat(e.to_string()))
 }
 
 fn write_option_string(buffer: &mut Vec<u8>, opt: &Option<String>) {
@@ -1000,7 +1026,11 @@ impl std::fmt::Display for SaveError {
             SaveError::IoError(msg) => write!(f, "I/O error: {}", msg),
             SaveError::InvalidFormat(msg) => write!(f, "Invalid save format: {}", msg),
             SaveError::VersionMismatch { expected, found } => {
-                write!(f, "Save version mismatch: expected {}, found {}", expected, found)
+                write!(
+                    f,
+                    "Save version mismatch: expected {}, found {}",
+                    expected, found
+                )
             }
             SaveError::UnexpectedEof => write!(f, "Unexpected end of save file"),
             SaveError::Corrupted(msg) => write!(f, "Save file corrupted: {}", msg),
