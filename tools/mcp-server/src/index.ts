@@ -191,6 +191,33 @@ Analyzes the code structure and describes its behavior, including:
       required: ["code"],
     },
   },
+  {
+    name: "sigil_lint",
+    description: `Run the Sigil linter to find code quality issues.
+
+Catches common problems like:
+- Unused variables and imports
+- Shadowed bindings
+- Missing return statements
+- Unreachable code
+- Style issues
+
+Returns diagnostics with suggested fixes when available.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        code: {
+          type: "string",
+          description: "The Sigil source code to lint",
+        },
+        fix: {
+          type: "boolean",
+          description: "If true, returns the code with auto-fixes applied",
+        },
+      },
+      required: ["code"],
+    },
+  },
 ];
 
 /**
@@ -266,6 +293,32 @@ async function handleToolCall(
         return generateExplanation(code, ir);
       } catch {
         return "Unable to parse IR for explanation";
+      }
+    }
+
+    case "sigil_lint": {
+      const code = args.code as string;
+      const fix = args.fix as boolean;
+
+      const lintArgs = fix
+        ? ["lint", "__INPUT__", "--format=json", "--fix"]
+        : ["lint", "__INPUT__", "--format=json"];
+
+      const result = await runSigilCommand(lintArgs, code);
+      const output = stripAnsi(result.stdout + result.stderr);
+
+      if (result.exitCode === 0 && !output.includes('"severity"')) {
+        return "✓ No lint issues found";
+      }
+
+      try {
+        const diagnostics = JSON.parse(output);
+        if (Array.isArray(diagnostics) && diagnostics.length === 0) {
+          return "✓ No lint issues found";
+        }
+        return JSON.stringify(diagnostics, null, 2);
+      } catch {
+        return output || "✓ No lint issues found";
       }
     }
 
@@ -348,7 +401,7 @@ async function main() {
   const server = new Server(
     {
       name: "sigil-mcp",
-      version: "0.1.0",
+      version: "1.0.0",
     },
     {
       capabilities: {
