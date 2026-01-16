@@ -2007,7 +2007,9 @@ pub mod jit {
                         // Holographic operations
                         | PipeOp::Universal
                         | PipeOp::Possibility
-                        | PipeOp::Necessity => {
+                        | PipeOp::Necessity
+                        | PipeOp::PossibilityMethod { .. }
+                        | PipeOp::NecessityMethod { .. } => {
                             // Fallback to interpreter for these complex operations
                             result
                         }

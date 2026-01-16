@@ -3199,9 +3199,21 @@ impl<'a> Parser<'a> {
             Some(Token::Header) => true,      // |header{...}
             Some(Token::Body) => true,        // |body{...}
             Some(Token::Interrobang) => true, // |‽
+            // Holographic operators
+            Some(Token::Lozenge) => true,     // |◊ or |◊method - possibility
+            Some(Token::BoxSymbol) => true,   // |□ or |□method - necessity
             // Identifier could be pipe method: |collect, |take, etc.
             // But identifiers NOT followed by `(` or `{` are likely bitwise OR operands
-            Some(Token::Ident(_)) => {
+            Some(Token::Ident(name)) => {
+                // Some pipe methods don't require parentheses
+                let no_args_pipe_methods = [
+                    "collect", "observe", "len", "first", "last", "reverse",
+                    "iter", "into_iter", "enumerate", "sum", "product",
+                    "min", "max", "count", "flatten", "unique"
+                ];
+                if no_args_pipe_methods.contains(&name.as_str()) {
+                    return true;
+                }
                 // Only treat as pipe method if followed by explicit call syntax
                 // peek_next() gave us the Ident, peek_n(1) gives us the token after it
                 // Also handle evidentiality markers: |validate!{...} where ! precedes {
@@ -6247,16 +6259,46 @@ impl<'a> Parser<'a> {
                 }
             }
 
-            // Possibility: |◊ - extract approximate/speculative answer
+            // Possibility: |◊ or |◊method - extract approximate/speculative answer
             Some(Token::Lozenge) => {
                 self.advance();
-                Ok(PipeOp::Possibility)
+                // Check if followed by identifier (method call)
+                if let Some(Token::Ident(_)) = self.current_token() {
+                    let name = self.parse_ident()?;
+                    // Check for arguments
+                    let args = if self.check(&Token::LParen) {
+                        self.advance();
+                        let args = self.parse_expr_list()?;
+                        self.expect(Token::RParen)?;
+                        args
+                    } else {
+                        vec![]
+                    };
+                    Ok(PipeOp::PossibilityMethod { name, args })
+                } else {
+                    Ok(PipeOp::Possibility)
+                }
             }
 
-            // Necessity: |□ - verify and promote to certain
+            // Necessity: |□ or |□method - verify and promote to certain
             Some(Token::BoxSymbol) => {
                 self.advance();
-                Ok(PipeOp::Necessity)
+                // Check if followed by identifier (method call)
+                if let Some(Token::Ident(_)) = self.current_token() {
+                    let name = self.parse_ident()?;
+                    // Check for arguments
+                    let args = if self.check(&Token::LParen) {
+                        self.advance();
+                        let args = self.parse_expr_list()?;
+                        self.expect(Token::RParen)?;
+                        args
+                    } else {
+                        vec![]
+                    };
+                    Ok(PipeOp::NecessityMethod { name, args })
+                } else {
+                    Ok(PipeOp::Necessity)
+                }
             }
 
             // Any/Exists: |∃{p} or |any{p}

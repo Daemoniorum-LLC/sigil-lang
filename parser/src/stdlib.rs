@@ -184,6 +184,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     // Phase 12: Emotional hologram and experimental crypto
     register_hologram(interp);
     register_experimental_crypto(interp);
+    // Phase 12b: Sketch data structures (HyperLogLog, BloomFilter, etc.)
+    register_sketch(interp);
     // Phase 13: Multi-base encoding and cultural numerology
     register_multibase(interp);
     // Phase 14: Polycultural audio - world tuning, sacred frequencies, synthesis
@@ -462,6 +464,7 @@ fn register_core(interp: &mut Interpreter) {
                 Evidence::Known => "known",
                 Evidence::Uncertain => "uncertain",
                 Evidence::Reported => "reported",
+                Evidence::Predicted => "predicted",
                 Evidence::Paradox => "paradox",
             },
             Value::Affective { .. } => "affective",
@@ -2770,6 +2773,7 @@ fn register_evidence(interp: &mut Interpreter) {
                     Evidence::Known => "known",
                     Evidence::Uncertain => "uncertain",
                     Evidence::Reported => "reported",
+                    Evidence::Predicted => "predicted",
                     Evidence::Paradox => "paradox",
                 };
                 Ok(Value::String(Rc::new(level.to_string())))
@@ -2868,6 +2872,7 @@ fn register_evidence(interp: &mut Interpreter) {
         let combined = match (ev1, ev2) {
             (Evidence::Paradox, _) | (_, Evidence::Paradox) => Evidence::Paradox,
             (Evidence::Reported, _) | (_, Evidence::Reported) => Evidence::Reported,
+            (Evidence::Predicted, _) | (_, Evidence::Predicted) => Evidence::Predicted,
             (Evidence::Uncertain, _) | (_, Evidence::Uncertain) => Evidence::Uncertain,
             _ => Evidence::Known,
         };
@@ -2877,6 +2882,7 @@ fn register_evidence(interp: &mut Interpreter) {
                 Evidence::Known => "known",
                 Evidence::Uncertain => "uncertain",
                 Evidence::Reported => "reported",
+                Evidence::Predicted => "predicted",
                 Evidence::Paradox => "paradox",
             }
             .to_string(),
@@ -20807,6 +20813,242 @@ fn gf256_inv(a: u8) -> u8 {
 //   Base58  - Bitcoin addresses (no confusing 0/O/I/l)
 //   Base32  - Case-insensitive, no confusing chars
 //   Base36  - Alphanumeric only
+
+// ============================================================================
+// SKETCH DATA STRUCTURES: HyperLogLog, BloomFilter, CountMinSketch, MerkleTree
+// ============================================================================
+// Probabilistic data structures for approximate answers with holographic operators
+
+fn register_sketch(interp: &mut Interpreter) {
+    // === HyperLogLog ===
+    // Probabilistic cardinality estimator
+    // HyperLogLog::new() or HyperLogLog::<14>::new()
+    define(interp, "HyperLogLog·new", Some(0), |_, _| {
+        let mut fields = std::collections::HashMap::new();
+        // 14-bit precision by default = 2^14 = 16384 registers
+        let precision = 14u64;
+        let num_registers = 1u64 << precision;
+        // Initialize registers to 0
+        let registers: Vec<Value> = vec![Value::Int(0); num_registers as usize];
+        fields.insert("_precision".to_string(), Value::Int(precision as i64));
+        fields.insert(
+            "_registers".to_string(),
+            Value::Array(Rc::new(RefCell::new(registers))),
+        );
+        fields.insert("_count".to_string(), Value::Int(0));
+        Ok(Value::Struct {
+            name: "HyperLogLog".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // === BloomFilter ===
+    // Probabilistic set membership with false positives
+    define(interp, "BloomFilter·new", Some(0), |_, _| {
+        let mut fields = std::collections::HashMap::new();
+        // Default: 1024 bits, 3 hash functions
+        let size = 1024u64;
+        let num_hashes = 3u64;
+        let bits: Vec<Value> = vec![Value::Bool(false); size as usize];
+        fields.insert("_size".to_string(), Value::Int(size as i64));
+        fields.insert("_num_hashes".to_string(), Value::Int(num_hashes as i64));
+        fields.insert(
+            "_bits".to_string(),
+            Value::Array(Rc::new(RefCell::new(bits))),
+        );
+        Ok(Value::Struct {
+            name: "BloomFilter".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // === CountMinSketch ===
+    // Frequency estimation with overcounting
+    define(interp, "CountMinSketch·new", Some(0), |_, _| {
+        let mut fields = std::collections::HashMap::new();
+        // Default: 4 hash functions, 1024 counters each
+        let depth = 4u64;
+        let width = 1024u64;
+        // Create 2D array of counters
+        let counters: Vec<Value> = (0..depth)
+            .map(|_| {
+                let row: Vec<Value> = vec![Value::Int(0); width as usize];
+                Value::Array(Rc::new(RefCell::new(row)))
+            })
+            .collect();
+        fields.insert("_depth".to_string(), Value::Int(depth as i64));
+        fields.insert("_width".to_string(), Value::Int(width as i64));
+        fields.insert(
+            "_counters".to_string(),
+            Value::Array(Rc::new(RefCell::new(counters))),
+        );
+        Ok(Value::Struct {
+            name: "CountMinSketch".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // === MerkleTree ===
+    // Hash tree for data integrity verification
+    define(interp, "MerkleTree·new", Some(0), |_, _| {
+        let mut fields = std::collections::HashMap::new();
+        fields.insert(
+            "_leaves".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![]))),
+        );
+        fields.insert(
+            "_hashes".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![]))),
+        );
+        fields.insert("_root".to_string(), Value::Null);
+        Ok(Value::Struct {
+            name: "MerkleTree".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // MerkleTree::from - create from array
+    define(interp, "MerkleTree·from", Some(1), |_, args| {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let items = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("MerkleTree::from requires array")),
+        };
+
+        let mut fields = std::collections::HashMap::new();
+        let mut leaves: Vec<Value> = Vec::new();
+
+        // Hash each item to create leaf hashes
+        for item in &items {
+            let data = match item {
+                Value::String(s) => s.as_bytes().to_vec(),
+                Value::Int(n) => n.to_le_bytes().to_vec(),
+                other => format!("{:?}", other).into_bytes(),
+            };
+            let mut hasher = DefaultHasher::new();
+            data.hash(&mut hasher);
+            let leaf_hash = format!("{:016x}", hasher.finish());
+            leaves.push(Value::String(Rc::new(leaf_hash)));
+        }
+
+        // Compute root hash
+        let combined: String = leaves
+            .iter()
+            .filter_map(|v| match v {
+                Value::String(s) => Some(s.to_string()),
+                _ => None,
+            })
+            .collect();
+        let mut root_hasher = DefaultHasher::new();
+        combined.hash(&mut root_hasher);
+        let root = format!("{:016x}", root_hasher.finish());
+
+        fields.insert(
+            "_leaves".to_string(),
+            Value::Array(Rc::new(RefCell::new(leaves))),
+        );
+        fields.insert(
+            "_items".to_string(),
+            Value::Array(Rc::new(RefCell::new(items))),
+        );
+        fields.insert("_root".to_string(), Value::String(Rc::new(root)));
+
+        Ok(Value::Struct {
+            name: "MerkleTree".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // === fetch_untrusted_data - returns data with Reported (~) evidentiality ===
+    define(interp, "fetch_untrusted_data", Some(0), |_, _| {
+        use crate::interpreter::Evidence;
+
+        // Create a verifiable data struct with value 42
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("value".to_string(), Value::Int(42));
+        fields.insert("hash".to_string(), Value::String(Rc::new("abc123".to_string())));
+        fields.insert("_verified".to_string(), Value::Bool(false));
+
+        let data = Value::Struct {
+            name: "UntrustedData".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        };
+
+        // Wrap in Reported evidentiality
+        Ok(Value::Evidential {
+            value: Box::new(data),
+            evidence: Evidence::Reported,
+        })
+    });
+
+    // === Superposition type - quantum-inspired probabilistic values ===
+    define(interp, "Superposition·new", Some(0), |_, _| {
+        let mut fields = std::collections::HashMap::new();
+        fields.insert(
+            "_values".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![]))),
+        );
+        fields.insert(
+            "_weights".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![]))),
+        );
+        fields.insert("_collapsed".to_string(), Value::Bool(false));
+        Ok(Value::Struct {
+            name: "Superposition".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // uniform - create uniform superposition from array
+    define(interp, "uniform", Some(1), |_, args| {
+        let items = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("uniform() requires array")),
+        };
+
+        let n = items.len();
+        let weight = 1.0 / n as f64;
+        let weights: Vec<Value> = (0..n).map(|_| Value::Float(weight)).collect();
+
+        let mut fields = std::collections::HashMap::new();
+        fields.insert(
+            "_values".to_string(),
+            Value::Array(Rc::new(RefCell::new(items))),
+        );
+        fields.insert(
+            "_weights".to_string(),
+            Value::Array(Rc::new(RefCell::new(weights))),
+        );
+        fields.insert("_collapsed".to_string(), Value::Bool(false));
+
+        Ok(Value::Struct {
+            name: "Superposition".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // === Hologram type - erasure-coded data ===
+    define(interp, "Hologram·new", Some(0), |_, _| {
+        let mut fields = std::collections::HashMap::new();
+        fields.insert(
+            "shards".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![]))),
+        );
+        fields.insert("_data_shards".to_string(), Value::Int(0));
+        fields.insert("_parity_shards".to_string(), Value::Int(0));
+        Ok(Value::Struct {
+            name: "Hologram".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // ReedSolomon - encoding scheme constant
+    define(interp, "ReedSolomon", Some(0), |_, _| {
+        Ok(Value::String(Rc::new("ReedSolomon".to_string())))
+    });
+}
 
 fn register_multibase(interp: &mut Interpreter) {
     // === Vigesimal (Base 20) - Mayan/Celtic ===

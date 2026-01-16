@@ -2814,6 +2814,23 @@ impl TypeChecker {
                 inner: Box::new(self.fresh_var()),
                 evidence: EvidenceLevel::Known,
             },
+            PipeOp::PossibilityMethod { args, .. } => {
+                // Type the arguments
+                for arg in args {
+                    let _ = self.infer_expr(arg);
+                }
+                self.fresh_var() // Returns predicted value
+            }
+            PipeOp::NecessityMethod { args, .. } => {
+                // Type the arguments
+                for arg in args {
+                    let _ = self.infer_expr(arg);
+                }
+                Type::Evidential {
+                    inner: Box::new(self.fresh_var()),
+                    evidence: EvidenceLevel::Known,
+                }
+            }
         };
 
         // Preserve evidence through pipe
