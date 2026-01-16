@@ -5624,6 +5624,9 @@ impl<'a> Parser<'a> {
     /// Parse postfix operators that can follow a pipe chain (like ?)
     fn parse_postfix_after_pipe(&mut self, mut expr: Expr) -> ParseResult<Expr> {
         loop {
+            // Skip comments to allow method chain continuation across lines
+            self.skip_comments();
+
             match self.current_token() {
                 Some(Token::Question) => {
                     self.advance();
@@ -5674,6 +5677,51 @@ impl<'a> Parser<'a> {
                             field,
                         };
                     }
+                }
+                // MiddleDot method chaining: expr·method()
+                Some(Token::MiddleDot) => {
+                    // Convert current expr to first segment, then parse chain
+                    let first_segment = self.expr_to_incorporation_segment(expr.clone())?;
+                    let mut segments = vec![first_segment];
+
+                    while self.consume_if(&Token::MiddleDot) {
+                        // Handle both named methods and tuple indices: ·method() or ·0
+                        let name = if let Some(Token::IntLit(idx)) = self.current_token().cloned() {
+                            let span = self.current_span();
+                            self.advance();
+                            Ident {
+                                name: idx,
+                                evidentiality: None,
+                                affect: None,
+                                span,
+                            }
+                        } else {
+                            self.parse_ident()?
+                        };
+                        // Handle bracket generics on method: ·method[Type]()
+                        if self.check(&Token::LBracket) && self.peek_looks_like_bracket_generic() {
+                            self.advance(); // consume [
+                            let _generics = self.parse_type_list()?;
+                            self.expect(Token::RBracket)?;
+                        }
+                        // Handle angle bracket generics: ·method<Type>()
+                        if self.check(&Token::Lt) && self.peek_looks_like_generic_arg() {
+                            self.advance(); // consume <
+                            let _generics = self.parse_type_list()?;
+                            self.expect_gt()?;
+                        }
+                        let args = if self.check(&Token::LParen) {
+                            self.advance();
+                            let args = self.parse_expr_list()?;
+                            self.expect(Token::RParen)?;
+                            Some(args)
+                        } else {
+                            None
+                        };
+                        segments.push(IncorporationSegment { name, args });
+                    }
+
+                    expr = Expr::Incorporation { segments };
                 }
                 _ => break,
             }
