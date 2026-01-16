@@ -1,6 +1,6 @@
 [package]
 name = "sigil-oracle"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Oracle - Language Server Protocol implementation for Sigil"
 authors = ["Daemoniorum, LLC"]
@@ -20,9 +20,8 @@ path = "src/main.rs"
 tower-lsp = "0.20"
 tokio = { version = "1", features = ["full"] }
 
-# Sigil parser - for crates.io publish, use: version = "0.1.0"
-# For local development, use path:
-sigil-parser = { path = "../../parser", default-features = false }
+# Sigil parser
+sigil-parser = { version = "0.1.1", default-features = false }
 
 # Serialization for LSP
 serde = { version = "1", features = ["derive"] }

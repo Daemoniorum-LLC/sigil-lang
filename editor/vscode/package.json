@@ -2,7 +2,7 @@
   "name": "sigil-lang",
   "displayName": "Sigil Language",
   "description": "Language support for Sigil - a polysynthetic programming language with evidentiality types",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "daemoniorum",
   "engines": {
     "vscode": "^1.74.0"
