@@ -1,0 +1,111 @@
+================================================================================
+Pipeline with tau (transform)
+================================================================================
+
+fn main() {
+    let nums = [1, 2, 3];
+    let doubled = nums |τ{_ * 2};
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (let_statement
+        (identifier_pattern
+          (identifier))
+        (array_expression
+          (literal
+            (number_literal))
+          (literal
+            (number_literal))
+          (literal
+            (number_literal))))
+      (let_statement
+        (identifier_pattern
+          (identifier))
+        (pipeline_expression
+          (path
+            (identifier))
+          (morpheme_expression
+            (morpheme)
+            (morpheme_body
+              (binary_expression
+                (path
+                  (identifier))
+                (literal
+                  (number_literal))))))))))
+
+================================================================================
+Pipeline with sigma (sum)
+================================================================================
+
+fn sum_array() {
+    let total = [1, 2, 3] |Σ;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (let_statement
+        (identifier_pattern
+          (identifier))
+        (pipeline_expression
+          (array_expression
+            (literal
+              (number_literal))
+            (literal
+              (number_literal))
+            (literal
+              (number_literal)))
+          (morpheme_expression
+            (morpheme)))))))
+
+================================================================================
+Chained pipeline
+================================================================================
+
+fn process_data() {
+    let result = data |τ{_ * 2} |φ{_ > 10} |Σ;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (let_statement
+        (identifier_pattern
+          (identifier))
+        (pipeline_expression
+          (pipeline_expression
+            (pipeline_expression
+              (path
+                (identifier))
+              (morpheme_expression
+                (morpheme)
+                (morpheme_body
+                  (binary_expression
+                    (path
+                      (identifier))
+                    (literal
+                      (number_literal))))))
+            (morpheme_expression
+              (morpheme)
+              (morpheme_body
+                (binary_expression
+                  (path
+                    (identifier))
+                  (literal
+                    (number_literal))))))
+          (morpheme_expression
+            (morpheme)))))))
