@@ -3,7 +3,7 @@
 // Priority: P2 - Enhancement
 
 fn main() {
-    let sum: !i32 = 0;
+    let mut sum: !i32 = 0;
     for i in 1..4 {
         sum = sum + i;
     }
