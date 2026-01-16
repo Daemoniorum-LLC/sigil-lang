@@ -18,6 +18,23 @@ use tracing::info;
 use sigil_parser::{Lexer, Parser, Token, Span, TypeChecker};
 use std::collections::HashMap;
 
+/// Check if a character can continue a Unicode identifier.
+/// This covers common Unicode letters and combining marks used in identifiers.
+fn is_xid_continue(c: char) -> bool {
+    // Unicode categories that can continue an identifier:
+    // - Lu (uppercase letters), Ll (lowercase letters), Lt (titlecase)
+    // - Lm (modifier letters), Lo (other letters)
+    // - Mn (non-spacing marks), Mc (spacing combining marks)
+    // - Nd (decimal numbers), Pc (connector punctuation like _)
+    // - Nl (letter numbers like Roman numerals)
+    // This is a simplified check - full XID_Continue is more complex
+    c.is_alphabetic() || c.is_numeric() || c == '_' ||
+    matches!(c, '\u{0300}'..='\u{036F}' | // Combining diacritical marks
+             '\u{0370}'..='\u{03FF}' | // Greek (τ, φ, σ, ρ, λ, etc.)
+             '\u{2200}'..='\u{22FF}' | // Mathematical operators (∀, ∃, etc.)
+             '\u{2070}'..='\u{209F}')   // Superscripts and subscripts
+}
+
 /// A symbol definition in the document.
 #[derive(Debug, Clone)]
 struct SymbolDef {
@@ -458,22 +475,24 @@ impl OracleServer {
                         types.insert(func.name.name.clone(), sig);
                     }
                     sigil_parser::Item::Struct(s) => {
-                        let fields_str = match &s.fields {
+                        let struct_repr = match &s.fields {
                             sigil_parser::ast::StructFields::Named(fields) => {
                                 let field_strs: Vec<String> = fields.iter()
                                     .map(|f| format!("{}: {}", f.name.name, self.format_type(&f.ty)))
                                     .collect();
-                                field_strs.join(", ")
+                                format!("struct {} {{ {} }}", s.name.name, field_strs.join(", "))
                             }
                             sigil_parser::ast::StructFields::Tuple(tys) => {
                                 let ty_strs: Vec<String> = tys.iter()
                                     .map(|t| self.format_type(t))
                                     .collect();
-                                ty_strs.join(", ")
+                                format!("struct {}({})", s.name.name, ty_strs.join(", "))
                             }
-                            sigil_parser::ast::StructFields::Unit => String::new(),
+                            sigil_parser::ast::StructFields::Unit => {
+                                format!("struct {}", s.name.name)
+                            }
                         };
-                        types.insert(s.name.name.clone(), format!("struct {{ {} }}", fields_str));
+                        types.insert(s.name.name.clone(), struct_repr);
                     }
                     sigil_parser::Item::Enum(e) => {
                         let variants: Vec<String> = e.variants.iter()
@@ -642,7 +661,7 @@ impl OracleServer {
                     .unwrap_or_default();
                 format!("fn({}){}", ps.join(", "), ret)
             }
-            sigil_parser::TypeExpr::Evidential { inner, evidentiality, .. } => {
+            sigil_parser::TypeExpr::Evidential { inner, evidentiality, error_type } => {
                 let marker = match evidentiality {
                     sigil_parser::ast::Evidentiality::Known => "!",
                     sigil_parser::ast::Evidentiality::Uncertain => "?",
@@ -650,11 +669,57 @@ impl OracleServer {
                     sigil_parser::ast::Evidentiality::Predicted => "◊",
                     sigil_parser::ast::Evidentiality::Paradox => "‽",
                 };
-                format!("{}{}", self.format_type(inner), marker)
+                let base = format!("{}{}", self.format_type(inner), marker);
+                if let Some(err) = error_type {
+                    format!("{}[{}]", base, self.format_type(err))
+                } else {
+                    base
+                }
+            }
+            sigil_parser::TypeExpr::Cycle { .. } => "Cycle<_>".to_string(),
+            sigil_parser::TypeExpr::Simd { element, lanes } => {
+                format!("simd<{}, {}>", self.format_type(element), lanes)
+            }
+            sigil_parser::TypeExpr::Atomic(inner) => {
+                format!("atomic<{}>", self.format_type(inner))
+            }
+            sigil_parser::TypeExpr::Lifetime(lt) => format!("'{}", lt),
+            sigil_parser::TypeExpr::TraitObject(bounds) => {
+                let bound_strs: Vec<String> = bounds.iter().map(|b| self.format_type(b)).collect();
+                format!("dyn {}", bound_strs.join(" + "))
+            }
+            sigil_parser::TypeExpr::Hrtb { lifetimes, bound } => {
+                format!("for<{}> {}", lifetimes.iter().map(|l| format!("'{}", l)).collect::<Vec<_>>().join(", "), self.format_type(bound))
+            }
+            sigil_parser::TypeExpr::InlineStruct { fields } => {
+                let field_strs: Vec<String> = fields.iter()
+                    .map(|f| format!("{}: {}", f.name.name, self.format_type(&f.ty)))
+                    .collect();
+                format!("struct {{ {} }}", field_strs.join(", "))
+            }
+            sigil_parser::TypeExpr::InlineEnum { variants } => {
+                let var_strs: Vec<String> = variants.iter().map(|v| v.name.name.clone()).collect();
+                format!("enum {{ {} }}", var_strs.join(" | "))
+            }
+            sigil_parser::TypeExpr::ImplTrait(bounds) => {
+                let bound_strs: Vec<String> = bounds.iter().map(|b| self.format_type(b)).collect();
+                format!("impl {}", bound_strs.join(" + "))
+            }
+            sigil_parser::TypeExpr::AssocTypeBinding { name, ty } => {
+                format!("{} = {}", name.name, self.format_type(ty))
+            }
+            sigil_parser::TypeExpr::ConstExpr(_) => "<const>".to_string(),
+            sigil_parser::TypeExpr::QualifiedPath { self_type, trait_path, item_path } => {
+                let base = self.format_type(self_type);
+                let item = self.format_type_path(item_path);
+                if let Some(trait_p) = trait_path {
+                    format!("<{} as {}>::{}", base, self.format_type_path(trait_p), item)
+                } else {
+                    format!("<{}>::{}", base, item)
+                }
             }
             sigil_parser::TypeExpr::Infer => "_".to_string(),
             sigil_parser::TypeExpr::Never => "!".to_string(),
-            _ => "?".to_string(),
         }
     }
 
@@ -1051,11 +1116,12 @@ impl LanguageServer for OracleServer {
         };
 
         // Extract the function name (scan backwards for identifier)
+        // Support Unicode identifiers (letters, numbers, underscore, and Unicode XID characters)
         let before_paren = &content[..func_name_end];
         let func_name: String = before_paren
             .chars()
             .rev()
-            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .take_while(|c| c.is_alphanumeric() || *c == '_' || is_xid_continue(*c))
             .collect::<String>()
             .chars()
             .rev()
