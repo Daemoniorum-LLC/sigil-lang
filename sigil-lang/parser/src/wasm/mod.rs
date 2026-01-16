@@ -36,6 +36,7 @@ pub mod error;
 pub mod expressions;
 pub mod imports;
 pub mod literals;
+pub mod macros;
 pub mod morphemes;
 pub mod operators;
 pub mod sourcemap;
