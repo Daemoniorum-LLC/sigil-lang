@@ -1,0 +1,107 @@
+================================================================================
+Simple closure
+================================================================================
+
+fn test() {
+    let f = || 42;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (let_statement
+        (identifier_pattern
+          (identifier))
+        (closure
+          (literal
+            (number_literal)))))))
+
+================================================================================
+Closure with parameters
+================================================================================
+
+fn test() {
+    let add = |a, b| a + b;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (let_statement
+        (identifier_pattern
+          (identifier))
+        (closure
+          (closure_parameters
+            (closure_parameter
+              (identifier_pattern
+                (identifier)))
+            (closure_parameter
+              (identifier_pattern
+                (identifier))))
+          (binary_expression
+            (path
+              (identifier))
+            (path
+              (identifier))))))))
+
+================================================================================
+Closure with typed parameters
+================================================================================
+
+fn test() {
+    let f = |x: i32| -> i32 { x * 2 };
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (let_statement
+        (identifier_pattern
+          (identifier))
+        (closure
+          (closure_parameters
+            (closure_parameter
+              (identifier_pattern
+                (identifier))
+              (primitive_type)))
+          (primitive_type)
+          (block
+            (binary_expression
+              (path
+                (identifier))
+              (literal
+                (number_literal)))))))))
+
+================================================================================
+Move closure
+================================================================================
+
+fn test() {
+    let f = move || x;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (let_statement
+        (identifier_pattern
+          (identifier))
+        (closure
+          (path
+            (identifier)))))))

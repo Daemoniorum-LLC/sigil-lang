@@ -23,6 +23,7 @@
   "invoke"
   "pub"
   "async"
+  "await"
   "move"
   "ref"
   "unsafe"
@@ -54,6 +55,10 @@
   "super"
   "crate"
 ] @variable.builtin
+
+; Self type in impl blocks
+((identifier) @type.builtin
+  (#eq? @type.builtin "Self"))
 
 ; === Types ===
 (primitive_type) @type.builtin

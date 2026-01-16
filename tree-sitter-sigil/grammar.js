@@ -20,16 +20,10 @@ module.exports = grammar({
     // The | operator is used for both bitwise OR and pipeline expressions
     [$.binary_expression, $.pipeline_expression],
     [$.binary_expression, $.pipeline_expression, $.range_expression],
-    // field_expression and method_call both start with expr.ident
-    [$.field_expression, $.method_call],
     // Loop expressions can have optional labels which conflict with break label
     [$.loop_expression],
     [$.while_expression],
     [$.for_expression],
-  ],
-
-  // Allow struct expressions in expression position (like Rust's block expressions)
-  inline: $ => [
   ],
 
   rules: {
@@ -54,8 +48,6 @@ module.exports = grammar({
 
     // Simple block comment (non-nested)
     block_comment: $ => token(seq('/*', /[^*]*\*+([^/*][^*]*\*+)*/, '/')),
-
-    doc_comment: $ => token(seq('//!', /.*/)),
 
     // === Function Definition ===
     function_definition: $ => seq(
@@ -664,7 +656,9 @@ module.exports = grammar({
       ')',
     )),
 
-    method_call: $ => prec(15, seq(
+    // method_call has higher precedence than field_expression
+    // so s.len() parses as method_call, not call_expression(field_expression)
+    method_call: $ => prec(16, seq(
       $._expression,
       '.',
       field('method', $.identifier),
@@ -974,9 +968,11 @@ module.exports = grammar({
       $.literal,
     )),
 
+    // Reference pattern: &pattern or &mut pattern
+    // Note: In &mut x, the mut is captured by identifier_pattern, not reference_pattern
+    // This produces reference_pattern(&, identifier_pattern(mut x)) which is semantically valid
     reference_pattern: $ => prec(1, seq(
       '&',
-      // Note: 'mut' is part of identifier_pattern, not here
       $._pattern,
     )),
 
@@ -987,10 +983,16 @@ module.exports = grammar({
     )),
 
     // === Paths and Identifiers ===
-    path: $ => prec.left(seq(
-      optional(choice('::', 'crate', 'self', 'super')),
-      $.identifier,
-      repeat(seq('::', $.identifier)),
+    // self/super/crate can stand alone or prefix a path
+    path: $ => prec.left(choice(
+      // Standalone self/crate/super
+      choice('self', 'crate', 'super'),
+      // Path starting with :: or a prefix
+      seq(
+        optional(choice('::', seq(choice('self', 'crate', 'super'), '::'))),
+        $.identifier,
+        repeat(seq('::', $.identifier)),
+      ),
     )),
 
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,

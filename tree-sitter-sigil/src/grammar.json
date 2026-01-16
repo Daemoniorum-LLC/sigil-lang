@@ -90,22 +90,6 @@
         ]
       }
     },
-    "doc_comment": {
-      "type": "TOKEN",
-      "content": {
-        "type": "SEQ",
-        "members": [
-          {
-            "type": "STRING",
-            "value": "//!"
-          },
-          {
-            "type": "PATTERN",
-            "value": ".*"
-          }
-        ]
-      }
-    },
     "function_definition": {
       "type": "SEQ",
       "members": [
@@ -3444,7 +3428,7 @@
     },
     "method_call": {
       "type": "PREC",
-      "value": 15,
+      "value": 16,
       "content": {
         "type": "SEQ",
         "members": [
@@ -5202,56 +5186,92 @@
       "type": "PREC_LEFT",
       "value": 0,
       "content": {
-        "type": "SEQ",
+        "type": "CHOICE",
         "members": [
           {
             "type": "CHOICE",
             "members": [
               {
-                "type": "CHOICE",
-                "members": [
-                  {
-                    "type": "STRING",
-                    "value": "::"
-                  },
-                  {
-                    "type": "STRING",
-                    "value": "crate"
-                  },
-                  {
-                    "type": "STRING",
-                    "value": "self"
-                  },
-                  {
-                    "type": "STRING",
-                    "value": "super"
-                  }
-                ]
+                "type": "STRING",
+                "value": "self"
               },
               {
-                "type": "BLANK"
+                "type": "STRING",
+                "value": "crate"
+              },
+              {
+                "type": "STRING",
+                "value": "super"
               }
             ]
           },
           {
-            "type": "SYMBOL",
-            "name": "identifier"
-          },
-          {
-            "type": "REPEAT",
-            "content": {
-              "type": "SEQ",
-              "members": [
-                {
-                  "type": "STRING",
-                  "value": "::"
-                },
-                {
-                  "type": "SYMBOL",
-                  "name": "identifier"
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "CHOICE",
+                "members": [
+                  {
+                    "type": "CHOICE",
+                    "members": [
+                      {
+                        "type": "STRING",
+                        "value": "::"
+                      },
+                      {
+                        "type": "SEQ",
+                        "members": [
+                          {
+                            "type": "CHOICE",
+                            "members": [
+                              {
+                                "type": "STRING",
+                                "value": "self"
+                              },
+                              {
+                                "type": "STRING",
+                                "value": "crate"
+                              },
+                              {
+                                "type": "STRING",
+                                "value": "super"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "STRING",
+                            "value": "::"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "BLANK"
+                  }
+                ]
+              },
+              {
+                "type": "SYMBOL",
+                "name": "identifier"
+              },
+              {
+                "type": "REPEAT",
+                "content": {
+                  "type": "SEQ",
+                  "members": [
+                    {
+                      "type": "STRING",
+                      "value": "::"
+                    },
+                    {
+                      "type": "SYMBOL",
+                      "name": "identifier"
+                    }
+                  ]
                 }
-              ]
-            }
+              }
+            ]
           }
         ]
       }
@@ -5297,10 +5317,6 @@
       "binary_expression",
       "pipeline_expression",
       "range_expression"
-    ],
-    [
-      "field_expression",
-      "method_call"
     ],
     [
       "loop_expression"
