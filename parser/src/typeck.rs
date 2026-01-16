@@ -211,12 +211,58 @@ impl EvidenceLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeVar(pub u32);
 
+/// Type error codes for structured diagnostics
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeErrorCode {
+    /// E0308: Type mismatch
+    TypeMismatch,
+    /// E0425: Undefined name (variable, function, type)
+    UndefinedName,
+    /// E0382: Use after move / borrow errors
+    BorrowError,
+    /// E0600: Evidentiality constraint violation
+    EvidentialityError,
+    /// E0601: Condition must be boolean
+    NonBoolCondition,
+    /// E0602: Array elements must have same type
+    HeterogeneousArray,
+    /// E0603: Invalid index type
+    InvalidIndex,
+    /// E0604: Invalid operand type
+    InvalidOperand,
+    /// E0605: Missing match arm
+    MissingMatchArm,
+    /// E0606: Invalid reduction operation
+    InvalidReduction,
+    /// E0300: Generic type error
+    Generic,
+}
+
+impl TypeErrorCode {
+    pub fn code(&self) -> &'static str {
+        match self {
+            TypeErrorCode::TypeMismatch => "E0308",
+            TypeErrorCode::UndefinedName => "E0425",
+            TypeErrorCode::BorrowError => "E0382",
+            TypeErrorCode::EvidentialityError => "E0600",
+            TypeErrorCode::NonBoolCondition => "E0601",
+            TypeErrorCode::HeterogeneousArray => "E0602",
+            TypeErrorCode::InvalidIndex => "E0603",
+            TypeErrorCode::InvalidOperand => "E0604",
+            TypeErrorCode::MissingMatchArm => "E0605",
+            TypeErrorCode::InvalidReduction => "E0606",
+            TypeErrorCode::Generic => "E0300",
+        }
+    }
+}
+
 /// Type error
 #[derive(Debug, Clone)]
 pub struct TypeError {
     pub message: String,
     pub span: Option<Span>,
     pub notes: Vec<String>,
+    pub code: TypeErrorCode,
 }
 
 impl TypeError {
@@ -225,6 +271,7 @@ impl TypeError {
             message: message.into(),
             span: None,
             notes: Vec::new(),
+            code: TypeErrorCode::Generic,
         }
     }
 
@@ -236,6 +283,64 @@ impl TypeError {
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
         self.notes.push(note.into());
         self
+    }
+
+    pub fn with_code(mut self, code: TypeErrorCode) -> Self {
+        self.code = code;
+        self
+    }
+
+    // Convenient constructors for common error types
+
+    /// Type mismatch error: expected X, found Y
+    pub fn type_mismatch(expected: &str, found: &str) -> Self {
+        Self::new(format!("type mismatch: expected `{}`, found `{}`", expected, found))
+            .with_code(TypeErrorCode::TypeMismatch)
+    }
+
+    /// Undefined name error
+    pub fn undefined(kind: &str, name: &str) -> Self {
+        Self::new(format!("{} `{}` not found in this scope", kind, name))
+            .with_code(TypeErrorCode::UndefinedName)
+    }
+
+    /// Condition must be boolean error
+    pub fn non_bool_condition(context: &str, found: &str) -> Self {
+        Self::new(format!("{} condition must be `bool`, found `{}`", context, found))
+            .with_code(TypeErrorCode::NonBoolCondition)
+    }
+
+    /// Array elements must have same type
+    pub fn heterogeneous_array(first_type: &str, found_type: &str) -> Self {
+        Self::new(format!(
+            "array elements must have the same type: expected `{}`, found `{}`",
+            first_type, found_type
+        ))
+        .with_code(TypeErrorCode::HeterogeneousArray)
+    }
+
+    /// Invalid index type
+    pub fn invalid_index(found: &str) -> Self {
+        Self::new(format!("array index must be an integer, found `{}`", found))
+            .with_code(TypeErrorCode::InvalidIndex)
+    }
+
+    /// Invalid operand type
+    pub fn invalid_operand(op: &str, found: &str) -> Self {
+        Self::new(format!("invalid operand type `{}` for `{}`", found, op))
+            .with_code(TypeErrorCode::InvalidOperand)
+    }
+
+    /// Missing match arm
+    pub fn missing_match_arm() -> Self {
+        Self::new("match expression has no arms")
+            .with_code(TypeErrorCode::MissingMatchArm)
+    }
+
+    /// Invalid reduction
+    pub fn invalid_reduction(op: &str, found: &str) -> Self {
+        Self::new(format!("`{}` requires array or slice, found `{}`", op, found))
+            .with_code(TypeErrorCode::InvalidReduction)
     }
 }
 
@@ -1597,7 +1702,7 @@ impl TypeChecker {
                     for elem in &elements[1..] {
                         let t = self.infer_expr(elem);
                         if !self.unify(&elem_ty, &t) {
-                            self.error(TypeError::new("array elements must have same type"));
+                            self.error(TypeError::heterogeneous_array(&format!("{}", elem_ty), &format!("{}", t)));
                         }
                     }
                     Type::Array {
@@ -1620,7 +1725,7 @@ impl TypeChecker {
             } => {
                 let cond_ty = self.infer_expr(condition);
                 if !self.unify(&Type::Bool, &cond_ty) {
-                    self.error(TypeError::new("if condition must be bool"));
+                    self.error(TypeError::non_bool_condition("if", &format!("{}", cond_ty)));
                 }
 
                 let then_ty = self.check_block(then_branch);
@@ -1662,7 +1767,7 @@ impl TypeChecker {
             } => {
                 let cond_ty = self.infer_expr(condition);
                 if !self.unify(&Type::Bool, &cond_ty) {
-                    self.error(TypeError::new("while condition must be bool"));
+                    self.error(TypeError::non_bool_condition("while", &format!("{}", cond_ty)));
                 }
                 self.check_block(body);
                 Type::Unit
@@ -1702,7 +1807,7 @@ impl TypeChecker {
                 match coll_ty {
                     Type::Array { element, .. } | Type::Slice(element) => {
                         if !matches!(idx_ty, Type::Int(_)) {
-                            self.error(TypeError::new("index must be integer"));
+                            self.error(TypeError::invalid_index(&format!("{}", idx_ty)));
                         }
                         *element
                     }
@@ -1769,7 +1874,7 @@ impl TypeChecker {
                     if let Some(ref guard) = arm.guard {
                         let guard_ty = self.infer_expr(guard);
                         if !self.unify(&Type::Bool, &guard_ty) {
-                            self.error(TypeError::new("match guard must be bool"));
+                            self.error(TypeError::non_bool_condition("match guard", &format!("{}", guard_ty)));
                         }
                     }
 
@@ -2150,10 +2255,12 @@ impl TypeChecker {
             // Logical: bool -> bool
             BinOp::And | BinOp::Or => {
                 if !self.unify(&Type::Bool, &left_inner) {
-                    self.error(TypeError::new("logical operand must be bool"));
+                    self.error(TypeError::invalid_operand("&&/||", &format!("{}", left_inner))
+                        .with_note("logical operators require boolean operands"));
                 }
                 if !self.unify(&Type::Bool, &right_inner) {
-                    self.error(TypeError::new("logical operand must be bool"));
+                    self.error(TypeError::invalid_operand("&&/||", &format!("{}", right_inner))
+                        .with_note("logical operators require boolean operands"));
                 }
                 Type::Bool
             }
@@ -2164,7 +2271,8 @@ impl TypeChecker {
             // String concatenation
             BinOp::Concat => {
                 if !self.unify(&Type::Str, &left_inner) {
-                    self.error(TypeError::new("concat operand must be string"));
+                    self.error(TypeError::invalid_operand("++", &format!("{}", left_inner))
+                        .with_note("string concatenation requires string operands"));
                 }
                 Type::Str
             }
@@ -2280,7 +2388,7 @@ impl TypeChecker {
                     // For bootstrapping: return fresh type variable when input is unknown
                     self.fresh_var()
                 } else {
-                    self.error(TypeError::new("reduce requires array or slice"));
+                    self.error(TypeError::invalid_reduction("reduce", &format!("{}", inner)));
                     Type::Error
                 }
             }
@@ -2305,7 +2413,7 @@ impl TypeChecker {
                         Type::Int(_) | Type::Float(_) => *element,
                         Type::Var(_) => *element, // For bootstrapping: allow type variables
                         _ => {
-                            self.error(TypeError::new("numeric reduction requires numeric array"));
+                            self.error(TypeError::invalid_operand("numeric reduction", &format!("{}", element)));
                             Type::Error
                         }
                     }
@@ -2313,7 +2421,7 @@ impl TypeChecker {
                     // For bootstrapping: return fresh type variable when input is unknown
                     self.fresh_var()
                 } else {
-                    self.error(TypeError::new("reduction requires array or slice"));
+                    self.error(TypeError::invalid_reduction("numeric reduction", &format!("{}", inner)));
                     Type::Error
                 }
             }
@@ -2325,9 +2433,8 @@ impl TypeChecker {
                         Type::Array { .. } => *element,
                         Type::Var(_) => self.fresh_var(), // For bootstrapping
                         _ => {
-                            self.error(TypeError::new(
-                                "concat reduction requires array of strings or arrays",
-                            ));
+                            self.error(TypeError::invalid_operand("concat reduction", &format!("{}", element))
+                                .with_note("concat requires strings or arrays"));
                             Type::Error
                         }
                     }
@@ -2335,7 +2442,7 @@ impl TypeChecker {
                     // For bootstrapping: return fresh type variable
                     self.fresh_var()
                 } else {
-                    self.error(TypeError::new("concat reduction requires array or slice"));
+                    self.error(TypeError::invalid_reduction("concat reduction", &format!("{}", inner)));
                     Type::Error
                 }
             }
@@ -2346,9 +2453,8 @@ impl TypeChecker {
                         Type::Bool => Type::Bool,
                         Type::Var(_) => Type::Bool, // For bootstrapping: assume bool
                         _ => {
-                            self.error(TypeError::new(
-                                "boolean reduction requires array of booleans",
-                            ));
+                            self.error(TypeError::invalid_operand("boolean reduction", &format!("{}", element))
+                                .with_note("all/any requires array of booleans"));
                             Type::Error
                         }
                     }
@@ -2356,7 +2462,7 @@ impl TypeChecker {
                     // For bootstrapping: return bool
                     Type::Bool
                 } else {
-                    self.error(TypeError::new("boolean reduction requires array or slice"));
+                    self.error(TypeError::invalid_reduction("boolean reduction", &format!("{}", inner)));
                     Type::Error
                 }
             }
@@ -2365,7 +2471,7 @@ impl TypeChecker {
             PipeOp::Match(arms) => {
                 // All arms should return the same type
                 if arms.is_empty() {
-                    self.error(TypeError::new("match expression has no arms"));
+                    self.error(TypeError::missing_match_arm());
                     Type::Error
                 } else {
                     // Infer type from first arm, other arms should match

@@ -757,7 +757,7 @@ impl Diagnostics {
 // ============================================================================
 
 use crate::parser::ParseError;
-use crate::typeck::TypeError;
+use crate::typeck::{TypeError, TypeErrorCode};
 
 impl From<ParseError> for Diagnostic {
     fn from(err: ParseError) -> Self {
@@ -799,17 +799,41 @@ impl From<ParseError> for Diagnostic {
 impl From<&TypeError> for Diagnostic {
     fn from(err: &TypeError) -> Self {
         let span = err.span.unwrap_or_default();
-        let mut diag = Diagnostic::error(&err.message, span).with_code("E0300");
+        let mut diag = Diagnostic::error(&err.message, span).with_code(err.code.code());
 
-        // Classify the error and add appropriate code
-        if err.message.contains("type mismatch") || err.message.contains("expected") {
-            diag = diag.with_code("E0308");
-        } else if err.message.contains("undefined") || err.message.contains("not found") {
-            diag = diag.with_code("E0425");
-        } else if err.message.contains("borrow") || err.message.contains("move") {
-            diag = diag.with_code("E0382");
-        } else if err.message.contains("evidentiality") {
-            diag = diag.with_code("E0600");
+        // Add contextual help based on error type
+        match err.code {
+            TypeErrorCode::TypeMismatch => {
+                diag = diag.with_note("types must match for this operation");
+            }
+            TypeErrorCode::UndefinedName => {
+                diag = diag.with_note("check spelling or add an import/definition");
+            }
+            TypeErrorCode::BorrowError => {
+                diag = diag.with_note("a value can only be borrowed once mutably, or multiple times immutably");
+            }
+            TypeErrorCode::EvidentialityError => {
+                diag = diag.with_note("evidentiality markers track the source and certainty of values");
+            }
+            TypeErrorCode::NonBoolCondition => {
+                diag = diag.with_note("conditions must evaluate to `true` or `false`");
+            }
+            TypeErrorCode::HeterogeneousArray => {
+                diag = diag.with_note("all elements in an array must have the same type");
+            }
+            TypeErrorCode::InvalidIndex => {
+                diag = diag.with_note("use integers like `0`, `1`, `2` to index arrays");
+            }
+            TypeErrorCode::InvalidOperand => {
+                diag = diag.with_note("check that the operand types are valid for this operator");
+            }
+            TypeErrorCode::MissingMatchArm => {
+                diag = diag.with_note("add at least one arm to handle the matched value");
+            }
+            TypeErrorCode::InvalidReduction => {
+                diag = diag.with_note("reduction operations work on arrays or slices");
+            }
+            TypeErrorCode::Generic => {}
         }
 
         // Add notes from the error
