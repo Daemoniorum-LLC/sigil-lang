@@ -851,6 +851,55 @@ impl From<TypeError> for Diagnostic {
     }
 }
 
+use crate::interpreter::{RuntimeError, RuntimeErrorCode};
+
+impl From<&RuntimeError> for Diagnostic {
+    fn from(err: &RuntimeError) -> Self {
+        let span = err.span.unwrap_or_default();
+        let mut diag = Diagnostic::error(&err.message, span).with_code(err.code.code());
+
+        // Add contextual help based on error type
+        match err.code {
+            RuntimeErrorCode::DivisionByZero => {
+                diag = diag.with_note("check that the divisor is not zero before dividing");
+            }
+            RuntimeErrorCode::IndexOutOfBounds => {
+                diag = diag.with_note("array indices must be between 0 and length - 1");
+            }
+            RuntimeErrorCode::UndefinedVariable => {
+                diag = diag.with_note("make sure the variable is defined before use");
+            }
+            RuntimeErrorCode::TypeError => {
+                diag = diag.with_note("values must have compatible types at runtime");
+            }
+            RuntimeErrorCode::InvalidOperation => {
+                diag = diag.with_note("this operation is not supported for this value");
+            }
+            RuntimeErrorCode::AssertionFailed => {
+                diag = diag.with_note("the assertion condition evaluated to false");
+            }
+            RuntimeErrorCode::Overflow => {
+                diag = diag.with_note("the result is too large to represent");
+            }
+            RuntimeErrorCode::StackOverflow => {
+                diag = diag.with_note("check for infinite recursion in your code");
+            }
+            RuntimeErrorCode::ControlFlowError => {
+                diag = diag.with_note("control flow statements must be used in the correct context");
+            }
+            RuntimeErrorCode::Generic => {}
+        }
+
+        diag
+    }
+}
+
+impl From<RuntimeError> for Diagnostic {
+    fn from(err: RuntimeError) -> Self {
+        Diagnostic::from(&err)
+    }
+}
+
 /// Format a token for display in error messages.
 fn format_token(token: &Token) -> String {
     match token {

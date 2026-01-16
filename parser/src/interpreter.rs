@@ -494,11 +494,54 @@ impl fmt::Display for Value {
     }
 }
 
+/// Runtime error codes for structured diagnostics
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeErrorCode {
+    /// R0001: Division by zero
+    DivisionByZero,
+    /// R0002: Index out of bounds
+    IndexOutOfBounds,
+    /// R0003: Undefined variable
+    UndefinedVariable,
+    /// R0004: Type error at runtime
+    TypeError,
+    /// R0005: Invalid operation
+    InvalidOperation,
+    /// R0006: Assertion failed
+    AssertionFailed,
+    /// R0007: Overflow error
+    Overflow,
+    /// R0008: Stack overflow
+    StackOverflow,
+    /// R0009: Control flow error (return/break/continue in wrong context)
+    ControlFlowError,
+    /// R0000: Generic runtime error
+    Generic,
+}
+
+impl RuntimeErrorCode {
+    pub fn code(&self) -> &'static str {
+        match self {
+            RuntimeErrorCode::DivisionByZero => "R0001",
+            RuntimeErrorCode::IndexOutOfBounds => "R0002",
+            RuntimeErrorCode::UndefinedVariable => "R0003",
+            RuntimeErrorCode::TypeError => "R0004",
+            RuntimeErrorCode::InvalidOperation => "R0005",
+            RuntimeErrorCode::AssertionFailed => "R0006",
+            RuntimeErrorCode::Overflow => "R0007",
+            RuntimeErrorCode::StackOverflow => "R0008",
+            RuntimeErrorCode::ControlFlowError => "R0009",
+            RuntimeErrorCode::Generic => "R0000",
+        }
+    }
+}
+
 /// Runtime error
 #[derive(Debug)]
 pub struct RuntimeError {
     pub message: String,
     pub span: Option<Span>,
+    pub code: RuntimeErrorCode,
 }
 
 impl RuntimeError {
@@ -506,6 +549,7 @@ impl RuntimeError {
         Self {
             message: message.into(),
             span: None,
+            code: RuntimeErrorCode::Generic,
         }
     }
 
@@ -513,13 +557,60 @@ impl RuntimeError {
         Self {
             message: message.into(),
             span: Some(span),
+            code: RuntimeErrorCode::Generic,
         }
+    }
+
+    pub fn with_code(mut self, code: RuntimeErrorCode) -> Self {
+        self.code = code;
+        self
+    }
+
+    // Convenience constructors for common runtime errors
+
+    /// Division by zero error
+    pub fn division_by_zero() -> Self {
+        Self::new("division by zero")
+            .with_code(RuntimeErrorCode::DivisionByZero)
+    }
+
+    /// Index out of bounds error
+    pub fn index_out_of_bounds(index: i64, len: usize) -> Self {
+        Self::new(format!("index {} out of bounds for length {}", index, len))
+            .with_code(RuntimeErrorCode::IndexOutOfBounds)
+    }
+
+    /// Undefined variable error
+    pub fn undefined_variable(name: &str) -> Self {
+        Self::new(format!("undefined variable: `{}`", name))
+            .with_code(RuntimeErrorCode::UndefinedVariable)
+    }
+
+    /// Type error at runtime
+    pub fn type_error(expected: &str, found: &str) -> Self {
+        Self::new(format!("expected {}, found {}", expected, found))
+            .with_code(RuntimeErrorCode::TypeError)
+    }
+
+    /// Invalid operation error
+    pub fn invalid_operation(op: &str, context: &str) -> Self {
+        Self::new(format!("{} is not valid for {}", op, context))
+            .with_code(RuntimeErrorCode::InvalidOperation)
+    }
+
+    /// Assertion failed error
+    pub fn assertion_failed(msg: Option<&str>) -> Self {
+        let message = match msg {
+            Some(m) => format!("assertion failed: {}", m),
+            None => "assertion failed".to_string(),
+        };
+        Self::new(message).with_code(RuntimeErrorCode::AssertionFailed)
     }
 }
 
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Runtime error: {}", self.message)?;
+        write!(f, "[{}] Runtime error: {}", self.code.code(), self.message)?;
         if let Some(span) = self.span {
             write!(f, " at {}", span)?;
         }
@@ -538,9 +629,12 @@ pub enum ControlFlow {
 impl From<ControlFlow> for RuntimeError {
     fn from(cf: ControlFlow) -> Self {
         match cf {
-            ControlFlow::Return(_) => RuntimeError::new("return outside function"),
-            ControlFlow::Break(_) => RuntimeError::new("break outside loop"),
-            ControlFlow::Continue => RuntimeError::new("continue outside loop"),
+            ControlFlow::Return(_) => RuntimeError::new("return outside function")
+                .with_code(RuntimeErrorCode::ControlFlowError),
+            ControlFlow::Break(_) => RuntimeError::new("break outside loop")
+                .with_code(RuntimeErrorCode::ControlFlowError),
+            ControlFlow::Continue => RuntimeError::new("continue outside loop")
+                .with_code(RuntimeErrorCode::ControlFlowError),
         }
     }
 }
@@ -619,7 +713,7 @@ impl Environment {
         } else if let Some(ref parent) = self.parent {
             parent.borrow_mut().set(name, value)
         } else {
-            Err(RuntimeError::new(format!("Undefined variable: {}", name)))
+            Err(RuntimeError::undefined_variable(name))
         }
     }
 }
@@ -2997,7 +3091,7 @@ impl Interpreter {
             if name.len() <= 2 {
                 crate::sigil_debug!("DEBUG Undefined variable '{}' (len={})", name, name.len());
             }
-            Err(RuntimeError::new(format!("Undefined variable: {}", name)))
+            Err(RuntimeError::undefined_variable(name))
         } else {
             // Multi-segment path (module::item or Type·method)
             // Try full qualified name first (joined with ·)
@@ -3362,13 +3456,13 @@ impl Interpreter {
             BinOp::Mul => Value::Int(a * b),
             BinOp::Div => {
                 if b == 0 {
-                    return Err(RuntimeError::new("Division by zero"));
+                    return Err(RuntimeError::division_by_zero());
                 }
                 Value::Int(a / b)
             }
             BinOp::Rem => {
                 if b == 0 {
-                    return Err(RuntimeError::new("Division by zero"));
+                    return Err(RuntimeError::division_by_zero());
                 }
                 Value::Int(a % b)
             }
@@ -5145,32 +5239,35 @@ impl Interpreter {
         match (collection, idx) {
             (Value::Array(arr), Value::Int(i)) => {
                 let arr = arr.borrow();
-                let i = if i < 0 { arr.len() as i64 + i } else { i } as usize;
+                let len = arr.len();
+                let idx = if i < 0 { len as i64 + i } else { i } as usize;
                 let result = arr
-                    .get(i)
+                    .get(idx)
                     .cloned()
-                    .ok_or_else(|| RuntimeError::new("Index out of bounds"));
+                    .ok_or_else(|| RuntimeError::index_out_of_bounds(i, len));
                 if let Ok(ref v) = result {
                     crate::sigil_debug!(
                         "DEBUG eval_index: arr[{}] = {:?}",
-                        i,
+                        idx,
                         std::mem::discriminant(v)
                     );
                 }
                 result
             }
             (Value::Tuple(t), Value::Int(i)) => {
-                let i = if i < 0 { t.len() as i64 + i } else { i } as usize;
-                t.get(i)
+                let len = t.len();
+                let idx = if i < 0 { len as i64 + i } else { i } as usize;
+                t.get(idx)
                     .cloned()
-                    .ok_or_else(|| RuntimeError::new("Index out of bounds"))
+                    .ok_or_else(|| RuntimeError::index_out_of_bounds(i, len))
             }
             (Value::String(s), Value::Int(i)) => {
-                let i = if i < 0 { s.len() as i64 + i } else { i } as usize;
+                let len = s.len();
+                let idx = if i < 0 { len as i64 + i } else { i } as usize;
                 s.chars()
-                    .nth(i)
+                    .nth(idx)
                     .map(Value::Char)
-                    .ok_or_else(|| RuntimeError::new("Index out of bounds"))
+                    .ok_or_else(|| RuntimeError::index_out_of_bounds(i, len))
             }
             // Handle open-ended range slicing (from eval_range returning tuple)
             (Value::Array(arr), Value::Tuple(range_tuple)) if range_tuple.len() == 2 => {
