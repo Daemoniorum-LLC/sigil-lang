@@ -5,11 +5,13 @@ use sigil_parser::span::Span;
 use sigil_parser::typeck::TypeChecker;
 #[cfg(feature = "jit")]
 use sigil_parser::JitCompiler;
-use sigil_parser::{register_stdlib, set_verbose, Diagnostic, Diagnostics, Interpreter, Lexer, Parser, Token};
-#[cfg(feature = "llvm")]
-use sigil_parser::{CompileMode, LlvmCompiler, OptLevel};
 #[cfg(feature = "wasm")]
 use sigil_parser::WasmCompiler;
+use sigil_parser::{
+    register_stdlib, set_verbose, Diagnostic, Diagnostics, Interpreter, Lexer, Parser, Token,
+};
+#[cfg(feature = "llvm")]
+use sigil_parser::{CompileMode, LlvmCompiler, OptLevel};
 use std::borrow::Cow;
 use std::env;
 use std::fs;
@@ -40,7 +42,8 @@ fn main() -> ExitCode {
     }
 
     // Filter out global flags for command processing
-    let args: Vec<String> = args.into_iter()
+    let args: Vec<String> = args
+        .into_iter()
         .filter(|a| a != "--verbose" && a != "-v")
         .collect();
 
@@ -90,7 +93,7 @@ fn main() -> ExitCode {
             }
             // Collect program args (after --)
             let program_args: Vec<String> = if let Some(pos) = args.iter().position(|a| a == "--") {
-                args[pos+1..].to_vec()
+                args[pos + 1..].to_vec()
             } else {
                 vec![]
             };
@@ -103,7 +106,7 @@ fn main() -> ExitCode {
             }
             // Collect program args (after --)
             let program_args: Vec<String> = if let Some(pos) = args.iter().position(|a| a == "--") {
-                args[pos+1..].to_vec()
+                args[pos + 1..].to_vec()
             } else {
                 vec![]
             };
@@ -118,7 +121,7 @@ fn main() -> ExitCode {
             };
             // Collect program args (after --)
             let program_args: Vec<String> = if let Some(pos) = args.iter().position(|a| a == "--") {
-                args[pos+1..].to_vec()
+                args[pos + 1..].to_vec()
             } else {
                 vec![]
             };
@@ -196,13 +199,15 @@ fn main() -> ExitCode {
                     args[2]
                         .trim_end_matches(".sigil")
                         .trim_end_matches(".sg")
-                        .to_string() + ".wasm"
+                        .to_string()
+                        + ".wasm"
                 }
             } else {
                 args[2]
                     .trim_end_matches(".sigil")
                     .trim_end_matches(".sg")
-                    .to_string() + ".wasm"
+                    .to_string()
+                    + ".wasm"
             };
             wasm_compile_file(&args[2], &output)
         }
@@ -286,7 +291,8 @@ fn main() -> ExitCode {
             };
 
             // Get config path if specified
-            let config_path = args.iter()
+            let config_path = args
+                .iter()
                 .find(|a| a.starts_with("--config="))
                 .map(|a| a.strip_prefix("--config=").unwrap());
 
@@ -299,7 +305,14 @@ fn main() -> ExitCode {
             if watch_mode {
                 lint_watch(&args[2], format, config_path)
             } else {
-                lint_path(&args[2], format, config_path, apply_fix, parallel, show_stats)
+                lint_path(
+                    &args[2],
+                    format,
+                    config_path,
+                    apply_fix,
+                    parallel,
+                    show_stats,
+                )
             }
         }
         "dump-ir" => {
@@ -352,11 +365,12 @@ fn main() -> ExitCode {
             // Treat as file if it ends with .sigil or .sg
             if args[1].ends_with(".sigil") || args[1].ends_with(".sg") {
                 // Collect program args (after --)
-                let program_args: Vec<String> = if let Some(pos) = args.iter().position(|a| a == "--") {
-                    args[pos+1..].to_vec()
-                } else {
-                    vec![]
-                };
+                let program_args: Vec<String> =
+                    if let Some(pos) = args.iter().position(|a| a == "--") {
+                        args[pos + 1..].to_vec()
+                    } else {
+                        vec![]
+                    };
                 run_file(&args[1], &program_args)
             } else {
                 eprintln!("Unknown command: {}", args[1]);
@@ -400,7 +414,7 @@ fn run_file(path: &str, program_args: &[String]) -> ExitCode {
     // Execute with full stdlib
     let mut interpreter = Interpreter::new();
     register_stdlib(&mut interpreter);
-    
+
     // Set source directory for module resolution
     if let Some(parent) = std::path::Path::new(path).parent() {
         let source_dir = parent.to_string_lossy().to_string();
@@ -411,7 +425,7 @@ fn run_file(path: &str, program_args: &[String]) -> ExitCode {
             eprintln!("Warning: failed to discover project: {}", e);
         }
     }
-    
+
     // Set program arguments (program name + actual args)
     let program_name = std::path::Path::new(path)
         .file_stem()
@@ -420,7 +434,7 @@ fn run_file(path: &str, program_args: &[String]) -> ExitCode {
     let mut full_args = vec![program_name];
     full_args.extend(program_args.iter().cloned());
     interpreter.set_program_args(full_args);
-    
+
     match interpreter.execute(&ast) {
         Ok(value) => {
             // Only print result if it's not null
@@ -451,7 +465,11 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
 
     let mut files: Vec<String> = dir
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |ext| ext == "sg" || ext == "sigil"))
+        .filter(|e| {
+            e.path()
+                .extension()
+                .map_or(false, |ext| ext == "sg" || ext == "sigil")
+        })
         .map(|e| e.path().to_string_lossy().to_string())
         .collect();
 
@@ -460,8 +478,14 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
     // 2. Other modules in alphabetical order
     // 3. main.sigil last (uses definitions from other modules)
     files.sort_by(|a, b| {
-        let a_name = Path::new(a).file_name().and_then(|n| n.to_str()).unwrap_or("");
-        let b_name = Path::new(b).file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let a_name = Path::new(a)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        let b_name = Path::new(b)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
         match (a_name, b_name) {
             ("lib.sigil", _) | ("lib.sg", _) => std::cmp::Ordering::Less,
             (_, "lib.sigil") | (_, "lib.sg") => std::cmp::Ordering::Greater,
@@ -478,7 +502,10 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
 
     eprintln!("Loading {} modules from '{}':", files.len(), dir_path);
     for f in &files {
-        let name = Path::new(f).file_name().unwrap_or_default().to_string_lossy();
+        let name = Path::new(f)
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
         eprintln!("  - {}", name);
     }
 
@@ -513,13 +540,12 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
     }
 
     // Create program args array
-    let args_value = sigil_parser::Value::Array(
-        std::rc::Rc::new(std::cell::RefCell::new(
-            program_args.iter()
-                .map(|s| sigil_parser::Value::String(std::rc::Rc::new(s.clone())))
-                .collect()
-        ))
-    );
+    let args_value = sigil_parser::Value::Array(std::rc::Rc::new(std::cell::RefCell::new(
+        program_args
+            .iter()
+            .map(|s| sigil_parser::Value::String(std::rc::Rc::new(s.clone())))
+            .collect(),
+    )));
 
     // Try to call main with args
     match interpreter.call_function_by_name("main", vec![args_value]) {
@@ -558,14 +584,14 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
         }
     }
 
-    let manifest_content = match fs::read_to_string("Sigil.toml")
-        .or_else(|_| fs::read_to_string("sigil.toml")) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Error reading Sigil.toml: {}", e);
-            return ExitCode::from(1);
-        }
-    };
+    let manifest_content =
+        match fs::read_to_string("Sigil.toml").or_else(|_| fs::read_to_string("sigil.toml")) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Error reading Sigil.toml: {}", e);
+                return ExitCode::from(1);
+            }
+        };
 
     let manifest: TomlValue = match manifest_content.parse() {
         Ok(v) => v,
@@ -589,10 +615,12 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
         .get("workspace")
         .and_then(|w| w.get("members"))
         .and_then(|m| m.as_array())
-        .map(|arr| arr.iter()
-            .filter_map(|v| v.as_str())
-            .map(|s| s.to_string())
-            .collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.to_string())
+                .collect()
+        })
         .unwrap_or_default();
 
     if members.is_empty() {
@@ -605,10 +633,12 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
         .get("dependencies")
         .and_then(|d| d.as_table())
         .map(|table| {
-            table.iter()
+            table
+                .iter()
                 .filter_map(|(name, value)| {
                     // Handle path dependencies: { path = "../../some/path" }
-                    value.get("path")
+                    value
+                        .get("path")
                         .and_then(|p| p.as_str())
                         .map(|path| (name.replace('-', "_"), path.to_string()))
                 })
@@ -658,14 +688,24 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
 
         let mut files: Vec<String> = src_dir
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "sigil" || ext == "sg"))
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map_or(false, |ext| ext == "sigil" || ext == "sg")
+            })
             .map(|e| e.path().to_string_lossy().to_string())
             .collect();
 
         // Sort files: lib.sigil first, main.sigil last
         files.sort_by(|a, b| {
-            let a_name = Path::new(a).file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let b_name = Path::new(b).file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let a_name = Path::new(a)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            let b_name = Path::new(b)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
             match (a_name, b_name) {
                 ("lib.sigil", _) | ("lib.sg", _) => std::cmp::Ordering::Less,
                 (_, "lib.sigil") | (_, "lib.sg") => std::cmp::Ordering::Greater,
@@ -675,7 +715,11 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
             }
         });
 
-        eprintln!("  Loading dependency {} ({} files)...", dep_name, files.len());
+        eprintln!(
+            "  Loading dependency {} ({} files)...",
+            dep_name,
+            files.len()
+        );
 
         // Load each file in the dependency
         for file_path in &files {
@@ -685,8 +729,11 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
                 .unwrap_or("?");
             eprintln!("    - {}", file_name);
 
-            let module_name = if file_name != "lib.sigil" && file_name != "main.sigil"
-                && file_name != "lib.sg" && file_name != "main.sg" {
+            let module_name = if file_name != "lib.sigil"
+                && file_name != "main.sigil"
+                && file_name != "lib.sg"
+                && file_name != "main.sg"
+            {
                 Path::new(file_name)
                     .file_stem()
                     .and_then(|s| s.to_str())
@@ -751,7 +798,11 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
 
         let mut files: Vec<String> = src_dir
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "sigil" || ext == "sg"))
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map_or(false, |ext| ext == "sigil" || ext == "sg")
+            })
             .map(|e| e.path().to_string_lossy().to_string())
             .collect();
 
@@ -760,8 +811,14 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
         // 2. Other modules in alphabetical order
         // 3. main.sigil last (uses definitions from other modules)
         files.sort_by(|a, b| {
-            let a_name = Path::new(a).file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let b_name = Path::new(b).file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let a_name = Path::new(a)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            let b_name = Path::new(b)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
             match (a_name, b_name) {
                 ("lib.sigil", _) | ("lib.sg", _) => std::cmp::Ordering::Less,
                 (_, "lib.sigil") | (_, "lib.sg") => std::cmp::Ordering::Greater,
@@ -784,8 +841,11 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
             // Set current module based on file name (for module-qualified function names)
             // e.g., "analyze.sigil" -> module name "analyze"
             // Skip for lib.sigil and main.sigil as they are the crate root
-            let module_name = if file_name != "lib.sigil" && file_name != "main.sigil"
-                && file_name != "lib.sg" && file_name != "main.sg" {
+            let module_name = if file_name != "lib.sigil"
+                && file_name != "main.sigil"
+                && file_name != "lib.sg"
+                && file_name != "main.sg"
+            {
                 Path::new(file_name)
                     .file_stem()
                     .and_then(|s| s.to_str())
@@ -841,39 +901,34 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
     eprintln!("Running binary: {}\n", binary_crate);
 
     // Create program args array
-    let args_value = sigil_parser::Value::Array(
-        std::rc::Rc::new(std::cell::RefCell::new(
-            program_args.iter()
-                .map(|s| sigil_parser::Value::String(std::rc::Rc::new(s.clone())))
-                .collect()
-        ))
-    );
+    let args_value = sigil_parser::Value::Array(std::rc::Rc::new(std::cell::RefCell::new(
+        program_args
+            .iter()
+            .map(|s| sigil_parser::Value::String(std::rc::Rc::new(s.clone())))
+            .collect(),
+    )));
 
     // Try to call main
     match interpreter.call_function_by_name("main", vec![args_value.clone()]) {
-        Ok(value) => {
-            match &value {
-                sigil_parser::Value::Int(code) => ExitCode::from(*code as u8),
-                sigil_parser::Value::Null => ExitCode::SUCCESS,
-                _ => {
-                    println!("{}", value);
-                    ExitCode::SUCCESS
-                }
+        Ok(value) => match &value {
+            sigil_parser::Value::Int(code) => ExitCode::from(*code as u8),
+            sigil_parser::Value::Null => ExitCode::SUCCESS,
+            _ => {
+                println!("{}", value);
+                ExitCode::SUCCESS
             }
-        }
+        },
         Err(e) => {
             // Try calling main with no args
             match interpreter.call_function_by_name("main", vec![]) {
-                Ok(value) => {
-                    match &value {
-                        sigil_parser::Value::Int(code) => ExitCode::from(*code as u8),
-                        sigil_parser::Value::Null => ExitCode::SUCCESS,
-                        _ => {
-                            println!("{}", value);
-                            ExitCode::SUCCESS
-                        }
+                Ok(value) => match &value {
+                    sigil_parser::Value::Int(code) => ExitCode::from(*code as u8),
+                    sigil_parser::Value::Null => ExitCode::SUCCESS,
+                    _ => {
+                        println!("{}", value);
+                        ExitCode::SUCCESS
                     }
-                }
+                },
                 Err(e2) => {
                     eprintln!("Runtime error: {}", e2);
                     ExitCode::from(1)
@@ -1438,8 +1493,18 @@ fn lint_init() -> ExitCode {
 /// - Unreachable code (E0700)
 /// - Infinite loops (E0701)
 /// - Division by zero (E0702)
-fn lint_path(path: &str, format: OutputFormat, config_path: Option<&str>, apply_fix: bool, parallel: bool, show_stats: bool) -> ExitCode {
-    use sigil_parser::lint::{lint_source_with_config, lint_directory, lint_directory_parallel, apply_fixes, generate_sarif, LintConfig};
+fn lint_path(
+    path: &str,
+    format: OutputFormat,
+    config_path: Option<&str>,
+    apply_fix: bool,
+    parallel: bool,
+    show_stats: bool,
+) -> ExitCode {
+    use sigil_parser::lint::{
+        apply_fixes, generate_sarif, lint_directory, lint_directory_parallel,
+        lint_source_with_config, LintConfig,
+    };
     use std::path::Path;
 
     // Load config
@@ -1582,10 +1647,12 @@ fn lint_path(path: &str, format: OutputFormat, config_path: Option<&str>, apply_
         // Run the linter with config
         match lint_source_with_config(&source, path, config) {
             Ok(diagnostics) => {
-                let warning_count = diagnostics.iter()
+                let warning_count = diagnostics
+                    .iter()
                     .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Warning)
                     .count();
-                let error_count = diagnostics.iter()
+                let error_count = diagnostics
+                    .iter()
                     .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Error)
                     .count();
 
@@ -1601,7 +1668,10 @@ fn lint_path(path: &str, format: OutputFormat, config_path: Option<&str>, apply_
                         if format == OutputFormat::Human {
                             println!("✓ {} - applied {} fix(es)", path, fix_result.fixes_applied);
                             if fix_result.fixes_skipped > 0 {
-                                println!("  ({} fix(es) skipped due to conflicts)", fix_result.fixes_skipped);
+                                println!(
+                                    "  ({} fix(es) skipped due to conflicts)",
+                                    fix_result.fixes_skipped
+                                );
                             }
                         }
                     } else if format == OutputFormat::Human {
@@ -1617,7 +1687,10 @@ fn lint_path(path: &str, format: OutputFormat, config_path: Option<&str>, apply_
                         } else {
                             diagnostics.eprint_all(path, &source);
                             println!();
-                            println!("Found {} warning(s), {} error(s)", warning_count, error_count);
+                            println!(
+                                "Found {} warning(s), {} error(s)",
+                                warning_count, error_count
+                            );
                         }
                         if show_stats {
                             println!();
@@ -1918,7 +1991,10 @@ fn print_item_summary(item: &sigil_parser::Item) {
             println!("  macro {}", m.name.name);
         }
         Item::MacroInvocation(m) => {
-            let path_str: String = m.path.segments.iter()
+            let path_str: String = m
+                .path
+                .segments
+                .iter()
                 .map(|s| s.ident.name.as_str())
                 .collect::<Vec<_>>()
                 .join("::");
@@ -1931,13 +2007,21 @@ fn print_item_summary(item: &sigil_parser::Item) {
                     println!("  alter {} ({:?})", a.name.name, a.category);
                 }
                 PluralityItem::Headspace(h) => {
-                    println!("  headspace {} ({} locations)", h.name.name, h.locations.len());
+                    println!(
+                        "  headspace {} ({} locations)",
+                        h.name.name,
+                        h.locations.len()
+                    );
                 }
                 PluralityItem::Reality(r) => {
                     println!("  reality {} ({} layers)", r.name.name, r.layers.len());
                 }
                 PluralityItem::CoConChannel(c) => {
-                    println!("  cocon {} ({} participants)", c.name.name, c.participants.len());
+                    println!(
+                        "  cocon {} ({} participants)",
+                        c.name.name,
+                        c.participants.len()
+                    );
                 }
                 PluralityItem::TriggerHandler(_) => {
                     println!("  trigger handler");

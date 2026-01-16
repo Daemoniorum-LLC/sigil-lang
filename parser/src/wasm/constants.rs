@@ -167,7 +167,11 @@ mod tests {
         // Each tag should be unique
         for i in 0..tags.len() {
             for j in (i + 1)..tags.len() {
-                assert_ne!(tags[i], tags[j], "Type tags at {} and {} should be distinct", i, j);
+                assert_ne!(
+                    tags[i], tags[j],
+                    "Type tags at {} and {} should be distinct",
+                    i, j
+                );
             }
         }
     }

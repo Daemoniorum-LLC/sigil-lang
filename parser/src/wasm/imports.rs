@@ -177,7 +177,12 @@ impl ImportRegistry {
 
     fn register_event_imports(&mut self) {
         use ValType::*;
-        self.add_import("events", "add_listener", vec![I32, I32, I32, I32], vec![I32]);
+        self.add_import(
+            "events",
+            "add_listener",
+            vec![I32, I32, I32, I32],
+            vec![I32],
+        );
         self.add_import("events", "remove_listener", vec![I32], vec![]);
         self.add_import("events", "prevent_default", vec![I32], vec![]);
         self.add_import("events", "stop_propagation", vec![I32], vec![]);
@@ -231,29 +236,99 @@ impl ImportRegistry {
         use ValType::*;
         // Core array operations with aliases for direct lookup
         self.add_import_with_alias("morpheme", "array_new", "array_new", vec![], vec![I32]);
-        self.add_import_with_alias("morpheme", "array_push", "array_push", vec![I32, I64], vec![]);
-        self.add_import_with_alias("morpheme", "array_get", "array_get", vec![I32, I32], vec![I64]);
-        self.add_import_with_alias("morpheme", "array_set", "array_set", vec![I32, I32, I64], vec![]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_push",
+            "array_push",
+            vec![I32, I64],
+            vec![],
+        );
+        self.add_import_with_alias(
+            "morpheme",
+            "array_get",
+            "array_get",
+            vec![I32, I32],
+            vec![I64],
+        );
+        self.add_import_with_alias(
+            "morpheme",
+            "array_set",
+            "array_set",
+            vec![I32, I32, I64],
+            vec![],
+        );
         self.add_import_with_alias("morpheme", "array_len", "array_len", vec![I32], vec![I32]);
-        self.add_import_with_alias("morpheme", "array_map", "array_map", vec![I32, I32], vec![I32]);
-        self.add_import_with_alias("morpheme", "array_filter", "array_filter", vec![I32, I32], vec![I32]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_map",
+            "array_map",
+            vec![I32, I32],
+            vec![I32],
+        );
+        self.add_import_with_alias(
+            "morpheme",
+            "array_filter",
+            "array_filter",
+            vec![I32, I32],
+            vec![I32],
+        );
         // Parallel morphemes - use Web Workers or SharedArrayBuffer for parallelism
         self.add_import("morpheme", "array_parallel_map", vec![I32, I32], vec![I32]);
-        self.add_import("morpheme", "array_parallel_filter", vec![I32, I32], vec![I32]);
-        self.add_import("morpheme", "array_parallel_reduce", vec![I32, I32, I64], vec![I64]);
-        self.add_import_with_alias("morpheme", "array_reduce", "array_reduce", vec![I32, I32, I64], vec![I64]);
+        self.add_import(
+            "morpheme",
+            "array_parallel_filter",
+            vec![I32, I32],
+            vec![I32],
+        );
+        self.add_import(
+            "morpheme",
+            "array_parallel_reduce",
+            vec![I32, I32, I64],
+            vec![I64],
+        );
+        self.add_import_with_alias(
+            "morpheme",
+            "array_reduce",
+            "array_reduce",
+            vec![I32, I32, I64],
+            vec![I64],
+        );
         self.add_import_with_alias("morpheme", "array_sort", "array_sort", vec![I32], vec![I32]);
-        self.add_import_with_alias("morpheme", "array_first", "array_first", vec![I32], vec![I64]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_first",
+            "array_first",
+            vec![I32],
+            vec![I64],
+        );
         self.add_import_with_alias("morpheme", "array_last", "array_last", vec![I32], vec![I64]);
-        self.add_import_with_alias("morpheme", "array_nth", "array_nth", vec![I32, I32], vec![I64]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_nth",
+            "array_nth",
+            vec![I32, I32],
+            vec![I64],
+        );
         // Additional reduce operations for ρ+, ρ*, etc.
         self.add_import_with_alias("morpheme", "array_sum", "array_sum", vec![I32], vec![I64]);
-        self.add_import_with_alias("morpheme", "array_product", "array_product", vec![I32], vec![I64]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_product",
+            "array_product",
+            vec![I32],
+            vec![I64],
+        );
         self.add_import_with_alias("morpheme", "array_min", "array_min", vec![I32], vec![I64]);
         self.add_import_with_alias("morpheme", "array_max", "array_max", vec![I32], vec![I64]);
         self.add_import_with_alias("morpheme", "array_all", "array_all", vec![I32], vec![I32]);
         self.add_import_with_alias("morpheme", "array_any", "array_any", vec![I32], vec![I32]);
-        self.add_import_with_alias("morpheme", "array_random_element", "array_random_element", vec![I32], vec![I64]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_random_element",
+            "array_random_element",
+            vec![I32],
+            vec![I64],
+        );
     }
 
     fn register_math_imports(&mut self) {

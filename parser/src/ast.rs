@@ -661,7 +661,11 @@ pub enum TypeExpr {
     /// Simple named type: `i32`, `String`
     Path(TypePath),
     /// Reference: `&T`, `&mut T`, `&'a T`, `&'static mut T`
-    Reference { lifetime: Option<String>, mutable: bool, inner: Box<TypeExpr> },
+    Reference {
+        lifetime: Option<String>,
+        mutable: bool,
+        inner: Box<TypeExpr>,
+    },
     /// Pointer: `*const T`, `*mut T`
     Pointer { mutable: bool, inner: Box<TypeExpr> },
     /// Array: `[T; N]`
@@ -709,20 +713,13 @@ pub enum TypeExpr {
         bound: Box<TypeExpr>,
     },
     /// Inline struct type: `struct { field: Type, ... }`
-    InlineStruct {
-        fields: Vec<FieldDef>,
-    },
+    InlineStruct { fields: Vec<FieldDef> },
     /// Inline enum type: `enum { Variant1, Variant2(Type), ... }`
-    InlineEnum {
-        variants: Vec<EnumVariant>,
-    },
+    InlineEnum { variants: Vec<EnumVariant> },
     /// Impl trait: `impl Trait`, `impl Fn() -> R`
     ImplTrait(Vec<TypeExpr>),
     /// Associated type binding: `Output = Type` used in trait bounds
-    AssocTypeBinding {
-        name: Ident,
-        ty: Box<TypeExpr>,
-    },
+    AssocTypeBinding { name: Ident, ty: Box<TypeExpr> },
     /// Const expression in type position (for const generics): `<32>`, `<{N + 1}>`
     ConstExpr(Box<Expr>),
     /// Qualified path type: `<Type as Trait>::AssociatedType`
@@ -1022,10 +1019,7 @@ pub enum Expr {
     /// Array literal
     Array(Vec<Expr>),
     /// Array repeat literal: `[value; count]`
-    ArrayRepeat {
-        value: Box<Expr>,
-        count: Box<Expr>,
-    },
+    ArrayRepeat { value: Box<Expr>, count: Box<Expr> },
     /// Tuple literal
     Tuple(Vec<Expr>),
     /// Struct literal
@@ -1048,10 +1042,7 @@ pub enum Expr {
         arms: Vec<MatchArm>,
     },
     /// Loop with optional label: `'label: loop { ... }`
-    Loop {
-        label: Option<Ident>,
-        body: Block,
-    },
+    Loop { label: Option<Ident>, body: Block },
     /// While loop with optional label: `'label: while cond { ... }`
     While {
         label: Option<Ident>,
@@ -1094,9 +1085,7 @@ pub enum Expr {
         value: Option<Box<Expr>>,
     },
     /// Continue with optional label: `continue 'label`
-    Continue {
-        label: Option<Ident>,
-    },
+    Continue { label: Option<Ident> },
     /// Range: `a..b` or `a..=b`
     Range {
         start: Option<Box<Expr>>,
@@ -1256,12 +1245,9 @@ pub enum Expr {
     // Legion Expressions - Holographic Agent Collective
     // All Legion expressions work with collective memory and multi-agent coordination
     // ==========================================
-
     /// Legion field variable: `memory∿`
     /// The ∿ suffix indicates a LegionField collective memory type
-    LegionFieldVar {
-        name: Ident,
-    },
+    LegionFieldVar { name: Ident },
 
     /// Superposition: `field∿ ⊕= pattern`
     /// Pattern joins the collective memory
@@ -1272,29 +1258,19 @@ pub enum Expr {
 
     /// Interference query: `query ⫰ field∿`
     /// Query the collective memory via interference
-    LegionInterference {
-        query: Box<Expr>,
-        field: Box<Expr>,
-    },
+    LegionInterference { query: Box<Expr>, field: Box<Expr> },
 
     /// Resonance extraction: `resonance~ |◉`
     /// Extract agreement peaks from interference pattern
-    LegionResonance {
-        expr: Box<Expr>,
-    },
+    LegionResonance { expr: Box<Expr> },
 
     /// Distribute: `task ⟁ agent_count`
     /// Fragment task holographically across agents
-    LegionDistribute {
-        task: Box<Expr>,
-        count: Box<Expr>,
-    },
+    LegionDistribute { task: Box<Expr>, count: Box<Expr> },
 
     /// Gather: `fragments ⟀`
     /// Unify fragments via interference
-    LegionGather {
-        fragments: Box<Expr>,
-    },
+    LegionGather { fragments: Box<Expr> },
 
     /// Broadcast: `signal ↠ legion`
     /// Send signal to all agents
@@ -1305,23 +1281,15 @@ pub enum Expr {
 
     /// Consensus: `contributions ⇢`
     /// Achieve consensus from multiple contributions
-    LegionConsensus {
-        contributions: Box<Expr>,
-    },
+    LegionConsensus { contributions: Box<Expr> },
 
     /// Decay: `field∿ ∂= rate`
     /// Apply decay to collective memory
-    LegionDecay {
-        field: Box<Expr>,
-        rate: Box<Expr>,
-    },
+    LegionDecay { field: Box<Expr>, rate: Box<Expr> },
 
     /// Named argument in function call: `name: value`
     /// Used in calls like `stack(axis: 0)` or `func(x: 1, y: 2)`
-    NamedArg {
-        name: Ident,
-        value: Box<Expr>,
-    },
+    NamedArg { name: Ident, value: Box<Expr> },
 }
 
 /// Inline assembly expression.
@@ -1426,7 +1394,11 @@ pub enum PipeOp {
     /// Wraps another operation to run it as a compute shader
     Gpu(Box<PipeOp>),
     /// Method call with optional turbofish type arguments: `|collect::<String>()`
-    Method { name: Ident, type_args: Option<Vec<TypeExpr>>, args: Vec<Expr> },
+    Method {
+        name: Ident,
+        type_args: Option<Vec<TypeExpr>>,
+        args: Vec<Expr>,
+    },
     /// Call an arbitrary expression (e.g., `|self.layer` where layer is a callable)
     Call(Box<Expr>),
     /// Await

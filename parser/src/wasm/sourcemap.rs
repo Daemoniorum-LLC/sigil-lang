@@ -58,7 +58,7 @@ impl SourceLineMap {
 
         // Binary search to find the line
         let line_idx = match self.line_starts.binary_search(&offset) {
-            Ok(idx) => idx,  // Exact match at line start
+            Ok(idx) => idx,                    // Exact match at line start
             Err(idx) => idx.saturating_sub(1), // Between line starts
         };
 
@@ -306,8 +306,16 @@ mod tests {
             start: SourceLocation::new(1, 0),
             end: SourceLocation::new(5, 1),
             mappings: vec![
-                InstructionMapping { instruction_idx: 0, line: 2, column: 4 },
-                InstructionMapping { instruction_idx: 1, line: 3, column: 4 },
+                InstructionMapping {
+                    instruction_idx: 0,
+                    line: 2,
+                    column: 4,
+                },
+                InstructionMapping {
+                    instruction_idx: 1,
+                    line: 3,
+                    column: 4,
+                },
             ],
         });
 

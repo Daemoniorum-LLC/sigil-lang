@@ -51,13 +51,22 @@ impl WasmCompiler {
             } => self.compile_if(condition, then_branch, else_branch.as_deref()),
 
             // While loop
-            Expr::While { label, condition, body } => {
+            Expr::While {
+                label,
+                condition,
+                body,
+            } => {
                 let label_name = label.as_ref().map(|l| l.name.clone());
                 self.compile_while(condition, body, label_name)
             }
 
             // For loop
-            Expr::For { label, pattern, iter, body } => {
+            Expr::For {
+                label,
+                pattern,
+                iter,
+                body,
+            } => {
                 let label_name = label.as_ref().map(|l| l.name.clone());
                 self.compile_for(pattern, iter, body, label_name)
             }
@@ -97,7 +106,11 @@ impl WasmCompiler {
             }
 
             // Closure
-            Expr::Closure { params, body, is_move } => self.compile_closure(params, body, *is_move),
+            Expr::Closure {
+                params,
+                body,
+                is_move,
+            } => self.compile_closure(params, body, *is_move),
 
             // Pipe expression (morphemes)
             Expr::Pipe { expr, operations } => self.compile_pipe(expr, operations),
@@ -127,7 +140,10 @@ impl WasmCompiler {
             Expr::Try(expr) => self.compile_try(expr),
 
             // Await
-            Expr::Await { expr, evidentiality } => self.compile_await(expr, *evidentiality),
+            Expr::Await {
+                expr,
+                evidentiality,
+            } => self.compile_await(expr, *evidentiality),
 
             // Match
             Expr::Match { expr, arms } => self.compile_match(expr, arms),
@@ -146,9 +162,10 @@ impl WasmCompiler {
             Expr::Let { pattern, value } => self.compile_let_expr(pattern, value),
 
             // Evidential marker
-            Expr::Evidential { expr, evidentiality } => {
-                self.compile_evidential(expr, *evidentiality)
-            }
+            Expr::Evidential {
+                expr,
+                evidentiality,
+            } => self.compile_evidential(expr, *evidentiality),
 
             // Unsupported for now
             Expr::Incorporation { .. } => Err(WasmError::unsupported("incorporation expressions")),
@@ -190,7 +207,11 @@ impl WasmCompiler {
 
     /// Compile a path (variable reference).
     fn compile_path(&mut self, path: &TypePath) -> WasmResult<()> {
-        let name = path.segments.first().map(|s| s.ident.name.as_str()).unwrap_or("");
+        let name = path
+            .segments
+            .first()
+            .map(|s| s.ident.name.as_str())
+            .unwrap_or("");
 
         // Check local variables first
         if let Some(func) = self.current_function() {
@@ -299,9 +320,13 @@ impl WasmCompiler {
                     .unwrap_or("");
 
                 // Check if it's a local or mutable capture
-                let local_index = self.current_function().and_then(|f| f.get_local(name).map(|l| l.index));
+                let local_index = self
+                    .current_function()
+                    .and_then(|f| f.get_local(name).map(|l| l.index));
                 let cell_name = format!("__cell_{}", name);
-                let cell_index = self.current_function().and_then(|f| f.get_local(&cell_name).map(|l| l.index));
+                let cell_index = self
+                    .current_function()
+                    .and_then(|f| f.get_local(&cell_name).map(|l| l.index));
 
                 if let Some(index) = local_index {
                     // Direct local assignment
@@ -366,22 +391,14 @@ impl WasmCompiler {
             Expr::Field { expr, field } => self.compile_field_assign(expr, &field.name, value),
 
             // Index assignment
-            Expr::Index {
-                expr: array,
-                index,
-            } => self.compile_index_assign(array, index, value),
+            Expr::Index { expr: array, index } => self.compile_index_assign(array, index, value),
 
             _ => Err(WasmError::invalid_assignment_target()),
         }
     }
 
     /// Compile field assignment.
-    fn compile_field_assign(
-        &mut self,
-        target: &Expr,
-        field: &str,
-        value: &Expr,
-    ) -> WasmResult<()> {
+    fn compile_field_assign(&mut self, target: &Expr, field: &str, value: &Expr) -> WasmResult<()> {
         // Get struct pointer
         self.compile_expr(target)?;
 
@@ -412,12 +429,7 @@ impl WasmCompiler {
     }
 
     /// Compile index assignment.
-    fn compile_index_assign(
-        &mut self,
-        array: &Expr,
-        index: &Expr,
-        value: &Expr,
-    ) -> WasmResult<()> {
+    fn compile_index_assign(&mut self, array: &Expr, index: &Expr, value: &Expr) -> WasmResult<()> {
         // Get array pointer
         self.compile_expr(array)?;
 

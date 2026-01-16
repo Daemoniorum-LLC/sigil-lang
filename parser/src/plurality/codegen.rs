@@ -267,13 +267,19 @@ impl PluralityCodeGen {
             }
 
             if let Some(expressiveness) = &config.expressiveness {
-                self.writeln(&format!("expressiveness: {},", expr_to_string(expressiveness)));
+                self.writeln(&format!(
+                    "expressiveness: {},",
+                    expr_to_string(expressiveness)
+                ));
             } else {
                 self.writeln("expressiveness: 0.5,");
             }
 
             if let Some(susceptibility) = &config.susceptibility {
-                self.writeln(&format!("susceptibility: {},", expr_to_string(susceptibility)));
+                self.writeln(&format!(
+                    "susceptibility: {},",
+                    expr_to_string(susceptibility)
+                ));
             } else {
                 self.writeln("susceptibility: 0.5,");
             }
@@ -297,14 +303,8 @@ impl PluralityCodeGen {
             for transition in &sm.transitions {
                 self.writeln("AlterTransitionDef {");
                 self.indent += 1;
-                self.writeln(&format!(
-                    "from: AlterRuntimeState::{:?},",
-                    transition.from
-                ));
-                self.writeln(&format!(
-                    "to: AlterRuntimeState::{:?},",
-                    transition.to
-                ));
+                self.writeln(&format!("from: AlterRuntimeState::{:?},", transition.from));
+                self.writeln(&format!("to: AlterRuntimeState::{:?},", transition.to));
                 self.writeln(&format!(
                     "on: TriggerCondition::from({}),",
                     expr_to_string(&transition.on)
@@ -509,7 +509,9 @@ impl PluralityCodeGen {
         // Generate transform logic
         if !def.transforms.is_empty() {
             self.writeln("");
-            self.writeln("fn check_transform(&self, perception: &PerceptionState) -> Option<RealityLayer> {");
+            self.writeln(
+                "fn check_transform(&self, perception: &PerceptionState) -> Option<RealityLayer> {",
+            );
             self.indent += 1;
 
             for transform in &def.transforms {
@@ -576,7 +578,9 @@ impl PluralityCodeGen {
         self.writeln("");
 
         // Activate
-        self.writeln("pub fn activate(&mut self, system: &PluralSystem) -> Result<(), ChannelError> {");
+        self.writeln(
+            "pub fn activate(&mut self, system: &PluralSystem) -> Result<(), ChannelError> {",
+        );
         self.indent += 1;
         self.writeln("for &p in &self.participants {");
         self.indent += 1;
@@ -611,10 +615,7 @@ impl PluralityCodeGen {
 
         // Destructure trigger
         if !handler.pattern.fields.is_empty() {
-            self.write(&format!(
-                "let {} {{ ",
-                handler.pattern.trigger_type.name
-            ));
+            self.write(&format!("let {} {{ ", handler.pattern.trigger_type.name));
             for (i, (field, binding)) in handler.pattern.fields.iter().enumerate() {
                 if i > 0 {
                     self.write(", ");
@@ -672,7 +673,12 @@ impl PluralityCodeGen {
             write!(out, " requires: {},", expr_to_string(requires)).unwrap();
         }
 
-        write!(out, " bypass_deliberation: {},", expr.config.bypass_deliberation).unwrap();
+        write!(
+            out,
+            " bypass_deliberation: {},",
+            expr.config.bypass_deliberation
+        )
+        .unwrap();
         write!(out, " ..Default::default() }})").unwrap();
 
         // Add then/else closures
@@ -685,7 +691,11 @@ impl PluralityCodeGen {
                 write!(out, "SwitchResult::Denied(_) => {{ /* else block */ }}, ").unwrap();
             }
             if expr.config.emergency_block.is_some() {
-                write!(out, "SwitchResult::Emergency => {{ /* emergency block */ }}, ").unwrap();
+                write!(
+                    out,
+                    "SwitchResult::Emergency => {{ /* emergency block */ }}, "
+                )
+                .unwrap();
             }
             write!(out, "_ => {{}} }})").unwrap();
         }

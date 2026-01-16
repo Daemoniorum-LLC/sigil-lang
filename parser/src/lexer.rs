@@ -285,7 +285,7 @@ pub enum Token {
     #[token("type")]
     Type,
     #[token("struct")]
-    #[token("sigil")]  // Alternative syntax for struct
+    #[token("sigil")] // Alternative syntax for struct
     Struct,
     #[token("enum")]
     Enum,
@@ -294,10 +294,10 @@ pub enum Token {
     #[token("impl")]
     Impl,
     #[token("mod")]
-    #[token("scroll")]  // Sigil-native: scroll = mod
+    #[token("scroll")] // Sigil-native: scroll = mod
     Mod,
     #[token("use")]
-    #[token("invoke")]  // Sigil-native: invoke = use
+    #[token("invoke")] // Sigil-native: invoke = use
     Use,
     #[token("pub")]
     Pub,
@@ -348,7 +348,7 @@ pub enum Token {
     #[token("super")]
     Super,
     #[token("crate")]
-    #[token("tome")]  // Sigil-native: tome = crate
+    #[token("tome")] // Sigil-native: tome = crate
     Crate,
     #[token("where")]
     Where,
@@ -655,7 +655,6 @@ pub enum Token {
 
     // === Legion Morphemes (Holographic Agent Collective) ===
     // From Infernum 2.0 - distributed memory and multi-agent coordination
-
     #[token("∿")]
     #[token("legion_field")]
     LegionField, // Collective memory substrate (U+223F sine wave) - memory∿
@@ -1218,7 +1217,7 @@ impl Token {
                 | Token::Gather     // ⟀ - interference gathering
                 | Token::Broadcast  // ↠ - one-to-many
                 | Token::Consensus  // ⇢ - many-to-one
-                | Token::Partial    // ∂ - decay
+                | Token::Partial // ∂ - decay
         )
     }
 

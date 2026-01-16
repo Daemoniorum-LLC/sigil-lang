@@ -286,7 +286,12 @@ mod tests {
 
         for (err, expected_kind) in kinds {
             let msg = format!("{}", err);
-            assert!(msg.contains(expected_kind), "Expected '{}' in '{}'", expected_kind, msg);
+            assert!(
+                msg.contains(expected_kind),
+                "Expected '{}' in '{}'",
+                expected_kind,
+                msg
+            );
         }
     }
 
