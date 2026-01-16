@@ -56,26 +56,43 @@ impl WasmCompiler {
             return Ok(());
         }
 
-        // Parse the format string (first quoted string)
-        if !tokens.starts_with('"') {
+        // Handle raw strings: RawStringDelimited("content") format from parser
+        // or traditional r#"..."# syntax
+        let (format_str, args_str) = if tokens.starts_with("RawStringDelimited(") {
+            self.parse_raw_string_delimited(tokens)?
+        } else if tokens.starts_with("r ") || tokens.starts_with("r#") {
+            self.parse_raw_format_string(tokens)?
+        } else if tokens.starts_with('"') {
+            // Regular string
+            self.parse_format_string(tokens)?
+        } else {
             return Err(WasmError::parse("format! requires a string literal"));
+        };
+
+        // Parse arguments - separate named (name = value) from positional
+        let raw_args = self.parse_macro_args(args_str)?;
+        let mut named_args: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut positional_args: Vec<String> = Vec::new();
+
+        for arg in raw_args {
+            // Check if this is a named argument (name = value)
+            if let Some(eq_pos) = arg.find('=') {
+                // Make sure it's not == or <= or >= etc
+                let before_eq = arg[..eq_pos].chars().last();
+                let after_eq = arg.get(eq_pos + 1..eq_pos + 2).and_then(|s| s.chars().next());
+                if before_eq != Some('!') && before_eq != Some('<') && before_eq != Some('>')
+                   && before_eq != Some('=') && after_eq != Some('=') {
+                    let name = arg[..eq_pos].trim().to_string();
+                    let value = arg[eq_pos + 1..].trim().to_string();
+                    named_args.insert(name, value);
+                    continue;
+                }
+            }
+            positional_args.push(arg);
         }
-
-        // Find end of format string
-        let (format_str, args_str) = self.parse_format_string(tokens)?;
-
-        // Parse arguments
-        let args = self.parse_macro_args(args_str)?;
 
         // Split format string by {} placeholders and interleave with args
         let parts = self.split_format_string(&format_str)?;
-
-        if parts.placeholders > args.len() {
-            return Err(WasmError::parse(&format!(
-                "format! has {} placeholders but only {} arguments",
-                parts.placeholders, args.len()
-            )));
-        }
 
         // Generate code: concat all parts together
         // Start with first literal part (or empty string if starts with {})
@@ -86,10 +103,30 @@ impl WasmCompiler {
         func.push(Instruction::I32Const(offset as i32));
         func.push(Instruction::I64ExtendI32U);
 
-        // Process each argument and its following literal
-        for (i, arg_expr) in args.iter().enumerate() {
+        // Process each placeholder and its following literal
+        let mut positional_idx = 0;
+        for (i, spec) in parts.format_specs.iter().enumerate() {
+            // Determine which argument to use for this placeholder
+            let arg_expr = if spec.is_empty() {
+                // Positional placeholder {}
+                let arg = positional_args.get(positional_idx)
+                    .ok_or_else(|| WasmError::parse(&format!(
+                        "format! has more positional placeholders than arguments"
+                    )))?;
+                positional_idx += 1;
+                arg.clone()
+            } else {
+                // Named placeholder {name} or {name:spec}
+                let name = spec.split(':').next().unwrap_or(spec).trim();
+                named_args.get(name)
+                    .cloned()
+                    .ok_or_else(|| WasmError::parse(&format!(
+                        "format! missing named argument: {}", name
+                    )))?
+            };
+
             // Convert argument to string
-            self.compile_arg_to_string(arg_expr, &parts.format_specs.get(i).map(|s| s.as_str()))?;
+            self.compile_arg_to_string(&arg_expr, &Some(spec.as_str()))?;
 
             // Concat current result with argument string
             self.emit_string_concat()?;
@@ -108,6 +145,139 @@ impl WasmCompiler {
         }
 
         Ok(())
+    }
+
+    /// Parse a raw format string (r#"..."# or r"...") and return (content, remaining_args)
+    fn parse_raw_format_string<'a>(&self, tokens: &'a str) -> WasmResult<(String, &'a str)> {
+        // Raw strings are tokenized with spaces: r # " content " # or r " content "
+        let tokens = tokens.trim();
+
+        // Skip 'r'
+        let rest = if tokens.starts_with("r ") {
+            &tokens[2..]
+        } else if tokens.starts_with("r#") {
+            &tokens[1..]
+        } else {
+            return Err(WasmError::parse("expected raw string"));
+        };
+
+        // Count # delimiters
+        let hash_count = rest.chars().take_while(|c| *c == '#' || *c == ' ')
+            .filter(|c| *c == '#')
+            .count();
+
+        // Find the opening quote
+        let quote_start = rest.find('"')
+            .ok_or_else(|| WasmError::parse("expected \" in raw string"))?;
+
+        // Find the closing delimiter: " followed by hash_count # characters
+        let content_start = quote_start + 1;
+        let rest_after_quote = &rest[content_start..];
+
+        // Build closing pattern: " # # ... (with possible spaces)
+        let mut end_pos = None;
+        let mut i = 0;
+        while i < rest_after_quote.len() {
+            // Safety: ensure we're at a character boundary
+            if !rest_after_quote.is_char_boundary(i) {
+                i += 1;
+                continue;
+            }
+            if rest_after_quote[i..].starts_with('"') {
+                // Check for matching # count after the quote
+                let after_quote = &rest_after_quote[i + 1..];
+                let mut hashes_found = 0;
+                let mut j = 0;
+                while j < after_quote.len() {
+                    if !after_quote.is_char_boundary(j) {
+                        j += 1;
+                        continue;
+                    }
+                    let c = after_quote[j..].chars().next().unwrap_or(' ');
+                    if c == '#' {
+                        hashes_found += 1;
+                    } else if c == ' ' {
+                        // Skip spaces between # marks
+                    } else {
+                        break;
+                    }
+                    j += 1;
+                }
+                if hashes_found == hash_count {
+                    end_pos = Some(i);
+                    break;
+                }
+            }
+            i += 1;
+        }
+
+        let content_end = end_pos.ok_or_else(|| WasmError::parse("unclosed raw string"))?;
+        let content = rest_after_quote[..content_end].to_string();
+
+        // Find where arguments start (after closing " # # ...)
+        let total_consumed = quote_start + 1 + content_end + 1; // r + hashes + " + content + "
+        // Skip closing hashes
+        let mut args_start = total_consumed;
+        while args_start < rest.len() {
+            let c = rest.chars().nth(args_start).unwrap_or(' ');
+            if c == '#' || c == ' ' {
+                args_start += 1;
+            } else {
+                break;
+            }
+        }
+
+        let args_str = if args_start < rest.len() {
+            rest[args_start..].trim_start_matches(',').trim()
+        } else {
+            ""
+        };
+
+        Ok((content, args_str))
+    }
+
+    /// Parse a RawStringDelimited("content") format from the parser
+    /// Returns (content, remaining_args_str)
+    fn parse_raw_string_delimited<'a>(&self, tokens: &'a str) -> WasmResult<(String, &'a str)> {
+        // Format: RawStringDelimited("content") , args...
+        let prefix = "RawStringDelimited(";
+        if !tokens.starts_with(prefix) {
+            return Err(WasmError::parse("expected RawStringDelimited"));
+        }
+
+        // Find the inner string content
+        let after_prefix = &tokens[prefix.len()..];
+        if !after_prefix.starts_with('"') {
+            return Err(WasmError::parse("expected \" after RawStringDelimited("));
+        }
+
+        // Find the closing ") - the inner string is quoted
+        let mut in_escape = false;
+        let mut content_end = 0;
+        for (i, c) in after_prefix[1..].char_indices() {
+            if in_escape {
+                in_escape = false;
+            } else if c == '\\' {
+                in_escape = true;
+            } else if c == '"' {
+                content_end = i + 1;
+                break;
+            }
+        }
+
+        if content_end == 0 {
+            return Err(WasmError::parse("unclosed string in RawStringDelimited"));
+        }
+
+        let content = after_prefix[1..content_end].to_string();
+
+        // Skip past the closing )
+        let after_content = &after_prefix[content_end + 1..];
+        let rest = after_content.trim_start();
+        let rest = if rest.starts_with(')') { &rest[1..] } else { rest };
+        let args_str = rest.trim_start_matches(',').trim();
+
+        Ok((content, args_str))
     }
 
     /// Parse a format string and return (format_str_content, remaining_args_str)
@@ -603,6 +773,11 @@ impl WasmCompiler {
             let mut depth = 0;
             let mut i = 0;
             while i < s.len() {
+                // Safety: ensure we're at a character boundary
+                if !s.is_char_boundary(i) {
+                    i += 1;
+                    continue;
+                }
                 if s[i..].starts_with("<>") {
                     depth += 1;
                     i += 2;
@@ -646,11 +821,16 @@ impl WasmCompiler {
 
         let mut i = 0;
         while i < s.len() {
+            // Safety: ensure we're at a character boundary
+            if !s.is_char_boundary(i) {
+                i += 1;
+                continue;
+            }
             if s[i..].starts_with(&open_tag_start) {
                 // Check if it's actually an opening tag (followed by space, >, or /)
                 let next_char_pos = i + open_tag_start.len();
-                if next_char_pos < s.len() {
-                    let next_char = s.chars().nth(next_char_pos).unwrap_or(' ');
+                if next_char_pos < s.len() && s.is_char_boundary(next_char_pos) {
+                    let next_char = s[next_char_pos..].chars().next().unwrap_or(' ');
                     if next_char.is_whitespace() || next_char == '>' || next_char == '/' {
                         depth += 1;
                     }
