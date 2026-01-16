@@ -1,0 +1,20 @@
+// Benchmark: Collection Operations
+// Tests: Vec push, iteration, map/filter
+
+fn main() {
+    // Build a large vector
+    let mut nums: Vec<i64> = Vec::new();
+    let mut i = 0;
+    while i < 100000 {
+        nums.push(i);
+        i = i + 1;
+    }
+    println(nums.len());
+
+    // Sum with loop
+    let mut sum = 0;
+    for n in nums {
+        sum = sum + n;
+    }
+    println(sum);
+}

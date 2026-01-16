@@ -1,0 +1,40 @@
+// Prime Sieve for LLVM backend
+
+fn sieve(limit: i64) -> i64 {
+    let mut is_prime: Vec<bool> = Vec::new();
+    let mut i = 0;
+    while i <= limit {
+        is_prime.push(true);
+        i = i + 1;
+    }
+
+    is_prime[0] = false;
+    is_prime[1] = false;
+
+    let mut p = 2;
+    while p * p <= limit {
+        if is_prime[p] {
+            let mut multiple = p * p;
+            while multiple <= limit {
+                is_prime[multiple] = false;
+                multiple = multiple + p;
+            }
+        }
+        p = p + 1;
+    }
+
+    let mut count = 0;
+    let mut j = 0;
+    while j <= limit {
+        if is_prime[j] {
+            count = count + 1;
+        }
+        j = j + 1;
+    }
+    count
+}
+
+fn main() -> i64 {
+    let count = sieve(10000);
+    if count == 1229 { 0 } else { 1 }
+}
