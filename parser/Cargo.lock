@@ -3950,6 +3950,7 @@ dependencies = [
  "tree-sitter-python",
  "tree-sitter-rust",
  "tree-sitter-typescript",
+ "tungstenite",
  "unicode-bidi",
  "unicode-normalization",
  "unicode-script",

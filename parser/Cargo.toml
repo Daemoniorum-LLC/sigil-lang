@@ -24,7 +24,7 @@ protocols = ["protocol-core", "grpc", "http-client", "websocket", "kafka", "amqp
 protocol-core = ["tokio", "url", "async-trait", "futures-util", "tower"]
 grpc = ["protocol-core", "tonic", "prost", "prost-types"]
 http-client = ["protocol-core", "reqwest", "hyper", "hyper-util", "http", "http-body-util"]
-websocket = ["protocol-core", "tokio-tungstenite"]
+websocket = ["protocol-core", "tokio-tungstenite", "tungstenite"]
 kafka = ["protocol-core", "rdkafka"]
 amqp = ["protocol-core", "lapin"]
 graphql = ["protocol-core", "graphql_client"]
@@ -141,6 +141,7 @@ http-body-util = { version = "0.1", optional = true }
 
 # WebSocket support
 tokio-tungstenite = { version = "0.24", features = ["native-tls"], optional = true }
+tungstenite = { version = "0.24", features = ["native-tls"], optional = true }
 futures-util = { version = "0.3", optional = true }
 
 # Kafka support

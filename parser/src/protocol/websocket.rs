@@ -410,31 +410,33 @@ impl WebSocket {
         }
 
         if let Some(ref mut inner) = self.inner {
-            match inner.next().await {
-                Some(Ok(msg)) => {
-                    let message = match msg {
-                        TMessage::Text(s) => Message::Text(s),
-                        TMessage::Binary(b) => Message::Binary(b),
-                        TMessage::Ping(b) => Message::Ping(b),
-                        TMessage::Pong(b) => Message::Pong(b),
-                        TMessage::Close(frame) => {
-                            self.state = ConnectionState::Closed;
-                            Message::Close(frame.map(|f| CloseFrame {
-                                code: CloseCode::from_u16(f.code.into()),
-                                reason: f.reason.to_string(),
-                            }))
-                        }
-                        TMessage::Frame(_) => return self.recv().await, // Skip raw frames
-                    };
-                    Ok(Some(message))
-                }
-                Some(Err(e)) => {
-                    self.state = ConnectionState::Closed;
-                    Err(ProtocolError::Protocol(e.to_string()))
-                }
-                None => {
-                    self.state = ConnectionState::Closed;
-                    Ok(None)
+            loop {
+                match inner.next().await {
+                    Some(Ok(msg)) => {
+                        let message = match msg {
+                            TMessage::Text(s) => Message::Text(s),
+                            TMessage::Binary(b) => Message::Binary(b),
+                            TMessage::Ping(b) => Message::Ping(b),
+                            TMessage::Pong(b) => Message::Pong(b),
+                            TMessage::Close(frame) => {
+                                self.state = ConnectionState::Closed;
+                                Message::Close(frame.map(|f| CloseFrame {
+                                    code: CloseCode::from_u16(f.code.into()),
+                                    reason: f.reason.to_string(),
+                                }))
+                            }
+                            TMessage::Frame(_) => continue, // Skip raw frames
+                        };
+                        return Ok(Some(message));
+                    }
+                    Some(Err(e)) => {
+                        self.state = ConnectionState::Closed;
+                        return Err(ProtocolError::Protocol(e.to_string()));
+                    }
+                    None => {
+                        self.state = ConnectionState::Closed;
+                        return Ok(None);
+                    }
                 }
             }
         } else {

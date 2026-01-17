@@ -1,0 +1,15 @@
+// Test: WebSocket close code utilities
+// Spec: 15-PROTOCOLS.md § 5 WebSocket Support
+// Priority: P1 - Production Ready
+//
+// Tests WebSocket close code helper functions (always available)
+
+fn main() {
+    // Test ws_close_code_text
+    let text = ws_close_code_text(1000);
+    if text == "Normal Closure" {
+        println("OK");
+    } else {
+        println(text);
+    }
+}
