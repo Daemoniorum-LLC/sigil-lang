@@ -4214,9 +4214,9 @@ impl<'a> Parser<'a> {
                     } else {
                         self.parse_ident()?
                     };
-                    // Check for turbofish syntax: method::<Type>(args)
-                    if self.check(&Token::ColonColon) {
-                        self.advance(); // consume ::
+                    // Check for turbofish syntax: method::<Type>(args) or method·<Type>(args)
+                    if self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+                        // Already consumed :: or ·
                         self.expect(Token::Lt)?;
                         // Temporarily exit condition context - turbofish is type context
                         let was_in_condition = self.in_condition;
@@ -4970,8 +4970,9 @@ impl<'a> Parser<'a> {
                     generics: None,
                 }];
                 // Handle Self::method() and other path continuations
-                while self.consume_if(&Token::ColonColon) {
-                    // Check for turbofish syntax: Self::method::<Type>
+                // Support both :: and · (middle dot) as path separators
+                while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+                    // Check for turbofish syntax: Self::method::<Type> or Self·method·<Type>
                     if self.check(&Token::Lt) {
                         self.advance(); // consume <
                         let types = self.parse_type_list()?;
@@ -4980,7 +4981,9 @@ impl<'a> Parser<'a> {
                         if let Some(last) = segments.last_mut() {
                             last.generics = Some(types);
                         }
-                        break;
+                        // Continue parsing - there may be more segments after turbofish
+                        // e.g., Self::<T>::new() or This·<T>·method()
+                        continue;
                     }
                     segments.push(self.parse_path_segment()?);
                 }
