@@ -277,10 +277,12 @@ pub enum Token {
     #[token("async")]
     Async,
     #[token("let")]
+    #[token("≔")] // Sigil-native: ≔ (definition) = let
     Let,
     #[token("mut")]
     Mut,
     #[token("const")]
+    #[token("◆")] // Sigil-native: ◆ (diamond) = const
     Const,
     #[token("linear")]
     Linear,
@@ -290,10 +292,12 @@ pub enum Token {
     #[token("sigil")] // Alternative syntax for struct
     Struct,
     #[token("enum")]
+    #[token("ᛈ")] // Sigil-native: ᛈ (perthro rune) = enum
     Enum,
     #[token("trait")]
     Trait,
     #[token("impl")]
+    #[token("⊢")] // Sigil-native: ⊢ (turnstile) = impl
     Impl,
     #[token("mod")]
     #[token("scroll")] // Sigil-native: scroll = mod
@@ -302,6 +306,7 @@ pub enum Token {
     #[token("invoke")] // Sigil-native: invoke = use
     Use,
     #[token("pub")]
+    #[token("☉")] // Sigil-native: ☉ (sun) = pub
     Pub,
     #[token("actor")]
     Actor,
@@ -318,24 +323,32 @@ pub enum Token {
 
     // Control flow
     #[token("if")]
+    #[token("⎇")] // Sigil-native: ⎇ (ISO branch) = if
     If,
     #[token("else")]
+    #[token("⎉")] // Sigil-native: ⎉ (ISO alternative) = else
     Else,
     #[token("match")]
+    #[token("⌥")] // Sigil-native: ⌥ (option key) = match
     Match,
     #[token("loop")]
+    // Note: ∞ handled via Token::Infinity in parser
     Loop,
     #[token("while")]
+    #[token("⟳")] // Sigil-native: ⟳ (cycle) = while
     While,
     #[token("for")]
     For,
     #[token("in")]
     In,
     #[token("break")]
+    // Note: ⊗ handled via Token::Tensor in parser
     Break,
     #[token("continue")]
+    // Note: ↻ handled via Token::CycleArrow in parser
     Continue,
     #[token("return")]
+    #[token("⤺")] // Sigil-native: ⤺ (return arrow) = return
     Return,
     #[token("yield")]
     Yield,
@@ -353,6 +366,7 @@ pub enum Token {
     #[token("tome")] // Sigil-native: tome = crate
     Crate,
     #[token("where")]
+    #[token("∋")] // Sigil-native: ∋ (such that) = where
     Where,
     #[token("as")]
     As,
@@ -849,6 +863,7 @@ pub enum Token {
     #[token("++")]
     PlusPlus, // Concatenation
     #[token("::")]
+    // Note: · handled via Token::MiddleDot in parser
     ColonColon,
     #[token(":")]
     Colon,

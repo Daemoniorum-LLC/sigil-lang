@@ -1,0 +1,20 @@
+// Test: Control flow Sigil symbols
+// Spec: SIGIL_NATIVE_SYMBOLS_ROADMAP.md
+// Priority: P0
+//
+// Purpose:
+// Validates control flow symbols: ⎇ (if), ⎉ (else), ⟳ (while), ⤺ (return)
+//
+// Expected behavior:
+// Should compile and print 10
+
+fn main() {
+    ≔ x: !i32 = 5;
+
+    // ⎇ = if, ⎉ = else
+    ⎇ x > 3 {
+        println(10);
+    } ⎉ {
+        println(0);
+    }
+}

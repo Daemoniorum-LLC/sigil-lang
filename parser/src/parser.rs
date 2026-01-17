@@ -659,6 +659,57 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Expect struct keyword (Token::Struct or Token::Sigma for Σ)
+    pub(crate) fn expect_struct(&mut self) -> ParseResult<Span> {
+        match &self.current {
+            Some((Token::Struct | Token::Sigma, span)) => {
+                let span = *span;
+                self.advance();
+                Ok(span)
+            }
+            Some((token, span)) => Err(ParseError::UnexpectedToken {
+                expected: "struct or Σ".to_string(),
+                found: token.clone(),
+                span: *span,
+            }),
+            None => Err(ParseError::UnexpectedEof),
+        }
+    }
+
+    /// Expect fn keyword (Token::Fn or Token::Lambda for λ)
+    pub(crate) fn expect_fn(&mut self) -> ParseResult<Span> {
+        match &self.current {
+            Some((Token::Fn | Token::Lambda, span)) => {
+                let span = *span;
+                self.advance();
+                Ok(span)
+            }
+            Some((token, span)) => Err(ParseError::UnexpectedToken {
+                expected: "fn or λ".to_string(),
+                found: token.clone(),
+                span: *span,
+            }),
+            None => Err(ParseError::UnexpectedEof),
+        }
+    }
+
+    /// Expect trait keyword (Token::Trait or Token::Theta for Θ)
+    pub(crate) fn expect_trait(&mut self) -> ParseResult<Span> {
+        match &self.current {
+            Some((Token::Trait | Token::Theta, span)) => {
+                let span = *span;
+                self.advance();
+                Ok(span)
+            }
+            Some((token, span)) => Err(ParseError::UnexpectedToken {
+                expected: "trait or Θ".to_string(),
+                found: token.clone(),
+                span: *span,
+            }),
+            None => Err(ParseError::UnexpectedEof),
+        }
+    }
+
     pub(crate) fn check(&self, expected: &Token) -> bool {
         matches!(&self.current, Some((token, _)) if std::mem::discriminant(token) == std::mem::discriminant(expected))
     }
@@ -861,14 +912,14 @@ impl<'a> Parser<'a> {
         let visibility = self.parse_visibility()?;
 
         let item = match self.current_token() {
-            Some(Token::Fn) | Some(Token::Async) => {
+            Some(Token::Fn) | Some(Token::Lambda) | Some(Token::Async) | Some(Token::Hourglass) => {
                 Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
             }
-            Some(Token::Struct) => {
+            Some(Token::Struct) | Some(Token::Sigma) => {
                 Item::Struct(self.parse_struct_with_attrs(visibility, outer_attrs)?)
             }
             Some(Token::Enum) => Item::Enum(self.parse_enum(visibility)?),
-            Some(Token::Trait) => Item::Trait(self.parse_trait(visibility)?),
+            Some(Token::Trait) | Some(Token::Theta) => Item::Trait(self.parse_trait(visibility)?),
             Some(Token::Impl) => Item::Impl(self.parse_impl()?),
             Some(Token::Unsafe) => {
                 // unsafe impl, unsafe fn, unsafe trait
@@ -1017,7 +1068,7 @@ impl<'a> Parser<'a> {
         let is_const = self.consume_if(&Token::Const);
 
         let is_async = self.consume_if(&Token::Async);
-        self.expect(Token::Fn)?;
+        self.expect_fn()?;
 
         let mut name = self.parse_ident()?;
 
@@ -1250,7 +1301,7 @@ impl<'a> Parser<'a> {
             attrs.packed = true;
         }
 
-        self.expect(Token::Struct)?;
+        self.expect_struct()?;
         let name = self.parse_ident()?;
 
         // Evidentiality markers can appear BEFORE or AFTER generics:
@@ -1403,7 +1454,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_trait(&mut self, visibility: Visibility) -> ParseResult<TraitDef> {
-        self.expect(Token::Trait)?;
+        self.expect_trait()?;
         let name = self.parse_ident()?;
         let generics = self.parse_generics_opt()?;
 
@@ -1444,7 +1495,7 @@ impl<'a> Parser<'a> {
         let visibility = self.parse_visibility()?;
 
         match self.current_token() {
-            Some(Token::Fn) | Some(Token::Async) | Some(Token::Unsafe) => {
+            Some(Token::Fn) | Some(Token::Lambda) | Some(Token::Async) | Some(Token::Hourglass) | Some(Token::Unsafe) => {
                 Ok(TraitItem::Function(self.parse_function(visibility)?))
             }
             Some(Token::Type) => {
@@ -1462,7 +1513,7 @@ impl<'a> Parser<'a> {
                 // Check if this is `const fn` or just `const NAME: TYPE;`
                 if self
                     .peek_next()
-                    .map(|t| matches!(t, Token::Fn | Token::Async))
+                    .map(|t| matches!(t, Token::Fn | Token::Lambda | Token::Async | Token::Hourglass))
                     == Some(true)
                 {
                     Ok(TraitItem::Function(self.parse_function(visibility)?))
@@ -1559,7 +1610,7 @@ impl<'a> Parser<'a> {
         let visibility = self.parse_visibility()?;
 
         match self.current_token() {
-            Some(Token::Fn) | Some(Token::Async) | Some(Token::Unsafe) => Ok(ImplItem::Function(
+            Some(Token::Fn) | Some(Token::Lambda) | Some(Token::Async) | Some(Token::Hourglass) | Some(Token::Unsafe) => Ok(ImplItem::Function(
                 self.parse_function_with_attrs(visibility, outer_attrs)?,
             )),
             Some(Token::Type) => Ok(ImplItem::Type(self.parse_type_alias(visibility)?)),
@@ -1567,7 +1618,7 @@ impl<'a> Parser<'a> {
                 // Check if this is `const fn` or just `const`
                 if self
                     .peek_next()
-                    .map(|t| matches!(t, Token::Fn | Token::Async))
+                    .map(|t| matches!(t, Token::Fn | Token::Lambda | Token::Async | Token::Hourglass))
                     == Some(true)
                 {
                     Ok(ImplItem::Function(
@@ -2120,7 +2171,7 @@ impl<'a> Parser<'a> {
 
     /// Parse an extern function declaration (no body).
     fn parse_extern_function(&mut self, visibility: Visibility) -> ParseResult<ExternFunction> {
-        self.expect(Token::Fn)?;
+        self.expect_fn()?;
         let name = self.parse_ident()?;
 
         // Handle evidentiality marker after function name: fn load_safetensors~(...)
@@ -2685,8 +2736,8 @@ impl<'a> Parser<'a> {
                 let bounds = self.parse_type_bounds()?;
                 Ok(TypeExpr::TraitObject(bounds))
             }
-            Some(Token::Struct) => {
-                // Inline struct type: struct { field: Type, ... }
+            Some(Token::Struct) | Some(Token::Sigma) => {
+                // Inline struct type: struct { field: Type, ... } or Σ { ... }
                 self.advance();
                 self.expect(Token::LBrace)?;
                 let mut fields = Vec::new();
@@ -8382,13 +8433,18 @@ impl<'a> Parser<'a> {
 
     fn is_item_start(&mut self) -> bool {
         match self.current_token() {
-            Some(Token::Fn) | Some(Token::Struct) | Some(Token::Enum) | Some(Token::Trait)
-            | Some(Token::Impl) | Some(Token::Type) | Some(Token::Mod) | Some(Token::Use)
+            Some(Token::Fn) | Some(Token::Lambda) // λ = fn
+            | Some(Token::Struct) | Some(Token::Sigma) // Σ = struct
+            | Some(Token::Enum) // ᛈ handled in lexer
+            | Some(Token::Trait) | Some(Token::Theta) // Θ = trait
+            | Some(Token::Impl) // ⊢ handled in lexer
+            | Some(Token::Type) | Some(Token::Mod) | Some(Token::Use)
             | Some(Token::Const) | Some(Token::Static) | Some(Token::Actor) | Some(Token::Pub)
             | Some(Token::Extern) => true,
-            // async is only item start if followed by fn (async fn ...)
-            // async move { } or async { } are block expressions, not items
-            Some(Token::Async) => matches!(self.peek_next(), Some(Token::Fn)),
+            // async/⌛ is only item start if followed by fn/λ
+            Some(Token::Async) | Some(Token::Hourglass) => {
+                matches!(self.peek_next(), Some(Token::Fn) | Some(Token::Lambda))
+            }
             _ => false,
         }
     }

@@ -1,0 +1,28 @@
+// Test: Theta symbol Θ for trait
+// Spec: SIGIL_NATIVE_SYMBOLS_ROADMAP.md
+// Priority: P0
+//
+// Purpose:
+// Validates Θ (theta) works as trait keyword via context-sensitive parsing
+//
+// Expected behavior:
+// Should compile and print "Hello from Greeter"
+
+☉ Θ Greeter {
+    λ greet(&self) -> !String;
+}
+
+☉ Σ Person {
+    name: !String
+}
+
+⊢ Greeter for Person {
+    λ greet(&self) -> !String {
+        "Hello from Greeter"
+    }
+}
+
+λ main() {
+    ≔ p: !Person = Person { name: "Alice" };
+    println(p.greet());
+}
