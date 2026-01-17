@@ -33595,15 +33595,15 @@ mod tests {
             fn main() {
                 let ch = channel_new();
                 let count = 1000;
-                let i = 0;
+                let mut i = 0;
                 while i < count {
                     channel_send(ch, i);
                     i = i + 1;
                 }
 
                 // Receive all and compute sum to verify no data loss
-                let sum = 0;
-                let j = 0;
+                let mut sum = 0;
+                let mut j = 0;
                 while j < count {
                     let val = channel_recv(ch);
                     sum = sum + val;
@@ -33722,7 +33722,7 @@ mod tests {
             fn main() {
                 let act = spawn_actor("stress_actor");
                 let count = 10000;
-                let i = 0;
+                let mut i = 0;
                 while i < count {
                     send_to_actor(act, "msg", i);
                     i = i + 1;
@@ -33939,8 +33939,8 @@ mod tests {
             r#"
             fn main() {
                 let ch = channel_new();
-                let sum = 0;
-                let i = 0;
+                let mut sum = 0;
+                let mut i = 0;
                 while i < 100 {
                     channel_send(ch, i);
                     channel_send(ch, i * 2);
@@ -33966,14 +33966,14 @@ mod tests {
             fn main() {
                 let act = spawn_actor("recv_stress");
                 let count = 1000;
-                let i = 0;
+                let mut i = 0;
                 while i < count {
                     send_to_actor(act, "data", i);
                     i = i + 1;
                 }
 
                 // Drain all messages
-                let drained = 0;
+                let mut drained = 0;
                 while get_actor_pending(act) > 0 {
                     recv_from_actor(act);
                     drained = drained + 1;
@@ -34232,8 +34232,8 @@ mod tests {
             // d/dx(a*x + b) = a
             let code = format!(r#"
                 fn main() {{
-                    fn linear(x) {{ return {} * x + {}; }}
-                    let g = grad(linear, {});
+                    fn lin(x) {{ return {} * x + {}; }}
+                    let g = grad(lin, {});
                     let eps = 0.1;
                     return eps > abs(g - {});
                 }}
@@ -34311,8 +34311,8 @@ mod tests {
                     let arr = [{}];
                     let rev1 = reverse(arr);
                     let rev2 = reverse(rev1);
-                    let same = true;
-                    let i = 0;
+                    let mut same = true;
+                    let mut i = 0;
                     while i < len(arr) {{
                         if get(arr, i) != get(rev2, i) {{
                             same = false;
@@ -34349,7 +34349,7 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
+                let mut i = 0;
                 while i < 1000 {
                     let arr = [1, 2, 3, 4, 5];
                     push(arr, 6);
@@ -34374,8 +34374,8 @@ mod tests {
                 return fib(n - 1) + fib(n - 2);
             }
             fn main() {
-                let i = 0;
-                let total = 0;
+                let mut i = 0;
+                let mut total = 0;
                 while i < 100 {
                     total = total + fib(10);
                     i = i + 1;
@@ -34393,7 +34393,7 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
+                let mut i = 0;
                 while i < 500 {
                     let m = map_new();
                     map_set(m, "key1", 1);
@@ -34415,7 +34415,7 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
+                let mut i = 0;
                 while i < 1000 {
                     let s = "hello world";
                     let upper_s = upper(s);
@@ -34438,7 +34438,7 @@ mod tests {
             r#"
             fn main() {
                 let world = ecs_world();
-                let i = 0;
+                let mut i = 0;
                 while i < 500 {
                     let entity = ecs_spawn(world);
                     ecs_attach(world, entity, "Position", vec3(1.0, 2.0, 3.0));
@@ -34459,7 +34459,7 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
+                let mut i = 0;
                 while i < 500 {
                     let ch = channel_new();
                     channel_send(ch, i);
@@ -34481,7 +34481,7 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
+                let mut i = 0;
                 while i < 100 {
                     let act = spawn_actor("leak_test_actor");
                     send_to_actor(act, "msg", i);
@@ -34502,7 +34502,7 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
+                let mut i = 0;
                 while i < 1000 {
                     let v1 = vec3(1.0, 2.0, 3.0);
                     let v2 = vec3(4.0, 5.0, 6.0);
@@ -34526,8 +34526,8 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
-                let total = 0;
+                let mut i = 0;
+                let mut total = 0;
                 while i < 500 {
                     let x = i;
                     fn add_x(y) { return x + y; }
@@ -34548,7 +34548,7 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
+                let mut i = 0;
                 while i < 200 {
                     let inner1 = [1, 2, 3];
                     let inner2 = [4, 5, 6];
