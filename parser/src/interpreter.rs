@@ -2335,7 +2335,7 @@ impl Interpreter {
                         .iter()
                         .map(|s| s.ident.name.as_str())
                         .collect::<Vec<_>>()
-                        .join("::"),
+                        .join("·"),
                     _ => return Ok(Value::Null), // Can't handle complex types
                 };
 
@@ -2346,7 +2346,7 @@ impl Interpreter {
                         .iter()
                         .map(|s| s.ident.name.as_str())
                         .collect::<Vec<_>>()
-                        .join("::");
+                        .join("·");
                     if trait_name == "Drop" {
                         self.drop_types.insert(type_name.clone());
                     }
@@ -2416,14 +2416,14 @@ impl Interpreter {
                                         .iter()
                                         .map(|s| s.ident.name.as_str())
                                         .collect::<Vec<_>>()
-                                        .join("::"),
+                                        .join("·"),
                                     _ => continue, // Skip complex types
                                 };
 
-                                // Check if type name is already qualified (has ::)
+                                // Check if type name is already qualified (has ·)
                                 // If not, prefix with module name
-                                let qualified_type = if type_name.contains("::") {
-                                    type_name.replace("::", "·")
+                                let qualified_type = if type_name.contains("·") {
+                                    type_name.clone()
                                 } else {
                                     format!("{}·{}", module_name, type_name)
                                 };
@@ -2435,7 +2435,7 @@ impl Interpreter {
                                         .iter()
                                         .map(|s| s.ident.name.as_str())
                                         .collect::<Vec<_>>()
-                                        .join("::");
+                                        .join("·");
                                     if trait_name == "Drop" {
                                         self.drop_types.insert(qualified_type.clone());
                                     }
