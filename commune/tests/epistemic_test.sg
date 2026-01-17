@@ -1,0 +1,226 @@
+//! Commune Epistemic Tests - 14 tests
+
+enum Epistemic {
+    Axiomatic,
+    Observed,
+    Reported,
+    Inferred,
+    Contested,
+    Unknown,
+}
+
+impl Epistemic {
+    pub fn rank(&self) -> !u8 {
+        match self {
+            Epistemic::Axiomatic => 5,
+            Epistemic::Observed => 4,
+            Epistemic::Reported => 3,
+            Epistemic::Inferred => 2,
+            Epistemic::Contested => 1,
+            Epistemic::Unknown => 0,
+        }
+    }
+
+    pub fn confidence_factor(&self) -> !f32 {
+        match self {
+            Epistemic::Axiomatic => 1.0,
+            Epistemic::Observed => 0.95,
+            Epistemic::Reported => 0.8,
+            Epistemic::Inferred => 0.6,
+            Epistemic::Contested => 0.3,
+            Epistemic::Unknown => 0.1,
+        }
+    }
+
+    pub fn is_trustworthy(&self) -> !bool {
+        self.rank() >= 3
+    }
+
+    pub fn is_uncertain(&self) -> !bool {
+        match self {
+            Epistemic::Contested => true,
+            Epistemic::Unknown => true,
+            _ => false,
+        }
+    }
+}
+
+struct EpistemicState {
+    status: Epistemic,
+    confidence: !f32,
+    source_count: !usize,
+}
+
+impl EpistemicState {
+    pub fn axiomatic() -> Self {
+        EpistemicState {
+            status: Epistemic::Axiomatic,
+            confidence: 1.0,
+            source_count: 1,
+        }
+    }
+
+    pub fn observed(confidence: !f32) -> Self {
+        EpistemicState {
+            status: Epistemic::Observed,
+            confidence,
+            source_count: 1,
+        }
+    }
+
+    pub fn reported(confidence: !f32, sources: !usize) -> Self {
+        EpistemicState {
+            status: Epistemic::Reported,
+            confidence,
+            source_count: sources,
+        }
+    }
+
+    pub fn contested(sources: !usize) -> Self {
+        EpistemicState {
+            status: Epistemic::Contested,
+            confidence: 0.3,
+            source_count: sources,
+        }
+    }
+
+    pub fn effective_confidence(&self) -> !f32 {
+        self.confidence * self.status.confidence_factor()
+    }
+
+    pub fn is_reliable(&self) -> !bool {
+        self.effective_confidence() >= 0.6
+    }
+}
+
+struct BeliefStrength {
+    raw: !f32,
+    epistemic_adjusted: !f32,
+    decay_factor: !f32,
+}
+
+impl BeliefStrength {
+    pub fn new(raw: !f32, epistemic: Epistemic) -> Self {
+        let adjusted = raw * epistemic.confidence_factor();
+        BeliefStrength {
+            raw,
+            epistemic_adjusted: adjusted,
+            decay_factor: 1.0,
+        }
+    }
+
+    pub fn with_decay(mut self, factor: !f32) -> Self {
+        self.decay_factor = factor;
+        self
+    }
+
+    pub fn current(&self) -> !f32 {
+        self.epistemic_adjusted * self.decay_factor
+    }
+
+    pub fn is_strong(&self) -> !bool {
+        self.current() >= 0.7
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[test]
+fn test_epistemic_rank_axiomatic() {
+    let e = Epistemic::Axiomatic;
+    assert(e.rank() == 5);
+}
+
+#[test]
+fn test_epistemic_rank_observed() {
+    let e = Epistemic::Observed;
+    assert(e.rank() == 4);
+}
+
+#[test]
+fn test_epistemic_rank_reported() {
+    let e = Epistemic::Reported;
+    assert(e.rank() == 3);
+}
+
+#[test]
+fn test_epistemic_confidence_axiomatic() {
+    let e = Epistemic::Axiomatic;
+    assert(e.confidence_factor() == 1.0);
+}
+
+#[test]
+fn test_epistemic_confidence_observed() {
+    let e = Epistemic::Observed;
+    assert(e.confidence_factor() == 0.95);
+}
+
+#[test]
+fn test_epistemic_trustworthy() {
+    assert(Epistemic::Axiomatic.is_trustworthy());
+    assert(Epistemic::Observed.is_trustworthy());
+    assert(Epistemic::Reported.is_trustworthy());
+    assert(!Epistemic::Inferred.is_trustworthy());
+}
+
+#[test]
+fn test_epistemic_uncertain() {
+    assert(Epistemic::Contested.is_uncertain());
+    assert(Epistemic::Unknown.is_uncertain());
+    assert(!Epistemic::Observed.is_uncertain());
+}
+
+#[test]
+fn test_epistemic_state_axiomatic() {
+    let state = EpistemicState::axiomatic();
+    assert(state.confidence == 1.0);
+    assert(state.is_reliable());
+}
+
+#[test]
+fn test_epistemic_state_observed() {
+    let state = EpistemicState::observed(0.9);
+    assert(state.confidence == 0.9);
+}
+
+#[test]
+fn test_epistemic_state_effective_confidence() {
+    let state = EpistemicState::reported(0.8, 3);
+    let effective = state.effective_confidence();
+    // 0.8 * 0.8 = 0.64
+    assert(effective > 0.6);
+    assert(effective < 0.7);
+}
+
+#[test]
+fn test_epistemic_state_contested() {
+    let state = EpistemicState::contested(5);
+    assert(!state.is_reliable());
+}
+
+#[test]
+fn test_belief_strength_creation() {
+    let belief = BeliefStrength::new(0.9, Epistemic::Observed);
+    // 0.9 * 0.95 = 0.855
+    assert(belief.current() > 0.8);
+}
+
+#[test]
+fn test_belief_strength_decay() {
+    let belief = BeliefStrength::new(1.0, Epistemic::Axiomatic).with_decay(0.5);
+    assert(belief.current() == 0.5);
+}
+
+#[test]
+fn test_belief_strength_strong() {
+    let strong = BeliefStrength::new(0.9, Epistemic::Axiomatic);
+    let weak = BeliefStrength::new(0.5, Epistemic::Inferred);
+    assert(strong.is_strong());
+    assert(!weak.is_strong());
+}
+
+fn main() {
+    println("Commune epistemic tests - 14 tests");
+}
