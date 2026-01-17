@@ -1,4 +1,3 @@
-// SKIP: Requires implicit int → float type promotion (not yet implemented)
 // Test: Integer/float type coercion in math
 // Spec: 05-MATHEMATICS.md § 5.2 Type Coercion
 // Priority: P1 - Standard Feature

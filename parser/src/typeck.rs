@@ -1646,12 +1646,12 @@ impl TypeChecker {
                     for (i, (param, arg)) in params.iter().zip(arg_types.iter()).enumerate() {
                         // Check argument type matches parameter type
                         if !self.unify(param, arg) {
-                            // Allow implicit numeric coercion: int → float
-                            let is_numeric_coercion = Self::is_numeric_coercion(param, arg);
+                            // Allow implicit coercions: int → float, &mut T → &T
+                            let is_coercible = Self::is_coercible(param, arg);
                             // Only report error for concrete type mismatches, not type variables
                             if !matches!(param, Type::Var(_))
                                 && !matches!(arg, Type::Var(_))
-                                && !is_numeric_coercion
+                                && !is_coercible
                             {
                                 self.error(TypeError::new(format!(
                                     "type mismatch in argument {}: expected {}, found {}",
@@ -2223,12 +2223,28 @@ impl TypeChecker {
         let is_var_or_fn = |ty: &Type| matches!(ty, Type::Var(_) | Type::Function { .. });
 
         let result_ty = match op {
-            // Arithmetic: numeric -> numeric
+            // Arithmetic: numeric -> numeric (with int → float promotion)
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::Pow => {
-                // For bootstrapping: just try to unify, skip error if unification fails
-                // (type inference is incomplete so false positives are common with integer types)
-                let _ = self.unify(&left_inner, &right_inner);
-                left_inner
+                // Numeric type promotion: if either operand is float, result is float
+                match (&left_inner, &right_inner) {
+                    // Both floats: use larger precision (f64 > f32)
+                    (Type::Float(l), Type::Float(r)) => {
+                        Type::Float(if matches!(l, FloatSize::F64) || matches!(r, FloatSize::F64) {
+                            FloatSize::F64
+                        } else {
+                            *l
+                        })
+                    }
+                    // Float + Int: promote to float's size
+                    (Type::Float(f), Type::Int(_)) | (Type::Int(_), Type::Float(f)) => {
+                        Type::Float(*f)
+                    }
+                    // Otherwise: try to unify (bootstrapping mode)
+                    _ => {
+                        let _ = self.unify(&left_inner, &right_inner);
+                        left_inner
+                    }
+                }
             }
 
             // Matrix multiplication: tensor @ tensor -> tensor
@@ -3124,6 +3140,64 @@ impl TypeChecker {
             }
             _ => false,
         }
+    }
+
+    /// Check if this is an allowed implicit reference coercion (&mut T → &T)
+    fn is_reference_coercion(expected: &Type, actual: &Type) -> bool {
+        match (expected, actual) {
+            // &mut T can coerce to &T
+            (Type::Ref { inner: exp_inner, mutable: false, .. },
+             Type::Ref { inner: act_inner, mutable: true, .. }) => {
+                // Inner types must match
+                exp_inner == act_inner
+            }
+            // Also handle through evidential wrappers
+            (Type::Evidential { inner: exp, .. }, actual) => {
+                Self::is_reference_coercion(exp.as_ref(), actual)
+            }
+            (expected, Type::Evidential { inner: act, .. }) => {
+                Self::is_reference_coercion(expected, act.as_ref())
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if this is an allowed implicit deref coercion (&Box<T> → &T, &Vec<T> → &[T])
+    fn is_deref_coercion(expected: &Type, actual: &Type) -> bool {
+        match (expected, actual) {
+            // &Box<T> can coerce to &T, &Vec<T> can coerce to &[T]
+            (Type::Ref { inner: exp_inner, .. },
+             Type::Ref { inner: act_inner, .. }) => {
+                if let Type::Named { name, generics } = act_inner.as_ref() {
+                    if name == "Box" && generics.len() == 1 {
+                        // Check if Box's inner type matches expected
+                        return exp_inner.as_ref() == &generics[0];
+                    }
+                    if name == "Vec" && generics.len() == 1 {
+                        // &Vec<T> → &[T]: check if expected is slice of same element type
+                        if let Type::Slice(slice_elem) = exp_inner.as_ref() {
+                            return slice_elem.as_ref() == &generics[0];
+                        }
+                    }
+                }
+                false
+            }
+            // Also handle through evidential wrappers
+            (Type::Evidential { inner: exp, .. }, actual) => {
+                Self::is_deref_coercion(exp.as_ref(), actual)
+            }
+            (expected, Type::Evidential { inner: act, .. }) => {
+                Self::is_deref_coercion(expected, act.as_ref())
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if any implicit coercion is allowed
+    fn is_coercible(expected: &Type, actual: &Type) -> bool {
+        Self::is_numeric_coercion(expected, actual)
+            || Self::is_reference_coercion(expected, actual)
+            || Self::is_deref_coercion(expected, actual)
     }
 
     /// Convert AST type to internal type
