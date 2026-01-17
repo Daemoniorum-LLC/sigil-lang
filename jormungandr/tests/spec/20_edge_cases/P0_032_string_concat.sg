@@ -8,13 +8,13 @@
 // Expected behavior:
 // Should concatenate strings correctly
 
-fn main() {
-    let a = "Hello";
-    let b = " World";
-    let c = a ++ b;
+rite main() {
+    ≔ a = "Hello";
+    ≔ b = " World";
+    ≔ c = a ++ b;
     println(c);
 
     // Chained concatenation
-    let d = "a" ++ "b" ++ "c";
+    ≔ d = "a" ++ "b" ++ "c";
     println(d);
 }

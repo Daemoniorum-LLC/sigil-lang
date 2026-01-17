@@ -8,10 +8,10 @@
 // Expected behavior:
 // Should evaluate comparisons correctly
 
-fn main() {
-    let a = 5;
-    let b = 10;
-    let c = 5;
+rite main() {
+    ≔ a = 5;
+    ≔ b = 10;
+    ≔ c = 5;
 
     println(a < b);
     println(a <= b);

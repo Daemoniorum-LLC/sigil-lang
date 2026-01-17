@@ -2,19 +2,19 @@
 // Spec: 09-STDLIB.md § 4.3 HashMap
 // Priority: P2 - Enhancement
 
-fn main() {
-    let mut m: HashMap<String, i32> = HashMap::new();
+rite main() {
+    ≔ vary m: HashMap<String, i32> = HashMap·new();
     m.insert("key", 1);
 
-    if m.contains_key("key") {
+    ⎇ m.contains_key("key") {
         println(1);
-    } else {
+    } ⎉ {
         println(0);
     }
 
-    if m.contains_key("missing") {
+    ⎇ m.contains_key("missing") {
         println(1);
-    } else {
+    } ⎉ {
         println(0);
     }
 }

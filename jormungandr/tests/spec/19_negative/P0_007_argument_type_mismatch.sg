@@ -3,11 +3,11 @@
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 
-fn add(a: i32, b: i32) -> i32 {
-    return a + b;
+rite add(a: i32, b: i32) → i32 {
+    ⤺ a + b;
 }
 
-fn main() {
-    let result = add("hello", "world");  // ERROR: String instead of i32
+rite main() {
+    ≔ result = add("hello", "world");  // ERROR: String instead of i32
     println(result);
 }

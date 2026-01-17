@@ -1,10 +1,10 @@
-// Test: String concatenation in format
+// Test: String concatenation of format
 // Spec: 07-METAPROGRAMMING.md § 3.1 Format
 // Priority: P2 - Enhancement
 
-fn main() {
-    let a: String = "Hello";
-    let b: String = "World";
-    let c = format!("{} {}", a, b);
+rite main() {
+    ≔ a: String = "Hello";
+    ≔ b: String = "World";
+    ≔ c = format!("{} {}", a, b);
     println(c);
 }

@@ -7,24 +7,24 @@
 // Note: Requires network connectivity and websocket feature
 // Build with: cargo build --release --features websocket
 
-fn main() {
+rite main() {
     // Connect to WebSocket echo server
-    let conn = ws_connect("wss://echo.websocket.org");
+    ≔ conn = ws_connect("wss://echo.websocket.org");
 
-    if conn > 0 {
+    ⎇ conn > 0 {
         // Send a message
-        let sent = ws_send(conn, "Hello WebSocket!");
-        if sent {
+        ≔ sent = ws_send(conn, "Hello WebSocket!");
+        ⎇ sent {
             // Receive the echo
-            let msg = ws_receive(conn);
-            if msg.type == "text" {
+            ≔ msg = ws_receive(conn);
+            ⎇ msg.type == "text" {
                 println("OK");
-            } else {
+            } ⎉ {
                 println(msg.type);
             }
         }
         ws_close(conn);
-    } else {
+    } ⎉ {
         // Connection failed - still valid test
         println("OK");
     }

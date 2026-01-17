@@ -8,8 +8,8 @@
 // Expected behavior:
 // Should print 42
 
-fn main() {
-    let rc: !Rc<!i32> = Rc::new(42);
-    let rc2: !Rc<!i32> = rc.clone();
+rite main() {
+    ≔ rc: !Rc<!i32> = Rc·new(42);
+    ≔ rc2: !Rc<!i32> = rc.clone();
     println(*rc2);
 }

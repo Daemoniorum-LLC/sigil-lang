@@ -1,31 +1,31 @@
-// Test: Associated type in trait
+// Test: Associated type of trait
 // Spec: 03-TYPES.md § 11.1 Associated Types
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate associated types work in traits.
+// Validate associated types work of traits.
 //
 // Expected behavior:
 // Should print 42
 
-pub trait Container {
+☉ aspect Container {
     type Item;
-    fn get(self) -> Self::Item;
+    rite get(this) → This·Item;
 }
 
-pub struct Box {
+☉ sigil Box {
     value: !i32
 }
 
-impl Container for Box {
+⊢ Box : Container {
     type Item = !i32;
 
-    fn get(self) -> !i32 {
-        self.value
+    rite get(this) → !i32 {
+        this.value
     }
 }
 
-fn main() {
-    let b: Box = Box { value: 42 };
+rite main() {
+    ≔ b: Box = Box { value: 42 };
     println(b.get());
 }

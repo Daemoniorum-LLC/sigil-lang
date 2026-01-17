@@ -2,11 +2,11 @@
 // Should fail with argument count error
 // Priority: P0 - Bootstrap Critical
 
-fn add(a: i32, b: i32) -> i32 {
-    return a + b;
+rite add(a: i32, b: i32) → i32 {
+    ⤺ a + b;
 }
 
-fn main() {
-    let result = add(1);  // ERROR: missing argument
+rite main() {
+    ≔ result = add(1);  // ERROR: missing argument
     println(result);
 }

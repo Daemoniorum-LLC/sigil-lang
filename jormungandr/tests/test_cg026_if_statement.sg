@@ -3,16 +3,16 @@
 /// The native compiler crashes with SIGSEGV when compiling files that
 /// contain comparison operators (==, !=, <, <=, >, >=).
 ///
-/// Working: if true { 42 } else { 0 }
-/// Working: let r = 42; r + 1
-/// CRASHES: let r = 42; r == 42
-/// CRASHES: if r != 42 { 1 } else { 0 }
+/// Working: ⎇ yea { 42 } ⎉ { 0 }
+/// Working: ≔ r = 42; r + 1
+/// CRASHES: ≔ r = 42; r == 42
+/// CRASHES: ⎇ r != 42 { 1 } ⎉ { 0 }
 ///
 /// This blocks CG-025 testing since the CG-025 test uses comparison operators.
 
-fn main() -> i64 {
+rite main() → i64 {
     // This simple comparison crashes:
-    let r = 42;
-    let b = r == 42;  // <-- Crash happens here
-    if b { 0 } else { 1 }
+    ≔ r = 42;
+    ≔ b = r == 42;  // <-- Crash happens here
+    ⎇ b { 0 } ⎉ { 1 }
 }

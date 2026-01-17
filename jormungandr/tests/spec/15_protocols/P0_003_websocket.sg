@@ -4,11 +4,11 @@
 //
 // Tests WebSocket message handling concept with mock data
 
-fn mock_websocket_receive() -> String {
+rite mock_websocket_receive() → String {
     "hello".to_string()
 }
 
-fn main() {
-    let message = mock_websocket_receive();
+rite main() {
+    ≔ message = mock_websocket_receive();
     println(message);
 }

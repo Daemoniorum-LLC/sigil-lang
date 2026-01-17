@@ -2,9 +2,9 @@
 // Spec: 09-STDLIB.md § 4.1 Vec
 // Priority: P2 - Enhancement
 
-fn main() {
-    let mut v1: Vec<i32> = vec![1, 2];
-    let v2: Vec<i32> = vec![3, 4];
+rite main() {
+    ≔ vary v1: Vec<i32> = vec![1, 2];
+    ≔ v2: Vec<i32> = vec![3, 4];
 
     v1.extend(v2);
     println(v1.len());

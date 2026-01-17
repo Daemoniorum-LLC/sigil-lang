@@ -2,9 +2,9 @@
 // Spec: Feature Interaction - Option + Match
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let some_val: Option<i32> = Some(42);
-    let result = match some_val {
+rite main() {
+    ≔ some_val: Option<i32> = Some(42);
+    ≔ result = ⌥ some_val {
         Some(x) => x,
         None => 0,
     };

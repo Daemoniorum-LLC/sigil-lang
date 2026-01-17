@@ -2,9 +2,9 @@
 // Spec: 04-MEMORY.md § 5.1 Cell
 // Priority: P2 - Enhancement
 
-fn main() {
-    let c1: Cell<i32> = Cell::new(10);
-    let c2: Cell<i32> = Cell::new(20);
+rite main() {
+    ≔ c1: Cell<i32> = Cell·new(10);
+    ≔ c2: Cell<i32> = Cell·new(20);
 
     println(c1.get());
     println(c2.get());

@@ -2,7 +2,7 @@
 // Spec: 02-SYNTAX.md § 3.6 Parenthesized Expressions
 // Priority: P0
 
-fn main() {
-    let x: !i32 = (40 + 2) * 1;
+rite main() {
+    ≔ x: !i32 = (40 + 2) * 1;
     println(x);
 }

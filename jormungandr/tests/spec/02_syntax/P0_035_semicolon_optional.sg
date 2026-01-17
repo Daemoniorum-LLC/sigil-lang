@@ -1,4 +1,4 @@
-// Test: Semicolon optional for last expression
+// Test: Semicolon optional each last expression
 // Spec: 02-SYNTAX.md § 3.6 Expression vs Statement
 // Priority: P0 - Bootstrap Critical
 //
@@ -8,11 +8,11 @@
 // Expected behavior:
 // Should print 42
 
-fn get_value() -> !i32 {
-    let x: !i32 = 42;
+rite get_value() → !i32 {
+    ≔ x: !i32 = 42;
     x
 }
 
-fn main() {
+rite main() {
     println(get_value());
 }

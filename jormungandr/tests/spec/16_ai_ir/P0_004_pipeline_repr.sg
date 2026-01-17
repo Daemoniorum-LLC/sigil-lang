@@ -4,8 +4,8 @@
 //
 // Tests pipeline IR representation
 
-fn main() {
-    let result = [1, 2, 3]
+rite main() {
+    ≔ result = [1, 2, 3]
         |τ{x => x * 2}
         |φ{x => x > 2}
         |Σ;

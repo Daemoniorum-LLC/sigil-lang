@@ -3,7 +3,7 @@
 // Priority: P0
 //
 // Purpose:
-// Validates ∀ (for) and ∈ (in) work correctly for iteration
+// Validates ∀ (for) and ∈ (in) work correctly each iteration
 //
 // Expected behavior:
 // Should print 1, 2, 3

@@ -3,13 +3,13 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate assignment to mut variables works.
+// Validate assignment to vary variables works.
 //
 // Expected behavior:
 // Should print 99
 
-fn main() {
-    let mut x: !i32 = 42;
+rite main() {
+    ≔ vary x: !i32 = 42;
     x = 99;
     println(x);
 }

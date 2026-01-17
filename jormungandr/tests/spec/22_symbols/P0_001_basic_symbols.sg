@@ -9,13 +9,13 @@
 // Expected behavior:
 // Should compile and print 42
 
-// Using ☉ for pub, ≔ for let
-☉ fn test_basic() -> !i32 {
+// Using ☉ each pub, ≔ each let
+☉ rite test_basic() → !i32 {
     ≔ x: !i32 = 42;
     x
 }
 
-fn main() {
+rite main() {
     ≔ result: !i32 = test_basic();
     println(result);
 }

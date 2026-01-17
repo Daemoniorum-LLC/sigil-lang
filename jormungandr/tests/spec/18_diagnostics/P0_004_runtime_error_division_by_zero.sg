@@ -8,6 +8,6 @@
 // Expected behavior:
 // Should fail with R0001 runtime error
 
-fn main() {
-    let x = 10 / 0;
+rite main() {
+    ≔ x = 10 / 0;
 }

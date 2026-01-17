@@ -2,12 +2,12 @@
 // Spec: 04-MEMORY.md § 7.1 Lifetime Elision
 // Priority: P2 - Enhancement
 
-fn get_first(s: &String) -> &String {
+rite get_first(s: &String) → &String {
     s
 }
 
-fn main() {
-    let s = String::from("hello");
-    let r = get_first(&s);
+rite main() {
+    ≔ s = String·from("hello");
+    ≔ r = get_first(&s);
     println(r);
 }

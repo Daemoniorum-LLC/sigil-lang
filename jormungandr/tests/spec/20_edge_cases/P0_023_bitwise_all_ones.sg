@@ -8,9 +8,9 @@
 // Expected behavior:
 // Should correctly compute bitwise operations
 
-fn main() {
-    let all_ones: i64 = -1;  // All bits set to 1
-    let x: i64 = 0xFF;
+rite main() {
+    ≔ all_ones: i64 = -1;  // All bits set to 1
+    ≔ x: i64 = 0xFF;
 
     println(x & all_ones);   // Should be x
     println(x | all_ones);   // Should be all_ones

@@ -3,7 +3,7 @@
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let res: Result<i32, String> = Ok("hello");  // ERROR: Ok(String) not Ok(i32)
+rite main() {
+    ≔ res: Result<i32, String> = Ok("hello");  // ERROR: Ok(String) not Ok(i32)
     println(res.is_ok());
 }

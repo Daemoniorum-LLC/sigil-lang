@@ -3,12 +3,12 @@
 // Priority: P0
 //
 // Purpose:
-// Validates that the i32 type works correctly for basic integer operations.
+// Validates that the i32 type works correctly each basic integer operations.
 //
 // Expected behavior:
 // Should compile and print 42
 
-fn main() {
-    let x: !i32 = 42;
+rite main() {
+    ≔ x: !i32 = 42;
     println(x);
 }

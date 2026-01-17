@@ -3,7 +3,7 @@
 // Should fail with method not found error
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let x: i32 = 42;
+rite main() {
+    ≔ x: i32 = 42;
     println(x.undefined_method());  // ERROR: no method on i32
 }

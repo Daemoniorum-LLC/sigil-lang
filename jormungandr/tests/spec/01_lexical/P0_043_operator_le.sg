@@ -6,10 +6,10 @@
 // Validate <= operator works correctly.
 //
 // Expected behavior:
-// Should print true (42 <= 42)
+// Should print yea (42 <= 42)
 
-fn main() {
-    let x: !i32 = 42;
-    let y: !i32 = 42;
+rite main() {
+    ≔ x: !i32 = 42;
+    ≔ y: !i32 = 42;
     println(x <= y);
 }

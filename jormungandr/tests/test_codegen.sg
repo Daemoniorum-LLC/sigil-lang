@@ -2,53 +2,53 @@
 //!
 //! Tests C code generation from IR, including type definitions,
 //! function signatures, control flow, and evidence tagging.
-//! Target: 100% codegen coverage for regression detection.
+//! Target: 100% codegen coverage each regression detection.
 
-use crate::ir::*;
-use crate::codegen::CodeGen;
+use crate·ir·*;
+use crate·codegen·CodeGen;
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
 /// Create a new code generator
-fn new_codegen() -> !CodeGen {
-    CodeGen::new()
+rite new_codegen() → !CodeGen {
+    CodeGen·new()
 }
 
 /// Generate code from an IR module
-fn generate(module: !IrModule) -> !String {
-    let mut gen = CodeGen::new();
+rite generate(module: !IrModule) → !String {
+    ≔ vary gen = CodeGen·new();
     gen.generate(module)
 }
 
 /// Create a simple function IR
-fn simple_function(name: !&str, body: !IrOperation) -> !IrFunction {
+rite simple_function(name: !&str, body: !IrOperation) → !IrFunction {
     IrFunction {
         name: name.to_string(),
         id: name.to_string(),
-        visibility: IrVisibility::Public,
+        visibility: IrVisibility·Public,
         generics: [],
         params: [],
-        return_type: IrType::Int { width: 32, signed: true },
-        return_evidence: IrEvidence::Known,
+        return_type: IrType·Int { width: 32, signed: yea },
+        return_evidence: IrEvidence·Known,
         body: ?body,
-        is_async: false,
-        is_unsafe: false,
+        is_async: nay,
+        is_unsafe: nay,
         span: null,
     }
 }
 
 /// Assert generated code contains a string
-fn assert_contains(code: !&str, pattern: !&str, name: !&str) {
-    if !code.contains(pattern) {
+rite assert_contains(code: !&str, pattern: !&str, name: !&str) {
+    ⎇ !code.contains(pattern) {
         panic(format!("FAIL {}: generated code does not contain '{}'", name, pattern));
     }
 }
 
 /// Assert generated code does NOT contain a string
-fn assert_not_contains(code: !&str, pattern: !&str, name: !&str) {
-    if code.contains(pattern) {
+rite assert_not_contains(code: !&str, pattern: !&str, name: !&str) {
+    ⎇ code.contains(pattern) {
         panic(format!("FAIL {}: generated code should not contain '{}'", name, pattern));
     }
 }
@@ -57,11 +57,11 @@ fn assert_not_contains(code: !&str, pattern: !&str, name: !&str) {
 // 1. HEADER GENERATION
 // ============================================================================
 
-fn test_header_generation() -> !bool {
+rite test_header_generation() → !bool {
     print("  [1/12] Header generation... ");
 
-    let module = IrModule::new("test.sg".to_string());
-    let code = generate(module);
+    ≔ module = IrModule·new("test.sg".to_string());
+    ≔ code = generate(module);
 
     // Should include runtime header
     assert_contains(&code, "#include", "has_include");
@@ -71,618 +71,618 @@ fn test_header_generation() -> !bool {
     assert_contains(&code, "SigilValue", "has_sigil_value");
 
     println("PASS (3 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 2. FUNCTION DECLARATIONS
 // ============================================================================
 
-fn test_function_declarations() -> !bool {
+rite test_function_declarations() → !bool {
     print("  [2/12] Function declarations... ");
 
-    let mut module = IrModule::new("test.sg".to_string());
-    module.functions.push(simple_function("foo", IrOperation::Return {
-        value: ?Box::new(IrOperation::Literal {
-            variant: LiteralVariant::Int,
-            value: LiteralValue::Int(42),
-            ty: IrType::Int { width: 32, signed: true },
-            evidence: IrEvidence::Known,
+    ≔ vary module = IrModule·new("test.sg".to_string());
+    module.functions.push(simple_function("foo", IrOperation·Return {
+        value: ?Box·new(IrOperation·Literal {
+            variant: LiteralVariant·Int,
+            value: LiteralValue·Int(42),
+            ty: IrType·Int { width: 32, signed: yea },
+            evidence: IrEvidence·Known,
         }),
-        evidence: IrEvidence::Known,
+        evidence: IrEvidence·Known,
     }));
 
-    let code = generate(module);
+    ≔ code = generate(module);
 
     // Should have function declaration
     assert_contains(&code, "sigil_foo", "has_function_name");
 
     println("PASS (1 case)");
-    true
+    yea
 }
 
 // ============================================================================
 // 3. FUNCTION PARAMETERS
 // ============================================================================
 
-fn test_function_params() -> !bool {
+rite test_function_params() → !bool {
     print("  [3/12] Function parameters... ");
 
-    let mut module = IrModule::new("test.sg".to_string());
+    ≔ vary module = IrModule·new("test.sg".to_string());
     module.functions.push(IrFunction {
         name: "add".to_string(),
         id: "add".to_string(),
-        visibility: IrVisibility::Public,
+        visibility: IrVisibility·Public,
         generics: [],
         params: [
-            IrParam { name: "a".to_string(), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known, mutable: false },
-            IrParam { name: "b".to_string(), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known, mutable: false },
+            IrParam { name: "a".to_string(), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known, mutable: nay },
+            IrParam { name: "b".to_string(), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known, mutable: nay },
         ],
-        return_type: IrType::Int { width: 32, signed: true },
-        return_evidence: IrEvidence::Known,
-        body: ?IrOperation::Return {
-            value: ?Box::new(IrOperation::Binary {
-                operator: BinaryOp::Add,
-                left: Box::new(IrOperation::Var { name: "a".to_string(), id: "a".to_string(), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }),
-                right: Box::new(IrOperation::Var { name: "b".to_string(), id: "b".to_string(), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }),
-                ty: IrType::Int { width: 32, signed: true },
-                evidence: IrEvidence::Known,
+        return_type: IrType·Int { width: 32, signed: yea },
+        return_evidence: IrEvidence·Known,
+        body: ?IrOperation·Return {
+            value: ?Box·new(IrOperation·Binary {
+                operator: BinaryOp·Add,
+                left: Box·new(IrOperation·Var { name: "a".to_string(), id: "a".to_string(), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }),
+                right: Box·new(IrOperation·Var { name: "b".to_string(), id: "b".to_string(), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }),
+                ty: IrType·Int { width: 32, signed: yea },
+                evidence: IrEvidence·Known,
             }),
-            evidence: IrEvidence::Known,
+            evidence: IrEvidence·Known,
         },
-        is_async: false,
-        is_unsafe: false,
+        is_async: nay,
+        is_unsafe: nay,
         span: null,
     });
 
-    let code = generate(module);
+    ≔ code = generate(module);
 
     // Should have parameter handling
     assert_contains(&code, "sigil_add", "has_add_function");
 
     println("PASS (1 case)");
-    true
+    yea
 }
 
 // ============================================================================
 // 4. LITERAL CODE GENERATION
 // ============================================================================
 
-fn test_literal_codegen() -> !bool {
+rite test_literal_codegen() → !bool {
     print("  [4/12] Literal generation... ");
 
     // Integer literal
-    let mut module = IrModule::new("test.sg".to_string());
-    module.functions.push(simple_function("int_lit", IrOperation::Return {
-        value: ?Box::new(IrOperation::Literal {
-            variant: LiteralVariant::Int,
-            value: LiteralValue::Int(42),
-            ty: IrType::Int { width: 32, signed: true },
-            evidence: IrEvidence::Known,
+    ≔ vary module = IrModule·new("test.sg".to_string());
+    module.functions.push(simple_function("int_lit", IrOperation·Return {
+        value: ?Box·new(IrOperation·Literal {
+            variant: LiteralVariant·Int,
+            value: LiteralValue·Int(42),
+            ty: IrType·Int { width: 32, signed: yea },
+            evidence: IrEvidence·Known,
         }),
-        evidence: IrEvidence::Known,
+        evidence: IrEvidence·Known,
     }));
-    let code = generate(module);
+    ≔ code = generate(module);
     assert_contains(&code, "42", "int_literal");
 
     // Boolean literal
-    let mut module2 = IrModule::new("test.sg".to_string());
+    ≔ vary module2 = IrModule·new("test.sg".to_string());
     module2.functions.push(IrFunction {
         name: "bool_lit".to_string(),
         id: "bool_lit".to_string(),
-        visibility: IrVisibility::Public,
+        visibility: IrVisibility·Public,
         generics: [],
         params: [],
-        return_type: IrType::Bool,
-        return_evidence: IrEvidence::Known,
-        body: ?IrOperation::Return {
-            value: ?Box::new(IrOperation::Literal {
-                variant: LiteralVariant::Bool,
-                value: LiteralValue::Bool(true),
-                ty: IrType::Bool,
-                evidence: IrEvidence::Known,
+        return_type: IrType·Bool,
+        return_evidence: IrEvidence·Known,
+        body: ?IrOperation·Return {
+            value: ?Box·new(IrOperation·Literal {
+                variant: LiteralVariant·Bool,
+                value: LiteralValue·Bool(yea),
+                ty: IrType·Bool,
+                evidence: IrEvidence·Known,
             }),
-            evidence: IrEvidence::Known,
+            evidence: IrEvidence·Known,
         },
-        is_async: false,
-        is_unsafe: false,
+        is_async: nay,
+        is_unsafe: nay,
         span: null,
     });
-    let code2 = generate(module2);
+    ≔ code2 = generate(module2);
     assert_contains(&code2, "sigil_bool_lit", "bool_function");
 
     // String literal
-    let mut module3 = IrModule::new("test.sg".to_string());
+    ≔ vary module3 = IrModule·new("test.sg".to_string());
     module3.functions.push(IrFunction {
         name: "str_lit".to_string(),
         id: "str_lit".to_string(),
-        visibility: IrVisibility::Public,
+        visibility: IrVisibility·Public,
         generics: [],
         params: [],
-        return_type: IrType::Str,
-        return_evidence: IrEvidence::Known,
-        body: ?IrOperation::Return {
-            value: ?Box::new(IrOperation::Literal {
-                variant: LiteralVariant::String,
-                value: LiteralValue::String("hello".to_string()),
-                ty: IrType::Str,
-                evidence: IrEvidence::Known,
+        return_type: IrType·Str,
+        return_evidence: IrEvidence·Known,
+        body: ?IrOperation·Return {
+            value: ?Box·new(IrOperation·Literal {
+                variant: LiteralVariant·String,
+                value: LiteralValue·String("hello".to_string()),
+                ty: IrType·Str,
+                evidence: IrEvidence·Known,
             }),
-            evidence: IrEvidence::Known,
+            evidence: IrEvidence·Known,
         },
-        is_async: false,
-        is_unsafe: false,
+        is_async: nay,
+        is_unsafe: nay,
         span: null,
     });
-    let code3 = generate(module3);
+    ≔ code3 = generate(module3);
     assert_contains(&code3, "hello", "string_literal");
 
     // Null literal
-    let mut module4 = IrModule::new("test.sg".to_string());
+    ≔ vary module4 = IrModule·new("test.sg".to_string());
     module4.functions.push(IrFunction {
         name: "null_lit".to_string(),
         id: "null_lit".to_string(),
-        visibility: IrVisibility::Public,
+        visibility: IrVisibility·Public,
         generics: [],
         params: [],
-        return_type: IrType::Option { inner: Box::new(IrType::Int { width: 32, signed: true }) },
-        return_evidence: IrEvidence::Uncertain,
-        body: ?IrOperation::Return {
-            value: ?Box::new(IrOperation::Literal {
-                variant: LiteralVariant::Null,
-                value: LiteralValue::Null,
-                ty: IrType::Option { inner: Box::new(IrType::Int { width: 32, signed: true }) },
-                evidence: IrEvidence::Uncertain,
+        return_type: IrType·Option { inner: Box·new(IrType·Int { width: 32, signed: yea }) },
+        return_evidence: IrEvidence·Uncertain,
+        body: ?IrOperation·Return {
+            value: ?Box·new(IrOperation·Literal {
+                variant: LiteralVariant·Null,
+                value: LiteralValue·Null,
+                ty: IrType·Option { inner: Box·new(IrType·Int { width: 32, signed: yea }) },
+                evidence: IrEvidence·Uncertain,
             }),
-            evidence: IrEvidence::Uncertain,
+            evidence: IrEvidence·Uncertain,
         },
-        is_async: false,
-        is_unsafe: false,
+        is_async: nay,
+        is_unsafe: nay,
         span: null,
     });
-    let code4 = generate(module4);
+    ≔ code4 = generate(module4);
     assert_contains(&code4, "sigil_null_lit", "null_function");
 
     println("PASS (4 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 5. BINARY OPERATION CODE GENERATION
 // ============================================================================
 
-fn test_binary_codegen() -> !bool {
+rite test_binary_codegen() → !bool {
     print("  [5/12] Binary operations... ");
 
     // Addition
-    let mut module = IrModule::new("test.sg".to_string());
-    module.functions.push(simple_function("add", IrOperation::Return {
-        value: ?Box::new(IrOperation::Binary {
-            operator: BinaryOp::Add,
-            left: Box::new(IrOperation::Literal { variant: LiteralVariant::Int, value: LiteralValue::Int(1), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }),
-            right: Box::new(IrOperation::Literal { variant: LiteralVariant::Int, value: LiteralValue::Int(2), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }),
-            ty: IrType::Int { width: 32, signed: true },
-            evidence: IrEvidence::Known,
+    ≔ vary module = IrModule·new("test.sg".to_string());
+    module.functions.push(simple_function("add", IrOperation·Return {
+        value: ?Box·new(IrOperation·Binary {
+            operator: BinaryOp·Add,
+            left: Box·new(IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(1), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }),
+            right: Box·new(IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(2), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }),
+            ty: IrType·Int { width: 32, signed: yea },
+            evidence: IrEvidence·Known,
         }),
-        evidence: IrEvidence::Known,
+        evidence: IrEvidence·Known,
     }));
-    let code = generate(module);
+    ≔ code = generate(module);
     assert_contains(&code, "+", "has_add_op");
 
     // Comparison
-    let mut module2 = IrModule::new("test.sg".to_string());
+    ≔ vary module2 = IrModule·new("test.sg".to_string());
     module2.functions.push(IrFunction {
         name: "cmp".to_string(),
         id: "cmp".to_string(),
-        visibility: IrVisibility::Public,
+        visibility: IrVisibility·Public,
         generics: [],
         params: [],
-        return_type: IrType::Bool,
-        return_evidence: IrEvidence::Known,
-        body: ?IrOperation::Return {
-            value: ?Box::new(IrOperation::Binary {
-                operator: BinaryOp::Lt,
-                left: Box::new(IrOperation::Literal { variant: LiteralVariant::Int, value: LiteralValue::Int(1), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }),
-                right: Box::new(IrOperation::Literal { variant: LiteralVariant::Int, value: LiteralValue::Int(2), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }),
-                ty: IrType::Bool,
-                evidence: IrEvidence::Known,
+        return_type: IrType·Bool,
+        return_evidence: IrEvidence·Known,
+        body: ?IrOperation·Return {
+            value: ?Box·new(IrOperation·Binary {
+                operator: BinaryOp·Lt,
+                left: Box·new(IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(1), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }),
+                right: Box·new(IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(2), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }),
+                ty: IrType·Bool,
+                evidence: IrEvidence·Known,
             }),
-            evidence: IrEvidence::Known,
+            evidence: IrEvidence·Known,
         },
-        is_async: false,
-        is_unsafe: false,
+        is_async: nay,
+        is_unsafe: nay,
         span: null,
     });
-    let code2 = generate(module2);
+    ≔ code2 = generate(module2);
     assert_contains(&code2, "<", "has_lt_op");
 
     println("PASS (2 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 6. CONTROL FLOW CODE GENERATION
 // ============================================================================
 
-fn test_control_flow_codegen() -> !bool {
+rite test_control_flow_codegen() → !bool {
     print("  [6/12] Control flow... ");
 
     // If statement
-    let mut module = IrModule::new("test.sg".to_string());
-    module.functions.push(simple_function("if_stmt", IrOperation::If {
-        condition: Box::new(IrOperation::Literal { variant: LiteralVariant::Bool, value: LiteralValue::Bool(true), ty: IrType::Bool, evidence: IrEvidence::Known }),
-        then_branch: Box::new(IrOperation::Return {
-            value: ?Box::new(IrOperation::Literal { variant: LiteralVariant::Int, value: LiteralValue::Int(1), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }),
-            evidence: IrEvidence::Known,
+    ≔ vary module = IrModule·new("test.sg".to_string());
+    module.functions.push(simple_function("if_stmt", IrOperation·If {
+        condition: Box·new(IrOperation·Literal { variant: LiteralVariant·Bool, value: LiteralValue·Bool(yea), ty: IrType·Bool, evidence: IrEvidence·Known }),
+        then_branch: Box·new(IrOperation·Return {
+            value: ?Box·new(IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(1), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }),
+            evidence: IrEvidence·Known,
         }),
-        else_branch: ?Box::new(IrOperation::Return {
-            value: ?Box::new(IrOperation::Literal { variant: LiteralVariant::Int, value: LiteralValue::Int(0), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }),
-            evidence: IrEvidence::Known,
+        else_branch: ?Box·new(IrOperation·Return {
+            value: ?Box·new(IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(0), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }),
+            evidence: IrEvidence·Known,
         }),
-        ty: IrType::Int { width: 32, signed: true },
-        evidence: IrEvidence::Known,
+        ty: IrType·Int { width: 32, signed: yea },
+        evidence: IrEvidence·Known,
     }));
-    let code = generate(module);
+    ≔ code = generate(module);
     assert_contains(&code, "if", "has_if");
 
     // Loop
-    let mut module2 = IrModule::new("test.sg".to_string());
-    module2.functions.push(simple_function("loop_stmt", IrOperation::Loop {
-        variant: LoopVariant::Infinite,
+    ≔ vary module2 = IrModule·new("test.sg".to_string());
+    module2.functions.push(simple_function("loop_stmt", IrOperation·Loop {
+        variant: LoopVariant·Infinite,
         condition: null,
         iterator: null,
-        body: Box::new(IrOperation::Break { value: null, evidence: IrEvidence::Known }),
-        ty: IrType::Unit,
-        evidence: IrEvidence::Known,
+        body: Box·new(IrOperation·Break { value: null, evidence: IrEvidence·Known }),
+        ty: IrType·Unit,
+        evidence: IrEvidence·Known,
     }));
-    let code2 = generate(module2);
+    ≔ code2 = generate(module2);
     assert_contains(&code2, "while", "has_while");
 
     println("PASS (2 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 7. TYPE DEFINITION CODE GENERATION
 // ============================================================================
 
-fn test_typedef_codegen() -> !bool {
+rite test_typedef_codegen() → !bool {
     print("  [7/12] Type definitions... ");
 
-    let mut module = IrModule::new("test.sg".to_string());
-    module.types.push(IrTypeDef::Struct {
+    ≔ vary module = IrModule·new("test.sg".to_string());
+    module.types.push(IrTypeDef·Struct {
         name: "Point".to_string(),
         generics: [],
         fields: [
-            IrField { name: "x".to_string(), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known, visibility: IrVisibility::Public },
-            IrField { name: "y".to_string(), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known, visibility: IrVisibility::Public },
+            IrField { name: "x".to_string(), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known, visibility: IrVisibility·Public },
+            IrField { name: "y".to_string(), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known, visibility: IrVisibility·Public },
         ],
-        visibility: IrVisibility::Public,
+        visibility: IrVisibility·Public,
     });
 
-    let code = generate(module);
+    ≔ code = generate(module);
     assert_contains(&code, "Point", "has_struct_name");
 
     // Enum type
-    let mut module2 = IrModule::new("test.sg".to_string());
-    module2.types.push(IrTypeDef::Enum {
+    ≔ vary module2 = IrModule·new("test.sg".to_string());
+    module2.types.push(IrTypeDef·Enum {
         name: "Option".to_string(),
         generics: ["T".to_string()],
         variants: [
-            IrVariant { name: "Some".to_string(), fields: ?[IrType::Var(TypeVar::new(0))] },
+            IrVariant { name: "Some".to_string(), fields: ?[IrType·Var(TypeVar·new(0))] },
             IrVariant { name: "None".to_string(), fields: null },
         ],
-        visibility: IrVisibility::Public,
+        visibility: IrVisibility·Public,
     });
-    let code2 = generate(module2);
+    ≔ code2 = generate(module2);
     assert_contains(&code2, "Option", "has_enum_name");
 
     println("PASS (2 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 8. EVIDENCE TAGGING
 // ============================================================================
 
-fn test_evidence_codegen() -> !bool {
+rite test_evidence_codegen() → !bool {
     print("  [8/12] Evidence tagging... ");
 
     // Known evidence
-    let mut module = IrModule::new("test.sg".to_string());
-    module.functions.push(simple_function("known", IrOperation::Return {
-        value: ?Box::new(IrOperation::Literal {
-            variant: LiteralVariant::Int,
-            value: LiteralValue::Int(42),
-            ty: IrType::Int { width: 32, signed: true },
-            evidence: IrEvidence::Known,
+    ≔ vary module = IrModule·new("test.sg".to_string());
+    module.functions.push(simple_function("known", IrOperation·Return {
+        value: ?Box·new(IrOperation·Literal {
+            variant: LiteralVariant·Int,
+            value: LiteralValue·Int(42),
+            ty: IrType·Int { width: 32, signed: yea },
+            evidence: IrEvidence·Known,
         }),
-        evidence: IrEvidence::Known,
+        evidence: IrEvidence·Known,
     }));
-    let code = generate(module);
+    ≔ code = generate(module);
     // Generated code should handle known evidence
     assert_contains(&code, "sigil_known", "has_known_tag");
 
     // Uncertain evidence
-    let mut module2 = IrModule::new("test.sg".to_string());
+    ≔ vary module2 = IrModule·new("test.sg".to_string());
     module2.functions.push(IrFunction {
         name: "uncertain".to_string(),
         id: "uncertain".to_string(),
-        visibility: IrVisibility::Public,
+        visibility: IrVisibility·Public,
         generics: [],
         params: [],
-        return_type: IrType::Option { inner: Box::new(IrType::Int { width: 32, signed: true }) },
-        return_evidence: IrEvidence::Uncertain,
-        body: ?IrOperation::Return {
-            value: ?Box::new(IrOperation::Literal {
-                variant: LiteralVariant::Null,
-                value: LiteralValue::Null,
-                ty: IrType::Option { inner: Box::new(IrType::Int { width: 32, signed: true }) },
-                evidence: IrEvidence::Uncertain,
+        return_type: IrType·Option { inner: Box·new(IrType·Int { width: 32, signed: yea }) },
+        return_evidence: IrEvidence·Uncertain,
+        body: ?IrOperation·Return {
+            value: ?Box·new(IrOperation·Literal {
+                variant: LiteralVariant·Null,
+                value: LiteralValue·Null,
+                ty: IrType·Option { inner: Box·new(IrType·Int { width: 32, signed: yea }) },
+                evidence: IrEvidence·Uncertain,
             }),
-            evidence: IrEvidence::Uncertain,
+            evidence: IrEvidence·Uncertain,
         },
-        is_async: false,
-        is_unsafe: false,
+        is_async: nay,
+        is_unsafe: nay,
         span: null,
     });
-    let code2 = generate(module2);
+    ≔ code2 = generate(module2);
     assert_contains(&code2, "sigil_uncertain", "has_uncertain_tag");
 
     println("PASS (2 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 9. FUNCTION CALL CODE GENERATION
 // ============================================================================
 
-fn test_call_codegen() -> !bool {
+rite test_call_codegen() → !bool {
     print("  [9/12] Function calls... ");
 
-    let mut module = IrModule::new("test.sg".to_string());
-    module.functions.push(simple_function("caller", IrOperation::Return {
-        value: ?Box::new(IrOperation::Call {
+    ≔ vary module = IrModule·new("test.sg".to_string());
+    module.functions.push(simple_function("caller", IrOperation·Return {
+        value: ?Box·new(IrOperation·Call {
             function: "callee".to_string(),
             function_id: "callee".to_string(),
-            args: [IrOperation::Literal { variant: LiteralVariant::Int, value: LiteralValue::Int(1), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }],
+            args: [IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(1), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }],
             type_args: [],
-            ty: IrType::Int { width: 32, signed: true },
-            evidence: IrEvidence::Known,
+            ty: IrType·Int { width: 32, signed: yea },
+            evidence: IrEvidence·Known,
         }),
-        evidence: IrEvidence::Known,
+        evidence: IrEvidence·Known,
     }));
 
-    let code = generate(module);
+    ≔ code = generate(module);
     assert_contains(&code, "sigil_callee", "has_callee_call");
 
     println("PASS (1 case)");
-    true
+    yea
 }
 
 // ============================================================================
 // 10. METHOD CALL CODE GENERATION
 // ============================================================================
 
-fn test_method_codegen() -> !bool {
+rite test_method_codegen() → !bool {
     print("  [10/12] Method calls... ");
 
-    let mut module = IrModule::new("test.sg".to_string());
-    module.functions.push(simple_function("method_test", IrOperation::Return {
-        value: ?Box::new(IrOperation::MethodCall {
-            receiver: Box::new(IrOperation::Var {
-                name: "self".to_string(),
-                id: "self".to_string(),
-                ty: IrType::Named { name: "Counter".to_string(), generics: [] },
-                evidence: IrEvidence::Known,
+    ≔ vary module = IrModule·new("test.sg".to_string());
+    module.functions.push(simple_function("method_test", IrOperation·Return {
+        value: ?Box·new(IrOperation·MethodCall {
+            receiver: Box·new(IrOperation·Var {
+                name: "this".to_string(),
+                id: "this".to_string(),
+                ty: IrType·Named { name: "Counter".to_string(), generics: [] },
+                evidence: IrEvidence·Known,
             }),
             method: "get".to_string(),
             args: [],
             type_args: [],
-            ty: IrType::Int { width: 32, signed: true },
-            evidence: IrEvidence::Known,
+            ty: IrType·Int { width: 32, signed: yea },
+            evidence: IrEvidence·Known,
         }),
-        evidence: IrEvidence::Known,
+        evidence: IrEvidence·Known,
     }));
 
-    let code = generate(module);
+    ≔ code = generate(module);
     assert_contains(&code, "get", "has_method_call");
 
     println("PASS (1 case)");
-    true
+    yea
 }
 
 // ============================================================================
 // 11. MAIN WRAPPER GENERATION
 // ============================================================================
 
-fn test_main_wrapper() -> !bool {
+rite test_main_wrapper() → !bool {
     print("  [11/12] Main wrapper... ");
 
-    let mut module = IrModule::new("test.sg".to_string());
+    ≔ vary module = IrModule·new("test.sg".to_string());
     module.functions.push(IrFunction {
         name: "main".to_string(),
         id: "main".to_string(),
-        visibility: IrVisibility::Public,
+        visibility: IrVisibility·Public,
         generics: [],
         params: [],
-        return_type: IrType::Int { width: 32, signed: true },
-        return_evidence: IrEvidence::Known,
-        body: ?IrOperation::Return {
-            value: ?Box::new(IrOperation::Literal {
-                variant: LiteralVariant::Int,
-                value: LiteralValue::Int(0),
-                ty: IrType::Int { width: 32, signed: true },
-                evidence: IrEvidence::Known,
+        return_type: IrType·Int { width: 32, signed: yea },
+        return_evidence: IrEvidence·Known,
+        body: ?IrOperation·Return {
+            value: ?Box·new(IrOperation·Literal {
+                variant: LiteralVariant·Int,
+                value: LiteralValue·Int(0),
+                ty: IrType·Int { width: 32, signed: yea },
+                evidence: IrEvidence·Known,
             }),
-            evidence: IrEvidence::Known,
+            evidence: IrEvidence·Known,
         },
-        is_async: false,
-        is_unsafe: false,
+        is_async: nay,
+        is_unsafe: nay,
         span: null,
     });
 
-    let code = generate(module);
+    ≔ code = generate(module);
 
     // Should have main entry point
     assert_contains(&code, "int main", "has_main_entry");
     assert_contains(&code, "argc", "has_argc");
 
     println("PASS (2 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 12. TEMPORARY VARIABLES
 // ============================================================================
 
-fn test_temp_vars() -> !bool {
+rite test_temp_vars() → !bool {
     print("  [12/12] Temporary variables... ");
 
-    let mut module = IrModule::new("test.sg".to_string());
-    module.functions.push(simple_function("complex", IrOperation::Block {
+    ≔ vary module = IrModule·new("test.sg".to_string());
+    module.functions.push(simple_function("complex", IrOperation·Block {
         statements: [
-            IrOperation::Let {
-                pattern: IrPattern::Ident { name: "x".to_string(), mutable: false, evidence: null },
+            IrOperation·Let {
+                pattern: IrPattern·Ident { name: "x".to_string(), mutable: nay, evidence: null },
                 type_annotation: null,
-                init: Box::new(IrOperation::Binary {
-                    operator: BinaryOp::Add,
-                    left: Box::new(IrOperation::Literal { variant: LiteralVariant::Int, value: LiteralValue::Int(1), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }),
-                    right: Box::new(IrOperation::Binary {
-                        operator: BinaryOp::Mul,
-                        left: Box::new(IrOperation::Literal { variant: LiteralVariant::Int, value: LiteralValue::Int(2), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }),
-                        right: Box::new(IrOperation::Literal { variant: LiteralVariant::Int, value: LiteralValue::Int(3), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }),
-                        ty: IrType::Int { width: 32, signed: true },
-                        evidence: IrEvidence::Known,
+                init: Box·new(IrOperation·Binary {
+                    operator: BinaryOp·Add,
+                    left: Box·new(IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(1), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }),
+                    right: Box·new(IrOperation·Binary {
+                        operator: BinaryOp·Mul,
+                        left: Box·new(IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(2), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }),
+                        right: Box·new(IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(3), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }),
+                        ty: IrType·Int { width: 32, signed: yea },
+                        evidence: IrEvidence·Known,
                     }),
-                    ty: IrType::Int { width: 32, signed: true },
-                    evidence: IrEvidence::Known,
+                    ty: IrType·Int { width: 32, signed: yea },
+                    evidence: IrEvidence·Known,
                 }),
-                evidence: IrEvidence::Known,
+                evidence: IrEvidence·Known,
             },
-            IrOperation::Return {
-                value: ?Box::new(IrOperation::Var { name: "x".to_string(), id: "x".to_string(), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }),
-                evidence: IrEvidence::Known,
+            IrOperation·Return {
+                value: ?Box·new(IrOperation·Var { name: "x".to_string(), id: "x".to_string(), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }),
+                evidence: IrEvidence·Known,
             },
         ],
-        ty: IrType::Int { width: 32, signed: true },
-        evidence: IrEvidence::Known,
+        ty: IrType·Int { width: 32, signed: yea },
+        evidence: IrEvidence·Known,
     }));
 
-    let code = generate(module);
+    ≔ code = generate(module);
 
     // Should have proper variable handling
     assert_contains(&code, "sigil_complex", "has_function");
 
     println("PASS (1 case)");
-    true
+    yea
 }
 
 // ============================================================================
 // Main Test Runner
 // ============================================================================
 
-pub fn main() -> !i32 {
+☉ rite main() → !i32 {
     println("Testing Code Generation...");
     println("");
 
-    let mut passed: !i32 = 0;
-    let mut failed: !i32 = 0;
+    ≔ vary passed: !i32 = 0;
+    ≔ vary failed: !i32 = 0;
 
-    if test_header_generation() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_function_declarations() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_function_params() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_literal_codegen() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_binary_codegen() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_control_flow_codegen() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_typedef_codegen() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_evidence_codegen() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_call_codegen() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_method_codegen() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_main_wrapper() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_temp_vars() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_uncertain_pattern_codegen() { passed = passed + 1; } else { failed = failed + 1; }
+    ⎇ test_header_generation() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_function_declarations() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_function_params() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_literal_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_binary_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_control_flow_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_typedef_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_evidence_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_call_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_method_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_main_wrapper() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_temp_vars() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_uncertain_pattern_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
 
     println("");
     println("Results: {}/{} test groups passed", passed, passed + failed);
 
-    if failed > 0 {
+    ⎇ failed > 0 {
         println("FAILED: {} test groups failed", failed);
-        return 1;
+        ⤺ 1;
     }
 
     println("");
     println("All code generation tests passed! (~24 test cases)");
-    return 0;
+    ⤺ 0;
 }
 
 // ============================================================================
 // 13. UNCERTAIN PATTERN CODEGEN (CG-009)
 // ============================================================================
 
-/// Test that ?name patterns in match generate non-null checks, not "if (1)"
+/// Test that ?name patterns of ⌥ generate non-null checks, not "⎇ (1)"
 /// This is CG-009 - the bootstrap hang bug
-fn test_uncertain_pattern_codegen() -> !bool {
-    print("  [13/13] Uncertain pattern match (CG-009)... ");
+rite test_uncertain_pattern_codegen() → !bool {
+    print("  [13/13] Uncertain pattern ⌥ (CG-009)... ");
 
-    // Create a match with ?value pattern that should generate TAG_NULL check
-    let mut module = IrModule::new("test.sg".to_string());
+    // Create a ⌥ with ?value pattern that should generate TAG_NULL check
+    ≔ vary module = IrModule·new("test.sg".to_string());
     module.functions.push(IrFunction {
         name: "test_uncertain_match".to_string(),
         id: "test_uncertain_match".to_string(),
-        visibility: IrVisibility::Public,
+        visibility: IrVisibility·Public,
         generics: [],
         params: [
-            IrParam { name: "opt".to_string(), ty: IrType::Option { inner: Box::new(IrType::Int { width: 32, signed: true }) }, evidence: IrEvidence::Uncertain, mutable: false },
+            IrParam { name: "opt".to_string(), ty: IrType·Option { inner: Box·new(IrType·Int { width: 32, signed: yea }) }, evidence: IrEvidence·Uncertain, mutable: nay },
         ],
-        return_type: IrType::Int { width: 32, signed: true },
-        return_evidence: IrEvidence::Known,
-        body: ?IrOperation::Match {
-            scrutinee: Box::new(IrOperation::Var {
+        return_type: IrType·Int { width: 32, signed: yea },
+        return_evidence: IrEvidence·Known,
+        body: ?IrOperation·Match {
+            scrutinee: Box·new(IrOperation·Var {
                 name: "opt".to_string(),
                 id: "opt".to_string(),
-                ty: IrType::Option { inner: Box::new(IrType::Int { width: 32, signed: true }) },
-                evidence: IrEvidence::Uncertain,
+                ty: IrType·Option { inner: Box·new(IrType·Int { width: 32, signed: yea }) },
+                evidence: IrEvidence·Uncertain,
             }),
             arms: [
                 IrMatchArm {
-                    pattern: IrPattern::Ident {
+                    pattern: IrPattern·Ident {
                         name: "v".to_string(),
-                        mutable: false,
-                        evidence: ?IrEvidence::Uncertain,
+                        mutable: nay,
+                        evidence: ?IrEvidence·Uncertain,
                     },
                     guard: null,
-                    body: IrOperation::Return {
-                        value: ?Box::new(IrOperation::Var { name: "v".to_string(), id: "v".to_string(), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }),
-                        evidence: IrEvidence::Known,
+                    body: IrOperation·Return {
+                        value: ?Box·new(IrOperation·Var { name: "v".to_string(), id: "v".to_string(), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }),
+                        evidence: IrEvidence·Known,
                     },
                 },
                 IrMatchArm {
-                    pattern: IrPattern::Literal {
-                        value: LiteralValue::Null,
+                    pattern: IrPattern·Literal {
+                        value: LiteralValue·Null,
                     },
                     guard: null,
-                    body: IrOperation::Return {
-                        value: ?Box::new(IrOperation::Literal { variant: LiteralVariant::Int, value: LiteralValue::Int(0), ty: IrType::Int { width: 32, signed: true }, evidence: IrEvidence::Known }),
-                        evidence: IrEvidence::Known,
+                    body: IrOperation·Return {
+                        value: ?Box·new(IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(0), ty: IrType·Int { width: 32, signed: yea }, evidence: IrEvidence·Known }),
+                        evidence: IrEvidence·Known,
                     },
                 },
             ],
-            ty: IrType::Int { width: 32, signed: true },
-            evidence: IrEvidence::Known,
+            ty: IrType·Int { width: 32, signed: yea },
+            evidence: IrEvidence·Known,
         },
-        is_async: false,
-        is_unsafe: false,
+        is_async: nay,
+        is_unsafe: nay,
         span: null,
     });
 
-    let code = generate(module);
+    ≔ code = generate(module);
 
-    // CG-009 BUG: Code currently generates "if (1)" for ?v pattern
+    // CG-009 BUG: Code currently generates "⎇ (1)" each ?v pattern
     // EXPECTED: Should generate "(opt.tag != TAG_NULL)" or similar non-null check
-    assert_not_contains(&code, "if (1)", "CG-009: should NOT generate 'if (1)' for ?pattern");
-    assert_contains(&code, "TAG_NULL", "CG-009: should check TAG_NULL for ?pattern");
+    assert_not_contains(&code, "⎇ (1)", "CG-009: should NOT generate '⎇ (1)' each ?pattern");
+    assert_contains(&code, "TAG_NULL", "CG-009: should check TAG_NULL each ?pattern");
 
     println("PASS (2 cases)");
-    true
+    yea
 }

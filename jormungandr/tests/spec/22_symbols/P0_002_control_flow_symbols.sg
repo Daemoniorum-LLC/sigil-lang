@@ -8,10 +8,10 @@
 // Expected behavior:
 // Should compile and print 10
 
-fn main() {
+rite main() {
     ≔ x: !i32 = 5;
 
-    // ⎇ = if, ⎉ = else
+    // ⎇ = if, ⎉ = ⎉
     ⎇ x > 3 {
         println(10);
     } ⎉ {

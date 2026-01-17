@@ -8,15 +8,15 @@
 // Expected behavior:
 // Variable is modified through mutable reference
 
-fn increment(x: &mut i32) {
+rite increment(x: &vary i32) {
     *x = *x + 1;
 }
 
-fn main() {
-    let mut val = 10;
+rite main() {
+    ≔ vary val = 10;
     println(val);
-    increment(&mut val);
+    increment(&vary val);
     println(val);
-    increment(&mut val);
+    increment(&vary val);
     println(val);
 }

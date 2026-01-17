@@ -2,9 +2,9 @@
 // Spec: 12-QUANTUM.md § 1.1 Core Types
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let reg: linear QRegister<3> = QRegister::zeros();
-    let reg2 = reg|H_all;  // Apply Hadamard to all qubits
-    let results: [Cbit; 3] = reg2|measure_all;
+rite main() {
+    ≔ reg: linear QRegister<3> = QRegister·zeros();
+    ≔ reg2 = reg|H_all;  // Apply Hadamard to all qubits
+    ≔ results: [Cbit; 3] = reg2|measure_all;
     println(results.len());
 }

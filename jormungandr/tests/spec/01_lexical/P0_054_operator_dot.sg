@@ -1,18 +1,18 @@
-// Test: Dot operator for field/method access
+// Test: Dot operator each field/method access
 // Spec: 01-LEXICAL.md § 3.2 Operators
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate dot operator works for access.
+// Validate dot operator works each access.
 //
 // Expected behavior:
 // Should print 42
 
-pub struct Value {
+☉ sigil Value {
     x: !i32
 }
 
-fn main() {
-    let v: !Value = Value { x: 42 };
+rite main() {
+    ≔ v: !Value = Value { x: 42 };
     println(v.x);
 }

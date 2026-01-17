@@ -8,8 +8,8 @@
 // Expected behavior:
 // Should print 2 (42 & 3 = 2)
 
-fn main() {
-    let x: !i32 = 42;
-    let y: !i32 = 3;
+rite main() {
+    ≔ x: !i32 = 42;
+    ≔ y: !i32 = 3;
     println(x & y);
 }

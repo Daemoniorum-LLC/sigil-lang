@@ -1,4 +1,4 @@
-// Test: Struct field access in C codegen
+// Test: Struct field access of C codegen
 // Spec: 17-JORMUNGANDR-BOOTSTRAP.md § CG-001 Field Access
 // Priority: P0
 //
@@ -8,13 +8,13 @@
 // Expected behavior:
 // Should compile and print 42 then 10
 
-pub struct Point {
+☉ sigil Point {
     x: !i32,
     y: !i32
 }
 
-fn main() {
-    let p: !Point = Point { x: 42, y: 10 };
+rite main() {
+    ≔ p: !Point = Point { x: 42, y: 10 };
     println(p.x);
     println(p.y);
 }

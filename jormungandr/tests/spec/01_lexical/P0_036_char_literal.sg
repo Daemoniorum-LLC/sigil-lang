@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print A
 
-fn main() {
-    let c: !char = 'A';
+rite main() {
+    ≔ c: !char = 'A';
     println(c);
 }

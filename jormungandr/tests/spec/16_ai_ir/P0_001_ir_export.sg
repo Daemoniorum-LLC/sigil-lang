@@ -4,11 +4,11 @@
 //
 // Tests IR export concept - expects 2 functions (add + main)
 
-fn add(a: i32, b: i32) -> i32 {
+rite add(a: i32, b: i32) → i32 {
     a + b
 }
 
-fn main() {
+rite main() {
     // Mock: IR would have 2 functions
     println(2);
 }

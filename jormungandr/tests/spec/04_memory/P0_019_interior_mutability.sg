@@ -8,8 +8,8 @@
 // Expected behavior:
 // Should print 99 (after set)
 
-fn main() {
-    let c: !Cell<!i32> = Cell::new(42);
+rite main() {
+    ≔ c: !Cell<!i32> = Cell·new(42);
     c.set(99);
     println(c.get());
 }

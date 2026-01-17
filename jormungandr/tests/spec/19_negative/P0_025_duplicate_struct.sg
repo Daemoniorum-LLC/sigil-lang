@@ -1,19 +1,19 @@
 // EXPECTED: Static type checking should catch this error
-// Negative Test: Duplicate struct definition
+// Negative Test: Duplicate sigil definition
 // Should fail with duplicate error
 // Priority: P0 - Bootstrap Critical
 
-struct Point {
+sigil Point {
     x: i32,
     y: i32,
 }
 
-struct Point {  // ERROR: duplicate struct
+sigil Point {  // ERROR: duplicate struct
     a: i32,
     b: i32,
 }
 
-fn main() {
-    let p = Point { x: 1, y: 2 };
+rite main() {
+    ≔ p = Point { x: 1, y: 2 };
     println(p.x);
 }

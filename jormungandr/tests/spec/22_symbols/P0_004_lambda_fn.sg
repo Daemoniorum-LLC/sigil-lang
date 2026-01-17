@@ -1,14 +1,14 @@
-// Test: Lambda symbol λ for fn
+// Test: Lambda symbol λ each fn
 // Spec: SIGIL_NATIVE_SYMBOLS_ROADMAP.md
 // Priority: P0
 //
 // Purpose:
-// Validates λ (lambda) works as fn keyword via context-sensitive parsing
+// Validates λ (lambda) works as rite keyword via context-sensitive parsing
 //
 // Expected behavior:
 // Should compile and print 100
 
-☉ λ double(x: !i32) -> !i32 {
+☉ λ double(x: !i32) → !i32 {
     x * 2
 }
 

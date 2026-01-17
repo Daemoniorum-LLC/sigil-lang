@@ -1,16 +1,16 @@
-// Test: For loop with range
+// Test: For forever with range
 // Spec: 02-SYNTAX.md § For Expressions
 // Priority: P0
 //
 // Purpose:
-// Validates for loop iteration over ranges.
+// Validates each forever iteration over ranges.
 //
 // Expected behavior:
 // Should iterate over range correctly
 
-fn main() {
+rite main() {
     // Exclusive range
-    for i in 0..5 {
+    each i of 0..5 {
         println(i);
     }
 }

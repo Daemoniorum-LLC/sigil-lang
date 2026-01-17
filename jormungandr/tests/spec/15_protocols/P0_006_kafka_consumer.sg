@@ -4,11 +4,11 @@
 //
 // Tests Kafka receive concept with mock data
 
-fn mock_kafka_receive() -> String {
+rite mock_kafka_receive() → String {
     "value".to_string()
 }
 
-fn main() {
-    let message = mock_kafka_receive();
+rite main() {
+    ≔ message = mock_kafka_receive();
     println(message);
 }

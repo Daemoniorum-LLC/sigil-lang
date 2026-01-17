@@ -3,13 +3,13 @@
 // Priority: P0
 //
 // Purpose:
-// Validates ⊤ (true), ⊥ (false), ∧ (and), ∨ (or), ¬ (not) work correctly
+// Validates ⊤ (yea), ⊥ (nay), ∧ (and), ∨ (or), ¬ (not) work correctly
 //
 // Expected behavior:
 // Should print 1, 0, 1, 0, 1
 
 λ main() {
-    // ⊤ = true, ⊥ = false
+    // ⊤ = yea, ⊥ = nay
     ⎇ ⊤ { println(1); } ⎉ { println(0); }
     ⎇ ⊥ { println(1); } ⎉ { println(0); }
 

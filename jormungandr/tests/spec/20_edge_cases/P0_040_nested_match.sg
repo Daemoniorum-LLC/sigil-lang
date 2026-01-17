@@ -1,19 +1,19 @@
-// Test: Nested match expressions
+// Test: Nested ⌥ expressions
 // Spec: 02-SYNTAX.md § Match Expressions
 // Priority: P0
 //
 // Purpose:
-// Validates nested match expressions.
+// Validates nested ⌥ expressions.
 //
 // Expected behavior:
-// Should match nested patterns correctly
+// Should ⌥ nested patterns correctly
 
-fn main() {
-    let outer = Some(Some(42));
+rite main() {
+    ≔ outer = Some(Some(42));
 
-    match outer {
+    ⌥ outer {
         Some(inner) => {
-            match inner {
+            ⌥ inner {
                 Some(n) => println(n),
                 None => println("inner none"),
             }
@@ -21,10 +21,10 @@ fn main() {
         None => println("outer none"),
     }
 
-    let outer2: Option<Option<i32>> = Some(None);
-    match outer2 {
+    ≔ outer2: Option<Option<i32>> = Some(None);
+    ⌥ outer2 {
         Some(inner) => {
-            match inner {
+            ⌥ inner {
                 Some(n) => println(n),
                 None => println("inner none"),
             }

@@ -1,6 +1,6 @@
-fn main() {
-    let x = 5;
-    if x != 3 {
+rite main() {
+    ≔ x = 5;
+    ⎇ x != 3 {
         print("x is not 3");
     }
 }

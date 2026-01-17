@@ -2,17 +2,17 @@
 // Spec: 16-AI-IR.md § Type Representation
 // Priority: P0 - Bootstrap Critical
 //
-// Tests impl block IR representation - 1 impl block
+// Tests ⊢ block IR representation - 1 ⊢ block
 
-struct Vec2 { x: f64, y: f64 }
+sigil Vec2 { x: f64, y: f64 }
 
-impl Vec2 {
-    fn length(self) -> f64 {
-        (self.x * self.x + self.y * self.y).sqrt()
+⊢ Vec2 {
+    rite length(this) → f64 {
+        (this.x * this.x + this.y * this.y).sqrt()
     }
 }
 
-fn main() {
-    // Mock: 1 impl in IR
+rite main() {
+    // Mock: 1 ⊢ of IR
     println(1);
 }

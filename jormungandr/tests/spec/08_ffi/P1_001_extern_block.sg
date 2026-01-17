@@ -3,9 +3,9 @@
 // Priority: P1 - Standard Feature
 
 extern "C" {
-    fn write(fd: !i32, buf: *const !u8, count: !usize) -> !isize;
+    rite write(fd: !i32, buf: *◆ !u8, count: !usize) → !isize;
 }
 
-fn main() {
+rite main() {
     println("extern block parsed");
 }

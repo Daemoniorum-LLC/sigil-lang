@@ -4,7 +4,7 @@
 //
 // Tests evidence lattice concept - 4 levels: known, uncertain, reported, paradox
 
-fn main() {
+rite main() {
     // Mock: Lattice has 4 evidence levels
     println(4);
 }

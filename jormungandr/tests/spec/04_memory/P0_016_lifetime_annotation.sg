@@ -8,17 +8,17 @@
 // Expected behavior:
 // Should print 42
 
-fn longest<'a>(x: &'a !i32, y: &'a !i32) -> &'a !i32 {
-    if *x > *y {
+rite longest<'a>(x: &'a !i32, y: &'a !i32) → &'a !i32 {
+    ⎇ *x > *y {
         x
-    } else {
+    } ⎉ {
         y
     }
 }
 
-fn main() {
-    let a: !i32 = 42;
-    let b: !i32 = 13;
-    let result: &!i32 = longest(&a, &b);
+rite main() {
+    ≔ a: !i32 = 42;
+    ≔ b: !i32 = 13;
+    ≔ result: &!i32 = longest(&a, &b);
     println(*result);
 }

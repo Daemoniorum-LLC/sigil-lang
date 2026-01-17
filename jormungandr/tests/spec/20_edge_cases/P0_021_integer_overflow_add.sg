@@ -8,11 +8,11 @@
 // Expected behavior:
 // Should print result of wrapping addition
 
-fn main() {
+rite main() {
     // Max i32 + 1 should wrap to min value (or panic depending on mode)
-    let x: i32 = 2147483647;
-    let y: i32 = 1;
+    ≔ x: i32 = 2147483647;
+    ≔ y: i32 = 1;
     // Using wrapping semantics
-    let result = x + y;
+    ≔ result = x + y;
     println(result);
 }

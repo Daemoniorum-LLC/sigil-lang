@@ -271,42 +271,38 @@ pub enum Token {
     #[token("/*", block_comment_callback)]
     BlockComment(String),
 
-    // === Keywords ===
-    #[token("fn")]
+    // === Keywords (Sigil-native only - Rust purged) ===
+    // Note: λ/Λ handled by Token::Lambda - parser is context-aware
+    #[token("rite")] // rite (ritual/spell) for function
     Fn,
     #[token("async")]
     Async,
-    #[token("let")]
-    #[token("≔")] // Sigil-native: ≔ (definition) = let
+    #[token("≔")] // definition operator
     Let,
-    #[token("mut")]
+    // Note: ∆ handled by Token::Delta - parser is context-aware
+    #[token("vary")] // vary for mutable
     Mut,
-    #[token("const")]
-    #[token("◆")] // Sigil-native: ◆ (diamond) = const
+    #[token("◆")] // diamond for const
     Const,
     #[token("linear")]
     Linear,
     #[token("type")]
     Type,
-    #[token("struct")]
-    #[token("sigil")] // Alternative syntax for struct
+    // Note: Σ handled by Token::Sigma - parser is context-aware
+    #[token("sigil")] // sigil for struct
     Struct,
-    #[token("enum")]
-    #[token("ᛈ")] // Sigil-native: ᛈ (perthro rune) = enum
+    #[token("ᛈ")] // perthro rune for enum
     Enum,
-    #[token("trait")]
+    // Note: Θ handled by Token::Theta - parser is context-aware
+    #[token("aspect")] // aspect for trait
     Trait,
-    #[token("impl")]
-    #[token("⊢")] // Sigil-native: ⊢ (turnstile) = impl
+    #[token("⊢")] // turnstile for impl
     Impl,
-    #[token("mod")]
-    #[token("scroll")] // Sigil-native: scroll = mod
+    #[token("scroll")] // scroll for module
     Mod,
-    #[token("use")]
-    #[token("invoke")] // Sigil-native: invoke = use
+    #[token("invoke")] // invoke for use/import
     Use,
-    #[token("pub")]
-    #[token("☉")] // Sigil-native: ☉ (sun) = pub
+    #[token("☉")] // sun for public
     Pub,
     #[token("actor")]
     Actor,
@@ -321,54 +317,49 @@ pub enum Token {
     #[token("macro_rules")]
     MacroRules,
 
-    // Control flow
-    #[token("if")]
-    #[token("⎇")] // Sigil-native: ⎇ (ISO branch) = if
+    // Control flow (Sigil-native only)
+    #[token("⎇")] // ISO branch symbol for if
     If,
-    #[token("else")]
-    #[token("⎉")] // Sigil-native: ⎉ (ISO alternative) = else
+    #[token("⎉")] // ISO alternative symbol for else
     Else,
-    #[token("match")]
-    #[token("⌥")] // Sigil-native: ⌥ (option key) = match
+    #[token("⌥")] // option key symbol for match
     Match,
-    #[token("loop")]
-    // Note: ∞ handled via Token::Infinity in parser
+    // Note: ∞ handled by Token::Infinity - parser is context-aware
+    #[token("forever")] // forever for infinite loop
     Loop,
-    #[token("while")]
-    #[token("⟳")] // Sigil-native: ⟳ (cycle) = while
+    #[token("⟳")] // cycle arrow for while
     While,
-    #[token("for")]
+    // Note: ∀ handled by Token::ForAll - parser is context-aware
+    #[token("each")] // each for iteration
     For,
-    #[token("in")]
+    // Note: ∈ handled by Token::ElementOf - parser is context-aware
+    #[token("of")] // of for membership
     In,
-    #[token("break")]
-    // Note: ⊗ handled via Token::Tensor in parser
+    #[token("⊲")] // left triangle for break
     Break,
-    #[token("continue")]
-    // Note: ↻ handled via Token::CycleArrow in parser
+    #[token("⊳")] // right triangle for continue
     Continue,
-    #[token("return")]
-    #[token("⤺")] // Sigil-native: ⤺ (return arrow) = return
+    #[token("⤺")] // return arrow
     Return,
     #[token("yield")]
     Yield,
     #[token("await")]
     Await,
 
-    // Other keywords
-    #[token("self")]
+    // Other keywords (Sigil-native only)
+    // Note: ξ/Ξ handled by Token::Xi - parser is context-aware
+    #[token("this")] // this for self reference
     SelfLower,
-    #[token("Self")]
+    #[token("This")] // This for Self type
     SelfUpper,
-    #[token("super")]
+    // Note: ↑ handled by Token::IntensityUp - parser is context-aware
+    #[token("above")] // above for super/parent
     Super,
-    #[token("crate")]
-    #[token("tome")] // Sigil-native: tome = crate
+    #[token("tome")] // tome for crate
     Crate,
-    #[token("where")]
-    #[token("∋")] // Sigil-native: ∋ (such that) = where
+    #[token("∋")] // such that for where clauses
     Where,
-    #[token("as")]
+    #[token("as")] // type casting - no better symbolic alternative
     As,
     #[token("dyn")]
     Dyn,
@@ -437,10 +428,11 @@ pub enum Token {
     #[token("@‽")]
     AlterSourceBlended,
 
-    // Boolean literals
-    #[token("true")]
+    // Boolean literals (Sigil-native only)
+    // Note: ⊤/⊥ handled by Token::Top/Bottom - parser is context-aware
+    #[token("yea")] // yea for true
     True,
-    #[token("false")]
+    #[token("nay")] // nay for false
     False,
 
     // Null literal
@@ -458,7 +450,7 @@ pub enum Token {
 
     #[token("σ")]
     #[token("Σ")]
-    Sigma, // Sort (lowercase) / Sum (uppercase)
+    Sigma, // Sort/Sum - also struct in declaration context
 
     #[token("ρ")]
     #[token("Ρ")]
@@ -466,7 +458,7 @@ pub enum Token {
 
     #[token("λ")]
     #[token("Λ")]
-    Lambda, // Lambda
+    Lambda, // Lambda - also fn in declaration context
 
     #[token("Π")]
     Pi, // Product
@@ -784,10 +776,9 @@ pub enum Token {
     // === Operators ===
     #[token("|")]
     Pipe,
-    #[token("·")]
-    MiddleDot, // Incorporation
-    #[token("->")]
-    #[token("→")] // U+2192 RIGHTWARDS ARROW
+    #[token("·")] // middle dot - Sigil path separator (Rust :: purged)
+    MiddleDot,
+    #[token("→")] // rightwards arrow (Rust -> purged)
     Arrow,
     #[token("=>")]
     FatArrow,
@@ -817,9 +808,9 @@ pub enum Token {
     Percent,
     #[token("**")]
     StarStar, // Exponentiation
-    #[token("&&")]
+    // Note: ∧/∨ handled by Token::LogicAnd/LogicOr - parser is context-aware
+    // AndAnd and OrOr tokens kept for compatibility but won't lex anything
     AndAnd,
-    #[token("||")]
     OrOr,
     #[token("!")]
     Bang, // Evidentiality: known / logical not
@@ -863,8 +854,7 @@ pub enum Token {
     DotDotEq,
     #[token("++")]
     PlusPlus, // Concatenation
-    #[token("::")]
-    // Note: · handled via Token::MiddleDot in parser
+    // ColonColon now uses · (MiddleDot handles this - Rust :: purged)
     ColonColon,
     #[token(":")]
     Colon,

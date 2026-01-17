@@ -3,13 +3,13 @@
 // Priority: P0
 //
 // Purpose:
-// Validates ∞ (loop), ⊗ (break), ↻ (continue) work correctly
+// Validates ∞ (loop), ⊗ (⊲), ↻ (⊳) work correctly
 //
 // Expected behavior:
 // Should print 0, 1, 2, 100
 
 λ main() {
-    ≔ mut i: !i32 = 0;
+    ≔ vary i: !i32 = 0;
 
     ∞ {
         println(i);

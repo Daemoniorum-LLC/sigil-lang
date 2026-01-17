@@ -3,21 +3,21 @@
 // Priority: P0
 //
 // Purpose:
-// Validates pattern binding while matching.
+// Validates pattern binding ⟳ matching.
 //
 // Expected behavior:
-// Should bind values while matching
+// Should bind values ⟳ matching
 
-fn describe(opt: Option<i32>) {
-    match opt {
-        Some(n) if n > 100 => println("large"),
-        Some(n) if n < 0 => println("negative"),
+rite describe(opt: Option<i32>) {
+    ⌥ opt {
+        Some(n) ⎇ n > 100 => println("large"),
+        Some(n) ⎇ n < 0 => println("negative"),
         Some(n) => println(n),
         None => println("none"),
     }
 }
 
-fn main() {
+rite main() {
     describe(Some(200));
     describe(Some(-5));
     describe(Some(42));

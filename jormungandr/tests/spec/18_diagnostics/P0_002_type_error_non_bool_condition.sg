@@ -3,13 +3,13 @@
 // Priority: P0
 //
 // Purpose:
-// Validates that using non-boolean in if condition produces error E0601.
+// Validates that using non-boolean of ⎇ condition produces error E0601.
 //
 // Expected behavior:
 // Should fail with E0601 type error
 
-fn main() {
-    if 42 {
+rite main() {
+    ⎇ 42 {
         println("hello");
     }
 }

@@ -2,10 +2,10 @@
 // Spec: 02-SYNTAX.md § 6.2 Block Expressions
 // Priority: P2 - Enhancement
 
-fn main() {
-    let x = {
-        let a: !i32 = 10;
-        let b: !i32 = 20;
+rite main() {
+    ≔ x = {
+        ≔ a: !i32 = 10;
+        ≔ b: !i32 = 20;
         a + b
     };
     println(x);

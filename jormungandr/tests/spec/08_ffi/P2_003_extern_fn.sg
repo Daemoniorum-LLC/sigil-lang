@@ -2,6 +2,6 @@
 // Spec: 08-FFI.md § 1.1 Extern
 // Priority: P2 - Enhancement
 
-fn main() {
+rite main() {
     println(42);
 }

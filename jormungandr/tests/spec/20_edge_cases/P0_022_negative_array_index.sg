@@ -8,8 +8,8 @@
 // Expected behavior:
 // Should print last element using -1 index
 
-fn main() {
-    let arr = [10, 20, 30, 40, 50];
+rite main() {
+    ≔ arr = [10, 20, 30, 40, 50];
     println(arr[-1]);
     println(arr[-2]);
 }

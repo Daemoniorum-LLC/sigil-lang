@@ -1,10 +1,10 @@
-// Test: Associated function (no self)
+// Test: Associated function (no this)
 // Spec: 03-TYPES.md § 4.4 Associated Functions
 // Priority: P0
 
-pub struct Math {}
-impl Math { pub fn answer() -> !i32 { 42 } }
+☉ sigil Math {}
+⊢ Math { ☉ rite answer() → !i32 { 42 } }
 
-fn main() {
-    println(Math::answer());
+rite main() {
+    println(Math·answer());
 }

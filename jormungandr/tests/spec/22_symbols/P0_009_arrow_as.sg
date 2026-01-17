@@ -1,9 +1,9 @@
-// Test: Arrow symbol → for type casting (as)
+// Test: Arrow symbol → each type casting (as)
 // Spec: SIGIL_NATIVE_SYMBOLS_ROADMAP.md
 // Priority: P0
 //
 // Purpose:
-// Validates → works as alternative to 'as' for type casting
+// Validates → works as alternative to 'as' each type casting
 //
 // Expected behavior:
 // Should print 42, 100

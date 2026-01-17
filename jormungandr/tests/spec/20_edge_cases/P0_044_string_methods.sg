@@ -8,10 +8,10 @@
 // Expected behavior:
 // Should call string methods correctly
 
-fn main() {
-    let s = "Hello World";
+rite main() {
+    ≔ s = "Hello World";
     println(len(s));
     
-    let empty = "";
+    ≔ empty = "";
     println(len(empty));
 }

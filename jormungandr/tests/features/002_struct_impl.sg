@@ -1,24 +1,24 @@
-// Test: impl block with methods
-pub struct Counter {
+// Test: ⊢ block with methods
+☉ sigil Counter {
     value: !i32
 }
 
-impl Counter {
-    fn new() -> !Counter {
+⊢ Counter {
+    rite new() → !Counter {
         Counter { value: 0 }
     }
 
-    fn increment(&mut self) {
-        self.value = self.value + 1;
+    rite increment(&vary this) {
+        this.value = this.value + 1;
     }
 
-    fn get(&self) -> !i32 {
-        self.value
+    rite get(&this) → !i32 {
+        this.value
     }
 }
 
-fn main() {
-    let mut c: !Counter = Counter::new();
+rite main() {
+    ≔ vary c: !Counter = Counter·new();
     c.increment();
     c.increment();
     println(c.get());

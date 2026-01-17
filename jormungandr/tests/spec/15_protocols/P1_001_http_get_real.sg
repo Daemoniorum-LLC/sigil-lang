@@ -4,12 +4,12 @@
 //
 // Tests HTTP status code helper functions (always available)
 
-fn main() {
+rite main() {
     // Test http_status_text
-    let text = http_status_text(200);
-    if text == "OK" {
+    ≔ text = http_status_text(200);
+    ⎇ text == "OK" {
         println("OK");
-    } else {
+    } ⎉ {
         println(text);
     }
 }

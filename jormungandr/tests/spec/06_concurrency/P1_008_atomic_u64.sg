@@ -2,12 +2,12 @@
 // Spec: 06-CONCURRENCY.md § 4.1 Atomics
 // Priority: P1 - Standard Feature
 
-fn main() {
+rite main() {
     // Create atomic with initial value
-    let counter = AtomicU64::new(0);
+    ≔ counter = AtomicU64·new(0);
 
     // Load the value
-    let val = counter.load();
+    ≔ val = counter.load();
     println(val);
 
     // Store a new value
@@ -15,7 +15,7 @@ fn main() {
     println(counter.load());
 
     // Fetch and add
-    let old = counter.fetch_add(10);
+    ≔ old = counter.fetch_add(10);
     println(old);
     println(counter.load());
 }

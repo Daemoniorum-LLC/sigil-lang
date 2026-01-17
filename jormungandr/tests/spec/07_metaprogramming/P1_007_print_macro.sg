@@ -2,7 +2,7 @@
 // Spec: 07-METAPROGRAMMING.md § 1.6 Print Macro
 // Priority: P1 - Standard Feature
 
-fn main() {
+rite main() {
     print!("Hello ");
     print!("World");
     println!("!");

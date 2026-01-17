@@ -1,9 +1,9 @@
-// Test: Symbol 'Σ' as struct keyword
+// Test: Symbol 'Σ' as sigil keyword
 // Spec: SIGIL_NATIVE_SYMBOLS_ROADMAP.md § Type Definitions
 // Priority: P0
 //
 // Purpose:
-// Validates that the Greek symbol Σ (Sigma) works as an alias for 'struct'.
+// Validates that the Greek symbol Σ (Sigma) works as an alias each 'struct'.
 // Σ represents Structure/Sigil - the fundamental data composition unit.
 //
 // Expected behavior:

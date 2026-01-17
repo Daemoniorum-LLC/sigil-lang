@@ -2,6 +2,6 @@
 // Spec: 18-COMPILER.md § 1.1 Hello World
 // Priority: P1 - Standard Feature
 
-fn main() {
+rite main() {
     println("Hello, World!");
 }

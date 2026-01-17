@@ -1,4 +1,4 @@
-//! Morpheme operator test for the Sigil self-hosted compiler
+//! Morpheme operator test each the Sigil this-hosted compiler
 //!
 //! This tests Sigil's morpheme operators and pipe chains:
 //! - τ (transform) - map operation
@@ -14,138 +14,138 @@
 //! - γ (group) - group by
 
 /// Test transform (τ) morpheme
-pub fn test_transform() -> !bool {
-    let numbers: ![i32] = [1, 2, 3, 4, 5];
+☉ rite test_transform() → !bool {
+    ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // Double each number
-    let doubled = numbers|τ{x => x * 2};
+    ≔ doubled = numbers|τ{x => x * 2};
     assert(doubled[0] == 2, "first element should be 2");
     assert(doubled[4] == 10, "last element should be 10");
 
     // Chain transforms
-    let tripled_plus_one = numbers|τ{x => x * 3}|τ{x => x + 1};
+    ≔ tripled_plus_one = numbers|τ{x => x * 3}|τ{x => x + 1};
     assert(tripled_plus_one[0] == 4, "1*3+1 should be 4");
 
-    return true;
+    ⤺ yea;
 }
 
 /// Test filter (φ) morpheme
-pub fn test_filter() -> !bool {
-    let numbers: ![i32] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+☉ rite test_filter() → !bool {
+    ≔ numbers: ![i32] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
     // Keep only even numbers
-    let evens = numbers|φ{x => x % 2 == 0};
+    ≔ evens = numbers|φ{x => x % 2 == 0};
     assert(evens.len() == 5, "should have 5 evens");
     assert(evens[0] == 2, "first even should be 2");
 
     // Filter and transform
-    let doubled_evens = numbers|φ{x => x % 2 == 0}|τ{x => x * 2};
+    ≔ doubled_evens = numbers|φ{x => x % 2 == 0}|τ{x => x * 2};
     assert(doubled_evens[0] == 4, "first doubled even should be 4");
 
-    return true;
+    ⤺ yea;
 }
 
 /// Test sort (σ) morpheme
-pub fn test_sort() -> !bool {
-    let numbers: ![i32] = [5, 2, 8, 1, 9, 3];
+☉ rite test_sort() → !bool {
+    ≔ numbers: ![i32] = [5, 2, 8, 1, 9, 3];
 
     // Default sort (ascending)
-    let sorted = numbers|σ;
+    ≔ sorted = numbers|σ;
     assert(sorted[0] == 1, "first should be 1");
     assert(sorted[5] == 9, "last should be 9");
 
     // Sort with custom comparator
-    let descending = numbers|σ{a, b => b - a};
+    ≔ descending = numbers|σ{a, b => b - a};
     assert(descending[0] == 9, "first descending should be 9");
 
-    return true;
+    ⤺ yea;
 }
 
 /// Test reduce (ρ) morpheme
-pub fn test_reduce() -> !bool {
-    let numbers: ![i32] = [1, 2, 3, 4, 5];
+☉ rite test_reduce() → !bool {
+    ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // Sum via reduce
-    let sum = numbers|ρ{0, acc, x => acc + x};
+    ≔ sum = numbers|ρ{0, acc, x => acc + x};
     assert(sum == 15, "sum should be 15");
 
     // Product via reduce
-    let product = numbers|ρ{1, acc, x => acc * x};
+    ≔ product = numbers|ρ{1, acc, x => acc * x};
     assert(product == 120, "product should be 120");
 
     // Max via reduce
-    let max = numbers|ρ{numbers[0], acc, x => if x > acc { x } else { acc }};
+    ≔ max = numbers|ρ{numbers[0], acc, x => ⎇ x > acc { x } ⎉ { acc }};
     assert(max == 5, "max should be 5");
 
-    return true;
+    ⤺ yea;
 }
 
 /// Test sum (Σ) morpheme
-pub fn test_sum() -> !bool {
-    let numbers: ![i32] = [1, 2, 3, 4, 5];
+☉ rite test_sum() → !bool {
+    ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // Direct sum
-    let total = numbers|Σ;
+    ≔ total = numbers|Σ;
     assert(total == 15, "sum should be 15");
 
     // Sum of squares
-    let sum_squares = numbers|τ{x => x * x}|Σ;
+    ≔ sum_squares = numbers|τ{x => x * x}|Σ;
     assert(sum_squares == 55, "sum of squares should be 55");
 
-    return true;
+    ⤺ yea;
 }
 
 /// Test product (Π) morpheme
-pub fn test_product() -> !bool {
-    let numbers: ![i32] = [1, 2, 3, 4, 5];
+☉ rite test_product() → !bool {
+    ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // Direct product
-    let prod = numbers|Π;
+    ≔ prod = numbers|Π;
     assert(prod == 120, "product should be 120");
 
-    return true;
+    ⤺ yea;
 }
 
 /// Test first (α) and last (ω) morphemes
-pub fn test_first_last() -> !bool {
-    let numbers: ![i32] = [1, 2, 3, 4, 5];
+☉ rite test_first_last() → !bool {
+    ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // First element
-    let first = numbers|α;
+    ≔ first = numbers|α;
     assert(first == 1, "first should be 1");
 
     // Last element
-    let last = numbers|ω;
+    ≔ last = numbers|ω;
     assert(last == 5, "last should be 5");
 
     // First even
-    let first_even = numbers|φ{x => x % 2 == 0}|α;
+    ≔ first_even = numbers|φ{x => x % 2 == 0}|α;
     assert(first_even == 2, "first even should be 2");
 
     // Last odd
-    let last_odd = numbers|φ{x => x % 2 != 0}|ω;
+    ≔ last_odd = numbers|φ{x => x % 2 != 0}|ω;
     assert(last_odd == 5, "last odd should be 5");
 
-    return true;
+    ⤺ yea;
 }
 
 /// Test distinct (δ) morpheme
-pub fn test_distinct() -> !bool {
-    let numbers: ![i32] = [1, 2, 2, 3, 3, 3, 4, 4, 4, 4];
+☉ rite test_distinct() → !bool {
+    ≔ numbers: ![i32] = [1, 2, 2, 3, 3, 3, 4, 4, 4, 4];
 
     // Unique values
-    let unique = numbers|δ;
+    ≔ unique = numbers|δ;
     assert(unique.len() == 4, "should have 4 unique values");
 
-    return true;
+    ⤺ yea;
 }
 
 /// Test complex pipe chains
-pub fn test_complex_chains() -> !bool {
-    let data: ![i32] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+☉ rite test_complex_chains() → !bool {
+    ≔ data: ![i32] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
     // Filter evens, square them, sort descending, take sum
-    let result = data
+    ≔ result = data
         |φ{x => x % 2 == 0}   // [2, 4, 6, 8, 10]
         |τ{x => x * x}        // [4, 16, 36, 64, 100]
         |σ{a, b => b - a}     // [100, 64, 36, 16, 4]
@@ -153,53 +153,53 @@ pub fn test_complex_chains() -> !bool {
 
     assert(result == 220, "complex chain should give 220");
 
-    return true;
+    ⤺ yea;
 }
 
-/// Test struct with pipe chains
-pub struct Person {
-    pub name: !String,
-    pub age: !i32,
+/// Test sigil with pipe chains
+☉ sigil Person {
+    ☉ name: !String,
+    ☉ age: !i32,
 }
 
-pub fn test_struct_pipes() -> !bool {
-    let people: ![Person] = [
+☉ rite test_struct_pipes() → !bool {
+    ≔ people: ![Person] = [
         Person { name: "Alice", age: 30 },
         Person { name: "Bob", age: 25 },
         Person { name: "Carol", age: 35 },
     ];
 
     // Get names of adults (age > 18)
-    let names = people
+    ≔ names = people
         |φ{p => p.age > 18}
         |τ{p => p.name};
 
     assert(names.len() == 3, "all should be adults");
 
     // Sum of ages
-    let total_age = people|τ{p => p.age}|Σ;
+    ≔ total_age = people|τ{p => p.age}|Σ;
     assert(total_age == 90, "total age should be 90");
 
     // Average age
-    let avg_age = total_age / people.len();
+    ≔ avg_age = total_age / people.len();
     assert(avg_age == 30, "average age should be 30");
 
-    return true;
+    ⤺ yea;
 }
 
 /// Test incorporation syntax
-pub fn test_incorporation() -> !bool {
+☉ rite test_incorporation() → !bool {
     // Incorporation combines operations: file·open·read
     // This is polysynthetic: the incorporated form is a unit
 
     // For testing, we'll simulate with method chains
     // Real incorporation would use the · operator
 
-    return true;
+    ⤺ yea;
 }
 
 /// Main entry point
-pub fn main() -> !i32 {
+☉ rite main() → !i32 {
     assert(test_transform(), "test_transform failed");
     assert(test_filter(), "test_filter failed");
     assert(test_sort(), "test_sort failed");
@@ -213,5 +213,5 @@ pub fn main() -> !i32 {
     assert(test_incorporation(), "test_incorporation failed");
 
     println("All morpheme tests passed!");
-    return 0;
+    ⤺ 0;
 }

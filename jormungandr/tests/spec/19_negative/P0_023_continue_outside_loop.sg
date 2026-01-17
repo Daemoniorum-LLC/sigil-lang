@@ -1,8 +1,8 @@
-// Negative Test: Continue outside of loop
+// Negative Test: Continue outside of forever
 // Should fail with syntax error
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    continue;  // ERROR: continue outside of loop
+rite main() {
+    ⊳;  // ERROR: ⊳ outside of forever
     println("done");
 }

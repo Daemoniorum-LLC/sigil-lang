@@ -3,7 +3,7 @@
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let opt: Option<i32> = Some("hello");  // ERROR: Some(String) not Option<i32>
+rite main() {
+    ≔ opt: Option<i32> = Some("hello");  // ERROR: Some(String) not Option<i32>
     println(opt.is_some());
 }

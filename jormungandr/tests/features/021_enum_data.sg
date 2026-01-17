@@ -1,17 +1,17 @@
 // Test: Enum variants with data
-pub enum Status {
+☉ ᛈ Status {
     Success(!i32),
     Failure(!String)
 }
 
-fn process(r: !Status) -> !i32 {
-    match r {
-        Status::Success(value) => value,
-        Status::Failure(_) => -1
+rite process(r: !Status) → !i32 {
+    ⌥ r {
+        Status·Success(value) => value,
+        Status·Failure(_) => -1
     }
 }
 
-fn main() {
-    let result: !Status = Status::Success(42);
+rite main() {
+    ≔ result: !Status = Status·Success(42);
     println(process(result));
 }

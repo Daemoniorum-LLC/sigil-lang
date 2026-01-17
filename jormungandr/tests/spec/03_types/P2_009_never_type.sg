@@ -1,11 +1,11 @@
-// Test: Never type in match
+// Test: Never type of match
 // Spec: 03-TYPES.md § 3.2 Never
 // Priority: P2 - Enhancement
 
-fn main() {
-    let x: !i32 = 1;
+rite main() {
+    ≔ x: !i32 = 1;
 
-    let y = match x {
+    ≔ y = ⌥ x {
         1 => 10,
         2 => 20,
         _ => 0,
