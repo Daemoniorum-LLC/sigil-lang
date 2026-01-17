@@ -1,32 +1,32 @@
 // Oracle - Explainability Infrastructure
 // Understanding is the foundation of trust
 
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use shared::{
+invoke std·collections·HashMap;
+invoke std·hash·{Hash, Hasher};
+invoke shared·{
     Timestamp, Value, Confidence, EntityId,
 };
 
 // Semantic indexing for reasoning traces
-pub scroll semantic;
-pub use semantic::{SemanticIndex, SemanticConfig, SemanticResult, ResultType};
+☉ scroll semantic;
+☉ invoke semantic·{SemanticIndex, SemanticConfig, SemanticResult, ResultType};
 
 // ============================================================================
 // Core Types
 // ============================================================================
 
 /// Marker types for oracle-specific IDs
-pub struct ExplainableMarker;
-pub struct StepMarker;
+☉ sigil ExplainableMarker;
+☉ sigil StepMarker;
 
 /// Explainable identifier
-pub type ExplainableId = shared::Id<ExplainableMarker>;
+☉ type ExplainableId = shared·Id<ExplainableMarker>;
 /// Step identifier
-pub type StepId = shared::Id<StepMarker>;
+☉ type StepId = shared·Id<StepMarker>;
 
-impl StepId {
-    pub fn to_short(&self) -> String {
-        let bytes = self.bytes();
+⊢ StepId {
+    ☉ rite to_short(&this) → String {
+        ≔ bytes = this.bytes();
         format!("{:02x}{:02x}", bytes[0], bytes[1])
     }
 }
@@ -35,21 +35,21 @@ impl StepId {
 // Explainable Trait
 // ============================================================================
 
-pub trait Explainable {
-    fn id(&self) -> ExplainableId;
-    fn description(&self) -> String;
-    fn factors(&self) -> Vec<Factor>;
+☉ aspect Explainable {
+    rite id(&this) → ExplainableId;
+    rite description(&this) → String;
+    rite factors(&this) → Vec<Factor>;
 }
 
-pub struct Factor {
-    pub name: String,
-    pub value: f32,
-    pub description: String,
+☉ sigil Factor {
+    ☉ name: String,
+    ☉ value: f32,
+    ☉ description: String,
 }
 
-impl Clone for Factor {
-    fn clone(&self) -> Self {
-        Self { name: self.name.clone(), value: self.value, description: self.description.clone() }
+⊢ Factor : Clone {
+    rite clone(&this) → This {
+        This { name: this.name.clone(), value: this.value, description: this.description.clone() }
     }
 }
 
@@ -58,7 +58,7 @@ impl Clone for Factor {
 // ============================================================================
 
 #[derive(Copy, Clone)]
-pub enum ExplanationLevel {
+☉ ᛈ ExplanationLevel {
     Brief,
     Standard,
     Full,
@@ -69,61 +69,61 @@ pub enum ExplanationLevel {
 // Explanation Structure
 // ============================================================================
 
-pub struct Explanation {
-    pub decision: String,
-    pub summary: String,
-    pub reasoning: ReasoningChain,
-    pub evidence: Vec<Evidence>,
-    pub confidence: ConfidenceAssessment,
-    pub alternatives: Vec<Alternative>,
-    pub uncertainties: Vec<Uncertainty>,
-    pub level: ExplanationLevel,
+☉ sigil Explanation {
+    ☉ decision: String,
+    ☉ summary: String,
+    ☉ reasoning: ReasoningChain,
+    ☉ evidence: Vec<Evidence>,
+    ☉ confidence: ConfidenceAssessment,
+    ☉ alternatives: Vec<Alternative>,
+    ☉ uncertainties: Vec<Uncertainty>,
+    ☉ level: ExplanationLevel,
 }
 
-impl Explanation {
-    pub fn summary(&self) -> &str { &self.summary }
+⊢ Explanation {
+    ☉ rite summary(&this) → &str { &this.summary }
 
-    pub fn reasoning(&self) -> String {
-        self.reasoning.to_prose()
+    ☉ rite reasoning(&this) → String {
+        this.reasoning.to_prose()
     }
 
-    pub fn evidence(&self) -> &[Evidence] { &self.evidence }
+    ☉ rite evidence(&this) → &[Evidence] { &this.evidence }
 
-    pub fn alternatives_considered(&self) -> &[Alternative] { &self.alternatives }
+    ☉ rite alternatives_considered(&this) → &[Alternative] { &this.alternatives }
 
-    pub fn confidence(&self) -> Confidence { self.confidence.overall }
+    ☉ rite confidence(&this) → Confidence { this.confidence.overall }
 
-    pub fn to_human_readable(&self) -> String {
-        let mut output = String::new();
+    ☉ rite to_human_readable(&this) → String {
+        ≔ vary output = String·new();
 
-        output.push_str(&format!("{}\n\n", self.summary));
+        output.push_str(&format!("{}\n\n", this.summary));
 
-        if self.level as u8 >= ExplanationLevel::Standard as u8 {
+        ⎇ this.level as u8 >= ExplanationLevel·Standard as u8 {
             output.push_str("Reasoning:\n");
-            output.push_str(&self.reasoning.to_prose());
+            output.push_str(&this.reasoning.to_prose());
             output.push_str("\n\n");
         }
 
-        if self.level as u8 >= ExplanationLevel::Standard as u8 && !self.evidence.is_empty() {
+        ⎇ this.level as u8 >= ExplanationLevel·Standard as u8 && !this.evidence.is_empty() {
             output.push_str("Based on:\n");
-            for e in &self.evidence {
+            each e of &this.evidence {
                 output.push_str(&format!("  - {} ({})\n", e.content, e.source));
             }
             output.push_str("\n");
         }
 
-        output.push_str(&format!("Confidence: {:.0}%", self.confidence.overall.value() * 100.0));
+        output.push_str(&format!("Confidence: {:.0}%", this.confidence.overall.value() * 100.0));
 
-        if !self.uncertainties.is_empty() {
+        ⎇ !this.uncertainties.is_empty() {
             output.push_str("\n\nUncertainties:\n");
-            for u in &self.uncertainties {
+            each u of &this.uncertainties {
                 output.push_str(&format!("  - {}\n", u.description));
             }
         }
 
-        if self.level as u8 >= ExplanationLevel::Full as u8 && !self.alternatives.is_empty() {
+        ⎇ this.level as u8 >= ExplanationLevel·Full as u8 && !this.alternatives.is_empty() {
             output.push_str("\nAlternatives considered:\n");
-            for alt in &self.alternatives {
+            each alt of &this.alternatives {
                 output.push_str(&format!("  - {}: {}\n", alt.option, alt.rejection_reason));
             }
         }
@@ -136,39 +136,39 @@ impl Explanation {
 // Reasoning Chain
 // ============================================================================
 
-pub struct ReasoningChain {
+☉ sigil ReasoningChain {
     steps: Vec<ReasoningStep>,
 }
 
-impl ReasoningChain {
-    pub fn new() -> Self { Self { steps: vec![] } }
+⊢ ReasoningChain {
+    ☉ rite new() → This { This { steps: vec![] } }
 
-    pub fn add(&mut self, step: ReasoningStep) { self.steps.push(step); }
+    ☉ rite add(&vary this, step: ReasoningStep) { this.steps.push(step); }
 
-    pub fn steps(&self) -> &[ReasoningStep] { &self.steps }
+    ☉ rite steps(&this) → &[ReasoningStep] { &this.steps }
 
-    pub fn to_prose(&self) -> String {
-        self.steps.iter()
+    ☉ rite to_prose(&this) → String {
+        this.steps.iter()
             .enumerate()
             .map(|(i, s)| format!("{}. {}", i + 1, s.description))
-            .collect::<Vec<_>>()
+            .collect·<Vec<_>>()
             .join("\n")
     }
 }
 
-pub struct ReasoningStep {
-    pub id: StepId,
-    pub step_type: StepType,
-    pub description: String,
-    pub inputs: Vec<StepInput>,
-    pub output: Option<StepOutput>,
-    pub reasoning: String,
-    pub confidence: Confidence,
-    pub timestamp: Timestamp,
+☉ sigil ReasoningStep {
+    ☉ id: StepId,
+    ☉ step_type: StepType,
+    ☉ description: String,
+    ☉ inputs: Vec<StepInput>,
+    ☉ output: Option<StepOutput>,
+    ☉ reasoning: String,
+    ☉ confidence: Confidence,
+    ☉ timestamp: Timestamp,
 }
 
 #[derive(Clone)]
-pub enum StepType {
+☉ ᛈ StepType {
     Observation,
     Retrieval,
     Inference,
@@ -178,31 +178,31 @@ pub enum StepType {
     Action,
 }
 
-pub struct StepInput {
-    pub name: String,
-    pub value: Value,
-    pub source: Option<String>,
+☉ sigil StepInput {
+    ☉ name: String,
+    ☉ value: Value,
+    ☉ source: Option<String>,
 }
 
-pub struct StepOutput {
-    pub value: Value,
-    pub confidence: Confidence,
+☉ sigil StepOutput {
+    ☉ value: Value,
+    ☉ confidence: Confidence,
 }
 
 // ============================================================================
 // Evidence
 // ============================================================================
 
-pub struct Evidence {
-    pub content: String,
-    pub source: String,
-    pub evidence_type: EvidenceType,
-    pub weight: Confidence,
-    pub epistemic: Epistemic,
+☉ sigil Evidence {
+    ☉ content: String,
+    ☉ source: String,
+    ☉ evidence_type: EvidenceType,
+    ☉ weight: Confidence,
+    ☉ epistemic: Epistemic,
 }
 
 #[derive(Clone)]
-pub enum EvidenceType {
+☉ ᛈ EvidenceType {
     DirectObservation,
     Memory,
     Inference,
@@ -211,7 +211,7 @@ pub enum EvidenceType {
 }
 
 #[derive(Copy, Clone)]
-pub enum Epistemic {
+☉ ᛈ Epistemic {
     Certain,
     HighConfidence,
     MediumConfidence,
@@ -223,169 +223,169 @@ pub enum Epistemic {
 // Alternatives and Uncertainties
 // ============================================================================
 
-pub struct Alternative {
-    pub option: String,
-    pub description: String,
-    pub rejection_reason: String,
-    pub score: Option<f32>,
+☉ sigil Alternative {
+    ☉ option: String,
+    ☉ description: String,
+    ☉ rejection_reason: String,
+    ☉ score: Option<f32>,
 }
 
-pub struct Uncertainty {
-    pub description: String,
-    pub affects: Vec<String>,
-    pub impact: String,
+☉ sigil Uncertainty {
+    ☉ description: String,
+    ☉ affects: Vec<String>,
+    ☉ impact: String,
 }
 
 // ============================================================================
 // Confidence Assessment
 // ============================================================================
 
-pub struct ConfidenceAssessment {
-    pub overall: Confidence,
-    pub evidence_strength: Confidence,
-    pub reasoning_validity: Confidence,
-    pub experience_relevance: Confidence,
-    pub uncertainties: Vec<UncertaintyFactor>,
+☉ sigil ConfidenceAssessment {
+    ☉ overall: Confidence,
+    ☉ evidence_strength: Confidence,
+    ☉ reasoning_validity: Confidence,
+    ☉ experience_relevance: Confidence,
+    ☉ uncertainties: Vec<UncertaintyFactor>,
 }
 
-pub struct UncertaintyFactor {
-    pub factor: String,
-    pub impact: Confidence,
-    pub description: String,
+☉ sigil UncertaintyFactor {
+    ☉ factor: String,
+    ☉ impact: Confidence,
+    ☉ description: String,
 }
 
-pub struct ConfidenceBreakdown {
-    pub overall: Confidence,
-    pub evidence: Confidence,
-    pub reasoning: Confidence,
-    pub experience: Confidence,
-    pub uncertainties: Vec<String>,
+☉ sigil ConfidenceBreakdown {
+    ☉ overall: Confidence,
+    ☉ evidence: Confidence,
+    ☉ reasoning: Confidence,
+    ☉ experience: Confidence,
+    ☉ uncertainties: Vec<String>,
 }
 
 // ============================================================================
 // Trace System
 // ============================================================================
 
-pub struct TraceCollector {
+☉ sigil TraceCollector {
     enabled: bool,
     current: Option<Trace>,
     traces: HashMap<ExplainableId, Trace>,
 }
 
-impl TraceCollector {
-    pub fn new() -> Self {
-        Self { enabled: false, current: None, traces: HashMap::new() }
+⊢ TraceCollector {
+    ☉ rite new() → This {
+        This { enabled: nay, current: None, traces: HashMap·new() }
     }
 
-    pub fn enable(&mut self) {
-        self.enabled = true;
-        self.current = Some(Trace::new());
+    ☉ rite enable(&vary this) {
+        this.enabled = yea;
+        this.current = Some(Trace·new());
     }
 
-    pub fn disable(&mut self) { self.enabled = false; }
+    ☉ rite disable(&vary this) { this.enabled = nay; }
 
-    pub fn record(&mut self, step: ReasoningStep) {
-        if self.enabled {
-            if let Some(ref mut trace) = self.current {
+    ☉ rite record(&vary this, step: ReasoningStep) {
+        ⎇ this.enabled {
+            ⎇ ≔ Some(ref vary trace) = this.current {
                 trace.add_step(step);
             }
         }
     }
 
-    pub fn complete(&mut self, id: ExplainableId) {
-        if let Some(mut trace) = self.current.take() {
+    ☉ rite complete(&vary this, id: ExplainableId) {
+        ⎇ ≔ Some(vary trace) = this.current.take() {
             trace.complete();
-            self.traces.insert(id, trace);
+            this.traces.insert(id, trace);
         }
     }
 
-    pub fn get_trace(&self, id: &ExplainableId) -> Option<&Trace> {
-        self.traces.get(id)
+    ☉ rite get_trace(&this, id: &ExplainableId) → Option<&Trace> {
+        this.traces.get(id)
     }
 }
 
-pub struct Trace {
+☉ sigil Trace {
     steps: Vec<ReasoningStep>,
     causal_graph: CausalGraph,
     started: Timestamp,
     ended: Option<Timestamp>,
 }
 
-impl Trace {
-    pub fn new() -> Self {
-        Self {
+⊢ Trace {
+    ☉ rite new() → This {
+        This {
             steps: vec![],
-            causal_graph: CausalGraph::new(),
-            started: Timestamp::now(),
+            causal_graph: CausalGraph·new(),
+            started: Timestamp·now(),
             ended: None,
         }
     }
 
-    pub fn add_step(&mut self, step: ReasoningStep) {
-        self.causal_graph.add_node(&step);
-        if let Some(prev) = self.steps.last() {
-            self.causal_graph.add_edge(&prev.id, &step.id);
+    ☉ rite add_step(&vary this, step: ReasoningStep) {
+        this.causal_graph.add_node(&step);
+        ⎇ ≔ Some(prev) = this.steps.last() {
+            this.causal_graph.add_edge(&prev.id, &step.id);
         }
-        self.steps.push(step);
+        this.steps.push(step);
     }
 
-    pub fn complete(&mut self) { self.ended = Some(Timestamp::now()); }
+    ☉ rite complete(&vary this) { this.ended = Some(Timestamp·now()); }
 
-    pub fn steps(&self) -> &[ReasoningStep] { &self.steps }
+    ☉ rite steps(&this) → &[ReasoningStep] { &this.steps }
 }
 
-pub struct CausalGraph {
+☉ sigil CausalGraph {
     nodes: Vec<CausalNode>,
     edges: Vec<(StepId, StepId)>,
 }
 
-struct CausalNode {
+sigil CausalNode {
     id: StepId,
     description: String,
 }
 
-impl CausalGraph {
-    pub fn new() -> Self { Self { nodes: vec![], edges: vec![] } }
+⊢ CausalGraph {
+    ☉ rite new() → This { This { nodes: vec![], edges: vec![] } }
 
-    pub fn add_node(&mut self, step: &ReasoningStep) {
-        self.nodes.push(CausalNode {
+    ☉ rite add_node(&vary this, step: &ReasoningStep) {
+        this.nodes.push(CausalNode {
             id: step.id.clone(),
             description: step.description.clone(),
         });
     }
 
-    pub fn add_edge(&mut self, from: &StepId, to: &StepId) {
-        self.edges.push((from.clone(), to.clone()));
+    ☉ rite add_edge(&vary this, from: &StepId, to: &StepId) {
+        this.edges.push((from.clone(), to.clone()));
     }
 
-    pub fn to_dot(&self) -> String {
-        let mut output = String::from("digraph reasoning {\n");
-        for node in &self.nodes {
-            let short_desc = if node.description.len() > 30 {
+    ☉ rite to_dot(&this) → String {
+        ≔ vary output = String·from("digraph reasoning {\n");
+        each node of &this.nodes {
+            ≔ short_desc = ⎇ node.description.len() > 30 {
                 format!("{}...", &node.description[..27])
-            } else {
+            } ⎉ {
                 node.description.clone()
             };
             output.push_str(&format!("  {} [label=\"{}\"];\n", node.id.to_short(), short_desc));
         }
-        for (from, to) in &self.edges {
-            output.push_str(&format!("  {} -> {};\n", from.to_short(), to.to_short()));
+        each (from, to) of &this.edges {
+            output.push_str(&format!("  {} → {};\n", from.to_short(), to.to_short()));
         }
         output.push_str("}\n");
         output
     }
 
-    pub fn to_mermaid(&self) -> String {
-        let mut output = String::from("graph TD\n");
-        for node in &self.nodes {
-            let short_desc = if node.description.len() > 30 {
+    ☉ rite to_mermaid(&this) → String {
+        ≔ vary output = String·from("graph TD\n");
+        each node of &this.nodes {
+            ≔ short_desc = ⎇ node.description.len() > 30 {
                 format!("{}...", &node.description[..27])
-            } else {
+            } ⎉ {
                 node.description.clone()
             };
             output.push_str(&format!("  {}[{}]\n", node.id.to_short(), short_desc));
         }
-        for (from, to) in &self.edges {
+        each (from, to) of &this.edges {
             output.push_str(&format!("  {} --> {}\n", from.to_short(), to.to_short()));
         }
         output
@@ -396,23 +396,23 @@ impl CausalGraph {
 // Counterfactual Engine
 // ============================================================================
 
-pub struct Counterfactual {
-    pub actual: String,
-    pub alternative: String,
-    pub reasons: Vec<String>,
-    pub decision_point: Option<String>,
-    pub projected_consequences: Vec<String>,
+☉ sigil Counterfactual {
+    ☉ actual: String,
+    ☉ alternative: String,
+    ☉ reasons: Vec<String>,
+    ☉ decision_point: Option<String>,
+    ☉ projected_consequences: Vec<String>,
 }
 
-impl Counterfactual {
-    pub fn to_prose(&self) -> String {
-        let mut output = format!("I chose {} instead of {} because:\n", self.actual, self.alternative);
-        for (i, reason) in self.reasons.iter().enumerate() {
+⊢ Counterfactual {
+    ☉ rite to_prose(&this) → String {
+        ≔ vary output = format!("I chose {} instead of {} because:\n", this.actual, this.alternative);
+        each (i, reason) of this.reasons.iter().enumerate() {
             output.push_str(&format!("{}. {}\n", i + 1, reason));
         }
-        if !self.projected_consequences.is_empty() {
+        ⎇ !this.projected_consequences.is_empty() {
             output.push_str("\nIf the alternative had been chosen:\n");
-            for consequence in &self.projected_consequences {
+            each consequence of &this.projected_consequences {
                 output.push_str(&format!("  - {}\n", consequence));
             }
         }
@@ -424,107 +424,107 @@ impl Counterfactual {
 // Main Oracle Structure
 // ============================================================================
 
-pub struct Oracle {
+☉ sigil Oracle {
     trace: TraceCollector,
     config: OracleConfig,
     /// Optional semantic index for reasoning search
     semantic: Option<SemanticIndex>,
 }
 
-pub struct OracleConfig {
-    pub default_level: ExplanationLevel,
-    pub auto_explain: bool,
-    pub trace_enabled: bool,
+☉ sigil OracleConfig {
+    ☉ default_level: ExplanationLevel,
+    ☉ auto_explain: bool,
+    ☉ trace_enabled: bool,
     /// Enable semantic indexing
-    pub enable_semantic: bool,
+    ☉ enable_semantic: bool,
     /// Semantic indexing configuration
-    pub semantic_config: Option<SemanticConfig>,
+    ☉ semantic_config: Option<SemanticConfig>,
 }
 
-impl OracleConfig {
-    pub fn default() -> Self {
-        Self {
-            default_level: ExplanationLevel::Standard,
-            auto_explain: false,
-            trace_enabled: false,
-            enable_semantic: false,
+⊢ OracleConfig {
+    ☉ rite default() → This {
+        This {
+            default_level: ExplanationLevel·Standard,
+            auto_explain: nay,
+            trace_enabled: nay,
+            enable_semantic: nay,
             semantic_config: None,
         }
     }
 
     /// Enable semantic indexing with default config
-    pub fn with_semantic(mut self) -> Self {
-        self.enable_semantic = true;
-        self.semantic_config = Some(SemanticConfig::default_config());
-        self
+    ☉ rite with_semantic(vary this) → This {
+        this.enable_semantic = yea;
+        this.semantic_config = Some(SemanticConfig·default_config());
+        this
     }
 
     /// Enable semantic indexing with custom config
-    pub fn with_semantic_config(mut self, config: SemanticConfig) -> Self {
-        self.enable_semantic = true;
-        self.semantic_config = Some(config);
-        self
+    ☉ rite with_semantic_config(vary this, config: SemanticConfig) → This {
+        this.enable_semantic = yea;
+        this.semantic_config = Some(config);
+        this
     }
 }
 
-impl Oracle {
-    pub fn new() -> Self {
-        Self {
-            trace: TraceCollector::new(),
-            config: OracleConfig::default(),
+⊢ Oracle {
+    ☉ rite new() → This {
+        This {
+            trace: TraceCollector·new(),
+            config: OracleConfig·default(),
             semantic: None,
         }
     }
 
     /// Create Oracle with custom configuration
-    pub fn with_config(config: OracleConfig) -> Self {
-        let semantic = if config.enable_semantic {
-            config.semantic_config.as_ref().map(|sc| SemanticIndex::new(sc.clone()))
-        } else {
+    ☉ rite with_config(config: OracleConfig) → This {
+        ≔ semantic = ⎇ config.enable_semantic {
+            config.semantic_config.as_ref().map(|sc| SemanticIndex·new(sc.clone()))
+        } ⎉ {
             None
         };
 
-        Self {
-            trace: TraceCollector::new(),
+        This {
+            trace: TraceCollector·new(),
             config,
             semantic,
         }
     }
 
     /// Enable semantic indexing
-    pub fn enable_semantic(&mut self, config: SemanticConfig) {
-        self.semantic = Some(SemanticIndex::new(config));
+    ☉ rite enable_semantic(&vary this, config: SemanticConfig) {
+        this.semantic = Some(SemanticIndex·new(config));
     }
 
     /// Check if semantic indexing is enabled
-    pub fn has_semantic(&self) -> bool {
-        self.semantic.is_some()
+    ☉ rite has_semantic(&this) → bool {
+        this.semantic.is_some()
     }
 
     /// Enable tracing
-    pub fn trace_on(&mut self) { self.trace.enable(); }
+    ☉ rite trace_on(&vary this) { this.trace.enable(); }
 
     /// Disable tracing
-    pub fn trace_off(&mut self) { self.trace.disable(); }
+    ☉ rite trace_off(&vary this) { this.trace.disable(); }
 
     /// Record a reasoning step
-    pub fn record_step(&mut self, step: ReasoningStep) {
-        self.trace.record(step);
+    ☉ rite record_step(&vary this, step: ReasoningStep) {
+        this.trace.record(step);
     }
 
     /// Complete trace for an explainable
-    pub fn complete_trace(&mut self, id: ExplainableId) {
-        self.trace.complete(id);
+    ☉ rite complete_trace(&vary this, id: ExplainableId) {
+        this.trace.complete(id);
     }
 
     /// Explain an explainable
-    pub fn explain<T: Explainable>(&self, item: &T, level: ExplanationLevel) -> Explanation {
-        let trace = self.trace.get_trace(&item.id());
+    ☉ rite explain<T: Explainable>(&this, item: &T, level: ExplanationLevel) → Explanation {
+        ≔ trace = this.trace.get_trace(&item.id());
 
         // Build reasoning chain from trace
-        let reasoning = match trace {
+        ≔ reasoning = ⌥ trace {
             Some(t) => ReasoningChain { steps: t.steps.clone() },
-            None => ReasoningChain::new(),
+            None => ReasoningChain·new(),
         };
 
         // Build explanation
@@ -534,10 +534,10 @@ impl Oracle {
             reasoning,
             evidence: vec![],
             confidence: ConfidenceAssessment {
-                overall: Confidence::new(0.8),
-                evidence_strength: Confidence::new(0.7),
-                reasoning_validity: Confidence::new(0.8),
-                experience_relevance: Confidence::new(0.6),
+                overall: Confidence·new(0.8),
+                evidence_strength: Confidence·new(0.7),
+                reasoning_validity: Confidence·new(0.8),
+                experience_relevance: Confidence·new(0.6),
                 uncertainties: vec![],
             },
             alternatives: vec![],
@@ -547,18 +547,18 @@ impl Oracle {
     }
 
     /// Get confidence breakdown
-    pub fn confidence_breakdown<T: Explainable>(&self, _item: &T) -> ConfidenceBreakdown {
+    ☉ rite confidence_breakdown<T: Explainable>(&this, _item: &T) → ConfidenceBreakdown {
         ConfidenceBreakdown {
-            overall: Confidence::new(0.8),
-            evidence: Confidence::new(0.7),
-            reasoning: Confidence::new(0.8),
-            experience: Confidence::new(0.6),
+            overall: Confidence·new(0.8),
+            evidence: Confidence·new(0.7),
+            reasoning: Confidence·new(0.8),
+            experience: Confidence·new(0.6),
             uncertainties: vec![],
         }
     }
 
     /// Analyze counterfactual
-    pub fn counterfactual(&self, actual: &str, alternative: &str) -> Counterfactual {
+    ☉ rite counterfactual(&this, actual: &str, alternative: &str) → Counterfactual {
         Counterfactual {
             actual: actual.to_string(),
             alternative: alternative.to_string(),
@@ -569,18 +569,18 @@ impl Oracle {
     }
 
     /// Create interactive explainer
-    pub fn interactive_explainer<'a, T: Explainable>(&'a self, item: &'a T) -> InteractiveExplainer<'a, T> {
-        InteractiveExplainer::new(item, self)
+    ☉ rite interactive_explainer<'a, T: Explainable>(&'a this, item: &'a T) → InteractiveExplainer<'a, T> {
+        InteractiveExplainer·new(item, this)
     }
 
     /// Check if should explain
-    pub fn should_explain(&self) -> bool {
-        self.config.auto_explain
+    ☉ rite should_explain(&this) → bool {
+        this.config.auto_explain
     }
 
     /// Get trace for visualization
-    pub fn get_trace(&self, id: &ExplainableId) -> Option<&Trace> {
-        self.trace.get_trace(id)
+    ☉ rite get_trace(&this, id: &ExplainableId) → Option<&Trace> {
+        this.trace.get_trace(id)
     }
 
     // ========================================================================
@@ -588,56 +588,56 @@ impl Oracle {
     // ========================================================================
 
     /// Index a reasoning step for semantic search
-    pub fn index_reasoning(&mut self, step: &ReasoningStep, trace_id: &str) {
-        if let Some(ref mut semantic) = self.semantic {
+    ☉ rite index_reasoning(&vary this, step: &ReasoningStep, trace_id: &str) {
+        ⎇ ≔ Some(ref vary semantic) = this.semantic {
             semantic.index_reasoning(&step.description, &step.reasoning, trace_id);
         }
     }
 
     /// Index evidence for semantic search
-    pub fn index_evidence(&mut self, evidence: &Evidence, explanation_id: &str) {
-        if let Some(ref mut semantic) = self.semantic {
+    ☉ rite index_evidence(&vary this, evidence: &Evidence, explanation_id: &str) {
+        ⎇ ≔ Some(ref vary semantic) = this.semantic {
             semantic.index_evidence(&evidence.content, &evidence.source, explanation_id);
         }
     }
 
     /// Index a code snippet for semantic search
-    pub fn index_code(&mut self, code: &str, file_path: &str, line_start: usize) {
-        if let Some(ref mut semantic) = self.semantic {
+    ☉ rite index_code(&vary this, code: &str, file_path: &str, line_start: usize) {
+        ⎇ ≔ Some(ref vary semantic) = this.semantic {
             semantic.index_code(code, file_path, line_start);
         }
     }
 
     /// Semantic search across all indexed content
-    pub fn semantic_search(&self, query: &str, k: usize) -> Vec<SemanticResult> {
-        if let Some(ref semantic) = self.semantic {
+    ☉ rite semantic_search(&this, query: &str, k: usize) → Vec<SemanticResult> {
+        ⎇ ≔ Some(ref semantic) = this.semantic {
             semantic.search(query, k)
-        } else {
+        } ⎉ {
             vec![]
         }
     }
 
     /// Find similar reasoning steps
-    pub fn find_similar_reasoning(&self, description: &str, k: usize) -> Vec<SemanticResult> {
-        if let Some(ref semantic) = self.semantic {
+    ☉ rite find_similar_reasoning(&this, description: &str, k: usize) → Vec<SemanticResult> {
+        ⎇ ≔ Some(ref semantic) = this.semantic {
             semantic.find_similar_reasoning(description, k)
-        } else {
+        } ⎉ {
             vec![]
         }
     }
 
     /// Find similar evidence
-    pub fn find_similar_evidence(&self, evidence_content: &str, k: usize) -> Vec<SemanticResult> {
-        if let Some(ref semantic) = self.semantic {
+    ☉ rite find_similar_evidence(&this, evidence_content: &str, k: usize) → Vec<SemanticResult> {
+        ⎇ ≔ Some(ref semantic) = this.semantic {
             semantic.find_similar_evidence(evidence_content, k)
-        } else {
+        } ⎉ {
             vec![]
         }
     }
 
     /// Get semantic index stats
-    pub fn semantic_stats(&self) -> Option<(usize, usize, usize)> {
-        self.semantic.as_ref().map(|s| (
+    ☉ rite semantic_stats(&this) → Option<(usize, usize, usize)> {
+        this.semantic.as_ref().map(|s| (
             s.reasoning_count(),
             s.evidence_count(),
             s.code_count(),
@@ -645,17 +645,17 @@ impl Oracle {
     }
 }
 
-impl Clone for ReasoningStep {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            step_type: self.step_type.clone(),
-            description: self.description.clone(),
+⊢ ReasoningStep : Clone {
+    rite clone(&this) → This {
+        This {
+            id: this.id,
+            step_type: this.step_type.clone(),
+            description: this.description.clone(),
             inputs: vec![], // Simplified
             output: None,
-            reasoning: self.reasoning.clone(),
-            confidence: self.confidence,
-            timestamp: self.timestamp,
+            reasoning: this.reasoning.clone(),
+            confidence: this.confidence,
+            timestamp: this.timestamp,
         }
     }
 }
@@ -664,37 +664,37 @@ impl Clone for ReasoningStep {
 // Interactive Explainer
 // ============================================================================
 
-pub struct InteractiveExplainer<'a, T: Explainable> {
+☉ sigil InteractiveExplainer<'a, T: Explainable> {
     item: &'a T,
     oracle: &'a Oracle,
     current_level: ExplanationLevel,
 }
 
-impl<'a, T: Explainable> InteractiveExplainer<'a, T> {
-    pub fn new(item: &'a T, oracle: &'a Oracle) -> Self {
-        Self { item, oracle, current_level: ExplanationLevel::Standard }
+⊢<'a, T: Explainable> InteractiveExplainer<'a, T> {
+    ☉ rite new(item: &'a T, oracle: &'a Oracle) → This {
+        This { item, oracle, current_level: ExplanationLevel·Standard }
     }
 
-    pub fn current_explanation(&self) -> Explanation {
-        self.oracle.explain(self.item, self.current_level)
+    ☉ rite current_explanation(&this) → Explanation {
+        this.oracle.explain(this.item, this.current_level)
     }
 
-    pub fn drill_down(&mut self) -> Explanation {
-        self.current_level = match self.current_level {
-            ExplanationLevel::Brief => ExplanationLevel::Standard,
-            ExplanationLevel::Standard => ExplanationLevel::Full,
-            ExplanationLevel::Full => ExplanationLevel::Technical,
-            ExplanationLevel::Technical => ExplanationLevel::Technical,
+    ☉ rite drill_down(&vary this) → Explanation {
+        this.current_level = ⌥ this.current_level {
+            ExplanationLevel·Brief => ExplanationLevel·Standard,
+            ExplanationLevel·Standard => ExplanationLevel·Full,
+            ExplanationLevel·Full => ExplanationLevel·Technical,
+            ExplanationLevel·Technical => ExplanationLevel·Technical,
         };
-        self.current_explanation()
+        this.current_explanation()
     }
 
-    pub fn show_evidence(&self) -> Vec<Evidence> {
-        self.oracle.explain(self.item, ExplanationLevel::Full).evidence
+    ☉ rite show_evidence(&this) → Vec<Evidence> {
+        this.oracle.explain(this.item, ExplanationLevel·Full).evidence
     }
 
-    pub fn explain_confidence(&self) -> ConfidenceBreakdown {
-        self.oracle.confidence_breakdown(self.item)
+    ☉ rite explain_confidence(&this) → ConfidenceBreakdown {
+        this.oracle.confidence_breakdown(this.item)
     }
 }
 
@@ -702,10 +702,10 @@ impl<'a, T: Explainable> InteractiveExplainer<'a, T> {
 // Convenience Functions
 // ============================================================================
 
-pub fn new_oracle() -> Oracle { Oracle::new() }
+☉ rite new_oracle() → Oracle { Oracle·new() }
 
-pub fn explain_decision<T: Explainable>(oracle: &Oracle, decision: &T) -> String {
-    oracle.explain(decision, ExplanationLevel::Standard).to_human_readable()
+☉ rite explain_decision<T: Explainable>(oracle: &Oracle, decision: &T) → String {
+    oracle.explain(decision, ExplanationLevel·Standard).to_human_readable()
 }
 
 // External functions now provided by shared module through Timestamp and Id types

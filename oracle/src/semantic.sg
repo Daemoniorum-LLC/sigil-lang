@@ -7,37 +7,37 @@
 // - Code snippet indexing for context retrieval
 // - "Find similar decisions" functionality
 
-invoke nihil_embed::{
+invoke nihil_embed·{
     EmbedConfig, CodeTokenizer, Embedding, EmbeddingIndex,
     Pooler, ChunkConfig, cosine_similarity
 };
 
-use shared::{Timestamp, Confidence};
+invoke shared·{Timestamp, Confidence};
 
 // ============================================================================
 // Semantic Configuration
 // ============================================================================
 
 /// Configuration for semantic indexing
-pub struct SemanticConfig {
+☉ sigil SemanticConfig {
     /// Embedding dimension (384 for small, 768 for base)
-    pub embedding_dim: usize,
+    ☉ embedding_dim: usize,
     /// Pooling strategy: "cls", "mean", "max"
-    pub pooling: String,
+    ☉ pooling: String,
     /// Minimum similarity threshold for results
-    pub similarity_threshold: f32,
+    ☉ similarity_threshold: f32,
     /// Maximum results to return
-    pub max_results: usize,
+    ☉ max_results: usize,
     /// Vocabulary size for tokenizer
-    pub vocab_size: usize,
+    ☉ vocab_size: usize,
     /// Maximum sequence length
-    pub max_seq_len: usize,
+    ☉ max_seq_len: usize,
 }
 
-impl SemanticConfig {
+⊢ SemanticConfig {
     /// Default configuration using small model
-    pub fn default_config() -> Self {
-        Self {
+    ☉ rite default_config() → This {
+        This {
             embedding_dim: 384,
             pooling: "cls".to_string(),
             similarity_threshold: 0.5,
@@ -48,8 +48,8 @@ impl SemanticConfig {
     }
 
     /// Configuration for base model
-    pub fn base() -> Self {
-        Self {
+    ☉ rite base() → This {
+        This {
             embedding_dim: 768,
             pooling: "cls".to_string(),
             similarity_threshold: 0.5,
@@ -60,15 +60,15 @@ impl SemanticConfig {
     }
 
     /// Set similarity threshold
-    pub fn with_threshold(mut self, threshold: f32) -> Self {
-        self.similarity_threshold = threshold;
-        self
+    ☉ rite with_threshold(vary this, threshold: f32) → This {
+        this.similarity_threshold = threshold;
+        this
     }
 
     /// Set max results
-    pub fn with_max_results(mut self, max: usize) -> Self {
-        self.max_results = max;
-        self
+    ☉ rite with_max_results(vary this, max: usize) → This {
+        this.max_results = max;
+        this
     }
 }
 
@@ -77,7 +77,7 @@ impl SemanticConfig {
 // ============================================================================
 
 /// Type of semantic search result
-pub enum ResultType {
+☉ ᛈ ResultType {
     /// A reasoning step from a trace
     ReasoningStep,
     /// Evidence supporting a decision
@@ -87,22 +87,22 @@ pub enum ResultType {
 }
 
 /// A semantic search result
-pub struct SemanticResult {
+☉ sigil SemanticResult {
     /// The matched content
-    pub content: String,
+    ☉ content: String,
     /// Source identifier (trace_id, evidence_id, file:line)
-    pub source_id: String,
+    ☉ source_id: String,
     /// Similarity score (0.0 to 1.0)
-    pub similarity: f32,
+    ☉ similarity: f32,
     /// Type of result
-    pub result_type: ResultType,
+    ☉ result_type: ResultType,
     /// Timestamp when indexed (if available)
-    pub indexed_at: Option<Timestamp>,
+    ☉ indexed_at: Option<Timestamp>,
 }
 
-impl SemanticResult {
-    pub fn new(content: String, source_id: String, similarity: f32, result_type: ResultType) -> Self {
-        Self {
+⊢ SemanticResult {
+    ☉ rite new(content: String, source_id: String, similarity: f32, result_type: ResultType) → This {
+        This {
             content,
             source_id,
             similarity,
@@ -111,9 +111,9 @@ impl SemanticResult {
         }
     }
 
-    pub fn with_timestamp(mut self, ts: Timestamp) -> Self {
-        self.indexed_at = Some(ts);
-        self
+    ☉ rite with_timestamp(vary this, ts: Timestamp) → This {
+        this.indexed_at = Some(ts);
+        this
     }
 }
 
@@ -127,7 +127,7 @@ impl SemanticResult {
 /// - Reasoning steps from traces
 /// - Evidence items from explanations
 /// - Code snippets for context retrieval
-pub struct SemanticIndex {
+☉ sigil SemanticIndex {
     /// Index for reasoning steps
     reasoning_index: EmbeddingIndex,
     /// Index for evidence
@@ -140,65 +140,65 @@ pub struct SemanticIndex {
     tokenizer: CodeTokenizer,
     /// Pooler for sequence aggregation
     pooler: Pooler,
-    /// Content storage (index -> content)
+    /// Content storage (index → content)
     reasoning_content: Vec<String>,
     evidence_content: Vec<String>,
     code_content: Vec<String>,
 }
 
-impl SemanticIndex {
+⊢ SemanticIndex {
     /// Create a new semantic index
-    pub fn new(config: SemanticConfig) -> Self {
-        let tokenizer = CodeTokenizer::new(config.vocab_size, config.max_seq_len);
-        let pooler = if config.pooling == "mean" {
-            Pooler::mean()
-        } else if config.pooling == "max" {
-            Pooler::max_pool()
-        } else {
-            Pooler::cls()
+    ☉ rite new(config: SemanticConfig) → This {
+        ≔ tokenizer = CodeTokenizer·new(config.vocab_size, config.max_seq_len);
+        ≔ pooler = ⎇ config.pooling == "mean" {
+            Pooler·mean()
+        } ⎉ ⎇ config.pooling == "max" {
+            Pooler·max_pool()
+        } ⎉ {
+            Pooler·cls()
         };
 
-        Self {
-            reasoning_index: EmbeddingIndex::new(config.embedding_dim),
-            evidence_index: EmbeddingIndex::new(config.embedding_dim),
-            code_index: EmbeddingIndex::new(config.embedding_dim),
+        This {
+            reasoning_index: EmbeddingIndex·new(config.embedding_dim),
+            evidence_index: EmbeddingIndex·new(config.embedding_dim),
+            code_index: EmbeddingIndex·new(config.embedding_dim),
             config,
             tokenizer,
             pooler,
-            reasoning_content: Vec::new(),
-            evidence_content: Vec::new(),
-            code_content: Vec::new(),
+            reasoning_content: Vec·new(),
+            evidence_content: Vec·new(),
+            code_content: Vec·new(),
         }
     }
 
     /// Create with default configuration
-    pub fn default_index() -> Self {
-        Self::new(SemanticConfig::default_config())
+    ☉ rite default_index() → This {
+        This·new(SemanticConfig·default_config())
     }
 
     /// Get embedding dimension
-    pub fn dim(&self) -> usize {
-        self.config.embedding_dim
+    ☉ rite dim(&this) → usize {
+        this.config.embedding_dim
     }
 
     /// Total number of indexed items
-    pub fn len(&self) -> usize {
-        self.reasoning_index.len() + self.evidence_index.len() + self.code_index.len()
+    ☉ rite len(&this) → usize {
+        this.reasoning_index.len() + this.evidence_index.len() + this.code_index.len()
     }
 
     /// Number of indexed reasoning steps
-    pub fn reasoning_count(&self) -> usize {
-        self.reasoning_index.len()
+    ☉ rite reasoning_count(&this) → usize {
+        this.reasoning_index.len()
     }
 
     /// Number of indexed evidence items
-    pub fn evidence_count(&self) -> usize {
-        self.evidence_index.len()
+    ☉ rite evidence_count(&this) → usize {
+        this.evidence_index.len()
     }
 
     /// Number of indexed code snippets
-    pub fn code_count(&self) -> usize {
-        self.code_index.len()
+    ☉ rite code_count(&this) → usize {
+        this.code_index.len()
     }
 
     // ========================================================================
@@ -208,20 +208,20 @@ impl SemanticIndex {
     /// Generate embedding for text
     /// Note: In production, this would use a transformer model.
     /// This simplified version uses token statistics as a proxy.
-    fn embed_text(&self, text: &str) -> Embedding {
-        let tokens = self.tokenizer.tokenize(text);
-        let dim = self.config.embedding_dim;
+    rite embed_text(&this, text: &str) → Embedding {
+        ≔ tokens = this.tokenizer.tokenize(text);
+        ≔ dim = this.config.embedding_dim;
 
         // Create simple embedding from token distribution
         // Production would use transformer encoder here
-        let mut data = vec![0.0; dim];
-        for (i, &token) in tokens.iter().enumerate() {
-            let idx = (token + i) % dim;
+        ≔ vary data = vec![0.0; dim];
+        each (i, &token) of tokens.iter().enumerate() {
+            ≔ idx = (token + i) % dim;
             data[idx] = data[idx] + 1.0;
         }
 
         // Normalize
-        let embedding = Embedding::new(data, dim);
+        ≔ embedding = Embedding·new(data, dim);
         embedding.normalize()
     }
 
@@ -230,28 +230,28 @@ impl SemanticIndex {
     // ========================================================================
 
     /// Index a reasoning step
-    pub fn index_reasoning(&mut self, description: &str, reasoning: &str, trace_id: &str) {
-        let combined = format!("{} {}", description, reasoning);
-        let embedding = self.embed_text(&combined);
-        self.reasoning_index.add(embedding, trace_id);
-        self.reasoning_content.push(combined);
+    ☉ rite index_reasoning(&vary this, description: &str, reasoning: &str, trace_id: &str) {
+        ≔ combined = format!("{} {}", description, reasoning);
+        ≔ embedding = this.embed_text(&combined);
+        this.reasoning_index.add(embedding, trace_id);
+        this.reasoning_content.push(combined);
     }
 
     /// Index evidence
-    pub fn index_evidence(&mut self, content: &str, source: &str, explanation_id: &str) {
-        let combined = format!("{} from {}", content, source);
-        let embedding = self.embed_text(&combined);
-        let meta = format!("{}:{}", explanation_id, source);
-        self.evidence_index.add(embedding, &meta);
-        self.evidence_content.push(content.to_string());
+    ☉ rite index_evidence(&vary this, content: &str, source: &str, explanation_id: &str) {
+        ≔ combined = format!("{} from {}", content, source);
+        ≔ embedding = this.embed_text(&combined);
+        ≔ meta = format!("{}:{}", explanation_id, source);
+        this.evidence_index.add(embedding, &meta);
+        this.evidence_content.push(content.to_string());
     }
 
     /// Index a code snippet
-    pub fn index_code(&mut self, code: &str, file_path: &str, line_start: usize) {
-        let embedding = self.embed_text(code);
-        let meta = format!("{}:{}", file_path, line_start);
-        self.code_index.add(embedding, &meta);
-        self.code_content.push(code.to_string());
+    ☉ rite index_code(&vary this, code: &str, file_path: &str, line_start: usize) {
+        ≔ embedding = this.embed_text(code);
+        ≔ meta = format!("{}:{}", file_path, line_start);
+        this.code_index.add(embedding, &meta);
+        this.code_content.push(code.to_string());
     }
 
     // ========================================================================
@@ -259,73 +259,73 @@ impl SemanticIndex {
     // ========================================================================
 
     /// Search all indices
-    pub fn search(&self, query: &str, k: usize) -> Vec<SemanticResult> {
-        let query_embedding = self.embed_text(query);
-        let limit = if k > self.config.max_results { self.config.max_results } else { k };
+    ☉ rite search(&this, query: &str, k: usize) → Vec<SemanticResult> {
+        ≔ query_embedding = this.embed_text(query);
+        ≔ limit = ⎇ k > this.config.max_results { this.config.max_results } ⎉ { k };
 
-        let mut results = Vec::new();
+        ≔ vary results = Vec·new();
 
         // Search reasoning
-        let reasoning_results = self.reasoning_index.search(&query_embedding, limit);
-        for (idx, sim) in reasoning_results {
-            if sim >= self.config.similarity_threshold {
-                let content = if idx < self.reasoning_content.len() {
-                    self.reasoning_content[idx].clone()
-                } else {
+        ≔ reasoning_results = this.reasoning_index.search(&query_embedding, limit);
+        each (idx, sim) of reasoning_results {
+            ⎇ sim >= this.config.similarity_threshold {
+                ≔ content = ⎇ idx < this.reasoning_content.len() {
+                    this.reasoning_content[idx].clone()
+                } ⎉ {
                     "".to_string()
                 };
-                results.push(SemanticResult::new(
+                results.push(SemanticResult·new(
                     content,
-                    self.reasoning_index.get_metadata(idx).to_string(),
+                    this.reasoning_index.get_metadata(idx).to_string(),
                     sim,
-                    ResultType::ReasoningStep,
+                    ResultType·ReasoningStep,
                 ));
             }
         }
 
         // Search evidence
-        let evidence_results = self.evidence_index.search(&query_embedding, limit);
-        for (idx, sim) in evidence_results {
-            if sim >= self.config.similarity_threshold {
-                let content = if idx < self.evidence_content.len() {
-                    self.evidence_content[idx].clone()
-                } else {
+        ≔ evidence_results = this.evidence_index.search(&query_embedding, limit);
+        each (idx, sim) of evidence_results {
+            ⎇ sim >= this.config.similarity_threshold {
+                ≔ content = ⎇ idx < this.evidence_content.len() {
+                    this.evidence_content[idx].clone()
+                } ⎉ {
                     "".to_string()
                 };
-                results.push(SemanticResult::new(
+                results.push(SemanticResult·new(
                     content,
-                    self.evidence_index.get_metadata(idx).to_string(),
+                    this.evidence_index.get_metadata(idx).to_string(),
                     sim,
-                    ResultType::Evidence,
+                    ResultType·Evidence,
                 ));
             }
         }
 
         // Search code
-        let code_results = self.code_index.search(&query_embedding, limit);
-        for (idx, sim) in code_results {
-            if sim >= self.config.similarity_threshold {
-                let content = if idx < self.code_content.len() {
-                    self.code_content[idx].clone()
-                } else {
+        ≔ code_results = this.code_index.search(&query_embedding, limit);
+        each (idx, sim) of code_results {
+            ⎇ sim >= this.config.similarity_threshold {
+                ≔ content = ⎇ idx < this.code_content.len() {
+                    this.code_content[idx].clone()
+                } ⎉ {
                     "".to_string()
                 };
-                results.push(SemanticResult::new(
+                results.push(SemanticResult·new(
                     content,
-                    self.code_index.get_metadata(idx).to_string(),
+                    this.code_index.get_metadata(idx).to_string(),
                     sim,
-                    ResultType::CodeSnippet,
+                    ResultType·CodeSnippet,
                 ));
             }
         }
 
         // Sort by similarity (descending)
-        for i in 0..results.len() {
-            for j in (i + 1)..results.len() {
-                if results[j].similarity > results[i].similarity {
-                    let temp_content = results[i].content.clone();
-                    let temp_source = results[i].source_id.clone();
-                    let temp_sim = results[i].similarity;
+        each i of 0..results.len() {
+            each j of (i + 1)..results.len() {
+                ⎇ results[j].similarity > results[i].similarity {
+                    ≔ temp_content = results[i].content.clone();
+                    ≔ temp_source = results[i].source_id.clone();
+                    ≔ temp_sim = results[i].similarity;
 
                     results[i].content = results[j].content.clone();
                     results[i].source_id = results[j].source_id.clone();
@@ -339,14 +339,14 @@ impl SemanticIndex {
         }
 
         // Limit to k results
-        let final_limit = if k < results.len() { k } else { results.len() };
-        let mut final_results = Vec::new();
-        for i in 0..final_limit {
-            final_results.push(SemanticResult::new(
+        ≔ final_limit = ⎇ k < results.len() { k } ⎉ { results.len() };
+        ≔ vary final_results = Vec·new();
+        each i of 0..final_limit {
+            final_results.push(SemanticResult·new(
                 results[i].content.clone(),
                 results[i].source_id.clone(),
                 results[i].similarity,
-                ResultType::ReasoningStep, // Simplified - would need to track type
+                ResultType·ReasoningStep, // Simplified - would need to track type
             ));
         }
 
@@ -354,23 +354,23 @@ impl SemanticIndex {
     }
 
     /// Search only reasoning steps
-    pub fn search_reasoning(&self, query: &str, k: usize) -> Vec<SemanticResult> {
-        let query_embedding = self.embed_text(query);
-        let results = self.reasoning_index.search(&query_embedding, k);
+    ☉ rite search_reasoning(&this, query: &str, k: usize) → Vec<SemanticResult> {
+        ≔ query_embedding = this.embed_text(query);
+        ≔ results = this.reasoning_index.search(&query_embedding, k);
 
-        let mut semantic_results = Vec::new();
-        for (idx, sim) in results {
-            if sim >= self.config.similarity_threshold {
-                let content = if idx < self.reasoning_content.len() {
-                    self.reasoning_content[idx].clone()
-                } else {
+        ≔ vary semantic_results = Vec·new();
+        each (idx, sim) of results {
+            ⎇ sim >= this.config.similarity_threshold {
+                ≔ content = ⎇ idx < this.reasoning_content.len() {
+                    this.reasoning_content[idx].clone()
+                } ⎉ {
                     "".to_string()
                 };
-                semantic_results.push(SemanticResult::new(
+                semantic_results.push(SemanticResult·new(
                     content,
-                    self.reasoning_index.get_metadata(idx).to_string(),
+                    this.reasoning_index.get_metadata(idx).to_string(),
                     sim,
-                    ResultType::ReasoningStep,
+                    ResultType·ReasoningStep,
                 ));
             }
         }
@@ -379,23 +379,23 @@ impl SemanticIndex {
     }
 
     /// Search only evidence
-    pub fn search_evidence(&self, query: &str, k: usize) -> Vec<SemanticResult> {
-        let query_embedding = self.embed_text(query);
-        let results = self.evidence_index.search(&query_embedding, k);
+    ☉ rite search_evidence(&this, query: &str, k: usize) → Vec<SemanticResult> {
+        ≔ query_embedding = this.embed_text(query);
+        ≔ results = this.evidence_index.search(&query_embedding, k);
 
-        let mut semantic_results = Vec::new();
-        for (idx, sim) in results {
-            if sim >= self.config.similarity_threshold {
-                let content = if idx < self.evidence_content.len() {
-                    self.evidence_content[idx].clone()
-                } else {
+        ≔ vary semantic_results = Vec·new();
+        each (idx, sim) of results {
+            ⎇ sim >= this.config.similarity_threshold {
+                ≔ content = ⎇ idx < this.evidence_content.len() {
+                    this.evidence_content[idx].clone()
+                } ⎉ {
                     "".to_string()
                 };
-                semantic_results.push(SemanticResult::new(
+                semantic_results.push(SemanticResult·new(
                     content,
-                    self.evidence_index.get_metadata(idx).to_string(),
+                    this.evidence_index.get_metadata(idx).to_string(),
                     sim,
-                    ResultType::Evidence,
+                    ResultType·Evidence,
                 ));
             }
         }
@@ -404,23 +404,23 @@ impl SemanticIndex {
     }
 
     /// Search only code
-    pub fn search_code(&self, query: &str, k: usize) -> Vec<SemanticResult> {
-        let query_embedding = self.embed_text(query);
-        let results = self.code_index.search(&query_embedding, k);
+    ☉ rite search_code(&this, query: &str, k: usize) → Vec<SemanticResult> {
+        ≔ query_embedding = this.embed_text(query);
+        ≔ results = this.code_index.search(&query_embedding, k);
 
-        let mut semantic_results = Vec::new();
-        for (idx, sim) in results {
-            if sim >= self.config.similarity_threshold {
-                let content = if idx < self.code_content.len() {
-                    self.code_content[idx].clone()
-                } else {
+        ≔ vary semantic_results = Vec·new();
+        each (idx, sim) of results {
+            ⎇ sim >= this.config.similarity_threshold {
+                ≔ content = ⎇ idx < this.code_content.len() {
+                    this.code_content[idx].clone()
+                } ⎉ {
                     "".to_string()
                 };
-                semantic_results.push(SemanticResult::new(
+                semantic_results.push(SemanticResult·new(
                     content,
-                    self.code_index.get_metadata(idx).to_string(),
+                    this.code_index.get_metadata(idx).to_string(),
                     sim,
-                    ResultType::CodeSnippet,
+                    ResultType·CodeSnippet,
                 ));
             }
         }
@@ -429,13 +429,13 @@ impl SemanticIndex {
     }
 
     /// Find similar reasoning to a given description
-    pub fn find_similar_reasoning(&self, description: &str, k: usize) -> Vec<SemanticResult> {
-        self.search_reasoning(description, k)
+    ☉ rite find_similar_reasoning(&this, description: &str, k: usize) → Vec<SemanticResult> {
+        this.search_reasoning(description, k)
     }
 
     /// Find similar evidence
-    pub fn find_similar_evidence(&self, evidence_content: &str, k: usize) -> Vec<SemanticResult> {
-        self.search_evidence(evidence_content, k)
+    ☉ rite find_similar_evidence(&this, evidence_content: &str, k: usize) → Vec<SemanticResult> {
+        this.search_evidence(evidence_content, k)
     }
 }
 
@@ -445,18 +445,18 @@ impl SemanticIndex {
 
 #[cfg(test)]
 scroll tests {
-    use super::*;
+    invoke super·*;
 
     #[test]
-    fn test_semantic_config_default() {
-        let config = SemanticConfig::default_config();
+    rite test_semantic_config_default() {
+        ≔ config = SemanticConfig·default_config();
         assert_eq(config.embedding_dim, 384);
         assert_eq(config.max_results, 10);
     }
 
     #[test]
-    fn test_semantic_index_creation() {
-        let index = SemanticIndex::default_index();
+    rite test_semantic_index_creation() {
+        ≔ index = SemanticIndex·default_index();
         assert_eq(index.dim(), 384);
         assert_eq(index.len(), 0);
     }
