@@ -265,8 +265,23 @@ fn main() -> ExitCode {
                 return lint_explain(rule);
             }
 
-            if args.len() < 3 {
-                eprintln!("Error: missing path argument");
+            // Handle --setup-hooks to generate pre-commit hook
+            if args.iter().any(|a| a == "--setup-hooks") {
+                return lint_setup_hooks();
+            }
+
+            // Handle --changed to lint only git-changed files
+            if args.iter().any(|a| a == "--changed" || a == "--diff") {
+                return lint_changed_only(args.clone());
+            }
+
+            // Handle --since=<commit> to lint files changed since commit
+            if let Some(since_arg) = args.iter().find(|a| a.starts_with("--since=")) {
+                let commit = since_arg.strip_prefix("--since=").unwrap_or("HEAD");
+                return lint_since(commit, args.clone());
+            }
+
+            if args.len() < 3 || args[2].starts_with('-') {
                 eprintln!("Usage: sigil lint <file.sigil|directory> [options]");
                 eprintln!();
                 eprintln!("Options:");
@@ -280,6 +295,17 @@ fn main() -> ExitCode {
                 eprintln!("  --init                  Generate default .sigillint.toml");
                 eprintln!("  --list                  List all available lint rules");
                 eprintln!("  --explain=<RULE>        Show detailed docs for a rule (code or name)");
+                eprintln!();
+                eprintln!("Git Integration:");
+                eprintln!("  --changed               Lint only uncommitted changes");
+                eprintln!("  --since=<commit>        Lint files changed since commit");
+                eprintln!("  --baseline              Use .sigillint-baseline.json to filter known issues");
+                eprintln!("  --setup-hooks           Generate pre-commit hook");
+                eprintln!();
+                eprintln!("Reports:");
+                eprintln!("  --html=<path>           Generate HTML report");
+                eprintln!("  --ci=github|gitlab      Output CI annotations");
+                eprintln!("  --quiet/-q              Suppress non-error output");
                 return ExitCode::from(1);
             }
             let format = if args.iter().any(|a| a == "--format=json") {
@@ -303,6 +329,20 @@ fn main() -> ExitCode {
             let watch_mode = args.iter().any(|a| a == "--watch");
             let parallel = args.iter().any(|a| a == "--parallel");
             let show_stats = args.iter().any(|a| a == "--stats");
+            let use_baseline = args.iter().any(|a| a == "--baseline");
+            let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
+
+            // Get HTML output path if specified
+            let html_path = args
+                .iter()
+                .find(|a| a.starts_with("--html="))
+                .map(|a| a.strip_prefix("--html=").unwrap());
+
+            // Get CI format if specified
+            let ci_format = args
+                .iter()
+                .find(|a| a.starts_with("--ci="))
+                .map(|a| a.strip_prefix("--ci=").unwrap());
 
             if watch_mode {
                 lint_watch(&args[2], format, config_path)
@@ -314,6 +354,10 @@ fn main() -> ExitCode {
                     apply_fix,
                     parallel,
                     show_stats,
+                    use_baseline,
+                    quiet,
+                    html_path,
+                    ci_format,
                 )
             }
         }
@@ -1658,10 +1702,15 @@ fn lint_path(
     apply_fix: bool,
     parallel: bool,
     show_stats: bool,
+    use_baseline: bool,
+    quiet: bool,
+    html_path: Option<&str>,
+    ci_format: Option<&str>,
 ) -> ExitCode {
     use sigil_parser::lint::{
-        apply_fixes, generate_sarif, lint_directory, lint_directory_parallel,
-        lint_source_with_config, LintConfig,
+        apply_fixes, find_baseline, generate_ci_annotations, generate_sarif,
+        lint_directory, lint_directory_parallel, lint_source_with_config,
+        save_html_report, CiFormat, LintConfig,
     };
     use std::path::Path;
 
@@ -1682,40 +1731,85 @@ fn lint_path(
 
     // Directory linting (--fix not supported for directories yet)
     if target.is_dir() {
-        if apply_fix {
+        if apply_fix && !quiet {
             eprintln!("Warning: --fix is not yet supported for directory linting");
         }
+
+        // Load baseline if requested (for info message only - filtering happens at report level)
+        if use_baseline {
+            if find_baseline().is_some() {
+                if !quiet {
+                    eprintln!("Using baseline: .sigillint-baseline.json");
+                }
+            } else if !quiet {
+                eprintln!("Warning: --baseline specified but no baseline file found");
+                eprintln!("Create one with: sigil lint . --format=json > .sigillint-baseline.json");
+            }
+        }
+
+        // Run the linting
         let result = if parallel {
             lint_directory_parallel(target, config)
         } else {
             lint_directory(target, config)
         };
 
+        // Generate HTML report if requested
+        if let Some(html_file) = html_path {
+            let title = format!("Lint Report: {}", path);
+            if let Err(e) = save_html_report(&result, Path::new(html_file), &title) {
+                eprintln!("Error writing HTML report: {}", e);
+            } else if !quiet {
+                println!("HTML report written to: {}", html_file);
+            }
+        }
+
+        // Generate CI annotations if requested
+        if let Some(ci) = ci_format {
+            let ci_fmt = match ci {
+                "github" => CiFormat::GitHub,
+                "gitlab" => CiFormat::GitLab,
+                _ => {
+                    eprintln!("Unknown CI format '{}', using github", ci);
+                    CiFormat::GitHub
+                }
+            };
+            let annotations = generate_ci_annotations(&result, ci_fmt);
+            println!("{}", annotations);
+            return if result.total_errors > 0 || result.parse_errors > 0 {
+                ExitCode::from(1)
+            } else {
+                ExitCode::SUCCESS
+            };
+        }
+
         match format {
             OutputFormat::Human => {
-                for (file_path, file_result) in &result.files {
-                    match file_result {
-                        Ok(diagnostics) => {
-                            if diagnostics.is_empty() {
-                                println!("✓ {} - no issues", file_path);
-                            } else {
-                                let source = fs::read_to_string(file_path).unwrap_or_default();
-                                diagnostics.eprint_all(file_path, &source);
+                if !quiet {
+                    for (file_path, file_result) in &result.files {
+                        match file_result {
+                            Ok(diagnostics) => {
+                                if diagnostics.is_empty() {
+                                    println!("✓ {} - no issues", file_path);
+                                } else {
+                                    let source = fs::read_to_string(file_path).unwrap_or_default();
+                                    diagnostics.eprint_all(file_path, &source);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("✗ {} - parse error: {}", file_path, e);
                             }
                         }
-                        Err(e) => {
-                            eprintln!("✗ {} - parse error: {}", file_path, e);
-                        }
                     }
+                    println!();
+                    println!(
+                        "Linted {} file(s): {} warning(s), {} error(s), {} parse error(s)",
+                        result.files.len(),
+                        result.total_warnings,
+                        result.total_errors,
+                        result.parse_errors
+                    );
                 }
-                println!();
-                println!(
-                    "Linted {} file(s): {} warning(s), {} error(s), {} parse error(s)",
-                    result.files.len(),
-                    result.total_warnings,
-                    result.total_errors,
-                    result.parse_errors
-                );
             }
             OutputFormat::Json | OutputFormat::Compact => {
                 let json_result = serde_json::json!({
@@ -1893,6 +1987,223 @@ fn lint_path(
                 }
                 ExitCode::from(1)
             }
+        }
+    }
+}
+
+/// Generate pre-commit hook for git.
+fn lint_setup_hooks() -> ExitCode {
+    use sigil_parser::lint::generate_pre_commit_hook;
+
+    match generate_pre_commit_hook() {
+        Ok(path) => {
+            println!("Pre-commit hook installed: {}", path.display());
+            println!();
+            println!("The hook will lint all staged .sg and .sigil files before each commit.");
+            println!("To skip the hook temporarily, use: git commit --no-verify");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Error installing pre-commit hook: {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Lint only files with uncommitted changes.
+fn lint_changed_only(args: Vec<String>) -> ExitCode {
+    use sigil_parser::lint::{lint_changed_files, LintConfig};
+
+    let config = LintConfig::find_and_load();
+    let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
+    let format = if args.iter().any(|a| a == "--format=json") {
+        OutputFormat::Json
+    } else if args.iter().any(|a| a == "--format=compact") {
+        OutputFormat::Compact
+    } else {
+        OutputFormat::Human
+    };
+
+    match lint_changed_files(config) {
+        Ok(result) => {
+            if result.files.is_empty() {
+                if !quiet {
+                    println!("No changed Sigil files to lint.");
+                }
+                return ExitCode::SUCCESS;
+            }
+
+            match format {
+                OutputFormat::Human => {
+                    if !quiet {
+                        for (file_path, file_result) in &result.files {
+                            match file_result {
+                                Ok(diagnostics) => {
+                                    if diagnostics.is_empty() {
+                                        println!("✓ {} - no issues", file_path);
+                                    } else {
+                                        let source = fs::read_to_string(file_path).unwrap_or_default();
+                                        diagnostics.eprint_all(file_path, &source);
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("✗ {} - parse error: {}", file_path, e);
+                                }
+                            }
+                        }
+                        println!();
+                        println!(
+                            "Linted {} changed file(s): {} warning(s), {} error(s)",
+                            result.files.len(),
+                            result.total_warnings,
+                            result.total_errors
+                        );
+                    }
+                }
+                OutputFormat::Json | OutputFormat::Compact => {
+                    let mut files_json = Vec::new();
+                    for (p, r) in &result.files {
+                        let entry = match r {
+                            Ok(diags) => serde_json::json!({
+                                "file": p,
+                                "success": true,
+                                "diagnostics": diags.iter().count(),
+                            }),
+                            Err(e) => serde_json::json!({
+                                "file": p,
+                                "success": false,
+                                "error": e,
+                            }),
+                        };
+                        files_json.push(entry);
+                    }
+                    let json_result = serde_json::json!({
+                        "mode": "changed_files",
+                        "files": files_json,
+                        "total_warnings": result.total_warnings,
+                        "total_errors": result.total_errors,
+                    });
+                    if format == OutputFormat::Json {
+                        println!("{}", serde_json::to_string_pretty(&json_result).unwrap());
+                    } else {
+                        println!("{}", serde_json::to_string(&json_result).unwrap());
+                    }
+                }
+                OutputFormat::Sarif => {
+                    eprintln!("SARIF output not supported for --changed mode");
+                }
+            }
+
+            if result.total_errors > 0 || result.parse_errors > 0 {
+                ExitCode::from(1)
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Lint files changed since a specific commit.
+fn lint_since(commit: &str, args: Vec<String>) -> ExitCode {
+    use sigil_parser::lint::{lint_changed_since, LintConfig};
+
+    let config = LintConfig::find_and_load();
+    let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
+    let format = if args.iter().any(|a| a == "--format=json") {
+        OutputFormat::Json
+    } else if args.iter().any(|a| a == "--format=compact") {
+        OutputFormat::Compact
+    } else {
+        OutputFormat::Human
+    };
+
+    match lint_changed_since(commit, config) {
+        Ok(result) => {
+            if result.files.is_empty() {
+                if !quiet {
+                    println!("No Sigil files changed since '{}'.", commit);
+                }
+                return ExitCode::SUCCESS;
+            }
+
+            match format {
+                OutputFormat::Human => {
+                    if !quiet {
+                        println!("Linting files changed since '{}':", commit);
+                        println!();
+                        for (file_path, file_result) in &result.files {
+                            match file_result {
+                                Ok(diagnostics) => {
+                                    if diagnostics.is_empty() {
+                                        println!("✓ {} - no issues", file_path);
+                                    } else {
+                                        let source = fs::read_to_string(file_path).unwrap_or_default();
+                                        diagnostics.eprint_all(file_path, &source);
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("✗ {} - parse error: {}", file_path, e);
+                                }
+                            }
+                        }
+                        println!();
+                        println!(
+                            "Linted {} file(s) changed since '{}': {} warning(s), {} error(s)",
+                            result.files.len(),
+                            commit,
+                            result.total_warnings,
+                            result.total_errors
+                        );
+                    }
+                }
+                OutputFormat::Json | OutputFormat::Compact => {
+                    let mut files_json = Vec::new();
+                    for (p, r) in &result.files {
+                        let entry = match r {
+                            Ok(diags) => serde_json::json!({
+                                "file": p,
+                                "success": true,
+                                "diagnostics": diags.iter().count(),
+                            }),
+                            Err(e) => serde_json::json!({
+                                "file": p,
+                                "success": false,
+                                "error": e,
+                            }),
+                        };
+                        files_json.push(entry);
+                    }
+                    let json_result = serde_json::json!({
+                        "mode": "since",
+                        "base_commit": commit,
+                        "files": files_json,
+                        "total_warnings": result.total_warnings,
+                        "total_errors": result.total_errors,
+                    });
+                    if format == OutputFormat::Json {
+                        println!("{}", serde_json::to_string_pretty(&json_result).unwrap());
+                    } else {
+                        println!("{}", serde_json::to_string(&json_result).unwrap());
+                    }
+                }
+                OutputFormat::Sarif => {
+                    eprintln!("SARIF output not supported for --since mode");
+                }
+            }
+
+            if result.total_errors > 0 || result.parse_errors > 0 {
+                ExitCode::from(1)
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            ExitCode::from(1)
         }
     }
 }
