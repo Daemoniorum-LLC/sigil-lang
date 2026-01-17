@@ -156,6 +156,12 @@ impl WasmCompiler {
             PipeOp::Flatten => Err(WasmError::unsupported("flatten operation")),
             PipeOp::Unique => Err(WasmError::unsupported("unique operation")),
             PipeOp::Enumerate => Err(WasmError::unsupported("enumerate operation")),
+            // Holographic operations
+            PipeOp::Universal => Err(WasmError::unsupported("universal reconstruction")),
+            PipeOp::Possibility => Err(WasmError::unsupported("possibility extraction")),
+            PipeOp::Necessity => Err(WasmError::unsupported("necessity verification")),
+            PipeOp::PossibilityMethod { .. } => Err(WasmError::unsupported("possibility method call")),
+            PipeOp::NecessityMethod { .. } => Err(WasmError::unsupported("necessity method call")),
         }
     }
 

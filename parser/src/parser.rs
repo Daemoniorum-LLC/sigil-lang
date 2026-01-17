@@ -2437,6 +2437,12 @@ impl<'a> Parser<'a> {
                     inner: Box::new(inner),
                 })
             }
+            Some(Token::Linear) => {
+                // Linear type: `linear T` - value can only be used once
+                self.advance();
+                let inner = self.parse_type()?;
+                Ok(TypeExpr::Linear(Box::new(inner)))
+            }
             Some(Token::LBracket) => {
                 self.advance();
                 // Check for empty brackets or array/shape syntax
@@ -3199,9 +3205,26 @@ impl<'a> Parser<'a> {
             Some(Token::Header) => true,      // |header{...}
             Some(Token::Body) => true,        // |body{...}
             Some(Token::Interrobang) => true, // |‽
+            // Holographic operators
+            Some(Token::Lozenge) => true,     // |◊ or |◊method - possibility
+            Some(Token::BoxSymbol) => true,   // |□ or |□method - necessity
             // Identifier could be pipe method: |collect, |take, etc.
             // But identifiers NOT followed by `(` or `{` are likely bitwise OR operands
-            Some(Token::Ident(_)) => {
+            Some(Token::Ident(name)) => {
+                // Some pipe methods don't require parentheses
+                let no_args_pipe_methods = [
+                    "collect", "observe", "len", "first", "last", "reverse",
+                    "iter", "into_iter", "enumerate", "sum", "product",
+                    "min", "max", "count", "flatten", "unique",
+                    // Quantum gates
+                    "H", "X", "Y", "Z", "S", "T", "measure",
+                    "H_all", "measure_all",
+                    // Neural network activations and tensor operations
+                    "relu", "softmax", "reshape", "backward",
+                ];
+                if no_args_pipe_methods.contains(&name.as_str()) {
+                    return true;
+                }
                 // Only treat as pipe method if followed by explicit call syntax
                 // peek_next() gave us the Ident, peek_n(1) gives us the token after it
                 // Also handle evidentiality markers: |validate!{...} where ! precedes {
@@ -3646,6 +3669,7 @@ impl<'a> Parser<'a> {
                 // Tensor/array operators
                 Some(Token::CircledDot) => BinOp::Hadamard, // ⊙ element-wise multiply
                 Some(Token::Tensor) => BinOp::TensorProd,   // ⊗ tensor product
+                Some(Token::Gpu) => BinOp::Convolve,        // ⊛ convolution/merge
                 // Legion operators handled specially below
                 Some(Token::Interfere)
                 | Some(Token::Distribute)
@@ -6230,13 +6254,62 @@ impl<'a> Parser<'a> {
             // Mathematical & APL-Inspired Operations
             // ==========================================
 
-            // All/ForAll: |∀{p} or |all{p}
+            // All/ForAll: |∀{p} for predicate check, |∀ for universal reconstruction
             Some(Token::ForAll) => {
                 self.advance();
-                self.expect(Token::LBrace)?;
-                let pred = self.parse_expr()?;
-                self.expect(Token::RBrace)?;
-                Ok(PipeOp::All(Box::new(pred)))
+                // Check if followed by brace - if so, it's All(predicate)
+                // Otherwise, it's Universal (holographic reconstruction)
+                if self.check(&Token::LBrace) {
+                    self.advance(); // consume LBrace
+                    let pred = self.parse_expr()?;
+                    self.expect(Token::RBrace)?;
+                    Ok(PipeOp::All(Box::new(pred)))
+                } else {
+                    // No brace - universal reconstruction (sum/merge)
+                    Ok(PipeOp::Universal)
+                }
+            }
+
+            // Possibility: |◊ or |◊method - extract approximate/speculative answer
+            Some(Token::Lozenge) => {
+                self.advance();
+                // Check if followed by identifier (method call)
+                if let Some(Token::Ident(_)) = self.current_token() {
+                    let name = self.parse_ident()?;
+                    // Check for arguments
+                    let args = if self.check(&Token::LParen) {
+                        self.advance();
+                        let args = self.parse_expr_list()?;
+                        self.expect(Token::RParen)?;
+                        args
+                    } else {
+                        vec![]
+                    };
+                    Ok(PipeOp::PossibilityMethod { name, args })
+                } else {
+                    Ok(PipeOp::Possibility)
+                }
+            }
+
+            // Necessity: |□ or |□method - verify and promote to certain
+            Some(Token::BoxSymbol) => {
+                self.advance();
+                // Check if followed by identifier (method call)
+                if let Some(Token::Ident(_)) = self.current_token() {
+                    let name = self.parse_ident()?;
+                    // Check for arguments
+                    let args = if self.check(&Token::LParen) {
+                        self.advance();
+                        let args = self.parse_expr_list()?;
+                        self.expect(Token::RParen)?;
+                        args
+                    } else {
+                        vec![]
+                    };
+                    Ok(PipeOp::NecessityMethod { name, args })
+                } else {
+                    Ok(PipeOp::Necessity)
+                }
             }
 
             // Any/Exists: |∃{p} or |any{p}
@@ -8417,7 +8490,8 @@ fn infix_binding_power(op: BinOp) -> (u8, u8) {
         | BinOp::Rem
         | BinOp::MatMul
         | BinOp::Hadamard
-        | BinOp::TensorProd => (17, 18),
+        | BinOp::TensorProd
+        | BinOp::Convolve => (17, 18),
         BinOp::Pow => (20, 19), // Right associative
     }
 }

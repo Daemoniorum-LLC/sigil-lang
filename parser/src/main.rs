@@ -394,7 +394,9 @@ fn run_file(path: &str, program_args: &[String]) -> ExitCode {
     let ast = match parser.parse_file() {
         Ok(ast) => ast,
         Err(e) => {
-            eprintln!("Parse error in '{}': {}", path, e);
+            // Use rich diagnostic output
+            let diag: Diagnostic = e.into();
+            diag.eprint(path, &source);
             return ExitCode::from(1);
         }
     };
@@ -403,10 +405,9 @@ fn run_file(path: &str, program_args: &[String]) -> ExitCode {
     let mut type_checker = TypeChecker::new();
     if let Err(type_errors) = type_checker.check_file(&ast) {
         for err in type_errors {
-            eprintln!("Type error in '{}': {}", path, err.message);
-            for note in &err.notes {
-                eprintln!("  note: {}", note);
-            }
+            // Use rich diagnostic output
+            let diag: Diagnostic = (&err).into();
+            diag.eprint(path, &source);
         }
         return ExitCode::from(1);
     }
@@ -527,7 +528,8 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
         let ast = match parser.parse_file() {
             Ok(ast) => ast,
             Err(e) => {
-                eprintln!("Parse error in '{}': {}", file_path, e);
+                let diag: Diagnostic = e.into();
+                diag.eprint(file_path, &source);
                 return ExitCode::from(1);
             }
         };
@@ -867,7 +869,8 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
             let ast = match parser.parse_file() {
                 Ok(ast) => ast,
                 Err(e) => {
-                    eprintln!("Parse error in '{}': {}", file_path, e);
+                    let diag: Diagnostic = e.into();
+                    diag.eprint(file_path, &source);
                     return ExitCode::from(1);
                 }
             };
@@ -1720,26 +1723,17 @@ fn lint_path(
                 }
             }
             Err(e) => {
+                // e is a String from lint_source_with_config, convert to diagnostic
+                let diag = Diagnostic::error(&e, Span::default()).with_code("E0005");
                 if format == OutputFormat::Human {
-                    eprintln!("Parse error in '{}': {}", path, e);
+                    diag.eprint(path, &source);
                 } else {
-                    let error_json = serde_json::json!({
-                        "file": path,
-                        "diagnostics": [{
-                            "severity": "error",
-                            "message": format!("Parse error: {}", e),
-                            "code": "E0002",
-                            "line": 1,
-                            "column": 1,
-                        }],
-                        "error_count": 1,
-                        "warning_count": 0,
-                        "success": false
-                    });
+                    let mut diagnostics = Diagnostics::new();
+                    diagnostics.add(diag);
                     if format == OutputFormat::Json {
-                        println!("{}", serde_json::to_string_pretty(&error_json).unwrap());
+                        println!("{}", diagnostics.to_json_string(path, &source));
                     } else {
-                        println!("{}", serde_json::to_string(&error_json).unwrap());
+                        println!("{}", diagnostics.to_json_compact(path, &source));
                     }
                 }
                 ExitCode::from(1)
@@ -1873,7 +1867,8 @@ fn dump_ir_file(path: &str, pretty: bool, output: Option<&str>) -> ExitCode {
     let ast = match parser.parse_file() {
         Ok(ast) => ast,
         Err(e) => {
-            eprintln!("Parse error in '{}': {}", path, e);
+            let diag: Diagnostic = e.into();
+            diag.eprint(path, &source);
             return ExitCode::from(1);
         }
     };
@@ -1927,7 +1922,8 @@ fn parse_file(path: &str) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("Parse error in '{}': {}", path, e);
+            let diag: Diagnostic = e.into();
+            diag.eprint(path, &source);
             ExitCode::from(1)
         }
     }
@@ -3062,11 +3058,13 @@ fn build_project() -> ExitCode {
     };
 
     // Parse
+    let main_file_str = main_file.to_string_lossy();
     let mut parser = Parser::new(&source);
     let ast = match parser.parse_file() {
         Ok(ast) => ast,
         Err(e) => {
-            eprintln!("Parse error: {}", e);
+            let diag: Diagnostic = e.into();
+            diag.eprint(&main_file_str, &source);
             return ExitCode::from(1);
         }
     };
@@ -3075,10 +3073,8 @@ fn build_project() -> ExitCode {
     let mut type_checker = TypeChecker::new();
     if let Err(errors) = type_checker.check_file(&ast) {
         for err in errors {
-            eprintln!("Error: {}", err.message);
-            for note in &err.notes {
-                eprintln!("  note: {}", note);
-            }
+            let diag: Diagnostic = (&err).into();
+            diag.eprint(&main_file_str, &source);
         }
         return ExitCode::from(1);
     }

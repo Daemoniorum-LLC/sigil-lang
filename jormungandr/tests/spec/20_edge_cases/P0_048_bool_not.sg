@@ -1,0 +1,19 @@
+// Test: Boolean not operator
+// Spec: 05-MATHEMATICS.md § Boolean
+// Priority: P0
+//
+// Purpose:
+// Validates the ! (not) operator.
+//
+// Expected behavior:
+// Should negate boolean values
+
+fn main() {
+    let t = true;
+    let f = false;
+
+    println(!t);
+    println(!f);
+    println(!!t);
+    println(!(!f));
+}

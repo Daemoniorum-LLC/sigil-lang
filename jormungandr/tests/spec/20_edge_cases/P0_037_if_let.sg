@@ -1,0 +1,26 @@
+// Test: If let pattern
+// Spec: 02-SYNTAX.md § If Let
+// Priority: P0
+//
+// Purpose:
+// Validates if let for pattern matching in conditions.
+//
+// Expected behavior:
+// Should destructure and bind in condition
+
+fn main() {
+    let x: Option<i32> = Some(42);
+    let y: Option<i32> = None;
+
+    if let Some(n) = x {
+        println(n);
+    } else {
+        println("none");
+    }
+
+    if let Some(n) = y {
+        println(n);
+    } else {
+        println("none");
+    }
+}

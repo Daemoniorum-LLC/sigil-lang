@@ -9,8 +9,10 @@
   padding-top: 64px;
 }
 
-/* Sidebar */
+/* Sidebar - explicitly position in column 1, span all rows */
 .docs-sidebar {
+  grid-column: 1;
+  grid-row: 1 / -1;
   position: sticky;
   top: 64px;
   height: calc(100vh - 64px);
@@ -65,8 +67,10 @@
   color: var(--accent);
 }
 
-/* Main Content */
+/* Main Content - explicitly position in column 2, span all rows */
 .docs-content {
+  grid-column: 2;
+  grid-row: 1 / -1;
   max-width: 900px;
   padding: var(--space-3xl);
 }

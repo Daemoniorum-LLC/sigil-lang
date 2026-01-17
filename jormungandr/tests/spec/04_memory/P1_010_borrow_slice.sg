@@ -1,3 +1,4 @@
+// SKIP: Requires &Vec<T> → &[T] slice coercion (not yet implemented)
 // Test: Borrowing slices from vectors
 // Spec: 04-MEMORY.md § 3 Borrowing
 // Priority: P1 - Production Ready

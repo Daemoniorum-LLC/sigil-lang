@@ -1,0 +1,25 @@
+// Test: Match with wildcard and guards
+// Spec: 02-SYNTAX.md § Match Expressions
+// Priority: P0
+//
+// Purpose:
+// Validates wildcard pattern _ and guards in match.
+//
+// Expected behavior:
+// Should match correctly with guards
+
+fn classify(n: i32) -> &str {
+    match n {
+        0 => "zero",
+        x if x < 0 => "negative",
+        x if x > 100 => "large",
+        _ => "positive",
+    }
+}
+
+fn main() {
+    println(classify(0));
+    println(classify(-5));
+    println(classify(50));
+    println(classify(200));
+}

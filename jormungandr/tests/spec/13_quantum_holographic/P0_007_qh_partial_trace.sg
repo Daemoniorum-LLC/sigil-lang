@@ -4,7 +4,7 @@
 
 fn main() {
     let entangled: Entangled<QHState<i32>, QHState<i32>> = bell_state();
-    let (system, environment) = entangled|partial_trace;
+    let (system, environment) = partial_trace(entangled);
     // System alone is in mixed state
-    println(system|is_pure);
+    println(system|is_pure());
 }

@@ -282,6 +282,8 @@ pub enum Token {
     Mut,
     #[token("const")]
     Const,
+    #[token("linear")]
+    Linear,
     #[token("type")]
     Type,
     #[token("struct")]
@@ -652,6 +654,9 @@ pub enum Token {
 
     #[token("◊")]
     Lozenge, // Predicted/speculative (U+25CA) - Token◊
+
+    #[token("□")]
+    BoxSymbol, // Necessity/verification (U+25A1) - holographic necessity operator
 
     // === Legion Morphemes (Holographic Agent Collective) ===
     // From Infernum 2.0 - distributed memory and multi-agent coordination

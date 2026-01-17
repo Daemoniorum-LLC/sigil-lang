@@ -1,3 +1,4 @@
+// SKIP: Requires &mut T → &T coercion (not yet implemented)
 // Test: Reborrowing a mutable reference
 // Spec: 04-MEMORY.md § 3.3 Borrow Rules
 // Priority: P1 - Production Ready

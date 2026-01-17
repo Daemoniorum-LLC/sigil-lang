@@ -1,0 +1,23 @@
+// Test: Closure capturing mutable variable
+// Spec: 03-TYPES.md § Closures
+// Priority: P0
+//
+// Purpose:
+// Validates that closures can capture and modify mutable variables.
+//
+// Expected behavior:
+// Closure should be able to modify captured variable
+
+fn main() {
+    let mut counter = 0;
+
+    let mut increment = || {
+        counter = counter + 1;
+        counter
+    };
+
+    println(increment());
+    println(increment());
+    println(increment());
+    println(counter);
+}

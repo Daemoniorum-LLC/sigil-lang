@@ -1,0 +1,31 @@
+// Test: Boolean short-circuit evaluation
+// Spec: 03-TYPES.md § Boolean Operations
+// Priority: P0
+//
+// Purpose:
+// Validates that && and || short-circuit correctly.
+//
+// Expected behavior:
+// Second operand should not be evaluated when short-circuiting
+
+fn side_effect(msg: &str) -> bool {
+    println(msg);
+    true
+}
+
+fn main() {
+    // && should short-circuit on false
+    println("Testing &&:");
+    let r1 = false && side_effect("should not print");
+    println(r1);
+
+    // || should short-circuit on true
+    println("Testing ||:");
+    let r2 = true || side_effect("should not print");
+    println(r2);
+
+    // Non-short-circuit cases
+    println("Non-short-circuit:");
+    let r3 = true && side_effect("should print");
+    println(r3);
+}

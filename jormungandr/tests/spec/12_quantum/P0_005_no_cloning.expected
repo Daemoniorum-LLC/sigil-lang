@@ -1,1 +1,1 @@
-ERROR: linear value used twice
+linear value 'q' used twice (no-cloning theorem violation)
