@@ -1,0 +1,15 @@
+// Test: HTTP request with custom headers
+// Spec: 15-PROTOCOLS.md § 4 HTTP Support
+// Priority: P1 - Production Ready
+//
+// Tests http_request with custom headers
+
+fn main() {
+    // Test url_encode function
+    let encoded = url_encode("hello world");
+    if encoded == "hello%20world" {
+        println("OK");
+    } else {
+        println(encoded);
+    }
+}

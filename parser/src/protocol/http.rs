@@ -366,8 +366,8 @@ impl RequestBuilder {
     /// Send the request and await the response
     #[cfg(feature = "reqwest")]
     pub async fn send(self) -> ProtocolResult<Response> {
+        let client = self.client.clone();
         let request = self.build();
-        let client = self.client;
 
         if let Some(ref inner) = client.inner {
             let mut req_builder = match request.method {

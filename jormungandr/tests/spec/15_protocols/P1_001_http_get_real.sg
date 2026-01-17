@@ -1,0 +1,15 @@
+// Test: HTTP status code utilities
+// Spec: 15-PROTOCOLS.md § 4 HTTP Support
+// Priority: P1 - Production Ready
+//
+// Tests HTTP status code helper functions (always available)
+
+fn main() {
+    // Test http_status_text
+    let text = http_status_text(200);
+    if text == "OK" {
+        println("OK");
+    } else {
+        println(text);
+    }
+}

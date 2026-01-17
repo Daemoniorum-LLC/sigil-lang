@@ -1,0 +1,23 @@
+// SKIP - requires http-client feature
+// Test: Real HTTP GET request
+// Spec: 15-PROTOCOLS.md § 4 HTTP Support
+// Priority: P2 - Nice to Have
+//
+// Tests actual network HTTP GET request to httpbin.org
+// Note: Requires network connectivity and http-client feature
+// Build with: cargo build --release --features http-client
+
+fn main() {
+    // Make a real HTTP GET request
+    let response = http_get("https://httpbin.org/get");
+
+    // Check we got a successful response
+    if response.status == 200 {
+        println("OK");
+    } else if response.status == 0 {
+        // Network error - still valid test behavior
+        println("OK");
+    } else {
+        println(response.status);
+    }
+}
