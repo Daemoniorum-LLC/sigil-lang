@@ -285,6 +285,7 @@ pub enum Token {
     #[token("type")]
     Type,
     #[token("sigil")]
+    #[token("struct")]
     Struct,
     #[token("enum")]
     Enum,

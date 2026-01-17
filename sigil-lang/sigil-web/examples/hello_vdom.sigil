@@ -1,0 +1,44 @@
+/// Simple VDOM rendering example
+///
+/// This demonstrates basic component rendering with Sigil's VDOM.
+
+// External VDOM imports from JS runtime
+extern "wasm" {
+    fn vdom_create_vnode(tag: i64) -> i32;
+    fn vdom_create_text_vnode(text: i64) -> i32;
+    fn vdom_set_vnode_str_prop(vnode: i32, name: i64, value: i64);
+    fn vdom_append_vnode_child(parent: i32, child: i32);
+    fn vdom_mount_vnode(vnode: i32, selector: i64) -> i32;
+}
+
+/// Create a simple div element with text content
+fn create_greeting(name: String!) -> i32 {
+    // Create container div
+    let div = vdom_create_vnode("div" as i64);
+
+    // Set class name
+    vdom_set_vnode_str_prop(div, "className" as i64, "greeting" as i64);
+
+    // Create greeting text
+    let greeting = f"Hello, {name}! Welcome to Sigil.";
+    let text = vdom_create_text_vnode(greeting as i64);
+
+    // Append text to div
+    vdom_append_vnode_child(div, text);
+
+    div
+}
+
+/// Main entry point
+pub fn main() {
+    print("Starting VDOM test...");
+
+    // Create the greeting component
+    let component = create_greeting("World");
+
+    // Mount to #app
+    let dom_id = vdom_mount_vnode(component, "#app" as i64);
+
+    print(f"Mounted component, DOM ID: {dom_id}");
+    print("VDOM test complete!");
+}

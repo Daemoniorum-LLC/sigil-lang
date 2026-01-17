@@ -1,0 +1,124 @@
+/// Interactive Counter Component
+///
+/// Demonstrates:
+/// - Signal-based state management
+/// - Event handling (click)
+/// - Dynamic UI updates
+
+// Global state
+static mut COUNT: i64 = 0;
+static mut ROOT_VNODE: i32 = 0;
+static mut MOUNTED: bool = false;
+
+/// Create the counter UI
+fn render_counter() -> i32 {
+    // Create container div
+    let container = vdom_create_vnode("div");
+    vdom_set_vnode_str_prop(container, "className", "counter-container");
+
+    // Create title
+    let title = vdom_create_vnode("h2");
+    let title_text = vdom_create_text_vnode("Sigil Counter");
+    vdom_append_vnode_child(title, title_text);
+    vdom_append_vnode_child(container, title);
+
+    // Create count display
+    let display = vdom_create_vnode("div");
+    vdom_set_vnode_str_prop(display, "className", "count-display");
+    let count_text = vdom_create_text_vnode(f"Count: {COUNT}");
+    vdom_append_vnode_child(display, count_text);
+    vdom_append_vnode_child(container, display);
+
+    // Create button container
+    let buttons = vdom_create_vnode("div");
+    vdom_set_vnode_str_prop(buttons, "className", "button-container");
+
+    // Decrement button
+    let dec_btn = vdom_create_vnode("button");
+    vdom_set_vnode_str_prop(dec_btn, "id", "dec-btn");
+    let dec_text = vdom_create_text_vnode("-");
+    vdom_append_vnode_child(dec_btn, dec_text);
+    vdom_append_vnode_child(buttons, dec_btn);
+
+    // Increment button
+    let inc_btn = vdom_create_vnode("button");
+    vdom_set_vnode_str_prop(inc_btn, "id", "inc-btn");
+    let inc_text = vdom_create_text_vnode("+");
+    vdom_append_vnode_child(inc_btn, inc_text);
+    vdom_append_vnode_child(buttons, inc_btn);
+
+    // Reset button
+    let reset_btn = vdom_create_vnode("button");
+    vdom_set_vnode_str_prop(reset_btn, "id", "reset-btn");
+    let reset_text = vdom_create_text_vnode("Reset");
+    vdom_append_vnode_child(reset_btn, reset_text);
+    vdom_append_vnode_child(buttons, reset_btn);
+
+    vdom_append_vnode_child(container, buttons);
+
+    container
+}
+
+/// Increment the count
+pub fn increment() {
+    COUNT = COUNT + 1;
+    print(f"Incremented to {COUNT}");
+    update_ui();
+}
+
+/// Decrement the count
+pub fn decrement() {
+    COUNT = COUNT - 1;
+    print(f"Decremented to {COUNT}");
+    update_ui();
+}
+
+/// Reset the count
+pub fn reset() {
+    COUNT = 0;
+    print("Reset to 0");
+    update_ui();
+}
+
+/// Update the UI after state change
+fn update_ui() {
+    if MOUNTED {
+        // Create new VDOM
+        let new_vnode = render_counter();
+        // Diff and patch
+        vdom_diff_and_patch(ROOT_VNODE, new_vnode, 1);
+        ROOT_VNODE = new_vnode;
+    }
+}
+
+/// Initialize and mount the counter
+pub fn main() {
+    print("=== Sigil Counter Demo ===");
+    print("");
+
+    // Render initial UI
+    ROOT_VNODE = render_counter();
+
+    // Mount to #app
+    let dom_id = vdom_mount_vnode(ROOT_VNODE, "#app");
+    MOUNTED = true;
+
+    print(f"Counter mounted (DOM ID: {dom_id})");
+    print("");
+    print("Exported functions:");
+    print("  - increment()  : Add 1 to count");
+    print("  - decrement()  : Subtract 1 from count");
+    print("  - reset()      : Reset count to 0");
+    print("");
+    print("Call these from JS to interact with the counter!");
+}
+
+// VDOM extern declarations (provided by runtime)
+extern "wasm" {
+    fn vdom_create_vnode(tag: &str) -> i32;
+    fn vdom_create_text_vnode(text: &str) -> i32;
+    fn vdom_set_vnode_str_prop(vnode: i32, name: &str, value: &str);
+    fn vdom_append_vnode_child(parent: i32, child: i32);
+    fn vdom_mount_vnode(vnode: i32, selector: &str) -> i32;
+    fn vdom_diff_and_patch(old: i32, new: i32, parent: i32);
+}

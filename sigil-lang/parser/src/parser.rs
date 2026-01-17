@@ -4422,6 +4422,26 @@ impl<'a> Parser<'a> {
                     let mut segments = vec![first_segment];
 
                     while self.consume_if(&Token::MiddleDot) {
+                        // Handle ·⌛ as await syntax (alternative to `expr⌛`)
+                        if self.check(&Token::Hourglass) {
+                            self.advance();
+                            let evidentiality = self.parse_evidentiality_opt();
+                            // Build Incorporation from segments collected so far
+                            expr = if segments.len() == 1 && segments[0].args.is_none() {
+                                // Single segment without args - restore original expr
+                                expr.clone()
+                            } else {
+                                Expr::Incorporation { segments: segments.clone() }
+                            };
+                            expr = Expr::Await {
+                                expr: Box::new(expr),
+                                evidentiality,
+                            };
+                            // Reset for potential continuation after await
+                            let first_segment = self.expr_to_incorporation_segment(expr.clone())?;
+                            segments = vec![first_segment];
+                            continue;
+                        }
                         // Handle both named methods and tuple indices: ·method() or ·0
                         let name = if let Some(Token::IntLit(idx)) = self.current_token().cloned() {
                             let span = self.current_span();
@@ -5732,6 +5752,26 @@ impl<'a> Parser<'a> {
                     let mut segments = vec![first_segment];
 
                     while self.consume_if(&Token::MiddleDot) {
+                        // Handle ·⌛ as await syntax (alternative to `expr⌛`)
+                        if self.check(&Token::Hourglass) {
+                            self.advance();
+                            let evidentiality = self.parse_evidentiality_opt();
+                            // Build Incorporation from segments collected so far
+                            expr = if segments.len() == 1 && segments[0].args.is_none() {
+                                // Single segment without args - restore original expr
+                                expr.clone()
+                            } else {
+                                Expr::Incorporation { segments: segments.clone() }
+                            };
+                            expr = Expr::Await {
+                                expr: Box::new(expr),
+                                evidentiality,
+                            };
+                            // Reset for potential continuation after await
+                            let first_segment = self.expr_to_incorporation_segment(expr.clone())?;
+                            segments = vec![first_segment];
+                            continue;
+                        }
                         // Handle both named methods and tuple indices: ·method() or ·0
                         let name = if let Some(Token::IntLit(idx)) = self.current_token().cloned() {
                             let span = self.current_span();
@@ -7036,8 +7076,25 @@ impl<'a> Parser<'a> {
 
         match self.current_token().cloned() {
             Some(Token::Underscore) => {
+                let span = self.current_span();
                 self.advance();
-                Ok(Pattern::Wildcard)
+                // Check for postfix evidentiality: _!
+                let ev = self.parse_evidentiality_opt();
+                if ev.is_some() {
+                    // Convert _! to Pattern::Ident with name="_" and evidentiality
+                    Ok(Pattern::Ident {
+                        mutable: false,
+                        name: Ident {
+                            name: "_".to_string(),
+                            evidentiality: None,
+                            affect: None,
+                            span,
+                        },
+                        evidentiality: ev,
+                    })
+                } else {
+                    Ok(Pattern::Wildcard)
+                }
             }
             Some(Token::DotDot) => {
                 self.advance();
