@@ -65,6 +65,7 @@ fn main() -> ExitCode {
         eprintln!("  parse <file>    Parse and check a Sigil file");
         eprintln!("  lex <file>      Tokenize a Sigil file");
         eprintln!("  repl            Start interactive REPL");
+        eprintln!("  lsp             Start LSP server (for IDE integration)");
         eprintln!();
         eprintln!("Project Commands:");
         eprintln!("  new <name>      Create a new Sigil project");
@@ -350,6 +351,13 @@ fn main() -> ExitCode {
             lex_file(&args[2])
         }
         "repl" => repl(),
+        #[cfg(feature = "lsp")]
+        "lsp" => sigil_parser::lsp::start_lsp(),
+        #[cfg(not(feature = "lsp"))]
+        "lsp" => {
+            eprintln!("Error: LSP server not available (compile with --features lsp)");
+            ExitCode::from(1)
+        }
         "new" => {
             if args.len() < 3 {
                 eprintln!("Error: missing project name");
