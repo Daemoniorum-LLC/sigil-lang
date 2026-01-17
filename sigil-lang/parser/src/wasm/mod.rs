@@ -85,6 +85,9 @@ pub struct WasmCompiler {
     /// String interning map
     pub(crate) string_map: HashMap<String, u32>,
 
+    /// String constants map (name -> data segment offset)
+    pub(crate) string_consts: HashMap<String, u32>,
+
     /// Function table elements (for indirect calls)
     pub(crate) table_elements: Vec<u32>,
 
@@ -171,6 +174,7 @@ impl WasmCompiler {
             data_segments: Vec::new(),
             data_offset: memory::HEAP_START,
             string_map: HashMap::new(),
+            string_consts: HashMap::new(),
             table_elements: Vec::new(),
             closure_map: HashMap::new(),
             closure_counter: 0,

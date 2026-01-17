@@ -4070,13 +4070,59 @@ impl<'a> Parser<'a> {
                     Token::Dyn => "dyn".to_string(),
                     Token::Super => "super".to_string(),
                     Token::Crate => "tome".to_string(),
+                    // Sigil-specific tokens
+                    Token::MiddleDot => "·".to_string(), // Method call operator
+                    Token::Nabla => "∇".to_string(),     // Gradient/backprop operator
+                    Token::Tau => "τ".to_string(),       // Morpheme closure marker
+                    Token::Rho => "ρ".to_string(),       // Reduce morpheme
+                    Token::Sigma => "σ".to_string(),     // Filter morpheme
+                    Token::Delta => "δ".to_string(),     // Dual morpheme
+                    Token::Lambda => "λ".to_string(),    // Lambda alternative
+                    Token::Pi => "π".to_string(),        // Parallel morpheme
+                    Token::Phi => "φ".to_string(),       // Phi combinator
+                    Token::Zeta => "ζ".to_string(),      // Zeta combinator
+                    Token::Mu => "μ".to_string(),        // Mu combinator
+                    Token::Theta => "θ".to_string(),     // Theta notation
+                    Token::Alpha => "α".to_string(),     // First element
+                    Token::Omega => "ω".to_string(),     // End/terminal
+                    Token::Epsilon => "ε".to_string(),   // Empty/null
+                    Token::Chi => "χ".to_string(),       // Random/choice
+                    Token::Nu => "ν".to_string(),        // Nth element
+                    Token::Xi => "ξ".to_string(),        // Next in sequence
+                    Token::Psi => "ψ".to_string(),       // Mental state
+                    Token::Kappa => "κ".to_string(),     // Callback/continuation
+                    Token::Iota => "ι".to_string(),      // Enumerate/index
+                    Token::PlusPlus => "++".to_string(), // Concat
+                    Token::PlusEq => "+=".to_string(),
+                    Token::MinusEq => "-=".to_string(),
+                    Token::StarEq => "*=".to_string(),
+                    Token::SlashEq => "/=".to_string(),
+                    Token::AndAnd => "&&".to_string(),   // Logical AND
+                    Token::OrOr => "||".to_string(),     // Logical OR
+                    Token::Caret => "^".to_string(),     // XOR
+                    Token::CaretEq => "^=".to_string(),
+                    Token::AmpEq => "&=".to_string(),
+                    Token::PipeEq => "|=".to_string(),
+                    Token::Shl => "<<".to_string(),      // Left shift
+                    Token::Shr => ">>".to_string(),      // Right shift
+                    Token::ShlEq => "<<=".to_string(),
+                    Token::ShrEq => ">>=".to_string(),
+                    Token::DotDotEq => "..=".to_string(), // Inclusive range
+                    Token::Hourglass => "⏳".to_string(), // Await symbol
+                    Token::Parallel => "‖".to_string(),  // Parallel execution
+                    Token::Compose => "∘".to_string(),   // Function composition
+                    Token::ForAll => "∀".to_string(),    // Universal quantification
+                    Token::Exists => "∃".to_string(),    // Existential quantification
+                    Token::ElementOf => "∈".to_string(), // Membership test
+                    Token::Union => "∪".to_string(),     // Set union
+                    Token::Intersection => "∩".to_string(), // Set intersection
                     _ => format!("{:?}", token),
                 };
-                // Don't add space before . :: ( [ { ) ] } , ;
+                // Don't add space before . · :: ( [ { ) ] } , ;
                 let suppress_space_before = matches!(token,
-                    Token::Dot | Token::ColonColon | Token::LParen | Token::LBracket |
+                    Token::Dot | Token::MiddleDot | Token::ColonColon | Token::LParen | Token::LBracket |
                     Token::LBrace | Token::RParen | Token::RBracket | Token::RBrace |
-                    Token::Comma | Token::Semi);
+                    Token::Comma | Token::Semi | Token::Question);
                 if !tokens.is_empty() && !suppress_space_before && !tokens.ends_with('.') &&
                    !tokens.ends_with("::") && !tokens.ends_with('(') && !tokens.ends_with('[') &&
                    !tokens.ends_with('{') {

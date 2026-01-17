@@ -1140,6 +1140,43 @@ impl WasmCompiler {
                     return Err(WasmError::arity_mismatch(1, params.len()));
                 }
 
+                // Handle tuple pattern destructuring for enumerate() etc.
+                if let crate::ast::Pattern::Tuple(patterns) = &params[0].pattern {
+                    // Tuple value is on stack - need to destructure
+                    // Tuples from enumerate are pairs: (i64 index, i64 item)
+                    // The tuple is passed as a pointer to memory or two values
+                    // For morpheme operations, we use a simple two-value approach
+                    let func = self
+                        .current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+                    // Tuple is stored as pointer to memory block
+                    // Layout: [first_value: i64, second_value: i64]
+                    let tuple_ptr = func.alloc_local("__tuple_ptr".to_string(), ValType::I64);
+                    func.push(Instruction::LocalTee(tuple_ptr));
+
+                    // Bind each pattern in reverse order (stack discipline)
+                    for (i, pattern) in patterns.iter().enumerate().rev() {
+                        let name = get_pattern_name(pattern);
+                        let local_idx = func.alloc_local(name, ValType::I64);
+
+                        // Load tuple element: ptr + offset
+                        func.push(Instruction::LocalGet(tuple_ptr));
+                        func.push(Instruction::I64Const((i * 8) as i64)); // 8 bytes per i64
+                        func.push(Instruction::I64Add);
+                        // Load i64 from memory
+                        func.push(Instruction::I64Load(wasm_encoder::MemArg {
+                            offset: 0,
+                            align: 3, // 8-byte alignment
+                            memory_index: 0,
+                        }));
+                        func.push(Instruction::LocalSet(local_idx));
+                    }
+
+                    // Compile body
+                    return self.compile_expr(body);
+                }
+
                 // Value is on stack, bind to parameter
                 let param_name = get_pattern_name(&params[0].pattern);
                 let func = self

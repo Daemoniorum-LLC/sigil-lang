@@ -293,8 +293,10 @@ pub enum Token {
     #[token("impl")]
     Impl,
     #[token("scroll")]
+    #[token("mod")]
     Mod,
     #[token("invoke")]
+    #[token("use")]
     Use,
     #[token("pub")]
     Pub,
