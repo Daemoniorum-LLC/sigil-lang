@@ -2407,6 +2407,82 @@ impl Interpreter {
                                 let qualified_name = format!("{}·{}", module_name, e.name.name);
                                 self.types.insert(qualified_name, TypeDef::Enum(e.clone()));
                             }
+                            Item::Impl(impl_block) => {
+                                // Handle impl blocks inside modules
+                                // Extract the type name and qualify it with the module name
+                                let type_name = match &impl_block.self_ty {
+                                    TypeExpr::Path(path) => path
+                                        .segments
+                                        .iter()
+                                        .map(|s| s.ident.name.as_str())
+                                        .collect::<Vec<_>>()
+                                        .join("::"),
+                                    _ => continue, // Skip complex types
+                                };
+
+                                // Check if type name is already qualified (has ::)
+                                // If not, prefix with module name
+                                let qualified_type = if type_name.contains("::") {
+                                    type_name.replace("::", "·")
+                                } else {
+                                    format!("{}·{}", module_name, type_name)
+                                };
+
+                                // Check for Drop trait impl
+                                if let Some(trait_path) = &impl_block.trait_ {
+                                    let trait_name = trait_path
+                                        .segments
+                                        .iter()
+                                        .map(|s| s.ident.name.as_str())
+                                        .collect::<Vec<_>>()
+                                        .join("::");
+                                    if trait_name == "Drop" {
+                                        self.drop_types.insert(qualified_type.clone());
+                                    }
+                                }
+
+                                // Register each method with module-qualified name
+                                for impl_item in &impl_block.items {
+                                    if let ImplItem::Function(func) = impl_item {
+                                        let fn_value = self.create_function(func)?;
+                                        // Register as module·Type·method
+                                        let qualified_name =
+                                            format!("{}·{}", qualified_type, func.name.name);
+                                        self.globals
+                                            .borrow_mut()
+                                            .define(qualified_name.clone(), fn_value.clone());
+
+                                        // Also register without module prefix for local access
+                                        // (Type·method for when type is accessed without module prefix)
+                                        let local_name = format!("{}·{}", type_name, func.name.name);
+                                        if local_name != qualified_name {
+                                            self.globals
+                                                .borrow_mut()
+                                                .define(local_name, fn_value.clone());
+                                        }
+                                    }
+                                }
+                            }
+                            Item::Module(nested_mod) => {
+                                // Handle nested modules recursively
+                                let nested_name = format!("{}·{}", module_name, nested_mod.name.name);
+                                if let Some(nested_items) = &nested_mod.items {
+                                    // Create a temporary module item with qualified name
+                                    // and process it recursively
+                                    let prev_module = self.current_module.clone();
+                                    self.current_module = Some(nested_name.clone());
+                                    for nested_item in nested_items {
+                                        if let Err(e) = self.execute_item(&nested_item.node) {
+                                            crate::sigil_warn!(
+                                                "Warning: error in nested module {}: {}",
+                                                nested_name,
+                                                e
+                                            );
+                                        }
+                                    }
+                                    self.current_module = prev_module;
+                                }
+                            }
                             _ => {} // Skip other nested items for now
                         }
                     }
@@ -3314,21 +3390,43 @@ impl Interpreter {
                 );
             }
 
-            // Check for enum variant syntax FIRST (EnumName::Variant)
+            // Check for enum variant syntax (EnumName::Variant or module::EnumName::Variant)
             // This must come before looking up just the last segment to avoid
             // returning a built-in function instead of the actual variant
-            if path.segments.len() == 2 {
-                let type_name = &path.segments[0].ident.name;
-                let variant_name = &path.segments[1].ident.name;
+            if path.segments.len() >= 2 {
+                let variant_name = &path.segments.last().unwrap().ident.name;
 
-                // Check if this is an enum variant (direct type name match)
-                if let Some(TypeDef::Enum(enum_def)) = self.types.get(type_name) {
+                // Build possible type names from the path (all segments except the last)
+                let type_segments: Vec<&str> = path.segments[..path.segments.len() - 1]
+                    .iter()
+                    .map(|s| s.ident.name.as_str())
+                    .collect();
+
+                // Try different type name formats:
+                // 1. Direct name (e.g., "DType" for DType::F32)
+                // 2. Module-qualified with · (e.g., "dtype·DType" for dtype::DType::F32)
+                // 3. Module-qualified with :: converted (e.g., "dtype·DType")
+                let type_name_direct = type_segments.join("::");
+                let type_name_qualified = type_segments.join("·");
+
+                // Try direct type name first
+                let enum_def_and_name = self
+                    .types
+                    .get(&type_name_direct)
+                    .map(|td| (td, type_name_direct.clone()))
+                    .or_else(|| {
+                        self.types
+                            .get(&type_name_qualified)
+                            .map(|td| (td, type_name_qualified.clone()))
+                    });
+
+                if let Some((TypeDef::Enum(enum_def), actual_enum_name)) = enum_def_and_name {
                     for variant in &enum_def.variants {
                         if &variant.name.name == variant_name {
                             // Return a variant constructor or unit variant
                             if matches!(variant.fields, crate::ast::StructFields::Unit) {
                                 return Ok(Value::Variant {
-                                    enum_name: type_name.clone(),
+                                    enum_name: actual_enum_name,
                                     variant_name: variant_name.clone(),
                                     fields: None,
                                 });
@@ -3337,17 +3435,25 @@ impl Interpreter {
                     }
                 }
 
-                // Fallback: type name might be an alias - search all enums for the variant
+                // Fallback: search all enums for matching type name suffix and variant
                 for (actual_type_name, type_def) in &self.types {
                     if let TypeDef::Enum(enum_def) = type_def {
-                        for variant in &enum_def.variants {
-                            if &variant.name.name == variant_name {
-                                if matches!(variant.fields, crate::ast::StructFields::Unit) {
-                                    return Ok(Value::Variant {
-                                        enum_name: actual_type_name.clone(),
-                                        variant_name: variant_name.clone(),
-                                        fields: None,
-                                    });
+                        // Check if this enum name ends with our type name
+                        // (handles module·DType matching DType)
+                        let matches = actual_type_name == &type_name_direct
+                            || actual_type_name == &type_name_qualified
+                            || actual_type_name.ends_with(&format!("·{}", type_name_direct));
+
+                        if matches {
+                            for variant in &enum_def.variants {
+                                if &variant.name.name == variant_name {
+                                    if matches!(variant.fields, crate::ast::StructFields::Unit) {
+                                        return Ok(Value::Variant {
+                                            enum_name: actual_type_name.clone(),
+                                            variant_name: variant_name.clone(),
+                                            fields: None,
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -13463,7 +13569,7 @@ impl Interpreter {
             .iter()
             .map(|s| s.ident.name.as_str())
             .collect::<Vec<_>>()
-            .join("::");
+            .join("·"); // Use middle dot to match method registration format
 
         // Resolve "Self" to the actual type name if we're in an impl block
         let name = if raw_name == "Self" {
@@ -13474,7 +13580,8 @@ impl Interpreter {
                 raw_name
             }
         } else {
-            raw_name
+            // Normalize :: to · for consistency with internal naming
+            raw_name.replace("::", "·")
         };
 
         let mut field_values = HashMap::new();
@@ -13514,6 +13621,45 @@ impl Interpreter {
                     })?,
             };
             field_values.insert(field.name.name.clone(), value);
+        }
+
+        // Check if this is an enum variant with struct fields (e.g., Message::Move { x, y })
+        // Path will have 2+ segments for enum variants
+        if path.segments.len() >= 2 {
+            let enum_name_segments: Vec<&str> = path.segments[..path.segments.len() - 1]
+                .iter()
+                .map(|s| s.ident.name.as_str())
+                .collect();
+            let variant_name = &path.segments.last().unwrap().ident.name;
+
+            // Try different enum name formats
+            let enum_name_direct = enum_name_segments.join("::");
+            let enum_name_qualified = enum_name_segments.join("·");
+
+            // Check if this is an enum variant
+            let enum_def_opt = self
+                .types
+                .get(&enum_name_direct)
+                .or_else(|| self.types.get(&enum_name_qualified));
+
+            if let Some(TypeDef::Enum(enum_def)) = enum_def_opt {
+                // Check if this variant exists
+                for variant in &enum_def.variants {
+                    if &variant.name.name == variant_name {
+                        // This is an enum variant with struct-like fields
+                        // Create a Variant value with the fields wrapped in a Struct
+                        let inner_struct = Value::Struct {
+                            name: format!("{}::{}", enum_name_direct, variant_name),
+                            fields: Rc::new(RefCell::new(field_values)),
+                        };
+                        return Ok(Value::Variant {
+                            enum_name: enum_name_direct,
+                            variant_name: variant_name.clone(),
+                            fields: Some(Rc::new(vec![inner_struct])),
+                        });
+                    }
+                }
+            }
         }
 
         // Check for missing required fields (type checking)
