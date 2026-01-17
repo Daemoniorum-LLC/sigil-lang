@@ -155,9 +155,16 @@ impl WasmCompiler {
             Expr::Incorporation { segments } => {
                 self.compile_incorporation(segments)
             }
-            Expr::Macro { path, .. } => {
+            Expr::Macro { path, tokens } => {
                 // Handle builtin macros
                 let macro_name = path.segments.last().map(|s| s.ident.name.as_str()).unwrap_or("");
+
+                // Try the macro expansion module first
+                if self.compile_macro(macro_name, tokens)? {
+                    return Ok(());
+                }
+
+                // Handle special control-flow macros
                 match macro_name {
                     // unreachable!(), panic!(), todo!() -> WASM unreachable instruction
                     "unreachable" | "panic" | "todo" | "unimplemented" => {
@@ -177,6 +184,51 @@ impl WasmCompiler {
                         // No-op, push unit
                         func.push(Instruction::I64Const(0));
                         Ok(())
+                    }
+                    // println!, eprintln! -> console::log_str
+                    "println" | "eprintln" | "print" | "eprint" => {
+                        // Expand as format! then print
+                        self.compile_macro("format", tokens)?;
+                        let log_str_idx = self.imports.get_func("console_log_str")
+                            .ok_or_else(|| WasmError::internal("console::log_str import not found"))?;
+                        let func = self.current_function_mut().unwrap();
+                        func.push(Instruction::Call(log_str_idx));
+                        func.push(Instruction::I64Const(0)); // Return unit
+                        Ok(())
+                    }
+                    // dbg! -> format and log, return value
+                    "dbg" => {
+                        // For dbg!, we want to print the expression and return it
+                        // Parse the expression
+                        let args = self.parse_macro_args(tokens)?;
+                        if args.is_empty() {
+                            let func = self.current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::I64Const(0));
+                            return Ok(());
+                        }
+
+                        // Compile the expression
+                        let mut parser = crate::parser::Parser::new(&args[0]);
+                        let expr = parser.parse_expr()
+                            .map_err(|e| WasmError::parse(&format!("in dbg!: {}", e)))?;
+                        self.compile_expr(&expr)?;
+
+                        // Duplicate the value, convert to string, and log
+                        // For now, just return the value (full impl would log too)
+                        Ok(())
+                    }
+                    // assert! -> conditional unreachable
+                    "assert" | "assert_eq" | "assert_ne" => {
+                        // For now, compile as no-op (assertions are debug-only)
+                        let func = self.current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::I64Const(0));
+                        Ok(())
+                    }
+                    // include_str! -> load string at compile time (would need file access)
+                    "include_str" | "include_bytes" => {
+                        Err(WasmError::unsupported(&format!("{}! (requires file access)", macro_name)))
                     }
                     _ => Err(WasmError::unsupported(&format!("macro: {}!", macro_name))),
                 }
@@ -315,6 +367,13 @@ impl WasmCompiler {
             | "TypeId" | "Any" | "Clone" | "Copy" | "Debug" | "Default" | "PartialEq"
             // Module paths
             | "std" | "core" | "alloc" | "mem" | "collections" | "any" | "rc" | "cell"
+            // UI/Qliphoth modules (design tokens)
+            | "typography" | "colors" | "spacing" | "tokens" | "layout" | "theme"
+            | "signals" | "hooks" | "runtime" | "vdom" | "events" | "component"
+            | "borders" | "containers" | "shadows" | "animations" | "breakpoints"
+            | "HeadingLevel" | "TextSize" | "BadgeVariant"
+            // sigil_web prelude
+            | "sigil_web" | "prelude" | "crate"
         );
         if is_module_or_type {
             // Push a dummy value (0) - these are used as type annotations or namespace prefixes

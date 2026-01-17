@@ -134,9 +134,9 @@ impl ImportRegistry {
 
     fn register_browser_imports(&mut self) {
         use ValType::*;
-        // Window and document access
-        self.add_import("browser", "window", vec![], vec![I32]);
-        self.add_import("browser", "document", vec![], vec![I32]);
+        // Window and document access - add aliases for direct lookup
+        self.add_import_with_alias("browser", "window", "window", vec![], vec![I32]);
+        self.add_import_with_alias("browser", "document", "document", vec![], vec![I32]);
         // Window properties
         self.add_import("browser", "inner_width", vec![I32], vec![I32]);
         self.add_import("browser", "inner_height", vec![I32], vec![I32]);
@@ -170,6 +170,20 @@ impl ImportRegistry {
         self.add_import("string", "from_float", vec![F64], vec![I32]); // (float) -> str
         self.add_import("string", "parse_int", vec![I32], vec![I64]); // (str) -> int
         self.add_import("string", "parse_float", vec![I32], vec![F64]); // (str) -> float
+        // Additional string methods
+        self.add_import("string", "lines", vec![I32], vec![I32]); // (str) -> array of strings
+        self.add_import("string", "split_whitespace", vec![I32], vec![I32]); // (str) -> array of strings
+        self.add_import("string", "split", vec![I32, I32], vec![I32]); // (str, delimiter) -> array
+        self.add_import("string", "trim", vec![I32], vec![I32]); // (str) -> trimmed str
+        self.add_import("string", "trim_start", vec![I32], vec![I32]); // (str) -> trimmed str
+        self.add_import("string", "trim_end", vec![I32], vec![I32]); // (str) -> trimmed str
+        self.add_import("string", "to_uppercase", vec![I32], vec![I32]); // (str) -> uppercase str
+        self.add_import("string", "to_lowercase", vec![I32], vec![I32]); // (str) -> lowercase str
+        self.add_import("string", "contains", vec![I32, I32], vec![I32]); // (str, substr) -> bool
+        self.add_import("string", "starts_with", vec![I32, I32], vec![I32]); // (str, prefix) -> bool
+        self.add_import("string", "ends_with", vec![I32, I32], vec![I32]); // (str, suffix) -> bool
+        self.add_import("string", "replace", vec![I32, I32, I32], vec![I32]); // (str, from, to) -> new str
+        self.add_import("string", "chars", vec![I32], vec![I32]); // (str) -> array of chars
     }
 
     fn register_dom_imports(&mut self) {
@@ -288,7 +302,17 @@ impl ImportRegistry {
         self.add_import("math", "ceil", vec![F64], vec![F64]);
         self.add_import("math", "round", vec![F64], vec![F64]);
         self.add_import("math", "abs", vec![F64], vec![F64]);
+        self.add_import("math", "abs_int", vec![I64], vec![I64]); // integer abs
         self.add_import("math", "random", vec![], vec![F64]);
+        // Additional math functions
+        self.add_import("math", "clamp", vec![F64, F64, F64], vec![F64]); // (value, min, max) -> clamped
+        self.add_import("math", "clamp_int", vec![I64, I64, I64], vec![I64]); // (value, min, max) -> clamped
+        self.add_import("math", "min", vec![F64, F64], vec![F64]);
+        self.add_import("math", "max", vec![F64, F64], vec![F64]);
+        self.add_import("math", "min_int", vec![I64, I64], vec![I64]);
+        self.add_import("math", "max_int", vec![I64, I64], vec![I64]);
+        self.add_import("math", "signum", vec![F64], vec![F64]);
+        self.add_import("math", "signum_int", vec![I64], vec![I64]);
     }
 
     fn register_vdom_imports(&mut self) {

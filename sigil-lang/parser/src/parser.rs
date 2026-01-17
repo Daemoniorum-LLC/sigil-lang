@@ -3154,6 +3154,7 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Dyn) => true,       // [dyn Trait]
             Some(Token::Impl) => true,      // [impl Trait]
+            Some(Token::Underscore) => true, // [_] inferred type
             // Path-starting keywords that indicate type paths
             Some(Token::Crate) => true,     // [crate::Type]
             Some(Token::Super) => true,     // [super::Type]
@@ -4069,13 +4070,59 @@ impl<'a> Parser<'a> {
                     Token::Dyn => "dyn".to_string(),
                     Token::Super => "super".to_string(),
                     Token::Crate => "tome".to_string(),
+                    // Sigil-specific tokens
+                    Token::MiddleDot => "·".to_string(), // Method call operator
+                    Token::Nabla => "∇".to_string(),     // Gradient/backprop operator
+                    Token::Tau => "τ".to_string(),       // Morpheme closure marker
+                    Token::Rho => "ρ".to_string(),       // Reduce morpheme
+                    Token::Sigma => "σ".to_string(),     // Filter morpheme
+                    Token::Delta => "δ".to_string(),     // Dual morpheme
+                    Token::Lambda => "λ".to_string(),    // Lambda alternative
+                    Token::Pi => "π".to_string(),        // Parallel morpheme
+                    Token::Phi => "φ".to_string(),       // Phi combinator
+                    Token::Zeta => "ζ".to_string(),      // Zeta combinator
+                    Token::Mu => "μ".to_string(),        // Mu combinator
+                    Token::Theta => "θ".to_string(),     // Theta notation
+                    Token::Alpha => "α".to_string(),     // First element
+                    Token::Omega => "ω".to_string(),     // End/terminal
+                    Token::Epsilon => "ε".to_string(),   // Empty/null
+                    Token::Chi => "χ".to_string(),       // Random/choice
+                    Token::Nu => "ν".to_string(),        // Nth element
+                    Token::Xi => "ξ".to_string(),        // Next in sequence
+                    Token::Psi => "ψ".to_string(),       // Mental state
+                    Token::Kappa => "κ".to_string(),     // Callback/continuation
+                    Token::Iota => "ι".to_string(),      // Enumerate/index
+                    Token::PlusPlus => "++".to_string(), // Concat
+                    Token::PlusEq => "+=".to_string(),
+                    Token::MinusEq => "-=".to_string(),
+                    Token::StarEq => "*=".to_string(),
+                    Token::SlashEq => "/=".to_string(),
+                    Token::AndAnd => "&&".to_string(),   // Logical AND
+                    Token::OrOr => "||".to_string(),     // Logical OR
+                    Token::Caret => "^".to_string(),     // XOR
+                    Token::CaretEq => "^=".to_string(),
+                    Token::AmpEq => "&=".to_string(),
+                    Token::PipeEq => "|=".to_string(),
+                    Token::Shl => "<<".to_string(),      // Left shift
+                    Token::Shr => ">>".to_string(),      // Right shift
+                    Token::ShlEq => "<<=".to_string(),
+                    Token::ShrEq => ">>=".to_string(),
+                    Token::DotDotEq => "..=".to_string(), // Inclusive range
+                    Token::Hourglass => "⏳".to_string(), // Await symbol
+                    Token::Parallel => "‖".to_string(),  // Parallel execution
+                    Token::Compose => "∘".to_string(),   // Function composition
+                    Token::ForAll => "∀".to_string(),    // Universal quantification
+                    Token::Exists => "∃".to_string(),    // Existential quantification
+                    Token::ElementOf => "∈".to_string(), // Membership test
+                    Token::Union => "∪".to_string(),     // Set union
+                    Token::Intersection => "∩".to_string(), // Set intersection
                     _ => format!("{:?}", token),
                 };
-                // Don't add space before . :: ( [ { ) ] } , ;
+                // Don't add space before . · :: ( [ { ) ] } , ;
                 let suppress_space_before = matches!(token,
-                    Token::Dot | Token::ColonColon | Token::LParen | Token::LBracket |
+                    Token::Dot | Token::MiddleDot | Token::ColonColon | Token::LParen | Token::LBracket |
                     Token::LBrace | Token::RParen | Token::RBracket | Token::RBrace |
-                    Token::Comma | Token::Semi);
+                    Token::Comma | Token::Semi | Token::Question);
                 if !tokens.is_empty() && !suppress_space_before && !tokens.ends_with('.') &&
                    !tokens.ends_with("::") && !tokens.ends_with('(') && !tokens.ends_with('[') &&
                    !tokens.ends_with('{') {
@@ -5624,6 +5671,9 @@ impl<'a> Parser<'a> {
     /// Parse postfix operators that can follow a pipe chain (like ?)
     fn parse_postfix_after_pipe(&mut self, mut expr: Expr) -> ParseResult<Expr> {
         loop {
+            // Skip comments to allow method chain continuation across lines
+            self.skip_comments();
+
             match self.current_token() {
                 Some(Token::Question) => {
                     self.advance();
@@ -5674,6 +5724,51 @@ impl<'a> Parser<'a> {
                             field,
                         };
                     }
+                }
+                // MiddleDot method chaining: expr·method()
+                Some(Token::MiddleDot) => {
+                    // Convert current expr to first segment, then parse chain
+                    let first_segment = self.expr_to_incorporation_segment(expr.clone())?;
+                    let mut segments = vec![first_segment];
+
+                    while self.consume_if(&Token::MiddleDot) {
+                        // Handle both named methods and tuple indices: ·method() or ·0
+                        let name = if let Some(Token::IntLit(idx)) = self.current_token().cloned() {
+                            let span = self.current_span();
+                            self.advance();
+                            Ident {
+                                name: idx,
+                                evidentiality: None,
+                                affect: None,
+                                span,
+                            }
+                        } else {
+                            self.parse_ident()?
+                        };
+                        // Handle bracket generics on method: ·method[Type]()
+                        if self.check(&Token::LBracket) && self.peek_looks_like_bracket_generic() {
+                            self.advance(); // consume [
+                            let _generics = self.parse_type_list()?;
+                            self.expect(Token::RBracket)?;
+                        }
+                        // Handle angle bracket generics: ·method<Type>()
+                        if self.check(&Token::Lt) && self.peek_looks_like_generic_arg() {
+                            self.advance(); // consume <
+                            let _generics = self.parse_type_list()?;
+                            self.expect_gt()?;
+                        }
+                        let args = if self.check(&Token::LParen) {
+                            self.advance();
+                            let args = self.parse_expr_list()?;
+                            self.expect(Token::RParen)?;
+                            Some(args)
+                        } else {
+                            None
+                        };
+                        segments.push(IncorporationSegment { name, args });
+                    }
+
+                    expr = Expr::Incorporation { segments };
                 }
                 _ => break,
             }

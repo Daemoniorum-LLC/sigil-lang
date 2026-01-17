@@ -802,8 +802,47 @@ impl WasmCompiler {
 
     /// Compile a const definition.
     fn compile_const(&mut self, def: &ConstDef) -> WasmResult<()> {
+        use crate::ast::{Expr, Literal};
+
         // Consts are inlined at use sites, but we need to evaluate them
         // For now, add as a global
+
+        // Check if this is a string constant (plain, raw, or multi-line)
+        let string_content = match &def.value {
+            Expr::Literal(Literal::String(s)) => Some(s.as_str()),
+            Expr::Literal(Literal::RawString(s)) => Some(s.as_str()),
+            Expr::Literal(Literal::MultiLineString(s)) => Some(s.as_str()),
+            _ => None,
+        };
+        if let Some(s) = string_content {
+            // String constants are stored in the data segment
+            // The global holds the offset into the data segment
+            let offset = self.add_string(s);
+            let idx = self.globals.len() as u32;
+            self.globals.push((ValType::I64, false, offset as i64));
+            self.global_map.insert(def.name.name.clone(), idx);
+            // Also track this as a string constant for proper access
+            self.string_consts.insert(def.name.name.clone(), offset);
+            return Ok(());
+        }
+
+        // Check for reference to string literal: &"string" or &str literal
+        if let Expr::AddrOf { expr, .. } = &def.value {
+            let string_content = match expr.as_ref() {
+                Expr::Literal(Literal::String(s)) => Some(s.as_str()),
+                Expr::Literal(Literal::RawString(s)) => Some(s.as_str()),
+                Expr::Literal(Literal::MultiLineString(s)) => Some(s.as_str()),
+                _ => None,
+            };
+            if let Some(s) = string_content {
+                let offset = self.add_string(s);
+                let idx = self.globals.len() as u32;
+                self.globals.push((ValType::I64, false, offset as i64));
+                self.global_map.insert(def.name.name.clone(), idx);
+                self.string_consts.insert(def.name.name.clone(), offset);
+                return Ok(());
+            }
+        }
 
         // Evaluate constant expression at compile time
         let const_val = self.eval_const_expr(&def.value)?;

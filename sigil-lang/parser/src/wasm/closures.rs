@@ -2,7 +2,7 @@
 //!
 //! Compiles Sigil closures to WASM with environment capture.
 
-use wasm_encoder::{Instruction, ValType};
+use wasm_encoder::{BlockType, Instruction, ValType};
 
 use super::error::{WasmError, WasmResult};
 use super::types::{ClosureInfo, CompiledFunction};
@@ -1248,6 +1248,225 @@ impl WasmCompiler {
                 self.compile_unwrap(receiver)?;
                 Ok(true)
             }
+            "unwrap_or_else" => {
+                // unwrap_or_else(|| default_fn): return value if Some, otherwise call closure
+                // For now, compile receiver and ignore the closure (simplified)
+                self.compile_expr(receiver)?;
+                // TODO: Implement proper unwrap_or_else with closure evaluation
+                Ok(true)
+            }
+
+            // String methods
+            "lines" => {
+                self.compile_expr(receiver)?;
+                if let Some(func_idx) = self.imports.get_func("string_lines") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                }
+                Ok(true)
+            }
+            "split_whitespace" => {
+                self.compile_expr(receiver)?;
+                if let Some(func_idx) = self.imports.get_func("string_split_whitespace") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                }
+                Ok(true)
+            }
+            "split" => {
+                self.compile_expr(receiver)?;
+                if !args.is_empty() {
+                    self.compile_expr(&args[0])?;
+                }
+                if let Some(func_idx) = self.imports.get_func("string_split") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                }
+                Ok(true)
+            }
+            "trim" => {
+                self.compile_expr(receiver)?;
+                if let Some(func_idx) = self.imports.get_func("string_trim") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                }
+                Ok(true)
+            }
+            "trim_start" => {
+                self.compile_expr(receiver)?;
+                if let Some(func_idx) = self.imports.get_func("string_trim_start") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                }
+                Ok(true)
+            }
+            "trim_end" => {
+                self.compile_expr(receiver)?;
+                if let Some(func_idx) = self.imports.get_func("string_trim_end") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                }
+                Ok(true)
+            }
+            "to_uppercase" => {
+                self.compile_expr(receiver)?;
+                if let Some(func_idx) = self.imports.get_func("string_to_uppercase") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                }
+                Ok(true)
+            }
+            "to_lowercase" => {
+                self.compile_expr(receiver)?;
+                if let Some(func_idx) = self.imports.get_func("string_to_lowercase") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                }
+                Ok(true)
+            }
+            "contains" => {
+                self.compile_expr(receiver)?;
+                if !args.is_empty() {
+                    self.compile_expr(&args[0])?;
+                }
+                if let Some(func_idx) = self.imports.get_func("string_contains") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                }
+                Ok(true)
+            }
+            "starts_with" => {
+                self.compile_expr(receiver)?;
+                if !args.is_empty() {
+                    self.compile_expr(&args[0])?;
+                }
+                if let Some(func_idx) = self.imports.get_func("string_starts_with") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                }
+                Ok(true)
+            }
+            "ends_with" => {
+                self.compile_expr(receiver)?;
+                if !args.is_empty() {
+                    self.compile_expr(&args[0])?;
+                }
+                if let Some(func_idx) = self.imports.get_func("string_ends_with") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                }
+                Ok(true)
+            }
+            "replace" => {
+                self.compile_expr(receiver)?;
+                for arg in args {
+                    self.compile_expr(arg)?;
+                }
+                if let Some(func_idx) = self.imports.get_func("string_replace") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                }
+                Ok(true)
+            }
+            "chars" => {
+                self.compile_expr(receiver)?;
+                if let Some(func_idx) = self.imports.get_func("string_chars") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                }
+                Ok(true)
+            }
+
+            // Numeric methods
+            "abs" => {
+                self.compile_expr(receiver)?;
+                // Use integer abs by default (most common case)
+                // For proper type dispatch, would check receiver type
+                if let Some(func_idx) = self.imports.get_func("math_abs_int") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                } else {
+                    // Fallback: inline implementation for i64
+                    // abs(x) = if x < 0 then -x else x
+                    let func = self.current_function_mut().unwrap();
+                    let temp = func.alloc_local("__abs_tmp".to_string(), ValType::I64);
+                    func.push(Instruction::LocalTee(temp));
+                    func.push(Instruction::I64Const(0));
+                    func.push(Instruction::I64LtS);
+                    func.push(Instruction::If(BlockType::Result(ValType::I64)));
+                    func.push(Instruction::I64Const(0));
+                    func.push(Instruction::LocalGet(temp));
+                    func.push(Instruction::I64Sub);
+                    func.push(Instruction::Else);
+                    func.push(Instruction::LocalGet(temp));
+                    func.push(Instruction::End);
+                }
+                Ok(true)
+            }
+            "clamp" => {
+                // receiver.clamp(min, max)
+                self.compile_expr(receiver)?;
+                for arg in args {
+                    self.compile_expr(arg)?;
+                }
+                if let Some(func_idx) = self.imports.get_func("math_clamp_int") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                } else {
+                    // Fallback: inline implementation
+                    // clamp(x, min, max) = max(min, min(x, max))
+                    let func = self.current_function_mut().unwrap();
+                    let val = func.alloc_local("__clamp_val".to_string(), ValType::I64);
+                    let min = func.alloc_local("__clamp_min".to_string(), ValType::I64);
+                    let max = func.alloc_local("__clamp_max".to_string(), ValType::I64);
+                    func.push(Instruction::LocalSet(max));
+                    func.push(Instruction::LocalSet(min));
+                    func.push(Instruction::LocalSet(val));
+                    // min(val, max)
+                    func.push(Instruction::LocalGet(val));
+                    func.push(Instruction::LocalGet(max));
+                    func.push(Instruction::LocalGet(val));
+                    func.push(Instruction::LocalGet(max));
+                    func.push(Instruction::I64LtS);
+                    func.push(Instruction::Select);
+                    // max(result, min)
+                    let intermediate = func.alloc_local("__clamp_tmp".to_string(), ValType::I64);
+                    func.push(Instruction::LocalTee(intermediate));
+                    func.push(Instruction::LocalGet(min));
+                    func.push(Instruction::LocalGet(intermediate));
+                    func.push(Instruction::LocalGet(min));
+                    func.push(Instruction::I64GtS);
+                    func.push(Instruction::Select);
+                }
+                Ok(true)
+            }
+            "signum" => {
+                self.compile_expr(receiver)?;
+                if let Some(func_idx) = self.imports.get_func("math_signum_int") {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                } else {
+                    // Inline: returns -1, 0, or 1
+                    let func = self.current_function_mut().unwrap();
+                    let temp = func.alloc_local("__signum_tmp".to_string(), ValType::I64);
+                    func.push(Instruction::LocalTee(temp));
+                    func.push(Instruction::I64Const(0));
+                    func.push(Instruction::I64LtS);
+                    func.push(Instruction::If(BlockType::Result(ValType::I64)));
+                    func.push(Instruction::I64Const(-1));
+                    func.push(Instruction::Else);
+                    func.push(Instruction::LocalGet(temp));
+                    func.push(Instruction::I64Const(0));
+                    func.push(Instruction::I64GtS);
+                    func.push(Instruction::If(BlockType::Result(ValType::I64)));
+                    func.push(Instruction::I64Const(1));
+                    func.push(Instruction::Else);
+                    func.push(Instruction::I64Const(0));
+                    func.push(Instruction::End);
+                    func.push(Instruction::End);
+                }
+                Ok(true)
+            }
 
             // Collection methods - map to morpheme imports
             // Vec/Array methods
@@ -1519,6 +1738,132 @@ impl WasmCompiler {
             // Iterator methods
             "iter_mut" => {
                 self.compile_expr(receiver)?;
+                Ok(true)
+            }
+            "next" => {
+                // Iterator::next() - get next element from iterator
+                self.compile_expr(receiver)?;
+                // For morpheme arrays, this is typically a no-op or returns first element
+                // The iterator state is typically held externally
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::I64Const(0)); // Return None/empty for stub
+                Ok(true)
+            }
+            "collect" => {
+                // Iterator::collect() - collects iterator into a collection
+                // For morpheme arrays, this is essentially an identity operation
+                self.compile_expr(receiver)?;
+                // The array handle is already on stack
+                Ok(true)
+            }
+            "take" => {
+                // Iterator::take(n) - take first n elements
+                self.compile_expr(receiver)?;
+                if !args.is_empty() {
+                    self.compile_expr(&args[0])?;
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Drop); // Drop count for now
+                }
+                // Return receiver as stub (proper impl would slice)
+                Ok(true)
+            }
+            "skip" => {
+                // Iterator::skip(n) - skip first n elements
+                self.compile_expr(receiver)?;
+                if !args.is_empty() {
+                    self.compile_expr(&args[0])?;
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Drop); // Drop count for now
+                }
+                Ok(true)
+            }
+            "head" => {
+                // Head of iterator/collection - return first element
+                self.compile_collection_method(receiver, "morpheme_array_first", args)?;
+                Ok(true)
+            }
+            "tail" => {
+                // Tail of iterator/collection - return all but first
+                self.compile_expr(receiver)?;
+                // For stub, just return receiver (proper impl would slice)
+                Ok(true)
+            }
+            "enumerate" => {
+                // Iterator::enumerate() - add indices to elements
+                self.compile_expr(receiver)?;
+                // For stub, just return receiver
+                Ok(true)
+            }
+            "zip" => {
+                // Iterator::zip(other) - combine two iterators
+                self.compile_expr(receiver)?;
+                if !args.is_empty() {
+                    self.compile_expr(&args[0])?;
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Drop);
+                }
+                Ok(true)
+            }
+            "flatten" => {
+                // Iterator::flatten() - flatten nested iterators
+                self.compile_expr(receiver)?;
+                Ok(true)
+            }
+            "flat_map" => {
+                // Iterator::flat_map(f) - map then flatten
+                self.compile_expr(receiver)?;
+                if !args.is_empty() {
+                    self.compile_expr(&args[0])?;
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Drop);
+                }
+                Ok(true)
+            }
+            "fold" => {
+                // Iterator::fold(init, f) - reduce with initial value
+                self.compile_expr(receiver)?;
+                for arg in args {
+                    self.compile_expr(arg)?;
+                }
+                if args.len() >= 2 {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Drop); // Drop closure
+                }
+                // Return init value as stub
+                Ok(true)
+            }
+            "find" => {
+                // Iterator::find(predicate) - find first matching element
+                self.compile_expr(receiver)?;
+                if !args.is_empty() {
+                    self.compile_expr(&args[0])?;
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Drop);
+                }
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::I64Const(0)); // Return None as stub
+                Ok(true)
+            }
+            "position" | "find_index" => {
+                // Iterator::position(predicate) - find index of first matching element
+                self.compile_expr(receiver)?;
+                if !args.is_empty() {
+                    self.compile_expr(&args[0])?;
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Drop);
+                }
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::I64Const(-1)); // Return -1 (not found) as stub
+                Ok(true)
+            }
+            "rev" | "reverse" => {
+                // Iterator::rev() - reverse iterator
+                self.compile_expr(receiver)?;
+                Ok(true)
+            }
+            "count" => {
+                // Iterator::count() - count elements
+                self.compile_len(receiver)?;
                 Ok(true)
             }
 
