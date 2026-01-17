@@ -3566,7 +3566,7 @@ fn build_project() -> ExitCode {
 
 fn repl() -> ExitCode {
     println!(
-        "{}{}Sigil REPL v0.1.0{}",
+        "{}{}Sigil REPL v0.2.0{}",
         colors::BOLD,
         colors::MORPHEME,
         colors::RESET
@@ -3574,17 +3574,7 @@ fn repl() -> ExitCode {
     println!("A polysynthetic language with evidentiality types.");
     println!();
     println!("{}Commands:{}", colors::DIM, colors::RESET);
-    println!("  {}:help{}     Show help", colors::KEYWORD, colors::RESET);
-    println!(
-        "  {}:ast{}      Toggle AST display",
-        colors::KEYWORD,
-        colors::RESET
-    );
-    println!(
-        "  {}:clear{}    Clear screen",
-        colors::KEYWORD,
-        colors::RESET
-    );
+    println!("  {}:help{}     Show all commands", colors::KEYWORD, colors::RESET);
     println!("  {}:exit{}     Exit REPL", colors::KEYWORD, colors::RESET);
     println!();
     println!(
@@ -3618,51 +3608,134 @@ fn repl() -> ExitCode {
     let mut interpreter = Interpreter::new();
     register_stdlib(&mut interpreter);
     let mut show_ast = false;
+    let mut show_timing = false;
+    let mut multiline_buffer = String::new();
+    let mut brace_depth: i32 = 0;
 
     loop {
-        let readline = rl.readline("");
+        // Determine prompt based on multiline state
+        let prompt = if multiline_buffer.is_empty() {
+            format!("{}sigil>{} ", colors::MORPHEME, colors::RESET)
+        } else {
+            format!("{}...{} ", colors::DIM, colors::RESET)
+        };
+
+        let readline = rl.readline(&prompt);
         match readline {
             Ok(line) => {
                 let input = line.trim();
+
+                // Handle empty line in multiline mode
                 if input.is_empty() {
+                    if !multiline_buffer.is_empty() {
+                        // Empty line submits multiline buffer
+                        let full_input = std::mem::take(&mut multiline_buffer);
+                        brace_depth = 0;
+                        let _ = rl.add_history_entry(&full_input);
+                        evaluate_input_with_timing(&mut interpreter, &full_input, show_ast, show_timing);
+                    }
                     continue;
                 }
 
-                let _ = rl.add_history_entry(input);
-
-                // Handle REPL commands
-                match input {
-                    ":exit" | ":quit" | "exit" | "quit" => break,
-                    ":clear" => {
-                        print!("\x1b[2J\x1b[H"); // Clear screen
-                        continue;
+                // Handle REPL commands (only when not in multiline mode)
+                if multiline_buffer.is_empty() && input.starts_with(':') {
+                    let _ = rl.add_history_entry(input);
+                    match input {
+                        ":exit" | ":quit" | ":q" => break,
+                        ":clear" | ":cls" => {
+                            print!("\x1b[2J\x1b[H"); // Clear screen
+                            continue;
+                        }
+                        ":help" | ":h" | ":?" => {
+                            print_help();
+                            continue;
+                        }
+                        ":symbols" => {
+                            print_symbols();
+                            continue;
+                        }
+                        ":ast" => {
+                            show_ast = !show_ast;
+                            println!(
+                                "AST display: {}{}{}",
+                                colors::KEYWORD,
+                                if show_ast { "on" } else { "off" },
+                                colors::RESET
+                            );
+                            continue;
+                        }
+                        ":timing" | ":time" => {
+                            show_timing = !show_timing;
+                            println!(
+                                "Execution timing: {}{}{}",
+                                colors::KEYWORD,
+                                if show_timing { "on" } else { "off" },
+                                colors::RESET
+                            );
+                            continue;
+                        }
+                        ":reset" => {
+                            interpreter = Interpreter::new();
+                            register_stdlib(&mut interpreter);
+                            println!("{}Interpreter state reset.{}", colors::DIM, colors::RESET);
+                            continue;
+                        }
+                        ":vars" | ":env" => {
+                            print_variables(&interpreter);
+                            continue;
+                        }
+                        _ if input.starts_with(":load ") => {
+                            let file_path = input.strip_prefix(":load ").unwrap().trim();
+                            load_file_into_repl(&mut interpreter, file_path, show_ast, show_timing);
+                            continue;
+                        }
+                        _ if input.starts_with(":type ") => {
+                            let expr = input.strip_prefix(":type ").unwrap().trim();
+                            show_expression_type(&interpreter, expr);
+                            continue;
+                        }
+                        _ => {
+                            println!(
+                                "{}Unknown command: {}{}",
+                                colors::SPECIAL, input, colors::RESET
+                            );
+                            println!("{}Type :help for available commands{}", colors::DIM, colors::RESET);
+                            continue;
+                        }
                     }
-                    ":help" => {
-                        print_help();
-                        continue;
-                    }
-                    ":symbols" => {
-                        print_symbols();
-                        continue;
-                    }
-                    ":ast" => {
-                        show_ast = !show_ast;
-                        println!(
-                            "AST display: {}{}{}",
-                            colors::KEYWORD,
-                            if show_ast { "on" } else { "off" },
-                            colors::RESET
-                        );
-                        continue;
-                    }
-                    _ => {}
                 }
 
-                // Try to parse and evaluate
-                evaluate_input(&mut interpreter, input, show_ast);
+                // Track brace depth for multiline input
+                for ch in input.chars() {
+                    match ch {
+                        '{' | '(' | '[' => brace_depth += 1,
+                        '}' | ')' | ']' => brace_depth = (brace_depth - 1).max(0),
+                        _ => {}
+                    }
+                }
+
+                // Accumulate multiline input
+                if !multiline_buffer.is_empty() {
+                    multiline_buffer.push('\n');
+                }
+                multiline_buffer.push_str(input);
+
+                // Execute if braces are balanced
+                if brace_depth == 0 {
+                    let full_input = std::mem::take(&mut multiline_buffer);
+                    let _ = rl.add_history_entry(&full_input);
+                    evaluate_input_with_timing(&mut interpreter, &full_input, show_ast, show_timing);
+                }
             }
             Err(ReadlineError::Interrupted) => {
-                println!("{}^C{}", colors::DIM, colors::RESET);
+                if !multiline_buffer.is_empty() {
+                    // Cancel multiline input
+                    multiline_buffer.clear();
+                    brace_depth = 0;
+                    println!("{}(input cancelled){}", colors::DIM, colors::RESET);
+                } else {
+                    println!("{}^C{}", colors::DIM, colors::RESET);
+                }
                 continue;
             }
             Err(ReadlineError::Eof) => {
@@ -3684,6 +3757,76 @@ fn repl() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn evaluate_input_with_timing(interpreter: &mut Interpreter, input: &str, show_ast: bool, show_timing: bool) {
+    let start = std::time::Instant::now();
+    evaluate_input(interpreter, input, show_ast);
+    if show_timing {
+        let elapsed = start.elapsed();
+        println!("{}Executed in {:?}{}", colors::DIM, elapsed, colors::RESET);
+    }
+}
+
+fn print_variables(_interpreter: &Interpreter) {
+    println!(
+        "{}{}Current Variables:{}",
+        colors::BOLD,
+        colors::MORPHEME,
+        colors::RESET
+    );
+    println!();
+    println!(
+        "{}Use expressions to inspect values, e.g.: x{}",
+        colors::DIM,
+        colors::RESET
+    );
+    println!(
+        "{}Define variables with: let name = value;{}",
+        colors::DIM,
+        colors::RESET
+    );
+}
+
+fn load_file_into_repl(interpreter: &mut Interpreter, path: &str, show_ast: bool, show_timing: bool) {
+    match fs::read_to_string(path) {
+        Ok(source) => {
+            println!("{}Loading {}...{}", colors::DIM, path, colors::RESET);
+            let start = std::time::Instant::now();
+            evaluate_input(interpreter, &source, show_ast);
+            if show_timing {
+                let elapsed = start.elapsed();
+                println!("{}Loaded in {:?}{}", colors::DIM, elapsed, colors::RESET);
+            }
+        }
+        Err(e) => {
+            eprintln!("{}Error loading '{}': {}{}", colors::SPECIAL, path, e, colors::RESET);
+        }
+    }
+}
+
+fn show_expression_type(interpreter: &Interpreter, expr: &str) {
+    // Parse and type-check the expression
+    let mut parser = Parser::new(expr);
+    match parser.parse_file() {
+        Ok(_ast) => {
+            // For now, just show a simple type inference
+            // A full implementation would use the type checker
+            println!(
+                "{}Type inference for expressions is not fully implemented yet.{}",
+                colors::DIM,
+                colors::RESET
+            );
+            println!(
+                "{}Tip: Use 'typeof(expr)' in expressions to get runtime type.{}",
+                colors::DIM,
+                colors::RESET
+            );
+        }
+        Err(e) => {
+            eprintln!("{}Parse error: {}{}", colors::SPECIAL, e, colors::RESET);
+        }
+    }
+}
+
 fn dirs_home() -> Option<std::path::PathBuf> {
     std::env::var_os("HOME").map(std::path::PathBuf::from)
 }
@@ -3696,31 +3839,65 @@ fn print_help() {
         colors::RESET
     );
     println!();
+    println!("{}Basic:{}", colors::DIM, colors::RESET);
     println!(
-        "  {}:help{}      Show this help",
+        "  {}:help, :h, :?{}    Show this help",
         colors::KEYWORD,
         colors::RESET
     );
     println!(
-        "  {}:symbols{}   Show all Unicode symbols",
+        "  {}:exit, :quit, :q{} Exit the REPL",
         colors::KEYWORD,
         colors::RESET
     );
     println!(
-        "  {}:ast{}       Toggle AST display mode",
+        "  {}:clear, :cls{}     Clear the screen",
+        colors::KEYWORD,
+        colors::RESET
+    );
+    println!();
+    println!("{}Debug:{}", colors::DIM, colors::RESET);
+    println!(
+        "  {}:ast{}             Toggle AST display",
         colors::KEYWORD,
         colors::RESET
     );
     println!(
-        "  {}:clear{}     Clear the screen",
+        "  {}:timing, :time{}   Toggle execution timing",
         colors::KEYWORD,
         colors::RESET
     );
     println!(
-        "  {}:exit{}      Exit the REPL",
+        "  {}:vars, :env{}      Show current variables",
         colors::KEYWORD,
         colors::RESET
     );
+    println!(
+        "  {}:type <expr>{}     Show expression type",
+        colors::KEYWORD,
+        colors::RESET
+    );
+    println!();
+    println!("{}Session:{}", colors::DIM, colors::RESET);
+    println!(
+        "  {}:load <file>{}     Load and execute a Sigil file",
+        colors::KEYWORD,
+        colors::RESET
+    );
+    println!(
+        "  {}:reset{}           Reset interpreter state",
+        colors::KEYWORD,
+        colors::RESET
+    );
+    println!(
+        "  {}:symbols{}         Show all Unicode symbols",
+        colors::KEYWORD,
+        colors::RESET
+    );
+    println!();
+    println!("{}Multiline Input:{}", colors::DIM, colors::RESET);
+    println!("  Open braces automatically continue to next line.");
+    println!("  Press Enter on empty line to submit, Ctrl+C to cancel.");
     println!();
     println!("{}{}Examples:{}", colors::BOLD, colors::TYPE, colors::RESET);
     println!();
