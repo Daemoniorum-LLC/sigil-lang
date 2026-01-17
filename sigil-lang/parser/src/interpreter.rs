@@ -2099,7 +2099,12 @@ impl Interpreter {
                         .collect()
                 };
                 for (name, val) in matching_methods {
-                    self.globals.borrow_mut().define(name, val);
+                    // Only define if not already present - avoids overwriting correctly-named builtins
+                    // e.g., fs·read_to_string should keep its proper name, not be overwritten by
+                    // a copy of std·fs·read_to_string which has the wrong internal name
+                    if self.globals.borrow().get(&name).is_none() {
+                        self.globals.borrow_mut().define(name, val);
+                    }
                 }
                 Ok(())
             }
@@ -3137,6 +3142,9 @@ impl Interpreter {
                 .map(|s| s.ident.name.as_str())
                 .collect::<Vec<_>>()
                 .join("·");
+            if qualified_name.contains("read") || qualified_name.contains("fs") {
+                eprintln!("[DEBUG eval_call] qualified_name='{}', segments={}", qualified_name, path.segments.len());
+            }
 
             // Handle Self(...) as tuple struct constructor
             if qualified_name == "Self" {
@@ -4712,6 +4720,37 @@ impl Interpreter {
         method: &Ident,
         args: &[Expr],
     ) -> Result<Value, RuntimeError> {
+        eprintln!("[DEBUG eval_method_call] method='{}', receiver={:?}", method.name, std::mem::discriminant(receiver));
+        // Try "Type·method" as a combined function name for unresolved receiver patterns
+        // This allows syntax like fs·read_to_string(path) to resolve to "fs·read_to_string" function
+        if let Expr::Path(path) = receiver {
+            if path.segments.len() == 1 {
+                let recv_name = &path.segments[0].ident.name;
+                // Only try combined lookup if receiver is not in environment
+                let recv_exists = self.environment.borrow().get(recv_name).is_some();
+                if !recv_exists {
+                    let combined_name = format!("{}·{}", recv_name, method.name);
+                    eprintln!("[DEBUG] Trying combined lookup: '{}' (recv='{}', method='{}')", combined_name, recv_name, method.name);
+                    // Check if combined function exists in environment or globals
+                    let func_val_opt = self.environment.borrow().get(&combined_name)
+                        .or_else(|| self.globals.borrow().get(&combined_name));
+                    eprintln!("[DEBUG] Combined lookup result: {:?}", func_val_opt.is_some());
+                    if let Some(func_val) = func_val_opt {
+                        // Evaluate arguments and call the function
+                        let arg_values: Vec<Value> = args
+                            .iter()
+                            .map(|a| self.evaluate(a))
+                            .collect::<Result<_, _>>()?;
+                        return match func_val {
+                            Value::Function(f) => self.call_function(&f, arg_values),
+                            Value::BuiltIn(b) => self.call_builtin(&b, arg_values),
+                            _ => Err(RuntimeError::new(format!("{} is not a function", combined_name))),
+                        };
+                    }
+                }
+            }
+        }
+
         // Special handling for String::push/push_str - needs to mutate the variable
         if (method.name == "push" || method.name == "push_str") && args.len() == 1 {
             let recv_val = self.evaluate(receiver)?;
@@ -7194,8 +7233,54 @@ impl Interpreter {
             return Err(RuntimeError::new("empty incorporation chain"));
         }
 
-        // First segment: get initial value (variable lookup or function call)
+        // Special case: if first segment is undefined and there's a second segment with args,
+        // try combining them as a function name (e.g., fs·read_to_string -> "fs·read_to_string")
         let first = &segments[0];
+        if first.args.is_none() && segments.len() >= 2 {
+            let first_name = &first.name.name;
+            let env_lookup = self.environment.borrow().get(first_name);
+            if env_lookup.is_none() {
+                let second = &segments[1];
+                let combined_name = format!("{}·{}", first_name, second.name.name);
+                // Try to find combined function in environment or globals
+                let combined_func = self.environment.borrow().get(&combined_name)
+                    .or_else(|| self.globals.borrow().get(&combined_name));
+                if let Some(func_val) = combined_func {
+                    // Call the combined function with args from second segment
+                    let arg_values: Vec<Value> = second.args
+                        .as_ref()
+                        .map(|args| {
+                            args.iter()
+                                .map(|a| self.evaluate(a))
+                                .collect::<Result<Vec<_>, _>>()
+                        })
+                        .transpose()?
+                        .unwrap_or_default();
+                    let mut value = match func_val {
+                        Value::Function(f) => self.call_function(&f, arg_values)?,
+                        Value::BuiltIn(b) => self.call_builtin(&b, arg_values)?,
+                        _ => return Err(RuntimeError::new(format!("{} is not a function", combined_name))),
+                    };
+                    // Process remaining segments (3rd, 4th, ...) if any
+                    for segment in segments.iter().skip(2) {
+                        let seg_args: Vec<Value> = segment
+                            .args
+                            .as_ref()
+                            .map(|args| {
+                                args.iter()
+                                    .map(|a| self.evaluate(a))
+                                    .collect::<Result<Vec<_>, _>>()
+                            })
+                            .transpose()?
+                            .unwrap_or_default();
+                        value = self.call_incorporation_method(&value, &segment.name.name, seg_args)?;
+                    }
+                    return Ok(value);
+                }
+            }
+        }
+
+        // First segment: get initial value (variable lookup or function call)
         let mut value = if let Some(args) = &first.args {
             // First segment is a function call: func(args)·next·...
             let arg_values: Vec<Value> = args

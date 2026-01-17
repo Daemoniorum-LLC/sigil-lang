@@ -5710,16 +5710,23 @@ fn register_concurrency(interp: &mut Interpreter) {
             Err(e) => return Err(RuntimeError::new(format!("Invalid address: {}", e))),
         };
 
-        let _listener = match std::net::TcpListener::bind(addr) {
+        let listener = match std::net::TcpListener::bind(addr) {
             Ok(l) => l,
             Err(e) => return Err(RuntimeError::new(format!("Failed to bind: {}", e))),
         };
 
+        let local_addr = listener.local_addr().map(|a| a.to_string()).unwrap_or_default();
+
+        // Store the listener in the global registry
+        let listener_id = store_listener(listener);
+
         let mut map = HashMap::new();
         map.insert("__type__".to_string(), Value::String(Rc::new("TcpListener".to_string())));
         map.insert("addr".to_string(), Value::String(Rc::new(addr_str)));
+        map.insert("local_addr".to_string(), Value::String(Rc::new(local_addr)));
+        map.insert("__listener_id__".to_string(), Value::Int(listener_id as i64));
 
-        eprintln!("[Sigil] TcpListener bound to {}", addr);
+        eprintln!("[Sigil] TcpListener bound to {} (id={})", addr, listener_id);
 
         Ok(Value::Variant {
             enum_name: "Result".to_string(),
@@ -5751,6 +5758,51 @@ fn register_concurrency(interp: &mut Interpreter) {
                 variant_name: "Err".to_string(),
                 fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
             }),
+        }
+    });
+
+    // TcpListener::accept - accept a new connection
+    define(interp, "TcpListener·accept", Some(1), |_, args| {
+        let listener_id = match &args[0] {
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::Int(id)) = borrowed.get("__listener_id__") {
+                    *id as u64
+                } else {
+                    return Err(RuntimeError::new("TcpListener missing __listener_id__"));
+                }
+            }
+            _ => return Err(RuntimeError::new("accept requires TcpListener")),
+        };
+
+        // Get the listener from the registry and accept a connection
+        let registry = get_listener_registry();
+        let guard = registry.lock().unwrap();
+        if let Some(listener) = guard.get(&listener_id) {
+            match listener.accept() {
+                Ok((stream, addr)) => {
+                    // Store the stream in the global registry
+                    let stream_id = store_tcp_stream(stream);
+
+                    let mut map = HashMap::new();
+                    map.insert("__type__".to_string(), Value::String(Rc::new("TcpStream".to_string())));
+                    map.insert("__stream_id__".to_string(), Value::Int(stream_id as i64));
+                    map.insert("peer_addr".to_string(), Value::String(Rc::new(addr.to_string())));
+
+                    Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Ok".to_string(),
+                        fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
+                    })
+                }
+                Err(e) => Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Err".to_string(),
+                    fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+                }),
+            }
+        } else {
+            Err(RuntimeError::new("TcpListener not found in registry"))
         }
     });
 
@@ -7319,6 +7371,26 @@ fn register_fs(interp: &mut Interpreter) {
         match std::fs::read_to_string(&path) {
             Ok(content) => Ok(Value::String(Rc::new(content))),
             Err(e) => Err(RuntimeError::new(format!("read_to_string() error: {}", e))),
+        }
+    });
+
+    // fs·read_to_string - returns Result variant for pattern matching
+    define(interp, "fs·read_to_string", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("read_to_string() requires string path")),
+        };
+        match std::fs::read_to_string(&path) {
+            Ok(content) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Ok".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(content))])),
+            }),
+            Err(e) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+            }),
         }
     });
 

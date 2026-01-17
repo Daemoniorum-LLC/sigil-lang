@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sigil HTTP Server Test</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        h1 {
+            color: #00d4ff;
+            text-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+        }
+        .success {
+            background: rgba(0, 255, 128, 0.1);
+            border: 1px solid #00ff80;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .info {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid #00d4ff;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        code {
+            background: rgba(255,255,255,0.1);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Fira Code', monospace;
+        }
+        pre {
+            background: #0d1117;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Sigil HTTP Server</h1>
+
+    <div class="success">
+        <strong>Server is working!</strong>
+        <p>This page was served by a native Sigil HTTP server.</p>
+    </div>
+
+    <div class="info">
+        <h3>Server Details</h3>
+        <ul>
+            <li>Written in pure Sigil (~165 lines)</li>
+            <li>Uses Sigil's TCP socket stdlib</li>
+            <li>Supports MIME types for common file extensions</li>
+            <li>Pattern matching on Result variants for error handling</li>
+        </ul>
+    </div>
+
+    <h2>Example Server Code</h2>
+    <pre><code>/// Handle a single HTTP request
+fn handle_request(stream: TcpStream, root_dir: str) {
+    let reader = BufReader·new(&mut stream);
+    let request_line = BufReader·read_line(reader);
+
+    match request_line {
+        Ok(line) => {
+            let path = parse_request(line);
+            let file_path = if path == "/" {
+                f"{root_dir}/index.html"
+            } else {
+                f"{root_dir}{path}"
+            };
+
+            match fs·read_to_string(file_path) {
+                Ok(content) => {
+                    let mime = get_mime_type(file_path);
+                    let response = build_response(200, "OK", mime, content);
+                    TcpStream·write_all(stream, response);
+                }
+                Err(e) => {
+                    let response = not_found_response(path);
+                    TcpStream·write_all(stream, response);
+                }
+            }
+        }
+        Err(e) => print(f"[ERROR] {e}"),
+    }
+}</code></pre>
+</body>
+</html>
