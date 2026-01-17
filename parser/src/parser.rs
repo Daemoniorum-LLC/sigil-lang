@@ -6176,22 +6176,23 @@ impl<'a> Parser<'a> {
 
                 // Check for path continuation or turbofish syntax:
                 // |Tensor::from_slice - path to associated function
-                // |collect::<String>() - turbofish generics
+                // |collect::<String>() or |collect·<String>() - turbofish generics
                 let mut path_segments = vec![PathSegment {
                     ident: name.clone(),
                     generics: None,
                 }];
                 let type_args = loop {
-                    if self.check(&Token::ColonColon) {
-                        self.advance(); // consume ::
+                    if self.check(&Token::ColonColon) || self.check(&Token::MiddleDot) {
+                        let is_middledot = self.check(&Token::MiddleDot);
+                        self.advance(); // consume :: or ·
                         if self.check(&Token::Lt) {
-                            // Turbofish: ::<Type>
+                            // Turbofish: ::<Type> or ·<Type>
                             self.advance(); // consume <
                             let types = self.parse_type_list()?;
                             self.expect_gt()?;
                             break Some(types);
                         } else if let Some(Token::Ident(_)) = self.current_token() {
-                            // Path continuation: ::segment
+                            // Path continuation: ::segment or ·segment
                             let segment = self.parse_ident()?;
                             path_segments.push(PathSegment {
                                 ident: segment,
@@ -6199,9 +6200,11 @@ impl<'a> Parser<'a> {
                             });
                             // Continue to check for more segments or turbofish
                         } else {
-                            return Err(ParseError::Custom(
-                                "expected identifier or '<' after '::'".to_string(),
-                            ));
+                            let sep = if is_middledot { "·" } else { "::" };
+                            return Err(ParseError::Custom(format!(
+                                "expected identifier or '<' after '{}'",
+                                sep
+                            )));
                         }
                     } else {
                         break None;
