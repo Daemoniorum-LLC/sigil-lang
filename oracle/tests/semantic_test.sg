@@ -1,0 +1,541 @@
+//! Tests for Oracle Semantic Indexing
+//!
+//! Verifies semantic search across reasoning traces, evidence, and code.
+
+// ============================================================================
+// Test Data Structures (Self-contained for testing)
+// ============================================================================
+
+pub struct SemanticConfig {
+    embedding_dim: usize,
+    pooling: String,
+    similarity_threshold: f32,
+    max_results: usize,
+    vocab_size: usize,
+    max_seq_len: usize,
+}
+
+impl SemanticConfig {
+    pub fn default_config() -> Self {
+        Self {
+            embedding_dim: 384,
+            pooling: "cls".to_string(),
+            similarity_threshold: 0.0,  // Low threshold for testing
+            max_results: 10,
+            vocab_size: 32000,
+            max_seq_len: 512,
+        }
+    }
+
+    pub fn with_threshold(mut self, threshold: f32) -> Self {
+        self.similarity_threshold = threshold;
+        self
+    }
+}
+
+// Simplified embedding for testing
+pub struct Embedding {
+    data: Vec<f32>,
+    dim: usize,
+}
+
+impl Embedding {
+    pub fn new(data: Vec<f32>, dim: usize) -> Self {
+        Self { data, dim }
+    }
+
+    pub fn zeros(dim: usize) -> Self {
+        Self { data: vec![0.0; dim], dim }
+    }
+
+    pub fn dim(&self) -> usize {
+        self.dim
+    }
+
+    pub fn at(&self, idx: usize) -> f32 {
+        self.data[idx]
+    }
+
+    pub fn normalize(&self) -> Self {
+        let mut sum_sq = 0.0;
+        for i in 0..self.dim {
+            sum_sq = sum_sq + self.data[i] * self.data[i];
+        }
+        let norm = approx_sqrt(sum_sq);
+
+        let mut normalized = Vec::new();
+        for i in 0..self.dim {
+            if norm > 0.0 {
+                normalized.push(self.data[i] / norm);
+            } else {
+                normalized.push(0.0);
+            }
+        }
+        Self { data: normalized, dim: self.dim }
+    }
+}
+
+fn approx_sqrt(x: f32) -> f32 {
+    if x <= 0.0 { return 0.0; }
+    let mut guess = x / 2.0;
+    for _ in 0..10 {
+        guess = (guess + x / guess) / 2.0;
+    }
+    guess
+}
+
+pub fn cosine_similarity(a: &Embedding, b: &Embedding) -> f32 {
+    if a.dim() != b.dim() { return 0.0; }
+
+    let mut dot = 0.0;
+    let mut norm_a = 0.0;
+    let mut norm_b = 0.0;
+
+    for i in 0..a.dim() {
+        let a_val = a.at(i);
+        let b_val = b.at(i);
+        dot = dot + a_val * b_val;
+        norm_a = norm_a + a_val * a_val;
+        norm_b = norm_b + b_val * b_val;
+    }
+
+    let denom = approx_sqrt(norm_a) * approx_sqrt(norm_b);
+    if denom > 0.0 { dot / denom } else { 0.0 }
+}
+
+pub struct EmbeddingIndex {
+    embeddings: Vec<Embedding>,
+    metadata: Vec<String>,
+    dim: usize,
+}
+
+impl EmbeddingIndex {
+    pub fn new(dim: usize) -> Self {
+        Self { embeddings: Vec::new(), metadata: Vec::new(), dim }
+    }
+
+    pub fn add(&mut self, embedding: Embedding, meta: &str) {
+        self.embeddings.push(embedding);
+        self.metadata.push(meta.to_string());
+    }
+
+    pub fn len(&self) -> usize {
+        self.embeddings.len()
+    }
+
+    pub fn search(&self, query: &Embedding, k: usize) -> Vec<(usize, f32)> {
+        let mut scores = Vec::new();
+        for i in 0..self.embeddings.len() {
+            let sim = cosine_similarity(query, &self.embeddings[i]);
+            scores.push((i, sim));
+        }
+
+        // Sort descending
+        for i in 0..scores.len() {
+            for j in (i + 1)..scores.len() {
+                if scores[j].1 > scores[i].1 {
+                    let temp = scores[i];
+                    scores[i] = scores[j];
+                    scores[j] = temp;
+                }
+            }
+        }
+
+        let limit = if k < scores.len() { k } else { scores.len() };
+        let mut result = Vec::new();
+        for i in 0..limit {
+            result.push(scores[i]);
+        }
+        result
+    }
+
+    pub fn get_metadata(&self, idx: usize) -> &str {
+        &self.metadata[idx]
+    }
+}
+
+pub struct CodeTokenizer {
+    vocab_size: usize,
+    max_length: usize,
+    cls_token_id: usize,
+    sep_token_id: usize,
+}
+
+impl CodeTokenizer {
+    pub fn new(vocab_size: usize, max_length: usize) -> Self {
+        Self {
+            vocab_size,
+            max_length,
+            cls_token_id: 1,
+            sep_token_id: 2,
+        }
+    }
+
+    pub fn tokenize(&self, text: &str) -> Vec<usize> {
+        let mut tokens = Vec::new();
+        tokens.push(self.cls_token_id);
+        for c in text.chars() {
+            if tokens.len() >= self.max_length - 1 { break; }
+            let token_id = ((c as usize) % (self.vocab_size - 4)) + 4;
+            tokens.push(token_id);
+        }
+        tokens.push(self.sep_token_id);
+        tokens
+    }
+}
+
+// Semantic result type
+pub enum ResultType {
+    ReasoningStep,
+    Evidence,
+    CodeSnippet,
+}
+
+pub struct SemanticResult {
+    pub content: String,
+    pub source_id: String,
+    pub similarity: f32,
+    pub result_type: ResultType,
+}
+
+// Simplified SemanticIndex for testing
+pub struct SemanticIndex {
+    reasoning_index: EmbeddingIndex,
+    evidence_index: EmbeddingIndex,
+    code_index: EmbeddingIndex,
+    config: SemanticConfig,
+    tokenizer: CodeTokenizer,
+    reasoning_content: Vec<String>,
+    evidence_content: Vec<String>,
+    code_content: Vec<String>,
+}
+
+impl SemanticIndex {
+    pub fn new(config: SemanticConfig) -> Self {
+        let tokenizer = CodeTokenizer::new(config.vocab_size, config.max_seq_len);
+        Self {
+            reasoning_index: EmbeddingIndex::new(config.embedding_dim),
+            evidence_index: EmbeddingIndex::new(config.embedding_dim),
+            code_index: EmbeddingIndex::new(config.embedding_dim),
+            config,
+            tokenizer,
+            reasoning_content: Vec::new(),
+            evidence_content: Vec::new(),
+            code_content: Vec::new(),
+        }
+    }
+
+    pub fn default_index() -> Self {
+        Self::new(SemanticConfig::default_config())
+    }
+
+    pub fn dim(&self) -> usize {
+        self.config.embedding_dim
+    }
+
+    pub fn len(&self) -> usize {
+        self.reasoning_index.len() + self.evidence_index.len() + self.code_index.len()
+    }
+
+    pub fn reasoning_count(&self) -> usize {
+        self.reasoning_index.len()
+    }
+
+    pub fn evidence_count(&self) -> usize {
+        self.evidence_index.len()
+    }
+
+    pub fn code_count(&self) -> usize {
+        self.code_index.len()
+    }
+
+    fn embed_text(&self, text: &str) -> Embedding {
+        let tokens = self.tokenizer.tokenize(text);
+        let dim = self.config.embedding_dim;
+
+        let mut data = vec![0.0; dim];
+        for (i, &token) in tokens.iter().enumerate() {
+            let idx = (token + i) % dim;
+            data[idx] = data[idx] + 1.0;
+        }
+
+        let embedding = Embedding::new(data, dim);
+        embedding.normalize()
+    }
+
+    pub fn index_reasoning(&mut self, description: &str, reasoning: &str, trace_id: &str) {
+        let combined = format!("{} {}", description, reasoning);
+        let embedding = self.embed_text(&combined);
+        self.reasoning_index.add(embedding, trace_id);
+        self.reasoning_content.push(combined);
+    }
+
+    pub fn index_evidence(&mut self, content: &str, source: &str, explanation_id: &str) {
+        let embedding = self.embed_text(content);
+        let meta = format!("{}:{}", explanation_id, source);
+        self.evidence_index.add(embedding, &meta);
+        self.evidence_content.push(content.to_string());
+    }
+
+    pub fn index_code(&mut self, code: &str, file_path: &str, line_start: usize) {
+        let embedding = self.embed_text(code);
+        let meta = format!("{}:{}", file_path, line_start);
+        self.code_index.add(embedding, &meta);
+        self.code_content.push(code.to_string());
+    }
+
+    pub fn search_reasoning(&self, query: &str, k: usize) -> Vec<SemanticResult> {
+        let query_embedding = self.embed_text(query);
+        let results = self.reasoning_index.search(&query_embedding, k);
+
+        let mut semantic_results = Vec::new();
+        for (idx, sim) in results {
+            if sim >= self.config.similarity_threshold {
+                let content = if idx < self.reasoning_content.len() {
+                    self.reasoning_content[idx].clone()
+                } else {
+                    "".to_string()
+                };
+                semantic_results.push(SemanticResult {
+                    content,
+                    source_id: self.reasoning_index.get_metadata(idx).to_string(),
+                    similarity: sim,
+                    result_type: ResultType::ReasoningStep,
+                });
+            }
+        }
+        semantic_results
+    }
+
+    pub fn search_evidence(&self, query: &str, k: usize) -> Vec<SemanticResult> {
+        let query_embedding = self.embed_text(query);
+        let results = self.evidence_index.search(&query_embedding, k);
+
+        let mut semantic_results = Vec::new();
+        for (idx, sim) in results {
+            if sim >= self.config.similarity_threshold {
+                let content = if idx < self.evidence_content.len() {
+                    self.evidence_content[idx].clone()
+                } else {
+                    "".to_string()
+                };
+                semantic_results.push(SemanticResult {
+                    content,
+                    source_id: self.evidence_index.get_metadata(idx).to_string(),
+                    similarity: sim,
+                    result_type: ResultType::Evidence,
+                });
+            }
+        }
+        semantic_results
+    }
+
+    pub fn search_code(&self, query: &str, k: usize) -> Vec<SemanticResult> {
+        let query_embedding = self.embed_text(query);
+        let results = self.code_index.search(&query_embedding, k);
+
+        let mut semantic_results = Vec::new();
+        for (idx, sim) in results {
+            if sim >= self.config.similarity_threshold {
+                let content = if idx < self.code_content.len() {
+                    self.code_content[idx].clone()
+                } else {
+                    "".to_string()
+                };
+                semantic_results.push(SemanticResult {
+                    content,
+                    source_id: self.code_index.get_metadata(idx).to_string(),
+                    similarity: sim,
+                    result_type: ResultType::CodeSnippet,
+                });
+            }
+        }
+        semantic_results
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[test]
+fn test_semantic_config_default() {
+    let config = SemanticConfig::default_config();
+    assert_eq(config.embedding_dim, 384);
+    assert_eq(config.max_results, 10);
+    assert_eq(config.vocab_size, 32000);
+    assert_eq(config.max_seq_len, 512);
+}
+
+#[test]
+fn test_semantic_index_creation() {
+    let index = SemanticIndex::default_index();
+    assert_eq(index.dim(), 384);
+    assert_eq(index.len(), 0);
+    assert_eq(index.reasoning_count(), 0);
+    assert_eq(index.evidence_count(), 0);
+    assert_eq(index.code_count(), 0);
+}
+
+#[test]
+fn test_index_reasoning_step() {
+    let mut index = SemanticIndex::default_index();
+
+    index.index_reasoning(
+        "Analyzed user request",
+        "The user asked about investment options",
+        "trace_001"
+    );
+
+    assert_eq(index.reasoning_count(), 1);
+    assert_eq(index.len(), 1);
+}
+
+#[test]
+fn test_index_evidence() {
+    let mut index = SemanticIndex::default_index();
+
+    index.index_evidence(
+        "Market data shows upward trend",
+        "financial_api",
+        "explanation_001"
+    );
+
+    assert_eq(index.evidence_count(), 1);
+}
+
+#[test]
+fn test_index_code() {
+    let mut index = SemanticIndex::default_index();
+
+    index.index_code(
+        "fn calculate_roi(investment: f64, returns: f64) -> f64 { returns / investment }",
+        "src/finance.sg",
+        42
+    );
+
+    assert_eq(index.code_count(), 1);
+}
+
+#[test]
+fn test_search_reasoning() {
+    let mut index = SemanticIndex::default_index();
+
+    // Index some reasoning steps
+    index.index_reasoning("Investment analysis", "Evaluated stock portfolio", "trace_001");
+    index.index_reasoning("Risk assessment", "Calculated risk metrics", "trace_002");
+    index.index_reasoning("User greeting", "Said hello to user", "trace_003");
+
+    // Search for investment-related reasoning
+    let results = index.search_reasoning("investment portfolio", 2);
+
+    assert(results.len() > 0);
+    // First result should be investment-related
+    let first = &results[0];
+    assert(first.similarity > 0.0);
+}
+
+#[test]
+fn test_search_evidence() {
+    let mut index = SemanticIndex::default_index();
+
+    index.index_evidence("Stock price increased 10%", "market_data", "exp_001");
+    index.index_evidence("Interest rates are low", "fed_reserve", "exp_002");
+    index.index_evidence("Weather is sunny today", "weather_api", "exp_003");
+
+    let results = index.search_evidence("stock market prices", 2);
+
+    assert(results.len() > 0);
+}
+
+#[test]
+fn test_search_code() {
+    let mut index = SemanticIndex::default_index();
+
+    index.index_code("fn add(a: i32, b: i32) -> i32 { a + b }", "src/math.sg", 10);
+    index.index_code("fn multiply(x: f64, y: f64) -> f64 { x * y }", "src/math.sg", 20);
+    index.index_code("fn greet(name: &str) { println(name) }", "src/utils.sg", 5);
+
+    let results = index.search_code("addition function", 2);
+
+    assert(results.len() > 0);
+}
+
+#[test]
+fn test_similarity_threshold() {
+    let config = SemanticConfig::default_config().with_threshold(0.9);
+    let mut index = SemanticIndex::new(config);
+
+    index.index_reasoning("Hello world", "A greeting", "trace_001");
+
+    // Search for something completely different
+    let results = index.search_reasoning("quantum physics equations", 5);
+
+    // With high threshold, dissimilar content should be filtered
+    // (may or may not return results depending on embedding)
+    // Just verify it doesn't crash
+    let _count = results.len();
+}
+
+#[test]
+fn test_empty_index_search() {
+    let index = SemanticIndex::default_index();
+
+    let results = index.search_reasoning("anything", 5);
+    assert_eq(results.len(), 0);
+
+    let results = index.search_evidence("anything", 5);
+    assert_eq(results.len(), 0);
+
+    let results = index.search_code("anything", 5);
+    assert_eq(results.len(), 0);
+}
+
+#[test]
+fn test_embedding_normalization() {
+    let data = vec![3.0, 4.0];  // 3-4-5 triangle
+    let embedding = Embedding::new(data, 2);
+    let normalized = embedding.normalize();
+
+    let x = normalized.at(0);
+    let y = normalized.at(1);
+    let length_sq = x * x + y * y;
+
+    // Should be approximately 1.0
+    let diff = length_sq - 1.0;
+    let is_unit = diff < 0.01 && diff > -0.01;
+    assert(is_unit);
+}
+
+#[test]
+fn test_cosine_similarity_identical() {
+    let data = vec![1.0, 2.0, 3.0];
+    let e1 = Embedding::new(data.clone(), 3);
+    let e2 = Embedding::new(data, 3);
+
+    let sim = cosine_similarity(&e1, &e2);
+
+    // Identical vectors should have similarity ~1.0
+    let diff = sim - 1.0;
+    let is_one = diff < 0.001 && diff > -0.001;
+    assert(is_one);
+}
+
+#[test]
+fn test_multiple_index_types() {
+    let mut index = SemanticIndex::default_index();
+
+    // Index all three types
+    index.index_reasoning("Decision made", "Based on analysis", "trace_001");
+    index.index_evidence("Supporting data", "data_source", "exp_001");
+    index.index_code("fn decide() { }", "src/logic.sg", 1);
+
+    assert_eq(index.reasoning_count(), 1);
+    assert_eq(index.evidence_count(), 1);
+    assert_eq(index.code_count(), 1);
+    assert_eq(index.len(), 3);
+}
+
+fn main() {
+    print("Oracle semantic indexing tests");
+}

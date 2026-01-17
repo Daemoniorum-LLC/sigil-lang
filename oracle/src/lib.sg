@@ -7,6 +7,10 @@ use shared::{
     Timestamp, Value, Confidence, EntityId,
 };
 
+// Semantic indexing for reasoning traces
+pub scroll semantic;
+pub use semantic::{SemanticIndex, SemanticConfig, SemanticResult, ResultType};
+
 // ============================================================================
 // Core Types
 // ============================================================================
@@ -423,12 +427,18 @@ impl Counterfactual {
 pub struct Oracle {
     trace: TraceCollector,
     config: OracleConfig,
+    /// Optional semantic index for reasoning search
+    semantic: Option<SemanticIndex>,
 }
 
 pub struct OracleConfig {
     pub default_level: ExplanationLevel,
     pub auto_explain: bool,
     pub trace_enabled: bool,
+    /// Enable semantic indexing
+    pub enable_semantic: bool,
+    /// Semantic indexing configuration
+    pub semantic_config: Option<SemanticConfig>,
 }
 
 impl OracleConfig {
@@ -437,7 +447,23 @@ impl OracleConfig {
             default_level: ExplanationLevel::Standard,
             auto_explain: false,
             trace_enabled: false,
+            enable_semantic: false,
+            semantic_config: None,
         }
+    }
+
+    /// Enable semantic indexing with default config
+    pub fn with_semantic(mut self) -> Self {
+        self.enable_semantic = true;
+        self.semantic_config = Some(SemanticConfig::default_config());
+        self
+    }
+
+    /// Enable semantic indexing with custom config
+    pub fn with_semantic_config(mut self, config: SemanticConfig) -> Self {
+        self.enable_semantic = true;
+        self.semantic_config = Some(config);
+        self
     }
 }
 
@@ -446,7 +472,33 @@ impl Oracle {
         Self {
             trace: TraceCollector::new(),
             config: OracleConfig::default(),
+            semantic: None,
         }
+    }
+
+    /// Create Oracle with custom configuration
+    pub fn with_config(config: OracleConfig) -> Self {
+        let semantic = if config.enable_semantic {
+            config.semantic_config.as_ref().map(|sc| SemanticIndex::new(sc.clone()))
+        } else {
+            None
+        };
+
+        Self {
+            trace: TraceCollector::new(),
+            config,
+            semantic,
+        }
+    }
+
+    /// Enable semantic indexing
+    pub fn enable_semantic(&mut self, config: SemanticConfig) {
+        self.semantic = Some(SemanticIndex::new(config));
+    }
+
+    /// Check if semantic indexing is enabled
+    pub fn has_semantic(&self) -> bool {
+        self.semantic.is_some()
     }
 
     /// Enable tracing
@@ -529,6 +581,67 @@ impl Oracle {
     /// Get trace for visualization
     pub fn get_trace(&self, id: &ExplainableId) -> Option<&Trace> {
         self.trace.get_trace(id)
+    }
+
+    // ========================================================================
+    // Semantic Search Methods
+    // ========================================================================
+
+    /// Index a reasoning step for semantic search
+    pub fn index_reasoning(&mut self, step: &ReasoningStep, trace_id: &str) {
+        if let Some(ref mut semantic) = self.semantic {
+            semantic.index_reasoning(&step.description, &step.reasoning, trace_id);
+        }
+    }
+
+    /// Index evidence for semantic search
+    pub fn index_evidence(&mut self, evidence: &Evidence, explanation_id: &str) {
+        if let Some(ref mut semantic) = self.semantic {
+            semantic.index_evidence(&evidence.content, &evidence.source, explanation_id);
+        }
+    }
+
+    /// Index a code snippet for semantic search
+    pub fn index_code(&mut self, code: &str, file_path: &str, line_start: usize) {
+        if let Some(ref mut semantic) = self.semantic {
+            semantic.index_code(code, file_path, line_start);
+        }
+    }
+
+    /// Semantic search across all indexed content
+    pub fn semantic_search(&self, query: &str, k: usize) -> Vec<SemanticResult> {
+        if let Some(ref semantic) = self.semantic {
+            semantic.search(query, k)
+        } else {
+            vec![]
+        }
+    }
+
+    /// Find similar reasoning steps
+    pub fn find_similar_reasoning(&self, description: &str, k: usize) -> Vec<SemanticResult> {
+        if let Some(ref semantic) = self.semantic {
+            semantic.find_similar_reasoning(description, k)
+        } else {
+            vec![]
+        }
+    }
+
+    /// Find similar evidence
+    pub fn find_similar_evidence(&self, evidence_content: &str, k: usize) -> Vec<SemanticResult> {
+        if let Some(ref semantic) = self.semantic {
+            semantic.find_similar_evidence(evidence_content, k)
+        } else {
+            vec![]
+        }
+    }
+
+    /// Get semantic index stats
+    pub fn semantic_stats(&self) -> Option<(usize, usize, usize)> {
+        self.semantic.as_ref().map(|s| (
+            s.reasoning_count(),
+            s.evidence_count(),
+            s.code_count(),
+        ))
     }
 }
 
