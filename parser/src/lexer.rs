@@ -787,6 +787,7 @@ pub enum Token {
     #[token("·")]
     MiddleDot, // Incorporation
     #[token("->")]
+    #[token("→")] // U+2192 RIGHTWARDS ARROW
     Arrow,
     #[token("=>")]
     FatArrow,

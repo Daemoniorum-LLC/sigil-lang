@@ -768,6 +768,21 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Check for as keyword (Token::As or Token::Arrow for →)
+    pub(crate) fn check_as(&self) -> bool {
+        matches!(self.current_token(), Some(Token::As) | Some(Token::Arrow))
+    }
+
+    /// Consume as keyword if present (Token::As or Token::Arrow for →)
+    pub(crate) fn consume_if_as(&mut self) -> bool {
+        if self.check_as() {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
     /// Skip any comments
     pub(crate) fn skip_comments(&mut self) {
         while matches!(
@@ -1874,8 +1889,8 @@ impl<'a> Parser<'a> {
             });
         }
 
-        // Check for rename
-        if self.consume_if(&Token::As) {
+        // Check for rename (as or →)
+        if self.consume_if_as() {
             // Allow underscore as alias: `use foo::Bar as _`
             if self.check(&Token::Underscore) {
                 let span = self.current_span();
@@ -2687,8 +2702,8 @@ impl<'a> Parser<'a> {
                 self.advance(); // consume <
                 let base_type = self.parse_type()?;
 
-                // Check for "as Trait" clause
-                let trait_path = if self.consume_if(&Token::As) {
+                // Check for "as Trait" clause (as or →)
+                let trait_path = if self.consume_if_as() {
                     Some(self.parse_type_path()?)
                 } else {
                     None
@@ -3106,7 +3121,7 @@ impl<'a> Parser<'a> {
                         } else {
                             // Check what follows the lowercase identifier
                             match self.peek_n(2) {
-                                Some(Token::As) => false,       // [(n as T)] cast expression
+                                Some(Token::As) | Some(Token::Arrow) => false, // [(n as T)] or [(n → T)] cast expression
                                 Some(Token::Plus) => false,     // [(a + b)]
                                 Some(Token::Minus) => false,    // [(a - b)]
                                 Some(Token::Star) => false,     // [(a * b)]
@@ -4258,8 +4273,8 @@ impl<'a> Parser<'a> {
                     self.advance();
                     expr = Expr::Try(Box::new(expr));
                 }
-                // Cast expression: expr as Type
-                Some(Token::As) => {
+                // Cast expression: expr as Type (or expr → Type)
+                Some(Token::As) | Some(Token::Arrow) => {
                     self.advance();
                     let ty = self.parse_type()?;
                     expr = Expr::Cast {
