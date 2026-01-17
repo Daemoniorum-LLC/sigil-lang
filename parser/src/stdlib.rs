@@ -27147,6 +27147,327 @@ fn register_protocol(interp: &mut Interpreter) {
         );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
+
+    // ========================================================================
+    // REAL HTTP CLIENT - Uses reqwest for actual network I/O
+    // ========================================================================
+    // These functions make real HTTP requests. Network errors return error values.
+    // Response is a map with: status (int), headers (map), body (string)
+
+    // http_get - Make a GET request to a URL
+    // Returns: ~{status: i32, headers: Map, body: String} (uncertain due to network)
+    #[cfg(feature = "http-client")]
+    define(interp, "http_get", Some(1), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("http_get requires string URL")),
+        };
+
+        match reqwest::blocking::get(&url) {
+            Ok(response) => {
+                let status = response.status().as_u16() as i64;
+                let mut headers_map = std::collections::HashMap::new();
+                for (name, value) in response.headers() {
+                    if let Ok(v) = value.to_str() {
+                        headers_map.insert(
+                            name.as_str().to_string(),
+                            Value::String(Rc::new(v.to_string())),
+                        );
+                    }
+                }
+                let body = response.text().unwrap_or_default();
+
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(status));
+                result.insert(
+                    "headers".to_string(),
+                    Value::Map(Rc::new(RefCell::new(headers_map))),
+                );
+                result.insert("body".to_string(), Value::String(Rc::new(body)));
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+            Err(e) => {
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(0));
+                result.insert(
+                    "error".to_string(),
+                    Value::String(Rc::new(e.to_string())),
+                );
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+        }
+    });
+
+    // http_post - Make a POST request with a body
+    // Returns: ~{status: i32, headers: Map, body: String}
+    #[cfg(feature = "http-client")]
+    define(interp, "http_post", Some(2), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("http_post requires string URL")),
+        };
+        let body = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("http_post requires string body")),
+        };
+
+        let client = reqwest::blocking::Client::new();
+        match client.post(&url).body(body).send() {
+            Ok(response) => {
+                let status = response.status().as_u16() as i64;
+                let mut headers_map = std::collections::HashMap::new();
+                for (name, value) in response.headers() {
+                    if let Ok(v) = value.to_str() {
+                        headers_map.insert(
+                            name.as_str().to_string(),
+                            Value::String(Rc::new(v.to_string())),
+                        );
+                    }
+                }
+                let response_body = response.text().unwrap_or_default();
+
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(status));
+                result.insert(
+                    "headers".to_string(),
+                    Value::Map(Rc::new(RefCell::new(headers_map))),
+                );
+                result.insert("body".to_string(), Value::String(Rc::new(response_body)));
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+            Err(e) => {
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(0));
+                result.insert(
+                    "error".to_string(),
+                    Value::String(Rc::new(e.to_string())),
+                );
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+        }
+    });
+
+    // http_post_json - Make a POST request with JSON body
+    // Returns: ~{status: i32, headers: Map, body: String}
+    #[cfg(feature = "http-client")]
+    define(interp, "http_post_json", Some(2), |_, args| {
+        fn value_to_json_inner(val: &Value) -> serde_json::Value {
+            match val {
+                Value::Null => serde_json::Value::Null,
+                Value::Bool(b) => serde_json::Value::Bool(*b),
+                Value::Int(n) => serde_json::Value::Number(serde_json::Number::from(*n)),
+                Value::Float(f) => serde_json::Number::from_f64(*f)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null),
+                Value::String(s) => serde_json::Value::String(s.to_string()),
+                Value::Array(arr) => {
+                    let arr = arr.borrow();
+                    serde_json::Value::Array(arr.iter().map(value_to_json_inner).collect())
+                }
+                Value::Map(map) => {
+                    let map = map.borrow();
+                    let obj: serde_json::Map<String, serde_json::Value> = map
+                        .iter()
+                        .map(|(k, v)| (k.clone(), value_to_json_inner(v)))
+                        .collect();
+                    serde_json::Value::Object(obj)
+                }
+                _ => serde_json::Value::String(format!("{}", val)),
+            }
+        }
+
+        let url = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("http_post_json requires string URL")),
+        };
+        let json_body = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            v => serde_json::to_string(&value_to_json_inner(v)).unwrap_or_default(),
+        };
+
+        let client = reqwest::blocking::Client::new();
+        match client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .body(json_body)
+            .send()
+        {
+            Ok(response) => {
+                let status = response.status().as_u16() as i64;
+                let mut headers_map = std::collections::HashMap::new();
+                for (name, value) in response.headers() {
+                    if let Ok(v) = value.to_str() {
+                        headers_map.insert(
+                            name.as_str().to_string(),
+                            Value::String(Rc::new(v.to_string())),
+                        );
+                    }
+                }
+                let response_body = response.text().unwrap_or_default();
+
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(status));
+                result.insert(
+                    "headers".to_string(),
+                    Value::Map(Rc::new(RefCell::new(headers_map))),
+                );
+                result.insert("body".to_string(), Value::String(Rc::new(response_body)));
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+            Err(e) => {
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(0));
+                result.insert(
+                    "error".to_string(),
+                    Value::String(Rc::new(e.to_string())),
+                );
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+        }
+    });
+
+    // http_request - General HTTP request with method, headers, and body
+    // http_request(method, url, headers?, body?)
+    // Returns: ~{status: i32, headers: Map, body: String}
+    #[cfg(feature = "http-client")]
+    define(interp, "http_request", None, |_, args| {
+        if args.is_empty() {
+            return Err(RuntimeError::new(
+                "http_request requires at least method and url",
+            ));
+        }
+
+        let method = match &args[0] {
+            Value::String(s) => s.as_str().to_uppercase(),
+            _ => return Err(RuntimeError::new("http_request requires string method")),
+        };
+
+        let url = if args.len() > 1 {
+            match &args[1] {
+                Value::String(s) => s.as_str().to_string(),
+                _ => return Err(RuntimeError::new("http_request requires string URL")),
+            }
+        } else {
+            return Err(RuntimeError::new("http_request requires URL"));
+        };
+
+        let headers: std::collections::HashMap<String, String> = if args.len() > 2 {
+            match &args[2] {
+                Value::Map(m) => {
+                    let map = m.borrow();
+                    map.iter()
+                        .filter_map(|(k, v)| {
+                            if let Value::String(s) = v {
+                                Some((k.clone(), s.as_str().to_string()))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                }
+                Value::Null => std::collections::HashMap::new(),
+                _ => std::collections::HashMap::new(),
+            }
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        let body: Option<String> = if args.len() > 3 {
+            match &args[3] {
+                Value::String(s) => Some(s.as_str().to_string()),
+                Value::Null => None,
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        let client = reqwest::blocking::Client::new();
+        let mut request = match method.as_str() {
+            "GET" => client.get(&url),
+            "POST" => client.post(&url),
+            "PUT" => client.put(&url),
+            "DELETE" => client.delete(&url),
+            "PATCH" => client.patch(&url),
+            "HEAD" => client.head(&url),
+            _ => return Err(RuntimeError::new(&format!("Unsupported HTTP method: {}", method))),
+        };
+
+        for (key, value) in headers {
+            request = request.header(&key, &value);
+        }
+
+        if let Some(b) = body {
+            request = request.body(b);
+        }
+
+        match request.send() {
+            Ok(response) => {
+                let status = response.status().as_u16() as i64;
+                let mut headers_map = std::collections::HashMap::new();
+                for (name, value) in response.headers() {
+                    if let Ok(v) = value.to_str() {
+                        headers_map.insert(
+                            name.as_str().to_string(),
+                            Value::String(Rc::new(v.to_string())),
+                        );
+                    }
+                }
+                let response_body = response.text().unwrap_or_default();
+
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(status));
+                result.insert(
+                    "headers".to_string(),
+                    Value::Map(Rc::new(RefCell::new(headers_map))),
+                );
+                result.insert("body".to_string(), Value::String(Rc::new(response_body)));
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+            Err(e) => {
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(0));
+                result.insert(
+                    "error".to_string(),
+                    Value::String(Rc::new(e.to_string())),
+                );
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+        }
+    });
+
+    // http_download - Download a file to disk
+    // http_download(url, path) -> bool
+    #[cfg(feature = "http-client")]
+    define(interp, "http_download", Some(2), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("http_download requires string URL")),
+        };
+        let path = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("http_download requires string path")),
+        };
+
+        match reqwest::blocking::get(&url) {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.bytes() {
+                        Ok(bytes) => {
+                            match std::fs::write(&path, &bytes) {
+                                Ok(_) => Ok(Value::Bool(true)),
+                                Err(_) => Ok(Value::Bool(false)),
+                            }
+                        }
+                        Err(_) => Ok(Value::Bool(false)),
+                    }
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            }
+            Err(_) => Ok(Value::Bool(false)),
+        }
+    });
 }
 
 // ============================================================================

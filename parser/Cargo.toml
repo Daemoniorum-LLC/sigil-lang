@@ -133,7 +133,7 @@ prost = { version = "0.13", optional = true }
 prost-types = { version = "0.13", optional = true }
 
 # HTTP client support
-reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli", "multipart"], optional = true }
+reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli", "multipart", "blocking"], optional = true }
 hyper = { version = "1.4", features = ["full"], optional = true }
 hyper-util = { version = "0.1", optional = true }
 http = { version = "1.1", optional = true }
