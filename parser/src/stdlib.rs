@@ -27468,6 +27468,286 @@ fn register_protocol(interp: &mut Interpreter) {
             Err(_) => Ok(Value::Bool(false)),
         }
     });
+
+    // ========================================================================
+    // WEBSOCKET CLIENT - Uses tungstenite for blocking WebSocket I/O
+    // ========================================================================
+    // WebSocket connections are stored in a thread-local map with unique IDs.
+    // Functions: ws_connect, ws_send, ws_send_binary, ws_receive, ws_close
+
+    #[cfg(feature = "websocket")]
+    {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::{Mutex, OnceLock};
+
+        // Global WebSocket connection storage
+        static WS_CONNECTIONS: OnceLock<Mutex<std::collections::HashMap<u64, tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>>>> = OnceLock::new();
+        static WS_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+        fn get_ws_connections() -> &'static Mutex<std::collections::HashMap<u64, tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>>> {
+            WS_CONNECTIONS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+        }
+
+        // ws_connect - Connect to a WebSocket server
+        // Returns: connection ID (int) or 0 on failure
+        define(interp, "ws_connect", Some(1), |_, args| {
+            let url = match &args[0] {
+                Value::String(s) => s.as_str().to_string(),
+                _ => return Err(RuntimeError::new("ws_connect requires string URL")),
+            };
+
+            match tungstenite::connect(&url) {
+                Ok((socket, _response)) => {
+                    let id = WS_COUNTER.fetch_add(1, Ordering::SeqCst);
+                    if let Ok(mut conns) = get_ws_connections().lock() {
+                        conns.insert(id, socket);
+                        Ok(Value::Int(id as i64))
+                    } else {
+                        Ok(Value::Int(0))
+                    }
+                }
+                Err(e) => {
+                    // Return error info as a map
+                    let mut result = std::collections::HashMap::new();
+                    result.insert("id".to_string(), Value::Int(0));
+                    result.insert("error".to_string(), Value::String(Rc::new(e.to_string())));
+                    Ok(Value::Map(Rc::new(RefCell::new(result))))
+                }
+            }
+        });
+
+        // ws_send - Send a text message
+        // ws_send(conn_id, message) -> bool
+        define(interp, "ws_send", Some(2), |_, args| {
+            let conn_id = match &args[0] {
+                Value::Int(n) => *n as u64,
+                _ => return Err(RuntimeError::new("ws_send requires connection ID")),
+            };
+            let message = match &args[1] {
+                Value::String(s) => s.as_str().to_string(),
+                _ => return Err(RuntimeError::new("ws_send requires string message")),
+            };
+
+            if let Ok(mut conns) = get_ws_connections().lock() {
+                if let Some(socket) = conns.get_mut(&conn_id) {
+                    match socket.send(tungstenite::Message::Text(message)) {
+                        Ok(_) => Ok(Value::Bool(true)),
+                        Err(_) => Ok(Value::Bool(false)),
+                    }
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            } else {
+                Ok(Value::Bool(false))
+            }
+        });
+
+        // ws_send_binary - Send binary data
+        // ws_send_binary(conn_id, data) -> bool
+        define(interp, "ws_send_binary", Some(2), |_, args| {
+            let conn_id = match &args[0] {
+                Value::Int(n) => *n as u64,
+                _ => return Err(RuntimeError::new("ws_send_binary requires connection ID")),
+            };
+            let data = match &args[1] {
+                Value::String(s) => s.as_bytes().to_vec(),
+                Value::Array(arr) => {
+                    let arr = arr.borrow();
+                    arr.iter()
+                        .filter_map(|v| {
+                            if let Value::Int(n) = v {
+                                Some(*n as u8)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                }
+                _ => return Err(RuntimeError::new("ws_send_binary requires data")),
+            };
+
+            if let Ok(mut conns) = get_ws_connections().lock() {
+                if let Some(socket) = conns.get_mut(&conn_id) {
+                    match socket.send(tungstenite::Message::Binary(data)) {
+                        Ok(_) => Ok(Value::Bool(true)),
+                        Err(_) => Ok(Value::Bool(false)),
+                    }
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            } else {
+                Ok(Value::Bool(false))
+            }
+        });
+
+        // ws_receive - Receive a message (blocking)
+        // Returns: {type: "text"|"binary"|"ping"|"pong"|"close", data: string|array}
+        define(interp, "ws_receive", Some(1), |_, args| {
+            let conn_id = match &args[0] {
+                Value::Int(n) => *n as u64,
+                _ => return Err(RuntimeError::new("ws_receive requires connection ID")),
+            };
+
+            if let Ok(mut conns) = get_ws_connections().lock() {
+                if let Some(socket) = conns.get_mut(&conn_id) {
+                    match socket.read() {
+                        Ok(msg) => {
+                            let mut result = std::collections::HashMap::new();
+                            match msg {
+                                tungstenite::Message::Text(text) => {
+                                    result.insert(
+                                        "type".to_string(),
+                                        Value::String(Rc::new("text".to_string())),
+                                    );
+                                    result.insert(
+                                        "data".to_string(),
+                                        Value::String(Rc::new(text)),
+                                    );
+                                }
+                                tungstenite::Message::Binary(data) => {
+                                    result.insert(
+                                        "type".to_string(),
+                                        Value::String(Rc::new("binary".to_string())),
+                                    );
+                                    let arr: Vec<Value> =
+                                        data.iter().map(|b| Value::Int(*b as i64)).collect();
+                                    result.insert(
+                                        "data".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(arr))),
+                                    );
+                                }
+                                tungstenite::Message::Ping(data) => {
+                                    result.insert(
+                                        "type".to_string(),
+                                        Value::String(Rc::new("ping".to_string())),
+                                    );
+                                    result.insert(
+                                        "data".to_string(),
+                                        Value::String(Rc::new(
+                                            String::from_utf8_lossy(&data).to_string(),
+                                        )),
+                                    );
+                                }
+                                tungstenite::Message::Pong(data) => {
+                                    result.insert(
+                                        "type".to_string(),
+                                        Value::String(Rc::new("pong".to_string())),
+                                    );
+                                    result.insert(
+                                        "data".to_string(),
+                                        Value::String(Rc::new(
+                                            String::from_utf8_lossy(&data).to_string(),
+                                        )),
+                                    );
+                                }
+                                tungstenite::Message::Close(frame) => {
+                                    result.insert(
+                                        "type".to_string(),
+                                        Value::String(Rc::new("close".to_string())),
+                                    );
+                                    if let Some(f) = frame {
+                                        result.insert(
+                                            "code".to_string(),
+                                            Value::Int(u16::from(f.code) as i64),
+                                        );
+                                        result.insert(
+                                            "reason".to_string(),
+                                            Value::String(Rc::new(f.reason.to_string())),
+                                        );
+                                    }
+                                }
+                                tungstenite::Message::Frame(_) => {
+                                    result.insert(
+                                        "type".to_string(),
+                                        Value::String(Rc::new("frame".to_string())),
+                                    );
+                                }
+                            }
+                            Ok(Value::Map(Rc::new(RefCell::new(result))))
+                        }
+                        Err(e) => {
+                            let mut result = std::collections::HashMap::new();
+                            result.insert(
+                                "type".to_string(),
+                                Value::String(Rc::new("error".to_string())),
+                            );
+                            result.insert(
+                                "error".to_string(),
+                                Value::String(Rc::new(e.to_string())),
+                            );
+                            Ok(Value::Map(Rc::new(RefCell::new(result))))
+                        }
+                    }
+                } else {
+                    let mut result = std::collections::HashMap::new();
+                    result.insert(
+                        "type".to_string(),
+                        Value::String(Rc::new("error".to_string())),
+                    );
+                    result.insert(
+                        "error".to_string(),
+                        Value::String(Rc::new("Invalid connection ID".to_string())),
+                    );
+                    Ok(Value::Map(Rc::new(RefCell::new(result))))
+                }
+            } else {
+                let mut result = std::collections::HashMap::new();
+                result.insert(
+                    "type".to_string(),
+                    Value::String(Rc::new("error".to_string())),
+                );
+                result.insert(
+                    "error".to_string(),
+                    Value::String(Rc::new("Failed to acquire lock".to_string())),
+                );
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+        });
+
+        // ws_close - Close a WebSocket connection
+        // ws_close(conn_id) -> bool
+        define(interp, "ws_close", Some(1), |_, args| {
+            let conn_id = match &args[0] {
+                Value::Int(n) => *n as u64,
+                _ => return Err(RuntimeError::new("ws_close requires connection ID")),
+            };
+
+            if let Ok(mut conns) = get_ws_connections().lock() {
+                if let Some(mut socket) = conns.remove(&conn_id) {
+                    match socket.close(None) {
+                        Ok(_) => Ok(Value::Bool(true)),
+                        Err(_) => Ok(Value::Bool(true)), // Connection removed anyway
+                    }
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            } else {
+                Ok(Value::Bool(false))
+            }
+        });
+
+        // ws_ping - Send a ping message
+        // ws_ping(conn_id) -> bool
+        define(interp, "ws_ping", Some(1), |_, args| {
+            let conn_id = match &args[0] {
+                Value::Int(n) => *n as u64,
+                _ => return Err(RuntimeError::new("ws_ping requires connection ID")),
+            };
+
+            if let Ok(mut conns) = get_ws_connections().lock() {
+                if let Some(socket) = conns.get_mut(&conn_id) {
+                    match socket.send(tungstenite::Message::Ping(vec![])) {
+                        Ok(_) => Ok(Value::Bool(true)),
+                        Err(_) => Ok(Value::Bool(false)),
+                    }
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            } else {
+                Ok(Value::Bool(false))
+            }
+        });
+    }
 }
 
 // ============================================================================
