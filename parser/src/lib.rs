@@ -60,6 +60,7 @@ pub mod parser;
 pub mod plurality;
 pub mod span;
 pub mod stdlib;
+pub mod tome;
 pub mod tree_sitter_support;
 pub mod typeck;
 

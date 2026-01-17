@@ -52,27 +52,35 @@ fn main() -> ExitCode {
         eprintln!();
         eprintln!("Usage: sigil <command> [file.sigil] [options]");
         eprintln!();
-        eprintln!("Commands:");
+        eprintln!("Execution:");
         eprintln!("  run <file>      Execute a Sigil file (interpreted)");
         eprintln!("  run-dir <dir>   Execute all .sg/.sigil files in dir (multi-module)");
         eprintln!("  run-ws [bin]    Run a workspace (reads Sigil.toml, optional bin crate name)");
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
         eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO)");
+        eprintln!();
+        eprintln!("Analysis:");
         eprintln!("  check <file>    Type-check and validate (for AI agents: --format=json)");
         eprintln!("  lint <path>     Run linter on file or directory (--format=json for AI)");
         eprintln!("  dump-ir <file>  Dump AI-facing IR as JSON (for agents/tooling)");
         eprintln!("  parse <file>    Parse and check a Sigil file");
         eprintln!("  lex <file>      Tokenize a Sigil file");
+        eprintln!();
+        eprintln!("Tooling:");
         eprintln!("  repl            Start interactive REPL");
         eprintln!("  lsp             Start LSP server (for IDE integration)");
         eprintln!("  fmt <path>      Format source files (--check to verify only)");
         eprintln!();
-        eprintln!("Project Commands:");
-        eprintln!("  new <name>      Create a new Sigil project");
-        eprintln!("  init            Initialize a Sigil project in current directory");
-        eprintln!("  test            Run tests in the current project");
-        eprintln!("  build           Build the current project");
+        eprintln!("Tome Management (Package Manager):");
+        eprintln!("  conjure <name>  Summon a new tome into existence");
+        eprintln!("  inscribe        Mark current directory as a tome");
+        eprintln!("  summon <tome>   Call forth a binding (dependency)");
+        eprintln!("  banish <tome>   Cast out a binding");
+        eprintln!("  attune          Realign with latest binding versions");
+        eprintln!("  forge           Shape the tome into being (build)");
+        eprintln!("  rite <name>     Invoke a custom rite (script)");
+        eprintln!("  consecrate      Enshrine tome in the Grimoire registry");
         eprintln!();
         eprintln!("AI Agent Options (for 'check' command):");
         eprintln!("  --format=json       Output diagnostics as JSON (pretty-printed)");
@@ -549,17 +557,92 @@ fn main() -> ExitCode {
                 }
             }
         }
+        // Legacy aliases - redirect to tome commands
         "new" => {
+            eprintln!("Hint: 'sigil new' is now 'sigil conjure' (thematic naming)");
             if args.len() < 3 {
                 eprintln!("Error: missing project name");
-                eprintln!("Usage: sigil new <project-name>");
+                eprintln!("Usage: sigil conjure <project-name>");
                 return ExitCode::from(1);
             }
-            new_project(&args[2])
+            tome_conjure(&args[2])
         }
-        "init" => init_project(),
+        "init" => {
+            eprintln!("Hint: 'sigil init' is now 'sigil inscribe' (thematic naming)");
+            tome_inscribe()
+        }
+        "build" => {
+            eprintln!("Hint: 'sigil build' is now 'sigil forge' (thematic naming)");
+            tome_forge()
+        }
         "test" => run_tests(),
-        "build" => build_project(),
+
+        // Tome Management Commands (thematic names)
+        "conjure" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing tome name");
+                eprintln!("Usage: sigil conjure <tome-name>");
+                eprintln!();
+                eprintln!("Summons a new tome into existence, creating:");
+                eprintln!("  <tome-name>/");
+                eprintln!("    Grimoire.toml    - Tome manifest");
+                eprintln!("    src/");
+                eprintln!("      main.sg        - Entry point");
+                eprintln!("    .gitignore");
+                return ExitCode::from(1);
+            }
+            tome_conjure(&args[2])
+        }
+        "inscribe" => tome_inscribe(),
+        "summon" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing binding name");
+                eprintln!("Usage: sigil summon <binding> [version|path:../local|git:url]");
+                eprintln!();
+                eprintln!("Examples:");
+                eprintln!("  sigil summon aegis 0.1.0");
+                eprintln!("  sigil summon chorus path:../chorus");
+                eprintln!("  sigil summon anima git:https://github.com/daemoniorum/anima");
+                eprintln!();
+                eprintln!("Alternative flag syntax:");
+                eprintln!("  sigil summon aegis --version 0.1.0");
+                eprintln!("  sigil summon chorus --path ../chorus");
+                eprintln!("  sigil summon anima --git https://github.com/daemoniorum/anima");
+                return ExitCode::from(1);
+            }
+            // Parse spec - support both "path:value" and "--path value" formats
+            let spec = if args.len() >= 5 {
+                match args[3].as_str() {
+                    "--version" | "-v" => args[4].clone(),
+                    "--path" | "-p" => format!("path:{}", args[4]),
+                    "--git" | "-g" => format!("git:{}", args[4]),
+                    _ => args.get(3).cloned().unwrap_or_else(|| "*".to_string())
+                }
+            } else {
+                args.get(3).cloned().unwrap_or_else(|| "*".to_string())
+            };
+            tome_summon(&args[2], &spec)
+        }
+        "banish" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing binding name");
+                eprintln!("Usage: sigil banish <binding>");
+                return ExitCode::from(1);
+            }
+            tome_banish(&args[2])
+        }
+        "attune" => tome_attune(),
+        "forge" => tome_forge(),
+        "rite" => {
+            if args.len() < 3 {
+                // List available rites
+                tome_list_rites()
+            } else {
+                tome_invoke_rite(&args[2])
+            }
+        }
+        "consecrate" => tome_consecrate(),
+
         _ => {
             // Treat as file if it ends with .sigil or .sg
             if args[1].ends_with(".sigil") || args[1].ends_with(".sg") {
@@ -4439,5 +4522,294 @@ fn evaluate_input(interpreter: &mut Interpreter, input: &str, show_ast: bool) {
             }
         }
         Err(e) => eprintln!("{}Parse error: {}{}", colors::SPECIAL, e, colors::RESET),
+    }
+}
+
+// ============================================================================
+// Tome Management Commands
+// ============================================================================
+
+/// Conjure a new tome (create project)
+fn tome_conjure(name: &str) -> ExitCode {
+    use sigil_parser::tome;
+
+    println!("Conjuring tome '{}'...", name);
+
+    match tome::conjure(name, None) {
+        Ok(path) => {
+            println!();
+            println!("  Tome summoned at: {}", path.display());
+            println!();
+            println!("  Structure:");
+            println!("    {}/", name);
+            println!("      Grimoire.toml    # Tome manifest");
+            println!("      src/");
+            println!("        main.sg        # Entry point");
+            println!("      .gitignore");
+            println!();
+            println!("  Next steps:");
+            println!("    cd {}", name);
+            println!("    sigil forge        # Build the tome");
+            println!("    sigil run src/main.sg");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Failed to conjure tome: {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Inscribe current directory as a tome
+fn tome_inscribe() -> ExitCode {
+    use sigil_parser::tome;
+
+    let current_dir = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("Failed to get current directory: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    println!("Inscribing current directory as a tome...");
+
+    match tome::inscribe(&current_dir) {
+        Ok(()) => {
+            println!();
+            println!("  Directory inscribed!");
+            println!("  Created: Grimoire.toml");
+            println!();
+            println!("  Edit Grimoire.toml to configure your tome.");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Failed to inscribe: {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Summon a binding (add dependency)
+fn tome_summon(name: &str, spec: &str) -> ExitCode {
+    use sigil_parser::tome::{self, Grimoire};
+
+    let grimoire_path = match Grimoire::find() {
+        Some(p) => p.parent().unwrap().to_path_buf(),
+        None => {
+            eprintln!("No Grimoire.toml found in current directory or ancestors.");
+            eprintln!("Run 'sigil inscribe' to create one.");
+            return ExitCode::from(1);
+        }
+    };
+
+    println!("Summoning binding '{}'...", name);
+
+    match tome::summon(&grimoire_path, name, spec) {
+        Ok(()) => {
+            println!("  Added {} to [bindings]", name);
+            println!();
+            println!("  Run 'sigil attune' to resolve bindings.");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Failed to summon: {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Banish a binding (remove dependency)
+fn tome_banish(name: &str) -> ExitCode {
+    use sigil_parser::tome::{self, Grimoire};
+
+    let grimoire_path = match Grimoire::find() {
+        Some(p) => p.parent().unwrap().to_path_buf(),
+        None => {
+            eprintln!("No Grimoire.toml found in current directory or ancestors.");
+            return ExitCode::from(1);
+        }
+    };
+
+    println!("Banishing binding '{}'...", name);
+
+    match tome::banish(&grimoire_path, name) {
+        Ok(()) => {
+            println!("  Removed {} from [bindings]", name);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Failed to banish: {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Attune bindings (resolve dependencies)
+fn tome_attune() -> ExitCode {
+    use sigil_parser::tome::{self, Grimoire};
+
+    let grimoire_path = match Grimoire::find() {
+        Some(p) => p.parent().unwrap().to_path_buf(),
+        None => {
+            eprintln!("No Grimoire.toml found in current directory or ancestors.");
+            return ExitCode::from(1);
+        }
+    };
+
+    println!("Attuning bindings...");
+
+    match tome::attune(&grimoire_path) {
+        Ok(result) => {
+            if result.resolved.is_empty() && result.errors.is_empty() {
+                println!("  No bindings to resolve.");
+            } else {
+                for binding in &result.resolved {
+                    println!("  Resolved: {} v{}", binding.name, binding.version);
+                }
+                for (name, err) in &result.errors {
+                    eprintln!("  Failed: {} - {}", name, err);
+                }
+            }
+
+            if result.errors.is_empty() {
+                println!();
+                println!("  Grimoire.lock updated.");
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(1)
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to attune: {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Forge the tome (build)
+fn tome_forge() -> ExitCode {
+    use sigil_parser::tome::{self, Grimoire};
+
+    let grimoire_path = match Grimoire::find() {
+        Some(p) => p.parent().unwrap().to_path_buf(),
+        None => {
+            eprintln!("No Grimoire.toml found in current directory or ancestors.");
+            return ExitCode::from(1);
+        }
+    };
+
+    println!("Forging tome...");
+
+    match tome::forge(&grimoire_path) {
+        Ok(result) => {
+            println!("  Tome: {} v{}", result.tome_name, result.version);
+            if let Some(main_file) = &result.main_file {
+                println!("  Entry: {}", main_file.display());
+            }
+            println!();
+            println!("  Forge complete!");
+            println!();
+            println!("  Run with: sigil run {}",
+                result.main_file.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "src/main.sg".to_string()));
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Failed to forge: {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// List available rites
+fn tome_list_rites() -> ExitCode {
+    use sigil_parser::tome::{self, Grimoire};
+
+    let grimoire_path = match Grimoire::find() {
+        Some(p) => p.parent().unwrap().to_path_buf(),
+        None => {
+            eprintln!("No Grimoire.toml found in current directory or ancestors.");
+            return ExitCode::from(1);
+        }
+    };
+
+    match tome::list_rites(&grimoire_path) {
+        Ok(rites) => {
+            if rites.is_empty() {
+                println!("No rites defined in Grimoire.toml");
+                println!();
+                println!("Add rites to your Grimoire.toml:");
+                println!("  [rites]");
+                println!("  test = \"sigil run tests/main.sg\"");
+                println!("  bench = \"sigil run bench/main.sg\"");
+            } else {
+                println!("Available rites:");
+                for (name, command) in rites {
+                    println!("  {} = \"{}\"", name, command);
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Failed to list rites: {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Invoke a rite (run script)
+fn tome_invoke_rite(name: &str) -> ExitCode {
+    use sigil_parser::tome::{self, Grimoire};
+
+    let grimoire_path = match Grimoire::find() {
+        Some(p) => p.parent().unwrap().to_path_buf(),
+        None => {
+            eprintln!("No Grimoire.toml found in current directory or ancestors.");
+            return ExitCode::from(1);
+        }
+    };
+
+    println!("Invoking rite '{}'...", name);
+    println!();
+
+    match tome::invoke_rite(&grimoire_path, name) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("Rite failed: {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Consecrate tome (publish to registry - placeholder)
+fn tome_consecrate() -> ExitCode {
+    use sigil_parser::tome::Grimoire;
+
+    let grimoire_path = match Grimoire::find() {
+        Some(p) => p,
+        None => {
+            eprintln!("No Grimoire.toml found in current directory or ancestors.");
+            return ExitCode::from(1);
+        }
+    };
+
+    match Grimoire::load(&grimoire_path) {
+        Ok(grimoire) => {
+            println!("Preparing to consecrate '{}'...", grimoire.tome.name);
+            println!();
+            println!("  The Grimoire registry is not yet available.");
+            println!("  For now, share your tome via git:");
+            println!();
+            println!("    # Others can summon via git:");
+            println!("    sigil summon {} git:https://github.com/you/{}",
+                grimoire.tome.name, grimoire.tome.name);
+            println!();
+            println!("  The Grimoire registry will be unveiled soon...");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Failed to read Grimoire: {}", e);
+            ExitCode::from(1)
+        }
     }
 }
