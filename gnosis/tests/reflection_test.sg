@@ -1,0 +1,638 @@
+//! Tests for Gnosis Reflection System
+//!
+//! Verifies ReflectionSystem, Reflection, insights, and growth measurement.
+
+use std::collections::HashMap;
+
+// ============================================================================
+// Self-contained Test Types
+// ============================================================================
+
+pub struct Duration { nanos: u64 }
+impl Duration {
+    pub fn hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    pub fn as_nanos(&self) -> u64 { self.nanos }
+}
+impl Copy for Duration {}
+impl Clone for Duration { fn clone(&self) -> Self { *self } }
+
+pub struct Timestamp { pub nanos: u64 }
+impl Timestamp {
+    pub fn now() -> Self { Self { nanos: 10_000_000_000 } }
+    pub fn from_nanos(n: u64) -> Self { Self { nanos: n } }
+}
+impl PartialOrd for Timestamp {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.nanos.partial_cmp(&other.nanos)
+    }
+}
+impl PartialEq for Timestamp {
+    fn eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SkillLevel {
+    Novice,
+    AdvancedBeginner,
+    Competent,
+    Proficient,
+    Expert,
+}
+
+impl SkillLevel {
+    pub fn from_proficiency(p: f32) -> Self {
+        if p >= 0.9 { SkillLevel::Expert }
+        else if p >= 0.7 { SkillLevel::Proficient }
+        else if p >= 0.5 { SkillLevel::Competent }
+        else if p >= 0.3 { SkillLevel::AdvancedBeginner }
+        else { SkillLevel::Novice }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum Priority {
+    Critical,
+    High,
+    Normal,
+    Low,
+}
+
+#[derive(Copy, Clone)]
+pub enum ReflectionPeriod {
+    Daily,
+    Weekly,
+    Monthly,
+}
+
+impl ReflectionPeriod {
+    pub fn start_time(&self) -> Timestamp {
+        let now = Timestamp::now();
+        let offset = match self {
+            ReflectionPeriod::Daily => Duration::hours(24),
+            ReflectionPeriod::Weekly => Duration::hours(168),
+            ReflectionPeriod::Monthly => Duration::hours(720),
+        };
+        Timestamp::from_nanos(now.nanos.saturating_sub(offset.as_nanos()))
+    }
+
+    pub fn hours(&self) -> u64 {
+        match self {
+            ReflectionPeriod::Daily => 24,
+            ReflectionPeriod::Weekly => 168,
+            ReflectionPeriod::Monthly => 720,
+        }
+    }
+}
+
+pub struct Success {
+    pub description: String,
+    pub factors: Vec<String>,
+}
+
+impl Success {
+    pub fn new(description: &str) -> Self {
+        Self {
+            description: description.to_string(),
+            factors: vec![],
+        }
+    }
+
+    pub fn with_factor(mut self, factor: &str) -> Self {
+        self.factors.push(factor.to_string());
+        self
+    }
+
+    pub fn factor_count(&self) -> usize {
+        self.factors.len()
+    }
+}
+
+pub struct ImprovementArea {
+    pub skill: String,
+    pub suggestion: String,
+    pub priority: Priority,
+}
+
+impl ImprovementArea {
+    pub fn new(skill: &str, suggestion: &str) -> Self {
+        Self {
+            skill: skill.to_string(),
+            suggestion: suggestion.to_string(),
+            priority: Priority::Normal,
+        }
+    }
+
+    pub fn with_priority(mut self, priority: Priority) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    pub fn is_critical(&self) -> bool {
+        match self.priority {
+            Priority::Critical => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_high_priority(&self) -> bool {
+        match self.priority {
+            Priority::Critical | Priority::High => true,
+            _ => false,
+        }
+    }
+}
+
+pub struct Insight {
+    pub observation: String,
+    pub implication: String,
+    pub action: Option<String>,
+}
+
+impl Insight {
+    pub fn new(observation: &str, implication: &str) -> Self {
+        Self {
+            observation: observation.to_string(),
+            implication: implication.to_string(),
+            action: None,
+        }
+    }
+
+    pub fn with_action(mut self, action: &str) -> Self {
+        self.action = Some(action.to_string());
+        self
+    }
+
+    pub fn is_actionable(&self) -> bool {
+        self.action.is_some()
+    }
+}
+
+pub struct SkillSnapshot {
+    pub name: String,
+    pub level: SkillLevel,
+    pub proficiency: f32,
+    pub recent_exercises: usize,
+}
+
+impl SkillSnapshot {
+    pub fn new(name: &str, proficiency: f32, recent: usize) -> Self {
+        Self {
+            name: name.to_string(),
+            level: SkillLevel::from_proficiency(proficiency),
+            proficiency,
+            recent_exercises: recent,
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.recent_exercises > 0
+    }
+
+    pub fn is_expert(&self) -> bool {
+        self.level >= SkillLevel::Proficient
+    }
+
+    pub fn is_novice(&self) -> bool {
+        self.level == SkillLevel::Novice
+    }
+}
+
+pub struct GrowthMeasurement {
+    pub overall: f32,
+    pub by_skill: Vec<(String, f32)>,
+}
+
+impl GrowthMeasurement {
+    pub fn new(overall: f32) -> Self {
+        Self {
+            overall,
+            by_skill: vec![],
+        }
+    }
+
+    pub fn with_skill(mut self, name: &str, growth: f32) -> Self {
+        self.by_skill.push((name.to_string(), growth));
+        self
+    }
+
+    pub fn overall_growth(&self) -> f32 {
+        self.overall
+    }
+
+    pub fn skill_count(&self) -> usize {
+        self.by_skill.len()
+    }
+
+    pub fn has_growth(&self) -> bool {
+        self.overall > 0.0
+    }
+
+    pub fn top_skill(&self) -> Option<(&String, f32)> {
+        self.by_skill.iter()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+            .map(|(name, growth)| (name, *growth))
+    }
+}
+
+pub struct Reflection {
+    pub period: ReflectionPeriod,
+    pub successes: Vec<Success>,
+    pub improvements: Vec<ImprovementArea>,
+    pub patterns: Vec<String>,
+    pub insights: Vec<Insight>,
+    pub growth: GrowthMeasurement,
+    pub timestamp: Timestamp,
+}
+
+impl Reflection {
+    pub fn new(period: ReflectionPeriod) -> Self {
+        Self {
+            period,
+            successes: vec![],
+            improvements: vec![],
+            patterns: vec![],
+            insights: vec![],
+            growth: GrowthMeasurement::new(0.0),
+            timestamp: Timestamp::now(),
+        }
+    }
+
+    pub fn with_success(mut self, success: Success) -> Self {
+        self.successes.push(success);
+        self
+    }
+
+    pub fn with_improvement(mut self, improvement: ImprovementArea) -> Self {
+        self.improvements.push(improvement);
+        self
+    }
+
+    pub fn with_pattern(mut self, pattern: &str) -> Self {
+        self.patterns.push(pattern.to_string());
+        self
+    }
+
+    pub fn with_insight(mut self, insight: Insight) -> Self {
+        self.insights.push(insight);
+        self
+    }
+
+    pub fn with_growth(mut self, growth: GrowthMeasurement) -> Self {
+        self.growth = growth;
+        self
+    }
+
+    pub fn success_count(&self) -> usize { self.successes.len() }
+    pub fn improvement_count(&self) -> usize { self.improvements.len() }
+    pub fn pattern_count(&self) -> usize { self.patterns.len() }
+    pub fn insight_count(&self) -> usize { self.insights.len() }
+
+    pub fn has_successes(&self) -> bool { !self.successes.is_empty() }
+    pub fn has_improvements(&self) -> bool { !self.improvements.is_empty() }
+    pub fn has_patterns(&self) -> bool { !self.patterns.is_empty() }
+    pub fn has_insights(&self) -> bool { !self.insights.is_empty() }
+
+    pub fn actionable_insights(&self) -> Vec<&Insight> {
+        self.insights.iter().filter(|i| i.is_actionable()).collect()
+    }
+
+    pub fn critical_improvements(&self) -> Vec<&ImprovementArea> {
+        self.improvements.iter().filter(|i| i.is_critical()).collect()
+    }
+
+    pub fn to_summary(&self) -> String {
+        let mut output = String::new();
+        output.push_str("=== Reflection Summary ===\n");
+
+        if self.has_successes() {
+            output.push_str(&format!("Successes: {}\n", self.success_count()));
+        }
+        if self.has_improvements() {
+            output.push_str(&format!("Areas for Improvement: {}\n", self.improvement_count()));
+        }
+        if self.has_patterns() {
+            output.push_str(&format!("Patterns: {}\n", self.pattern_count()));
+        }
+        if self.has_insights() {
+            output.push_str(&format!("Insights: {}\n", self.insight_count()));
+        }
+
+        output.push_str(&format!("Overall Growth: {:.0}%\n", self.growth.overall * 100.0));
+        output
+    }
+}
+
+pub struct ReflectionConfig {
+    pub min_experiences: usize,
+    pub pattern_significance: f32,
+}
+
+impl ReflectionConfig {
+    pub fn default_config() -> Self {
+        Self {
+            min_experiences: 5,
+            pattern_significance: 0.7,
+        }
+    }
+
+    pub fn with_min_experiences(mut self, min: usize) -> Self {
+        self.min_experiences = min;
+        self
+    }
+}
+
+// ============================================================================
+// Tests: ReflectionPeriod
+// ============================================================================
+
+#[test]
+fn test_reflection_period_daily() {
+    let period = ReflectionPeriod::Daily;
+    assert_eq(period.hours(), 24);
+}
+
+#[test]
+fn test_reflection_period_weekly() {
+    let period = ReflectionPeriod::Weekly;
+    assert_eq(period.hours(), 168);
+}
+
+#[test]
+fn test_reflection_period_monthly() {
+    let period = ReflectionPeriod::Monthly;
+    assert_eq(period.hours(), 720);
+}
+
+#[test]
+fn test_reflection_period_start_time() {
+    let period = ReflectionPeriod::Daily;
+    let start = period.start_time();
+    assert(start.nanos < Timestamp::now().nanos);
+}
+
+// ============================================================================
+// Tests: Success
+// ============================================================================
+
+#[test]
+fn test_success_new() {
+    let s = Success::new("Completed project on time");
+    assert_eq(s.description, "Completed project on time");
+    assert_eq(s.factor_count(), 0);
+}
+
+#[test]
+fn test_success_with_factor() {
+    let s = Success::new("Success")
+        .with_factor("good planning")
+        .with_factor("team collaboration");
+    assert_eq(s.factor_count(), 2);
+}
+
+// ============================================================================
+// Tests: ImprovementArea
+// ============================================================================
+
+#[test]
+fn test_improvement_area_new() {
+    let area = ImprovementArea::new("testing", "Add more unit tests");
+    assert_eq(area.skill, "testing");
+    assert_eq(area.suggestion, "Add more unit tests");
+}
+
+#[test]
+fn test_improvement_area_with_priority() {
+    let area = ImprovementArea::new("security", "Review auth flow")
+        .with_priority(Priority::Critical);
+    assert(area.is_critical());
+    assert(area.is_high_priority());
+}
+
+#[test]
+fn test_improvement_area_high_priority() {
+    let area = ImprovementArea::new("perf", "Optimize queries")
+        .with_priority(Priority::High);
+    assert(!area.is_critical());
+    assert(area.is_high_priority());
+}
+
+#[test]
+fn test_improvement_area_normal_priority() {
+    let area = ImprovementArea::new("docs", "Add examples");
+    assert(!area.is_critical());
+    assert(!area.is_high_priority());
+}
+
+// ============================================================================
+// Tests: Insight
+// ============================================================================
+
+#[test]
+fn test_insight_new() {
+    let insight = Insight::new("High error rate on Mondays", "Team needs ramp-up time");
+    assert_eq(insight.observation, "High error rate on Mondays");
+    assert(!insight.is_actionable());
+}
+
+#[test]
+fn test_insight_with_action() {
+    let insight = Insight::new("Slow builds", "Blocking development")
+        .with_action("Upgrade CI infrastructure");
+    assert(insight.is_actionable());
+    assert_eq(insight.action.unwrap(), "Upgrade CI infrastructure");
+}
+
+// ============================================================================
+// Tests: SkillSnapshot
+// ============================================================================
+
+#[test]
+fn test_skill_snapshot_new() {
+    let snap = SkillSnapshot::new("rust", 0.8, 10);
+    assert_eq(snap.name, "rust");
+    assert_eq(snap.proficiency, 0.8);
+    assert_eq(snap.recent_exercises, 10);
+}
+
+#[test]
+fn test_skill_snapshot_is_active() {
+    let active = SkillSnapshot::new("coding", 0.5, 5);
+    let inactive = SkillSnapshot::new("unused", 0.5, 0);
+    assert(active.is_active());
+    assert(!inactive.is_active());
+}
+
+#[test]
+fn test_skill_snapshot_is_expert() {
+    let expert = SkillSnapshot::new("mastered", 0.9, 100);
+    let novice = SkillSnapshot::new("learning", 0.2, 5);
+    assert(expert.is_expert());
+    assert(!novice.is_expert());
+}
+
+#[test]
+fn test_skill_snapshot_is_novice() {
+    let novice = SkillSnapshot::new("new", 0.1, 2);
+    let competent = SkillSnapshot::new("practiced", 0.6, 20);
+    assert(novice.is_novice());
+    assert(!competent.is_novice());
+}
+
+// ============================================================================
+// Tests: GrowthMeasurement
+// ============================================================================
+
+#[test]
+fn test_growth_measurement_new() {
+    let growth = GrowthMeasurement::new(0.5);
+    assert_eq(growth.overall_growth(), 0.5);
+    assert_eq(growth.skill_count(), 0);
+}
+
+#[test]
+fn test_growth_measurement_with_skill() {
+    let growth = GrowthMeasurement::new(0.6)
+        .with_skill("rust", 0.8)
+        .with_skill("testing", 0.4);
+    assert_eq(growth.skill_count(), 2);
+}
+
+#[test]
+fn test_growth_measurement_has_growth() {
+    let positive = GrowthMeasurement::new(0.3);
+    let zero = GrowthMeasurement::new(0.0);
+    assert(positive.has_growth());
+    assert(!zero.has_growth());
+}
+
+#[test]
+fn test_growth_measurement_top_skill() {
+    let growth = GrowthMeasurement::new(0.5)
+        .with_skill("low", 0.2)
+        .with_skill("high", 0.9)
+        .with_skill("mid", 0.5);
+    let top = growth.top_skill();
+    assert(top.is_some());
+    assert_eq(*top.unwrap().0, "high");
+}
+
+// ============================================================================
+// Tests: Reflection
+// ============================================================================
+
+#[test]
+fn test_reflection_new() {
+    let r = Reflection::new(ReflectionPeriod::Weekly);
+    assert_eq(r.success_count(), 0);
+    assert_eq(r.improvement_count(), 0);
+}
+
+#[test]
+fn test_reflection_with_success() {
+    let r = Reflection::new(ReflectionPeriod::Daily)
+        .with_success(Success::new("Shipped feature"));
+    assert(r.has_successes());
+    assert_eq(r.success_count(), 1);
+}
+
+#[test]
+fn test_reflection_with_improvement() {
+    let r = Reflection::new(ReflectionPeriod::Daily)
+        .with_improvement(ImprovementArea::new("testing", "Add coverage"));
+    assert(r.has_improvements());
+    assert_eq(r.improvement_count(), 1);
+}
+
+#[test]
+fn test_reflection_with_pattern() {
+    let r = Reflection::new(ReflectionPeriod::Weekly)
+        .with_pattern("Strong debugging skills");
+    assert(r.has_patterns());
+    assert_eq(r.pattern_count(), 1);
+}
+
+#[test]
+fn test_reflection_with_insight() {
+    let r = Reflection::new(ReflectionPeriod::Monthly)
+        .with_insight(Insight::new("Observation", "Implication"));
+    assert(r.has_insights());
+    assert_eq(r.insight_count(), 1);
+}
+
+#[test]
+fn test_reflection_with_growth() {
+    let r = Reflection::new(ReflectionPeriod::Weekly)
+        .with_growth(GrowthMeasurement::new(0.75));
+    assert_eq(r.growth.overall_growth(), 0.75);
+}
+
+#[test]
+fn test_reflection_actionable_insights() {
+    let r = Reflection::new(ReflectionPeriod::Daily)
+        .with_insight(Insight::new("O1", "I1").with_action("A1"))
+        .with_insight(Insight::new("O2", "I2"))
+        .with_insight(Insight::new("O3", "I3").with_action("A3"));
+    let actionable = r.actionable_insights();
+    assert_eq(actionable.len(), 2);
+}
+
+#[test]
+fn test_reflection_critical_improvements() {
+    let r = Reflection::new(ReflectionPeriod::Weekly)
+        .with_improvement(ImprovementArea::new("sec", "Fix").with_priority(Priority::Critical))
+        .with_improvement(ImprovementArea::new("docs", "Add"))
+        .with_improvement(ImprovementArea::new("bug", "Fix").with_priority(Priority::Critical));
+    let critical = r.critical_improvements();
+    assert_eq(critical.len(), 2);
+}
+
+#[test]
+fn test_reflection_to_summary() {
+    let r = Reflection::new(ReflectionPeriod::Daily)
+        .with_success(Success::new("Done"))
+        .with_growth(GrowthMeasurement::new(0.5));
+    let summary = r.to_summary();
+    assert(summary.contains("Successes: 1"));
+    assert(summary.contains("Overall Growth: 50%"));
+}
+
+#[test]
+fn test_reflection_comprehensive() {
+    let r = Reflection::new(ReflectionPeriod::Monthly)
+        .with_success(Success::new("Launched product").with_factor("teamwork"))
+        .with_success(Success::new("Zero downtime"))
+        .with_improvement(ImprovementArea::new("monitoring", "Add alerts"))
+        .with_pattern("Strong on deadlines")
+        .with_pattern("Weak on documentation")
+        .with_insight(Insight::new("Sprint velocity stable", "Sustainable pace"))
+        .with_growth(GrowthMeasurement::new(0.65)
+            .with_skill("rust", 0.8)
+            .with_skill("deployment", 0.5));
+
+    assert_eq(r.success_count(), 2);
+    assert_eq(r.improvement_count(), 1);
+    assert_eq(r.pattern_count(), 2);
+    assert_eq(r.insight_count(), 1);
+    assert(r.growth.has_growth());
+}
+
+// ============================================================================
+// Tests: ReflectionConfig
+// ============================================================================
+
+#[test]
+fn test_reflection_config_default() {
+    let config = ReflectionConfig::default_config();
+    assert_eq(config.min_experiences, 5);
+    assert_eq(config.pattern_significance, 0.7);
+}
+
+#[test]
+fn test_reflection_config_with_min_experiences() {
+    let config = ReflectionConfig::default_config().with_min_experiences(10);
+    assert_eq(config.min_experiences, 10);
+}
+
+fn main() {
+    print("Gnosis reflection tests");
+}
