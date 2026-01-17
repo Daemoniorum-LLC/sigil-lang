@@ -5,14 +5,14 @@
 // Note: In single-threaded interpreter, we use try_recv
 // after send since blocking recv would deadlock.
 
-fn main() {
-    let ch = channel_new();
+rite main() {
+    ≔ ch = channel_new();
 
     // Send a value
     channel_send(ch, 42);
     println("sent");
 
     // Try to receive (non-blocking)
-    let result = channel_try_recv(ch);
+    ≔ result = channel_try_recv(ch);
     println(result);
 }

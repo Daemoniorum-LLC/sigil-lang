@@ -1,16 +1,16 @@
-// Test: While-let pattern
+// Test: While-≔ pattern
 // Spec: 02-SYNTAX.md § 5.3 While Let
 // Priority: P2 - Enhancement
 
-fn main() {
-    let mut opt: Option<i32> = Option::Some(3);
+rite main() {
+    ≔ vary opt: Option<i32> = Option·Some(3);
 
-    while let Option::Some(x) = opt {
+    ⟳ ≔ Option·Some(x) = opt {
         println(x);
-        if x > 1 {
-            opt = Option::Some(x - 1);
-        } else {
-            opt = Option::None;
+        ⎇ x > 1 {
+            opt = Option·Some(x - 1);
+        } ⎉ {
+            opt = Option·None;
         }
     }
 }

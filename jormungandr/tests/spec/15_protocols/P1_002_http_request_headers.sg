@@ -4,12 +4,12 @@
 //
 // Tests http_request with custom headers
 
-fn main() {
+rite main() {
     // Test url_encode function
-    let encoded = url_encode("hello world");
-    if encoded == "hello%20world" {
+    ≔ encoded = url_encode("hello world");
+    ⎇ encoded == "hello%20world" {
         println("OK");
-    } else {
+    } ⎉ {
         println(encoded);
     }
 }

@@ -3,8 +3,8 @@
 // Should fail with mutability error
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let x = 42;
+rite main() {
+    ≔ x = 42;
     x = 100;  // ERROR: cannot assign to immutable variable
     println(x);
 }

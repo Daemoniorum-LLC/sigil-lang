@@ -1,4 +1,4 @@
-// Test: Multiple drops in same scope
+// Test: Multiple drops of same scope
 // Spec: 04-MEMORY.md § 3.1 Drop Trait
 // Priority: P0 - Bootstrap Critical
 //
@@ -8,19 +8,19 @@
 // Expected behavior:
 // Three drops should be printed
 
-struct Counter {}
+sigil Counter {}
 
-impl Drop for Counter {
-    fn drop(mut self) {
+⊢ Counter : Drop {
+    rite drop(vary this) {
         println("drop");
     }
 }
 
-fn main() {
+rite main() {
     {
-        let a = Counter {};
-        let b = Counter {};
-        let c = Counter {};
+        ≔ a = Counter {};
+        ≔ b = Counter {};
+        ≔ c = Counter {};
     }
     println("done");
 }

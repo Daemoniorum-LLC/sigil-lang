@@ -2,10 +2,10 @@
 // Spec: 05-MATHEMATICS.md § 2.1 Integers
 // Priority: P2 - Enhancement
 
-fn main() {
-    let max: !i32 = 2147483647;
+rite main() {
+    ≔ max: !i32 = 2147483647;
     println(max);
 
-    let big: !i32 = max - 1;
+    ≔ big: !i32 = max - 1;
     println(big);
 }

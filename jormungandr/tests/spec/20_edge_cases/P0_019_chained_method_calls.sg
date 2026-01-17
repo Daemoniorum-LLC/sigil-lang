@@ -2,7 +2,7 @@
 // Spec: Edge Cases - Method Chaining
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let s = "  hello  ".trim().to_uppercase();
+rite main() {
+    ≔ s = "  hello  ".trim().to_uppercase();
     println(s);
 }

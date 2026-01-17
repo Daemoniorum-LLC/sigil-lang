@@ -4,12 +4,12 @@
 //
 // Tests WebSocket close code helper functions (always available)
 
-fn main() {
+rite main() {
     // Test ws_close_code_text
-    let text = ws_close_code_text(1000);
-    if text == "Normal Closure" {
+    ≔ text = ws_close_code_text(1000);
+    ⎇ text == "Normal Closure" {
         println("OK");
-    } else {
+    } ⎉ {
         println(text);
     }
 }

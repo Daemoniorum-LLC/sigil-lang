@@ -4,10 +4,10 @@
 //
 // Tests constant IR representation - 2 constants defined
 
-const MAX_SIZE: i32 = 100;
-const PI: f64 = 3.14159;
+◆ MAX_SIZE: i32 = 100;
+◆ PI: f64 = 3.14159;
 
-fn main() {
-    // Mock: 2 constants in IR
+rite main() {
+    // Mock: 2 constants of IR
     println(2);
 }

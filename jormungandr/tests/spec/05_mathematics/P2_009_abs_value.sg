@@ -2,8 +2,8 @@
 // Spec: 05-MATHEMATICS.md § 2.1 Math Functions
 // Priority: P2 - Enhancement
 
-fn main() {
-    let x: !i32 = -5;
-    let result: !i32 = if x < 0 { -x } else { x };
+rite main() {
+    ≔ x: !i32 = -5;
+    ≔ result: !i32 = ⎇ x < 0 { -x } ⎉ { x };
     println(result);
 }

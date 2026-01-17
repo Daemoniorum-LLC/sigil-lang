@@ -1,24 +1,24 @@
-// Test: Call trait method through concrete type
-pub trait Describable {
-    fn describe(&self) -> !String;
+// Test: Call aspect method through concrete type
+☉ aspect Describable {
+    rite describe(&this) → !String;
 }
 
-pub struct Book {
+☉ sigil Book {
     title: !String,
     author: !String
 }
 
-impl Describable for Book {
-    fn describe(&self) -> !String {
-        let mut result: !String = self.title.clone();
+⊢ Book : Describable {
+    rite describe(&this) → !String {
+        ≔ vary result: !String = this.title.clone();
         result.push_str(" by ");
-        result.push_str(&self.author);
+        result.push_str(&this.author);
         result
     }
 }
 
-fn main() {
-    let book: !Book = Book {
+rite main() {
+    ≔ book: !Book = Book {
         title: "The Sigil Language",
         author: "The Daemoniorum Team"
     };

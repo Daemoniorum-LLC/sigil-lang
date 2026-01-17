@@ -2,6 +2,6 @@
 // Should fail with undefined variable error
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
+rite main() {
     println(undefined_var);  // ERROR: undefined variable
 }

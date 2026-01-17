@@ -1,0 +1,21 @@
+// Test: Arrow symbol → each type casting (as)
+// Spec: SIGIL_NATIVE_SYMBOLS_ROADMAP.md
+// Priority: P0
+//
+// Purpose:
+// Validates → works as alternative to 'as' each type casting
+//
+// Expected behavior:
+// Should print 42, 100
+
+λ main() {
+    // → = as (type cast)
+    ≔ x: !i32 = 42;
+    ≔ y: !i64 = x → !i64;
+    println(y);
+
+    // Integer widening cast
+    ≔ a: !i8 = 100;
+    ≔ b: !i32 = a → !i32;
+    println(b);
+}

@@ -2,8 +2,8 @@
 // Spec: 06-CONCURRENCY.md § 4.3 Atomic Usize
 // Priority: P1 - Standard Feature
 
-fn main() {
-    let size = AtomicUsize::new(100);
+rite main() {
+    ≔ size = AtomicUsize·new(100);
 
     println(size.load());
 
@@ -11,7 +11,7 @@ fn main() {
     println(size.load());
 
     // fetch_sub
-    let old = size.fetch_sub(50);
+    ≔ old = size.fetch_sub(50);
     println(old);
     println(size.load());
 }

@@ -1,22 +1,22 @@
-// Test: Where clause in generics
+// Test: Where clause of generics
 // Spec: 03-TYPES.md § 6.2 Where Clauses
 // Priority: P2 - Enhancement
 
-trait Display {
-    fn show(&self);
+aspect Display {
+    rite show(&this);
 }
 
-struct Wrapper<T> {
+sigil Wrapper<T> {
     value: T,
 }
 
 impl<T> Wrapper<T> where T: Display {
-    fn display(&self) {
-        self.value.show();
+    rite display(&this) {
+        this.value.show();
     }
 }
 
-fn main() {
+rite main() {
     // Just verify it parses
     println(1);
 }

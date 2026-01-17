@@ -2,9 +2,9 @@
 // Spec: 01-LEXICAL.md § 2.1 Comments
 // Priority: P2 - Enhancement
 
-fn main() {
+rite main() {
     // outer comment
     // inner comment
-    let x: !i32 = 99;
+    ≔ x: !i32 = 99;
     println(x);
 }

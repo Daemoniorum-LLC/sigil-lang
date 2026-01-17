@@ -2,8 +2,8 @@
 // Spec: 09-STDLIB.md § 3.1 Option
 // Priority: P2 - Enhancement
 
-fn main() {
-    let opt: Option<i32> = Option::Some(42);
-    let val: !i32 = opt.unwrap();
+rite main() {
+    ≔ opt: Option<i32> = Option·Some(42);
+    ≔ val: !i32 = opt.unwrap();
     println(val);
 }

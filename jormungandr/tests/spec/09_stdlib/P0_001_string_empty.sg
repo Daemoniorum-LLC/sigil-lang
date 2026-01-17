@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print empty line
 
-fn main() {
-    let s: !String = "";
+rite main() {
+    ≔ s: !String = "";
     println(s);
 }

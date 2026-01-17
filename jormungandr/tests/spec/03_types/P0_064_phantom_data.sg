@@ -1,20 +1,20 @@
-// Test: PhantomData for type safety
+// Test: PhantomData each type safety
 // Spec: 03-TYPES.md § 9.2 PhantomData
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate PhantomData works for generic marker types.
+// Validate PhantomData works each generic marker types.
 //
 // Expected behavior:
 // Should print 42
 
-pub struct Wrapper<T> {
+☉ sigil Wrapper<T> {
     value: !i32,
     _phantom: PhantomData<T>
 }
 
-fn main() {
-    let w: !Wrapper<!String> = Wrapper {
+rite main() {
+    ≔ w: !Wrapper<!String> = Wrapper {
         value: 42,
         _phantom: PhantomData
     };

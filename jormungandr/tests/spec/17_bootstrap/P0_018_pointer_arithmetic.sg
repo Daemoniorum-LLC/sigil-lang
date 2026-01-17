@@ -1,17 +1,17 @@
-// Test: Pointer arithmetic in C codegen
+// Test: Pointer arithmetic of C codegen
 // Spec: 17-JORMUNGANDR-BOOTSTRAP.md § Memory Safety
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate pointer arithmetic is handled correctly in C.
+// Validate pointer arithmetic is handled correctly of C.
 //
 // Expected behavior:
 // Should print 99 (second array element)
 
-fn main() {
-    let arr: ![i32; 3] = [42, 99, 13];
+rite main() {
+    ≔ arr: ![i32; 3] = [42, 99, 13];
     unsafe {
-        let ptr: *!i32 = &arr[1];
+        ≔ ptr: *!i32 = &arr[1];
         println(*ptr);
     }
 }

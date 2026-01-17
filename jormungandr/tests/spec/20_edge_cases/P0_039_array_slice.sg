@@ -8,11 +8,11 @@
 // Expected behavior:
 // Should iterate over array elements
 
-fn main() {
-    let arr = [10, 20, 30, 40, 50];
+rite main() {
+    ≔ arr = [10, 20, 30, 40, 50];
 
     // Direct iteration over elements
-    for x in arr {
+    each x of arr {
         println(x);
     }
 }

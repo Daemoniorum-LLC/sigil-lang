@@ -8,13 +8,13 @@
 // Expected behavior:
 // Should print 42 twice
 
-fn print_twice(x: !i32, y: !i32) {
+rite print_twice(x: !i32, y: !i32) {
     println(x);
     println(y);
 }
 
-fn main() {
-    let val: !i32 = 42;
-    let val2: !i32 = val;  // Copy, not move
+rite main() {
+    ≔ val: !i32 = 42;
+    ≔ val2: !i32 = val;  // Copy, not move
     print_twice(val, val2);
 }

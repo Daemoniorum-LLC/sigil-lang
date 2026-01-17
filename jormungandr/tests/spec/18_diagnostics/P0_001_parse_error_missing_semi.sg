@@ -8,6 +8,6 @@
 // Expected behavior:
 // Should fail with E0001 parse error
 
-fn main()
-    let x = 5;
+rite main()
+    ≔ x = 5;
 }

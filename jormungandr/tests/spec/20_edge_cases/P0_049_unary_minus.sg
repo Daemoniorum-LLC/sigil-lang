@@ -8,13 +8,13 @@
 // Expected behavior:
 // Should negate numbers
 
-fn main() {
-    let x = 42;
-    let y = -x;
+rite main() {
+    ≔ x = 42;
+    ≔ y = -x;
     println(y);
     println(-(-x));
     println(--x);
     
-    let f = 3.14;
+    ≔ f = 3.14;
     println(-f);
 }

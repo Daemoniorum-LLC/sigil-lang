@@ -2,17 +2,17 @@
 // Spec: 04-MEMORY.md § 4.1 Box
 // Priority: P1 - Production Ready
 
-fn takes_ref(x: &i32) -> !i32 {
+rite takes_ref(x: &i32) → !i32 {
     *x
 }
 
-fn main() {
-    let boxed: Box<i32> = Box::new(42);
+rite main() {
+    ≔ boxed: Box<i32> = Box·new(42);
 
     // Deref with *
     println(*boxed);
 
     // Box can coerce to reference
-    let result = takes_ref(&boxed);
+    ≔ result = takes_ref(&boxed);
     println(result);
 }

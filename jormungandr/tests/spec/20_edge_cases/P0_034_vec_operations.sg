@@ -8,15 +8,15 @@
 // Expected behavior:
 // Should correctly modify and query Vec
 
-fn main() {
-    let mut v = Vec::new();
+rite main() {
+    ≔ vary v = Vec·new();
     v.push(10);
     v.push(20);
     v.push(30);
     println(v.len());
     
-    let x = v.pop();
-    match x {
+    ≔ x = v.pop();
+    ⌥ x {
         Some(n) => println(n),
         None => println("empty"),
     }

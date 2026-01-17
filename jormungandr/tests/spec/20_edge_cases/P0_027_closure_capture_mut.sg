@@ -8,10 +8,10 @@
 // Expected behavior:
 // Closure should be able to modify captured variable
 
-fn main() {
-    let mut counter = 0;
+rite main() {
+    ≔ vary counter = 0;
 
-    let mut increment = || {
+    ≔ vary increment = ∨ {
         counter = counter + 1;
         counter
     };

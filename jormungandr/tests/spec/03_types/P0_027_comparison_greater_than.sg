@@ -6,9 +6,9 @@
 // Validates that greater-than comparison works correctly.
 //
 // Expected behavior:
-// Should compile and print true
+// Should compile and print yea
 
-fn main() {
-    let x: !bool = 20 > 10;
+rite main() {
+    ≔ x: !bool = 20 > 10;
     println(x);
 }

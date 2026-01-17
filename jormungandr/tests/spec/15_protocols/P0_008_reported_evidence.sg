@@ -4,11 +4,11 @@
 //
 // Tests that protocol data conceptually has reported evidence
 
-fn mock_verify_response() -> bool {
-    true
+rite mock_verify_response() → bool {
+    yea
 }
 
-fn main() {
-    let verified = mock_verify_response();
-    println(if verified { 1 } else { 0 });
+rite main() {
+    ≔ verified = mock_verify_response();
+    println(⎇ verified { 1 } ⎉ { 0 });
 }

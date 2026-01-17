@@ -2,13 +2,13 @@
 // Spec: 16-AI-IR.md § Type Representation
 // Priority: P0 - Bootstrap Critical
 //
-// Tests trait IR representation - 1 trait defined
+// Tests aspect IR representation - 1 aspect defined
 
-trait Display {
-    fn display(self) -> String;
+aspect Display {
+    rite display(this) → String;
 }
 
-fn main() {
-    // Mock: 1 trait in IR
+rite main() {
+    // Mock: 1 aspect of IR
     println(1);
 }

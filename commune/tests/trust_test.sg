@@ -1,0 +1,307 @@
+//! Commune Trust Tests - 18 tests
+
+struct TrustFlags {
+    verified: !bool,
+    blocked: !bool,
+    system: !bool,
+}
+
+impl TrustFlags {
+    pub fn default_flags() -> Self {
+        TrustFlags {
+            verified: false,
+            blocked: false,
+            system: false,
+        }
+    }
+
+    pub fn verified() -> Self {
+        TrustFlags {
+            verified: true,
+            blocked: false,
+            system: false,
+        }
+    }
+
+    pub fn system_agent() -> Self {
+        TrustFlags {
+            verified: true,
+            blocked: false,
+            system: true,
+        }
+    }
+
+    pub fn blocked_agent() -> Self {
+        TrustFlags {
+            verified: false,
+            blocked: true,
+            system: false,
+        }
+    }
+
+    pub fn is_trusted(&self) -> !bool {
+        !self.blocked && (self.verified || self.system)
+    }
+}
+
+struct AccuracyMetrics {
+    total: !usize,
+    correct: !usize,
+}
+
+impl AccuracyMetrics {
+    pub fn new() -> Self {
+        AccuracyMetrics { total: 0, correct: 0 }
+    }
+
+    pub fn record_correct(&mut self) {
+        self.total = self.total + 1;
+        self.correct = self.correct + 1;
+    }
+
+    pub fn record_incorrect(&mut self) {
+        self.total = self.total + 1;
+    }
+
+    pub fn score(&self) -> !f32 {
+        if self.total == 0 {
+            1.0
+        } else {
+            self.correct as !f32 / self.total as !f32
+        }
+    }
+
+    pub fn is_reliable(&self) -> !bool {
+        self.score() >= 0.8
+    }
+}
+
+struct TrustLevel {
+    base: !f32,
+    bonus: !f32,
+    penalty: !f32,
+}
+
+impl TrustLevel {
+    pub fn new(base: !f32) -> Self {
+        TrustLevel { base, bonus: 0.0, penalty: 0.0 }
+    }
+
+    pub fn with_bonus(mut self, bonus: !f32) -> Self {
+        self.bonus = bonus;
+        self
+    }
+
+    pub fn with_penalty(mut self, penalty: !f32) -> Self {
+        self.penalty = penalty;
+        self
+    }
+
+    pub fn effective(&self) -> !f32 {
+        let raw = self.base + self.bonus - self.penalty;
+        if raw < 0.0 {
+            0.0
+        } else if raw > 1.0 {
+            1.0
+        } else {
+            raw
+        }
+    }
+
+    pub fn meets_threshold(&self, threshold: !f32) -> !bool {
+        self.effective() >= threshold
+    }
+}
+
+struct TrustProfile {
+    base_trust: !f32,
+    accuracy: AccuracyMetrics,
+    vouch_bonus: !f32,
+    flags: TrustFlags,
+}
+
+impl TrustProfile {
+    pub fn new(default_trust: !f32) -> Self {
+        TrustProfile {
+            base_trust: default_trust,
+            accuracy: AccuracyMetrics::new(),
+            vouch_bonus: 0.0,
+            flags: TrustFlags::default_flags(),
+        }
+    }
+
+    pub fn verified(trust: !f32) -> Self {
+        TrustProfile {
+            base_trust: trust,
+            accuracy: AccuracyMetrics::new(),
+            vouch_bonus: 0.0,
+            flags: TrustFlags::verified(),
+        }
+    }
+
+    pub fn system() -> Self {
+        TrustProfile {
+            base_trust: 1.0,
+            accuracy: AccuracyMetrics::new(),
+            vouch_bonus: 0.0,
+            flags: TrustFlags::system_agent(),
+        }
+    }
+
+    pub fn add_vouch(&mut self, strength: !f32) {
+        self.vouch_bonus = self.vouch_bonus + strength;
+        if self.vouch_bonus > 0.2 {
+            self.vouch_bonus = 0.2;
+        }
+    }
+
+    pub fn effective_trust(&self) -> !f32 {
+        if self.flags.blocked {
+            return 0.0;
+        }
+        let accuracy_factor = self.accuracy.score();
+        let base = self.base_trust * accuracy_factor + self.vouch_bonus;
+        if base > 1.0 {
+            1.0
+        } else {
+            base
+        }
+    }
+
+    pub fn can_vouch(&self) -> !bool {
+        self.effective_trust() >= 0.7
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[test]
+fn test_trust_flags_default() {
+    let flags = TrustFlags::default_flags();
+    assert(!flags.verified);
+    assert(!flags.blocked);
+    assert(!flags.is_trusted());
+}
+
+#[test]
+fn test_trust_flags_verified() {
+    let flags = TrustFlags::verified();
+    assert(flags.verified);
+    assert(flags.is_trusted());
+}
+
+#[test]
+fn test_trust_flags_system() {
+    let flags = TrustFlags::system_agent();
+    assert(flags.system);
+    assert(flags.is_trusted());
+}
+
+#[test]
+fn test_trust_flags_blocked() {
+    let flags = TrustFlags::blocked_agent();
+    assert(flags.blocked);
+    assert(!flags.is_trusted());
+}
+
+#[test]
+fn test_accuracy_empty() {
+    let acc = AccuracyMetrics::new();
+    assert(acc.score() == 1.0);
+}
+
+#[test]
+fn test_accuracy_perfect() {
+    let mut acc = AccuracyMetrics::new();
+    acc.record_correct();
+    acc.record_correct();
+    acc.record_correct();
+    assert(acc.score() == 1.0);
+    assert(acc.is_reliable());
+}
+
+#[test]
+fn test_accuracy_mixed() {
+    let mut acc = AccuracyMetrics::new();
+    acc.record_correct();
+    acc.record_incorrect();
+    assert(acc.score() == 0.5);
+    assert(!acc.is_reliable());
+}
+
+#[test]
+fn test_trust_level_base() {
+    let level = TrustLevel::new(0.5);
+    assert(level.effective() == 0.5);
+}
+
+#[test]
+fn test_trust_level_with_bonus() {
+    let level = TrustLevel::new(0.5).with_bonus(0.2);
+    assert(level.effective() == 0.7);
+}
+
+#[test]
+fn test_trust_level_with_penalty() {
+    let level = TrustLevel::new(0.5).with_penalty(0.3);
+    assert(level.effective() == 0.2);
+}
+
+#[test]
+fn test_trust_level_clamped_high() {
+    let level = TrustLevel::new(0.9).with_bonus(0.3);
+    assert(level.effective() == 1.0);
+}
+
+#[test]
+fn test_trust_level_clamped_low() {
+    let level = TrustLevel::new(0.2).with_penalty(0.5);
+    assert(level.effective() == 0.0);
+}
+
+#[test]
+fn test_trust_level_threshold() {
+    let level = TrustLevel::new(0.8);
+    assert(level.meets_threshold(0.7));
+    assert(!level.meets_threshold(0.9));
+}
+
+#[test]
+fn test_trust_profile_new() {
+    let profile = TrustProfile::new(0.5);
+    assert(profile.base_trust == 0.5);
+}
+
+#[test]
+fn test_trust_profile_verified() {
+    let profile = TrustProfile::verified(0.9);
+    assert(profile.flags.verified);
+}
+
+#[test]
+fn test_trust_profile_system() {
+    let profile = TrustProfile::system();
+    assert(profile.effective_trust() == 1.0);
+    assert(profile.can_vouch());
+}
+
+#[test]
+fn test_trust_profile_vouch() {
+    let mut profile = TrustProfile::new(0.7);
+    profile.add_vouch(0.1);
+    profile.add_vouch(0.1);
+    assert(profile.vouch_bonus == 0.2);
+}
+
+#[test]
+fn test_trust_profile_vouch_cap() {
+    let mut profile = TrustProfile::new(0.5);
+    profile.add_vouch(0.3);
+    assert(profile.vouch_bonus == 0.2);
+}
+
+fn main() {
+    println("Commune trust tests - 18 tests");
+}

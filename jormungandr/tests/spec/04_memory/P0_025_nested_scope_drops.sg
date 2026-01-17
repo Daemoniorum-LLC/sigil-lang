@@ -8,21 +8,21 @@
 // Expected behavior:
 // Inner scope values dropped before outer continues
 
-struct Logger {
+sigil Logger {
     msg: String
 }
 
-impl Drop for Logger {
-    fn drop(&mut self) {
-        println(self.msg);
+⊢ Logger : Drop {
+    rite drop(&vary this) {
+        println(this.msg);
     }
 }
 
-fn main() {
-    let outer = Logger { msg: "outer".to_string() };
+rite main() {
+    ≔ outer = Logger { msg: "outer".to_string() };
     println("start");
     {
-        let inner = Logger { msg: "inner".to_string() };
+        ≔ inner = Logger { msg: "inner".to_string() };
         println("inside");
     }
     println("after inner");

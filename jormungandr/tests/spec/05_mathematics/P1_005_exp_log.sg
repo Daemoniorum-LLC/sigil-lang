@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 1.5 Exponential/Logarithm
 // Priority: P1 - Standard Feature
 
-fn main() {
+rite main() {
     // e^0 = 1
     println(exp(0));
 

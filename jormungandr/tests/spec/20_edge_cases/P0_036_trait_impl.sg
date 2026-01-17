@@ -3,33 +3,33 @@
 // Priority: P0
 //
 // Purpose:
-// Validates trait definition and implementation.
+// Validates aspect definition and implementation.
 //
 // Expected behavior:
-// Should call trait methods through impl
+// Should call aspect methods through impl
 
-trait Greet {
-    fn greet(&self) -> &str;
+aspect Greet {
+    rite greet(&this) → &str;
 }
 
-struct English;
-struct Spanish;
+sigil English;
+sigil Spanish;
 
-impl Greet for English {
-    fn greet(&self) -> &str {
+⊢ English : Greet {
+    rite greet(&this) → &str {
         "Hello"
     }
 }
 
-impl Greet for Spanish {
-    fn greet(&self) -> &str {
+⊢ Spanish : Greet {
+    rite greet(&this) → &str {
         "Hola"
     }
 }
 
-fn main() {
-    let e = English;
-    let s = Spanish;
+rite main() {
+    ≔ e = English;
+    ≔ s = Spanish;
     println(e.greet());
     println(s.greet());
 }

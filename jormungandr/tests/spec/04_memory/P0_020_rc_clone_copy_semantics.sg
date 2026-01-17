@@ -3,15 +3,15 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validates Rc clone behavior - Sigil's Rc::clone creates
+// Validates Rc clone behavior - Sigil's Rc·clone creates
 // an independent copy (value semantics), not shared reference.
 //
 // Expected behavior:
 // Modifying one Rc does not affect clones
 
-fn main() {
-    let rc1: Rc<i32> = Rc::new(100);
-    let rc2 = rc1.clone();
+rite main() {
+    ≔ rc1: Rc<i32> = Rc·new(100);
+    ≔ rc2 = rc1.clone();
 
     // Both have same initial value
     println(*rc1);

@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 3.14
 
-fn main() {
-    let x: !f64 = 3.14;
+rite main() {
+    ≔ x: !f64 = 3.14;
     println(x);
 }

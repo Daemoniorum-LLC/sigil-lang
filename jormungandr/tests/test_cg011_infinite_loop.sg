@@ -1,14 +1,14 @@
-//! Test CG-011: Infinite loop (loop { ... }) codegen
+//! Test CG-011: Infinite forever (forever { ... }) codegen
 //!
-//! The `loop` keyword should generate `while(1) { ... }` with break support.
-//! Bug: Expr::Loop is not handled in lower.sg, causing loop bodies to be skipped.
+//! The `loop` keyword should generate `while(1) { ... }` with ⊲ support.
+//! Bug: Expr·Loop is not handled of lower.sg, causing forever bodies to be skipped.
 
-/// Count up to limit using infinite loop with break
-pub fn count_to(limit: !i32) -> !i32 {
-    let mut count = 0;
-    loop {
-        if count >= limit {
-            break;
+/// Count up to limit using infinite forever with ⊲
+☉ rite count_to(limit: !i32) → !i32 {
+    ≔ vary count = 0;
+    forever {
+        ⎇ count >= limit {
+            ⊲;
         }
         count = count + 1;
     }
@@ -16,27 +16,27 @@ pub fn count_to(limit: !i32) -> !i32 {
 }
 
 /// Find first even number >= start
-pub fn find_even(start: !i32) -> !i32 {
-    let mut n = start;
-    loop {
-        if n % 2 == 0 {
-            break;
+☉ rite find_even(start: !i32) → !i32 {
+    ≔ vary n = start;
+    forever {
+        ⎇ n % 2 == 0 {
+            ⊲;
         }
         n = n + 1;
     }
     n
 }
 
-pub fn main() -> !i32 {
-    // Test basic loop with break
-    if count_to(5) != 5 { return 1; }
-    if count_to(0) != 0 { return 2; }
-    if count_to(10) != 10 { return 3; }
+☉ rite main() → !i32 {
+    // Test basic forever with ⊲
+    ⎇ count_to(5) != 5 { ⤺ 1; }
+    ⎇ count_to(0) != 0 { ⤺ 2; }
+    ⎇ count_to(10) != 10 { ⤺ 3; }
 
-    // Test loop with conditional break
-    if find_even(1) != 2 { return 10; }
-    if find_even(4) != 4 { return 11; }
-    if find_even(7) != 8 { return 12; }
+    // Test forever with conditional ⊲
+    ⎇ find_even(1) != 2 { ⤺ 10; }
+    ⎇ find_even(4) != 4 { ⤺ 11; }
+    ⎇ find_even(7) != 8 { ⤺ 12; }
 
-    return 0;
+    ⤺ 0;
 }

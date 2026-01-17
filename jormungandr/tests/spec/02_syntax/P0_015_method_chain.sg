@@ -2,8 +2,8 @@
 // Spec: 02-SYNTAX.md § 3.9 Method Calls
 // Priority: P0
 
-fn main() {
-    let mut s: !String = "Hello";
+rite main() {
+    ≔ vary s: !String = "Hello";
     s.push_str(" ").push_str("World");
     println(s);
 }

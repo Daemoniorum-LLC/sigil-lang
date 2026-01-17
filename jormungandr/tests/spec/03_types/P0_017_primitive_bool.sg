@@ -6,9 +6,9 @@
 // Validates that the bool type works correctly.
 //
 // Expected behavior:
-// Should compile and print true
+// Should compile and print yea
 
-fn main() {
-    let x: !bool = true;
+rite main() {
+    ≔ x: !bool = yea;
     println(x);
 }

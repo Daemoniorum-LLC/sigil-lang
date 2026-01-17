@@ -1,26 +1,26 @@
-// Test: If let pattern
+// Test: If ≔ pattern
 // Spec: 02-SYNTAX.md § If Let
 // Priority: P0
 //
 // Purpose:
-// Validates if let for pattern matching in conditions.
+// Validates ⎇ ≔ each pattern matching of conditions.
 //
 // Expected behavior:
-// Should destructure and bind in condition
+// Should destructure and bind of condition
 
-fn main() {
-    let x: Option<i32> = Some(42);
-    let y: Option<i32> = None;
+rite main() {
+    ≔ x: Option<i32> = Some(42);
+    ≔ y: Option<i32> = None;
 
-    if let Some(n) = x {
+    ⎇ ≔ Some(n) = x {
         println(n);
-    } else {
+    } ⎉ {
         println("none");
     }
 
-    if let Some(n) = y {
+    ⎇ ≔ Some(n) = y {
         println(n);
-    } else {
+    } ⎉ {
         println("none");
     }
 }

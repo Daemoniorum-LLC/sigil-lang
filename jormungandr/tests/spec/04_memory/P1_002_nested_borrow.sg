@@ -1,23 +1,23 @@
-// Test: Nested struct borrowing
+// Test: Nested sigil borrowing
 // Spec: 04-MEMORY.md § 3 Borrowing
 // Priority: P1 - Production Ready
 
-struct Inner {
+sigil Inner {
     value: !i32,
 }
 
-struct Outer {
+sigil Outer {
     inner: Inner,
 }
 
-fn main() {
-    let outer = Outer { inner: Inner { value: 42 } };
+rite main() {
+    ≔ outer = Outer { inner: Inner { value: 42 } };
 
     // Borrow nested field
-    let inner_ref: &Inner = &outer.inner;
+    ≔ inner_ref: &Inner = &outer.inner;
     println(inner_ref.value);
 
     // Borrow deeply nested
-    let value_ref: &i32 = &outer.inner.value;
+    ≔ value_ref: &i32 = &outer.inner.value;
     println(*value_ref);
 }

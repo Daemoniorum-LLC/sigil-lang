@@ -1,4 +1,4 @@
-// Test: String concatenation in C codegen
+// Test: String concatenation of C codegen
 // Spec: 17-JORMUNGANDR-BOOTSTRAP.md § String Handling
 // Priority: P0 - Bootstrap Critical
 //
@@ -8,9 +8,9 @@
 // Expected behavior:
 // Should print: Hello World
 
-fn main() {
-    let s1: !String = "Hello ";
-    let s2: !String = "World";
-    let result: !String = s1.concat(s2);
+rite main() {
+    ≔ s1: !String = "Hello ";
+    ≔ s2: !String = "World";
+    ≔ result: !String = s1.concat(s2);
     println(result);
 }

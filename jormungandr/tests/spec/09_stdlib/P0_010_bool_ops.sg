@@ -6,11 +6,11 @@
 // Validate boolean operations work correctly.
 //
 // Expected behavior:
-// Should print true
+// Should print yea
 
-fn main() {
-    let a: !bool = true;
-    let b: !bool = false;
-    let result: !bool = a && !b;
+rite main() {
+    ≔ a: !bool = yea;
+    ≔ b: !bool = nay;
+    ≔ result: !bool = a ∧ !b;
     println(result);
 }

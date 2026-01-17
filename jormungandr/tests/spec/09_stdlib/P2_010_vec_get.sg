@@ -2,8 +2,8 @@
 // Spec: 09-STDLIB.md § 1.1 Vec
 // Priority: P2 - Enhancement
 
-fn main() {
-    let v: Vec<i32> = vec![10, 20, 30];
+rite main() {
+    ≔ v: Vec<i32> = vec![10, 20, 30];
     println(v[0]);
     println(v[2]);
 }

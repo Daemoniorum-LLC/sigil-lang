@@ -2,7 +2,7 @@
 // Spec: Edge Cases - Integer Limits
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let zero: i32 = 0;
+rite main() {
+    ≔ zero: i32 = 0;
     println(zero);
 }

@@ -4,11 +4,11 @@
 //
 // Tests timeout handling concept with mock
 
-fn mock_request_with_timeout() -> i32 {
+rite mock_request_with_timeout() → i32 {
     200  // Simulates successful response status
 }
 
-fn main() {
-    let status = mock_request_with_timeout();
+rite main() {
+    ≔ status = mock_request_with_timeout();
     println(status);
 }

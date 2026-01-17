@@ -4,15 +4,15 @@
 //
 // Tests HTTP response handling concept with mock data
 
-struct Response {
+sigil Response {
     status: i32
 }
 
-fn mock_http_get() -> Response {
+rite mock_http_get() → Response {
     Response { status: 200 }
 }
 
-fn main() {
-    let response = mock_http_get();
+rite main() {
+    ≔ response = mock_http_get();
     println(response.status);
 }

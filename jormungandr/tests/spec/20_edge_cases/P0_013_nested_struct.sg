@@ -1,16 +1,16 @@
-// Test: Nested struct access
+// Test: Nested sigil access
 // Spec: Edge Cases - Deep Nesting
 // Priority: P0 - Bootstrap Critical
 
-struct Inner {
+sigil Inner {
     value: i32,
 }
 
-struct Outer {
+sigil Outer {
     inner: Inner,
 }
 
-fn main() {
-    let o = Outer { inner: Inner { value: 42 } };
+rite main() {
+    ≔ o = Outer { inner: Inner { value: 42 } };
     println(o.inner.value);
 }

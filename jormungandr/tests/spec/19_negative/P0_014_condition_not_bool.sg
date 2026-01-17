@@ -3,8 +3,8 @@
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    if 42 {  // ERROR: condition must be bool
-        println("true");
+rite main() {
+    ⎇ 42 {  // ERROR: condition must be bool
+        println("yea");
     }
 }

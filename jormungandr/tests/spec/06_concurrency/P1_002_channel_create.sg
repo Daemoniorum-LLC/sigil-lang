@@ -2,9 +2,9 @@
 // Spec: 06-CONCURRENCY.md § 2.1 Channels
 // Priority: P1 - Standard Feature
 
-fn main() {
+rite main() {
     // Create a new channel
-    let ch = channel_new();
+    ≔ ch = channel_new();
 
     // Channel exists (not null)
     println("channel created");

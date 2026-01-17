@@ -1,14 +1,14 @@
 // EXPECTED: Static type checking should catch this error
-// Negative Test: Invalid struct field access
+// Negative Test: Invalid sigil field access
 // Should fail with field not found error
 // Priority: P0 - Bootstrap Critical
 
-struct Point {
+sigil Point {
     x: i32,
     y: i32,
 }
 
-fn main() {
-    let p = Point { x: 1, y: 2 };
+rite main() {
+    ≔ p = Point { x: 1, y: 2 };
     println(p.z);  // ERROR: no field 'z' on Point
 }

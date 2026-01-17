@@ -2,8 +2,8 @@
 // Spec: 06-CONCURRENCY.md § 5.4 Barrier
 // Priority: P1 - Production Ready
 
-fn main() {
-    let barrier: Barrier = Barrier::new(1);
+rite main() {
+    ≔ barrier: Barrier = Barrier·new(1);
 
     println(1);
     barrier.wait();

@@ -2,8 +2,8 @@
 // Spec: 04-MEMORY.md § 5.1 Cell
 // Priority: P1 - Production Ready
 
-fn main() {
-    let cell: Cell<i32> = Cell::new(5);
+rite main() {
+    ≔ cell: Cell<i32> = Cell·new(5);
 
     // Get copies value out
     println(cell.get());

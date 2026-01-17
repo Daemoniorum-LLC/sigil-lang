@@ -659,6 +659,57 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Expect struct keyword (Token::Struct or Token::Sigma for Σ)
+    pub(crate) fn expect_struct(&mut self) -> ParseResult<Span> {
+        match &self.current {
+            Some((Token::Struct | Token::Sigma, span)) => {
+                let span = *span;
+                self.advance();
+                Ok(span)
+            }
+            Some((token, span)) => Err(ParseError::UnexpectedToken {
+                expected: "struct or Σ".to_string(),
+                found: token.clone(),
+                span: *span,
+            }),
+            None => Err(ParseError::UnexpectedEof),
+        }
+    }
+
+    /// Expect fn keyword (Token::Fn or Token::Lambda for λ)
+    pub(crate) fn expect_fn(&mut self) -> ParseResult<Span> {
+        match &self.current {
+            Some((Token::Fn | Token::Lambda, span)) => {
+                let span = *span;
+                self.advance();
+                Ok(span)
+            }
+            Some((token, span)) => Err(ParseError::UnexpectedToken {
+                expected: "fn or λ".to_string(),
+                found: token.clone(),
+                span: *span,
+            }),
+            None => Err(ParseError::UnexpectedEof),
+        }
+    }
+
+    /// Expect trait keyword (Token::Trait or Token::Theta for Θ)
+    pub(crate) fn expect_trait(&mut self) -> ParseResult<Span> {
+        match &self.current {
+            Some((Token::Trait | Token::Theta, span)) => {
+                let span = *span;
+                self.advance();
+                Ok(span)
+            }
+            Some((token, span)) => Err(ParseError::UnexpectedToken {
+                expected: "trait or Θ".to_string(),
+                found: token.clone(),
+                span: *span,
+            }),
+            None => Err(ParseError::UnexpectedEof),
+        }
+    }
+
     pub(crate) fn check(&self, expected: &Token) -> bool {
         matches!(&self.current, Some((token, _)) if std::mem::discriminant(token) == std::mem::discriminant(expected))
     }
@@ -675,6 +726,56 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn consume_if(&mut self, expected: &Token) -> bool {
         if self.check(expected) {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check for mut keyword (Token::Mut or Token::Delta for Δ)
+    pub(crate) fn check_mut(&self) -> bool {
+        matches!(self.current_token(), Some(Token::Mut) | Some(Token::Delta))
+    }
+
+    /// Consume mut keyword if present (Token::Mut or Token::Delta for Δ)
+    pub(crate) fn consume_if_mut(&mut self) -> bool {
+        if self.check_mut() {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check for self keyword (Token::SelfLower or Token::Xi for ξ)
+    pub(crate) fn check_self(&self) -> bool {
+        matches!(self.current_token(), Some(Token::SelfLower) | Some(Token::Xi))
+    }
+
+    /// Check for path separator (Token::ColonColon or Token::MiddleDot for ·)
+    pub(crate) fn check_path_sep(&self) -> bool {
+        matches!(self.current_token(), Some(Token::ColonColon) | Some(Token::MiddleDot))
+    }
+
+    /// Consume path separator if present
+    pub(crate) fn consume_if_path_sep(&mut self) -> bool {
+        if self.check_path_sep() {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check for as keyword (Token::As or Token::Arrow for →)
+    pub(crate) fn check_as(&self) -> bool {
+        matches!(self.current_token(), Some(Token::As) | Some(Token::Arrow))
+    }
+
+    /// Consume as keyword if present (Token::As or Token::Arrow for →)
+    pub(crate) fn consume_if_as(&mut self) -> bool {
+        if self.check_as() {
             self.advance();
             true
         } else {
@@ -756,12 +857,12 @@ impl<'a> Parser<'a> {
             self.current_token(),
             Some(
                 Token::Pub
-                    | Token::Fn
-                    | Token::Async
-                    | Token::Struct
-                    | Token::Enum
-                    | Token::Trait
-                    | Token::Impl
+                    | Token::Fn | Token::Lambda  // rite or λ
+                    | Token::Async | Token::Hourglass  // async or ⧗
+                    | Token::Struct | Token::Sigma  // sigil or Σ
+                    | Token::Enum  // ᛈ
+                    | Token::Trait | Token::Theta  // aspect or Θ
+                    | Token::Impl  // ⊢
                     | Token::Type
                     | Token::Mod
                     | Token::Use
@@ -802,18 +903,18 @@ impl<'a> Parser<'a> {
         matches!(
             self.current_token(),
             Some(
-                Token::Let
-                    | Token::If
-                    | Token::Match
-                    | Token::Loop
-                    | Token::While
-                    | Token::For
-                    | Token::Return
-                    | Token::Break
-                    | Token::Continue
+                Token::Let  // ≔
+                    | Token::If  // ⎇
+                    | Token::Match  // ⌥
+                    | Token::Loop | Token::Infinity  // forever or ∞
+                    | Token::While  // ⟳
+                    | Token::For | Token::ForAll  // each or ∀
+                    | Token::Return  // ⤺
+                    | Token::Break  // ⊲
+                    | Token::Continue  // ⊳
                     | Token::Ident(_)
-                    | Token::SelfLower
-                    | Token::SelfUpper
+                    | Token::SelfLower | Token::Xi  // this or ξ
+                    | Token::SelfUpper  // This or Ξ (also Xi)
                     | Token::LParen
                     | Token::LBracket
                     | Token::LBrace
@@ -821,8 +922,8 @@ impl<'a> Parser<'a> {
                     | Token::StringLit(_)
                     | Token::IntLit(_)
                     | Token::FloatLit(_)
-                    | Token::True
-                    | Token::False
+                    | Token::True | Token::Top  // yea or ⊤
+                    | Token::False | Token::Bottom  // nay or ⊥
                     | Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)
                     | Token::DocComment(_)
             )
@@ -861,14 +962,14 @@ impl<'a> Parser<'a> {
         let visibility = self.parse_visibility()?;
 
         let item = match self.current_token() {
-            Some(Token::Fn) | Some(Token::Async) => {
+            Some(Token::Fn) | Some(Token::Lambda) | Some(Token::Async) | Some(Token::Hourglass) => {
                 Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
             }
-            Some(Token::Struct) => {
+            Some(Token::Struct) | Some(Token::Sigma) => {
                 Item::Struct(self.parse_struct_with_attrs(visibility, outer_attrs)?)
             }
             Some(Token::Enum) => Item::Enum(self.parse_enum(visibility)?),
-            Some(Token::Trait) => Item::Trait(self.parse_trait(visibility)?),
+            Some(Token::Trait) | Some(Token::Theta) => Item::Trait(self.parse_trait(visibility)?),
             Some(Token::Impl) => Item::Impl(self.parse_impl()?),
             Some(Token::Unsafe) => {
                 // unsafe impl, unsafe fn, unsafe trait
@@ -1017,7 +1118,7 @@ impl<'a> Parser<'a> {
         let is_const = self.consume_if(&Token::Const);
 
         let is_async = self.consume_if(&Token::Async);
-        self.expect(Token::Fn)?;
+        self.expect_fn()?;
 
         let mut name = self.parse_ident()?;
 
@@ -1250,7 +1351,7 @@ impl<'a> Parser<'a> {
             attrs.packed = true;
         }
 
-        self.expect(Token::Struct)?;
+        self.expect_struct()?;
         let name = self.parse_ident()?;
 
         // Evidentiality markers can appear BEFORE or AFTER generics:
@@ -1403,7 +1504,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_trait(&mut self, visibility: Visibility) -> ParseResult<TraitDef> {
-        self.expect(Token::Trait)?;
+        self.expect_trait()?;
         let name = self.parse_ident()?;
         let generics = self.parse_generics_opt()?;
 
@@ -1444,7 +1545,7 @@ impl<'a> Parser<'a> {
         let visibility = self.parse_visibility()?;
 
         match self.current_token() {
-            Some(Token::Fn) | Some(Token::Async) | Some(Token::Unsafe) => {
+            Some(Token::Fn) | Some(Token::Lambda) | Some(Token::Async) | Some(Token::Hourglass) | Some(Token::Unsafe) => {
                 Ok(TraitItem::Function(self.parse_function(visibility)?))
             }
             Some(Token::Type) => {
@@ -1462,7 +1563,7 @@ impl<'a> Parser<'a> {
                 // Check if this is `const fn` or just `const NAME: TYPE;`
                 if self
                     .peek_next()
-                    .map(|t| matches!(t, Token::Fn | Token::Async))
+                    .map(|t| matches!(t, Token::Fn | Token::Lambda | Token::Async | Token::Hourglass))
                     == Some(true)
                 {
                     Ok(TraitItem::Function(self.parse_function(visibility)?))
@@ -1488,16 +1589,18 @@ impl<'a> Parser<'a> {
         self.expect(Token::Impl)?;
         let generics = self.parse_generics_opt()?;
 
-        // Parse either `Trait for Type` or just `Type`
+        // Parse either `Type : Trait` or just `Type`
+        // Sigil syntax: ⊢ Type : Aspect (type first, then aspect/trait)
         let first_type = self.parse_type()?;
 
-        let (trait_, self_ty) = if self.consume_if(&Token::For) {
-            let self_ty = self.parse_type()?;
-            let trait_path = match first_type {
+        let (trait_, self_ty) = if self.consume_if(&Token::Colon) {
+            // New Sigil syntax: ⊢ Type : Trait
+            let trait_type = self.parse_type()?;
+            let trait_path = match trait_type {
                 TypeExpr::Path(p) => p,
-                _ => return Err(ParseError::Custom("expected trait path".to_string())),
+                _ => return Err(ParseError::Custom("expected aspect path".to_string())),
             };
-            (Some(trait_path), self_ty)
+            (Some(trait_path), first_type)
         } else {
             (None, first_type)
         };
@@ -1559,7 +1662,7 @@ impl<'a> Parser<'a> {
         let visibility = self.parse_visibility()?;
 
         match self.current_token() {
-            Some(Token::Fn) | Some(Token::Async) | Some(Token::Unsafe) => Ok(ImplItem::Function(
+            Some(Token::Fn) | Some(Token::Lambda) | Some(Token::Async) | Some(Token::Hourglass) | Some(Token::Unsafe) => Ok(ImplItem::Function(
                 self.parse_function_with_attrs(visibility, outer_attrs)?,
             )),
             Some(Token::Type) => Ok(ImplItem::Type(self.parse_type_alias(visibility)?)),
@@ -1567,7 +1670,7 @@ impl<'a> Parser<'a> {
                 // Check if this is `const fn` or just `const`
                 if self
                     .peek_next()
-                    .map(|t| matches!(t, Token::Fn | Token::Async))
+                    .map(|t| matches!(t, Token::Fn | Token::Lambda | Token::Async | Token::Hourglass))
                     == Some(true)
                 {
                     Ok(ImplItem::Function(
@@ -1730,7 +1833,8 @@ impl<'a> Parser<'a> {
                 affect: None,
                 span,
             }
-        } else if self.check(&Token::SelfLower) {
+        } else if self.check_self() {
+            // this or ξ (self)
             let span = self.current_span();
             self.advance();
             Ident {
@@ -1788,8 +1892,8 @@ impl<'a> Parser<'a> {
             });
         }
 
-        // Check for rename
-        if self.consume_if(&Token::As) {
+        // Check for rename (as or →)
+        if self.consume_if_as() {
             // Allow underscore as alias: `use foo::Bar as _`
             if self.check(&Token::Underscore) {
                 let span = self.current_span();
@@ -1829,7 +1933,7 @@ impl<'a> Parser<'a> {
 
     fn parse_static(&mut self, visibility: Visibility) -> ParseResult<StaticDef> {
         self.expect(Token::Static)?;
-        let mutable = self.consume_if(&Token::Mut);
+        let mutable = self.consume_if_mut();
         let name = self.parse_ident()?;
         self.expect(Token::Colon)?;
         let ty = self.parse_type()?;
@@ -2120,7 +2224,7 @@ impl<'a> Parser<'a> {
 
     /// Parse an extern function declaration (no body).
     fn parse_extern_function(&mut self, visibility: Visibility) -> ParseResult<ExternFunction> {
-        self.expect(Token::Fn)?;
+        self.expect_fn()?;
         let name = self.parse_ident()?;
 
         // Handle evidentiality marker after function name: fn load_safetensors~(...)
@@ -2176,7 +2280,7 @@ impl<'a> Parser<'a> {
     /// Parse an extern static declaration.
     fn parse_extern_static(&mut self, visibility: Visibility) -> ParseResult<ExternStatic> {
         self.expect(Token::Static)?;
-        let mutable = self.consume_if(&Token::Mut);
+        let mutable = self.consume_if_mut();
         let name = self.parse_ident()?;
         self.expect(Token::Colon)?;
         let ty = self.parse_type()?;
@@ -2387,7 +2491,7 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 };
-                let mutable = self.consume_if(&Token::Mut);
+                let mutable = self.consume_if_mut();
                 let inner = self.parse_type()?;
                 // Inner reference
                 let inner_ref = TypeExpr::Reference {
@@ -2411,7 +2515,7 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 };
-                let mutable = self.consume_if(&Token::Mut);
+                let mutable = self.consume_if_mut();
                 let inner = self.parse_type()?;
                 Ok(TypeExpr::Reference {
                     lifetime,
@@ -2425,7 +2529,7 @@ impl<'a> Parser<'a> {
                 // Make const/mut optional to support Sigil's *!T syntax
                 let mutable = if self.consume_if(&Token::Const) {
                     false
-                } else if self.consume_if(&Token::Mut) {
+                } else if self.consume_if_mut() {
                     true
                 } else {
                     // No const/mut - default to immutable (for *!T style)
@@ -2601,8 +2705,8 @@ impl<'a> Parser<'a> {
                 self.advance(); // consume <
                 let base_type = self.parse_type()?;
 
-                // Check for "as Trait" clause
-                let trait_path = if self.consume_if(&Token::As) {
+                // Check for "as Trait" clause (as or →)
+                let trait_path = if self.consume_if_as() {
                     Some(self.parse_type_path()?)
                 } else {
                     None
@@ -2685,8 +2789,8 @@ impl<'a> Parser<'a> {
                 let bounds = self.parse_type_bounds()?;
                 Ok(TypeExpr::TraitObject(bounds))
             }
-            Some(Token::Struct) => {
-                // Inline struct type: struct { field: Type, ... }
+            Some(Token::Struct) | Some(Token::Sigma) => {
+                // Inline struct type: struct { field: Type, ... } or Σ { ... }
                 self.advance();
                 self.expect(Token::LBrace)?;
                 let mut fields = Vec::new();
@@ -2817,7 +2921,7 @@ impl<'a> Parser<'a> {
                 Ok(TypeExpr::InlineEnum { variants })
             }
             // Handle crate::, self::, super:: path prefixes in types
-            Some(Token::Crate) | Some(Token::SelfLower) | Some(Token::Super) => {
+            Some(Token::Crate) | Some(Token::SelfLower) | Some(Token::Xi) | Some(Token::Super) | Some(Token::IntensityUp) => {
                 let keyword = self.current_token().cloned();
                 let span = self.current_span();
                 self.advance();
@@ -2825,8 +2929,8 @@ impl<'a> Parser<'a> {
                 // Build the first segment from the keyword
                 let keyword_name = match keyword {
                     Some(Token::Crate) => "crate",
-                    Some(Token::SelfLower) => "self",
-                    Some(Token::Super) => "super",
+                    Some(Token::SelfLower) | Some(Token::Xi) => "self",  // this or ξ
+                    Some(Token::Super) | Some(Token::IntensityUp) => "super",  // above or ↑
                     _ => unreachable!(),
                 };
                 let first_segment = PathSegment {
@@ -3020,7 +3124,7 @@ impl<'a> Parser<'a> {
                         } else {
                             // Check what follows the lowercase identifier
                             match self.peek_n(2) {
-                                Some(Token::As) => false,       // [(n as T)] cast expression
+                                Some(Token::As) | Some(Token::Arrow) => false, // [(n as T)] or [(n → T)] cast expression
                                 Some(Token::Plus) => false,     // [(a + b)]
                                 Some(Token::Minus) => false,    // [(a - b)]
                                 Some(Token::Star) => false,     // [(a * b)]
@@ -3041,11 +3145,11 @@ impl<'a> Parser<'a> {
             Some(Token::Impl) => true, // [impl Trait]
             // Path-starting keywords that indicate type paths
             Some(Token::Crate) => true, // [crate::Type]
-            Some(Token::Super) => true, // [super::Type]
+            Some(Token::Super) | Some(Token::IntensityUp) => true, // [super::Type] or ↑::Type
             // Literals indicate expressions, not types
             Some(Token::IntLit(_)) => false,
             Some(Token::FloatLit(_)) => false,
-            Some(Token::SelfLower) => false, // [self.x] - expression
+            Some(Token::SelfLower) | Some(Token::Xi) => false, // [this.x] or [ξ.x] - expression
             // Could be array: [expr; size] or [type; size]
             // If it's for generics, there won't be a semicolon
             _ => false,
@@ -3067,7 +3171,7 @@ impl<'a> Parser<'a> {
                 // Look at what follows * to distinguish
                 match self.peek_n(1) {
                     Some(Token::Const) => true, // *const T - pointer type
-                    Some(Token::Mut) => true,   // *mut T - pointer type
+                    Some(Token::Mut) | Some(Token::Delta) => true,   // *mut/*Δ T - pointer type
                     _ => false,                 // *expr - dereference, not a type
                 }
             }
@@ -3078,9 +3182,9 @@ impl<'a> Parser<'a> {
             Some(Token::Atomic) => true,      // atomic<T>
             Some(Token::Dyn) => true,         // dyn Trait - trait objects
             Some(Token::Impl) => true,        // impl Trait - existential types
-            Some(Token::SelfUpper) => true,   // Self is a type
+            Some(Token::SelfUpper) => true,   // This is a type
             Some(Token::Crate) => true,       // crate::Type - path starting with crate
-            Some(Token::Super) => true,       // super::Type - path starting with super
+            Some(Token::Super) | Some(Token::IntensityUp) => true, // above/↑ - path starting with super
             Some(Token::Lifetime(_)) => true, // 'a, 'static - lifetime type args
             Some(Token::Underscore) => true,  // _ - inferred type
             // Evidentiality prefixes on types: !T, ?T, ~T
@@ -3088,9 +3192,6 @@ impl<'a> Parser<'a> {
             Some(Token::Question) => true,
             Some(Token::Tilde) => true,
             Some(Token::Interrobang) => true,
-            // Path-rooted types: crate::Type, super::Type
-            Some(Token::Crate) => true,
-            Some(Token::Super) => true,
             // For identifiers, we need 2-token lookahead to see what follows
             Some(Token::Ident(name)) => {
                 // peek_n(1) looks at the token after the identifier
@@ -3140,7 +3241,7 @@ impl<'a> Parser<'a> {
                 }
             }
             // NOT a type - likely comparison with expression
-            Some(Token::SelfLower) => false, // self is an expression
+            Some(Token::SelfLower) | Some(Token::Xi) => false, // this/ξ is an expression
             // Integer literals in generics: const generic values like Type<50257, 1024>
             // Only treat as generic if followed by comma or closing >
             Some(Token::IntLit(_)) => {
@@ -3153,7 +3254,7 @@ impl<'a> Parser<'a> {
             }
             Some(Token::FloatLit(_)) => false,
             Some(Token::StringLit(_)) => false,
-            Some(Token::True) | Some(Token::False) => false,
+            Some(Token::True) | Some(Token::False) | Some(Token::Top) | Some(Token::Bottom) => false, // yea/nay/⊤/⊥
             Some(Token::Null) => false,
             _ => false, // Default to not parsing as generics if uncertain
         }
@@ -3640,8 +3741,8 @@ impl<'a> Parser<'a> {
             let op = match self.current_token() {
                 // Bitwise OR - only reached if not a pipe operation
                 Some(Token::Pipe) => BinOp::BitOr,
-                Some(Token::OrOr) => BinOp::Or,
-                Some(Token::AndAnd) => BinOp::And,
+                Some(Token::OrOr) | Some(Token::LogicOr) => BinOp::Or,  // || or ∨
+                Some(Token::AndAnd) | Some(Token::LogicAnd) => BinOp::And,  // && or ∧
                 Some(Token::EqEq) => BinOp::Eq,
                 Some(Token::NotEq) => BinOp::Ne,
                 Some(Token::Lt) => BinOp::Lt,
@@ -3664,8 +3765,7 @@ impl<'a> Parser<'a> {
                 // Unicode bitwise operators
                 Some(Token::BitwiseAndSymbol) => BinOp::BitAnd, // ⋏
                 Some(Token::BitwiseOrSymbol) => BinOp::BitOr,   // ⋎
-                // Logical/geometric algebra operators
-                Some(Token::LogicAnd) => BinOp::And, // ∧ (wedge/outer product, parsed as And)
+                // Note: ∧ and ∨ logic operators handled above with && and ||
                 // Tensor/array operators
                 Some(Token::CircledDot) => BinOp::Hadamard, // ⊙ element-wise multiply
                 Some(Token::Tensor) => BinOp::TensorProd,   // ⊗ tensor product
@@ -3747,7 +3847,7 @@ impl<'a> Parser<'a> {
                     expr: Box::new(expr),
                 })
             }
-            Some(Token::Bang) => {
+            Some(Token::Bang) | Some(Token::LogicNot) => {
                 self.advance();
                 let expr = self.parse_prefix_expr()?;
                 Ok(Expr::Unary {
@@ -3779,7 +3879,7 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Amp) => {
                 self.advance();
-                let op = if self.consume_if(&Token::Mut) {
+                let op = if self.consume_if_mut() {
                     UnaryOp::RefMut
                 } else {
                     UnaryOp::Ref
@@ -4173,8 +4273,8 @@ impl<'a> Parser<'a> {
                     self.advance();
                     expr = Expr::Try(Box::new(expr));
                 }
-                // Cast expression: expr as Type
-                Some(Token::As) => {
+                // Cast expression: expr as Type (or expr → Type)
+                Some(Token::As) | Some(Token::Arrow) => {
                     self.advance();
                     let ty = self.parse_type()?;
                     expr = Expr::Cast {
@@ -4481,11 +4581,11 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Expr::Literal(Literal::ByteChar(b)))
             }
-            Some(Token::True) => {
+            Some(Token::True) | Some(Token::Top) => {
                 self.advance();
                 Ok(Expr::Literal(Literal::Bool(true)))
             }
-            Some(Token::False) => {
+            Some(Token::False) | Some(Token::Bottom) => {
                 self.advance();
                 Ok(Expr::Literal(Literal::Bool(false)))
             }
@@ -4498,8 +4598,17 @@ impl<'a> Parser<'a> {
                 Ok(Expr::Literal(Literal::Empty))
             }
             Some(Token::Infinity) => {
-                self.advance();
-                Ok(Expr::Literal(Literal::Infinity))
+                // Check if this is ∞ { ... } (loop) or just ∞ (infinity literal)
+                if matches!(self.peek_next(), Some(Token::LBrace)) {
+                    // It's a loop: ∞ { body }
+                    self.advance();
+                    let body = self.parse_block()?;
+                    Ok(Expr::Loop { label: None, body })
+                } else {
+                    // It's an infinity literal
+                    self.advance();
+                    Ok(Expr::Literal(Literal::Infinity))
+                }
             }
             Some(Token::Circle) => {
                 self.advance();
@@ -4595,7 +4704,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.expect(Token::Colon)?;
                 match self.current_token().cloned() {
-                    Some(Token::Loop) => {
+                    Some(Token::Loop) | Some(Token::Infinity) => {
                         self.advance();
                         let body = self.parse_block()?;
                         Ok(Expr::Loop {
@@ -4624,10 +4733,17 @@ impl<'a> Parser<'a> {
                             body,
                         })
                     }
-                    Some(Token::For) => {
+                    Some(Token::For) | Some(Token::ForAll) => {
                         self.advance();
                         let pattern = self.parse_pattern()?;
-                        self.expect(Token::In)?;
+                        // Accept both 'in' and '∈' for element-of
+                        if !self.consume_if(&Token::In) && !self.consume_if(&Token::ElementOf) {
+                            return Err(ParseError::UnexpectedToken {
+                                expected: "in or ∈".to_string(),
+                                found: self.current_token().cloned().unwrap_or(Token::Null),
+                                span: self.current_span(),
+                            });
+                        }
                         let iter = self.parse_condition()?;
                         let body = self.parse_block()?;
                         Ok(Expr::For {
@@ -4638,13 +4754,13 @@ impl<'a> Parser<'a> {
                         })
                     }
                     other => Err(ParseError::UnexpectedToken {
-                        expected: "loop, while, or for after label".to_string(),
+                        expected: "loop/∞, while/⟳, or for/∀ after label".to_string(),
                         found: other.unwrap_or(Token::Null),
                         span: self.current_span(),
                     }),
                 }
             }
-            Some(Token::Loop) => {
+            Some(Token::Loop) | Some(Token::Infinity) => {
                 self.advance();
                 let body = self.parse_block()?;
                 Ok(Expr::Loop { label: None, body })
@@ -4670,10 +4786,17 @@ impl<'a> Parser<'a> {
                     body,
                 })
             }
-            Some(Token::For) => {
+            Some(Token::For) | Some(Token::ForAll) => {
                 self.advance();
                 let pattern = self.parse_pattern()?;
-                self.expect(Token::In)?;
+                // Accept both 'in' and '∈' for element-of
+                if !self.consume_if(&Token::In) && !self.consume_if(&Token::ElementOf) {
+                    return Err(ParseError::UnexpectedToken {
+                        expected: "in or ∈".to_string(),
+                        found: self.current_token().cloned().unwrap_or(Token::Null),
+                        span: self.current_span(),
+                    });
+                }
                 let iter = self.parse_condition()?;
                 let body = self.parse_block()?;
                 Ok(Expr::For {
@@ -4696,7 +4819,7 @@ impl<'a> Parser<'a> {
                 };
                 Ok(Expr::Return(value))
             }
-            Some(Token::Break) => {
+            Some(Token::Break) | Some(Token::Tensor) => {
                 self.advance();
                 // Check for optional label: break 'label or break 'label value
                 let label = if let Some(Token::Lifetime(name)) = self.current_token().cloned() {
@@ -4723,7 +4846,7 @@ impl<'a> Parser<'a> {
                 };
                 Ok(Expr::Break { label, value })
             }
-            Some(Token::Continue) => {
+            Some(Token::Continue) | Some(Token::CycleArrow) => {
                 self.advance();
                 // Check for optional label: continue 'label
                 let label = if let Some(Token::Lifetime(name)) = self.current_token().cloned() {
@@ -4817,8 +4940,8 @@ impl<'a> Parser<'a> {
                     }],
                 }))
             }
-            Some(Token::SelfLower) => {
-                // self keyword as expression
+            Some(Token::SelfLower) | Some(Token::Xi) => {
+                // this/ξ keyword as expression (self)
                 let span = self.current_span();
                 self.advance();
                 Ok(Expr::Path(TypePath {
@@ -5527,8 +5650,8 @@ impl<'a> Parser<'a> {
             match &next {
                 // These indicate a pipe target (function call, closure, morpheme)
                 Token::Ident(_) => true,
-                Token::SelfLower => true,
-                Token::SelfUpper => true,
+                Token::SelfLower | Token::Xi => true,  // this/ξ
+                Token::SelfUpper => true,  // This
                 // Morpheme operators (τ, φ, σ, ρ, Π, Σ, etc.)
                 Token::Tau
                 | Token::Phi
@@ -5928,8 +6051,8 @@ impl<'a> Parser<'a> {
                 };
                 Ok(PipeOp::TryMap(mapper))
             }
-            // Handle self.field as a pipe call: |self.layer becomes Call(self.layer)
-            Some(Token::SelfLower) | Some(Token::SelfUpper) => {
+            // Handle this.field as a pipe call: |this.layer or |ξ.layer becomes Call(self.layer)
+            Some(Token::SelfLower) | Some(Token::SelfUpper) | Some(Token::Xi) => {
                 // Parse self and any field accesses/method calls following it
                 let expr = self.parse_postfix_expr()?;
                 Ok(PipeOp::Call(Box::new(expr)))
@@ -6490,8 +6613,8 @@ impl<'a> Parser<'a> {
                     }
                     _ => {}
                 }
-            } else if matches!(self.peek_next(), Some(Token::Mut)) {
-                // &mut x =>
+            } else if matches!(self.peek_next(), Some(Token::Mut) | Some(Token::Delta)) {
+                // &mut x => or &Δ x =>
                 return true;
             }
         }
@@ -6562,8 +6685,8 @@ impl<'a> Parser<'a> {
                 if self.check(&Token::Let) {
                     stmts.push(self.parse_let_stmt()?);
                 } else if self.check(&Token::Return)
-                    || self.check(&Token::Break)
-                    || self.check(&Token::Continue)
+                    || self.check(&Token::Break) || self.check(&Token::Tensor)
+                    || self.check(&Token::Continue) || self.check(&Token::CycleArrow)
                 {
                     // Control flow - treat as final expression
                     break;
@@ -6987,10 +7110,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Pattern::Rest)
             }
-            Some(Token::Mut) => {
+            Some(Token::Mut) | Some(Token::Delta) => {
                 self.advance();
-                // Handle `mut self` specially
-                let name = if self.check(&Token::SelfLower) {
+                // Handle `mut self` / `Δ ⊙` specially
+                let name = if self.check_self() {
                     let span = self.current_span();
                     self.advance();
                     Ident {
@@ -7012,7 +7135,7 @@ impl<'a> Parser<'a> {
             // Ref pattern: ref ident or ref mut ident (binds by reference)
             Some(Token::Ref) => {
                 self.advance();
-                let mutable = self.consume_if(&Token::Mut);
+                let mutable = self.consume_if_mut();
                 let name = self.parse_ident()?;
                 let evidentiality = self.parse_evidentiality_opt();
                 Ok(Pattern::RefBinding {
@@ -7028,7 +7151,7 @@ impl<'a> Parser<'a> {
                 if matches!(self.current_token(), Some(Token::Lifetime(_))) {
                     self.advance();
                 }
-                let mutable = self.consume_if(&Token::Mut);
+                let mutable = self.consume_if_mut();
                 let inner = self.parse_pattern()?;
                 Ok(Pattern::Ref {
                     mutable,
@@ -7207,15 +7330,15 @@ impl<'a> Parser<'a> {
                 return Ok(Pattern::Path(path));
             }
             // Handle crate::, self::, super:: path patterns
-            Some(Token::Crate) | Some(Token::SelfLower) | Some(Token::Super) => {
+            Some(Token::Crate) | Some(Token::SelfLower) | Some(Token::Xi) | Some(Token::Super) | Some(Token::IntensityUp) => {
                 let keyword = self.current_token().cloned();
                 let span = self.current_span();
                 self.advance();
 
                 // These must be followed by :: for a path pattern
                 if !self.consume_if(&Token::ColonColon) && !self.consume_if(&Token::MiddleDot) {
-                    // Just `self` as an identifier pattern
-                    if matches!(keyword, Some(Token::SelfLower)) {
+                    // Just `this` or `ξ` as an identifier pattern
+                    if matches!(keyword, Some(Token::SelfLower) | Some(Token::Xi)) {
                         return Ok(Pattern::Ident {
                             mutable: false,
                             name: Ident {
@@ -7228,15 +7351,15 @@ impl<'a> Parser<'a> {
                         });
                     }
                     return Err(ParseError::Custom(
-                        "expected :: after crate/super in path pattern".to_string(),
+                        "expected · after crate/super in path pattern".to_string(),
                     ));
                 }
 
                 // Build the path starting with crate/self/super
                 let keyword_name = match keyword {
                     Some(Token::Crate) => "crate",
-                    Some(Token::SelfLower) => "self",
-                    Some(Token::Super) => "super",
+                    Some(Token::SelfLower) | Some(Token::Xi) => "self",  // this or ξ
+                    Some(Token::Super) | Some(Token::IntensityUp) => "super",  // above or ↑
                     _ => unreachable!(),
                 };
                 let mut segments = vec![PathSegment {
@@ -7500,8 +7623,8 @@ impl<'a> Parser<'a> {
                     evidentiality,
                 })
             }
-            Some(Token::SelfLower) => {
-                // self keyword as pattern in method parameters
+            Some(Token::SelfLower) | Some(Token::Xi) => {
+                // this or ξ keyword as pattern in method parameters (self)
                 let span = self.current_span();
                 self.advance();
                 Ok(Pattern::Ident {
@@ -8382,13 +8505,18 @@ impl<'a> Parser<'a> {
 
     fn is_item_start(&mut self) -> bool {
         match self.current_token() {
-            Some(Token::Fn) | Some(Token::Struct) | Some(Token::Enum) | Some(Token::Trait)
-            | Some(Token::Impl) | Some(Token::Type) | Some(Token::Mod) | Some(Token::Use)
+            Some(Token::Fn) | Some(Token::Lambda) // λ = fn
+            | Some(Token::Struct) | Some(Token::Sigma) // Σ = struct
+            | Some(Token::Enum) // ᛈ handled in lexer
+            | Some(Token::Trait) | Some(Token::Theta) // Θ = trait
+            | Some(Token::Impl) // ⊢ handled in lexer
+            | Some(Token::Type) | Some(Token::Mod) | Some(Token::Use)
             | Some(Token::Const) | Some(Token::Static) | Some(Token::Actor) | Some(Token::Pub)
             | Some(Token::Extern) => true,
-            // async is only item start if followed by fn (async fn ...)
-            // async move { } or async { } are block expressions, not items
-            Some(Token::Async) => matches!(self.peek_next(), Some(Token::Fn)),
+            // async/⌛ is only item start if followed by fn/λ
+            Some(Token::Async) | Some(Token::Hourglass) => {
+                matches!(self.peek_next(), Some(Token::Fn) | Some(Token::Lambda))
+            }
             _ => false,
         }
     }

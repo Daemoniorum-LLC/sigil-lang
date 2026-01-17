@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 5.4 Expression Evaluation
 // Priority: P1 - Standard Feature
 
-fn main() {
+rite main() {
     // Order of operations
     println(2 + 3 * 4);
     println(10 - 2 * 3);
@@ -12,18 +12,18 @@ fn main() {
     println((10 - 2) * 3);
 
     // Nested operations
-    let x: !i32 = ((1 + 2) * 3 + 4) * 5;
+    ≔ x: !i32 = ((1 + 2) * 3 + 4) * 5;
     println(x);
 
     // Chained comparisons via boolean
-    let a: !i32 = 5;
-    if a > 3 {
-        if a < 10 {
+    ≔ a: !i32 = 5;
+    ⎇ a > 3 {
+        ⎇ a < 10 {
             println("in range");
         }
     }
 
     // Math with function results
-    let y: !f64 = sqrt(16) + pow(2, 3);
+    ≔ y: !f64 = sqrt(16) + pow(2, 3);
     println(y);
 }

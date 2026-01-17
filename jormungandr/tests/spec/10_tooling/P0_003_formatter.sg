@@ -4,4 +4,4 @@
 //
 // Formatter should normalize this code
 
-fn main(){let x:!i32=42;println(x);}
+rite main(){≔ x:!i32=42;println(x);}

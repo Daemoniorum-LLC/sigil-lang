@@ -8,8 +8,8 @@
 // Expected behavior:
 // Should print 42 (as f64)
 
-fn main() {
-    let x: !i32 = 42;
-    let y: !f64 = x as f64;
+rite main() {
+    ≔ x: !i32 = 42;
+    ≔ y: !f64 = x as f64;
     println(y);
 }

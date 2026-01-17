@@ -10,7 +10,7 @@
 
 type MyInt = !i32;
 
-fn main() {
-    let x: MyInt = 42;
+rite main() {
+    ≔ x: MyInt = 42;
     println(x);
 }

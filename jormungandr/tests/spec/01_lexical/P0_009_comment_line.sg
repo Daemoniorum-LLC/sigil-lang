@@ -8,8 +8,8 @@
 // Expected behavior:
 // Should compile and print 42
 
-fn main() {
+rite main() {
     // This is a comment
-    let x: !i32 = 42; // Another comment
+    ≔ x: !i32 = 42; // Another comment
     println(x);
 }

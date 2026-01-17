@@ -1,13 +1,13 @@
-// Test: Loop with break
+// Test: Loop with ⊲
 // Spec: 02-SYNTAX.md § 5.4 Loop
 // Priority: P2 - Enhancement
 
-fn main() {
-    let mut count: !i32 = 0;
-    loop {
+rite main() {
+    ≔ vary count: !i32 = 0;
+    forever {
         count = count + 1;
-        if count >= 3 {
-            break;
+        ⎇ count >= 3 {
+            ⊲;
         }
     }
     println(count);

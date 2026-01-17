@@ -4,11 +4,11 @@
 //
 // Tests AMQP publish concept with mock
 
-fn mock_amqp_publish() -> bool {
-    true
+rite mock_amqp_publish() → bool {
+    yea
 }
 
-fn main() {
-    let success = mock_amqp_publish();
-    println(if success { 1 } else { 0 });
+rite main() {
+    ≔ success = mock_amqp_publish();
+    println(⎇ success { 1 } ⎉ { 0 });
 }

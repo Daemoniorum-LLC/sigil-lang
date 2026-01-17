@@ -4,11 +4,11 @@
 //
 // Tests stream processing concept with mock data
 
-fn mock_stream_count() -> i32 {
+rite mock_stream_count() → i32 {
     5  // Simulates receiving 5 items from a stream
 }
 
-fn main() {
-    let count = mock_stream_count();
+rite main() {
+    ≔ count = mock_stream_count();
     println(count);
 }
