@@ -733,6 +733,41 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Check for mut keyword (Token::Mut or Token::Delta for Δ)
+    pub(crate) fn check_mut(&self) -> bool {
+        matches!(self.current_token(), Some(Token::Mut) | Some(Token::Delta))
+    }
+
+    /// Consume mut keyword if present (Token::Mut or Token::Delta for Δ)
+    pub(crate) fn consume_if_mut(&mut self) -> bool {
+        if self.check_mut() {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check for self keyword (Token::SelfLower or Token::CircledDot for ⊙)
+    pub(crate) fn check_self(&self) -> bool {
+        matches!(self.current_token(), Some(Token::SelfLower) | Some(Token::CircledDot))
+    }
+
+    /// Check for path separator (Token::ColonColon or Token::MiddleDot for ·)
+    pub(crate) fn check_path_sep(&self) -> bool {
+        matches!(self.current_token(), Some(Token::ColonColon) | Some(Token::MiddleDot))
+    }
+
+    /// Consume path separator if present
+    pub(crate) fn consume_if_path_sep(&mut self) -> bool {
+        if self.check_path_sep() {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
     /// Skip any comments
     pub(crate) fn skip_comments(&mut self) {
         while matches!(
@@ -1880,7 +1915,7 @@ impl<'a> Parser<'a> {
 
     fn parse_static(&mut self, visibility: Visibility) -> ParseResult<StaticDef> {
         self.expect(Token::Static)?;
-        let mutable = self.consume_if(&Token::Mut);
+        let mutable = self.consume_if_mut();
         let name = self.parse_ident()?;
         self.expect(Token::Colon)?;
         let ty = self.parse_type()?;
@@ -2227,7 +2262,7 @@ impl<'a> Parser<'a> {
     /// Parse an extern static declaration.
     fn parse_extern_static(&mut self, visibility: Visibility) -> ParseResult<ExternStatic> {
         self.expect(Token::Static)?;
-        let mutable = self.consume_if(&Token::Mut);
+        let mutable = self.consume_if_mut();
         let name = self.parse_ident()?;
         self.expect(Token::Colon)?;
         let ty = self.parse_type()?;
@@ -2438,7 +2473,7 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 };
-                let mutable = self.consume_if(&Token::Mut);
+                let mutable = self.consume_if_mut();
                 let inner = self.parse_type()?;
                 // Inner reference
                 let inner_ref = TypeExpr::Reference {
@@ -2462,7 +2497,7 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 };
-                let mutable = self.consume_if(&Token::Mut);
+                let mutable = self.consume_if_mut();
                 let inner = self.parse_type()?;
                 Ok(TypeExpr::Reference {
                     lifetime,
@@ -2476,7 +2511,7 @@ impl<'a> Parser<'a> {
                 // Make const/mut optional to support Sigil's *!T syntax
                 let mutable = if self.consume_if(&Token::Const) {
                     false
-                } else if self.consume_if(&Token::Mut) {
+                } else if self.consume_if_mut() {
                     true
                 } else {
                     // No const/mut - default to immutable (for *!T style)
@@ -3118,7 +3153,7 @@ impl<'a> Parser<'a> {
                 // Look at what follows * to distinguish
                 match self.peek_n(1) {
                     Some(Token::Const) => true, // *const T - pointer type
-                    Some(Token::Mut) => true,   // *mut T - pointer type
+                    Some(Token::Mut) | Some(Token::Delta) => true,   // *mut/*Δ T - pointer type
                     _ => false,                 // *expr - dereference, not a type
                 }
             }
@@ -3691,8 +3726,8 @@ impl<'a> Parser<'a> {
             let op = match self.current_token() {
                 // Bitwise OR - only reached if not a pipe operation
                 Some(Token::Pipe) => BinOp::BitOr,
-                Some(Token::OrOr) => BinOp::Or,
-                Some(Token::AndAnd) => BinOp::And,
+                Some(Token::OrOr) | Some(Token::LogicOr) => BinOp::Or,  // || or ∨
+                Some(Token::AndAnd) | Some(Token::LogicAnd) => BinOp::And,  // && or ∧
                 Some(Token::EqEq) => BinOp::Eq,
                 Some(Token::NotEq) => BinOp::Ne,
                 Some(Token::Lt) => BinOp::Lt,
@@ -3715,8 +3750,7 @@ impl<'a> Parser<'a> {
                 // Unicode bitwise operators
                 Some(Token::BitwiseAndSymbol) => BinOp::BitAnd, // ⋏
                 Some(Token::BitwiseOrSymbol) => BinOp::BitOr,   // ⋎
-                // Logical/geometric algebra operators
-                Some(Token::LogicAnd) => BinOp::And, // ∧ (wedge/outer product, parsed as And)
+                // Note: ∧ and ∨ logic operators handled above with && and ||
                 // Tensor/array operators
                 Some(Token::CircledDot) => BinOp::Hadamard, // ⊙ element-wise multiply
                 Some(Token::Tensor) => BinOp::TensorProd,   // ⊗ tensor product
@@ -3798,7 +3832,7 @@ impl<'a> Parser<'a> {
                     expr: Box::new(expr),
                 })
             }
-            Some(Token::Bang) => {
+            Some(Token::Bang) | Some(Token::LogicNot) => {
                 self.advance();
                 let expr = self.parse_prefix_expr()?;
                 Ok(Expr::Unary {
@@ -3830,7 +3864,7 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Amp) => {
                 self.advance();
-                let op = if self.consume_if(&Token::Mut) {
+                let op = if self.consume_if_mut() {
                     UnaryOp::RefMut
                 } else {
                     UnaryOp::Ref
@@ -4532,11 +4566,11 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Expr::Literal(Literal::ByteChar(b)))
             }
-            Some(Token::True) => {
+            Some(Token::True) | Some(Token::Top) => {
                 self.advance();
                 Ok(Expr::Literal(Literal::Bool(true)))
             }
-            Some(Token::False) => {
+            Some(Token::False) | Some(Token::Bottom) => {
                 self.advance();
                 Ok(Expr::Literal(Literal::Bool(false)))
             }
@@ -4549,8 +4583,17 @@ impl<'a> Parser<'a> {
                 Ok(Expr::Literal(Literal::Empty))
             }
             Some(Token::Infinity) => {
-                self.advance();
-                Ok(Expr::Literal(Literal::Infinity))
+                // Check if this is ∞ { ... } (loop) or just ∞ (infinity literal)
+                if matches!(self.peek_next(), Some(Token::LBrace)) {
+                    // It's a loop: ∞ { body }
+                    self.advance();
+                    let body = self.parse_block()?;
+                    Ok(Expr::Loop { label: None, body })
+                } else {
+                    // It's an infinity literal
+                    self.advance();
+                    Ok(Expr::Literal(Literal::Infinity))
+                }
             }
             Some(Token::Circle) => {
                 self.advance();
@@ -4646,7 +4689,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.expect(Token::Colon)?;
                 match self.current_token().cloned() {
-                    Some(Token::Loop) => {
+                    Some(Token::Loop) | Some(Token::Infinity) => {
                         self.advance();
                         let body = self.parse_block()?;
                         Ok(Expr::Loop {
@@ -4675,10 +4718,17 @@ impl<'a> Parser<'a> {
                             body,
                         })
                     }
-                    Some(Token::For) => {
+                    Some(Token::For) | Some(Token::ForAll) => {
                         self.advance();
                         let pattern = self.parse_pattern()?;
-                        self.expect(Token::In)?;
+                        // Accept both 'in' and '∈' for element-of
+                        if !self.consume_if(&Token::In) && !self.consume_if(&Token::ElementOf) {
+                            return Err(ParseError::UnexpectedToken {
+                                expected: "in or ∈".to_string(),
+                                found: self.current_token().cloned().unwrap_or(Token::Null),
+                                span: self.current_span(),
+                            });
+                        }
                         let iter = self.parse_condition()?;
                         let body = self.parse_block()?;
                         Ok(Expr::For {
@@ -4689,13 +4739,13 @@ impl<'a> Parser<'a> {
                         })
                     }
                     other => Err(ParseError::UnexpectedToken {
-                        expected: "loop, while, or for after label".to_string(),
+                        expected: "loop/∞, while/⟳, or for/∀ after label".to_string(),
                         found: other.unwrap_or(Token::Null),
                         span: self.current_span(),
                     }),
                 }
             }
-            Some(Token::Loop) => {
+            Some(Token::Loop) | Some(Token::Infinity) => {
                 self.advance();
                 let body = self.parse_block()?;
                 Ok(Expr::Loop { label: None, body })
@@ -4721,10 +4771,17 @@ impl<'a> Parser<'a> {
                     body,
                 })
             }
-            Some(Token::For) => {
+            Some(Token::For) | Some(Token::ForAll) => {
                 self.advance();
                 let pattern = self.parse_pattern()?;
-                self.expect(Token::In)?;
+                // Accept both 'in' and '∈' for element-of
+                if !self.consume_if(&Token::In) && !self.consume_if(&Token::ElementOf) {
+                    return Err(ParseError::UnexpectedToken {
+                        expected: "in or ∈".to_string(),
+                        found: self.current_token().cloned().unwrap_or(Token::Null),
+                        span: self.current_span(),
+                    });
+                }
                 let iter = self.parse_condition()?;
                 let body = self.parse_block()?;
                 Ok(Expr::For {
@@ -4747,7 +4804,7 @@ impl<'a> Parser<'a> {
                 };
                 Ok(Expr::Return(value))
             }
-            Some(Token::Break) => {
+            Some(Token::Break) | Some(Token::Tensor) => {
                 self.advance();
                 // Check for optional label: break 'label or break 'label value
                 let label = if let Some(Token::Lifetime(name)) = self.current_token().cloned() {
@@ -4774,7 +4831,7 @@ impl<'a> Parser<'a> {
                 };
                 Ok(Expr::Break { label, value })
             }
-            Some(Token::Continue) => {
+            Some(Token::Continue) | Some(Token::CycleArrow) => {
                 self.advance();
                 // Check for optional label: continue 'label
                 let label = if let Some(Token::Lifetime(name)) = self.current_token().cloned() {
@@ -4868,8 +4925,8 @@ impl<'a> Parser<'a> {
                     }],
                 }))
             }
-            Some(Token::SelfLower) => {
-                // self keyword as expression
+            Some(Token::SelfLower) | Some(Token::CircledDot) => {
+                // self/⊙ keyword as expression
                 let span = self.current_span();
                 self.advance();
                 Ok(Expr::Path(TypePath {
@@ -6541,8 +6598,8 @@ impl<'a> Parser<'a> {
                     }
                     _ => {}
                 }
-            } else if matches!(self.peek_next(), Some(Token::Mut)) {
-                // &mut x =>
+            } else if matches!(self.peek_next(), Some(Token::Mut) | Some(Token::Delta)) {
+                // &mut x => or &Δ x =>
                 return true;
             }
         }
@@ -6613,8 +6670,8 @@ impl<'a> Parser<'a> {
                 if self.check(&Token::Let) {
                     stmts.push(self.parse_let_stmt()?);
                 } else if self.check(&Token::Return)
-                    || self.check(&Token::Break)
-                    || self.check(&Token::Continue)
+                    || self.check(&Token::Break) || self.check(&Token::Tensor)
+                    || self.check(&Token::Continue) || self.check(&Token::CycleArrow)
                 {
                     // Control flow - treat as final expression
                     break;
@@ -7038,10 +7095,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Pattern::Rest)
             }
-            Some(Token::Mut) => {
+            Some(Token::Mut) | Some(Token::Delta) => {
                 self.advance();
-                // Handle `mut self` specially
-                let name = if self.check(&Token::SelfLower) {
+                // Handle `mut self` / `Δ ⊙` specially
+                let name = if self.check_self() {
                     let span = self.current_span();
                     self.advance();
                     Ident {
@@ -7063,7 +7120,7 @@ impl<'a> Parser<'a> {
             // Ref pattern: ref ident or ref mut ident (binds by reference)
             Some(Token::Ref) => {
                 self.advance();
-                let mutable = self.consume_if(&Token::Mut);
+                let mutable = self.consume_if_mut();
                 let name = self.parse_ident()?;
                 let evidentiality = self.parse_evidentiality_opt();
                 Ok(Pattern::RefBinding {
@@ -7079,7 +7136,7 @@ impl<'a> Parser<'a> {
                 if matches!(self.current_token(), Some(Token::Lifetime(_))) {
                     self.advance();
                 }
-                let mutable = self.consume_if(&Token::Mut);
+                let mutable = self.consume_if_mut();
                 let inner = self.parse_pattern()?;
                 Ok(Pattern::Ref {
                     mutable,

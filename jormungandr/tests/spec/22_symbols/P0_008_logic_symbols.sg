@@ -1,0 +1,24 @@
+// Test: Logic symbols ⊤, ⊥, ∧, ∨, ¬
+// Spec: SIGIL_NATIVE_SYMBOLS_ROADMAP.md
+// Priority: P0
+//
+// Purpose:
+// Validates ⊤ (true), ⊥ (false), ∧ (and), ∨ (or), ¬ (not) work correctly
+//
+// Expected behavior:
+// Should print 1, 0, 1, 0, 1
+
+λ main() {
+    // ⊤ = true, ⊥ = false
+    ⎇ ⊤ { println(1); } ⎉ { println(0); }
+    ⎇ ⊥ { println(1); } ⎉ { println(0); }
+
+    // ∧ = and
+    ⎇ ⊤ ∧ ⊤ { println(1); } ⎉ { println(0); }
+
+    // ∨ = or
+    ⎇ ⊥ ∨ ⊥ { println(1); } ⎉ { println(0); }
+
+    // ¬ = not
+    ⎇ ¬⊥ { println(1); } ⎉ { println(0); }
+}

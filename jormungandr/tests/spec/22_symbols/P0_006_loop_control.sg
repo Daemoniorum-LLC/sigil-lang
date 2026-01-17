@@ -1,0 +1,22 @@
+// Test: Loop control symbols ∞, ⊗, ↻
+// Spec: SIGIL_NATIVE_SYMBOLS_ROADMAP.md
+// Priority: P0
+//
+// Purpose:
+// Validates ∞ (loop), ⊗ (break), ↻ (continue) work correctly
+//
+// Expected behavior:
+// Should print 0, 1, 2, 100
+
+λ main() {
+    ≔ mut i: !i32 = 0;
+
+    ∞ {
+        println(i);
+        i = i + 1;
+        ⎇ i >= 3 {
+            ⊗;
+        }
+    }
+    println(100);
+}

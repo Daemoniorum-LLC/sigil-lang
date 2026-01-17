@@ -1,0 +1,16 @@
+// Test: For-in symbols ∀, ∈
+// Spec: SIGIL_NATIVE_SYMBOLS_ROADMAP.md
+// Priority: P0
+//
+// Purpose:
+// Validates ∀ (for) and ∈ (in) work correctly for iteration
+//
+// Expected behavior:
+// Should print 1, 2, 3
+
+λ main() {
+    ≔ arr: ![!i32; 3] = [1, 2, 3];
+    ∀ x ∈ arr {
+        println(x);
+    }
+}
