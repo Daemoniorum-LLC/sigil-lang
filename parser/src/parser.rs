@@ -3931,16 +3931,16 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.parse_pipe_closure_with_move(true)
             }
-            // Pipe-style closure: |params| body or || body
-            Some(Token::Pipe) | Some(Token::OrOr) => self.parse_pipe_closure_with_move(false),
+            // Pipe-style closure: |params| body or || body or ∨ body
+            Some(Token::Pipe) | Some(Token::OrOr) | Some(Token::LogicOr) => self.parse_pipe_closure_with_move(false),
             _ => self.parse_postfix_expr(),
         }
     }
 
-    /// Parse a pipe-style closure: |params| body or || body or move |params| body
+    /// Parse a pipe-style closure: |params| body or || body or ∨ body or move |params| body
     fn parse_pipe_closure_with_move(&mut self, is_move: bool) -> ParseResult<Expr> {
-        let params = if self.consume_if(&Token::OrOr) {
-            // || body - no parameters
+        let params = if self.consume_if(&Token::OrOr) || self.consume_if(&Token::LogicOr) {
+            // || body or ∨ body - no parameters
             Vec::new()
         } else {
             // |params| body
@@ -5685,7 +5685,8 @@ impl<'a> Parser<'a> {
                 | Token::Hourglass => true,
                 // Closure syntax |x| or || (lookahead for closure parameter list)
                 Token::Pipe => true,
-                Token::OrOr => true, // Empty closure ||
+                Token::OrOr => true,    // Empty closure ||
+                Token::LogicOr => true, // Empty closure ∨
                 // Move closure
                 Token::Move => true,
                 // Block expression used as pipe target
@@ -6090,18 +6091,23 @@ impl<'a> Parser<'a> {
                 let name = self.parse_ident()?;
 
                 // Special handling for evidence promotion operations BEFORE macro check
-                // |validate!{predicate} or |validate!(predicate) - validate and promote to Known
+                // |validate!(predicate) - validate and promote to Known (paren-delimited only)
                 // |validate?{predicate} - validate and promote to Uncertain
                 // |validate~{predicate} - validate and keep as Reported
                 // |assume!("reason") - assume evidence level
+                // NOTE: validate!{...} with braces is treated as a macro invocation, not special validate
                 if name.name == "validate" || name.name == "assume" {
                     // Check for evidentiality marker followed by { or (
+                    // For !, only treat as special validate if followed by ( not {
+                    // This allows validate!{struct: fields} to be parsed as a macro
                     let (has_marker, target_evidence) = if self.check(&Token::Bang) {
                         let peek = self.peek_next();
-                        if matches!(peek, Some(Token::LBrace) | Some(Token::LParen)) {
+                        if matches!(peek, Some(Token::LParen)) {
+                            // validate!(predicate) - special handling
                             self.advance(); // consume !
                             (true, Evidentiality::Known)
                         } else {
+                            // validate!{...} or validate![...] - let macro handling take over
                             (false, Evidentiality::Known)
                         }
                     } else if self.check(&Token::Question) {
@@ -7921,6 +7927,8 @@ impl<'a> Parser<'a> {
             // Other contextual keywords
             Token::Ref => Some("ref"),
             Token::Null => Some("null"),
+            // Neural network keywords - allow as identifiers for struct fields
+            Token::Linear => Some("linear"),
             _ => None,
         }
     }
