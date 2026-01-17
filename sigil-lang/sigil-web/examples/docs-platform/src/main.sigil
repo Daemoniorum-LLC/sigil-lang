@@ -1,0 +1,237 @@
+// Daemoniorum Documentation Platform
+// Built with Sigil Web
+// Copyright © 2025 Daemoniorum, LLC. All rights reserved.
+
+use sigil_web::prelude::*
+use crate::components::*
+use crate::components::markdown_viewer::{DocPage, DocPageProps, build_full_sidebar}
+use crate::pages::*
+use crate::layouts::*
+use crate::data::catalog::PRODUCT_CATALOG
+use crate::data::docs_catalog::{DOCS_CATALOG, search_docs, get_all_docs}
+
+/// Application entry point
+fn main() {
+    // Initialize the documentation platform
+    App::mount("#root", DocsApp::new())
+}
+
+/// Root application component
+component DocsApp {
+    state theme: Theme! = Theme::Dark
+    state sidebar_open: bool! = true
+    state search_query: String! = ""
+
+    fn render(self) -> VNode {
+        let theme_context! = ThemeContext::new(self.theme)
+
+        theme_context·provider(self.theme, vec![
+            Router {
+                // Landing page
+                Route[path: "/"] { Home {} }
+
+                // Documentation index
+                Route[path: "/docs"] { DocsIndex {} }
+
+                // Dynamic documentation routes - handles all project docs
+                Route[path: "/docs/:project"] { |props|
+                    DynamicDocPage {
+                        project_id: props.params["project"]·clone(),
+                        section_id: None,
+                        doc_id: None
+                    }
+                }
+                Route[path: "/docs/:project/:section"] { |props|
+                    DynamicDocPage {
+                        project_id: props.params["project"]·clone(),
+                        section_id: Some(props.params["section"]·clone()),
+                        doc_id: None
+                    }
+                }
+                Route[path: "/docs/:project/:section/:doc"] { |props|
+                    DynamicDocPage {
+                        project_id: props.params["project"]·clone(),
+                        section_id: Some(props.params["section"]·clone()),
+                        doc_id: Some(props.params["doc"]·clone())
+                    }
+                }
+
+                // API reference routes
+                Route[path: "/api"] { ApiIndex {} }
+                Route[path: "/api/:product"] { |props|
+                    ApiReference { product_id: props.params["product"]·clone() }
+                }
+                Route[path: "/api/:product/:module"] { |props|
+                    ApiModule {
+                        product_id: props.params["product"]·clone(),
+                        module_id: props.params["module"]·clone()
+                    }
+                }
+
+                // Guides and tutorials
+                Route[path: "/guides"] { GuidesIndex {} }
+                Route[path: "/guides/:guide"] { |props|
+                    Guide { guide_id: props.params["guide"]·clone() }
+                }
+
+                // Examples and playground
+                Route[path: "/examples"] { ExamplesIndex {} }
+                Route[path: "/playground"] { Playground {} }
+
+                // Search
+                Route[path: "/search"] { SearchResults {} }
+
+                // Changelog and releases
+                Route[path: "/changelog"] { Changelog {} }
+                Route[path: "/changelog/:version"] { |props|
+                    ReleaseNotes { version: props.params["version"]·clone() }
+                }
+
+                // 404
+                Route[path: "*"] { NotFound {} }
+            }
+        ])
+    }
+}
+
+/// Dynamic documentation page that loads from the catalog
+fn DynamicDocPage(props: DynamicDocPageProps) -> VNode! {
+    // Find the project in the catalog
+    let project? = DOCS_CATALOG·iter()·find(|p| p.id == props.project_id)
+
+    match project? {
+        Some(proj) => {
+            // Find the specific document
+            let doc_entry? = find_doc_entry(proj, &props.section_id, &props.doc_id)
+
+            match doc_entry? {
+                Some(doc) => {
+                    // Calculate prev/next navigation
+                    let (prev, next) = get_nav_links(proj, doc)
+
+                    DocPage(DocPageProps {
+                        file_path: doc.file_path·clone(),
+                        current_path: doc.path·clone(),
+                        prev_page: prev,
+                        next_page: next
+                    })
+                }
+                None => {
+                    // Show project overview if no specific doc found
+                    if let Some(readme) = proj.sections·first()·and_then(|s| s.docs·first()) {
+                        DocPage(DocPageProps {
+                            file_path: readme.file_path·clone(),
+                            current_path: format!("/docs/{}", props.project_id),
+                            prev_page: None,
+                            next_page: None
+                        })
+                    } else {
+                        NotFound()
+                    }
+                }
+            }
+        }
+        None => NotFound()
+    }
+}
+
+struct DynamicDocPageProps {
+    project_id: String!
+    section_id: Option<String>?
+    doc_id: Option<String>?
+}
+
+/// Find a document entry in the project
+fn find_doc_entry<'a>(
+    project: &'a crate::data::docs_catalog::Project,
+    section_id: &Option<String>,
+    doc_id: &Option<String>
+) -> Option<&'a crate::data::docs_catalog::DocEntry>? {
+    match (section_id, doc_id) {
+        (Some(sect), Some(doc)) => {
+            project.sections·iter()
+                ·find(|s| s.id == *sect)
+                ·and_then(|s| s.docs·iter()·find(|d| d.id == *doc))
+        }
+        (Some(sect), None) => {
+            project.sections·iter()
+                ·find(|s| s.id == *sect)
+                ·and_then(|s| s.docs·first())
+        }
+        (None, _) => {
+            project.sections·first()
+                ·and_then(|s| s.docs·first())
+        }
+    }
+}
+
+/// Get previous and next navigation links
+fn get_nav_links(
+    project: &crate::data::docs_catalog::Project,
+    current: &crate::data::docs_catalog::DocEntry
+) -> (Option<PageLink>, Option<PageLink>)! {
+    // Flatten all docs in order
+    let all_docs! = project.sections·iter()
+        ·flat_map(|s| s.docs·iter())
+        ·collect::<Vec<_>>()
+
+    let current_idx? = all_docs·iter()·position(|d| d.id == current.id)
+
+    let prev? = current_idx
+        ·filter(|&i| i > 0)
+        ·map(|i| &all_docs[i - 1])
+        ·map(|d| PageLink {
+            title: d.title·clone(),
+            path: d.path·clone()
+        })
+
+    let next? = current_idx
+        ·filter(|&i| i < all_docs·len() - 1)
+        ·map(|i| &all_docs[i + 1])
+        ·map(|d| PageLink {
+            title: d.title·clone(),
+            path: d.path·clone()
+        })
+
+    (prev, next)
+}
+
+/// Theme enumeration
+pub enum Theme {
+    Light,
+    Dark,
+    System
+}
+
+impl Theme {
+    pub fn css_class(&self) -> &'static str! {
+        match self {
+            Theme::Light => "theme-light",
+            Theme::Dark => "theme-dark",
+            Theme::System => "theme-system"
+        }
+    }
+}
+
+/// Theme context for app-wide theme access
+pub static ThemeContext: Context<Theme> = Context::new(Theme::Dark)
+
+/// Use theme hook
+pub fn use_theme() -> Theme!! {
+    use_context(&ThemeContext)
+}
+
+/// Toggle theme hook
+pub fn use_toggle_theme() -> fn()!! {
+    let theme! = use_theme()
+    let navigate! = use_navigate()
+
+    move || {
+        let new_theme! = match theme {
+            Theme::Light => Theme::Dark,
+            Theme::Dark => Theme::Light,
+            Theme::System => Theme::Light
+        }
+        // Update theme context
+    }
+}

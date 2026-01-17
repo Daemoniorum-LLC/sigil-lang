@@ -1,0 +1,223 @@
+// Sigil Web Core Module
+// Provides the fundamental runtime, reconciliation, and rendering engine
+
+pub mod vdom;
+pub mod reconciler;
+pub mod scheduler;
+pub mod renderer;
+pub mod events;
+
+use crate::dom::Element;
+use crate::state::Store;
+use crate::platform::Platform;
+
+// Re-exports for convenience
+pub use vdom::{VNode, VElement, VText, VFragment, VComponent};
+pub use reconciler::Reconciler;
+pub use scheduler::{Scheduler, Priority};
+pub use renderer::Renderer;
+pub use events::{Event, EventHandler, EventType};
+
+/// Core application runtime
+/// Manages the component tree, state, and rendering pipeline
+actor AppRuntime {
+    state root: Option<VNode>? = None
+    state platform: Platform!
+    state scheduler: Scheduler!
+    state reconciler: Reconciler!
+    state mounted: bool! = false
+
+    /// Initialize the runtime with a target platform
+    fn new(platform: Platform) -> Self! {
+        AppRuntime {
+            platform: platform,
+            scheduler: Scheduler::new(),
+            reconciler: Reconciler::new(),
+            mounted: false,
+            root: None
+        }
+    }
+
+    /// Mount the application to a DOM element
+    on Mount(selector: String, component: VNode) {
+        let target! = self.platform·query_selector(selector)
+
+        match target! {
+            Some(el) => {
+                self.root = Some(component)
+                self.reconciler·initial_render(component, el)
+                self.mounted = true
+                self·emit(Mounted {})
+            }
+            None => {
+                panic!("Mount target not found: {selector}")
+            }
+        }
+    }
+
+    /// Schedule a state update
+    on ScheduleUpdate(component_id: u64, priority: Priority) {
+        self.scheduler·enqueue(component_id, priority)
+        self·process_queue()
+    }
+
+    /// Process pending updates
+    fn process_queue(self) {
+        self.scheduler·flush()
+            |τ{update => self.reconciler·reconcile(update)}
+            |each
+    }
+
+    /// Unmount the application
+    on Unmount {
+        match self.root {
+            Some(node) => {
+                self.reconciler·unmount(node)
+                self.root = None
+                self.mounted = false
+            }
+            None => {}
+        }
+    }
+
+    /// Check if application is mounted
+    fn is_mounted(self) -> bool! {
+        self.mounted
+    }
+}
+
+/// Application configuration
+struct AppConfig {
+    /// Enable development mode features
+    dev_mode: bool! = false
+
+    /// Enable strict mode checks
+    strict_mode: bool! = true
+
+    /// Enable concurrent rendering
+    concurrent: bool! = true
+
+    /// Custom error boundary
+    error_boundary: Option<fn(Error~) -> Element>? = None
+
+    /// Platform-specific options
+    platform_options: PlatformOptions! = PlatformOptions::default()
+}
+
+/// Platform-specific configuration
+struct PlatformOptions {
+    /// Target rendering environment
+    target: RenderTarget! = RenderTarget::Browser
+
+    /// Enable hydration for SSR
+    hydrate: bool! = false
+
+    /// Base URL for routing
+    base_url: String! = "/"
+}
+
+/// Render target environments
+enum RenderTarget {
+    Browser,
+    Server,
+    Static,
+    Native
+}
+
+/// Main application entry point
+pub struct App {
+    runtime: AppRuntime!
+    config: AppConfig!
+}
+
+impl App {
+    /// Create a new application with default config
+    pub fn new() -> Self! {
+        App::with_config(AppConfig::default())
+    }
+
+    /// Create a new application with custom config
+    pub fn with_config(config: AppConfig) -> Self! {
+        let platform! = Platform::detect(config.platform_options)
+        App {
+            runtime: AppRuntime::new(platform),
+            config: config
+        }
+    }
+
+    /// Mount a component to a DOM selector
+    pub fn mount<C: Component>(selector: &str, component: C) -> Self! {
+        let app! = App::new()
+        app.runtime·send(Mount {
+            selector: selector.to_string(),
+            component: component·to_vnode()
+        })
+        app
+    }
+
+    /// Mount with hydration (for SSR)
+    pub fn hydrate<C: Component>(selector: &str, component: C) -> Self! {
+        let config! = AppConfig {
+            platform_options: PlatformOptions {
+                hydrate: true,
+                ..PlatformOptions::default()
+            },
+            ..AppConfig::default()
+        }
+        let app! = App::with_config(config)
+        app.runtime·send(Mount {
+            selector: selector.to_string(),
+            component: component·to_vnode()
+        })
+        app
+    }
+
+    /// Render to static HTML (for SSG)
+    pub fn render_to_string<C: Component>(component: C) -> String! {
+        let config! = AppConfig {
+            platform_options: PlatformOptions {
+                target: RenderTarget::Static,
+                ..PlatformOptions::default()
+            },
+            ..AppConfig::default()
+        }
+        let renderer! = Renderer::new_static()
+        renderer·render_to_string(component·to_vnode())
+    }
+
+    /// Unmount the application
+    pub fn unmount(self) {
+        self.runtime·send(Unmount {})
+    }
+}
+
+/// Prelude module for convenient imports
+pub mod prelude {
+    pub use super::{App, AppConfig, AppRuntime};
+    pub use super::vdom::*;
+    pub use super::events::*;
+    pub use crate::components::*;
+    pub use crate::hooks::*;
+    pub use crate::router::*;
+    pub use crate::state::*;
+    pub use crate::dom::*;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_creation() {
+        let app! = App::new()
+        assert!(!app.runtime·is_mounted())
+    }
+
+    #[test]
+    fn test_render_to_string() {
+        let html! = App::render_to_string(
+            div { "Hello, World!" }
+        )
+        assert_eq!(html, "<div>Hello, World!</div>")
+    }
+}

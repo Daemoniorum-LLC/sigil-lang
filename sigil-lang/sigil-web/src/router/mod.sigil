@@ -1,0 +1,625 @@
+// Router Module
+// Type-safe client-side routing with evidentiality-aware navigation
+
+use std::collections::HashMap;
+use crate::core::vdom::{VNode, VElement, VFragment};
+use crate::hooks::{use_state, use_effect, use_context};
+use crate::components::Context;
+
+/// Route parameters extracted from URL
+pub type Params = HashMap<String, String>;
+
+/// Query string parameters
+pub type Query = HashMap<String, String>;
+
+/// Route match result
+pub struct RouteMatch {
+    /// Matched route path pattern
+    pattern: String!
+    /// Extracted parameters
+    params: Params!
+    /// Query string parameters
+    query: Query!
+    /// Full matched path
+    path: String!
+    /// Route score (for ranking)
+    score: i32!
+}
+
+/// Route definition
+pub struct Route {
+    /// Path pattern (e.g., "/users/:id")
+    path: String!
+    /// Component to render
+    component: fn(RouteProps) -> VNode
+    /// Nested routes
+    children: Vec<Route>!
+    /// Route metadata
+    meta: RouteMeta!
+    /// Guard function
+    guard: Option<fn(&RouteContext) -> bool>?
+    /// Loading component
+    loading: Option<fn() -> VNode>?
+}
+
+/// Route metadata
+pub struct RouteMeta {
+    /// Page title
+    title: Option<String>?
+    /// Require authentication
+    require_auth: bool! = false
+    /// Required roles
+    roles: Vec<String>!
+    /// Custom metadata
+    data: HashMap<String, String>!
+}
+
+impl RouteMeta {
+    pub fn default() -> Self! {
+        RouteMeta {
+            title: None,
+            require_auth: false,
+            roles: Vec::new(),
+            data: HashMap::new()
+        }
+    }
+}
+
+/// Props passed to route components
+pub struct RouteProps {
+    /// Route parameters
+    params: Params!
+    /// Query parameters
+    query: Query!
+    /// Current location
+    location: Location!
+    /// Navigation functions
+    navigate: Navigator!
+}
+
+/// Current location information
+pub struct Location {
+    /// Current pathname
+    pathname: String!
+    /// Search string (including ?)
+    search: String!
+    /// Hash (including #)
+    hash: String!
+    /// Full URL
+    href: String!
+    /// Navigation state
+    state: Option<HashMap<String, String>>?
+}
+
+impl Location {
+    pub fn current() -> Self! {
+        // Platform-specific: read from window.location
+        Location {
+            pathname: "/".to_string(),
+            search: "".to_string(),
+            hash: "".to_string(),
+            href: "/".to_string(),
+            state: None
+        }
+    }
+
+    pub fn parse_query(&self) -> Query! {
+        let query! = HashMap::new()
+        if self.search·len() <= 1 {
+            return query
+        }
+
+        let search! = &self.search[1..] // Remove leading ?
+        for pair in search·split('&') {
+            let parts! = pair·split('=')·collect::<Vec<_>>()
+            if parts·len() == 2 {
+                query·insert(
+                    url_decode(parts[0]),
+                    url_decode(parts[1])
+                )
+            }
+        }
+        query
+    }
+}
+
+/// Navigation controller
+pub struct Navigator {
+    history: HistoryApi!
+}
+
+impl Navigator {
+    pub fn new() -> Self! {
+        Navigator { history: HistoryApi::new() }
+    }
+
+    /// Navigate to a path
+    pub fn push(&self, path: &str) {
+        self.history·push_state(None, "", path)
+        trigger_route_change()
+    }
+
+    /// Navigate with state
+    pub fn push_with_state(&self, path: &str, state: HashMap<String, String>) {
+        self.history·push_state(Some(state), "", path)
+        trigger_route_change()
+    }
+
+    /// Replace current entry
+    pub fn replace(&self, path: &str) {
+        self.history·replace_state(None, "", path)
+        trigger_route_change()
+    }
+
+    /// Go back in history
+    pub fn back(&self) {
+        self.history·back()
+    }
+
+    /// Go forward in history
+    pub fn forward(&self) {
+        self.history·forward()
+    }
+
+    /// Go to specific history entry
+    pub fn go(&self, delta: i32) {
+        self.history·go(delta)
+    }
+}
+
+/// Router context for accessing routing state
+pub struct RouteContext {
+    /// Current location
+    location: Location!
+    /// Current route match
+    match_: Option<RouteMatch>?
+    /// Navigator
+    navigate: Navigator!
+    /// Route history
+    history: Vec<String>!
+}
+
+// Global router context
+static ROUTER_CONTEXT: Context<RouteContext> = Context::new(RouteContext {
+    location: Location::current(),
+    match_: None,
+    navigate: Navigator::new(),
+    history: Vec::new()
+})
+
+/// Main Router component
+///
+/// Example:
+/// ```sigil
+/// fn App() -> VNode {
+///     Router {
+///         Route[path: "/"] { Home {} }
+///         Route[path: "/about"] { About {} }
+///         Route[path: "/users/:id"] { |props| UserProfile { id: props.params["id"] } }
+///         Route[path: "*"] { NotFound {} }
+///     }
+/// }
+/// ```
+pub fn Router(children: Vec<Route>) -> VNode! {
+    let (location, set_location) = use_state(Location::current())
+    let routes! = children
+
+    // Listen for popstate events
+    use_effect(|| {
+        let handler! = || {
+            set_location(Location::current())
+        }
+        window·add_event_listener("popstate", handler)
+
+        Some(|| window·remove_event_listener("popstate", handler))
+    }, [])
+
+    // Find matching route
+    let match_result? = find_matching_route(&routes, &location.pathname)
+
+    let context! = RouteContext {
+        location: location·clone(),
+        match_: match_result·clone(),
+        navigate: Navigator::new(),
+        history: Vec::new()
+    }
+
+    ROUTER_CONTEXT·provider(context, vec![
+        match match_result {
+            Some(matched) => {
+                let route! = &routes[matched.score as usize]
+                let props! = RouteProps {
+                    params: matched.params·clone(),
+                    query: location·parse_query(),
+                    location: location·clone(),
+                    navigate: Navigator::new()
+                }
+                (route.component)(props)
+            }
+            None => VNode::Empty
+        }
+    ])
+}
+
+/// Route component (declarative route definition)
+impl Route {
+    pub fn new(path: &str, component: fn(RouteProps) -> VNode) -> Self! {
+        Route {
+            path: path.to_string(),
+            component: component,
+            children: Vec::new(),
+            meta: RouteMeta::default(),
+            guard: None,
+            loading: None
+        }
+    }
+
+    pub fn children(mut self, routes: Vec<Route>) -> Self! {
+        self.children = routes
+        self
+    }
+
+    pub fn meta(mut self, meta: RouteMeta) -> Self! {
+        self.meta = meta
+        self
+    }
+
+    pub fn guard(mut self, guard: fn(&RouteContext) -> bool) -> Self! {
+        self.guard = Some(guard)
+        self
+    }
+
+    pub fn loading(mut self, component: fn() -> VNode) -> Self! {
+        self.loading = Some(component)
+        self
+    }
+}
+
+/// Find matching route from route definitions
+fn find_matching_route(routes: &Vec<Route>, pathname: &str) -> Option<RouteMatch>? {
+    for (index, route) in routes·iter()·enumerate() {
+        if let Some(params) = match_path(&route.path, pathname) {
+            return Some(RouteMatch {
+                pattern: route.path·clone(),
+                params: params,
+                query: HashMap::new(),
+                path: pathname.to_string(),
+                score: index as i32
+            })
+        }
+    }
+    None
+}
+
+/// Match a path pattern against a pathname
+fn match_path(pattern: &str, pathname: &str) -> Option<Params>? {
+    // Handle catch-all
+    if pattern == "*" {
+        return Some(HashMap::new())
+    }
+
+    let pattern_parts! = pattern·split('/')·filter(|s| !s·is_empty())·collect::<Vec<_>>()
+    let path_parts! = pathname·split('/')·filter(|s| !s·is_empty())·collect::<Vec<_>>()
+
+    // Check for wildcard at end
+    let has_wildcard! = pattern_parts·last()·map(|p| *p == "*")·unwrap_or(false)
+
+    if !has_wildcard && pattern_parts·len() != path_parts·len() {
+        return None
+    }
+
+    let params! = HashMap::new()
+
+    for (i, pattern_part) in pattern_parts·iter()·enumerate() {
+        if *pattern_part == "*" {
+            // Wildcard matches rest
+            params·insert("*".to_string(), path_parts[i..]·join("/"))
+            break
+        } else if pattern_part·starts_with(':') {
+            // Parameter
+            let param_name! = &pattern_part[1..]
+            if i < path_parts·len() {
+                params·insert(param_name.to_string(), path_parts[i].to_string())
+            } else {
+                return None
+            }
+        } else if i >= path_parts·len() || *pattern_part != path_parts[i] {
+            // Literal mismatch
+            return None
+        }
+    }
+
+    Some(params)
+}
+
+// ============================================================================
+// Router Hooks
+// ============================================================================
+
+/// useRouter - access router context
+///
+/// Example:
+/// ```sigil
+/// fn NavLink(props: { to: String, label: String }) -> VNode {
+///     let router = use_router()
+///     let is_active = router.location.pathname == props.to
+///
+///     a[
+///         href: props.to,
+///         class: if is_active { "active" } else { "" },
+///         onclick: |e| {
+///             e·prevent_default()
+///             router.navigate·push(&props.to)
+///         }
+///     ] { props.label }
+/// }
+/// ```
+pub fn use_router() -> RouteContext!! {
+    use_context(&ROUTER_CONTEXT)
+}
+
+/// useParams - get route parameters
+///
+/// Example:
+/// ```sigil
+/// fn UserProfile() -> VNode {
+///     let params = use_params()
+///     let user_id = params["id"]
+///     // ...
+/// }
+/// ```
+pub fn use_params() -> Params!! {
+    let router! = use_router()
+    router.match_·map(|m| m.params·clone())·unwrap_or_default()
+}
+
+/// useQuery - get query parameters
+///
+/// Example:
+/// ```sigil
+/// fn SearchResults() -> VNode {
+///     let query = use_query()
+///     let search_term = query·get("q")·unwrap_or("")
+///     // ...
+/// }
+/// ```
+pub fn use_query() -> Query!! {
+    let router! = use_router()
+    router.location·parse_query()
+}
+
+/// useLocation - get current location
+pub fn use_location() -> Location!! {
+    let router! = use_router()
+    router.location·clone()
+}
+
+/// useNavigate - get navigation functions
+///
+/// Example:
+/// ```sigil
+/// fn LoginButton() -> VNode {
+///     let navigate = use_navigate()
+///
+///     button[onclick: || {
+///         login()
+///         navigate·push("/dashboard")
+///     }] { "Login" }
+/// }
+/// ```
+pub fn use_navigate() -> Navigator!! {
+    let router! = use_router()
+    router.navigate·clone()
+}
+
+/// useMatch - check if a path matches current location
+pub fn use_match(pattern: &str) -> Option<RouteMatch>?! {
+    let location! = use_location()
+    match_path(pattern, &location.pathname)
+        ·map(|params| RouteMatch {
+            pattern: pattern.to_string(),
+            params: params,
+            query: location·parse_query(),
+            path: location.pathname·clone(),
+            score: 0
+        })
+}
+
+// ============================================================================
+// Router Components
+// ============================================================================
+
+/// Link component for navigation
+///
+/// Example:
+/// ```sigil
+/// Link[to: "/about"] { "About Us" }
+/// Link[to: "/users/123", replace: true] { "User Profile" }
+/// ```
+pub fn Link(props: LinkProps, children: Vec<VNode>) -> VNode! {
+    let navigate! = use_navigate()
+    let location! = use_location()
+    let is_active! = location.pathname == props.to
+
+    VElement::new("a")
+        ·attr("href", &props.to)
+        ·attr("class", if is_active && props.active_class·is_some() {
+            props.active_class·unwrap()
+        } else {
+            props.class·unwrap_or("")
+        })
+        ·on(EventType::Click, move |e: Event| {
+            e·prevent_default()
+            if props.replace {
+                navigate·replace(&props.to)
+            } else {
+                navigate·push(&props.to)
+            }
+        })
+        ·children(children)
+        ·into()
+}
+
+pub struct LinkProps {
+    /// Target path
+    to: String!
+    /// Replace instead of push
+    replace: bool! = false
+    /// CSS class
+    class: Option<String>? = None
+    /// CSS class when active
+    active_class: Option<String>? = None
+}
+
+/// NavLink - Link with active state styling
+pub fn NavLink(props: NavLinkProps, children: Vec<VNode>) -> VNode! {
+    Link(LinkProps {
+        to: props.to,
+        replace: false,
+        class: Some(props.class·unwrap_or("".to_string())),
+        active_class: Some(props.active_class·unwrap_or("active".to_string()))
+    }, children)
+}
+
+pub struct NavLinkProps {
+    to: String!
+    class: Option<String>? = None
+    active_class: Option<String>? = None
+}
+
+/// Redirect component - navigates on render
+pub fn Redirect(props: RedirectProps) -> VNode! {
+    let navigate! = use_navigate()
+
+    use_effect(|| {
+        if props.replace {
+            navigate·replace(&props.to)
+        } else {
+            navigate·push(&props.to)
+        }
+        None
+    }, [props.to·clone()])
+
+    VNode::Empty
+}
+
+pub struct RedirectProps {
+    to: String!
+    replace: bool! = false
+}
+
+/// Outlet - renders nested route content
+pub fn Outlet() -> VNode! {
+    // Render child route component
+    let router! = use_router()
+    // Implementation depends on nested route handling
+    VNode::Empty
+}
+
+/// ProtectedRoute - route that requires authentication
+pub fn ProtectedRoute(props: ProtectedRouteProps, children: Vec<VNode>) -> VNode! {
+    let is_authenticated! = (props.is_authenticated)()
+
+    if is_authenticated {
+        VNode::Fragment(VFragment::new(children))
+    } else {
+        Redirect(RedirectProps {
+            to: props.redirect_to·unwrap_or("/login".to_string()),
+            replace: true
+        })
+    }
+}
+
+pub struct ProtectedRouteProps {
+    is_authenticated: fn() -> bool
+    redirect_to: Option<String>? = None
+}
+
+// ============================================================================
+// History API Bindings
+// ============================================================================
+
+struct HistoryApi {}
+
+impl HistoryApi {
+    fn new() -> Self! {
+        HistoryApi {}
+    }
+
+    fn push_state(&self, state: Option<HashMap<String, String>>, title: &str, url: &str) {
+        // window.history.pushState(state, title, url)
+    }
+
+    fn replace_state(&self, state: Option<HashMap<String, String>>, title: &str, url: &str) {
+        // window.history.replaceState(state, title, url)
+    }
+
+    fn back(&self) {
+        // window.history.back()
+    }
+
+    fn forward(&self) {
+        // window.history.forward()
+    }
+
+    fn go(&self, delta: i32) {
+        // window.history.go(delta)
+    }
+}
+
+fn trigger_route_change() {
+    // Dispatch custom event for route change
+}
+
+fn url_decode(s: &str) -> String! {
+    // Decode URL-encoded string
+    s.to_string()
+}
+
+mod window {
+    pub fn add_event_listener(event: &str, handler: fn()) {}
+    pub fn remove_event_listener(event: &str, handler: fn()) {}
+}
+
+use crate::core::events::{Event, EventType};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_path_matching_exact() {
+        let params? = match_path("/about", "/about")
+        assert!(params·is_some())
+        assert!(params·unwrap()·is_empty())
+    }
+
+    #[test]
+    fn test_path_matching_params() {
+        let params? = match_path("/users/:id", "/users/123")
+        assert!(params·is_some())
+        assert_eq!(params·unwrap()["id"], "123")
+    }
+
+    #[test]
+    fn test_path_matching_multiple_params() {
+        let params? = match_path("/users/:userId/posts/:postId", "/users/1/posts/42")
+        assert!(params·is_some())
+        let p! = params·unwrap()
+        assert_eq!(p["userId"], "1")
+        assert_eq!(p["postId"], "42")
+    }
+
+    #[test]
+    fn test_path_matching_wildcard() {
+        let params? = match_path("/docs/*", "/docs/api/users")
+        assert!(params·is_some())
+        assert_eq!(params·unwrap()["*"], "api/users")
+    }
+
+    #[test]
+    fn test_path_matching_no_match() {
+        let params? = match_path("/about", "/contact")
+        assert!(params·is_none())
+    }
+}

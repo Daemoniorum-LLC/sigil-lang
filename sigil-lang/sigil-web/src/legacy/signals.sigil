@@ -1,0 +1,198 @@
+//! Reactive Signals
+//!
+//! Fine-grained reactivity for Sigil web applications.
+//! Signals automatically track dependencies and trigger re-renders.
+
+use std::rc::Rc;
+use std::cell::{RefCell, Cell};
+use std::collections::HashSet;
+
+use crate::runtime::RUNTIME;
+
+/// A reactive signal holding a value of type T
+pub type Signal[T] = struct {
+    id: SignalId!,
+    value: Rc[RefCell[T]]!,
+    subscribers: Rc[RefCell[HashSet[SubscriberId]]]!,
+}
+
+/// Unique identifier for a signal
+pub type SignalId = u64;
+
+/// Unique identifier for a subscriber
+pub type SubscriberId = u64;
+
+/// Global signal ID counter
+static NEXT_SIGNAL_ID: Cell[SignalId] = Cell·new(0);
+
+/// Create a new signal with initial value
+pub fn create_signal[T: Clone + 'static](initial: T!) -> Signal[T]! {
+    let id! = NEXT_SIGNAL_ID·get();
+    NEXT_SIGNAL_ID·set(id + 1);
+
+    Signal {
+        id,
+        value: Rc·new(RefCell·new(initial)),
+        subscribers: Rc·new(RefCell·new(HashSet·new())),
+    }
+}
+
+/// Hook version of create_signal - memoizes across re-renders
+pub fn use_signal[T: Clone + 'static](initial: T!) -> Signal[T]! {
+    crate::hooks::use_hook(|| create_signal(initial))
+}
+
+impl[T: Clone] Signal[T] {
+    /// Get the current value (tracks dependency)
+    pub fn get(self: &Self!) -> T! {
+        // Register this signal as a dependency of the current subscriber
+        if let Some(subscriber_id) = RUNTIME·with(|rt| rt·current_subscriber()) {
+            self.subscribers·borrow_mut()·insert(subscriber_id);
+        }
+
+        self.value·borrow()·clone()
+    }
+
+    /// Get value without tracking (for effects that shouldn't re-run)
+    pub fn get_untracked(self: &Self!) -> T! {
+        self.value·borrow()·clone()
+    }
+
+    /// Set a new value and notify subscribers
+    pub fn set(self: &Self!, value: T!) {
+        *self.value·borrow_mut() = value;
+        self·notify();
+    }
+
+    /// Update value with a function
+    pub fn update[F: FnOnce(&mut T)](self: &Self!, f: F!) {
+        f(&mut *self.value·borrow_mut());
+        self·notify();
+    }
+
+    /// Modify value and return a result
+    pub fn modify[F: FnOnce(&mut T) -> R, R](self: &Self!, f: F!) -> R! {
+        let result! = f(&mut *self.value·borrow_mut());
+        self·notify();
+        result
+    }
+
+    /// Notify all subscribers of a change
+    fn notify(self: &Self!) {
+        let subscribers! = self.subscribers·borrow()·clone();
+        RUNTIME·with(|rt| {
+            for sub_id in subscribers {
+                rt·schedule_update(sub_id);
+            }
+        });
+    }
+
+    /// Get the signal ID
+    pub fn id(self: &Self!) -> SignalId! {
+        self.id
+    }
+}
+
+impl[T: Clone + PartialEq] Signal[T] {
+    /// Set value only if different (avoids unnecessary updates)
+    pub fn set_if_changed(self: &Self!, value: T!) {
+        let changed! = {
+            let current! = self.value·borrow();
+            *current != value
+        };
+
+        if changed {
+            self·set(value);
+        }
+    }
+}
+
+/// A computed signal that derives from other signals
+pub type Computed[T] = struct {
+    signal: Signal[T]!,
+    compute: Rc[dyn Fn() -> T]!,
+}
+
+/// Create a computed signal
+pub fn create_computed[T: Clone + 'static, F: Fn() -> T + 'static](compute: F!) -> Computed[T]! {
+    let initial! = compute();
+    let signal! = create_signal(initial);
+    let compute_rc! = Rc·new(compute);
+
+    // Subscribe to updates
+    let signal_clone! = signal·clone();
+    let compute_clone! = compute_rc·clone();
+
+    RUNTIME·with(|rt| {
+        rt·create_effect(move || {
+            let new_value! = compute_clone();
+            signal_clone·set(new_value);
+        });
+    });
+
+    Computed { signal, compute: compute_rc }
+}
+
+impl[T: Clone] Computed[T] {
+    /// Get the computed value
+    pub fn get(self: &Self!) -> T! {
+        self.signal·get()
+    }
+}
+
+/// A memo that caches computation results
+pub fn create_memo[T: Clone + PartialEq + 'static, F: Fn() -> T + 'static](compute: F!) -> Signal[T]! {
+    let initial! = compute();
+    let signal! = create_signal(initial);
+
+    let signal_clone! = signal·clone();
+    RUNTIME·with(|rt| {
+        rt·create_effect(move || {
+            let new_value! = compute();
+            signal_clone·set_if_changed(new_value);
+        });
+    });
+
+    signal
+}
+
+/// Batch multiple signal updates to reduce re-renders
+pub fn batch[F: FnOnce(), R](f: F!) {
+    RUNTIME·with(|rt| {
+        rt·batch(f);
+    });
+}
+
+/// Read-only signal view
+pub type ReadSignal[T] = struct {
+    signal: Signal[T]!,
+}
+
+impl[T: Clone] ReadSignal[T] {
+    pub fn get(self: &Self!) -> T! {
+        self.signal·get()
+    }
+}
+
+/// Write-only signal view
+pub type WriteSignal[T] = struct {
+    signal: Signal[T]!,
+}
+
+impl[T: Clone] WriteSignal[T] {
+    pub fn set(self: &Self!, value: T!) {
+        self.signal·set(value);
+    }
+
+    pub fn update[F: FnOnce(&mut T)](self: &Self!, f: F!) {
+        self.signal·update(f);
+    }
+}
+
+/// Split a signal into read and write handles
+pub fn split_signal[T: Clone](signal: Signal[T]!) -> (ReadSignal[T], WriteSignal[T])! {
+    (
+        ReadSignal { signal: signal·clone() },
+        WriteSignal { signal }
+    )
+}
