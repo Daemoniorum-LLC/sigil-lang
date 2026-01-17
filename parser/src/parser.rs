@@ -2713,11 +2713,21 @@ impl<'a> Parser<'a> {
                 };
 
                 self.expect_gt()?; // consume >
-                self.expect(Token::ColonColon)?; // must have :: after >
+                // must have :: or · after >
+                if !self.consume_if(&Token::ColonColon) && !self.consume_if(&Token::MiddleDot) {
+                    return match &self.current {
+                        Some((token, span)) => Err(ParseError::UnexpectedToken {
+                            expected: "ColonColon or MiddleDot".to_string(),
+                            found: token.clone(),
+                            span: *span,
+                        }),
+                        None => Err(ParseError::UnexpectedEof),
+                    };
+                }
 
                 // Parse the associated type/const path
                 let mut segments = vec![self.parse_path_segment()?];
-                while self.consume_if(&Token::ColonColon) {
+                while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
                     segments.push(self.parse_path_segment()?);
                 }
 
@@ -3225,6 +3235,7 @@ impl<'a> Parser<'a> {
                     // This distinguishes `HashMap<K, V>` (generic) from `x < y,` (comparison in match)
                     Some(Token::Comma) => is_type_like,
                     Some(Token::ColonColon) => true, // T::U path
+                    Some(Token::MiddleDot) => true,  // T·U path (Sigil-style)
                     Some(Token::Lt) => true,         // T<U> nested generic
                     Some(Token::LBracket) => true,   // T[U] bracket generic
                     // Evidentiality markers after type name: T?, T!, T~, T◊, T‽
