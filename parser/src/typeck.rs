@@ -3142,14 +3142,33 @@ impl TypeChecker {
         }
     }
 
+    /// Strip evidential wrappers and compare inner types structurally
+    fn types_match(a: &Type, b: &Type) -> bool {
+        // Strip evidential wrappers from both sides
+        let a_inner = match a {
+            Type::Evidential { inner, .. } => inner.as_ref(),
+            other => other,
+        };
+        let b_inner = match b {
+            Type::Evidential { inner, .. } => inner.as_ref(),
+            other => other,
+        };
+        // Recursively compare if still wrapped
+        if a_inner != a || b_inner != b {
+            return Self::types_match(a_inner, b_inner);
+        }
+        // Compare structurally
+        a == b
+    }
+
     /// Check if this is an allowed implicit reference coercion (&mut T → &T)
     fn is_reference_coercion(expected: &Type, actual: &Type) -> bool {
         match (expected, actual) {
-            // &mut T can coerce to &T
+            // &mut T can coerce to &T (but not vice versa)
             (Type::Ref { inner: exp_inner, mutable: false, .. },
              Type::Ref { inner: act_inner, mutable: true, .. }) => {
-                // Inner types must match
-                exp_inner == act_inner
+                // Inner types must match (handling evidential wrappers)
+                Self::types_match(exp_inner.as_ref(), act_inner.as_ref())
             }
             // Also handle through evidential wrappers
             (Type::Evidential { inner: exp, .. }, actual) => {
@@ -3162,21 +3181,36 @@ impl TypeChecker {
         }
     }
 
-    /// Check if this is an allowed implicit deref coercion (&Box<T> → &T, &Vec<T> → &[T])
+    /// Check if this is an allowed implicit deref coercion
+    /// Supports: &Box<T> → &T, &mut Box<T> → &mut T, &Vec<T> → &[T], &String → &str
     fn is_deref_coercion(expected: &Type, actual: &Type) -> bool {
         match (expected, actual) {
-            // &Box<T> can coerce to &T, &Vec<T> can coerce to &[T]
-            (Type::Ref { inner: exp_inner, .. },
-             Type::Ref { inner: act_inner, .. }) => {
+            // Reference coercions with mutability consistency
+            (Type::Ref { inner: exp_inner, mutable: exp_mut, .. },
+             Type::Ref { inner: act_inner, mutable: act_mut, .. }) => {
+                // For deref coercion, mutability must be consistent:
+                // &T → &T (ok), &mut T → &mut T (ok), &mut T → &T (ok, handled by is_reference_coercion)
+                // But &T → &mut T is NOT allowed
+                if *act_mut && !*exp_mut {
+                    // actual is &mut but expected is & - this is reborrow, not deref coercion
+                    return false;
+                }
+
                 if let Type::Named { name, generics } = act_inner.as_ref() {
+                    // &Box<T> → &T or &mut Box<T> → &mut T
                     if name == "Box" && generics.len() == 1 {
-                        // Check if Box's inner type matches expected
-                        return exp_inner.as_ref() == &generics[0];
+                        return Self::types_match(exp_inner.as_ref(), &generics[0]);
                     }
+                    // &Vec<T> → &[T]
                     if name == "Vec" && generics.len() == 1 {
-                        // &Vec<T> → &[T]: check if expected is slice of same element type
                         if let Type::Slice(slice_elem) = exp_inner.as_ref() {
-                            return slice_elem.as_ref() == &generics[0];
+                            return Self::types_match(slice_elem.as_ref(), &generics[0]);
+                        }
+                    }
+                    // &String → &str
+                    if name == "String" && generics.is_empty() {
+                        if matches!(exp_inner.as_ref(), Type::Str) {
+                            return true;
                         }
                     }
                 }
