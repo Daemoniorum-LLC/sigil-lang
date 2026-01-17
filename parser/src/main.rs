@@ -66,6 +66,7 @@ fn main() -> ExitCode {
         eprintln!("  lex <file>      Tokenize a Sigil file");
         eprintln!("  repl            Start interactive REPL");
         eprintln!("  lsp             Start LSP server (for IDE integration)");
+        eprintln!("  fmt <path>      Format source files (--check to verify only)");
         eprintln!();
         eprintln!("Project Commands:");
         eprintln!("  new <name>      Create a new Sigil project");
@@ -357,6 +358,152 @@ fn main() -> ExitCode {
         "lsp" => {
             eprintln!("Error: LSP server not available (compile with --features lsp)");
             ExitCode::from(1)
+        }
+        "fmt" => {
+            let check_only = args.iter().any(|a| a == "--check");
+            let stdin_mode = args.iter().any(|a| a == "--stdin");
+
+            // Find the path argument (skip flags)
+            let path_arg = args
+                .iter()
+                .skip(2)
+                .find(|a| !a.starts_with('-'));
+
+            let config = sigil_parser::fmt::FormatConfig::load();
+
+            if stdin_mode {
+                match sigil_parser::fmt::format_stdin(&config) {
+                    Ok(formatted) => {
+                        print!("{}", formatted);
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                        ExitCode::from(1)
+                    }
+                }
+            } else if path_arg.is_none() {
+                // Format current directory
+                let path = std::path::Path::new(".");
+                match sigil_parser::fmt::format_directory(path, &config, check_only) {
+                    Ok(result) => {
+                        if check_only {
+                            if result.unformatted.is_empty() && result.errors.is_empty() {
+                                println!("All {} files are properly formatted.", result.total);
+                                ExitCode::SUCCESS
+                            } else {
+                                for path in &result.unformatted {
+                                    println!("Would reformat: {}", path.display());
+                                }
+                                for (path, err) in &result.errors {
+                                    eprintln!("Error in {}: {}", path.display(), err);
+                                }
+                                ExitCode::from(1)
+                            }
+                        } else {
+                            if !result.changed.is_empty() {
+                                for path in &result.changed {
+                                    println!("Formatted: {}", path.display());
+                                }
+                            }
+                            for (path, err) in &result.errors {
+                                eprintln!("Error in {}: {}", path.display(), err);
+                            }
+                            println!(
+                                "Formatted {} of {} files.",
+                                result.changed.len(),
+                                result.total
+                            );
+                            if result.errors.is_empty() {
+                                ExitCode::SUCCESS
+                            } else {
+                                ExitCode::from(1)
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                        ExitCode::from(1)
+                    }
+                }
+            } else {
+                let path = std::path::Path::new(path_arg.unwrap());
+                if path.is_dir() {
+                    match sigil_parser::fmt::format_directory(path, &config, check_only) {
+                        Ok(result) => {
+                            if check_only {
+                                if result.unformatted.is_empty() && result.errors.is_empty() {
+                                    println!("All {} files are properly formatted.", result.total);
+                                    ExitCode::SUCCESS
+                                } else {
+                                    for path in &result.unformatted {
+                                        println!("Would reformat: {}", path.display());
+                                    }
+                                    for (path, err) in &result.errors {
+                                        eprintln!("Error in {}: {}", path.display(), err);
+                                    }
+                                    ExitCode::from(1)
+                                }
+                            } else {
+                                if !result.changed.is_empty() {
+                                    for path in &result.changed {
+                                        println!("Formatted: {}", path.display());
+                                    }
+                                }
+                                for (path, err) in &result.errors {
+                                    eprintln!("Error in {}: {}", path.display(), err);
+                                }
+                                println!(
+                                    "Formatted {} of {} files.",
+                                    result.changed.len(),
+                                    result.total
+                                );
+                                if result.errors.is_empty() {
+                                    ExitCode::SUCCESS
+                                } else {
+                                    ExitCode::from(1)
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error: {}", e);
+                            ExitCode::from(1)
+                        }
+                    }
+                } else {
+                    if check_only {
+                        match sigil_parser::fmt::check_file(path, &config) {
+                            Ok(true) => {
+                                println!("{}: OK", path.display());
+                                ExitCode::SUCCESS
+                            }
+                            Ok(false) => {
+                                println!("{}: needs formatting", path.display());
+                                ExitCode::from(1)
+                            }
+                            Err(e) => {
+                                eprintln!("Error: {}", e);
+                                ExitCode::from(1)
+                            }
+                        }
+                    } else {
+                        match sigil_parser::fmt::format_file(path, &config) {
+                            Ok(true) => {
+                                println!("Formatted: {}", path.display());
+                                ExitCode::SUCCESS
+                            }
+                            Ok(false) => {
+                                println!("{}: already formatted", path.display());
+                                ExitCode::SUCCESS
+                            }
+                            Err(e) => {
+                                eprintln!("Error: {}", e);
+                                ExitCode::from(1)
+                            }
+                        }
+                    }
+                }
+            }
         }
         "new" => {
             if args.len() < 3 {
