@@ -6933,6 +6933,561 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("zip expects array argument")),
                 }
             }
+            // ========== Java Streams-style methods ==========
+            (Value::Array(arr), "fold") | (Value::Array(arr), "reduce") => {
+                // fold(initial, accumulator_fn) -> reduces array to single value
+                // Like Java: stream.reduce(identity, accumulator)
+                if arg_values.len() != 2 {
+                    return Err(RuntimeError::new("fold expects 2 arguments (initial, accumulator)"));
+                }
+                let mut acc = arg_values[0].clone();
+                match &arg_values[1] {
+                    Value::Function(f) => {
+                        for val in arr.borrow().iter() {
+                            acc = self.call_function(f, vec![acc, val.clone()])?;
+                        }
+                        Ok(acc)
+                    }
+                    _ => Err(RuntimeError::new("fold expects function as second argument")),
+                }
+            }
+            (Value::Array(arr), "flat_map") | (Value::Array(arr), "flatMap") => {
+                // flatMap(fn) -> maps then flattens one level
+                // Like Java: stream.flatMap(x -> x.getItems().stream())
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("flat_map expects 1 argument (function)"));
+                }
+                match &arg_values[0] {
+                    Value::Function(f) => {
+                        let mut results = Vec::new();
+                        for val in arr.borrow().iter() {
+                            let mapped = self.call_function(f, vec![val.clone()])?;
+                            // Flatten if result is an array
+                            match mapped {
+                                Value::Array(inner) => {
+                                    results.extend(inner.borrow().iter().cloned());
+                                }
+                                other => results.push(other),
+                            }
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(results))))
+                    }
+                    _ => Err(RuntimeError::new("flat_map expects function argument")),
+                }
+            }
+            (Value::Array(arr), "flatten") => {
+                // flatten() -> flattens one level of nesting
+                let mut results = Vec::new();
+                for val in arr.borrow().iter() {
+                    match val {
+                        Value::Array(inner) => {
+                            results.extend(inner.borrow().iter().cloned());
+                        }
+                        other => results.push(other.clone()),
+                    }
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(results))))
+            }
+            (Value::Array(arr), "for_each") | (Value::Array(arr), "forEach") => {
+                // forEach(fn) -> applies fn to each element for side effects
+                // Like Java: stream.forEach(System.out::println)
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("for_each expects 1 argument (function)"));
+                }
+                match &arg_values[0] {
+                    Value::Function(f) => {
+                        for val in arr.borrow().iter() {
+                            self.call_function(f, vec![val.clone()])?;
+                        }
+                        Ok(Value::Null)
+                    }
+                    _ => Err(RuntimeError::new("for_each expects function argument")),
+                }
+            }
+            (Value::Array(arr), "peek") => {
+                // peek(fn) -> applies fn for side effects, returns original stream
+                // Like Java: stream.peek(x -> log.debug(x))
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("peek expects 1 argument (function)"));
+                }
+                match &arg_values[0] {
+                    Value::Function(f) => {
+                        for val in arr.borrow().iter() {
+                            self.call_function(f, vec![val.clone()])?;
+                        }
+                        Ok(Value::Array(arr.clone()))
+                    }
+                    _ => Err(RuntimeError::new("peek expects function argument")),
+                }
+            }
+            (Value::Array(arr), "sorted") | (Value::Array(arr), "sort") => {
+                // sorted() or sorted(comparator_fn) -> returns sorted array
+                // Like Java: stream.sorted() or stream.sorted(Comparator)
+                let mut v = arr.borrow().clone();
+                if arg_values.is_empty() {
+                    // Natural ordering
+                    v.sort_by(|a, b| self.compare_values(a, b, &None));
+                } else if let Some(Value::Function(f)) = arg_values.first() {
+                    // Custom comparator
+                    v.sort_by(|a, b| {
+                        match self.call_function(f, vec![a.clone(), b.clone()]) {
+                            Ok(Value::Int(n)) => {
+                                if n < 0 { std::cmp::Ordering::Less }
+                                else if n > 0 { std::cmp::Ordering::Greater }
+                                else { std::cmp::Ordering::Equal }
+                            }
+                            _ => std::cmp::Ordering::Equal,
+                        }
+                    });
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "distinct") => {
+                // distinct() -> removes duplicates, preserving order
+                // Like Java: stream.distinct()
+                let mut seen = Vec::new();
+                let mut results = Vec::new();
+                for val in arr.borrow().iter() {
+                    let is_dup = seen.iter().any(|v| self.values_equal(v, val));
+                    if !is_dup {
+                        seen.push(val.clone());
+                        results.push(val.clone());
+                    }
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(results))))
+            }
+            (Value::Array(arr), "limit") => {
+                // limit(n) -> takes first n elements (alias for take)
+                // Like Java: stream.limit(10)
+                let n = match arg_values.first() {
+                    Some(Value::Int(i)) => *i as usize,
+                    _ => return Err(RuntimeError::new("limit expects integer argument")),
+                };
+                let v: Vec<Value> = arr.borrow().iter().take(n).cloned().collect();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "take_while") | (Value::Array(arr), "takeWhile") => {
+                // takeWhile(predicate) -> takes elements while predicate is true
+                // Like Java: stream.takeWhile(x -> x < 10)
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("take_while expects 1 argument (predicate)"));
+                }
+                match &arg_values[0] {
+                    Value::Function(f) => {
+                        let mut results = Vec::new();
+                        for val in arr.borrow().iter() {
+                            let keep = self.call_function(f, vec![val.clone()])?;
+                            if matches!(keep, Value::Bool(true)) {
+                                results.push(val.clone());
+                            } else {
+                                break;
+                            }
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(results))))
+                    }
+                    _ => Err(RuntimeError::new("take_while expects function argument")),
+                }
+            }
+            (Value::Array(arr), "drop_while") | (Value::Array(arr), "dropWhile") | (Value::Array(arr), "skip_while") | (Value::Array(arr), "skipWhile") => {
+                // dropWhile(predicate) -> skips elements while predicate is true
+                // Like Java: stream.dropWhile(x -> x < 10)
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("drop_while expects 1 argument (predicate)"));
+                }
+                match &arg_values[0] {
+                    Value::Function(f) => {
+                        let mut results = Vec::new();
+                        let mut dropping = true;
+                        for val in arr.borrow().iter() {
+                            if dropping {
+                                let skip = self.call_function(f, vec![val.clone()])?;
+                                if !matches!(skip, Value::Bool(true)) {
+                                    dropping = false;
+                                    results.push(val.clone());
+                                }
+                            } else {
+                                results.push(val.clone());
+                            }
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(results))))
+                    }
+                    _ => Err(RuntimeError::new("drop_while expects function argument")),
+                }
+            }
+            (Value::Array(arr), "sum") => {
+                // sum() -> sums numeric elements
+                // Like Java: stream.mapToInt(x -> x).sum()
+                let mut total = 0i64;
+                let mut has_float = false;
+                let mut float_total = 0.0f64;
+                for val in arr.borrow().iter() {
+                    match val {
+                        Value::Int(n) => {
+                            if has_float {
+                                float_total += *n as f64;
+                            } else {
+                                total += n;
+                            }
+                        }
+                        Value::Float(n) => {
+                            if !has_float {
+                                float_total = total as f64;
+                                has_float = true;
+                            }
+                            float_total += n;
+                        }
+                        _ => {}
+                    }
+                }
+                if has_float {
+                    Ok(Value::Float(float_total))
+                } else {
+                    Ok(Value::Int(total))
+                }
+            }
+            (Value::Array(arr), "count") => {
+                // count() -> returns number of elements
+                // Like Java: stream.count()
+                Ok(Value::Int(arr.borrow().len() as i64))
+            }
+            (Value::Array(arr), "min") => {
+                // min() or min(comparator) -> returns minimum element as Option
+                // Like Java: stream.min()
+                let borrowed = arr.borrow();
+                if borrowed.is_empty() {
+                    return Ok(Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    });
+                }
+                let mut min_val = borrowed[0].clone();
+                for val in borrowed.iter().skip(1) {
+                    if self.compare_values(val, &min_val, &None) == std::cmp::Ordering::Less {
+                        min_val = val.clone();
+                    }
+                }
+                Ok(Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                    fields: Some(Rc::new(vec![min_val])),
+                })
+            }
+            (Value::Array(arr), "max") => {
+                // max() or max(comparator) -> returns maximum element as Option
+                // Like Java: stream.max()
+                let borrowed = arr.borrow();
+                if borrowed.is_empty() {
+                    return Ok(Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    });
+                }
+                let mut max_val = borrowed[0].clone();
+                for val in borrowed.iter().skip(1) {
+                    if self.compare_values(val, &max_val, &None) == std::cmp::Ordering::Greater {
+                        max_val = val.clone();
+                    }
+                }
+                Ok(Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                    fields: Some(Rc::new(vec![max_val])),
+                })
+            }
+            (Value::Array(arr), "average") | (Value::Array(arr), "avg") | (Value::Array(arr), "mean") => {
+                // average() -> returns average of numeric elements as Option<Float>
+                // Like Java: stream.mapToDouble(x -> x).average()
+                let borrowed = arr.borrow();
+                if borrowed.is_empty() {
+                    return Ok(Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    });
+                }
+                let mut sum = 0.0f64;
+                let mut count = 0usize;
+                for val in borrowed.iter() {
+                    match val {
+                        Value::Int(n) => { sum += *n as f64; count += 1; }
+                        Value::Float(n) => { sum += n; count += 1; }
+                        _ => {}
+                    }
+                }
+                if count == 0 {
+                    return Ok(Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    });
+                }
+                Ok(Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                    fields: Some(Rc::new(vec![Value::Float(sum / count as f64)])),
+                })
+            }
+            (Value::Array(arr), "group_by") | (Value::Array(arr), "groupBy") | (Value::Array(arr), "grouping_by") | (Value::Array(arr), "groupingBy") => {
+                // groupBy(key_fn) -> groups elements by key into a Map
+                // Like Java: stream.collect(Collectors.groupingBy(x -> x.getCategory()))
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("group_by expects 1 argument (key function)"));
+                }
+                match &arg_values[0] {
+                    Value::Function(f) => {
+                        let mut groups: HashMap<String, Vec<Value>> = HashMap::new();
+                        for val in arr.borrow().iter() {
+                            let key = self.call_function(f, vec![val.clone()])?;
+                            let key_str = format!("{}", key);
+                            groups.entry(key_str).or_default().push(val.clone());
+                        }
+                        let mut result_map: HashMap<String, Value> = HashMap::new();
+                        for (k, v) in groups {
+                            result_map.insert(k, Value::Array(Rc::new(RefCell::new(v))));
+                        }
+                        Ok(Value::Map(Rc::new(RefCell::new(result_map))))
+                    }
+                    _ => Err(RuntimeError::new("group_by expects function argument")),
+                }
+            }
+            (Value::Array(arr), "partition_by") | (Value::Array(arr), "partitionBy") | (Value::Array(arr), "partition") => {
+                // partitionBy(predicate) -> splits into (true_list, false_list) tuple
+                // Like Java: stream.collect(Collectors.partitioningBy(x -> x > 0))
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("partition expects 1 argument (predicate)"));
+                }
+                match &arg_values[0] {
+                    Value::Function(f) => {
+                        let mut true_list = Vec::new();
+                        let mut false_list = Vec::new();
+                        for val in arr.borrow().iter() {
+                            let result = self.call_function(f, vec![val.clone()])?;
+                            if matches!(result, Value::Bool(true)) {
+                                true_list.push(val.clone());
+                            } else {
+                                false_list.push(val.clone());
+                            }
+                        }
+                        Ok(Value::Tuple(Rc::new(vec![
+                            Value::Array(Rc::new(RefCell::new(true_list))),
+                            Value::Array(Rc::new(RefCell::new(false_list))),
+                        ])))
+                    }
+                    _ => Err(RuntimeError::new("partition expects function argument")),
+                }
+            }
+            (Value::Array(arr), "joining") | (Value::Array(arr), "join") => {
+                // join(separator) -> joins string elements with separator
+                // Like Java: stream.collect(Collectors.joining(", "))
+                let sep = match arg_values.first() {
+                    Some(Value::String(s)) => s.to_string(),
+                    Some(Value::Char(c)) => c.to_string(),
+                    _ => "".to_string(),
+                };
+                let parts: Vec<String> = arr.borrow().iter().map(|v| format!("{}", v)).collect();
+                Ok(Value::String(Rc::new(parts.join(&sep))))
+            }
+            (Value::Array(arr), "find_first") | (Value::Array(arr), "findFirst") => {
+                // findFirst() -> returns first element as Option
+                // Like Java: stream.findFirst()
+                match arr.borrow().first() {
+                    Some(v) => Ok(Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "Some".to_string(),
+                        fields: Some(Rc::new(vec![v.clone()])),
+                    }),
+                    None => Ok(Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    }),
+                }
+            }
+            (Value::Array(arr), "find_last") | (Value::Array(arr), "findLast") => {
+                // findLast() -> returns last element as Option
+                match arr.borrow().last() {
+                    Some(v) => Ok(Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "Some".to_string(),
+                        fields: Some(Rc::new(vec![v.clone()])),
+                    }),
+                    None => Ok(Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    }),
+                }
+            }
+            (Value::Array(arr), "none_match") | (Value::Array(arr), "noneMatch") | (Value::Array(arr), "none") => {
+                // noneMatch(predicate) -> true if no elements match
+                // Like Java: stream.noneMatch(x -> x < 0)
+                if arg_values.is_empty() {
+                    // No predicate - check if all elements are falsy
+                    for val in arr.borrow().iter() {
+                        let is_truthy = match val {
+                            Value::Bool(true) => true,
+                            Value::Int(n) if *n != 0 => true,
+                            _ => false,
+                        };
+                        if is_truthy {
+                            return Ok(Value::Bool(false));
+                        }
+                    }
+                    return Ok(Value::Bool(true));
+                }
+                match &arg_values[0] {
+                    Value::Function(f) => {
+                        for val in arr.borrow().iter() {
+                            let result = self.call_function(f, vec![val.clone()])?;
+                            if matches!(result, Value::Bool(true)) {
+                                return Ok(Value::Bool(false));
+                            }
+                        }
+                        Ok(Value::Bool(true))
+                    }
+                    _ => Err(RuntimeError::new("none_match expects function argument")),
+                }
+            }
+            (Value::Array(arr), "collect") | (Value::Array(arr), "to_vec") | (Value::Array(arr), "toList") => {
+                // collect() / toList() -> returns a new array (useful after lazy ops)
+                Ok(Value::Array(Rc::new(RefCell::new(arr.borrow().clone()))))
+            }
+            (Value::Array(arr), "to_set") | (Value::Array(arr), "toSet") => {
+                // toSet() -> collects unique elements into a HashSet
+                let mut set = HashSet::new();
+                for val in arr.borrow().iter() {
+                    set.insert(format!("{}", val));
+                }
+                Ok(Value::Set(Rc::new(RefCell::new(set))))
+            }
+            (Value::Array(arr), "to_map") | (Value::Array(arr), "toMap") => {
+                // toMap(key_fn, value_fn) -> collects into a Map
+                // Like Java: stream.collect(Collectors.toMap(k -> k.getId(), v -> v.getName()))
+                if arg_values.len() < 2 {
+                    return Err(RuntimeError::new("to_map expects 2 arguments (key_fn, value_fn)"));
+                }
+                match (&arg_values[0], &arg_values[1]) {
+                    (Value::Function(key_fn), Value::Function(val_fn)) => {
+                        let mut result_map: HashMap<String, Value> = HashMap::new();
+                        for val in arr.borrow().iter() {
+                            let key = self.call_function(key_fn, vec![val.clone()])?;
+                            let value = self.call_function(val_fn, vec![val.clone()])?;
+                            result_map.insert(format!("{}", key), value);
+                        }
+                        Ok(Value::Map(Rc::new(RefCell::new(result_map))))
+                    }
+                    _ => Err(RuntimeError::new("to_map expects function arguments")),
+                }
+            }
+            (Value::Array(arr), "chunk") | (Value::Array(arr), "chunked") => {
+                // chunk(size) -> splits into chunks of given size
+                let size = match arg_values.first() {
+                    Some(Value::Int(n)) if *n > 0 => *n as usize,
+                    _ => return Err(RuntimeError::new("chunk expects positive integer")),
+                };
+                let chunks: Vec<Value> = arr
+                    .borrow()
+                    .chunks(size)
+                    .map(|chunk| Value::Array(Rc::new(RefCell::new(chunk.to_vec()))))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(chunks))))
+            }
+            (Value::Array(arr), "windowed") | (Value::Array(arr), "windows") | (Value::Array(arr), "sliding") => {
+                // windowed(size) -> returns sliding windows of given size
+                let size = match arg_values.first() {
+                    Some(Value::Int(n)) if *n > 0 => *n as usize,
+                    _ => return Err(RuntimeError::new("windowed expects positive integer")),
+                };
+                let borrowed = arr.borrow();
+                if borrowed.len() < size {
+                    return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                }
+                let windows: Vec<Value> = borrowed
+                    .windows(size)
+                    .map(|w| Value::Array(Rc::new(RefCell::new(w.to_vec()))))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(windows))))
+            }
+            (Value::Array(arr), "interleave") => {
+                // interleave(other) -> alternates elements from both arrays
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("interleave expects 1 argument"));
+                }
+                match &arg_values[0] {
+                    Value::Array(other) => {
+                        let a = arr.borrow();
+                        let b = other.borrow();
+                        let mut result = Vec::new();
+                        let max_len = a.len().max(b.len());
+                        for i in 0..max_len {
+                            if i < a.len() { result.push(a[i].clone()); }
+                            if i < b.len() { result.push(b[i].clone()); }
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(result))))
+                    }
+                    _ => Err(RuntimeError::new("interleave expects array argument")),
+                }
+            }
+            (Value::Array(arr), "reversed") => {
+                // reversed() -> returns reversed copy (alias for reverse)
+                let mut v = arr.borrow().clone();
+                v.reverse();
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "shuffled") | (Value::Array(arr), "shuffle") => {
+                // shuffled() -> returns randomly shuffled copy
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                use std::time::{SystemTime, UNIX_EPOCH};
+
+                let mut v = arr.borrow().clone();
+                // Simple Fisher-Yates shuffle with time-based seed
+                let seed = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0);
+                let mut hasher = DefaultHasher::new();
+                seed.hash(&mut hasher);
+                let mut rng_state = hasher.finish();
+
+                for i in (1..v.len()).rev() {
+                    rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    let j = (rng_state as usize) % (i + 1);
+                    v.swap(i, j);
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "is_empty") | (Value::Array(arr), "isEmpty") => {
+                Ok(Value::Bool(arr.borrow().is_empty()))
+            }
+            (Value::Array(arr), "get") => {
+                // get(index) -> returns element at index as Option, supports negative indices
+                let idx = match arg_values.first() {
+                    Some(Value::Int(i)) => *i,
+                    _ => return Err(RuntimeError::new("get expects integer index")),
+                };
+                let borrowed = arr.borrow();
+                let actual_idx = if idx < 0 {
+                    (borrowed.len() as i64 + idx) as usize
+                } else {
+                    idx as usize
+                };
+                match borrowed.get(actual_idx) {
+                    Some(v) => Ok(Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "Some".to_string(),
+                        fields: Some(Rc::new(vec![v.clone()])),
+                    }),
+                    None => Ok(Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    }),
+                }
+            }
+            // ========== End Java Streams-style methods ==========
             (Value::String(s), "len") => Ok(Value::Int(s.len() as i64)),
             (Value::String(s), "chars") => {
                 let chars: Vec<Value> = s.chars().map(Value::Char).collect();
