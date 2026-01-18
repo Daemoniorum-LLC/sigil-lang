@@ -1,6 +1,6 @@
 [package]
 name = "sigil-parser"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Parser and native compiler for the Sigil programming language - a language that tracks data trust at the type level"
 authors = ["Lilith Crook <lilith@daemoniorum.com>"]
