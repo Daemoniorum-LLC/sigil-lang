@@ -23,7 +23,8 @@ pub mod llvm {
     use std::collections::HashMap;
     use std::path::Path;
 
-    use crate::ast::{self, BinOp, Expr, Item, Literal, UnaryOp};
+    use crate::ast::{self, BinOp, Expr, ExternBlock, ExternFunction, ExternItem, Item, Literal, TypeExpr, UnaryOp};
+    use crate::ffi::ctypes::CType;
     use crate::optimize::{OptLevel, Optimizer};
     use crate::parser::Parser;
 
@@ -64,6 +65,21 @@ pub mod llvm {
         pub type_params: Vec<String>,
     }
 
+    /// Information about an extern "C" function
+    #[derive(Clone)]
+    pub struct ExternFnSig<'ctx> {
+        /// Function name
+        pub name: String,
+        /// Parameter types
+        pub param_types: Vec<BasicTypeEnum<'ctx>>,
+        /// Return type (None for void)
+        pub return_type: Option<BasicTypeEnum<'ctx>>,
+        /// Whether the function is variadic
+        pub variadic: bool,
+        /// The LLVM function value
+        pub fn_value: FunctionValue<'ctx>,
+    }
+
     /// LLVM-based compiler for Sigil
     pub struct LlvmCompiler<'ctx> {
         context: &'ctx Context,
@@ -92,6 +108,8 @@ pub mod llvm {
         string_counter: std::cell::Cell<u32>,
         /// Evidential wrapper types: maps base type name to {tag: i8, value: T} struct
         evidential_types: HashMap<String, StructType<'ctx>>,
+        /// Extern function registry for FFI
+        extern_functions: HashMap<String, ExternFnSig<'ctx>>,
     }
 
     // ============================================
@@ -377,6 +395,7 @@ pub mod llvm {
                 impl_methods: HashMap::new(),
                 string_counter: std::cell::Cell::new(0),
                 evidential_types: HashMap::new(),
+                extern_functions: HashMap::new(),
             })
         }
 
@@ -408,7 +427,7 @@ pub mod llvm {
                 }
             }
 
-            // Second pass: process modules and declare all functions
+            // Second pass: process modules, extern blocks, and declare all functions
             for spanned_item in &optimized.items {
                 match &spanned_item.node {
                     Item::Function(func) => {
@@ -419,6 +438,9 @@ pub mod llvm {
                     }
                     Item::Use(use_decl) => {
                         self.process_use(use_decl)?;
+                    }
+                    Item::ExternBlock(extern_block) => {
+                        self.declare_extern_block(extern_block)?;
                     }
                     _ => {}
                 }
@@ -728,6 +750,181 @@ pub mod llvm {
                 i64_type.into(), i64_type.into(), ptr_type.into(), i64_type.into()
             ], false);
             self.module.add_function("sigil_cuda_launch_kernel_2d", cuda_launch_2d_type, None);
+        }
+
+        /// Declare an extern block (FFI declarations)
+        fn declare_extern_block(&mut self, extern_block: &ExternBlock) -> Result<(), String> {
+            // Currently only "C" ABI is supported
+            if extern_block.abi != "C" && extern_block.abi != "c" {
+                return Err(format!(
+                    "Unsupported ABI: {}. Only \"C\" is supported.",
+                    extern_block.abi
+                ));
+            }
+
+            for item in &extern_block.items {
+                match item {
+                    ExternItem::Function(func) => {
+                        self.declare_extern_function(func)?;
+                    }
+                    ExternItem::Static(stat) => {
+                        // TODO: Implement extern statics
+                        eprintln!(
+                            "Warning: extern static '{}' not yet implemented in LLVM backend",
+                            stat.name.name
+                        );
+                    }
+                }
+            }
+
+            Ok(())
+        }
+
+        /// Declare an extern "C" function
+        fn declare_extern_function(&mut self, func: &ExternFunction) -> Result<(), String> {
+            let name = &func.name.name;
+
+            // Build parameter types
+            let mut param_types: Vec<BasicMetadataTypeEnum> = Vec::new();
+            let mut param_basic_types: Vec<BasicTypeEnum> = Vec::new();
+
+            let empty_subs = HashMap::new();
+            for param in &func.params {
+                let llvm_type = self.type_expr_to_llvm(&param.ty, &empty_subs);
+                param_types.push(llvm_type.into());
+                param_basic_types.push(llvm_type);
+            }
+
+            // Determine return type
+            let (fn_type, return_type) = if let Some(ref ret_ty) = func.return_type {
+                let ret_llvm_type = self.type_expr_to_llvm(ret_ty, &empty_subs);
+                (
+                    ret_llvm_type.fn_type(&param_types, func.variadic),
+                    Some(ret_llvm_type),
+                )
+            } else {
+                // void return
+                let void_type = self.context.void_type();
+                (void_type.fn_type(&param_types, func.variadic), None)
+            };
+
+            // Declare the function with external linkage
+            let fn_value = self.module.add_function(
+                name,
+                fn_type,
+                Some(inkwell::module::Linkage::External),
+            );
+
+            // Store in extern_functions registry
+            self.extern_functions.insert(
+                name.clone(),
+                ExternFnSig {
+                    name: name.clone(),
+                    param_types: param_basic_types,
+                    return_type,
+                    variadic: func.variadic,
+                    fn_value,
+                },
+            );
+
+            // Also store in functions map for general lookup
+            self.functions.insert(name.clone(), fn_value);
+
+            Ok(())
+        }
+
+        /// Convert a Sigil type expression to LLVM type for FFI
+        fn ffi_type_to_llvm(&self, ty: &TypeExpr) -> Result<BasicTypeEnum<'ctx>, String> {
+            match ty {
+                TypeExpr::Path(path) => {
+                    let name = path
+                        .segments
+                        .last()
+                        .map(|s| s.ident.name.as_str())
+                        .unwrap_or("");
+
+                    // Check if it's a C type
+                    if let Some(ctype) = CType::from_name(name) {
+                        return Ok(match ctype {
+                            CType::Void => self.context.i64_type().into(), // void as i64 placeholder
+                            CType::Char | CType::SChar | CType::UChar | CType::Int8 | CType::UInt8 => {
+                                self.context.i8_type().into()
+                            }
+                            CType::Short | CType::UShort | CType::Int16 | CType::UInt16 => {
+                                self.context.i16_type().into()
+                            }
+                            CType::Int | CType::UInt | CType::Int32 | CType::UInt32 => {
+                                self.context.i32_type().into()
+                            }
+                            CType::Long | CType::ULong | CType::LongLong | CType::ULongLong
+                            | CType::Size | CType::SSize | CType::PtrDiff | CType::Int64 | CType::UInt64 => {
+                                self.context.i64_type().into()
+                            }
+                            CType::Float => self.context.f32_type().into(),
+                            CType::Double => self.context.f64_type().into(),
+                        });
+                    }
+
+                    // Check Sigil native types
+                    match name {
+                        "i8" | "u8" => Ok(self.context.i8_type().into()),
+                        "i16" | "u16" => Ok(self.context.i16_type().into()),
+                        "i32" | "u32" | "int" => Ok(self.context.i32_type().into()),
+                        "i64" | "u64" => Ok(self.context.i64_type().into()),
+                        "f32" | "float" => Ok(self.context.f32_type().into()),
+                        "f64" | "double" => Ok(self.context.f64_type().into()),
+                        "bool" => Ok(self.context.bool_type().into()),
+                        "isize" | "usize" => Ok(self.context.i64_type().into()), // 64-bit platform
+                        _ => {
+                            // Check if it's a known struct type
+                            if self.struct_types.contains_key(name) {
+                                Ok(self.context.i64_type().into()) // Structs are passed as pointers (i64)
+                            } else {
+                                // Default to i64 for unknown types
+                                Ok(self.context.i64_type().into())
+                            }
+                        }
+                    }
+                }
+                TypeExpr::Pointer { .. } => {
+                    // Use i64 as opaque pointer type (consistent with codebase)
+                    Ok(self.context.i64_type().into())
+                }
+                TypeExpr::Reference { .. } => {
+                    // References are also pointers -> i64
+                    Ok(self.context.i64_type().into())
+                }
+                TypeExpr::Array { element, size } => {
+                    // Fixed-size arrays
+                    let elem_type = self.ffi_type_to_llvm(element)?;
+                    // Try to evaluate size as constant
+                    if let Expr::Literal(Literal::Int { value, .. }) = &**size {
+                        if let Ok(size_val) = value.parse::<u32>() {
+                            let array_type = elem_type.array_type(size_val);
+                            return Ok(array_type.into());
+                        }
+                    }
+                    // Default to i64 for dynamic arrays (pointer)
+                    Ok(self.context.i64_type().into())
+                }
+                TypeExpr::Tuple(elements) => {
+                    if elements.is_empty() {
+                        // Unit type () - use i64
+                        Ok(self.context.i64_type().into())
+                    } else {
+                        // Tuples are passed as structs/pointers
+                        Ok(self.context.i64_type().into())
+                    }
+                }
+                TypeExpr::Function { .. } => {
+                    // Function pointers -> i64
+                    Ok(self.context.i64_type().into())
+                }
+                _ => {
+                    // Default fallback to i64
+                    Ok(self.context.i64_type().into())
+                }
+            }
         }
 
         /// Register a struct type in the type registry
