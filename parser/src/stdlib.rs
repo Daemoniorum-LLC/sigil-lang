@@ -604,6 +604,11 @@ fn register_core(interp: &mut Interpreter) {
 
     // Result::Ok - create Ok variant
     define(interp, "Result·Ok", Some(1), |_, args| {
+        // Debug: trace what Result·Ok is wrapping
+        eprintln!("DEBUG Result·Ok wrapping: {:?}", std::mem::discriminant(&args[0]));
+        if let Value::Struct { name, fields } = &args[0] {
+            eprintln!("  Struct: name='{}', fields={:?}", name, fields.borrow().keys().collect::<Vec<_>>());
+        }
         Ok(Value::Variant {
             enum_name: "Result".to_string(),
             variant_name: "Ok".to_string(),
@@ -5577,6 +5582,14 @@ fn register_concurrency(interp: &mut Interpreter) {
             }
             _ => Err(RuntimeError::new("std::thread::spawn requires a closure")),
         }
+    });
+
+    // std::thread::available_parallelism - get number of CPU threads
+    define(interp, "std·thread·available_parallelism", Some(0), |_, _| {
+        let cpus = std::thread::available_parallelism()
+            .map(|n| n.get() as i64)
+            .unwrap_or(1);
+        Ok(Value::Int(cpus))
     });
 
     // thread_join - placeholder for join semantics

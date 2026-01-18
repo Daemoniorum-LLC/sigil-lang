@@ -972,6 +972,10 @@ impl Interpreter {
     /// Looks for a workspace config (one with [workspace] section and members)
     pub fn discover_project(&mut self, source_dir: &str) -> Result<(), RuntimeError> {
         let mut current = PathBuf::from(source_dir);
+        // Canonicalize for correct path resolution
+        if let Ok(canonical) = current.canonicalize() {
+            current = canonical;
+        }
 
         // Walk up to find Sigil.toml or Grimoire.toml with [workspace] section
         loop {
@@ -2595,41 +2599,46 @@ impl Interpreter {
                         {
                             // Load from current source directory
                             if let Some(source_dir) = &self.current_source_dir.clone() {
-                                // Build path: skip "tome", take next segment as module file
-                                if prefix.len() >= 2 {
-                                    let module_name = &prefix[1];
-                                    let module_file = format!("{}/{}.sigil", source_dir, module_name);
-                                    crate::sigil_debug!(
-                                        "DEBUG process_use_tree: loading tome module '{}' from {}",
-                                        module_name,
-                                        module_file
-                                    );
-                                    // Skip if already loaded (prevent infinite recursion)
-                                    if self.loaded_crates.contains(&module_file) {
-                                        // Already loaded, skip
-                                    } else if std::path::Path::new(&module_file).exists() {
-                                        // Mark as loaded before processing (handle circular deps)
-                                        self.loaded_crates.insert(module_file.clone());
+                                // Determine module name:
+                                // - invoke tome·module·Item -> prefix=["tome","module"], name=Item -> module_name = prefix[1]
+                                // - invoke tome·module -> prefix=["tome"], name=module -> module_name = name (simple_name)
+                                let module_name = if prefix.len() >= 2 {
+                                    prefix[1].clone()
+                                } else {
+                                    // `invoke tome·analyze;` case: prefix=["tome"], simple_name="analyze"
+                                    simple_name.clone()
+                                };
+                                let module_file = format!("{}/{}.sigil", source_dir, module_name);
+                                crate::sigil_debug!(
+                                    "DEBUG process_use_tree: loading tome module '{}' from {}",
+                                    module_name,
+                                    module_file
+                                );
+                                // Skip if already loaded (prevent infinite recursion)
+                                if self.loaded_crates.contains(&module_file) {
+                                    // Already loaded, skip
+                                } else if std::path::Path::new(&module_file).exists() {
+                                    // Mark as loaded before processing (handle circular deps)
+                                    self.loaded_crates.insert(module_file.clone());
 
-                                        // Read and parse the module file
-                                        if let Ok(source) = std::fs::read_to_string(&module_file) {
-                                            // Save current module context
-                                            let prev_module = self.current_module.clone();
+                                    // Read and parse the module file
+                                    if let Ok(source) = std::fs::read_to_string(&module_file) {
+                                        // Save current module context
+                                        let prev_module = self.current_module.clone();
 
-                                            // Set module context for the tome module
-                                            // This ensures impl methods are registered correctly
-                                            self.current_module = Some(module_name.clone());
+                                        // Set module context for the tome module
+                                        // This ensures impl methods are registered correctly
+                                        self.current_module = Some(module_name.clone());
 
-                                            let mut parser = crate::Parser::new(&source);
-                                            if let Ok(parsed_file) = parser.parse_file() {
-                                                for item in &parsed_file.items {
-                                                    let _ = self.execute_item(&item.node);
-                                                }
+                                        let mut parser = crate::Parser::new(&source);
+                                        if let Ok(parsed_file) = parser.parse_file() {
+                                            for item in &parsed_file.items {
+                                                let _ = self.execute_item(&item.node);
                                             }
-
-                                            // Restore previous module context
-                                            self.current_module = prev_module;
                                         }
+
+                                        // Restore previous module context
+                                        self.current_module = prev_module;
                                     }
                                 }
                             }
@@ -3561,6 +3570,23 @@ impl Interpreter {
                 // Actually, let's just let eval_call handle it via call_function_by_name
             }
 
+            // Try module·function lookup - first try the direct qualified name (e.g., "analyze·execute")
+            // This handles module function calls like `analyze·execute(...)` when module was imported via `invoke tome·analyze`
+            if path.segments.len() == 2 {
+                // Try direct lookup (module was registered with just module name prefix)
+                if let Some(val) = self.globals.borrow().get(&full_name) {
+                    return Ok(val);
+                }
+                // Also try with current_module crate prefix
+                if let Some(ref current_mod) = self.current_module {
+                    let crate_name = current_mod.split('·').next().unwrap_or(current_mod);
+                    let module_qualified = format!("{}·{}", crate_name, full_name);
+                    if let Some(val) = self.globals.borrow().get(&module_qualified) {
+                        return Ok(val);
+                    }
+                }
+            }
+
             // Fallback for unknown types from external crates:
             if path.segments.len() == 2 {
                 let type_name = &path.segments[0].ident.name;
@@ -4339,6 +4365,17 @@ impl Interpreter {
             }
 
             // Check variant constructors
+            // Debug: trace variant lookup for Command
+            if qualified_name.contains("Command") || qualified_name.contains("Analyze") {
+                eprintln!("DEBUG variant lookup: qualified_name='{}'", qualified_name);
+                eprintln!("  found in variant_constructors: {}", self.variant_constructors.contains_key(&qualified_name));
+                // Show registered variants with Command in name
+                for (k, v) in &self.variant_constructors {
+                    if k.contains("Command") {
+                        eprintln!("  registered: '{}' -> {:?}", k, v);
+                    }
+                }
+            }
             if let Some((enum_name, variant_name, arity)) =
                 self.variant_constructors.get(&qualified_name).cloned()
             {
@@ -4363,12 +4400,17 @@ impl Interpreter {
                         fields: None,
                     });
                 } else {
-                    if enum_name == "Item" {
-                        crate::sigil_debug!(
-                            "DEBUG creating Item::{} variant with {} fields",
+                    // Debug: trace variant creation for Result and Command
+                    if enum_name == "Command" || enum_name == "Result" {
+                        eprintln!(
+                            "DEBUG creating {}::{} variant with {} args",
+                            enum_name,
                             variant_name,
                             arg_values.len()
                         );
+                        for (i, v) in arg_values.iter().enumerate() {
+                            eprintln!("  arg[{}]: {}", i, self.format_value(v));
+                        }
                     }
                     return Ok(Value::Variant {
                         enum_name,
@@ -4652,7 +4694,21 @@ impl Interpreter {
             None
         };
 
+        // Debug: trace function lookup for Result
+        if let Expr::Path(path) = func_expr {
+            let path_str = path.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("·");
+            if path_str.contains("Result") {
+                eprintln!("DEBUG func lookup: path='{}', looking up in globals...", path_str);
+            }
+        }
         let func = self.evaluate(func_expr)?;
+        // Debug: trace what we got
+        if let Expr::Path(path) = func_expr {
+            let path_str = path.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("·");
+            if path_str.contains("Result") {
+                eprintln!("DEBUG func lookup result: path='{}', value={}", path_str, self.format_value(&func));
+            }
+        }
 
         // Track &mut path arguments for sync-back after function call
         // This enables proper mutable reference semantics where modifications persist
@@ -5654,14 +5710,24 @@ impl Interpreter {
         }
 
         // Debug: show what value we're trying to match with discriminant
-        crate::sigil_debug!(
+        eprintln!(
             "DEBUG No matching pattern for value: {} (discriminant: {:?})",
             self.format_value(&value),
             std::mem::discriminant(&value)
         );
+        // Show more details if it's a Struct or Variant
+        match &value {
+            Value::Struct { name, fields } => {
+                eprintln!("  Struct: name='{}', fields={:?}", name, fields.borrow().keys().collect::<Vec<_>>());
+            }
+            Value::Variant { enum_name, variant_name, fields } => {
+                eprintln!("  Variant: {}::{}, fields={:?}", enum_name, variant_name, fields);
+            }
+            _ => {}
+        }
         // Also show the arms
         for (i, arm) in arms.iter().enumerate() {
-            crate::sigil_debug!("DEBUG   arm {}: {:?}", i, arm.pattern);
+            eprintln!("DEBUG   arm {}: {:?}", i, arm.pattern);
         }
         Err(RuntimeError::new(format!(
             "No matching pattern for {}",
