@@ -1,20 +1,26 @@
 # Sigil Programming Language
 
-A polysynthetic programming language with evidentiality types, morpheme operators, and native performance through LLVM. Now with comprehensive **Agent Infrastructure** for building intelligent, self-aware systems.
+A polysynthetic programming language with evidentiality types, morpheme operators, and LLVM compilation. Includes agent infrastructure libraries for building AI systems.
 
-## v1.0.0 - Production Ready
+## v0.2.0
 
-This release introduces a complete suite of agent frameworks and memory systems:
+This release includes:
 
-- **🛡️ Aegis** - Security & safety framework
-- **✨ Anima** - Soul & consciousness modeling
-- **🔗 Commune** - Multi-agent communication
-- **🤝 Covenant** - Collaborative protocols
-- **⚙️ Daemon** - Background processes
-- **🧠 Gnosis** - Knowledge & learning
-- **🔮 Omen** - Planning & prediction
-- **👁️ Oracle** - Explainable decisions
-- **💾 Engram** - Advanced memory system (episodic, semantic, procedural)
+- Native symbol vocabulary (`≔`, `→`, `λ`, `σ`, `θ`, middledot syntax)
+- SIMD backend (AVX-512 F32x16 operations)
+- CUDA backend (GPU compute via `--cuda` flag)
+- LSP server, formatter, linter, package manager
+- HTTP and WebSocket clients
+- Agent infrastructure libraries:
+  - **Aegis** - Security & safety
+  - **Anima** - State modeling
+  - **Commune** - Multi-agent communication
+  - **Covenant** - Collaborative protocols
+  - **Daemon** - Background processes
+  - **Gnosis** - Knowledge systems
+  - **Omen** - Planning & prediction
+  - **Oracle** - Decision explanation
+  - **Engram** - Memory (episodic, semantic, procedural)
 
 ## Execution Backends
 
@@ -80,7 +86,7 @@ cargo build --release
 ## Quick Start
 
 ```bash
-# Run a program
+# Run a program (interpreter)
 sigil run hello.sigil
 
 # Type check
@@ -89,17 +95,20 @@ sigil check hello.sigil
 # Interactive REPL
 sigil repl
 
-# JIT compile (faster)
+# JIT compile (Cranelift)
 sigil jit program.sigil
 
-# Native compile (fastest)
+# Native compile (LLVM)
 sigil compile program.sigil -o program
 ./program
+
+# With CUDA support
+sigil compile program.sigil -o program --cuda
 ```
 
 ## Building with LLVM Backend
 
-For production performance, build with LLVM support:
+To enable native compilation, build with LLVM support:
 
 ```bash
 # Install LLVM 18 development headers
@@ -128,7 +137,7 @@ fn main() {
 
 ### Morpheme Operators
 
-Transform data with elegant pipeline syntax:
+Pipeline syntax for data transformation:
 
 ```sigil
 let result = data
@@ -137,8 +146,6 @@ let result = data
     |sigma            // Sort ascending
     |rho+             // Reduce: sum all
 ```
-
-Provides significant code reduction in real-world applications.
 
 ### Evidentiality Types
 

@@ -2,9 +2,9 @@
 
 ## The Canonical Compiler
 
-The **Rust-based Sigil compiler** at `parser/` is the canonical, production-ready compiler.
+The **Rust-based Sigil compiler** at `parser/` is the canonical compiler.
 
-**Test Results**: 233/233 P0 tests passing (100% pass rate) ✅🔥
+**Test Results**: 414/414 P0 tests passing (100%)
 
 ```bash
 cd parser
@@ -20,11 +20,10 @@ cd ../jormungandr/tests
 
 ## Why Rust Compiler?
 
-The Rust compiler is:
-- ✅ **PERFECT** - 100% test pass rate on bootstrap-critical tests (233/233)
-- ✅ **Complete** - Full lexer, parser, interpreter, JIT (Cranelift), and LLVM backend
-- ✅ **Optimized** - Days of optimization work, outperforms hand-written Rust in some cases
-- ✅ **Maintained** - 3.1MB of production code with full stdlib including Rc<T>, Cell<T>, Drop
+The Rust compiler:
+- 100% test pass rate (414/414 P0 tests)
+- Full lexer, parser, interpreter, JIT (Cranelift), and LLVM backend
+- Includes stdlib with Rc<T>, Cell<T>, Drop, HTTP, WebSocket
 
 ## Commands
 
@@ -60,7 +59,7 @@ The Rust compiler is:
 
 ## Test Suite
 
-The test suite is located at `jormungandr/tests/` with 233 bootstrap-critical (P0) tests.
+The test suite is located at `jormungandr/tests/`.
 
 ```bash
 cd jormungandr/tests
@@ -69,17 +68,17 @@ cd jormungandr/tests
 ./run_tests_rust.sh --priority P0      # Run P0 tests only
 ```
 
-**Current Status**: 233/233 passing (100%) 🏆
+**Current Status**: 414/414 passing (100%)
 
-**No Limitations** - All features work, including:
-- `P0_007_mutable_borrow` - ✅ Mutable reference semantics via sync-back mechanism
-- `P0_013_drop_trait` - ✅ Automatic Drop::drop() calls when values go out of scope
+Notable implementations:
+- Mutable reference semantics via sync-back mechanism
+- Automatic Drop::drop() calls when values go out of scope
 
 ## Jormungandr (Legacy Self-Hosted Compiler)
 
 The `jormungandr/` directory contains the legacy self-hosted compiler written in Sigil.
 
-**Status**: Development/experimental. Use the Rust compiler for production work.
+**Status**: Experimental. Use the Rust compiler for actual work.
 
 ```bash
 cd jormungandr/build
@@ -111,7 +110,7 @@ These can be used for testing the compiler with real-world code.
 
 ## Compute Backends
 
-The LLVM backend supports high-performance compute primitives for numerical workloads.
+The LLVM backend supports compute primitives for numerical workloads.
 
 ### SIMD Backend (AVX-512)
 
@@ -179,15 +178,15 @@ Cuda·cleanup();
 
 **Runtime:** Uses `libsigil_runtime_cuda.a` instead of standard runtime.
 
-## Recent Achievements (January 2026)
+## Recent Changes (January 2026)
 
-- ✅ Restored Rust compiler from git history (was deleted Jan 10)
-- ✅ Fixed 11 critical bugs across two epic sessions
-- ✅ Implemented Rc<T> and Cell<T> stdlib types
-- ✅ Implemented mutable reference sync-back mechanism
-- ✅ Implemented Drop trait with automatic destructor calls
-- ✅ **Achieved 100% pass rate on P0 bootstrap tests** 🏆
-- ✅ Added SIMD backend (AVX-512 F32x16 operations)
-- ✅ Added CUDA backend (GPU compute via Driver API)
-
-The Rust compiler is **PERFECT** - 233/233 tests passing!
+- Restored Rust compiler from git history
+- Fixed critical bugs in type system and codegen
+- Implemented Rc<T> and Cell<T> stdlib types
+- Implemented mutable reference sync-back mechanism
+- Implemented Drop trait with automatic destructor calls
+- Added native symbol vocabulary (middledot syntax, arrows, etc.)
+- Added SIMD backend (AVX-512 F32x16 operations)
+- Added CUDA backend (GPU compute via Driver API)
+- Added LSP server, formatter, linter, package manager
+- Added HTTP and WebSocket clients
