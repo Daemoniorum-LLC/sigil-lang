@@ -6739,7 +6739,9 @@ impl Interpreter {
                 v.reverse();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
-            (Value::Array(arr), "skip") => {
+            (Value::Array(arr), "↓") | (Value::Array(arr), "skip") | (Value::Array(arr), "drop") => {
+                // ↓(n) -> drop/skip first n elements
+                // Symbolic: downward selection arrow
                 let n = match arg_values.first() {
                     Some(Value::Int(i)) => *i as usize,
                     _ => 1,
@@ -6748,6 +6750,7 @@ impl Interpreter {
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
             (Value::Array(arr), "take") => {
+                // Note: ↑ alias defined in Collection Morphemes section
                 let n = match arg_values.first() {
                     Some(Value::Int(i)) => *i as usize,
                     _ => 1,
@@ -6806,8 +6809,9 @@ impl Interpreter {
                 // iter()/into_iter() on an array just returns the array - iteration happens in for loops
                 Ok(Value::Array(arr.clone()))
             }
-            (Value::Array(arr), "map") => {
-                // map(closure) applies closure to each element
+            (Value::Array(arr), "↦") | (Value::Array(arr), "map") => {
+                // ↦(fn) -> element-wise transformation
+                // Symbolic: maps-to arrow (function application)
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("map expects 1 argument (closure)"));
                 }
@@ -6823,8 +6827,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("map expects closure argument")),
                 }
             }
-            (Value::Array(arr), "filter") => {
-                // filter(predicate) keeps elements where predicate returns true
+            (Value::Array(arr), "⊛") | (Value::Array(arr), "filter") | (Value::Array(arr), "select") | (Value::Array(arr), "where") => {
+                // ⊛(predicate) -> selection/sieve by predicate
+                // Symbolic: circled asterisk (selection operator)
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("filter expects 1 argument (closure)"));
                 }
@@ -6842,8 +6847,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("filter expects closure argument")),
                 }
             }
-            (Value::Array(arr), "any") => {
-                // any(predicate) returns true if any element satisfies predicate
+            (Value::Array(arr), "∃") | (Value::Array(arr), "any") | (Value::Array(arr), "some") | (Value::Array(arr), "exists") => {
+                // ∃(predicate) -> existential quantification
+                // Symbolic: there exists
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("any expects 1 argument (closure)"));
                 }
@@ -6860,8 +6866,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("any expects closure argument")),
                 }
             }
-            (Value::Array(arr), "all") => {
-                // all(predicate) returns true if all elements satisfy predicate
+            (Value::Array(arr), "∀∶") | (Value::Array(arr), "all") | (Value::Array(arr), "every") | (Value::Array(arr), "forall") => {
+                // ∀∶(predicate) -> universal quantification test (returns bool)
+                // Symbolic: for all (with colon to distinguish from forEach)
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("all expects 1 argument (closure)"));
                 }
@@ -6878,8 +6885,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("all expects closure argument")),
                 }
             }
-            (Value::Array(arr), "find") => {
-                // find(predicate) returns first element satisfying predicate, or None
+            (Value::Array(arr), "∃?") | (Value::Array(arr), "find") => {
+                // ∃?(predicate) -> find first matching element
+                // Symbolic: existential query
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("find expects 1 argument (closure)"));
                 }
@@ -6904,8 +6912,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("find expects closure argument")),
                 }
             }
-            (Value::Array(arr), "enumerate") => {
-                // enumerate() returns array of (index, value) tuples
+            (Value::Array(arr), "ι") | (Value::Array(arr), "enumerate") | (Value::Array(arr), "indexed") => {
+                // ι() -> index-value pairs
+                // Symbolic: iota (indexing function from APL)
                 let enumerated: Vec<Value> = arr
                     .borrow()
                     .iter()
@@ -6914,8 +6923,9 @@ impl Interpreter {
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(enumerated))))
             }
-            (Value::Array(arr), "zip") => {
-                // zip with another array to create array of tuples
+            (Value::Array(arr), "⊗") | (Value::Array(arr), "zip") => {
+                // ⊗(other) -> pair elements from two arrays
+                // Symbolic: tensor/outer product
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("zip expects 1 argument"));
                 }
@@ -6933,10 +6943,20 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("zip expects array argument")),
                 }
             }
-            // ========== Java Streams-style methods ==========
-            (Value::Array(arr), "fold") | (Value::Array(arr), "reduce") => {
-                // fold(initial, accumulator_fn) -> reduces array to single value
-                // Like Java: stream.reduce(identity, accumulator)
+            // ========== Collection Morphemes (Agent-Native Symbolic API) ==========
+            // Primary: symbolic morphemes | Aliases: English names for tooling compatibility
+            //
+            // Aggregation:  ⊕ (fold)  ∑ (sum)  ∏ (product)  # (count)  ⊥ (min)  ⊤ (max)  μ (mean)
+            // Transform:    ↦ (map)   ⤳ (flatMap)  ⊏ (flatten)  ⊴ (sort)  ◉ (distinct)  ⟲ (reverse)
+            // Selection:    ↑ (take)  ↓ (drop)  ↑⦂ (takeWhile)  ↓⦂ (dropWhile)
+            // Quantifiers:  ∀ (forEach)  ∃ (any)  ∄ (none)  ∃! (findFirst)
+            // Grouping:     ⫴ (groupBy)  ⊘ (partition)  ⊞ (chunk)  ⌸ (window)
+            // Combinators:  ⊗ (zip)  ⫰ (interleave)  ⋈ (join)
+            // Collectors:   →[] (toVec)  →{} (toSet)  →⟨⟩ (toMap)
+            //
+            (Value::Array(arr), "⊕") | (Value::Array(arr), "fold") | (Value::Array(arr), "reduce") => {
+                // ⊕(initial, accumulator) -> reduces array to single value
+                // Symbolic: binary fold operator
                 if arg_values.len() != 2 {
                     return Err(RuntimeError::new("fold expects 2 arguments (initial, accumulator)"));
                 }
@@ -6951,9 +6971,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("fold expects function as second argument")),
                 }
             }
-            (Value::Array(arr), "flat_map") | (Value::Array(arr), "flatMap") => {
-                // flatMap(fn) -> maps then flattens one level
-                // Like Java: stream.flatMap(x -> x.getItems().stream())
+            (Value::Array(arr), "⤳") | (Value::Array(arr), "flat_map") | (Value::Array(arr), "flatMap") => {
+                // ⤳(fn) -> monadic bind: maps then flattens one level
+                // Symbolic: Kleisli arrow / monadic bind
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("flat_map expects 1 argument (function)"));
                 }
@@ -6975,8 +6995,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("flat_map expects function argument")),
                 }
             }
-            (Value::Array(arr), "flatten") => {
-                // flatten() -> flattens one level of nesting
+            (Value::Array(arr), "⊏") | (Value::Array(arr), "flatten") => {
+                // ⊏() -> flattens one level of nesting
+                // Symbolic: level collapse operator
                 let mut results = Vec::new();
                 for val in arr.borrow().iter() {
                     match val {
@@ -6988,9 +7009,9 @@ impl Interpreter {
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(results))))
             }
-            (Value::Array(arr), "for_each") | (Value::Array(arr), "forEach") => {
-                // forEach(fn) -> applies fn to each element for side effects
-                // Like Java: stream.forEach(System.out::println)
+            (Value::Array(arr), "∀") | (Value::Array(arr), "for_each") | (Value::Array(arr), "forEach") => {
+                // ∀(fn) -> universal quantification with side effects
+                // Symbolic: for all elements, apply
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("for_each expects 1 argument (function)"));
                 }
@@ -7004,9 +7025,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("for_each expects function argument")),
                 }
             }
-            (Value::Array(arr), "peek") => {
-                // peek(fn) -> applies fn for side effects, returns original stream
-                // Like Java: stream.peek(x -> log.debug(x))
+            (Value::Array(arr), "⊙") | (Value::Array(arr), "peek") => {
+                // ⊙(fn) -> observe without consuming: side effects, returns original
+                // Symbolic: circled dot (observation point)
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("peek expects 1 argument (function)"));
                 }
@@ -7020,9 +7041,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("peek expects function argument")),
                 }
             }
-            (Value::Array(arr), "sorted") | (Value::Array(arr), "sort") => {
-                // sorted() or sorted(comparator_fn) -> returns sorted array
-                // Like Java: stream.sorted() or stream.sorted(Comparator)
+            (Value::Array(arr), "⊴") | (Value::Array(arr), "sorted") | (Value::Array(arr), "sort") => {
+                // ⊴() or ⊴(comparator) -> returns ordered array
+                // Symbolic: ordering/precedes relation
                 let mut v = arr.borrow().clone();
                 if arg_values.is_empty() {
                     // Natural ordering
@@ -7042,9 +7063,9 @@ impl Interpreter {
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
-            (Value::Array(arr), "distinct") => {
-                // distinct() -> removes duplicates, preserving order
-                // Like Java: stream.distinct()
+            (Value::Array(arr), "◉") | (Value::Array(arr), "distinct") => {
+                // ◉() -> unique elements only, preserving order
+                // Symbolic: fisheye/unique marker
                 let mut seen = Vec::new();
                 let mut results = Vec::new();
                 for val in arr.borrow().iter() {
@@ -7056,9 +7077,9 @@ impl Interpreter {
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(results))))
             }
-            (Value::Array(arr), "limit") => {
-                // limit(n) -> takes first n elements (alias for take)
-                // Like Java: stream.limit(10)
+            (Value::Array(arr), "↑") | (Value::Array(arr), "limit") | (Value::Array(arr), "take") => {
+                // ↑(n) -> takes first n elements
+                // Symbolic: upward selection arrow
                 let n = match arg_values.first() {
                     Some(Value::Int(i)) => *i as usize,
                     _ => return Err(RuntimeError::new("limit expects integer argument")),
@@ -7066,9 +7087,9 @@ impl Interpreter {
                 let v: Vec<Value> = arr.borrow().iter().take(n).cloned().collect();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
-            (Value::Array(arr), "take_while") | (Value::Array(arr), "takeWhile") => {
-                // takeWhile(predicate) -> takes elements while predicate is true
-                // Like Java: stream.takeWhile(x -> x < 10)
+            (Value::Array(arr), "↑⦂") | (Value::Array(arr), "take_while") | (Value::Array(arr), "takeWhile") => {
+                // ↑⦂(predicate) -> takes while predicate holds
+                // Symbolic: conditional upward selection
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("take_while expects 1 argument (predicate)"));
                 }
@@ -7088,9 +7109,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("take_while expects function argument")),
                 }
             }
-            (Value::Array(arr), "drop_while") | (Value::Array(arr), "dropWhile") | (Value::Array(arr), "skip_while") | (Value::Array(arr), "skipWhile") => {
-                // dropWhile(predicate) -> skips elements while predicate is true
-                // Like Java: stream.dropWhile(x -> x < 10)
+            (Value::Array(arr), "↓⦂") | (Value::Array(arr), "drop_while") | (Value::Array(arr), "dropWhile") | (Value::Array(arr), "skip_while") | (Value::Array(arr), "skipWhile") => {
+                // ↓⦂(predicate) -> drops while predicate holds
+                // Symbolic: conditional downward skip
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("drop_while expects 1 argument (predicate)"));
                 }
@@ -7114,9 +7135,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("drop_while expects function argument")),
                 }
             }
-            (Value::Array(arr), "sum") => {
-                // sum() -> sums numeric elements
-                // Like Java: stream.mapToInt(x -> x).sum()
+            (Value::Array(arr), "∑") | (Value::Array(arr), "sum") => {
+                // ∑() -> summation of numeric elements
+                // Symbolic: standard mathematical summation
                 let mut total = 0i64;
                 let mut has_float = false;
                 let mut float_total = 0.0f64;
@@ -7145,14 +7166,45 @@ impl Interpreter {
                     Ok(Value::Int(total))
                 }
             }
-            (Value::Array(arr), "count") => {
-                // count() -> returns number of elements
-                // Like Java: stream.count()
+            (Value::Array(arr), "∏") | (Value::Array(arr), "product") => {
+                // ∏() -> product of numeric elements
+                // Symbolic: standard mathematical product
+                let mut total = 1i64;
+                let mut has_float = false;
+                let mut float_total = 1.0f64;
+                for val in arr.borrow().iter() {
+                    match val {
+                        Value::Int(n) => {
+                            if has_float {
+                                float_total *= *n as f64;
+                            } else {
+                                total *= n;
+                            }
+                        }
+                        Value::Float(n) => {
+                            if !has_float {
+                                float_total = total as f64;
+                                has_float = true;
+                            }
+                            float_total *= n;
+                        }
+                        _ => {}
+                    }
+                }
+                if has_float {
+                    Ok(Value::Float(float_total))
+                } else {
+                    Ok(Value::Int(total))
+                }
+            }
+            (Value::Array(arr), "#") | (Value::Array(arr), "count") | (Value::Array(arr), "len") => {
+                // #() -> cardinality of collection
+                // Symbolic: standard cardinality notation
                 Ok(Value::Int(arr.borrow().len() as i64))
             }
-            (Value::Array(arr), "min") => {
-                // min() or min(comparator) -> returns minimum element as Option
-                // Like Java: stream.min()
+            (Value::Array(arr), "⊥") | (Value::Array(arr), "min") | (Value::Array(arr), "infimum") => {
+                // ⊥() -> lattice infimum (minimum element)
+                // Symbolic: bottom element of partial order
                 let borrowed = arr.borrow();
                 if borrowed.is_empty() {
                     return Ok(Value::Variant {
@@ -7173,9 +7225,9 @@ impl Interpreter {
                     fields: Some(Rc::new(vec![min_val])),
                 })
             }
-            (Value::Array(arr), "max") => {
-                // max() or max(comparator) -> returns maximum element as Option
-                // Like Java: stream.max()
+            (Value::Array(arr), "⊤") | (Value::Array(arr), "max") | (Value::Array(arr), "supremum") => {
+                // ⊤() -> lattice supremum (maximum element)
+                // Symbolic: top element of partial order
                 let borrowed = arr.borrow();
                 if borrowed.is_empty() {
                     return Ok(Value::Variant {
@@ -7196,9 +7248,9 @@ impl Interpreter {
                     fields: Some(Rc::new(vec![max_val])),
                 })
             }
-            (Value::Array(arr), "average") | (Value::Array(arr), "avg") | (Value::Array(arr), "mean") => {
-                // average() -> returns average of numeric elements as Option<Float>
-                // Like Java: stream.mapToDouble(x -> x).average()
+            (Value::Array(arr), "μ") | (Value::Array(arr), "average") | (Value::Array(arr), "avg") | (Value::Array(arr), "mean") => {
+                // μ() -> statistical mean of numeric elements
+                // Symbolic: mu for mean (statistics)
                 let borrowed = arr.borrow();
                 if borrowed.is_empty() {
                     return Ok(Value::Variant {
@@ -7229,9 +7281,9 @@ impl Interpreter {
                     fields: Some(Rc::new(vec![Value::Float(sum / count as f64)])),
                 })
             }
-            (Value::Array(arr), "group_by") | (Value::Array(arr), "groupBy") | (Value::Array(arr), "grouping_by") | (Value::Array(arr), "groupingBy") => {
-                // groupBy(key_fn) -> groups elements by key into a Map
-                // Like Java: stream.collect(Collectors.groupingBy(x -> x.getCategory()))
+            (Value::Array(arr), "⫴") | (Value::Array(arr), "group_by") | (Value::Array(arr), "groupBy") | (Value::Array(arr), "grouping_by") | (Value::Array(arr), "groupingBy") => {
+                // ⫴(key_fn) -> partition by key into Map
+                // Symbolic: vertical partition lines
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("group_by expects 1 argument (key function)"));
                 }
@@ -7252,9 +7304,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("group_by expects function argument")),
                 }
             }
-            (Value::Array(arr), "partition_by") | (Value::Array(arr), "partitionBy") | (Value::Array(arr), "partition") => {
-                // partitionBy(predicate) -> splits into (true_list, false_list) tuple
-                // Like Java: stream.collect(Collectors.partitioningBy(x -> x > 0))
+            (Value::Array(arr), "⊘") | (Value::Array(arr), "partition_by") | (Value::Array(arr), "partitionBy") | (Value::Array(arr), "partition") => {
+                // ⊘(predicate) -> bisect by predicate into (true, false) tuple
+                // Symbolic: division/bisection operator
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("partition expects 1 argument (predicate)"));
                 }
@@ -7278,9 +7330,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("partition expects function argument")),
                 }
             }
-            (Value::Array(arr), "joining") | (Value::Array(arr), "join") => {
-                // join(separator) -> joins string elements with separator
-                // Like Java: stream.collect(Collectors.joining(", "))
+            (Value::Array(arr), "⋈") | (Value::Array(arr), "joining") | (Value::Array(arr), "join") => {
+                // ⋈(separator) -> concatenate elements with separator
+                // Symbolic: bowtie (relational join)
                 let sep = match arg_values.first() {
                     Some(Value::String(s)) => s.to_string(),
                     Some(Value::Char(c)) => c.to_string(),
@@ -7289,9 +7341,9 @@ impl Interpreter {
                 let parts: Vec<String> = arr.borrow().iter().map(|v| format!("{}", v)).collect();
                 Ok(Value::String(Rc::new(parts.join(&sep))))
             }
-            (Value::Array(arr), "find_first") | (Value::Array(arr), "findFirst") => {
-                // findFirst() -> returns first element as Option
-                // Like Java: stream.findFirst()
+            (Value::Array(arr), "∃!") | (Value::Array(arr), "find_first") | (Value::Array(arr), "findFirst") | (Value::Array(arr), "first") => {
+                // ∃!() -> unique existence: first element as Option
+                // Symbolic: exists unique
                 match arr.borrow().first() {
                     Some(v) => Ok(Value::Variant {
                         enum_name: "Option".to_string(),
@@ -7305,8 +7357,9 @@ impl Interpreter {
                     }),
                 }
             }
-            (Value::Array(arr), "find_last") | (Value::Array(arr), "findLast") => {
-                // findLast() -> returns last element as Option
+            (Value::Array(arr), "∃⁻¹") | (Value::Array(arr), "find_last") | (Value::Array(arr), "findLast") | (Value::Array(arr), "last") => {
+                // ∃⁻¹() -> inverse existence: last element as Option
+                // Symbolic: exists inverse (from end)
                 match arr.borrow().last() {
                     Some(v) => Ok(Value::Variant {
                         enum_name: "Option".to_string(),
@@ -7320,9 +7373,9 @@ impl Interpreter {
                     }),
                 }
             }
-            (Value::Array(arr), "none_match") | (Value::Array(arr), "noneMatch") | (Value::Array(arr), "none") => {
-                // noneMatch(predicate) -> true if no elements match
-                // Like Java: stream.noneMatch(x -> x < 0)
+            (Value::Array(arr), "∄") | (Value::Array(arr), "none_match") | (Value::Array(arr), "noneMatch") | (Value::Array(arr), "none") => {
+                // ∄(predicate) -> negated existence: true if none match
+                // Symbolic: there does not exist
                 if arg_values.is_empty() {
                     // No predicate - check if all elements are falsy
                     for val in arr.borrow().iter() {
@@ -7350,21 +7403,23 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("none_match expects function argument")),
                 }
             }
-            (Value::Array(arr), "collect") | (Value::Array(arr), "to_vec") | (Value::Array(arr), "toList") => {
-                // collect() / toList() -> returns a new array (useful after lazy ops)
+            (Value::Array(arr), "→[]") | (Value::Array(arr), "collect") | (Value::Array(arr), "to_vec") | (Value::Array(arr), "toList") => {
+                // →[]() -> materialize to array
+                // Symbolic: arrow to array brackets
                 Ok(Value::Array(Rc::new(RefCell::new(arr.borrow().clone()))))
             }
-            (Value::Array(arr), "to_set") | (Value::Array(arr), "toSet") => {
-                // toSet() -> collects unique elements into a HashSet
+            (Value::Array(arr), "→{}") | (Value::Array(arr), "to_set") | (Value::Array(arr), "toSet") => {
+                // →{}() -> materialize to set
+                // Symbolic: arrow to set braces
                 let mut set = HashSet::new();
                 for val in arr.borrow().iter() {
                     set.insert(format!("{}", val));
                 }
                 Ok(Value::Set(Rc::new(RefCell::new(set))))
             }
-            (Value::Array(arr), "to_map") | (Value::Array(arr), "toMap") => {
-                // toMap(key_fn, value_fn) -> collects into a Map
-                // Like Java: stream.collect(Collectors.toMap(k -> k.getId(), v -> v.getName()))
+            (Value::Array(arr), "→⟨⟩") | (Value::Array(arr), "to_map") | (Value::Array(arr), "toMap") => {
+                // →⟨⟩(key_fn, value_fn) -> materialize to map
+                // Symbolic: arrow to angle brackets (key-value)
                 if arg_values.len() < 2 {
                     return Err(RuntimeError::new("to_map expects 2 arguments (key_fn, value_fn)"));
                 }
@@ -7381,8 +7436,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("to_map expects function arguments")),
                 }
             }
-            (Value::Array(arr), "chunk") | (Value::Array(arr), "chunked") => {
-                // chunk(size) -> splits into chunks of given size
+            (Value::Array(arr), "⊞") | (Value::Array(arr), "chunk") | (Value::Array(arr), "chunked") => {
+                // ⊞(size) -> partition into fixed-size blocks
+                // Symbolic: squared plus (blocked grouping)
                 let size = match arg_values.first() {
                     Some(Value::Int(n)) if *n > 0 => *n as usize,
                     _ => return Err(RuntimeError::new("chunk expects positive integer")),
@@ -7394,8 +7450,9 @@ impl Interpreter {
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(chunks))))
             }
-            (Value::Array(arr), "windowed") | (Value::Array(arr), "windows") | (Value::Array(arr), "sliding") => {
-                // windowed(size) -> returns sliding windows of given size
+            (Value::Array(arr), "⌸") | (Value::Array(arr), "windowed") | (Value::Array(arr), "windows") | (Value::Array(arr), "sliding") => {
+                // ⌸(size) -> sliding window view
+                // Symbolic: quad/window frame
                 let size = match arg_values.first() {
                     Some(Value::Int(n)) if *n > 0 => *n as usize,
                     _ => return Err(RuntimeError::new("windowed expects positive integer")),
@@ -7410,8 +7467,9 @@ impl Interpreter {
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(windows))))
             }
-            (Value::Array(arr), "interleave") => {
-                // interleave(other) -> alternates elements from both arrays
+            (Value::Array(arr), "⫰") | (Value::Array(arr), "interleave") => {
+                // ⫰(other) -> alternating merge of two arrays
+                // Symbolic: interleave/weave pattern
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("interleave expects 1 argument"));
                 }
@@ -7430,14 +7488,16 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("interleave expects array argument")),
                 }
             }
-            (Value::Array(arr), "reversed") => {
-                // reversed() -> returns reversed copy (alias for reverse)
+            (Value::Array(arr), "⟲") | (Value::Array(arr), "reversed") | (Value::Array(arr), "reverse") => {
+                // ⟲() -> reversed sequence
+                // Symbolic: rotation/reversal arrow
                 let mut v = arr.borrow().clone();
                 v.reverse();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
-            (Value::Array(arr), "shuffled") | (Value::Array(arr), "shuffle") => {
-                // shuffled() -> returns randomly shuffled copy
+            (Value::Array(arr), "⧢") | (Value::Array(arr), "shuffled") | (Value::Array(arr), "shuffle") => {
+                // ⧢() -> randomly permuted sequence
+                // Symbolic: shuffle/randomize
                 use std::collections::hash_map::DefaultHasher;
                 use std::hash::{Hash, Hasher};
                 use std::time::{SystemTime, UNIX_EPOCH};
@@ -7459,11 +7519,14 @@ impl Interpreter {
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
-            (Value::Array(arr), "is_empty") | (Value::Array(arr), "isEmpty") => {
+            (Value::Array(arr), "∅?") | (Value::Array(arr), "is_empty") | (Value::Array(arr), "isEmpty") => {
+                // ∅?() -> test for emptiness
+                // Symbolic: empty set query
                 Ok(Value::Bool(arr.borrow().is_empty()))
             }
-            (Value::Array(arr), "get") => {
-                // get(index) -> returns element at index as Option, supports negative indices
+            (Value::Array(arr), "@") | (Value::Array(arr), "get") | (Value::Array(arr), "at") => {
+                // @(index) -> indexed access as Option, supports negative indices
+                // Symbolic: at/address operator
                 let idx = match arg_values.first() {
                     Some(Value::Int(i)) => *i,
                     _ => return Err(RuntimeError::new("get expects integer index")),
@@ -7487,7 +7550,7 @@ impl Interpreter {
                     }),
                 }
             }
-            // ========== End Java Streams-style methods ==========
+            // ========== End Collection Morphemes ==========
             (Value::String(s), "len") => Ok(Value::Int(s.len() as i64)),
             (Value::String(s), "chars") => {
                 let chars: Vec<Value> = s.chars().map(Value::Char).collect();
