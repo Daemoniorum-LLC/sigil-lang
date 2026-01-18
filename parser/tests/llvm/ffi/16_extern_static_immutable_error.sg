@@ -1,0 +1,12 @@
+// FFI Test 16: Immutable extern static assignment (should fail)
+// Tests: Error when assigning to non-mutable extern static
+// EXPECTED: Compilation error
+
+extern "C" {
+    static timezone: c_long;  // immutable
+}
+
+rite main() → i64 {
+    timezone = 0;  // Should fail - cannot assign to immutable
+    0
+}

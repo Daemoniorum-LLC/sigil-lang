@@ -80,6 +80,19 @@ pub mod llvm {
         pub fn_value: FunctionValue<'ctx>,
     }
 
+    /// Information about an extern "C" static variable
+    #[derive(Clone)]
+    pub struct ExternStaticInfo<'ctx> {
+        /// Variable name
+        pub name: String,
+        /// LLVM type
+        pub ty: BasicTypeEnum<'ctx>,
+        /// Whether the static is mutable
+        pub mutable: bool,
+        /// The LLVM global value
+        pub global: inkwell::values::GlobalValue<'ctx>,
+    }
+
     /// LLVM-based compiler for Sigil
     pub struct LlvmCompiler<'ctx> {
         context: &'ctx Context,
@@ -110,6 +123,8 @@ pub mod llvm {
         evidential_types: HashMap<String, StructType<'ctx>>,
         /// Extern function registry for FFI
         extern_functions: HashMap<String, ExternFnSig<'ctx>>,
+        /// Extern static registry for FFI
+        extern_statics: HashMap<String, ExternStaticInfo<'ctx>>,
     }
 
     // ============================================
@@ -396,6 +411,7 @@ pub mod llvm {
                 string_counter: std::cell::Cell::new(0),
                 evidential_types: HashMap::new(),
                 extern_functions: HashMap::new(),
+                extern_statics: HashMap::new(),
             })
         }
 
@@ -768,11 +784,7 @@ pub mod llvm {
                         self.declare_extern_function(func)?;
                     }
                     ExternItem::Static(stat) => {
-                        // TODO: Implement extern statics
-                        eprintln!(
-                            "Warning: extern static '{}' not yet implemented in LLVM backend",
-                            stat.name.name
-                        );
+                        self.declare_extern_static(stat)?;
                     }
                 }
             }
@@ -829,6 +841,39 @@ pub mod llvm {
 
             // Also store in functions map for general lookup
             self.functions.insert(name.clone(), fn_value);
+
+            Ok(())
+        }
+
+        /// Declare an extern "C" static variable
+        fn declare_extern_static(&mut self, stat: &ast::ExternStatic) -> Result<(), String> {
+            let name = &stat.name.name;
+
+            // Get the LLVM type for the static
+            let empty_subs = HashMap::new();
+            let llvm_type = self.type_expr_to_llvm(&stat.ty, &empty_subs);
+
+            // Create external global variable
+            let global = self.module.add_global(llvm_type, None, name);
+
+            // Set external linkage (defined elsewhere)
+            global.set_linkage(inkwell::module::Linkage::External);
+
+            // Set mutability - if not mutable, mark as constant
+            if !stat.mutable {
+                global.set_constant(true);
+            }
+
+            // Store in extern_statics registry
+            self.extern_statics.insert(
+                name.clone(),
+                ExternStaticInfo {
+                    name: name.clone(),
+                    ty: llvm_type,
+                    mutable: stat.mutable,
+                    global,
+                },
+            );
 
             Ok(())
         }
@@ -1778,6 +1823,38 @@ pub mod llvm {
                             .build_load(self.context.i64_type(), ptr, name)
                             .map_err(|e| e.to_string())?;
                         Ok(val.into_int_value())
+                    } else if let Some(static_info) = self.extern_statics.get(name).cloned() {
+                        // Load from extern static global variable
+                        let val = self
+                            .builder
+                            .build_load(static_info.ty, static_info.global.as_pointer_value(), name)
+                            .map_err(|e| e.to_string())?;
+                        // Convert to i64 if needed
+                        match val {
+                            inkwell::values::BasicValueEnum::IntValue(iv) => {
+                                if iv.get_type().get_bit_width() == 64 {
+                                    Ok(iv)
+                                } else {
+                                    // Sign-extend or zero-extend to i64
+                                    Ok(self.builder
+                                        .build_int_s_extend(iv, self.context.i64_type(), "ext")
+                                        .map_err(|e| e.to_string())?)
+                                }
+                            }
+                            inkwell::values::BasicValueEnum::FloatValue(fv) => {
+                                // Convert float to i64 (truncate to integer)
+                                Ok(self.builder
+                                    .build_float_to_signed_int(fv, self.context.i64_type(), "ftoi")
+                                    .map_err(|e: inkwell::builder::BuilderError| e.to_string())?)
+                            }
+                            inkwell::values::BasicValueEnum::PointerValue(pv) => {
+                                // Convert pointer to i64
+                                Ok(self.builder
+                                    .build_ptr_to_int(pv, self.context.i64_type(), "ptoi")
+                                    .map_err(|e| e.to_string())?)
+                            }
+                            _ => Ok(self.context.i64_type().const_int(0, false)),
+                        }
                     } else {
                         // Check if it's an unqualified enum variant (search all enums)
                         for (_, enum_info) in &self.enum_types {
@@ -1838,6 +1915,32 @@ pub mod llvm {
                             if let Some(&ptr) = scope.vars.get(name) {
                                 self.builder
                                     .build_store(ptr, val)
+                                    .map_err(|e| e.to_string())?;
+                                Ok(val)
+                            } else if let Some(static_info) = self.extern_statics.get(name).cloned() {
+                                // Assign to extern static (must be mutable)
+                                if !static_info.mutable {
+                                    return Err(format!(
+                                        "Cannot assign to immutable extern static: {}",
+                                        name
+                                    ));
+                                }
+                                // Convert val to the appropriate type if needed
+                                let store_val: inkwell::values::BasicValueEnum = match static_info.ty {
+                                    inkwell::types::BasicTypeEnum::IntType(int_ty) => {
+                                        if int_ty.get_bit_width() == 64 {
+                                            val.into()
+                                        } else {
+                                            self.builder
+                                                .build_int_truncate(val, int_ty, "trunc")
+                                                .map_err(|e| e.to_string())?
+                                                .into()
+                                        }
+                                    }
+                                    _ => val.into(),
+                                };
+                                self.builder
+                                    .build_store(static_info.global.as_pointer_value(), store_val)
                                     .map_err(|e| e.to_string())?;
                                 Ok(val)
                             } else {
