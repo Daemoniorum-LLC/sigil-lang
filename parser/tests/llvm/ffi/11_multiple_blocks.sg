@@ -1,0 +1,16 @@
+// FFI Test 11: Multiple extern blocks
+// Tests: Multiple extern "C" blocks in same file
+
+extern "C" {
+    rite abs(x: c_int) → c_int;
+}
+
+extern "C" {
+    rite labs(x: c_long) → c_long;
+}
+
+rite main() → i64 {
+    ≔ a = abs(-3) as i64;
+    ≔ b = labs(-7);
+    a + b  // Expected: 10
+}

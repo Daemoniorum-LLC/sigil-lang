@@ -1,0 +1,16 @@
+// FFI Test 12: size_t type
+// Tests: size_t type mapping (should be i64 on 64-bit)
+
+extern "C" {
+    rite abs(x: c_int) → c_int;
+}
+
+// Use size_t in a Sigil function signature
+rite compute_size(n: size_t) → size_t {
+    n * 2
+}
+
+rite main() → i64 {
+    ≔ result = compute_size(21);
+    result  // Expected: 42
+}
