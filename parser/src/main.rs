@@ -58,7 +58,7 @@ fn main() -> ExitCode {
         eprintln!("  run-ws [bin]    Run a workspace (reads Sigil.toml, optional bin crate name)");
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
-        eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO)");
+        eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO, --cuda for CUDA)");
         eprintln!();
         eprintln!("Analysis:");
         eprintln!("  check <file>    Type-check and validate (for AI agents: --format=json)");
@@ -167,11 +167,12 @@ fn main() -> ExitCode {
         "compile" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lto]");
+                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lto] [--cuda]");
                 return ExitCode::from(1);
             }
             // Parse flags
             let use_lto = args.iter().any(|a| a == "--lto");
+            let use_cuda = args.iter().any(|a| a == "--cuda");
             let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
                 if pos + 1 < args.len() {
                     args[pos + 1].clone()
@@ -188,7 +189,7 @@ fn main() -> ExitCode {
                     .trim_end_matches(".sg")
                     .to_string()
             };
-            compile_file(&args[2], &output, use_lto)
+            compile_file(&args[2], &output, use_lto, use_cuda)
         }
         #[cfg(not(feature = "llvm"))]
         "compile" => {
@@ -1312,7 +1313,7 @@ fn llvm_file(path: &str) -> ExitCode {
 }
 
 #[cfg(feature = "llvm")]
-fn compile_file(path: &str, output: &str, use_lto: bool) -> ExitCode {
+fn compile_file(path: &str, output: &str, use_lto: bool, use_cuda: bool) -> ExitCode {
     use inkwell::context::Context;
     use std::path::Path;
     use std::process::Command;
@@ -1355,20 +1356,32 @@ fn compile_file(path: &str, output: &str, use_lto: bool) -> ExitCode {
     }
 
     // Find the runtime (static library or C source)
-    let runtime_result = find_runtime(use_lto);
+    let runtime_result = if use_cuda {
+        find_cuda_runtime()
+    } else {
+        find_runtime(use_lto)
+    };
     if runtime_result.is_none() {
         eprintln!("Error: Could not find sigil runtime");
-        eprintln!("Expected locations:");
-        eprintln!("  - ./runtime/libsigil_runtime.a (pre-built, faster)");
-        eprintln!("  - ./runtime/sigil_runtime.c (source, required for --lto)");
-        eprintln!("Run 'make' in the runtime directory to build.");
+        if use_cuda {
+            eprintln!("Expected locations:");
+            eprintln!("  - ./runtime/libsigil_runtime_cuda.a (CUDA runtime)");
+            eprintln!("Build with: cd runtime && make cuda");
+        } else {
+            eprintln!("Expected locations:");
+            eprintln!("  - ./runtime/libsigil_runtime.a (pre-built, faster)");
+            eprintln!("  - ./runtime/sigil_runtime.c (source, required for --lto)");
+            eprintln!("Run 'make' in the runtime directory to build.");
+        }
         return ExitCode::from(1);
     }
     let (runtime, should_use_lto) = runtime_result.unwrap();
     let is_static_lib = runtime.ends_with(".a");
 
     // Link with clang/gcc
-    let mode_str = if should_use_lto {
+    let mode_str = if use_cuda {
+        "with CUDA"
+    } else if should_use_lto {
         "with LTO"
     } else if is_static_lib {
         "pre-built runtime"
@@ -1387,6 +1400,26 @@ fn compile_file(path: &str, output: &str, use_lto: bool) -> ExitCode {
     } else if !is_static_lib {
         // Add optimization flag when compiling C source without LTO
         args.insert(0, "-O3");
+    }
+
+    // Add CUDA libraries when building with CUDA support
+    if use_cuda {
+        // Find CUDA library paths (add all that exist)
+        let cuda_lib_paths = [
+            "/usr/lib/wsl/lib",           // WSL2 CUDA driver
+            "/usr/local/cuda/lib64",
+            "/usr/lib/x86_64-linux-gnu",
+            "/opt/cuda/lib64",
+        ];
+        for cuda_path in cuda_lib_paths {
+            if std::path::Path::new(cuda_path).exists() {
+                args.push("-L");
+                args.push(cuda_path);
+            }
+        }
+        args.push("-lcuda");
+        args.push("-lnvrtc");
+        args.push("-ldl");
     }
 
     let link_result = Command::new(&linker).args(&args).status();
@@ -1466,6 +1499,34 @@ fn find_runtime(use_lto: bool) -> Option<(String, bool)> {
             let src_path = dir.join("runtime/sigil_runtime.c");
             if src_path.exists() {
                 return Some((src_path.to_string_lossy().into_owned(), use_lto));
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(feature = "llvm")]
+fn find_cuda_runtime() -> Option<(String, bool)> {
+    // Look for CUDA-enabled runtime static library
+    let cuda_lib_candidates = [
+        "runtime/libsigil_runtime_cuda.a",
+        "../runtime/libsigil_runtime_cuda.a",
+        "sigil/parser/runtime/libsigil_runtime_cuda.a",
+    ];
+
+    for candidate in cuda_lib_candidates {
+        if std::path::Path::new(candidate).exists() {
+            return Some((candidate.to_string(), false));
+        }
+    }
+
+    // Try relative to executable
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let lib_path = dir.join("runtime/libsigil_runtime_cuda.a");
+            if lib_path.exists() {
+                return Some((lib_path.to_string_lossy().into_owned(), false));
             }
         }
     }
@@ -3634,7 +3695,7 @@ fn build_project() -> ExitCode {
         let output_path = target_dir.join(name);
         let output_str = output_path.to_string_lossy();
         println!("Compiling to native executable...");
-        return compile_file(&main_file.to_string_lossy(), &output_str, false);
+        return compile_file(&main_file.to_string_lossy(), &output_str, false, false);
     }
 
     #[cfg(not(feature = "llvm"))]

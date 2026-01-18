@@ -35,6 +35,12 @@ The Rust compiler is:
 # Compile to native binary (LLVM backend)
 ./target/release/sigil compile file.sg -o output
 
+# Compile with CUDA support (GPU compute)
+./target/release/sigil compile file.sg -o output --cuda
+
+# Compile with LTO (link-time optimization)
+./target/release/sigil compile file.sg -o output --lto
+
 # JIT execution (Cranelift backend)
 ./target/release/sigil jit file.sg
 ```
@@ -48,6 +54,9 @@ The Rust compiler is:
 - `parser/src/llvm_codegen.rs` - LLVM AOT backend (195KB)
 - `parser/src/stdlib.rs` - Standard library (1.2MB)
 - `parser/src/typeck.rs` - Type checker (122KB)
+- `parser/runtime/sigil_runtime.c` - C runtime (SIMD intrinsics, memory management)
+- `parser/runtime/libsigil_runtime.a` - Standard runtime library
+- `parser/runtime/libsigil_runtime_cuda.a` - CUDA-enabled runtime library
 
 ## Test Suite
 
@@ -100,6 +109,76 @@ These can be used for testing the compiler with real-world code.
 3. **Test your changes**: `../../parser/target/release/sigil run your_test.sg`
 4. **Check coverage**: Test results show which features work
 
+## Compute Backends
+
+The LLVM backend supports high-performance compute primitives for numerical workloads.
+
+### SIMD Backend (AVX-512)
+
+Native 512-bit vector operations using AVX-512 intrinsics.
+
+**Type:** `F32x16` - 16-lane packed f32 vector
+
+```sigil
+// Allocate aligned memory (64-byte for AVX-512)
+≔ a = F32x16·alloc(16);
+≔ b = F32x16·alloc(16);
+≔ result = F32x16·alloc(16);
+
+// Initialize vectors
+F32x16·splat(a, 2.0);
+F32x16·splat(b, 3.0);
+
+// Vector operations
+F32x16·add(result, a, b);      // result = a + b
+F32x16·mul(result, a, b);      // result = a * b
+F32x16·fmadd(result, a, b, c); // result = a * b + c
+
+// Reductions
+≔ sum = F32x16·reduce_add(a);  // horizontal sum
+≔ dot = F32x16·dot(a, b);      // dot product
+```
+
+**Requirements:** AVX-512 capable CPU. Falls back to scalar on unsupported hardware.
+
+### CUDA Backend
+
+GPU compute via CUDA Driver API. Compile with `--cuda` flag.
+
+```bash
+./sigil compile program.sg -o program --cuda
+```
+
+**Module:** `Cuda`
+
+```sigil
+// Initialize CUDA
+≔ ok = Cuda·init();
+≔ devices = Cuda·device_count();
+
+// Device memory management
+≔ d_ptr = Cuda·malloc(1024);
+Cuda·free(d_ptr);
+
+// Memory transfers
+Cuda·memcpy_h2d(d_ptr, h_ptr, size);  // Host → Device
+Cuda·memcpy_d2h(h_ptr, d_ptr, size);  // Device → Host
+
+// Synchronization
+Cuda·sync();
+
+// Kernel compilation (NVRTC)
+≔ kernel = Cuda·compile_kernel(cuda_source, "kernel_name");
+≔ result = Cuda·launch_1d(kernel, grid_x, block_x, args_ptr, num_args);
+
+// Cleanup
+Cuda·cleanup();
+```
+
+**Requirements:** NVIDIA GPU, CUDA toolkit. Links `-lcuda -lnvrtc`.
+
+**Runtime:** Uses `libsigil_runtime_cuda.a` instead of standard runtime.
+
 ## Recent Achievements (January 2026)
 
 - ✅ Restored Rust compiler from git history (was deleted Jan 10)
@@ -108,5 +187,7 @@ These can be used for testing the compiler with real-world code.
 - ✅ Implemented mutable reference sync-back mechanism
 - ✅ Implemented Drop trait with automatic destructor calls
 - ✅ **Achieved 100% pass rate on P0 bootstrap tests** 🏆
+- ✅ Added SIMD backend (AVX-512 F32x16 operations)
+- ✅ Added CUDA backend (GPU compute via Driver API)
 
 The Rust compiler is **PERFECT** - 233/233 tests passing!
