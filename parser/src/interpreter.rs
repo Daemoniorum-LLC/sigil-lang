@@ -968,38 +968,30 @@ impl Interpreter {
             .unwrap_or_else(|| std::env::args().collect())
     }
 
-    /// Find and parse Sigil.toml from a source directory, walking up parent directories
-    /// Looks for a workspace Sigil.toml (one with [workspace] section and members)
+    /// Find and parse Sigil.toml/Grimoire.toml from a source directory, walking up parent directories
+    /// Looks for a workspace config (one with [workspace] section and members)
     pub fn discover_project(&mut self, source_dir: &str) -> Result<(), RuntimeError> {
         let mut current = PathBuf::from(source_dir);
 
-        // Walk up to find Sigil.toml with [workspace] section
+        // Walk up to find Sigil.toml or Grimoire.toml with [workspace] section
         loop {
-            let sigil_toml = current.join("Sigil.toml");
-            if sigil_toml.exists() {
-                if let Ok(result) = self.try_parse_workspace_toml(&sigil_toml) {
-                    if result {
-                        return Ok(());
+            // Check Sigil.toml variants
+            for name in &["Sigil.toml", "sigil.toml", "Grimoire.toml", "grimoire.toml"] {
+                let manifest = current.join(name);
+                if manifest.exists() {
+                    if let Ok(result) = self.try_parse_workspace_toml(&manifest) {
+                        if result {
+                            return Ok(());
+                        }
+                        // Not a workspace config, continue searching
                     }
-                    // Not a workspace Sigil.toml, continue searching
-                }
-            }
-
-            // Also check for sigil.toml (lowercase)
-            let sigil_toml_lower = current.join("sigil.toml");
-            if sigil_toml_lower.exists() {
-                if let Ok(result) = self.try_parse_workspace_toml(&sigil_toml_lower) {
-                    if result {
-                        return Ok(());
-                    }
-                    // Not a workspace Sigil.toml, continue searching
                 }
             }
 
             if !current.pop() {
-                // No workspace Sigil.toml found
+                // No workspace config found
                 crate::sigil_debug!(
-                    "DEBUG discover_project: no workspace Sigil.toml found from {}",
+                    "DEBUG discover_project: no workspace config found from {}",
                     source_dir
                 );
                 return Ok(());
@@ -2594,7 +2586,55 @@ impl Interpreter {
                 // The crate name is the first segment of the path
                 if !prefix.is_empty() {
                     let crate_name = &prefix[0];
-                    if !self.types.contains_key(&qualified)
+
+                    // Handle "crate", "tome", or "above" as self-reference to current crate
+                    // e.g., "invoke crate·output·Output" loads from ./output.sigil
+                    if crate_name == "crate" || crate_name == "tome" || crate_name == "above" {
+                        if !self.types.contains_key(&qualified)
+                            && self.globals.borrow().get(&qualified).is_none()
+                        {
+                            // Load from current source directory
+                            if let Some(source_dir) = &self.current_source_dir.clone() {
+                                // Build path: skip "tome", take next segment as module file
+                                if prefix.len() >= 2 {
+                                    let module_name = &prefix[1];
+                                    let module_file = format!("{}/{}.sigil", source_dir, module_name);
+                                    crate::sigil_debug!(
+                                        "DEBUG process_use_tree: loading tome module '{}' from {}",
+                                        module_name,
+                                        module_file
+                                    );
+                                    // Skip if already loaded (prevent infinite recursion)
+                                    if self.loaded_crates.contains(&module_file) {
+                                        // Already loaded, skip
+                                    } else if std::path::Path::new(&module_file).exists() {
+                                        // Mark as loaded before processing (handle circular deps)
+                                        self.loaded_crates.insert(module_file.clone());
+
+                                        // Read and parse the module file
+                                        if let Ok(source) = std::fs::read_to_string(&module_file) {
+                                            // Save current module context
+                                            let prev_module = self.current_module.clone();
+
+                                            // Set module context for the tome module
+                                            // This ensures impl methods are registered correctly
+                                            self.current_module = Some(module_name.clone());
+
+                                            let mut parser = crate::Parser::new(&source);
+                                            if let Ok(parsed_file) = parser.parse_file() {
+                                                for item in &parsed_file.items {
+                                                    let _ = self.execute_item(&item.node);
+                                                }
+                                            }
+
+                                            // Restore previous module context
+                                            self.current_module = prev_module;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else if !self.types.contains_key(&qualified)
                         && self.globals.borrow().get(&qualified).is_none()
                         && !self.loaded_crates.contains(crate_name)
                     {
@@ -2611,13 +2651,30 @@ impl Interpreter {
 
                 // Create alias: simple_name -> qualified
                 // For types: if foo·bar·Baz exists in types, also register as Baz
-                if let Some(type_def) = self.types.get(&qualified).cloned() {
-                    self.types.insert(simple_name.clone(), type_def);
+                // Special handling for "crate·"/"tome·" self-reference: look up just the final name
+                let lookup_name = if !prefix.is_empty()
+                    && (prefix[0] == "crate" || prefix[0] == "tome" || prefix[0] == "above")
+                {
+                    // For tome·output·Output, look up just "Output"
+                    simple_name.clone()
+                } else {
+                    qualified.clone()
+                };
+
+                if let Some(type_def) = self.types.get(&lookup_name).cloned() {
+                    if lookup_name != simple_name {
+                        self.types.insert(simple_name.clone(), type_def.clone());
+                    }
+                    // Also register with the qualified name for consistency
+                    self.types.insert(qualified.clone(), type_def);
                 }
                 // For functions: if foo·bar·Baz exists in globals, also register as Baz
-                let func = self.globals.borrow().get(&qualified).map(|v| v.clone());
+                let func = self.globals.borrow().get(&lookup_name).map(|v| v.clone());
                 if let Some(val) = func {
-                    self.globals.borrow_mut().define(simple_name.clone(), val);
+                    self.globals.borrow_mut().define(simple_name.clone(), val.clone());
+                    if lookup_name != qualified {
+                        self.globals.borrow_mut().define(qualified.clone(), val);
+                    }
                 }
 
                 // Also import impl methods for this type
@@ -4249,8 +4306,16 @@ impl Interpreter {
                     .get(&default_fn_name)
                     .map(|v| v.clone());
                 if let Some(Value::Function(f)) = func_clone {
+                    // Set current_self_type so This resolves to the correct type
+                    let old_self_type = self.current_self_type.clone();
+                    self.current_self_type = Some(type_name.to_string());
+
                     // Call the type's default implementation
-                    return self.call_function(&f, vec![]);
+                    let result = self.call_function(&f, vec![]);
+
+                    // Restore old self type
+                    self.current_self_type = old_self_type;
+                    return result;
                 }
                 // Otherwise check for #[derive(Default)]
                 if let Some(struct_def) = self.default_structs.get(type_name).cloned() {
@@ -13572,7 +13637,7 @@ impl Interpreter {
             .join("·"); // Use middle dot to match method registration format
 
         // Resolve "Self" to the actual type name if we're in an impl block
-        let name = if raw_name == "Self" {
+        let name = if raw_name == "Self" || raw_name == "This" {
             if let Some(ref self_type) = self.current_self_type {
                 self_type.clone()
             } else {
