@@ -271,49 +271,38 @@ pub enum Token {
     #[token("/*", block_comment_callback)]
     BlockComment(String),
 
-    // === Keywords (Sigil-native with Rust compatibility aliases) ===
+    // === Keywords (Sigil-native only - Rust purged) ===
     // Note: λ/Λ handled by Token::Lambda - parser is context-aware
     #[token("rite")] // rite (ritual/spell) for function
-    #[token("fn")]   // Rust compatibility alias
     Fn,
     #[token("async")]
     Async,
-    #[token("≔")]    // definition operator
-    #[token("let")]  // Rust compatibility alias
+    #[token("≔")] // definition operator
     Let,
     // Note: ∆ handled by Token::Delta - parser is context-aware
     #[token("vary")] // vary for mutable
-    #[token("mut")]  // Rust compatibility alias
     Mut,
-    #[token("◆")]     // diamond for const
-    #[token("const")] // Rust compatibility alias
+    #[token("◆")] // diamond for const
     Const,
     #[token("linear")]
     Linear,
     #[token("type")]
     Type,
     // Note: Σ handled by Token::Sigma - parser is context-aware
-    #[token("sigil")]  // sigil for struct
-    #[token("struct")] // Rust compatibility alias
+    #[token("sigil")] // sigil for struct
     Struct,
-    #[token("ᛈ")]    // perthro rune for enum
-    #[token("enum")] // Rust compatibility alias
+    #[token("ᛈ")] // perthro rune for enum
     Enum,
     // Note: Θ handled by Token::Theta - parser is context-aware
     #[token("aspect")] // aspect for trait
-    #[token("trait")]  // Rust compatibility alias
     Trait,
-    #[token("⊢")]    // turnstile for impl
-    #[token("impl")] // Rust compatibility alias
+    #[token("⊢")] // turnstile for impl
     Impl,
     #[token("scroll")] // scroll for module
-    #[token("mod")]    // Rust compatibility alias
     Mod,
     #[token("invoke")] // invoke for use/import
-    #[token("use")]    // Rust compatibility alias
     Use,
-    #[token("☉")]   // sun for public
-    #[token("pub")] // Rust compatibility alias
+    #[token("☉")] // sun for public
     Pub,
     #[token("actor")]
     Actor,
@@ -328,39 +317,29 @@ pub enum Token {
     #[token("macro_rules")]
     MacroRules,
 
-    // Control flow (Sigil-native with Rust compatibility aliases)
-    #[token("⎇")]  // ISO branch symbol for if
-    #[token("if")] // Rust compatibility alias
+    // Control flow (Sigil-native only)
+    #[token("⎇")] // ISO branch symbol for if
     If,
-    #[token("⎉")]    // ISO alternative symbol for else
-    #[token("else")] // Rust compatibility alias
+    #[token("⎉")] // ISO alternative symbol for else
     Else,
-    #[token("⌥")]     // option key symbol for match
-    #[token("match")] // Rust compatibility alias
+    #[token("⌥")] // option key symbol for match
     Match,
     // Note: ∞ handled by Token::Infinity - parser is context-aware
     #[token("forever")] // forever for infinite loop
-    #[token("loop")]    // Rust compatibility alias
     Loop,
-    #[token("⟳")]     // cycle arrow for while
-    #[token("while")] // Rust compatibility alias
+    #[token("⟳")] // cycle arrow for while
     While,
     // Note: ∀ handled by Token::ForAll - parser is context-aware
     #[token("each")] // each for iteration
-    #[token("for")]  // Rust compatibility alias
     For,
     // Note: ∈ handled by Token::ElementOf - parser is context-aware
     #[token("of")] // of for membership
-    #[token("in")] // Rust compatibility alias
     In,
-    #[token("⊲")]     // left triangle for break
-    #[token("break")] // Rust compatibility alias
+    #[token("⊲")] // left triangle for break
     Break,
-    #[token("⊳")]       // right triangle for continue
-    #[token("continue")] // Rust compatibility alias
+    #[token("⊳")] // right triangle for continue
     Continue,
-    #[token("⤺")]      // return arrow
-    #[token("return")] // Rust compatibility alias
+    #[token("⤺")] // return arrow
     Return,
     #[token("yield")]
     Yield,
@@ -378,8 +357,7 @@ pub enum Token {
     Super,
     #[token("tome")] // tome for crate
     Crate,
-    #[token("∋")]     // such that for where clauses
-    #[token("where")] // Rust compatibility alias
+    #[token("∋")] // such that for where clauses
     Where,
     #[token("as")] // type casting - no better symbolic alternative
     As,
@@ -450,13 +428,11 @@ pub enum Token {
     #[token("@‽")]
     AlterSourceBlended,
 
-    // Boolean literals (Sigil-native with Rust compatibility aliases)
+    // Boolean literals (Sigil-native only)
     // Note: ⊤/⊥ handled by Token::Top/Bottom - parser is context-aware
-    #[token("yea")]  // yea for true
-    #[token("true")] // Rust compatibility alias
+    #[token("yea")] // yea for true
     True,
-    #[token("nay")]   // nay for false
-    #[token("false")] // Rust compatibility alias
+    #[token("nay")] // nay for false
     False,
 
     // Null literal
@@ -800,11 +776,9 @@ pub enum Token {
     // === Operators ===
     #[token("|")]
     Pipe,
-    #[token("·")]  // middle dot - Sigil path separator
-    #[token("::")] // Rust compatibility alias
+    #[token("·")] // middle dot - Sigil path separator (Rust :: purged)
     MiddleDot,
-    #[token("→")]  // rightwards arrow
-    #[token("->")] // Rust compatibility alias
+    #[token("→")] // rightwards arrow (Rust -> purged)
     Arrow,
     #[token("=>")]
     FatArrow,
