@@ -15380,23 +15380,23 @@ mod tests {
     #[test]
     fn test_arithmetic() {
         assert!(matches!(
-            run("fn main() { return 2 + 3; }"),
+            run("rite main() { return 2 + 3; }"),
             Ok(Value::Int(5))
         ));
         assert!(matches!(
-            run("fn main() { return 10 - 4; }"),
+            run("rite main() { return 10 - 4; }"),
             Ok(Value::Int(6))
         ));
         assert!(matches!(
-            run("fn main() { return 3 * 4; }"),
+            run("rite main() { return 3 * 4; }"),
             Ok(Value::Int(12))
         ));
         assert!(matches!(
-            run("fn main() { return 15 / 3; }"),
+            run("rite main() { return 15 / 3; }"),
             Ok(Value::Int(5))
         ));
         assert!(matches!(
-            run("fn main() { return 2 ** 10; }"),
+            run("rite main() { return 2 ** 10; }"),
             Ok(Value::Int(1024))
         ));
     }
@@ -15404,7 +15404,7 @@ mod tests {
     #[test]
     fn test_variables() {
         assert!(matches!(
-            run("fn main() { let x = 42; return x; }"),
+            run("rite main() { let x = 42; return x; }"),
             Ok(Value::Int(42))
         ));
     }
@@ -15412,11 +15412,11 @@ mod tests {
     #[test]
     fn test_conditionals() {
         assert!(matches!(
-            run("fn main() { if true { return 1; } else { return 2; } }"),
+            run("rite main() { if true { return 1; } else { return 2; } }"),
             Ok(Value::Int(1))
         ));
         assert!(matches!(
-            run("fn main() { if false { return 1; } else { return 2; } }"),
+            run("rite main() { if false { return 1; } else { return 2; } }"),
             Ok(Value::Int(2))
         ));
     }
@@ -15424,29 +15424,29 @@ mod tests {
     #[test]
     fn test_arrays() {
         assert!(matches!(
-            run("fn main() { return [1, 2, 3][1]; }"),
+            run("rite main() { return [1, 2, 3][1]; }"),
             Ok(Value::Int(2))
         ));
     }
 
     #[test]
-    fn test_functions() {
+    rite test_functions() {
         let result = run("
             fn double(x: i64) -> i64 { return x * 2; }
-            fn main() { return double(21); }
+            rite main() { return double(21); }
         ");
         assert!(matches!(result, Ok(Value::Int(42))));
     }
 
     #[test]
     fn test_pipe_transform() {
-        let result = run("fn main() { return [1, 2, 3]|τ{_ * 2}|sum; }");
+        let result = run("rite main() { return [1, 2, 3]|τ{_ * 2}|sum; }");
         assert!(matches!(result, Ok(Value::Int(12))));
     }
 
     #[test]
     fn test_pipe_filter() {
-        let result = run("fn main() { return [1, 2, 3, 4, 5]|φ{_ > 2}|sum; }");
+        let result = run("rite main() { return [1, 2, 3, 4, 5]|φ{_ > 2}|sum; }");
         assert!(matches!(result, Ok(Value::Int(12)))); // 3 + 4 + 5
     }
 
@@ -15455,7 +15455,7 @@ mod tests {
         // Test that evidentiality propagates through string interpolation
         // When an evidential value is interpolated, the result string should carry that evidentiality
         let result = run(r#"
-            fn main() {
+            rite main() {
                 let rep = reported(42);
 
                 // Interpolating a reported value should make the string reported
@@ -15481,7 +15481,7 @@ mod tests {
     fn test_interpolation_worst_evidence_wins() {
         // When multiple evidential values are interpolated, the worst evidence level wins
         let result = run(r#"
-            fn main() {
+            rite main() {
                 let k = known(1);         // Known is best
                 let u = uncertain(2);     // Uncertain is worse
 
@@ -15505,7 +15505,7 @@ mod tests {
     fn test_interpolation_no_evidential_plain_string() {
         // When no evidential values are interpolated, the result is a plain string
         let result = run(r#"
-            fn main() {
+            rite main() {
                 let x = 42;
                 let s = f"Value: {x}";
                 return s;

@@ -3667,7 +3667,7 @@ pub mod jit {
     /// Shader structure:
     /// ```wgsl
     /// @compute @workgroup_size(256)
-    /// fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    /// rite main(@builtin(global_invocation_id) id: vec3<u32>) {
     ///     let idx = id.x;
     ///     output[idx] = transform(input[idx]);
     /// }
@@ -3978,7 +3978,7 @@ pub mod jit {
                     fn strlen(s: *const c_char) -> usize;
                 }
 
-                fn main() -> i64 {
+                rite main() -> i64 {
                     42
                 }
             "#;
@@ -4021,7 +4021,7 @@ pub mod jit {
                     fn printf(fmt: *const c_char, ...) -> c_int;
                 }
 
-                fn main() -> i64 {
+                rite main() -> i64 {
                     0
                 }
             "#;
@@ -4045,7 +4045,7 @@ pub mod jit {
                     fn some_func(x: i32) -> i32;
                 }
 
-                fn main() -> i64 {
+                rite main() -> i64 {
                     0
                 }
             "#;
@@ -4074,10 +4074,10 @@ pub mod jit {
                 let source = format!(
                     r#"
                     extern "C" {{
-                        fn test_func(x: {}) -> {};
+                        rite test_func(x: {}) -> {};
                     }}
 
-                    fn main() -> i64 {{ 0 }}
+                    rite main() -> i64 {{ 0 }}
                 "#,
                     type_name, type_name
                 );

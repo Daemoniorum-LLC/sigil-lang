@@ -8760,7 +8760,7 @@ mod tests {
 
     #[test]
     fn test_parse_pipe_chain() {
-        let source = "fn main() { let result = data|τ{_ * 2}|φ{_ > 0}|σ; }";
+        let source = "rite main() { let result = data|τ{_ * 2}|φ{_ > 0}|σ; }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -8968,7 +8968,7 @@ mod tests {
         let source = r#"
             #![feature(asm, naked_functions)]
 
-            fn main() -> i64 { 0 }
+            rite main() -> i64 { 0 }
         "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
