@@ -2,9 +2,9 @@
 // Spec: 14-NEURAL.md § 3.1 The Gradient Operator
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let x: Tensor<[]> = Tensor::from(3.0)|requires_grad(true);
-    let y = x * x;  // y = x^2
-    let grad = ∇(y, x);  // dy/dx = 2x = 6
+rite main() {
+    ≔ x: Tensor<[]> = Tensor·from(3.0)|requires_grad(yea);
+    ≔ y = x * x;  // y = x^2
+    ≔ grad = ∇(y, x);  // dy/dx = 2x = 6
     println(grad);
 }

@@ -4,9 +4,9 @@
 //
 // The ⊛ operator combines/merges shards
 
-fn main() {
-    let shards_a: Vec<i32> = vec![1, 2];
-    let shards_b: Vec<i32> = vec![3, 4];
-    let merged = shards_a ⊛ shards_b;  // Convolution merge
+rite main() {
+    ≔ shards_a: Vec<i32> = vec![1, 2];
+    ≔ shards_b: Vec<i32> = vec![3, 4];
+    ≔ merged = shards_a ⊛ shards_b;  // Convolution merge
     println(merged.len());
 }

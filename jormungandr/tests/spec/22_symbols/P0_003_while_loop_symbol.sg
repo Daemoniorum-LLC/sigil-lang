@@ -1,0 +1,18 @@
+// Test: While forever symbol ⟳
+// Spec: SIGIL_NATIVE_SYMBOLS_ROADMAP.md
+// Priority: P0
+//
+// Purpose:
+// Validates ⟳ (cycle arrow) works as ⟳ forever
+//
+// Expected behavior:
+// Should print 0, 1, 2
+
+rite main() {
+    ≔ vary i: !i32 = 0;
+
+    ⟳ i < 3 {
+        println(i);
+        i = i + 1;
+    }
+}

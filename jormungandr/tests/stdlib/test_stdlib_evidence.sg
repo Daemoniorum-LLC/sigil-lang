@@ -1,0 +1,23 @@
+// Stdlib Tests: evidence
+// Evidential type functions with REAL assertions
+
+rite main() {
+    println("=== Testing evidence ===");
+
+    // evidence_of - returns evidence level string
+    ≔ e = evidence_of(42);
+    assert_eq(type_of(e), "string");
+    assert_eq(e, "known");
+
+    // affect_to_evidence - converts affect to evidence level
+    ≔ ae = affect_to_evidence(42);
+    assert_eq(type_of(ae), "string");
+    assert_eq(ae, "known");
+
+    // affect_of - returns affect level string
+    ≔ a = affect_of(42);
+    assert_eq(type_of(a), "string");
+    assert_eq(a, "none");
+
+    println("ALL EVIDENCE TESTS PASSED!");
+}

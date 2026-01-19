@@ -2,9 +2,9 @@
 // Spec: 12-QUANTUM.md § 3.1 Single-Qubit Gates
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let q: linear Qubit = Qubit::zero();
-    let q2 = q|Rx(3.14159);  // Rotate around X-axis by π
-    let result: Cbit = q2|measure;
+rite main() {
+    ≔ q: linear Qubit = Qubit·zero();
+    ≔ q2 = q|Rx(3.14159);  // Rotate around X-axis by π
+    ≔ result: Cbit = q2|measure;
     println(result);  // Should be |1⟩ (X rotation by π = bit flip)
 }

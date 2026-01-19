@@ -1,6 +1,6 @@
 [package]
 name = "sigil-parser"
-version = "0.1.2"
+version = "0.3.0"
 edition = "2021"
 description = "Parser and native compiler for the Sigil programming language - a language that tracks data trust at the type level"
 authors = ["Lilith Crook <lilith@daemoniorum.com>"]
@@ -13,7 +13,7 @@ keywords = ["parser", "compiler", "programming-language", "jit", "ai"]
 categories = ["compilers", "development-tools"]
 
 [features]
-default = ["jit"]
+default = ["jit", "http-client"]
 jit = ["cranelift-codegen", "cranelift-frontend", "cranelift-jit", "cranelift-module", "cranelift-native"]
 llvm = ["inkwell"]
 wasm = ["wasm-encoder"]
@@ -24,7 +24,7 @@ protocols = ["protocol-core", "grpc", "http-client", "websocket", "kafka", "amqp
 protocol-core = ["tokio", "url", "async-trait", "futures-util", "tower"]
 grpc = ["protocol-core", "tonic", "prost", "prost-types"]
 http-client = ["protocol-core", "reqwest", "hyper", "hyper-util", "http", "http-body-util"]
-websocket = ["protocol-core", "tokio-tungstenite"]
+websocket = ["protocol-core", "tokio-tungstenite", "tungstenite"]
 kafka = ["protocol-core", "rdkafka"]
 amqp = ["protocol-core", "lapin"]
 graphql = ["protocol-core", "graphql_client"]
@@ -133,7 +133,7 @@ prost = { version = "0.13", optional = true }
 prost-types = { version = "0.13", optional = true }
 
 # HTTP client support
-reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli", "multipart"], optional = true }
+reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli", "multipart", "blocking"], optional = true }
 hyper = { version = "1.4", features = ["full"], optional = true }
 hyper-util = { version = "0.1", optional = true }
 http = { version = "1.1", optional = true }
@@ -141,6 +141,7 @@ http-body-util = { version = "0.1", optional = true }
 
 # WebSocket support
 tokio-tungstenite = { version = "0.24", features = ["native-tls"], optional = true }
+tungstenite = { version = "0.24", features = ["native-tls"], optional = true }
 futures-util = { version = "0.3", optional = true }
 
 # Kafka support

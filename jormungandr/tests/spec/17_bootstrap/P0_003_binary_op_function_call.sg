@@ -9,9 +9,9 @@
 // Expected behavior:
 // Should compile and print 84 (42 + 42)
 
-fn main() {
-    let x: !i32 = 42;
-    let y: !i32 = 42;
-    let z: !i32 = x + y;
+rite main() {
+    ≔ x: !i32 = 42;
+    ≔ y: !i32 = 42;
+    ≔ z: !i32 = x + y;
     println(z);
 }

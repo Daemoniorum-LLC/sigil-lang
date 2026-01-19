@@ -1,0 +1,697 @@
+//! Tests for Omen Belief System
+//!
+//! Verifies Belief, Proposition, Evidence, BeliefSource, and BeliefManager.
+
+use std::collections::HashMap;
+
+// ============================================================================
+// Self-contained Test Types
+// ============================================================================
+
+pub struct BeliefId { bytes: [u8; 16] }
+fn uuid_v7() -> [u8; 16] { [0u8; 16] }
+
+impl BeliefId {
+    pub fn new() -> Self { Self { bytes: uuid_v7() } }
+}
+
+impl Clone for BeliefId {
+    fn clone(&self) -> Self { Self { bytes: self.bytes } }
+}
+
+impl PartialEq for BeliefId {
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum Epistemic {
+    Axiomatic,
+    Observed,
+    Reported,
+    Inferred,
+    Contested,
+    Unknown,
+}
+
+impl Epistemic {
+    pub fn rank(&self) -> u8 {
+        match self {
+            Epistemic::Axiomatic => 5,
+            Epistemic::Observed => 4,
+            Epistemic::Reported => 3,
+            Epistemic::Inferred => 2,
+            Epistemic::Contested => 1,
+            Epistemic::Unknown => 0,
+        }
+    }
+}
+
+pub struct Timestamp { nanos: u64 }
+
+impl Timestamp {
+    pub fn now() -> Self { Self { nanos: 1000 } }
+}
+
+pub struct Proposition {
+    pub subject: String,
+    pub predicate: String,
+    pub value: Option<String>,
+    pub negated: bool,
+}
+
+impl Proposition {
+    pub fn simple(text: &str) -> Self {
+        Self {
+            subject: text.to_string(),
+            predicate: "is_true".to_string(),
+            value: None,
+            negated: false,
+        }
+    }
+
+    pub fn with_predicate(subject: &str, predicate: &str) -> Self {
+        Self {
+            subject: subject.to_string(),
+            predicate: predicate.to_string(),
+            value: None,
+            negated: false,
+        }
+    }
+
+    pub fn relation(subject: &str, predicate: &str, value: &str) -> Self {
+        Self {
+            subject: subject.to_string(),
+            predicate: predicate.to_string(),
+            value: Some(value.to_string()),
+            negated: false,
+        }
+    }
+
+    pub fn negate(mut self) -> Self {
+        self.negated = !self.negated;
+        self
+    }
+
+    pub fn negates(&self, other: &Proposition) -> bool {
+        self.subject == other.subject &&
+        self.predicate == other.predicate &&
+        self.negated != other.negated
+    }
+
+    pub fn matches(&self, other: &Proposition) -> bool {
+        self.subject == other.subject &&
+        self.predicate == other.predicate &&
+        self.negated == other.negated
+    }
+}
+
+impl Clone for Proposition {
+    fn clone(&self) -> Self {
+        Self {
+            subject: self.subject.clone(),
+            predicate: self.predicate.clone(),
+            value: self.value.clone(),
+            negated: self.negated,
+        }
+    }
+}
+
+pub struct Evidence {
+    pub content: String,
+    pub source: String,
+    pub strength: f32,
+}
+
+impl Evidence {
+    pub fn new(content: &str, source: &str, strength: f32) -> Self {
+        Self {
+            content: content.to_string(),
+            source: source.to_string(),
+            strength: strength.clamp(0.0, 1.0),
+        }
+    }
+
+    pub fn strong(content: &str, source: &str) -> Self {
+        Self::new(content, source, 0.9)
+    }
+
+    pub fn weak(content: &str, source: &str) -> Self {
+        Self::new(content, source, 0.3)
+    }
+}
+
+impl Clone for Evidence {
+    fn clone(&self) -> Self {
+        Self {
+            content: self.content.clone(),
+            source: self.source.clone(),
+            strength: self.strength,
+        }
+    }
+}
+
+pub enum BeliefSource {
+    Observation,
+    Inference { premises: Vec<BeliefId> },
+    Testimony { source: String },
+    Assumption,
+    Axiom,
+}
+
+impl Clone for BeliefSource {
+    fn clone(&self) -> Self {
+        match self {
+            BeliefSource::Observation => BeliefSource::Observation,
+            BeliefSource::Inference { premises } => BeliefSource::Inference {
+                premises: premises.iter().map(|id| id.clone()).collect()
+            },
+            BeliefSource::Testimony { source } => BeliefSource::Testimony { source: source.clone() },
+            BeliefSource::Assumption => BeliefSource::Assumption,
+            BeliefSource::Axiom => BeliefSource::Axiom,
+        }
+    }
+}
+
+pub struct Belief {
+    pub id: BeliefId,
+    pub proposition: Proposition,
+    pub epistemic: Epistemic,
+    pub confidence: f32,
+    pub evidence: Vec<Evidence>,
+    pub source: BeliefSource,
+    pub acquired: Timestamp,
+}
+
+impl Belief {
+    pub fn observed(proposition: &str) -> Self {
+        Self {
+            id: BeliefId::new(),
+            proposition: Proposition::simple(proposition),
+            epistemic: Epistemic::Observed,
+            confidence: 0.95,
+            evidence: vec![],
+            source: BeliefSource::Observation,
+            acquired: Timestamp::now(),
+        }
+    }
+
+    pub fn inferred(proposition: &str, confidence: f32) -> Self {
+        Self {
+            id: BeliefId::new(),
+            proposition: Proposition::simple(proposition),
+            epistemic: Epistemic::Inferred,
+            confidence: confidence.clamp(0.0, 1.0),
+            evidence: vec![],
+            source: BeliefSource::Assumption,
+            acquired: Timestamp::now(),
+        }
+    }
+
+    pub fn axiom(proposition: &str) -> Self {
+        Self {
+            id: BeliefId::new(),
+            proposition: Proposition::simple(proposition),
+            epistemic: Epistemic::Axiomatic,
+            confidence: 1.0,
+            evidence: vec![],
+            source: BeliefSource::Axiom,
+            acquired: Timestamp::now(),
+        }
+    }
+
+    pub fn reported(proposition: &str, source: &str) -> Self {
+        Self {
+            id: BeliefId::new(),
+            proposition: Proposition::simple(proposition),
+            epistemic: Epistemic::Reported,
+            confidence: 0.7,
+            evidence: vec![],
+            source: BeliefSource::Testimony { source: source.to_string() },
+            acquired: Timestamp::now(),
+        }
+    }
+
+    pub fn with_evidence(mut self, evidence: Evidence) -> Self {
+        self.evidence.push(evidence);
+        self
+    }
+
+    pub fn contradicts(&self, other: &Belief) -> bool {
+        self.proposition.negates(&other.proposition)
+    }
+
+    pub fn is_certain(&self) -> bool {
+        self.confidence >= 0.99
+    }
+
+    pub fn is_probable(&self) -> bool {
+        self.confidence >= 0.5
+    }
+}
+
+impl Clone for Belief {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            proposition: self.proposition.clone(),
+            epistemic: self.epistemic,
+            confidence: self.confidence,
+            evidence: self.evidence.clone(),
+            source: self.source.clone(),
+            acquired: Timestamp { nanos: self.acquired.nanos },
+        }
+    }
+}
+
+pub struct BeliefManager {
+    beliefs: HashMap<String, Belief>,
+    by_subject: HashMap<String, Vec<String>>,
+    id_counter: usize,
+}
+
+impl BeliefManager {
+    pub fn new() -> Self {
+        Self {
+            beliefs: HashMap::new(),
+            by_subject: HashMap::new(),
+            id_counter: 0,
+        }
+    }
+
+    pub fn add(&mut self, belief: Belief) -> String {
+        let key = format!("belief_{}", self.id_counter);
+        self.id_counter += 1;
+
+        let subject = belief.proposition.subject.clone();
+        self.by_subject.entry(subject)
+            .or_default()
+            .push(key.clone());
+
+        self.beliefs.insert(key.clone(), belief);
+        key
+    }
+
+    pub fn get(&self, key: &str) -> Option<&Belief> {
+        self.beliefs.get(key)
+    }
+
+    pub fn holds(&self, proposition: &str) -> bool {
+        self.beliefs.values()
+            .any(|b| b.proposition.subject == proposition && b.confidence > 0.5)
+    }
+
+    pub fn about(&self, topic: &str) -> Vec<&Belief> {
+        self.by_subject.get(topic)
+            .map(|keys| keys.iter()
+                .filter_map(|k| self.beliefs.get(k))
+                .collect())
+            .unwrap_or_default()
+    }
+
+    pub fn count(&self) -> usize {
+        self.beliefs.len()
+    }
+
+    pub fn revise_with_evidence(&mut self, evidence: Evidence) {
+        for belief in self.beliefs.values_mut() {
+            if belief.proposition.subject.contains(&evidence.content) {
+                belief.confidence = (belief.confidence + evidence.strength) / 2.0;
+                belief.evidence.push(evidence.clone());
+            }
+        }
+    }
+
+    pub fn remove(&mut self, key: &str) -> Option<Belief> {
+        self.beliefs.remove(key)
+    }
+
+    pub fn strongest_about(&self, topic: &str) -> Option<&Belief> {
+        self.about(topic)
+            .into_iter()
+            .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap())
+    }
+}
+
+// ============================================================================
+// Tests: Proposition
+// ============================================================================
+
+#[test]
+fn test_proposition_simple() {
+    let p = Proposition::simple("sky is blue");
+    assert_eq(p.subject, "sky is blue");
+    assert_eq(p.predicate, "is_true");
+    assert(!p.negated);
+}
+
+#[test]
+fn test_proposition_with_predicate() {
+    let p = Proposition::with_predicate("agent", "is_ready");
+    assert_eq(p.subject, "agent");
+    assert_eq(p.predicate, "is_ready");
+}
+
+#[test]
+fn test_proposition_relation() {
+    let p = Proposition::relation("Alice", "knows", "Bob");
+    assert_eq(p.subject, "Alice");
+    assert_eq(p.predicate, "knows");
+    assert_eq(p.value.unwrap(), "Bob");
+}
+
+#[test]
+fn test_proposition_negate() {
+    let p = Proposition::simple("it is raining").negate();
+    assert(p.negated);
+}
+
+#[test]
+fn test_proposition_double_negate() {
+    let p = Proposition::simple("it is raining").negate().negate();
+    assert(!p.negated);
+}
+
+#[test]
+fn test_proposition_negates() {
+    let p1 = Proposition::simple("raining");
+    let p2 = Proposition::simple("raining").negate();
+    assert(p1.negates(&p2));
+    assert(p2.negates(&p1));
+}
+
+#[test]
+fn test_proposition_not_negates_different() {
+    let p1 = Proposition::simple("raining");
+    let p2 = Proposition::simple("sunny");
+    assert(!p1.negates(&p2));
+}
+
+#[test]
+fn test_proposition_matches() {
+    let p1 = Proposition::simple("x");
+    let p2 = Proposition::simple("x");
+    assert(p1.matches(&p2));
+}
+
+#[test]
+fn test_proposition_clone() {
+    let p1 = Proposition::relation("A", "likes", "B");
+    let p2 = p1.clone();
+    assert_eq(p1.subject, p2.subject);
+    assert_eq(p1.predicate, p2.predicate);
+}
+
+// ============================================================================
+// Tests: Evidence
+// ============================================================================
+
+#[test]
+fn test_evidence_new() {
+    let e = Evidence::new("observation data", "sensor", 0.8);
+    assert_eq(e.content, "observation data");
+    assert_eq(e.source, "sensor");
+    assert_eq(e.strength, 0.8);
+}
+
+#[test]
+fn test_evidence_strong() {
+    let e = Evidence::strong("direct observation", "camera");
+    assert_eq(e.strength, 0.9);
+}
+
+#[test]
+fn test_evidence_weak() {
+    let e = Evidence::weak("rumor", "gossip");
+    assert_eq(e.strength, 0.3);
+}
+
+#[test]
+fn test_evidence_strength_clamped() {
+    let e = Evidence::new("data", "source", 1.5);
+    assert_eq(e.strength, 1.0);
+}
+
+#[test]
+fn test_evidence_clone() {
+    let e1 = Evidence::new("data", "src", 0.5);
+    let e2 = e1.clone();
+    assert_eq(e1.strength, e2.strength);
+}
+
+// ============================================================================
+// Tests: BeliefSource
+// ============================================================================
+
+#[test]
+fn test_belief_source_observation() {
+    let src = BeliefSource::Observation;
+    let is_observation = match src {
+        BeliefSource::Observation => true,
+        _ => false,
+    };
+    assert(is_observation);
+}
+
+#[test]
+fn test_belief_source_inference() {
+    let premise = BeliefId::new();
+    let src = BeliefSource::Inference { premises: vec![premise] };
+    let is_inference = match src {
+        BeliefSource::Inference { .. } => true,
+        _ => false,
+    };
+    assert(is_inference);
+}
+
+#[test]
+fn test_belief_source_testimony() {
+    let src = BeliefSource::Testimony { source: "witness".to_string() };
+    let is_testimony = match src {
+        BeliefSource::Testimony { .. } => true,
+        _ => false,
+    };
+    assert(is_testimony);
+}
+
+#[test]
+fn test_belief_source_assumption() {
+    let src = BeliefSource::Assumption;
+    let is_assumption = match src {
+        BeliefSource::Assumption => true,
+        _ => false,
+    };
+    assert(is_assumption);
+}
+
+#[test]
+fn test_belief_source_axiom() {
+    let src = BeliefSource::Axiom;
+    let is_axiom = match src {
+        BeliefSource::Axiom => true,
+        _ => false,
+    };
+    assert(is_axiom);
+}
+
+#[test]
+fn test_belief_source_clone() {
+    let src = BeliefSource::Testimony { source: "expert".to_string() };
+    let cloned = src.clone();
+    let matches = match cloned {
+        BeliefSource::Testimony { source } => source == "expert",
+        _ => false,
+    };
+    assert(matches);
+}
+
+// ============================================================================
+// Tests: Belief
+// ============================================================================
+
+#[test]
+fn test_belief_observed() {
+    let b = Belief::observed("the door is open");
+    assert_eq(b.epistemic, Epistemic::Observed);
+    assert_eq(b.confidence, 0.95);
+}
+
+#[test]
+fn test_belief_inferred() {
+    let b = Belief::inferred("it will rain", 0.7);
+    assert_eq(b.epistemic, Epistemic::Inferred);
+    assert_eq(b.confidence, 0.7);
+}
+
+#[test]
+fn test_belief_axiom() {
+    let b = Belief::axiom("1 + 1 = 2");
+    assert_eq(b.epistemic, Epistemic::Axiomatic);
+    assert_eq(b.confidence, 1.0);
+}
+
+#[test]
+fn test_belief_reported() {
+    let b = Belief::reported("the meeting is at 3pm", "calendar");
+    assert_eq(b.epistemic, Epistemic::Reported);
+    assert_eq(b.confidence, 0.7);
+}
+
+#[test]
+fn test_belief_with_evidence() {
+    let b = Belief::observed("sensor reading high")
+        .with_evidence(Evidence::strong("measurement", "thermometer"));
+    assert_eq(b.evidence.len(), 1);
+}
+
+#[test]
+fn test_belief_contradicts() {
+    let b1 = Belief::observed("door is open");
+    let mut b2 = Belief::observed("door is open");
+    b2.proposition = b2.proposition.negate();
+    assert(b1.contradicts(&b2));
+}
+
+#[test]
+fn test_belief_not_contradicts() {
+    let b1 = Belief::observed("door is open");
+    let b2 = Belief::observed("window is open");
+    assert(!b1.contradicts(&b2));
+}
+
+#[test]
+fn test_belief_is_certain() {
+    let b = Belief::axiom("truth");
+    assert(b.is_certain());
+}
+
+#[test]
+fn test_belief_not_certain() {
+    let b = Belief::inferred("maybe", 0.6);
+    assert(!b.is_certain());
+}
+
+#[test]
+fn test_belief_is_probable() {
+    let b = Belief::inferred("likely", 0.6);
+    assert(b.is_probable());
+}
+
+#[test]
+fn test_belief_not_probable() {
+    let b = Belief::inferred("unlikely", 0.3);
+    assert(!b.is_probable());
+}
+
+#[test]
+fn test_belief_clone() {
+    let b1 = Belief::observed("fact");
+    let b2 = b1.clone();
+    assert_eq(b1.confidence, b2.confidence);
+}
+
+#[test]
+fn test_belief_confidence_clamped() {
+    let b = Belief::inferred("test", 1.5);
+    assert_eq(b.confidence, 1.0);
+}
+
+// ============================================================================
+// Tests: BeliefManager
+// ============================================================================
+
+#[test]
+fn test_belief_manager_new() {
+    let mgr = BeliefManager::new();
+    assert_eq(mgr.count(), 0);
+}
+
+#[test]
+fn test_belief_manager_add() {
+    let mut mgr = BeliefManager::new();
+    mgr.add(Belief::observed("test"));
+    assert_eq(mgr.count(), 1);
+}
+
+#[test]
+fn test_belief_manager_get() {
+    let mut mgr = BeliefManager::new();
+    let key = mgr.add(Belief::observed("fact"));
+    let b = mgr.get(&key);
+    assert(b.is_some());
+}
+
+#[test]
+fn test_belief_manager_holds() {
+    let mut mgr = BeliefManager::new();
+    mgr.add(Belief::observed("the sky is blue"));
+    assert(mgr.holds("the sky is blue"));
+}
+
+#[test]
+fn test_belief_manager_not_holds_low_confidence() {
+    let mut mgr = BeliefManager::new();
+    mgr.add(Belief::inferred("uncertain thing", 0.3));
+    assert(!mgr.holds("uncertain thing"));
+}
+
+#[test]
+fn test_belief_manager_about() {
+    let mut mgr = BeliefManager::new();
+    mgr.add(Belief::observed("weather"));
+    mgr.add(Belief::observed("weather"));
+    let beliefs = mgr.about("weather");
+    assert_eq(beliefs.len(), 2);
+}
+
+#[test]
+fn test_belief_manager_about_empty() {
+    let mgr = BeliefManager::new();
+    let beliefs = mgr.about("nothing");
+    assert_eq(beliefs.len(), 0);
+}
+
+#[test]
+fn test_belief_manager_revise_with_evidence() {
+    let mut mgr = BeliefManager::new();
+    mgr.add(Belief::inferred("topic evidence", 0.5));
+    mgr.revise_with_evidence(Evidence::strong("evidence", "source"));
+    // Confidence should be revised
+    let beliefs = mgr.about("topic evidence");
+    assert_eq(beliefs.len(), 1);
+}
+
+#[test]
+fn test_belief_manager_remove() {
+    let mut mgr = BeliefManager::new();
+    let key = mgr.add(Belief::observed("temporary"));
+    assert_eq(mgr.count(), 1);
+    mgr.remove(&key);
+    assert_eq(mgr.count(), 0);
+}
+
+#[test]
+fn test_belief_manager_strongest_about() {
+    let mut mgr = BeliefManager::new();
+    mgr.add(Belief::inferred("topic", 0.3));
+    mgr.add(Belief::observed("topic"));  // confidence 0.95
+    let strongest = mgr.strongest_about("topic");
+    assert(strongest.is_some());
+    assert_eq(strongest.unwrap().confidence, 0.95);
+}
+
+#[test]
+fn test_belief_manager_multiple_topics() {
+    let mut mgr = BeliefManager::new();
+    mgr.add(Belief::observed("topic_a"));
+    mgr.add(Belief::observed("topic_b"));
+    mgr.add(Belief::observed("topic_c"));
+    assert_eq(mgr.count(), 3);
+    assert_eq(mgr.about("topic_a").len(), 1);
+    assert_eq(mgr.about("topic_b").len(), 1);
+}
+
+fn main() {
+    print("Omen beliefs tests");
+}

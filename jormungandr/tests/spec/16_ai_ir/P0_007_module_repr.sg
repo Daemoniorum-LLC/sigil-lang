@@ -4,11 +4,11 @@
 //
 // Tests module IR representation - 1 module
 
-fn square(x: i32) -> i32 {
+rite square(x: i32) → i32 {
     x * x
 }
 
-fn main() {
-    // Mock: 1 module in IR
+rite main() {
+    // Mock: 1 module of IR
     println(1);
 }

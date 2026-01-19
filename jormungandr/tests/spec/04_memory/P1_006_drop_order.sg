@@ -1,19 +1,19 @@
-// Test: Drop trait is called
+// Test: Drop aspect is called
 // Spec: 04-MEMORY.md § 6.2 Drop
 // Priority: P1 - Production Ready
 
-struct Dropper {
+sigil Dropper {
     id: !i32,
 }
 
-impl Drop for Dropper {
-    fn drop(&mut self) {
-        println(self.id);
+⊢ Dropper : Drop {
+    rite drop(&vary this) {
+        println(this.id);
     }
 }
 
-fn main() {
-    let a = Dropper { id: 100 };
+rite main() {
+    ≔ a = Dropper { id: 100 };
 
     println(0);
     // Drop happens at end of scope

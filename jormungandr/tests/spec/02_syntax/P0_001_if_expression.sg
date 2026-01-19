@@ -3,12 +3,12 @@
 // Priority: P0
 //
 // Purpose:
-// Validates that if expressions work correctly with boolean conditions.
+// Validates that ⎇ expressions work correctly with boolean conditions.
 //
 // Expected behavior:
 // Should compile and print 42
 
-fn main() {
-    let x: !i32 = if true { 42 } else { 0 };
+rite main() {
+    ≔ x: !i32 = ⎇ yea { 42 } ⎉ { 0 };
     println(x);
 }

@@ -1,8 +1,8 @@
-// Test: Option::None handling
+// Test: Option·None handling
 // Spec: Edge Cases - Optional Values
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let opt: Option<i32> = None;
+rite main() {
+    ≔ opt: Option<i32> = None;
     println(opt.is_none());
 }

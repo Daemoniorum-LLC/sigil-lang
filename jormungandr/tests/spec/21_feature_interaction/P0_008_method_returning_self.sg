@@ -1,22 +1,22 @@
-// Test: Method returning Self for builder pattern
-// Spec: Feature Interaction - Methods + Self
+// Test: Method returning This each builder pattern
+// Spec: Feature Interaction - Methods + This
 // Priority: P0 - Bootstrap Critical
 
-struct Builder {
+sigil Builder {
     value: i32,
 }
 
-impl Builder {
-    fn new() -> Builder {
-        return Builder { value: 0 };
+⊢ Builder {
+    rite new() → Builder {
+        ⤺ Builder { value: 0 };
     }
 
-    fn with_value(self, v: i32) -> Builder {
-        return Builder { value: v };
+    rite with_value(this, v: i32) → Builder {
+        ⤺ Builder { value: v };
     }
 }
 
-fn main() {
-    let b = Builder::new().with_value(42);
+rite main() {
+    ≔ b = Builder·new().with_value(42);
     println(b.value);
 }

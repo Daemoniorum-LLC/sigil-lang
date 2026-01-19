@@ -1,5 +1,5 @@
 // Test: Function with mixed evidence parameters
-// Spec: 03-TYPES.md § 2.4 Evidence in Function Signatures
+// Spec: 03-TYPES.md § 2.4 Evidence of Function Signatures
 // Priority: P0
 //
 // Purpose:
@@ -10,13 +10,13 @@
 // Result should have Uncertain evidence (! + ? = ?)
 // Should print 141 (42 + 99)
 
-fn add_mixed(x: !i32, y: ?i32) -> ?i32 {
+rite add_mixed(x: !i32, y: ?i32) → ?i32 {
     x + y  // ! + ? = ?
 }
 
-fn main() {
-    let a: !i32 = 42;
-    let b: ?i32 = 99;
-    let result: ?i32 = add_mixed(a, b);
+rite main() {
+    ≔ a: !i32 = 42;
+    ≔ b: ?i32 = 99;
+    ≔ result: ?i32 = add_mixed(a, b);
     println(result);
 }

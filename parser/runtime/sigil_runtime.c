@@ -58,19 +58,35 @@ int64_t sigil_now(void) {
  * Print Functions
  * ============================================================================ */
 
-/* Print an integer value */
+/* Print an integer value (with newline) */
 void sigil_print_int(int64_t value) {
     printf("%lld\n", (long long)value);
 }
 
-/* Print a float value */
+/* Write an integer value (no newline) - for format strings */
+void sigil_write_int(int64_t value) {
+    printf("%lld", (long long)value);
+}
+
+/* Print a float value (with newline) */
 void sigil_print_float(double value) {
     printf("%g\n", value);
 }
 
-/* Print a string */
+/* Write a float value (no newline) - for format strings */
+void sigil_write_float(double value) {
+    printf("%g", value);
+}
+
+/* Print a string (with newline) */
 void sigil_print_str(const char* str) {
     printf("%s\n", str);
+}
+
+/* Write a string (no newline) - for format strings */
+void sigil_write_str(const char* str) {
+    printf("%s", str);
+    fflush(stdout);
 }
 
 /* Get string length */
@@ -577,6 +593,468 @@ int64_t sigil_file_exists(const char* path) {
     }
     return 0;
 }
+
+/* ============================================================================
+ * SIMD Functions (AVX-512 F32x16)
+ * ============================================================================ */
+
+#ifdef __AVX512F__
+#include <immintrin.h>
+
+/* Allocate aligned memory for SIMD vectors (64-byte aligned for AVX-512) */
+void* sigil_simd_alloc(int64_t num_floats) {
+    size_t size = (size_t)num_floats * sizeof(float);
+    return aligned_alloc(64, size);
+}
+
+/* Free aligned SIMD memory */
+void sigil_simd_free(void* ptr) {
+    free(ptr);
+}
+
+/* Splat scalar to all 16 lanes of F32x16 */
+void sigil_simd_splat_f32x16(float* dest, float value) {
+    __m512 v = _mm512_set1_ps(value);
+    _mm512_store_ps(dest, v);
+}
+
+/* Load aligned F32x16 - just memcpy wrapper for consistency */
+void sigil_simd_load_f32x16(float* dest, const float* src) {
+    __m512 v = _mm512_load_ps(src);
+    _mm512_store_ps(dest, v);
+}
+
+/* Store aligned F32x16 */
+void sigil_simd_store_f32x16(float* dest, const float* src) {
+    __m512 v = _mm512_load_ps(src);
+    _mm512_store_ps(dest, v);
+}
+
+/* F32x16 add: dest = a + b */
+void sigil_simd_add_f32x16(float* dest, const float* a, const float* b) {
+    __m512 va = _mm512_load_ps(a);
+    __m512 vb = _mm512_load_ps(b);
+    __m512 vr = _mm512_add_ps(va, vb);
+    _mm512_store_ps(dest, vr);
+}
+
+/* F32x16 subtract: dest = a - b */
+void sigil_simd_sub_f32x16(float* dest, const float* a, const float* b) {
+    __m512 va = _mm512_load_ps(a);
+    __m512 vb = _mm512_load_ps(b);
+    __m512 vr = _mm512_sub_ps(va, vb);
+    _mm512_store_ps(dest, vr);
+}
+
+/* F32x16 multiply: dest = a * b */
+void sigil_simd_mul_f32x16(float* dest, const float* a, const float* b) {
+    __m512 va = _mm512_load_ps(a);
+    __m512 vb = _mm512_load_ps(b);
+    __m512 vr = _mm512_mul_ps(va, vb);
+    _mm512_store_ps(dest, vr);
+}
+
+/* F32x16 divide: dest = a / b */
+void sigil_simd_div_f32x16(float* dest, const float* a, const float* b) {
+    __m512 va = _mm512_load_ps(a);
+    __m512 vb = _mm512_load_ps(b);
+    __m512 vr = _mm512_div_ps(va, vb);
+    _mm512_store_ps(dest, vr);
+}
+
+/* F32x16 fused multiply-add: dest = a * b + c */
+void sigil_simd_fmadd_f32x16(float* dest, const float* a, const float* b, const float* c) {
+    __m512 va = _mm512_load_ps(a);
+    __m512 vb = _mm512_load_ps(b);
+    __m512 vc = _mm512_load_ps(c);
+    __m512 vr = _mm512_fmadd_ps(va, vb, vc);
+    _mm512_store_ps(dest, vr);
+}
+
+/* F32x16 horizontal sum (reduce add) */
+float sigil_simd_reduce_add_f32x16(const float* src) {
+    __m512 v = _mm512_load_ps(src);
+    return _mm512_reduce_add_ps(v);
+}
+
+/* F32x16 extract single element */
+float sigil_simd_extract_f32x16(const float* src, int64_t index) {
+    return src[index & 15];
+}
+
+/* F32x16 dot product of two vectors */
+float sigil_simd_dot_f32x16(const float* a, const float* b) {
+    __m512 va = _mm512_load_ps(a);
+    __m512 vb = _mm512_load_ps(b);
+    __m512 vr = _mm512_mul_ps(va, vb);
+    return _mm512_reduce_add_ps(vr);
+}
+
+#else
+/* Fallback scalar implementations when AVX-512 is not available */
+
+void* sigil_simd_alloc(int64_t num_floats) {
+    return malloc((size_t)num_floats * sizeof(float));
+}
+
+void sigil_simd_free(void* ptr) {
+    free(ptr);
+}
+
+void sigil_simd_splat_f32x16(float* dest, float value) {
+    for (int i = 0; i < 16; i++) dest[i] = value;
+}
+
+void sigil_simd_load_f32x16(float* dest, const float* src) {
+    for (int i = 0; i < 16; i++) dest[i] = src[i];
+}
+
+void sigil_simd_store_f32x16(float* dest, const float* src) {
+    for (int i = 0; i < 16; i++) dest[i] = src[i];
+}
+
+void sigil_simd_add_f32x16(float* dest, const float* a, const float* b) {
+    for (int i = 0; i < 16; i++) dest[i] = a[i] + b[i];
+}
+
+void sigil_simd_sub_f32x16(float* dest, const float* a, const float* b) {
+    for (int i = 0; i < 16; i++) dest[i] = a[i] - b[i];
+}
+
+void sigil_simd_mul_f32x16(float* dest, const float* a, const float* b) {
+    for (int i = 0; i < 16; i++) dest[i] = a[i] * b[i];
+}
+
+void sigil_simd_div_f32x16(float* dest, const float* a, const float* b) {
+    for (int i = 0; i < 16; i++) dest[i] = a[i] / b[i];
+}
+
+void sigil_simd_fmadd_f32x16(float* dest, const float* a, const float* b, const float* c) {
+    for (int i = 0; i < 16; i++) dest[i] = a[i] * b[i] + c[i];
+}
+
+float sigil_simd_reduce_add_f32x16(const float* src) {
+    float sum = 0.0f;
+    for (int i = 0; i < 16; i++) sum += src[i];
+    return sum;
+}
+
+float sigil_simd_extract_f32x16(const float* src, int64_t index) {
+    return src[index & 15];
+}
+
+float sigil_simd_dot_f32x16(const float* a, const float* b) {
+    float sum = 0.0f;
+    for (int i = 0; i < 16; i++) sum += a[i] * b[i];
+    return sum;
+}
+
+#endif /* __AVX512F__ */
+
+/* ============================================================================
+ * CUDA Functions (using CUDA Driver API)
+ * ============================================================================ */
+
+#ifdef SIGIL_CUDA_SUPPORT
+#include <cuda.h>
+#include <nvrtc.h>
+
+static CUcontext g_cuda_context = NULL;
+static CUdevice g_cuda_device = 0;
+static int g_cuda_initialized = 0;
+
+/* Initialize CUDA - must be called before any other CUDA operations */
+int64_t sigil_cuda_init(void) {
+    if (g_cuda_initialized) return 1;
+
+    CUresult err = cuInit(0);
+    if (err != CUDA_SUCCESS) {
+        fprintf(stderr, "CUDA init failed: %d\n", err);
+        return 0;
+    }
+
+    err = cuDeviceGet(&g_cuda_device, 0);
+    if (err != CUDA_SUCCESS) {
+        fprintf(stderr, "CUDA device get failed: %d\n", err);
+        return 0;
+    }
+
+    err = cuCtxCreate(&g_cuda_context, 0, g_cuda_device);
+    if (err != CUDA_SUCCESS) {
+        fprintf(stderr, "CUDA context create failed: %d\n", err);
+        return 0;
+    }
+
+    g_cuda_initialized = 1;
+    return 1;
+}
+
+/* Cleanup CUDA resources */
+void sigil_cuda_cleanup(void) {
+    if (g_cuda_context) {
+        cuCtxDestroy(g_cuda_context);
+        g_cuda_context = NULL;
+    }
+    g_cuda_initialized = 0;
+}
+
+/* Get CUDA device properties */
+int64_t sigil_cuda_get_device_count(void) {
+    int count = 0;
+    if (cuDeviceGetCount(&count) != CUDA_SUCCESS) return 0;
+    return (int64_t)count;
+}
+
+/* Allocate device memory - returns device pointer as i64 */
+int64_t sigil_cuda_malloc(int64_t size) {
+    if (!g_cuda_initialized) {
+        if (!sigil_cuda_init()) return 0;
+    }
+
+    CUdeviceptr ptr = 0;
+    CUresult err = cuMemAlloc(&ptr, (size_t)size);
+    if (err != CUDA_SUCCESS) {
+        fprintf(stderr, "CUDA malloc failed: %d\n", err);
+        return 0;
+    }
+    return (int64_t)ptr;
+}
+
+/* Free device memory */
+void sigil_cuda_free(int64_t device_ptr) {
+    if (device_ptr) {
+        cuMemFree((CUdeviceptr)device_ptr);
+    }
+}
+
+/* Copy host to device */
+int64_t sigil_cuda_memcpy_h2d(int64_t dst_device, void* src_host, int64_t size) {
+    CUresult err = cuMemcpyHtoD((CUdeviceptr)dst_device, src_host, (size_t)size);
+    return (err == CUDA_SUCCESS) ? 1 : 0;
+}
+
+/* Copy device to host */
+int64_t sigil_cuda_memcpy_d2h(void* dst_host, int64_t src_device, int64_t size) {
+    CUresult err = cuMemcpyDtoH(dst_host, (CUdeviceptr)src_device, (size_t)size);
+    return (err == CUDA_SUCCESS) ? 1 : 0;
+}
+
+/* Copy device to device */
+int64_t sigil_cuda_memcpy_d2d(int64_t dst_device, int64_t src_device, int64_t size) {
+    CUresult err = cuMemcpyDtoD((CUdeviceptr)dst_device, (CUdeviceptr)src_device, (size_t)size);
+    return (err == CUDA_SUCCESS) ? 1 : 0;
+}
+
+/* Synchronize device */
+void sigil_cuda_sync(void) {
+    cuCtxSynchronize();
+}
+
+/* Kernel module storage */
+#define MAX_CUDA_MODULES 64
+static CUmodule g_cuda_modules[MAX_CUDA_MODULES];
+static CUfunction g_cuda_functions[MAX_CUDA_MODULES];
+static int g_num_cuda_modules = 0;
+
+/* Compile PTX string and load as module, returns function handle */
+int64_t sigil_cuda_load_ptx(const char* ptx_source, const char* kernel_name) {
+    if (!g_cuda_initialized) {
+        if (!sigil_cuda_init()) return -1;
+    }
+
+    if (g_num_cuda_modules >= MAX_CUDA_MODULES) {
+        fprintf(stderr, "Too many CUDA modules\n");
+        return -1;
+    }
+
+    CUmodule module;
+    CUresult err = cuModuleLoadData(&module, ptx_source);
+    if (err != CUDA_SUCCESS) {
+        fprintf(stderr, "CUDA module load failed: %d\n", err);
+        return -1;
+    }
+
+    CUfunction func;
+    err = cuModuleGetFunction(&func, module, kernel_name);
+    if (err != CUDA_SUCCESS) {
+        fprintf(stderr, "CUDA get function '%s' failed: %d\n", kernel_name, err);
+        cuModuleUnload(module);
+        return -1;
+    }
+
+    int handle = g_num_cuda_modules;
+    g_cuda_modules[handle] = module;
+    g_cuda_functions[handle] = func;
+    g_num_cuda_modules++;
+
+    return (int64_t)handle;
+}
+
+/* Launch kernel with 1D grid/block configuration
+ * handle: kernel handle from sigil_cuda_load_ptx
+ * grid_x: number of blocks
+ * block_x: threads per block
+ * args: array of argument pointers (device pointers as i64)
+ * num_args: number of arguments
+ */
+int64_t sigil_cuda_launch_kernel_1d(int64_t handle, int64_t grid_x, int64_t block_x,
+                                     void** args, int64_t num_args) {
+    if (handle < 0 || handle >= g_num_cuda_modules) {
+        fprintf(stderr, "Invalid kernel handle: %lld\n", (long long)handle);
+        return 0;
+    }
+
+    CUfunction func = g_cuda_functions[handle];
+
+    CUresult err = cuLaunchKernel(
+        func,
+        (unsigned)grid_x, 1, 1,   // grid dim
+        (unsigned)block_x, 1, 1,  // block dim
+        0,                         // shared mem
+        NULL,                      // stream
+        args,                      // args
+        NULL                       // extra
+    );
+
+    if (err != CUDA_SUCCESS) {
+        fprintf(stderr, "CUDA kernel launch failed: %d\n", err);
+        return 0;
+    }
+
+    return 1;
+}
+
+/* Launch kernel with 2D grid/block configuration */
+int64_t sigil_cuda_launch_kernel_2d(int64_t handle,
+                                     int64_t grid_x, int64_t grid_y,
+                                     int64_t block_x, int64_t block_y,
+                                     void** args, int64_t num_args) {
+    if (handle < 0 || handle >= g_num_cuda_modules) {
+        fprintf(stderr, "Invalid kernel handle: %lld\n", (long long)handle);
+        return 0;
+    }
+
+    CUfunction func = g_cuda_functions[handle];
+
+    CUresult err = cuLaunchKernel(
+        func,
+        (unsigned)grid_x, (unsigned)grid_y, 1,   // grid dim
+        (unsigned)block_x, (unsigned)block_y, 1, // block dim
+        0,                                        // shared mem
+        NULL,                                     // stream
+        args,                                     // args
+        NULL                                      // extra
+    );
+
+    if (err != CUDA_SUCCESS) {
+        fprintf(stderr, "CUDA kernel launch failed: %d\n", err);
+        return 0;
+    }
+
+    return 1;
+}
+
+/* Compile CUDA source to PTX using NVRTC */
+char* sigil_cuda_compile_to_ptx(const char* cuda_source, const char* kernel_name) {
+    nvrtcProgram prog;
+    nvrtcResult res = nvrtcCreateProgram(&prog, cuda_source, kernel_name, 0, NULL, NULL);
+    if (res != NVRTC_SUCCESS) {
+        fprintf(stderr, "NVRTC create program failed: %d\n", res);
+        return NULL;
+    }
+
+    // Compile with compute capability for Ada (sm_89)
+    const char* opts[] = {"--gpu-architecture=compute_89"};
+    res = nvrtcCompileProgram(prog, 1, opts);
+    if (res != NVRTC_SUCCESS) {
+        size_t log_size;
+        nvrtcGetProgramLogSize(prog, &log_size);
+        char* log = (char*)malloc(log_size);
+        nvrtcGetProgramLog(prog, log);
+        fprintf(stderr, "NVRTC compile failed:\n%s\n", log);
+        free(log);
+        nvrtcDestroyProgram(&prog);
+        return NULL;
+    }
+
+    size_t ptx_size;
+    nvrtcGetPTXSize(prog, &ptx_size);
+    char* ptx = (char*)malloc(ptx_size);
+    nvrtcGetPTX(prog, ptx);
+    nvrtcDestroyProgram(&prog);
+
+    return ptx;
+}
+
+/* High-level: compile CUDA source and get kernel handle */
+int64_t sigil_cuda_compile_kernel(const char* cuda_source, const char* kernel_name) {
+    char* ptx = sigil_cuda_compile_to_ptx(cuda_source, kernel_name);
+    if (!ptx) return -1;
+
+    int64_t handle = sigil_cuda_load_ptx(ptx, kernel_name);
+    free(ptx);
+    return handle;
+}
+
+#else
+/* Stub implementations when CUDA is not available */
+
+int64_t sigil_cuda_init(void) {
+    fprintf(stderr, "CUDA support not compiled in\n");
+    return 0;
+}
+
+void sigil_cuda_cleanup(void) {}
+
+int64_t sigil_cuda_get_device_count(void) { return 0; }
+
+int64_t sigil_cuda_malloc(int64_t size) {
+    (void)size;
+    return 0;
+}
+
+void sigil_cuda_free(int64_t device_ptr) {
+    (void)device_ptr;
+}
+
+int64_t sigil_cuda_memcpy_h2d(int64_t dst, void* src, int64_t size) {
+    (void)dst; (void)src; (void)size;
+    return 0;
+}
+
+int64_t sigil_cuda_memcpy_d2h(void* dst, int64_t src, int64_t size) {
+    (void)dst; (void)src; (void)size;
+    return 0;
+}
+
+int64_t sigil_cuda_memcpy_d2d(int64_t dst, int64_t src, int64_t size) {
+    (void)dst; (void)src; (void)size;
+    return 0;
+}
+
+void sigil_cuda_sync(void) {}
+
+int64_t sigil_cuda_load_ptx(const char* ptx, const char* name) {
+    (void)ptx; (void)name;
+    return -1;
+}
+
+int64_t sigil_cuda_launch_kernel_1d(int64_t h, int64_t gx, int64_t bx, void** args, int64_t n) {
+    (void)h; (void)gx; (void)bx; (void)args; (void)n;
+    return 0;
+}
+
+int64_t sigil_cuda_launch_kernel_2d(int64_t h, int64_t gx, int64_t gy, int64_t bx, int64_t by, void** args, int64_t n) {
+    (void)h; (void)gx; (void)gy; (void)bx; (void)by; (void)args; (void)n;
+    return 0;
+}
+
+int64_t sigil_cuda_compile_kernel(const char* src, const char* name) {
+    (void)src; (void)name;
+    return -1;
+}
+
+#endif /* SIGIL_CUDA_SUPPORT */
 
 /* ============================================================================
  * System Functions

@@ -4,12 +4,12 @@
 //
 // Tests type IR representation - Point has 2 fields (x, y)
 
-struct Point {
+sigil Point {
     x: i32,
     y: i32
 }
 
-fn main() {
+rite main() {
     // Mock: Point type has 2 fields
     println(2);
 }

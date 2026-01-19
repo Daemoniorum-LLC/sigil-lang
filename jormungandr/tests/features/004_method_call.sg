@@ -1,28 +1,28 @@
-// Test: Call method on struct instance
-pub struct Calculator {
+// Test: Call method on sigil instance
+☉ sigil Calculator {
     result: !i32
 }
 
-impl Calculator {
-    fn new() -> !Calculator {
+⊢ Calculator {
+    rite new() → !Calculator {
         Calculator { result: 0 }
     }
 
-    fn add(&mut self, value: !i32) {
-        self.result = self.result + value;
+    rite add(&vary this, value: !i32) {
+        this.result = this.result + value;
     }
 
-    fn multiply(&mut self, value: !i32) {
-        self.result = self.result * value;
+    rite multiply(&vary this, value: !i32) {
+        this.result = this.result * value;
     }
 
-    fn get_result(&self) -> !i32 {
-        self.result
+    rite get_result(&this) → !i32 {
+        this.result
     }
 }
 
-fn main() {
-    let mut calc: !Calculator = Calculator::new();
+rite main() {
+    ≔ vary calc: !Calculator = Calculator·new();
     calc.add(5);
     calc.add(3);
     calc.multiply(2);

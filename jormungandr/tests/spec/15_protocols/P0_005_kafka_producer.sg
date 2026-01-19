@@ -4,11 +4,11 @@
 //
 // Tests Kafka send concept with mock
 
-fn mock_kafka_send() -> bool {
-    true
+rite mock_kafka_send() → bool {
+    yea
 }
 
-fn main() {
-    let success = mock_kafka_send();
-    println(if success { 1 } else { 0 });
+rite main() {
+    ≔ success = mock_kafka_send();
+    println(⎇ success { 1 } ⎉ { 0 });
 }

@@ -2,21 +2,21 @@
 // Spec: 06-CONCURRENCY.md § 5.1 Mutex
 // Priority: P2 - Enhancement
 
-fn main() {
-    let m: Mutex<i32> = Mutex::new(0);
+rite main() {
+    ≔ m: Mutex<i32> = Mutex·new(0);
 
     {
-        let guard = m.lock();
+        ≔ guard = m.lock();
         println(*guard);
     }
 
     {
-        let guard = m.lock();
+        ≔ guard = m.lock();
         println(*guard);
     }
 
     {
-        let guard = m.lock();
+        ≔ guard = m.lock();
         println(*guard);
     }
 }

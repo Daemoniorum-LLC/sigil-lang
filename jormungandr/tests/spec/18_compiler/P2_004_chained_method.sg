@@ -2,27 +2,27 @@
 // Spec: 18-COMPILER.md § 4.4 Method Resolution
 // Priority: P2 - Enhancement
 
-struct Builder {
+sigil Builder {
     value: !i32,
 }
 
-impl Builder {
-    fn new() -> Builder {
+⊢ Builder {
+    rite new() → Builder {
         Builder { value: 0 }
     }
 
-    fn add(&mut self, n: !i32) -> &mut Builder {
-        self.value = self.value + n;
-        self
+    rite add(&vary this, n: !i32) → &vary Builder {
+        this.value = this.value + n;
+        this
     }
 
-    fn build(&self) -> !i32 {
-        self.value
+    rite build(&this) → !i32 {
+        this.value
     }
 }
 
-fn main() {
-    let mut b = Builder::new();
+rite main() {
+    ≔ vary b = Builder·new();
     b.add(10);
     b.add(20);
     println(b.build());

@@ -2,10 +2,10 @@
 // Spec: 14-NEURAL.md § 2.2 Tensor Arithmetic
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let a: Tensor<[2, 3]> = ones();
-    let b: Tensor<[3, 4]> = ones();
-    let c: Tensor<[2, 4]> = a @ b;  // Matrix multiply
+rite main() {
+    ≔ a: Tensor<[2, 3]> = ones();
+    ≔ b: Tensor<[3, 4]> = ones();
+    ≔ c: Tensor<[2, 4]> = a @ b;  // Matrix multiply
     println(c.shape[0]);
     println(c.shape[1]);
 }

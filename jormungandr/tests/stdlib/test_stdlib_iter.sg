@@ -1,0 +1,35 @@
+// Stdlib Tests: iter
+// Iterator utility functions with REAL assertions
+
+rite main() {
+    println("=== Testing iter ===");
+
+    // len - length of string/array
+    assert_eq(len("hello"), 5);
+    assert_eq(len(""), 0);
+    assert_eq(len([1, 2, 3]), 3);
+    assert_eq(len([]), 0);
+
+    // sum - sum of array elements
+    assert_eq(sum([1, 2, 3, 4]), 10);
+    assert_eq(sum([10, 20, 30]), 60);
+    assert_eq(sum([]), 0);
+    assert_eq(sum([5]), 5);
+
+    // product - product of array elements
+    assert_eq(product([1, 2, 3, 4]), 24);
+    assert_eq(product([2, 3, 5]), 30);
+    assert_eq(product([10]), 10);
+
+    // flatten - flatten nested arrays
+    ≔ flat = flatten([[1, 2], [3, 4]]);
+    assert_eq(len(flat), 4);
+    assert_eq(flat[0], 1);
+    assert_eq(flat[3], 4);
+
+    // unique - remove duplicates
+    ≔ uniq = unique([1, 2, 2, 3, 3, 3]);
+    assert_eq(len(uniq), 3);
+
+    println("ALL ITER TESTS PASSED!");
+}

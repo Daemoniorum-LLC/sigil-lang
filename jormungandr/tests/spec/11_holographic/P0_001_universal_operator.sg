@@ -4,8 +4,8 @@
 //
 // The ∀ operator reconstructs whole from parts
 
-fn main() {
-    let shards: Vec<i32> = vec![1, 2, 3, 4];
-    let whole = shards|∀;  // Universal reconstruction
+rite main() {
+    ≔ shards: Vec<i32> = vec![1, 2, 3, 4];
+    ≔ whole = shards|∀;  // Universal reconstruction
     println(whole);
 }

@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compute powers correctly
 
-fn main() {
+rite main() {
     println(2 ** 0);
     println(2 ** 1);
     println(2 ** 10);

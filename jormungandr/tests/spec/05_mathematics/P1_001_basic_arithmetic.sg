@@ -2,28 +2,28 @@
 // Spec: 05-MATHEMATICS.md § 1.1 Arithmetic
 // Priority: P1 - Standard Feature
 
-fn main() {
+rite main() {
     // Addition
-    let a: !i32 = 10 + 5;
+    ≔ a: !i32 = 10 + 5;
     println(a);
 
     // Subtraction
-    let b: !i32 = 10 - 3;
+    ≔ b: !i32 = 10 - 3;
     println(b);
 
     // Multiplication
-    let c: !i32 = 6 * 7;
+    ≔ c: !i32 = 6 * 7;
     println(c);
 
     // Division
-    let d: !i32 = 20 / 4;
+    ≔ d: !i32 = 20 / 4;
     println(d);
 
     // Float arithmetic
-    let e: !f64 = 3.5 + 2.5;
+    ≔ e: !f64 = 3.5 + 2.5;
     println(e);
 
     // Negative numbers
-    let f: !i32 = -5 + 3;
+    ≔ f: !i32 = -5 + 3;
     println(f);
 }

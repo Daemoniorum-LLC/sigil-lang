@@ -8,9 +8,9 @@
 // Expected behavior:
 // Should negate boolean values
 
-fn main() {
-    let t = true;
-    let f = false;
+rite main() {
+    ≔ t = yea;
+    ≔ f = nay;
 
     println(!t);
     println(!f);

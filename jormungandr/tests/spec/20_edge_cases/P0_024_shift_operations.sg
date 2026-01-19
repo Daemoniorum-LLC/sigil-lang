@@ -8,11 +8,11 @@
 // Expected behavior:
 // Should correctly shift bits
 
-fn main() {
-    let x: i64 = 1;
+rite main() {
+    ≔ x: i64 = 1;
     println(x << 10);    // 1024
 
-    let y: i64 = 1024;
+    ≔ y: i64 = 1024;
     println(y >> 5);     // 32
 
     // Shift by 0

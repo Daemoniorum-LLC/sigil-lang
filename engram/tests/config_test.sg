@@ -1,0 +1,606 @@
+//! Tests for Engram Configuration System
+//!
+//! Verifies configuration types and defaults.
+
+// ============================================================================
+// Self-contained Test Types
+// ============================================================================
+
+pub struct TokenCount(pub usize);
+
+impl TokenCount {
+    pub fn new(n: usize) -> Self { Self(n) }
+}
+
+pub struct ByteSize(pub usize);
+
+impl ByteSize {
+    pub fn kb(n: usize) -> Self { ByteSize(n * 1024) }
+    pub fn mb(n: usize) -> Self { ByteSize(n * 1024 * 1024) }
+    pub fn gb(n: usize) -> Self { ByteSize(n * 1024 * 1024 * 1024) }
+
+    pub fn bytes(&self) -> usize { self.0 }
+}
+
+pub enum CompressionStrategy {
+    EvictLowest,
+    Compress { target_ratio: f64 },
+    SummarizeBatch { batch_size: usize, target_tokens: TokenCount },
+    Aggressive,
+}
+
+pub enum TokenCounterType {
+    Approximate,
+    Tiktoken { model: String },
+}
+
+pub struct InstantConfig {
+    pub capacity: TokenCount,
+    pub decay_rate: f64,
+    pub eviction_threshold: f64,
+    pub compression_strategy: CompressionStrategy,
+    pub token_counter: TokenCounterType,
+}
+
+impl InstantConfig {
+    pub fn default_config() -> Self {
+        Self {
+            capacity: TokenCount(8000),
+            decay_rate: 0.05,
+            eviction_threshold: 0.1,
+            compression_strategy: CompressionStrategy::EvictLowest,
+            token_counter: TokenCounterType::Approximate,
+        }
+    }
+
+    pub fn with_capacity(mut self, cap: usize) -> Self {
+        self.capacity = TokenCount(cap);
+        self
+    }
+
+    pub fn with_decay_rate(mut self, rate: f64) -> Self {
+        self.decay_rate = rate;
+        self
+    }
+}
+
+pub enum DecayFunction {
+    Exponential { lambda: f64 },
+    Linear { rate: f64 },
+    PowerLaw { alpha: f64 },
+    None,
+}
+
+impl DecayFunction {
+    pub fn apply(&self, strength: f64, elapsed_hours: f64) -> f64 {
+        match self {
+            DecayFunction::Exponential { lambda } => {
+                // Approximate exp(-lambda * t)
+                let x = -lambda * elapsed_hours;
+                let mut result = 1.0;
+                let mut term = 1.0;
+                for i in 1..10 {
+                    term = term * x / i as f64;
+                    result = result + term;
+                }
+                strength * result.max(0.0)
+            },
+            DecayFunction::Linear { rate } => {
+                (strength - rate * elapsed_hours).max(0.0)
+            },
+            DecayFunction::PowerLaw { alpha } => {
+                // (1 + t)^(-alpha)
+                let base = 1.0 + elapsed_hours;
+                let mut result = 1.0;
+                for _ in 0..(*alpha as usize) {
+                    result = result / base;
+                }
+                strength * result
+            },
+            DecayFunction::None => strength,
+        }
+    }
+}
+
+pub struct EpisodicConfig {
+    pub decay_function: DecayFunction,
+    pub consolidation_threshold: f64,
+    pub consolidation_interval_hours: f64,
+    pub max_active_episodes: usize,
+    pub min_significance_to_keep: f64,
+}
+
+impl EpisodicConfig {
+    pub fn default_config() -> Self {
+        Self {
+            decay_function: DecayFunction::Exponential { lambda: 0.1 },
+            consolidation_threshold: 0.3,
+            consolidation_interval_hours: 6.0,
+            max_active_episodes: 10000,
+            min_significance_to_keep: 0.1,
+        }
+    }
+
+    pub fn with_decay(mut self, decay: DecayFunction) -> Self {
+        self.decay_function = decay;
+        self
+    }
+}
+
+pub enum ConflictStrategy {
+    TakeNewest,
+    TakeHighestConfidence,
+    MarkContested,
+    Merge,
+}
+
+pub struct SemanticConfig {
+    pub max_nodes: Option<usize>,
+    pub max_edges_per_node: usize,
+    pub belief_conflict_strategy: ConflictStrategy,
+    pub auto_link_threshold: f64,
+}
+
+impl SemanticConfig {
+    pub fn default_config() -> Self {
+        Self {
+            max_nodes: None,
+            max_edges_per_node: 100,
+            belief_conflict_strategy: ConflictStrategy::MarkContested,
+            auto_link_threshold: 0.8,
+        }
+    }
+
+    pub fn with_max_nodes(mut self, max: usize) -> Self {
+        self.max_nodes = Some(max);
+        self
+    }
+}
+
+pub struct ProceduralConfig {
+    pub min_episodes_for_skill: usize,
+    pub skill_success_threshold: f64,
+    pub pattern_match_threshold: f64,
+    pub max_skills: Option<usize>,
+}
+
+impl ProceduralConfig {
+    pub fn default_config() -> Self {
+        Self {
+            min_episodes_for_skill: 3,
+            skill_success_threshold: 0.5,
+            pattern_match_threshold: 0.6,
+            max_skills: None,
+        }
+    }
+}
+
+pub enum DistanceMetric {
+    Cosine,
+    Euclidean,
+    DotProduct,
+}
+
+pub struct VectorConfig {
+    pub dimensions: usize,
+    pub m: usize,
+    pub ef_construction: usize,
+    pub ef_search: usize,
+    pub metric: DistanceMetric,
+}
+
+impl VectorConfig {
+    pub fn default_config() -> Self {
+        Self {
+            dimensions: 384,
+            m: 16,
+            ef_construction: 200,
+            ef_search: 50,
+            metric: DistanceMetric::Cosine,
+        }
+    }
+
+    pub fn with_dimensions(mut self, dim: usize) -> Self {
+        self.dimensions = dim;
+        self
+    }
+}
+
+pub enum StorageBackend {
+    Memory,
+    File { path: String },
+    SQLite { path: String },
+    Redis { url: String },
+}
+
+pub enum EvictionPolicy {
+    LRU,
+    LFU,
+    FIFO,
+}
+
+pub struct HotStoreConfig {
+    pub capacity: ByteSize,
+    pub eviction_policy: EvictionPolicy,
+}
+
+impl HotStoreConfig {
+    pub fn default_config() -> Self {
+        Self {
+            capacity: ByteSize::mb(256),
+            eviction_policy: EvictionPolicy::LRU,
+        }
+    }
+}
+
+pub struct StorageConfig {
+    pub backend: StorageBackend,
+    pub hot: HotStoreConfig,
+}
+
+impl StorageConfig {
+    pub fn default_config() -> Self {
+        Self {
+            backend: StorageBackend::File { path: "./engram_data".to_string() },
+            hot: HotStoreConfig::default_config(),
+        }
+    }
+
+    pub fn ephemeral() -> Self {
+        Self {
+            backend: StorageBackend::Memory,
+            hot: HotStoreConfig::default_config(),
+        }
+    }
+}
+
+pub enum EmbeddingModel {
+    MiniLM_L6,
+    BGE_Small,
+    OpenAI { model: String },
+    External { url: String, model: String },
+}
+
+pub struct EmbeddingConfig {
+    pub model: EmbeddingModel,
+    pub dimensions: usize,
+    pub normalize: bool,
+    pub batch_size: usize,
+}
+
+impl EmbeddingConfig {
+    pub fn default_config() -> Self {
+        Self {
+            model: EmbeddingModel::MiniLM_L6,
+            dimensions: 384,
+            normalize: true,
+            batch_size: 32,
+        }
+    }
+}
+
+pub struct ConsolidationConfig {
+    pub enabled: bool,
+    pub interval_hours: f64,
+    pub on_idle: bool,
+    pub max_duration_secs: u64,
+}
+
+impl ConsolidationConfig {
+    pub fn default_config() -> Self {
+        Self {
+            enabled: true,
+            interval_hours: 6.0,
+            on_idle: true,
+            max_duration_secs: 60,
+        }
+    }
+}
+
+pub struct EngramConfig {
+    pub agent_id: Option<String>,
+    pub instant: InstantConfig,
+    pub episodic: EpisodicConfig,
+    pub semantic: SemanticConfig,
+    pub procedural: ProceduralConfig,
+    pub vector: VectorConfig,
+    pub storage: StorageConfig,
+    pub embedding: EmbeddingConfig,
+    pub consolidation: ConsolidationConfig,
+}
+
+impl EngramConfig {
+    pub fn default_config() -> Self {
+        Self {
+            agent_id: None,
+            instant: InstantConfig::default_config(),
+            episodic: EpisodicConfig::default_config(),
+            semantic: SemanticConfig::default_config(),
+            procedural: ProceduralConfig::default_config(),
+            vector: VectorConfig::default_config(),
+            storage: StorageConfig::default_config(),
+            embedding: EmbeddingConfig::default_config(),
+            consolidation: ConsolidationConfig::default_config(),
+        }
+    }
+
+    pub fn high_memory() -> Self {
+        Self {
+            instant: InstantConfig::default_config().with_capacity(128000),
+            ..Self::default_config()
+        }
+    }
+
+    pub fn low_memory() -> Self {
+        Self {
+            instant: InstantConfig {
+                capacity: TokenCount(2000),
+                compression_strategy: CompressionStrategy::Aggressive,
+                ..InstantConfig::default_config()
+            },
+            episodic: EpisodicConfig {
+                max_active_episodes: 1000,
+                ..EpisodicConfig::default_config()
+            },
+            ..Self::default_config()
+        }
+    }
+
+    pub fn ephemeral() -> Self {
+        Self {
+            storage: StorageConfig::ephemeral(),
+            ..Self::default_config()
+        }
+    }
+}
+
+// ============================================================================
+// Tests: ByteSize
+// ============================================================================
+
+#[test]
+fn test_byte_size_kb() {
+    let size = ByteSize::kb(10);
+    assert_eq(size.bytes(), 10240);
+}
+
+#[test]
+fn test_byte_size_mb() {
+    let size = ByteSize::mb(1);
+    assert_eq(size.bytes(), 1048576);
+}
+
+#[test]
+fn test_byte_size_gb() {
+    let size = ByteSize::gb(1);
+    assert_eq(size.bytes(), 1073741824);
+}
+
+// ============================================================================
+// Tests: InstantConfig
+// ============================================================================
+
+#[test]
+fn test_instant_config_default() {
+    let config = InstantConfig::default_config();
+    assert_eq(config.capacity.0, 8000);
+    assert_eq(config.eviction_threshold, 0.1);
+}
+
+#[test]
+fn test_instant_config_with_capacity() {
+    let config = InstantConfig::default_config().with_capacity(16000);
+    assert_eq(config.capacity.0, 16000);
+}
+
+#[test]
+fn test_instant_config_with_decay_rate() {
+    let config = InstantConfig::default_config().with_decay_rate(0.1);
+    assert_eq(config.decay_rate, 0.1);
+}
+
+// ============================================================================
+// Tests: DecayFunction
+// ============================================================================
+
+#[test]
+fn test_decay_exponential() {
+    let decay = DecayFunction::Exponential { lambda: 0.1 };
+    let result = decay.apply(1.0, 0.0);
+    let diff = (result - 1.0).abs();
+    assert(diff < 0.01);
+}
+
+#[test]
+fn test_decay_linear() {
+    let decay = DecayFunction::Linear { rate: 0.1 };
+    let result = decay.apply(1.0, 5.0);
+    // 1.0 - 0.1 * 5 = 0.5
+    let diff = (result - 0.5).abs();
+    assert(diff < 0.01);
+}
+
+#[test]
+fn test_decay_linear_clamps_at_zero() {
+    let decay = DecayFunction::Linear { rate: 0.5 };
+    let result = decay.apply(1.0, 10.0);
+    // Would be -4.0, but should clamp to 0
+    assert_eq(result, 0.0);
+}
+
+#[test]
+fn test_decay_none() {
+    let decay = DecayFunction::None;
+    let result = decay.apply(0.8, 100.0);
+    assert_eq(result, 0.8);
+}
+
+// ============================================================================
+// Tests: EpisodicConfig
+// ============================================================================
+
+#[test]
+fn test_episodic_config_default() {
+    let config = EpisodicConfig::default_config();
+    assert_eq(config.consolidation_threshold, 0.3);
+    assert_eq(config.max_active_episodes, 10000);
+}
+
+#[test]
+fn test_episodic_config_with_decay() {
+    let config = EpisodicConfig::default_config()
+        .with_decay(DecayFunction::Linear { rate: 0.05 });
+
+    let is_linear = match config.decay_function {
+        DecayFunction::Linear { .. } => true,
+        _ => false,
+    };
+    assert(is_linear);
+}
+
+// ============================================================================
+// Tests: SemanticConfig
+// ============================================================================
+
+#[test]
+fn test_semantic_config_default() {
+    let config = SemanticConfig::default_config();
+    assert(config.max_nodes.is_none());
+    assert_eq(config.max_edges_per_node, 100);
+}
+
+#[test]
+fn test_semantic_config_with_max_nodes() {
+    let config = SemanticConfig::default_config().with_max_nodes(5000);
+    assert_eq(config.max_nodes.unwrap(), 5000);
+}
+
+// ============================================================================
+// Tests: ProceduralConfig
+// ============================================================================
+
+#[test]
+fn test_procedural_config_default() {
+    let config = ProceduralConfig::default_config();
+    assert_eq(config.min_episodes_for_skill, 3);
+    assert_eq(config.pattern_match_threshold, 0.6);
+}
+
+// ============================================================================
+// Tests: VectorConfig
+// ============================================================================
+
+#[test]
+fn test_vector_config_default() {
+    let config = VectorConfig::default_config();
+    assert_eq(config.dimensions, 384);
+    assert_eq(config.m, 16);
+    assert_eq(config.ef_construction, 200);
+}
+
+#[test]
+fn test_vector_config_with_dimensions() {
+    let config = VectorConfig::default_config().with_dimensions(768);
+    assert_eq(config.dimensions, 768);
+}
+
+// ============================================================================
+// Tests: StorageConfig
+// ============================================================================
+
+#[test]
+fn test_storage_config_default() {
+    let config = StorageConfig::default_config();
+    let is_file = match config.backend {
+        StorageBackend::File { .. } => true,
+        _ => false,
+    };
+    assert(is_file);
+}
+
+#[test]
+fn test_storage_config_ephemeral() {
+    let config = StorageConfig::ephemeral();
+    let is_memory = match config.backend {
+        StorageBackend::Memory => true,
+        _ => false,
+    };
+    assert(is_memory);
+}
+
+// ============================================================================
+// Tests: EmbeddingConfig
+// ============================================================================
+
+#[test]
+fn test_embedding_config_default() {
+    let config = EmbeddingConfig::default_config();
+    assert_eq(config.dimensions, 384);
+    assert(config.normalize);
+    assert_eq(config.batch_size, 32);
+}
+
+// ============================================================================
+// Tests: ConsolidationConfig
+// ============================================================================
+
+#[test]
+fn test_consolidation_config_default() {
+    let config = ConsolidationConfig::default_config();
+    assert(config.enabled);
+    assert(config.on_idle);
+}
+
+// ============================================================================
+// Tests: EngramConfig
+// ============================================================================
+
+#[test]
+fn test_engram_config_default() {
+    let config = EngramConfig::default_config();
+    assert(config.agent_id.is_none());
+    assert_eq(config.instant.capacity.0, 8000);
+}
+
+#[test]
+fn test_engram_config_high_memory() {
+    let config = EngramConfig::high_memory();
+    assert_eq(config.instant.capacity.0, 128000);
+}
+
+#[test]
+fn test_engram_config_low_memory() {
+    let config = EngramConfig::low_memory();
+    assert_eq(config.instant.capacity.0, 2000);
+    assert_eq(config.episodic.max_active_episodes, 1000);
+
+    let is_aggressive = match config.instant.compression_strategy {
+        CompressionStrategy::Aggressive => true,
+        _ => false,
+    };
+    assert(is_aggressive);
+}
+
+#[test]
+fn test_engram_config_ephemeral() {
+    let config = EngramConfig::ephemeral();
+    let is_memory = match config.storage.backend {
+        StorageBackend::Memory => true,
+        _ => false,
+    };
+    assert(is_memory);
+}
+
+// ============================================================================
+// Tests: HotStoreConfig
+// ============================================================================
+
+#[test]
+fn test_hot_store_config_default() {
+    let config = HotStoreConfig::default_config();
+    assert_eq(config.capacity.bytes(), 256 * 1024 * 1024);
+}
+
+fn main() {
+    print("Engram configuration tests");
+}

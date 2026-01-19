@@ -2,8 +2,8 @@
 // Spec: 06-CONCURRENCY.md § 4.2 Channels
 // Priority: P2 - Enhancement
 
-fn main() {
-    let ch = channel_new();
+rite main() {
+    ≔ ch = channel_new();
 
     channel_send(ch, 1);
     channel_send(ch, 2);

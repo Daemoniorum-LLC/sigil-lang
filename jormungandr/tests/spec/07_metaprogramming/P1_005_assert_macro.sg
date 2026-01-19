@@ -2,9 +2,9 @@
 // Spec: 07-METAPROGRAMMING.md § 1.5 Assert Macro
 // Priority: P1 - Standard Feature
 
-fn main() {
+rite main() {
     // True assertions pass silently
-    assert!(true);
+    assert!(yea);
     assert!(1 == 1);
     assert!(5 > 3);
 

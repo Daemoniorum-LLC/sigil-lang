@@ -9,6 +9,6 @@
 // Expected behavior:
 // Should compile to C with main() wrapper and print 42
 
-fn main() {
+rite main() {
     println(42);
 }

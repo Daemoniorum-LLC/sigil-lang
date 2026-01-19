@@ -3,13 +3,13 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate mut keyword enables mutability.
+// Validate vary keyword enables mutability.
 //
 // Expected behavior:
 // Should print 99
 
-fn main() {
-    let mut x: !i32 = 42;
+rite main() {
+    ≔ vary x: !i32 = 42;
     x = 99;
     println(x);
 }

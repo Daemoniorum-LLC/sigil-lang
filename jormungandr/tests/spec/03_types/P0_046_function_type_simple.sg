@@ -8,14 +8,14 @@
 // Expected behavior:
 // Should print 42
 
-fn get_value() -> !i32 {
+rite get_value() → !i32 {
     42
 }
 
-fn call_fn(f: fn() -> !i32) -> !i32 {
+rite call_fn(f: rite() → !i32) → !i32 {
     f()
 }
 
-fn main() {
+rite main() {
     println(call_fn(get_value));
 }

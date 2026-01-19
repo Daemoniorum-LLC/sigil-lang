@@ -2,7 +2,7 @@
 // Spec: 18-COMPILER.md § 3.1 Blocks
 // Priority: P2 - Enhancement
 
-fn main() {
+rite main() {
     {
     }
     println(1);

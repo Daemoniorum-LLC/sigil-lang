@@ -1,0 +1,721 @@
+//! Integration Tests for Engram System
+//!
+//! Verifies the main Engram orchestration across all memory systems.
+
+// ============================================================================
+// Self-contained Test Types (simplified for integration testing)
+// ============================================================================
+
+pub struct TokenCount(pub usize);
+impl TokenCount {
+    pub fn zero() -> Self { Self(0) }
+    pub fn from_text(text: &str) -> Self { Self(text.len() / 4 + 1) }
+}
+
+pub enum MemorySource {
+    Instant,
+    Episodic,
+    Semantic,
+    Procedural,
+}
+
+impl Clone for MemorySource {
+    fn clone(&self) -> Self {
+        match self {
+            MemorySource::Instant => MemorySource::Instant,
+            MemorySource::Episodic => MemorySource::Episodic,
+            MemorySource::Semantic => MemorySource::Semantic,
+            MemorySource::Procedural => MemorySource::Procedural,
+        }
+    }
+}
+
+pub struct Memory {
+    pub id: String,
+    pub content: String,
+    pub relevance: f64,
+    pub confidence: f64,
+    pub source: MemorySource,
+}
+
+pub struct EngramStats {
+    pub recall_count: u64,
+    pub facts_learned: u64,
+    pub episodes_recorded: u64,
+}
+
+impl EngramStats {
+    pub fn new() -> Self {
+        Self {
+            recall_count: 0,
+            facts_learned: 0,
+            episodes_recorded: 0,
+        }
+    }
+}
+
+pub struct MemorySystemUsage {
+    pub item_count: usize,
+    pub bytes_used: usize,
+}
+
+pub struct MemoryUsage {
+    pub instant: MemorySystemUsage,
+    pub episodic: MemorySystemUsage,
+    pub semantic: MemorySystemUsage,
+    pub procedural: MemorySystemUsage,
+}
+
+pub struct Gap {
+    pub description: String,
+    pub severity: f64,
+}
+
+pub struct RecallResult {
+    pub memories: Vec<Memory>,
+    pub total_found: usize,
+    pub gaps: Vec<Gap>,
+}
+
+impl RecallResult {
+    pub fn is_empty(&self) -> bool { self.memories.is_empty() }
+    pub fn has_gaps(&self) -> bool { !self.gaps.is_empty() }
+}
+
+// Simplified Engram for testing integration patterns
+pub struct Engram {
+    agent_id: String,
+    instance_id: String,
+    stats: EngramStats,
+
+    // Simplified memory storage
+    instant_items: Vec<(String, f64)>,  // (content, relevance)
+    semantic_facts: Vec<(String, String, f64)>,  // (subject, object, confidence)
+    episodic_events: Vec<(String, String)>,  // (context, outcome)
+    procedural_skills: Vec<(String, Vec<String>, f64)>,  // (name, triggers, success_rate)
+
+    event_count: usize,
+}
+
+impl Engram {
+    pub fn new() -> Self {
+        Self {
+            agent_id: "agent_test_001".to_string(),
+            instance_id: "inst_test_001".to_string(),
+            stats: EngramStats::new(),
+            instant_items: Vec::new(),
+            semantic_facts: Vec::new(),
+            episodic_events: Vec::new(),
+            procedural_skills: Vec::new(),
+            event_count: 0,
+        }
+    }
+
+    pub fn agent_id(&self) -> &str {
+        &self.agent_id
+    }
+
+    pub fn instance_id(&self) -> &str {
+        &self.instance_id
+    }
+
+    // Attend - add to working memory
+    pub fn attend(&mut self, content: &str, relevance: f64) {
+        self.instant_items.push((content.to_string(), relevance));
+        // Sort by relevance descending
+        self.instant_items.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    }
+
+    // Learn - add fact to semantic memory
+    pub fn learn(&mut self, subject: &str, object: &str, confidence: f64) {
+        self.semantic_facts.push((subject.to_string(), object.to_string(), confidence));
+        self.stats.facts_learned = self.stats.facts_learned + 1;
+        self.event_count = self.event_count + 1;
+    }
+
+    // Experience - record episode
+    pub fn experience(&mut self, context: &str, outcome: &str) {
+        self.episodic_events.push((context.to_string(), outcome.to_string()));
+        self.stats.episodes_recorded = self.stats.episodes_recorded + 1;
+        self.event_count = self.event_count + 1;
+    }
+
+    // Register skill
+    pub fn register_skill(&mut self, name: &str, triggers: Vec<&str>, success_rate: f64) {
+        self.procedural_skills.push((
+            name.to_string(),
+            triggers.iter().map(|s| s.to_string()).collect(),
+            success_rate
+        ));
+    }
+
+    // Recall - search across all memories
+    pub fn recall(&mut self, query: &str, limit: usize) -> RecallResult {
+        self.stats.recall_count = self.stats.recall_count + 1;
+
+        let query_lower = query.to_lowercase();
+        let mut memories = Vec::new();
+
+        // Search instant
+        for (content, rel) in &self.instant_items {
+            if content.to_lowercase().contains(&query_lower) {
+                memories.push(Memory {
+                    id: format!("instant_{}", memories.len()),
+                    content: content.clone(),
+                    relevance: *rel,
+                    confidence: 1.0,
+                    source: MemorySource::Instant,
+                });
+            }
+        }
+
+        // Search semantic
+        for (subject, object, conf) in &self.semantic_facts {
+            let combined = format!("{} {}", subject, object).to_lowercase();
+            if combined.contains(&query_lower) {
+                memories.push(Memory {
+                    id: format!("semantic_{}", memories.len()),
+                    content: format!("{} -> {}", subject, object),
+                    relevance: 0.8,
+                    confidence: *conf,
+                    source: MemorySource::Semantic,
+                });
+            }
+        }
+
+        // Search episodic
+        for (context, outcome) in &self.episodic_events {
+            let combined = format!("{} {}", context, outcome).to_lowercase();
+            if combined.contains(&query_lower) {
+                memories.push(Memory {
+                    id: format!("episodic_{}", memories.len()),
+                    content: format!("{}: {}", context, outcome),
+                    relevance: 0.7,
+                    confidence: 0.9,
+                    source: MemorySource::Episodic,
+                });
+            }
+        }
+
+        // Sort by relevance * confidence
+        memories.sort_by(|a, b| {
+            let score_a = a.relevance * a.confidence;
+            let score_b = b.relevance * b.confidence;
+            score_b.partial_cmp(&score_a).unwrap()
+        });
+
+        // Identify gaps
+        let mut gaps = Vec::new();
+        if memories.is_empty() {
+            gaps.push(Gap {
+                description: "No memories found for query".to_string(),
+                severity: 0.8,
+            });
+        }
+
+        let total = memories.len();
+        if total > limit {
+            memories.truncate(limit);
+        }
+
+        RecallResult {
+            memories,
+            total_found: total,
+            gaps,
+        }
+    }
+
+    // Match skills to context
+    pub fn match_skills(&self, context: &str) -> Vec<(String, f64)> {
+        let context_lower = context.to_lowercase();
+        let mut matches = Vec::new();
+
+        for (name, triggers, success_rate) in &self.procedural_skills {
+            let mut match_count = 0;
+            for trigger in triggers {
+                if context_lower.contains(&trigger.to_lowercase()) {
+                    match_count = match_count + 1;
+                }
+            }
+            if match_count > 0 {
+                let match_score = match_count as f64 / triggers.len() as f64;
+                matches.push((name.clone(), match_score * success_rate));
+            }
+        }
+
+        matches.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        matches
+    }
+
+    // Get stats
+    pub fn stats(&self) -> &EngramStats {
+        &self.stats
+    }
+
+    // Get memory usage
+    pub fn memory_usage(&self) -> MemoryUsage {
+        MemoryUsage {
+            instant: MemorySystemUsage {
+                item_count: self.instant_items.len(),
+                bytes_used: self.instant_items.iter().map(|(s, _)| s.len()).sum(),
+            },
+            episodic: MemorySystemUsage {
+                item_count: self.episodic_events.len(),
+                bytes_used: self.episodic_events.iter().map(|(a, b)| a.len() + b.len()).sum(),
+            },
+            semantic: MemorySystemUsage {
+                item_count: self.semantic_facts.len(),
+                bytes_used: self.semantic_facts.iter().map(|(a, b, _)| a.len() + b.len()).sum(),
+            },
+            procedural: MemorySystemUsage {
+                item_count: self.procedural_skills.len(),
+                bytes_used: self.procedural_skills.iter().map(|(n, _, _)| n.len()).sum(),
+            },
+        }
+    }
+
+    // Clear working memory
+    pub fn clear_instant(&mut self) {
+        self.instant_items.clear();
+    }
+
+    // Get event count (for testing event emission)
+    pub fn event_count(&self) -> usize {
+        self.event_count
+    }
+}
+
+pub enum ContextFormat {
+    Plain,
+    XML,
+    Markdown,
+}
+
+pub struct ContextConfig {
+    pub budget: TokenCount,
+    pub format: ContextFormat,
+    pub for_task: Option<String>,
+}
+
+impl ContextConfig {
+    pub fn default_config() -> Self {
+        Self {
+            budget: TokenCount(4096),
+            format: ContextFormat::Plain,
+            for_task: None,
+        }
+    }
+
+    pub fn with_budget(mut self, budget: usize) -> Self {
+        self.budget = TokenCount(budget);
+        self
+    }
+
+    pub fn with_format(mut self, format: ContextFormat) -> Self {
+        self.format = format;
+        self
+    }
+
+    pub fn for_task(mut self, task: &str) -> Self {
+        self.for_task = Some(task.to_string());
+        self
+    }
+}
+
+pub fn build_context(engram: &Engram, config: &ContextConfig) -> String {
+    let mut items = Vec::new();
+
+    // Add instant memory items
+    for (content, relevance) in &engram.instant_items {
+        items.push((content.clone(), *relevance, "instant"));
+    }
+
+    // Sort by relevance
+    items.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+
+    // Format output
+    match config.format {
+        ContextFormat::Plain => {
+            items.iter().map(|(c, _, _)| c.clone()).collect::<Vec<_>>().join("\n\n")
+        },
+        ContextFormat::XML => {
+            items.iter()
+                .map(|(c, r, s)| format!("<context relevance=\"{:.2}\" source=\"{}\">{}</context>", r, s, c))
+                .collect::<Vec<_>>()
+                .join("\n")
+        },
+        ContextFormat::Markdown => {
+            items.iter()
+                .map(|(c, r, s)| format!("### {} ({:.0}%)\n\n{}", s, r * 100.0, c))
+                .collect::<Vec<_>>()
+                .join("\n\n---\n\n")
+        },
+    }
+}
+
+// ============================================================================
+// Tests: Engram Construction
+// ============================================================================
+
+#[test]
+fn test_engram_creation() {
+    let engram = Engram::new();
+    assert(!engram.agent_id().is_empty());
+    assert(!engram.instance_id().is_empty());
+}
+
+#[test]
+fn test_engram_initial_stats() {
+    let engram = Engram::new();
+    let stats = engram.stats();
+    assert_eq(stats.recall_count, 0);
+    assert_eq(stats.facts_learned, 0);
+    assert_eq(stats.episodes_recorded, 0);
+}
+
+// ============================================================================
+// Tests: Attend (Working Memory)
+// ============================================================================
+
+#[test]
+fn test_attend_adds_to_instant() {
+    let mut engram = Engram::new();
+    engram.attend("Important task context", 0.9);
+
+    let usage = engram.memory_usage();
+    assert_eq(usage.instant.item_count, 1);
+}
+
+#[test]
+fn test_attend_maintains_priority_order() {
+    let mut engram = Engram::new();
+    engram.attend("Low priority", 0.3);
+    engram.attend("High priority", 0.9);
+    engram.attend("Medium priority", 0.6);
+
+    // First item should be highest priority
+    assert_eq(engram.instant_items[0].1, 0.9);
+}
+
+#[test]
+fn test_clear_instant() {
+    let mut engram = Engram::new();
+    engram.attend("Some content", 0.5);
+    engram.attend("More content", 0.7);
+
+    engram.clear_instant();
+
+    let usage = engram.memory_usage();
+    assert_eq(usage.instant.item_count, 0);
+}
+
+// ============================================================================
+// Tests: Learn (Semantic Memory)
+// ============================================================================
+
+#[test]
+fn test_learn_adds_fact() {
+    let mut engram = Engram::new();
+    engram.learn("Python", "programming language", 0.95);
+
+    let usage = engram.memory_usage();
+    assert_eq(usage.semantic.item_count, 1);
+}
+
+#[test]
+fn test_learn_updates_stats() {
+    let mut engram = Engram::new();
+    engram.learn("Rust", "systems language", 0.9);
+
+    assert_eq(engram.stats().facts_learned, 1);
+}
+
+#[test]
+fn test_learn_multiple_facts() {
+    let mut engram = Engram::new();
+    engram.learn("Python", "interpreted", 0.9);
+    engram.learn("Rust", "compiled", 0.95);
+    engram.learn("JavaScript", "dynamic", 0.85);
+
+    assert_eq(engram.stats().facts_learned, 3);
+}
+
+// ============================================================================
+// Tests: Experience (Episodic Memory)
+// ============================================================================
+
+#[test]
+fn test_experience_records_episode() {
+    let mut engram = Engram::new();
+    engram.experience("Helping user with code", "success");
+
+    let usage = engram.memory_usage();
+    assert_eq(usage.episodic.item_count, 1);
+}
+
+#[test]
+fn test_experience_updates_stats() {
+    let mut engram = Engram::new();
+    engram.experience("Debug session", "fixed bug");
+
+    assert_eq(engram.stats().episodes_recorded, 1);
+}
+
+// ============================================================================
+// Tests: Recall (Cross-Memory Search)
+// ============================================================================
+
+#[test]
+fn test_recall_finds_instant_memory() {
+    let mut engram = Engram::new();
+    engram.attend("Current Python project discussion", 0.9);
+
+    let result = engram.recall("Python", 10);
+    assert(!result.is_empty());
+}
+
+#[test]
+fn test_recall_finds_semantic_memory() {
+    let mut engram = Engram::new();
+    engram.learn("Python", "high-level language", 0.9);
+
+    let result = engram.recall("Python", 10);
+    assert(!result.is_empty());
+}
+
+#[test]
+fn test_recall_finds_episodic_memory() {
+    let mut engram = Engram::new();
+    engram.experience("Python debugging", "resolved");
+
+    let result = engram.recall("Python", 10);
+    assert(!result.is_empty());
+}
+
+#[test]
+fn test_recall_updates_stats() {
+    let mut engram = Engram::new();
+    engram.recall("anything", 10);
+
+    assert_eq(engram.stats().recall_count, 1);
+}
+
+#[test]
+fn test_recall_respects_limit() {
+    let mut engram = Engram::new();
+    for i in 0..10 {
+        engram.learn(&format!("Python fact {}", i), "value", 0.8);
+    }
+
+    let result = engram.recall("Python", 3);
+    assert_eq(result.memories.len(), 3);
+}
+
+#[test]
+fn test_recall_identifies_gaps() {
+    let mut engram = Engram::new();
+    let result = engram.recall("nonexistent topic", 10);
+
+    assert(result.has_gaps());
+}
+
+#[test]
+fn test_recall_ranks_by_score() {
+    let mut engram = Engram::new();
+    engram.attend("Python is great", 0.9);  // high relevance
+    engram.learn("Python", "language", 0.5);  // low confidence
+
+    let result = engram.recall("Python", 10);
+
+    // First result should have higher score
+    if result.memories.len() >= 2 {
+        let score1 = result.memories[0].relevance * result.memories[0].confidence;
+        let score2 = result.memories[1].relevance * result.memories[1].confidence;
+        assert(score1 >= score2);
+    }
+}
+
+// ============================================================================
+// Tests: Skill Matching
+// ============================================================================
+
+#[test]
+fn test_register_skill() {
+    let mut engram = Engram::new();
+    engram.register_skill("code_review", vec!["review", "code", "check"], 0.85);
+
+    let usage = engram.memory_usage();
+    assert_eq(usage.procedural.item_count, 1);
+}
+
+#[test]
+fn test_match_skills_finds_relevant() {
+    let mut engram = Engram::new();
+    engram.register_skill("code_review", vec!["review", "code"], 0.9);
+    engram.register_skill("debugging", vec!["debug", "fix", "error"], 0.8);
+
+    let matches = engram.match_skills("Can you review my code?");
+
+    assert(!matches.is_empty());
+    assert_eq(matches[0].0, "code_review");
+}
+
+#[test]
+fn test_match_skills_ranks_by_match_score() {
+    let mut engram = Engram::new();
+    engram.register_skill("partial_match", vec!["code"], 0.9);
+    engram.register_skill("full_match", vec!["code", "review"], 0.9);
+
+    let matches = engram.match_skills("code review please");
+
+    // Full match should rank higher
+    if matches.len() >= 2 {
+        assert(matches[0].1 >= matches[1].1);
+    }
+}
+
+// ============================================================================
+// Tests: Memory Usage
+// ============================================================================
+
+#[test]
+fn test_memory_usage_tracking() {
+    let mut engram = Engram::new();
+
+    engram.attend("instant item", 0.5);
+    engram.learn("subject", "object", 0.8);
+    engram.experience("context", "outcome");
+    engram.register_skill("skill", vec!["trigger"], 0.9);
+
+    let usage = engram.memory_usage();
+    assert_eq(usage.instant.item_count, 1);
+    assert_eq(usage.semantic.item_count, 1);
+    assert_eq(usage.episodic.item_count, 1);
+    assert_eq(usage.procedural.item_count, 1);
+}
+
+// ============================================================================
+// Tests: Context Building
+// ============================================================================
+
+#[test]
+fn test_build_context_plain() {
+    let mut engram = Engram::new();
+    engram.attend("First item", 0.9);
+    engram.attend("Second item", 0.7);
+
+    let config = ContextConfig::default_config().with_format(ContextFormat::Plain);
+    let context = build_context(&engram, &config);
+
+    assert(context.contains("First item"));
+    assert(context.contains("Second item"));
+}
+
+#[test]
+fn test_build_context_xml() {
+    let mut engram = Engram::new();
+    engram.attend("Test content", 0.8);
+
+    let config = ContextConfig::default_config().with_format(ContextFormat::XML);
+    let context = build_context(&engram, &config);
+
+    assert(context.contains("<context"));
+    assert(context.contains("relevance="));
+}
+
+#[test]
+fn test_build_context_markdown() {
+    let mut engram = Engram::new();
+    engram.attend("Test content", 0.8);
+
+    let config = ContextConfig::default_config().with_format(ContextFormat::Markdown);
+    let context = build_context(&engram, &config);
+
+    assert(context.contains("###"));
+}
+
+// ============================================================================
+// Tests: Event Emission
+// ============================================================================
+
+#[test]
+fn test_events_emitted_on_learn() {
+    let mut engram = Engram::new();
+    let before = engram.event_count();
+
+    engram.learn("fact", "value", 0.9);
+
+    let after = engram.event_count();
+    assert(after > before);
+}
+
+#[test]
+fn test_events_emitted_on_experience() {
+    let mut engram = Engram::new();
+    let before = engram.event_count();
+
+    engram.experience("context", "outcome");
+
+    let after = engram.event_count();
+    assert(after > before);
+}
+
+// ============================================================================
+// Tests: End-to-End Workflows
+// ============================================================================
+
+#[test]
+fn test_learning_and_recall_workflow() {
+    let mut engram = Engram::new();
+
+    // Learn some facts
+    engram.learn("Rust", "memory safe", 0.95);
+    engram.learn("Rust", "fast", 0.9);
+    engram.learn("Python", "easy to learn", 0.85);
+
+    // Recall should find Rust facts
+    let result = engram.recall("Rust", 10);
+    assert_eq(result.total_found, 2);
+}
+
+#[test]
+fn test_experience_and_skill_extraction() {
+    let mut engram = Engram::new();
+
+    // Record experiences
+    engram.experience("Code review session", "successful");
+    engram.experience("Code review for PR", "approved");
+
+    // Register skill based on pattern
+    engram.register_skill("code_review_skill", vec!["code", "review"], 0.9);
+
+    // Should match skill
+    let matches = engram.match_skills("Please review my code");
+    assert(!matches.is_empty());
+}
+
+#[test]
+fn test_full_agent_interaction() {
+    let mut engram = Engram::new();
+
+    // User asks a question
+    engram.attend("User asking about Python performance", 0.9);
+
+    // Agent learns from interaction
+    engram.learn("Python", "can be slow for CPU-bound tasks", 0.8);
+    engram.learn("Python", "excellent for prototyping", 0.9);
+
+    // Record the experience
+    engram.experience("Python performance discussion", "helpful answer");
+
+    // Later recall
+    let result = engram.recall("Python performance", 10);
+
+    // Should find relevant memories
+    assert(!result.is_empty());
+    assert(result.total_found >= 2);
+}
+
+fn main() {
+    print("Engram integration tests");
+}

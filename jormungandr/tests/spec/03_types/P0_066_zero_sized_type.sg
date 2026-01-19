@@ -8,13 +8,13 @@
 // Expected behavior:
 // Should print 42
 
-pub struct Marker;
+☉ sigil Marker;
 
-fn process(_m: Marker) -> !i32 {
+rite process(_m: Marker) → !i32 {
     42
 }
 
-fn main() {
-    let m: Marker = Marker;
+rite main() {
+    ≔ m: Marker = Marker;
     println(process(m));
 }

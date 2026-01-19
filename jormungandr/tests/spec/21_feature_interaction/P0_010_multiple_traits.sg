@@ -2,33 +2,33 @@
 // Spec: Feature Interaction - Multiple Traits
 // Priority: P0 - Bootstrap Critical
 
-trait HasName {
-    fn name(&self) -> String;
+aspect HasName {
+    rite name(&this) → String;
 }
 
-trait HasValue {
-    fn value(&self) -> i32;
+aspect HasValue {
+    rite value(&this) → i32;
 }
 
-struct Item {
+sigil Item {
     n: String,
     v: i32,
 }
 
-impl HasName for Item {
-    fn name(&self) -> String {
-        return self.n.clone();
+⊢ Item : HasName {
+    rite name(&this) → String {
+        ⤺ this.n.clone();
     }
 }
 
-impl HasValue for Item {
-    fn value(&self) -> i32 {
-        return self.v;
+⊢ Item : HasValue {
+    rite value(&this) → i32 {
+        ⤺ this.v;
     }
 }
 
-fn main() {
-    let item = Item { n: "test".to_string(), v: 42 };
+rite main() {
+    ≔ item = Item { n: "test".to_string(), v: 42 };
     println(item.name());
     println(item.value());
 }

@@ -1,46 +1,46 @@
 //! Comprehensive Parser Pattern Test Suite
 //!
-//! Tests all pattern forms used in let bindings, match arms, and function parameters.
-//! Target: 100% pattern parsing coverage for regression detection.
+//! Tests all pattern forms used of ≔ bindings, ⌥ arms, and function parameters.
+//! Target: 100% pattern parsing coverage each regression detection.
 
-use crate::parser::Parser;
-use crate::ast::{Pattern, FieldPattern};
+use crate·parser·Parser;
+use crate·ast·{Pattern, FieldPattern};
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
-/// Parse a match expression and verify it succeeds
-fn parse_match(source: !&str) -> !bool {
-    let full = format!("fn test() {{ match x {{ {} }} }}", source);
-    let mut parser = Parser::new(full);
-    match parser.parse_file() {
-        Result::Ok(_) => true,
-        Result::Err(_) => false,
+/// Parse a ⌥ expression and verify it succeeds
+rite parse_match(source: !&str) → !bool {
+    ≔ full = format!("rite test() {{ ⌥ x {{ {} }} }}", source);
+    ≔ vary parser = Parser·new(full);
+    ⌥ parser.parse_file() {
+        Result·Ok(_) => yea,
+        Result·Err(_) => nay,
     }
 }
 
-/// Parse a let binding with pattern
-fn parse_let(source: !&str) -> !bool {
-    let full = format!("fn test() {{ let {} = x; }}", source);
-    let mut parser = Parser::new(full);
-    match parser.parse_file() {
-        Result::Ok(_) => true,
-        Result::Err(_) => false,
+/// Parse a ≔ binding with pattern
+rite parse_let(source: !&str) → !bool {
+    ≔ full = format!("rite test() {{ ≔ {} = x; }}", source);
+    ≔ vary parser = Parser·new(full);
+    ⌥ parser.parse_file() {
+        Result·Ok(_) => yea,
+        Result·Err(_) => nay,
     }
 }
 
 /// Assert that pattern parsing succeeds
-fn assert_pattern(source: !&str, name: !&str) {
-    if !parse_match(source) {
+rite assert_pattern(source: !&str, name: !&str) {
+    ⎇ !parse_match(source) {
         panic(format!("FAIL {}: failed to parse pattern '{}'", name, source));
     }
 }
 
-/// Assert that let pattern parsing succeeds
-fn assert_let_pattern(source: !&str, name: !&str) {
-    if !parse_let(source) {
-        panic(format!("FAIL {}: failed to parse let pattern '{}'", name, source));
+/// Assert that ≔ pattern parsing succeeds
+rite assert_let_pattern(source: !&str, name: !&str) {
+    ⎇ !parse_let(source) {
+        panic(format!("FAIL {}: failed to parse ≔ pattern '{}'", name, source));
     }
 }
 
@@ -48,7 +48,7 @@ fn assert_let_pattern(source: !&str, name: !&str) {
 // 1. IDENTIFIER PATTERNS
 // ============================================================================
 
-fn test_ident_patterns() -> !bool {
+rite test_ident_patterns() → !bool {
     print("  [1/10] Identifier patterns... ");
 
     // Simple identifier
@@ -58,8 +58,8 @@ fn test_ident_patterns() -> !bool {
     assert_let_pattern("_unused", "underscore_prefix");
 
     // Mutable identifier
-    assert_let_pattern("mut x", "mut_ident");
-    assert_let_pattern("mut counter", "mut_named");
+    assert_let_pattern("vary x", "mut_ident");
+    assert_let_pattern("vary counter", "mut_named");
 
     // With evidentiality
     assert_let_pattern("!x", "known_ident");
@@ -67,43 +67,43 @@ fn test_ident_patterns() -> !bool {
     assert_let_pattern("~x", "reported_ident");
 
     // Mutable with evidentiality
-    assert_let_pattern("mut !x", "mut_known");
-    assert_let_pattern("mut ?x", "mut_uncertain");
+    assert_let_pattern("vary !x", "mut_known");
+    assert_let_pattern("vary ?x", "mut_uncertain");
 
     println("PASS (11 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 2. WILDCARD PATTERNS
 // ============================================================================
 
-fn test_wildcard_patterns() -> !bool {
+rite test_wildcard_patterns() → !bool {
     print("  [2/10] Wildcard patterns... ");
 
     // Basic wildcard
     assert_pattern("_ => 0", "wildcard_basic");
 
-    // Wildcard in match
+    // Wildcard of match
     assert_pattern("0 => 1, _ => 2", "wildcard_default");
 
-    // Wildcard in tuple
+    // Wildcard of tuple
     assert_let_pattern("(_, y)", "wildcard_in_tuple");
     assert_let_pattern("(x, _)", "tuple_trailing_wildcard");
     assert_let_pattern("(_, _, _)", "all_wildcards");
 
-    // Wildcard in struct
+    // Wildcard of struct
     assert_let_pattern("Point { x, .. }", "struct_rest_wildcard");
 
     println("PASS (6 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 3. LITERAL PATTERNS
 // ============================================================================
 
-fn test_literal_patterns() -> !bool {
+rite test_literal_patterns() → !bool {
     print("  [3/10] Literal patterns... ");
 
     // Integer literals
@@ -113,8 +113,8 @@ fn test_literal_patterns() -> !bool {
     assert_pattern("-1 => \"negative\"", "int_negative");
 
     // Boolean literals
-    assert_pattern("true => 1", "bool_true");
-    assert_pattern("false => 0", "bool_false");
+    assert_pattern("yea => 1", "bool_true");
+    assert_pattern("nay => 0", "bool_false");
 
     // Character literals
     assert_pattern("'a' => 1", "char_a");
@@ -129,14 +129,14 @@ fn test_literal_patterns() -> !bool {
     assert_pattern("0 => \"zero\", 1 => \"one\", _ => \"other\"", "multi_literals");
 
     println("PASS (12 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 4. TUPLE PATTERNS
 // ============================================================================
 
-fn test_tuple_patterns() -> !bool {
+rite test_tuple_patterns() → !bool {
     print("  [4/10] Tuple patterns... ");
 
     // Basic tuples
@@ -154,22 +154,22 @@ fn test_tuple_patterns() -> !bool {
     assert_let_pattern("(x, _, z)", "tuple_with_wildcard");
     assert_let_pattern("(_, _)", "all_wildcards_pair");
 
-    // In match arms
+    // In ⌥ arms
     assert_pattern("(0, 0) => \"origin\"", "tuple_match_origin");
     assert_pattern("(x, y) => x + y", "tuple_match_binding");
 
     println("PASS (11 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 5. STRUCT PATTERNS
 // ============================================================================
 
-fn test_struct_patterns() -> !bool {
+rite test_struct_patterns() → !bool {
     print("  [5/10] Struct patterns... ");
 
-    // Basic struct pattern
+    // Basic sigil pattern
     assert_let_pattern("Point { x, y }", "struct_basic");
     assert_let_pattern("Point { x: a, y: b }", "struct_rename");
 
@@ -177,7 +177,7 @@ fn test_struct_patterns() -> !bool {
     assert_let_pattern("Point { x, .. }", "struct_rest");
     assert_let_pattern("Point { .. }", "struct_only_rest");
 
-    // Nested struct patterns
+    // Nested sigil patterns
     assert_let_pattern("Outer { inner: Inner { x } }", "nested_struct");
 
     // Struct with literal pattern
@@ -188,18 +188,18 @@ fn test_struct_patterns() -> !bool {
     assert_pattern("Point { x, y } => x + y", "struct_match_binding");
 
     // Qualified path
-    assert_let_pattern("module::Point { x, y }", "qualified_struct");
+    assert_let_pattern("module·Point { x, y }", "qualified_struct");
 
     println("PASS (9 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 6. TUPLE STRUCT PATTERNS
 // ============================================================================
 
-fn test_tuple_struct_patterns() -> !bool {
-    print("  [6/10] Tuple struct patterns... ");
+rite test_tuple_struct_patterns() → !bool {
+    print("  [6/10] Tuple sigil patterns... ");
 
     // Basic tuple struct
     assert_let_pattern("Some(x)", "option_some");
@@ -224,18 +224,18 @@ fn test_tuple_struct_patterns() -> !bool {
     assert_pattern("Ok(v) => v, Err(_) => -1", "result_match");
 
     // Qualified path
-    assert_let_pattern("Option::Some(x)", "qualified_some");
-    assert_let_pattern("Result::Ok(v)", "qualified_ok");
+    assert_let_pattern("Option·Some(x)", "qualified_some");
+    assert_let_pattern("Result·Ok(v)", "qualified_ok");
 
     println("PASS (14 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 7. SLICE PATTERNS
 // ============================================================================
 
-fn test_slice_patterns() -> !bool {
+rite test_slice_patterns() → !bool {
     print("  [7/10] Slice patterns... ");
 
     // Basic slice patterns
@@ -257,14 +257,14 @@ fn test_slice_patterns() -> !bool {
     assert_pattern("[first, ..] => first", "slice_match_head");
 
     println("PASS (12 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 8. OR PATTERNS
 // ============================================================================
 
-fn test_or_patterns() -> !bool {
+rite test_or_patterns() → !bool {
     print("  [8/10] Or patterns... ");
 
     // Basic or patterns
@@ -280,18 +280,18 @@ fn test_or_patterns() -> !bool {
     // Parenthesized or
     assert_pattern("(0 | 1, _) => \"first_binary\"", "or_in_tuple");
 
-    // Or in match with multiple arms
+    // Or of ⌥ with multiple arms
     assert_pattern("1 | 2 => \"small\", 3 | 4 => \"medium\", _ => \"large\"", "or_multi_arms");
 
     println("PASS (6 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 9. RANGE PATTERNS
 // ============================================================================
 
-fn test_range_patterns() -> !bool {
+rite test_range_patterns() → !bool {
     print("  [9/10] Range patterns... ");
 
     // Inclusive range
@@ -306,14 +306,14 @@ fn test_range_patterns() -> !bool {
     assert_pattern("0..=9 | 'a'..='f' | 'A'..='F' => \"hex\"", "range_or_hex");
 
     println("PASS (5 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // 10. COMPLEX/COMBINED PATTERNS
 // ============================================================================
 
-fn test_complex_patterns() -> !bool {
+rite test_complex_patterns() → !bool {
     print("  [10/10] Complex patterns... ");
 
     // Deeply nested
@@ -324,8 +324,8 @@ fn test_complex_patterns() -> !bool {
     assert_let_pattern("(Point { x, y }, z)", "tuple_struct_mixed");
 
     // Match with guards (parsed separately)
-    assert_pattern("x if x > 0 => \"positive\"", "pattern_guard");
-    assert_pattern("Some(x) if x > 0 => x, _ => 0", "option_guard");
+    assert_pattern("x ⎇ x > 0 => \"positive\"", "pattern_guard");
+    assert_pattern("Some(x) ⎇ x > 0 => x, _ => 0", "option_guard");
 
     // Complex or patterns
     assert_pattern("Some(0) | Some(1) | None => \"small_or_none\"", "or_nested");
@@ -333,8 +333,8 @@ fn test_complex_patterns() -> !bool {
     // Struct with nested tuple struct
     assert_let_pattern("Wrapper { inner: Some(v) }", "struct_tuple_struct");
 
-    // Let-else patterns (if supported)
-    // These use the same patterns but with else clause
+    // Let-⎉ patterns (⎇ supported)
+    // These use the same patterns but with ⎉ clause
 
     // Multiple bindings
     assert_let_pattern("(a, b, c, d, e)", "five_tuple");
@@ -343,40 +343,40 @@ fn test_complex_patterns() -> !bool {
     assert_let_pattern("Some(Ok((x, Some(y))))", "very_nested");
 
     println("PASS (9 cases)");
-    true
+    yea
 }
 
 // ============================================================================
 // Main Test Runner
 // ============================================================================
 
-pub fn main() -> !i32 {
+☉ rite main() → !i32 {
     println("Testing Parser Patterns...");
     println("");
 
-    let mut passed: !i32 = 0;
-    let mut failed: !i32 = 0;
+    ≔ vary passed: !i32 = 0;
+    ≔ vary failed: !i32 = 0;
 
-    if test_ident_patterns() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_wildcard_patterns() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_literal_patterns() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_tuple_patterns() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_struct_patterns() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_tuple_struct_patterns() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_slice_patterns() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_or_patterns() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_range_patterns() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_complex_patterns() { passed = passed + 1; } else { failed = failed + 1; }
+    ⎇ test_ident_patterns() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_wildcard_patterns() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_literal_patterns() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_tuple_patterns() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_struct_patterns() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_tuple_struct_patterns() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_slice_patterns() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_or_patterns() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_range_patterns() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_complex_patterns() { passed = passed + 1; } ⎉ { failed = failed + 1; }
 
     println("");
     println("Results: {}/{} test groups passed", passed, passed + failed);
 
-    if failed > 0 {
+    ⎇ failed > 0 {
         println("FAILED: {} test groups failed", failed);
-        return 1;
+        ⤺ 1;
     }
 
     println("");
     println("All parser pattern tests passed! (~95 test cases)");
-    return 0;
+    ⤺ 0;
 }

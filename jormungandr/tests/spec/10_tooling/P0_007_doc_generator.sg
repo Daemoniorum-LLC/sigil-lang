@@ -6,13 +6,13 @@
 ///
 /// # Examples
 /// ```
-/// let result = add(1, 2);
+/// ≔ result = add(1, 2);
 /// assert_eq!(result, 3);
 /// ```
-fn add(a: !i32, b: !i32) -> !i32 {
+rite add(a: !i32, b: !i32) → !i32 {
     a + b
 }
 
-fn main() {
+rite main() {
     println(add(2, 3));
 }

@@ -1,0 +1,13 @@
+// Stdlib Tests: HyperLogLog
+// HyperLogLog cardinality estimator with REAL assertions
+// TODO: Expand coverage - currently only tests constructor, needs add/estimate testing
+
+rite main() {
+    println("=== Testing HyperLogLog ===");
+
+    // HyperLogLog·new - creates cardinality estimator
+    ≔ hll = HyperLogLog·new();
+    assert_eq(type_of(hll), "struct:HyperLogLog");
+
+    println("ALL HYPERLOGLOG TESTS PASSED!");
+}

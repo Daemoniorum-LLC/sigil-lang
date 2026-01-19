@@ -1,6 +1,6 @@
-Testing &&:
+Testing ∧:
 false
-Testing ||:
+Testing ∨:
 true
 Non-short-circuit:
 should print

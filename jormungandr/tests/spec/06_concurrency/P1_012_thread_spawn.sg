@@ -1,9 +1,9 @@
-// Test: Channel with multiple values in order
+// Test: Channel with multiple values of order
 // Spec: 06-CONCURRENCY.md § 4 Channels
 // Priority: P1 - Production Ready
 
-fn main() {
-    let ch = channel_new();
+rite main() {
+    ≔ ch = channel_new();
 
     channel_send(ch, 10);
     channel_send(ch, 20);

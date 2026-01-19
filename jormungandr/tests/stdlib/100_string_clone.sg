@@ -1,6 +1,6 @@
 // Test: String clone method
-fn main() {
-    let s1: !String = "Hello";
-    let s2: !String = s1.clone();
+rite main() {
+    ≔ s1: !String = "Hello";
+    ≔ s2: !String = s1.clone();
     println(s2);
 }

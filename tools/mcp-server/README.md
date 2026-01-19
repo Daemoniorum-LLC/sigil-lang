@@ -2,6 +2,21 @@
 
 An MCP (Model Context Protocol) server that enables AI systems to write, run, type-check, and analyze Sigil code.
 
+## Quick Start
+
+**Try Sigil instantly (no install):**
+[playground.sigil-lang.com](https://playground.sigil-lang.com)
+
+**Add to Claude Code:**
+```bash
+claude mcp add sigil -- npx @daemoniorum/sigil-mcp
+```
+
+**Or install globally:**
+```bash
+npm install -g @daemoniorum/sigil-mcp
+```
+
 ## Why?
 
 Sigil is a programming language built for AI, by AI. This MCP server puts Sigil directly in the hands of AI assistants, allowing them to:

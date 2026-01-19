@@ -2,19 +2,19 @@
 // Spec: 05-MATHEMATICS.md § 2.2 Floating Point
 // Priority: P2 - Enhancement
 
-fn main() {
-    let x: !f64 = 3.14;
-    let y: !f64 = 2.71;
+rite main() {
+    ≔ x: !f64 = 3.14;
+    ≔ y: !f64 = 2.71;
 
-    if x > y {
+    ⎇ x > y {
         println(1);
-    } else {
+    } ⎉ {
         println(0);
     }
 
-    if y < x {
+    ⎇ y < x {
         println(1);
-    } else {
+    } ⎉ {
         println(0);
     }
 }

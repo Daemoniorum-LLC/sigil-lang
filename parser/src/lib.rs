@@ -49,6 +49,7 @@ macro_rules! sigil_warn {
 pub mod ast;
 pub mod diagnostic;
 pub mod ffi;
+pub mod fmt;
 pub mod interpreter;
 pub mod ir;
 pub mod lexer;
@@ -59,6 +60,7 @@ pub mod parser;
 pub mod plurality;
 pub mod span;
 pub mod stdlib;
+pub mod tome;
 pub mod tree_sitter_support;
 pub mod typeck;
 
@@ -73,6 +75,9 @@ pub mod wasm;
 
 #[cfg(feature = "protocol-core")]
 pub mod protocol;
+
+#[cfg(feature = "lsp")]
+pub mod lsp;
 
 pub use ast::*;
 pub use diagnostic::{Diagnostic, DiagnosticBuilder, Diagnostics, FixSuggestion, Severity};

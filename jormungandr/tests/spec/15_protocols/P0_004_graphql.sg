@@ -4,15 +4,15 @@
 //
 // Tests GraphQL response handling concept with mock data
 
-struct User {
+sigil User {
     name: String
 }
 
-fn mock_graphql_query() -> User {
+rite mock_graphql_query() → User {
     User { name: "Alice".to_string() }
 }
 
-fn main() {
-    let result = mock_graphql_query();
+rite main() {
+    ≔ result = mock_graphql_query();
     println(result.name);
 }

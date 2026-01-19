@@ -604,6 +604,11 @@ fn register_core(interp: &mut Interpreter) {
 
     // Result::Ok - create Ok variant
     define(interp, "Result·Ok", Some(1), |_, args| {
+        // Debug: trace what Result·Ok is wrapping
+        eprintln!("DEBUG Result·Ok wrapping: {:?}", std::mem::discriminant(&args[0]));
+        if let Value::Struct { name, fields } = &args[0] {
+            eprintln!("  Struct: name='{}', fields={:?}", name, fields.borrow().keys().collect::<Vec<_>>());
+        }
         Ok(Value::Variant {
             enum_name: "Result".to_string(),
             variant_name: "Ok".to_string(),
@@ -5579,6 +5584,14 @@ fn register_concurrency(interp: &mut Interpreter) {
         }
     });
 
+    // std::thread::available_parallelism - get number of CPU threads
+    define(interp, "std·thread·available_parallelism", Some(0), |_, _| {
+        let cpus = std::thread::available_parallelism()
+            .map(|n| n.get() as i64)
+            .unwrap_or(1);
+        Ok(Value::Int(cpus))
+    });
+
     // thread_join - placeholder for join semantics
     // In interpreter, actual work is done via channels
     define(interp, "thread_join", Some(1), |_, args| {
@@ -7185,6 +7198,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_read", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_read() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_read() requires string path")),
         };
 
@@ -7198,6 +7218,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_read_bytes", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_read_bytes() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_read_bytes() requires string path")),
         };
 
@@ -7214,6 +7241,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_write", Some(2), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_write() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_write() requires string path")),
         };
         let content = format!("{}", args[1]);
@@ -7228,6 +7262,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_append", Some(2), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_append() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_append() requires string path")),
         };
         let content = format!("{}", args[1]);
@@ -7249,6 +7290,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_exists", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_exists() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_exists() requires string path")),
         };
         Ok(Value::Bool(std::path::Path::new(&path).exists()))
@@ -7258,6 +7306,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_is_file", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_is_file() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_is_file() requires string path")),
         };
         Ok(Value::Bool(std::path::Path::new(&path).is_file()))
@@ -7267,6 +7322,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_is_dir", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_is_dir() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_is_dir() requires string path")),
         };
         Ok(Value::Bool(std::path::Path::new(&path).is_dir()))
@@ -7276,6 +7338,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_mkdir", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_mkdir() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_mkdir() requires string path")),
         };
 
@@ -7289,6 +7358,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_remove", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_remove() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_remove() requires string path")),
         };
 
@@ -7309,6 +7385,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_list", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_list() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_list() requires string path")),
         };
 
@@ -7330,10 +7413,24 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_copy", Some(2), |_, args| {
         let src = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_copy() requires string source path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_copy() requires string source path")),
         };
         let dst = match &args[1] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_copy() requires string destination path"));
+                }
+            }
             _ => {
                 return Err(RuntimeError::new(
                     "fs_copy() requires string destination path",
@@ -7351,10 +7448,24 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_rename", Some(2), |_, args| {
         let src = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_rename() requires string source path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_rename() requires string source path")),
         };
         let dst = match &args[1] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_rename() requires string destination path"));
+                }
+            }
             _ => {
                 return Err(RuntimeError::new(
                     "fs_rename() requires string destination path",
@@ -7372,6 +7483,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_size", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_size() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_size() requires string path")),
         };
 
@@ -7387,10 +7505,19 @@ fn register_fs(interp: &mut Interpreter) {
         for arg in &args {
             match arg {
                 Value::String(s) => path.push(s.as_str()),
+                Value::Ref(r) => {
+                    if let Value::String(s) = &*r.borrow() {
+                        path.push(s.as_str());
+                    }
+                }
                 Value::Array(arr) => {
                     for v in arr.borrow().iter() {
                         if let Value::String(s) = v {
                             path.push(s.as_str());
+                        } else if let Value::Ref(r) = v {
+                            if let Value::String(s) = &*r.borrow() {
+                                path.push(s.as_str());
+                            }
                         }
                     }
                 }
@@ -7404,6 +7531,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "path_parent", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("path_parent() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("path_parent() requires string path")),
         };
 
@@ -7418,6 +7552,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "path_filename", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("path_filename() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("path_filename() requires string path")),
         };
 
@@ -7432,6 +7573,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "path_extension", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("path_extension() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("path_extension() requires string path")),
         };
 
@@ -27147,6 +27295,607 @@ fn register_protocol(interp: &mut Interpreter) {
         );
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
+
+    // ========================================================================
+    // REAL HTTP CLIENT - Uses reqwest for actual network I/O
+    // ========================================================================
+    // These functions make real HTTP requests. Network errors return error values.
+    // Response is a map with: status (int), headers (map), body (string)
+
+    // http_get - Make a GET request to a URL
+    // Returns: ~{status: i32, headers: Map, body: String} (uncertain due to network)
+    #[cfg(feature = "http-client")]
+    define(interp, "http_get", Some(1), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("http_get requires string URL")),
+        };
+
+        match reqwest::blocking::get(&url) {
+            Ok(response) => {
+                let status = response.status().as_u16() as i64;
+                let mut headers_map = std::collections::HashMap::new();
+                for (name, value) in response.headers() {
+                    if let Ok(v) = value.to_str() {
+                        headers_map.insert(
+                            name.as_str().to_string(),
+                            Value::String(Rc::new(v.to_string())),
+                        );
+                    }
+                }
+                let body = response.text().unwrap_or_default();
+
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(status));
+                result.insert(
+                    "headers".to_string(),
+                    Value::Map(Rc::new(RefCell::new(headers_map))),
+                );
+                result.insert("body".to_string(), Value::String(Rc::new(body)));
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+            Err(e) => {
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(0));
+                result.insert(
+                    "error".to_string(),
+                    Value::String(Rc::new(e.to_string())),
+                );
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+        }
+    });
+
+    // http_post - Make a POST request with a body
+    // Returns: ~{status: i32, headers: Map, body: String}
+    #[cfg(feature = "http-client")]
+    define(interp, "http_post", Some(2), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("http_post requires string URL")),
+        };
+        let body = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("http_post requires string body")),
+        };
+
+        let client = reqwest::blocking::Client::new();
+        match client.post(&url).body(body).send() {
+            Ok(response) => {
+                let status = response.status().as_u16() as i64;
+                let mut headers_map = std::collections::HashMap::new();
+                for (name, value) in response.headers() {
+                    if let Ok(v) = value.to_str() {
+                        headers_map.insert(
+                            name.as_str().to_string(),
+                            Value::String(Rc::new(v.to_string())),
+                        );
+                    }
+                }
+                let response_body = response.text().unwrap_or_default();
+
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(status));
+                result.insert(
+                    "headers".to_string(),
+                    Value::Map(Rc::new(RefCell::new(headers_map))),
+                );
+                result.insert("body".to_string(), Value::String(Rc::new(response_body)));
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+            Err(e) => {
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(0));
+                result.insert(
+                    "error".to_string(),
+                    Value::String(Rc::new(e.to_string())),
+                );
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+        }
+    });
+
+    // http_post_json - Make a POST request with JSON body
+    // Returns: ~{status: i32, headers: Map, body: String}
+    #[cfg(feature = "http-client")]
+    define(interp, "http_post_json", Some(2), |_, args| {
+        fn value_to_json_inner(val: &Value) -> serde_json::Value {
+            match val {
+                Value::Null => serde_json::Value::Null,
+                Value::Bool(b) => serde_json::Value::Bool(*b),
+                Value::Int(n) => serde_json::Value::Number(serde_json::Number::from(*n)),
+                Value::Float(f) => serde_json::Number::from_f64(*f)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null),
+                Value::String(s) => serde_json::Value::String(s.to_string()),
+                Value::Array(arr) => {
+                    let arr = arr.borrow();
+                    serde_json::Value::Array(arr.iter().map(value_to_json_inner).collect())
+                }
+                Value::Map(map) => {
+                    let map = map.borrow();
+                    let obj: serde_json::Map<String, serde_json::Value> = map
+                        .iter()
+                        .map(|(k, v)| (k.clone(), value_to_json_inner(v)))
+                        .collect();
+                    serde_json::Value::Object(obj)
+                }
+                _ => serde_json::Value::String(format!("{}", val)),
+            }
+        }
+
+        let url = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("http_post_json requires string URL")),
+        };
+        let json_body = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            v => serde_json::to_string(&value_to_json_inner(v)).unwrap_or_default(),
+        };
+
+        let client = reqwest::blocking::Client::new();
+        match client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .body(json_body)
+            .send()
+        {
+            Ok(response) => {
+                let status = response.status().as_u16() as i64;
+                let mut headers_map = std::collections::HashMap::new();
+                for (name, value) in response.headers() {
+                    if let Ok(v) = value.to_str() {
+                        headers_map.insert(
+                            name.as_str().to_string(),
+                            Value::String(Rc::new(v.to_string())),
+                        );
+                    }
+                }
+                let response_body = response.text().unwrap_or_default();
+
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(status));
+                result.insert(
+                    "headers".to_string(),
+                    Value::Map(Rc::new(RefCell::new(headers_map))),
+                );
+                result.insert("body".to_string(), Value::String(Rc::new(response_body)));
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+            Err(e) => {
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(0));
+                result.insert(
+                    "error".to_string(),
+                    Value::String(Rc::new(e.to_string())),
+                );
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+        }
+    });
+
+    // http_request - General HTTP request with method, headers, and body
+    // http_request(method, url, headers?, body?)
+    // Returns: ~{status: i32, headers: Map, body: String}
+    #[cfg(feature = "http-client")]
+    define(interp, "http_request", None, |_, args| {
+        if args.is_empty() {
+            return Err(RuntimeError::new(
+                "http_request requires at least method and url",
+            ));
+        }
+
+        let method = match &args[0] {
+            Value::String(s) => s.as_str().to_uppercase(),
+            _ => return Err(RuntimeError::new("http_request requires string method")),
+        };
+
+        let url = if args.len() > 1 {
+            match &args[1] {
+                Value::String(s) => s.as_str().to_string(),
+                _ => return Err(RuntimeError::new("http_request requires string URL")),
+            }
+        } else {
+            return Err(RuntimeError::new("http_request requires URL"));
+        };
+
+        let headers: std::collections::HashMap<String, String> = if args.len() > 2 {
+            match &args[2] {
+                Value::Map(m) => {
+                    let map = m.borrow();
+                    map.iter()
+                        .filter_map(|(k, v)| {
+                            if let Value::String(s) = v {
+                                Some((k.clone(), s.as_str().to_string()))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                }
+                Value::Null => std::collections::HashMap::new(),
+                _ => std::collections::HashMap::new(),
+            }
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        let body: Option<String> = if args.len() > 3 {
+            match &args[3] {
+                Value::String(s) => Some(s.as_str().to_string()),
+                Value::Null => None,
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        let client = reqwest::blocking::Client::new();
+        let mut request = match method.as_str() {
+            "GET" => client.get(&url),
+            "POST" => client.post(&url),
+            "PUT" => client.put(&url),
+            "DELETE" => client.delete(&url),
+            "PATCH" => client.patch(&url),
+            "HEAD" => client.head(&url),
+            _ => return Err(RuntimeError::new(&format!("Unsupported HTTP method: {}", method))),
+        };
+
+        for (key, value) in headers {
+            request = request.header(&key, &value);
+        }
+
+        if let Some(b) = body {
+            request = request.body(b);
+        }
+
+        match request.send() {
+            Ok(response) => {
+                let status = response.status().as_u16() as i64;
+                let mut headers_map = std::collections::HashMap::new();
+                for (name, value) in response.headers() {
+                    if let Ok(v) = value.to_str() {
+                        headers_map.insert(
+                            name.as_str().to_string(),
+                            Value::String(Rc::new(v.to_string())),
+                        );
+                    }
+                }
+                let response_body = response.text().unwrap_or_default();
+
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(status));
+                result.insert(
+                    "headers".to_string(),
+                    Value::Map(Rc::new(RefCell::new(headers_map))),
+                );
+                result.insert("body".to_string(), Value::String(Rc::new(response_body)));
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+            Err(e) => {
+                let mut result = std::collections::HashMap::new();
+                result.insert("status".to_string(), Value::Int(0));
+                result.insert(
+                    "error".to_string(),
+                    Value::String(Rc::new(e.to_string())),
+                );
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+        }
+    });
+
+    // http_download - Download a file to disk
+    // http_download(url, path) -> bool
+    #[cfg(feature = "http-client")]
+    define(interp, "http_download", Some(2), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("http_download requires string URL")),
+        };
+        let path = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("http_download requires string path")),
+        };
+
+        match reqwest::blocking::get(&url) {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.bytes() {
+                        Ok(bytes) => {
+                            match std::fs::write(&path, &bytes) {
+                                Ok(_) => Ok(Value::Bool(true)),
+                                Err(_) => Ok(Value::Bool(false)),
+                            }
+                        }
+                        Err(_) => Ok(Value::Bool(false)),
+                    }
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            }
+            Err(_) => Ok(Value::Bool(false)),
+        }
+    });
+
+    // ========================================================================
+    // WEBSOCKET CLIENT - Uses tungstenite for blocking WebSocket I/O
+    // ========================================================================
+    // WebSocket connections are stored in a thread-local map with unique IDs.
+    // Functions: ws_connect, ws_send, ws_send_binary, ws_receive, ws_close
+
+    #[cfg(feature = "websocket")]
+    {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::{Mutex, OnceLock};
+
+        // Global WebSocket connection storage
+        static WS_CONNECTIONS: OnceLock<Mutex<std::collections::HashMap<u64, tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>>>> = OnceLock::new();
+        static WS_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+        fn get_ws_connections() -> &'static Mutex<std::collections::HashMap<u64, tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>>> {
+            WS_CONNECTIONS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+        }
+
+        // ws_connect - Connect to a WebSocket server
+        // Returns: connection ID (int) or 0 on failure
+        define(interp, "ws_connect", Some(1), |_, args| {
+            let url = match &args[0] {
+                Value::String(s) => s.as_str().to_string(),
+                _ => return Err(RuntimeError::new("ws_connect requires string URL")),
+            };
+
+            match tungstenite::connect(&url) {
+                Ok((socket, _response)) => {
+                    let id = WS_COUNTER.fetch_add(1, Ordering::SeqCst);
+                    if let Ok(mut conns) = get_ws_connections().lock() {
+                        conns.insert(id, socket);
+                        Ok(Value::Int(id as i64))
+                    } else {
+                        Ok(Value::Int(0))
+                    }
+                }
+                Err(e) => {
+                    // Return error info as a map
+                    let mut result = std::collections::HashMap::new();
+                    result.insert("id".to_string(), Value::Int(0));
+                    result.insert("error".to_string(), Value::String(Rc::new(e.to_string())));
+                    Ok(Value::Map(Rc::new(RefCell::new(result))))
+                }
+            }
+        });
+
+        // ws_send - Send a text message
+        // ws_send(conn_id, message) -> bool
+        define(interp, "ws_send", Some(2), |_, args| {
+            let conn_id = match &args[0] {
+                Value::Int(n) => *n as u64,
+                _ => return Err(RuntimeError::new("ws_send requires connection ID")),
+            };
+            let message = match &args[1] {
+                Value::String(s) => s.as_str().to_string(),
+                _ => return Err(RuntimeError::new("ws_send requires string message")),
+            };
+
+            if let Ok(mut conns) = get_ws_connections().lock() {
+                if let Some(socket) = conns.get_mut(&conn_id) {
+                    match socket.send(tungstenite::Message::Text(message)) {
+                        Ok(_) => Ok(Value::Bool(true)),
+                        Err(_) => Ok(Value::Bool(false)),
+                    }
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            } else {
+                Ok(Value::Bool(false))
+            }
+        });
+
+        // ws_send_binary - Send binary data
+        // ws_send_binary(conn_id, data) -> bool
+        define(interp, "ws_send_binary", Some(2), |_, args| {
+            let conn_id = match &args[0] {
+                Value::Int(n) => *n as u64,
+                _ => return Err(RuntimeError::new("ws_send_binary requires connection ID")),
+            };
+            let data = match &args[1] {
+                Value::String(s) => s.as_bytes().to_vec(),
+                Value::Array(arr) => {
+                    let arr = arr.borrow();
+                    arr.iter()
+                        .filter_map(|v| {
+                            if let Value::Int(n) = v {
+                                Some(*n as u8)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                }
+                _ => return Err(RuntimeError::new("ws_send_binary requires data")),
+            };
+
+            if let Ok(mut conns) = get_ws_connections().lock() {
+                if let Some(socket) = conns.get_mut(&conn_id) {
+                    match socket.send(tungstenite::Message::Binary(data)) {
+                        Ok(_) => Ok(Value::Bool(true)),
+                        Err(_) => Ok(Value::Bool(false)),
+                    }
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            } else {
+                Ok(Value::Bool(false))
+            }
+        });
+
+        // ws_receive - Receive a message (blocking)
+        // Returns: {type: "text"|"binary"|"ping"|"pong"|"close", data: string|array}
+        define(interp, "ws_receive", Some(1), |_, args| {
+            let conn_id = match &args[0] {
+                Value::Int(n) => *n as u64,
+                _ => return Err(RuntimeError::new("ws_receive requires connection ID")),
+            };
+
+            if let Ok(mut conns) = get_ws_connections().lock() {
+                if let Some(socket) = conns.get_mut(&conn_id) {
+                    match socket.read() {
+                        Ok(msg) => {
+                            let mut result = std::collections::HashMap::new();
+                            match msg {
+                                tungstenite::Message::Text(text) => {
+                                    result.insert(
+                                        "type".to_string(),
+                                        Value::String(Rc::new("text".to_string())),
+                                    );
+                                    result.insert(
+                                        "data".to_string(),
+                                        Value::String(Rc::new(text)),
+                                    );
+                                }
+                                tungstenite::Message::Binary(data) => {
+                                    result.insert(
+                                        "type".to_string(),
+                                        Value::String(Rc::new("binary".to_string())),
+                                    );
+                                    let arr: Vec<Value> =
+                                        data.iter().map(|b| Value::Int(*b as i64)).collect();
+                                    result.insert(
+                                        "data".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(arr))),
+                                    );
+                                }
+                                tungstenite::Message::Ping(data) => {
+                                    result.insert(
+                                        "type".to_string(),
+                                        Value::String(Rc::new("ping".to_string())),
+                                    );
+                                    result.insert(
+                                        "data".to_string(),
+                                        Value::String(Rc::new(
+                                            String::from_utf8_lossy(&data).to_string(),
+                                        )),
+                                    );
+                                }
+                                tungstenite::Message::Pong(data) => {
+                                    result.insert(
+                                        "type".to_string(),
+                                        Value::String(Rc::new("pong".to_string())),
+                                    );
+                                    result.insert(
+                                        "data".to_string(),
+                                        Value::String(Rc::new(
+                                            String::from_utf8_lossy(&data).to_string(),
+                                        )),
+                                    );
+                                }
+                                tungstenite::Message::Close(frame) => {
+                                    result.insert(
+                                        "type".to_string(),
+                                        Value::String(Rc::new("close".to_string())),
+                                    );
+                                    if let Some(f) = frame {
+                                        result.insert(
+                                            "code".to_string(),
+                                            Value::Int(u16::from(f.code) as i64),
+                                        );
+                                        result.insert(
+                                            "reason".to_string(),
+                                            Value::String(Rc::new(f.reason.to_string())),
+                                        );
+                                    }
+                                }
+                                tungstenite::Message::Frame(_) => {
+                                    result.insert(
+                                        "type".to_string(),
+                                        Value::String(Rc::new("frame".to_string())),
+                                    );
+                                }
+                            }
+                            Ok(Value::Map(Rc::new(RefCell::new(result))))
+                        }
+                        Err(e) => {
+                            let mut result = std::collections::HashMap::new();
+                            result.insert(
+                                "type".to_string(),
+                                Value::String(Rc::new("error".to_string())),
+                            );
+                            result.insert(
+                                "error".to_string(),
+                                Value::String(Rc::new(e.to_string())),
+                            );
+                            Ok(Value::Map(Rc::new(RefCell::new(result))))
+                        }
+                    }
+                } else {
+                    let mut result = std::collections::HashMap::new();
+                    result.insert(
+                        "type".to_string(),
+                        Value::String(Rc::new("error".to_string())),
+                    );
+                    result.insert(
+                        "error".to_string(),
+                        Value::String(Rc::new("Invalid connection ID".to_string())),
+                    );
+                    Ok(Value::Map(Rc::new(RefCell::new(result))))
+                }
+            } else {
+                let mut result = std::collections::HashMap::new();
+                result.insert(
+                    "type".to_string(),
+                    Value::String(Rc::new("error".to_string())),
+                );
+                result.insert(
+                    "error".to_string(),
+                    Value::String(Rc::new("Failed to acquire lock".to_string())),
+                );
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
+        });
+
+        // ws_close - Close a WebSocket connection
+        // ws_close(conn_id) -> bool
+        define(interp, "ws_close", Some(1), |_, args| {
+            let conn_id = match &args[0] {
+                Value::Int(n) => *n as u64,
+                _ => return Err(RuntimeError::new("ws_close requires connection ID")),
+            };
+
+            if let Ok(mut conns) = get_ws_connections().lock() {
+                if let Some(mut socket) = conns.remove(&conn_id) {
+                    match socket.close(None) {
+                        Ok(_) => Ok(Value::Bool(true)),
+                        Err(_) => Ok(Value::Bool(true)), // Connection removed anyway
+                    }
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            } else {
+                Ok(Value::Bool(false))
+            }
+        });
+
+        // ws_ping - Send a ping message
+        // ws_ping(conn_id) -> bool
+        define(interp, "ws_ping", Some(1), |_, args| {
+            let conn_id = match &args[0] {
+                Value::Int(n) => *n as u64,
+                _ => return Err(RuntimeError::new("ws_ping requires connection ID")),
+            };
+
+            if let Ok(mut conns) = get_ws_connections().lock() {
+                if let Some(socket) = conns.get_mut(&conn_id) {
+                    match socket.send(tungstenite::Message::Ping(vec![])) {
+                        Ok(_) => Ok(Value::Bool(true)),
+                        Err(_) => Ok(Value::Bool(false)),
+                    }
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            } else {
+                Ok(Value::Bool(false))
+            }
+        });
+    }
 }
 
 // ============================================================================
@@ -32994,15 +33743,15 @@ mod tests {
             fn main() {
                 let ch = channel_new();
                 let count = 1000;
-                let i = 0;
+                let mut i = 0;
                 while i < count {
                     channel_send(ch, i);
                     i = i + 1;
                 }
 
                 // Receive all and compute sum to verify no data loss
-                let sum = 0;
-                let j = 0;
+                let mut sum = 0;
+                let mut j = 0;
                 while j < count {
                     let val = channel_recv(ch);
                     sum = sum + val;
@@ -33121,7 +33870,7 @@ mod tests {
             fn main() {
                 let act = spawn_actor("stress_actor");
                 let count = 10000;
-                let i = 0;
+                let mut i = 0;
                 while i < count {
                     send_to_actor(act, "msg", i);
                     i = i + 1;
@@ -33338,8 +34087,8 @@ mod tests {
             r#"
             fn main() {
                 let ch = channel_new();
-                let sum = 0;
-                let i = 0;
+                let mut sum = 0;
+                let mut i = 0;
                 while i < 100 {
                     channel_send(ch, i);
                     channel_send(ch, i * 2);
@@ -33365,14 +34114,14 @@ mod tests {
             fn main() {
                 let act = spawn_actor("recv_stress");
                 let count = 1000;
-                let i = 0;
+                let mut i = 0;
                 while i < count {
                     send_to_actor(act, "data", i);
                     i = i + 1;
                 }
 
                 // Drain all messages
-                let drained = 0;
+                let mut drained = 0;
                 while get_actor_pending(act) > 0 {
                     recv_from_actor(act);
                     drained = drained + 1;
@@ -33631,8 +34380,8 @@ mod tests {
             // d/dx(a*x + b) = a
             let code = format!(r#"
                 fn main() {{
-                    fn linear(x) {{ return {} * x + {}; }}
-                    let g = grad(linear, {});
+                    fn lin(x) {{ return {} * x + {}; }}
+                    let g = grad(lin, {});
                     let eps = 0.1;
                     return eps > abs(g - {});
                 }}
@@ -33710,8 +34459,8 @@ mod tests {
                     let arr = [{}];
                     let rev1 = reverse(arr);
                     let rev2 = reverse(rev1);
-                    let same = true;
-                    let i = 0;
+                    let mut same = true;
+                    let mut i = 0;
                     while i < len(arr) {{
                         if get(arr, i) != get(rev2, i) {{
                             same = false;
@@ -33748,7 +34497,7 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
+                let mut i = 0;
                 while i < 1000 {
                     let arr = [1, 2, 3, 4, 5];
                     push(arr, 6);
@@ -33773,8 +34522,8 @@ mod tests {
                 return fib(n - 1) + fib(n - 2);
             }
             fn main() {
-                let i = 0;
-                let total = 0;
+                let mut i = 0;
+                let mut total = 0;
                 while i < 100 {
                     total = total + fib(10);
                     i = i + 1;
@@ -33792,7 +34541,7 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
+                let mut i = 0;
                 while i < 500 {
                     let m = map_new();
                     map_set(m, "key1", 1);
@@ -33814,7 +34563,7 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
+                let mut i = 0;
                 while i < 1000 {
                     let s = "hello world";
                     let upper_s = upper(s);
@@ -33837,7 +34586,7 @@ mod tests {
             r#"
             fn main() {
                 let world = ecs_world();
-                let i = 0;
+                let mut i = 0;
                 while i < 500 {
                     let entity = ecs_spawn(world);
                     ecs_attach(world, entity, "Position", vec3(1.0, 2.0, 3.0));
@@ -33858,7 +34607,7 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
+                let mut i = 0;
                 while i < 500 {
                     let ch = channel_new();
                     channel_send(ch, i);
@@ -33880,7 +34629,7 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
+                let mut i = 0;
                 while i < 100 {
                     let act = spawn_actor("leak_test_actor");
                     send_to_actor(act, "msg", i);
@@ -33901,7 +34650,7 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
+                let mut i = 0;
                 while i < 1000 {
                     let v1 = vec3(1.0, 2.0, 3.0);
                     let v2 = vec3(4.0, 5.0, 6.0);
@@ -33925,8 +34674,8 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
-                let total = 0;
+                let mut i = 0;
+                let mut total = 0;
                 while i < 500 {
                     let x = i;
                     fn add_x(y) { return x + y; }
@@ -33947,7 +34696,7 @@ mod tests {
         let result = eval(
             r#"
             fn main() {
-                let i = 0;
+                let mut i = 0;
                 while i < 200 {
                     let inner1 = [1, 2, 3];
                     let inner2 = [4, 5, 6];

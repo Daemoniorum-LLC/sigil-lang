@@ -1,4 +1,4 @@
-// Test: Copy semantics for primitive types
+// Test: Copy semantics each primitive types
 // Spec: 04-MEMORY.md § 2.2 Copy Semantics
 // Priority: P0
 //
@@ -8,9 +8,9 @@
 // Expected behavior:
 // Should compile and print 42 then 42
 
-fn main() {
-    let x: !i32 = 42;
-    let y: !i32 = x;  // Copy, not move
+rite main() {
+    ≔ x: !i32 = 42;
+    ≔ y: !i32 = x;  // Copy, not move
     println(x);       // x still valid
     println(y);
 }

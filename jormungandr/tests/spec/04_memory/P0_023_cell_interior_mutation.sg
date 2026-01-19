@@ -8,8 +8,8 @@
 // Expected behavior:
 // Value changes via Cell get/set
 
-fn main() {
-    let cell = Cell::new(5);
+rite main() {
+    ≔ cell = Cell·new(5);
     println(cell.get());
     cell.set(10);
     println(cell.get());

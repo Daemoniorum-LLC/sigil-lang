@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 2.1 Trigonometry
 // Priority: P1 - Standard Feature
 
-fn main() {
+rite main() {
     // sin(0) = 0
     println(sin(0.0));
 
@@ -13,9 +13,9 @@ fn main() {
     println(tan(0.0));
 
     // sin(PI/2) = 1
-    let pi: !f64 = PI();
-    let half_pi: !f64 = pi / 2.0;
-    let s: !f64 = sin(half_pi);
+    ≔ pi: !f64 = PI();
+    ≔ half_pi: !f64 = pi / 2.0;
+    ≔ s: !f64 = sin(half_pi);
     // Round to avoid float precision issues
     println(round(s));
 

@@ -1,0 +1,29 @@
+// Stdlib Tests: uuid
+// UUID functions with REAL assertions
+
+rite main() {
+    println("=== Testing uuid ===");
+
+    // uuid_v4 - generates valid UUID
+    ≔ u1 = uuid_v4();
+    assert_eq(len(u1), 36);  // UUID format: 8-4-4-4-12
+    assert_true(uuid_is_valid(u1));
+
+    // uuid_nil - returns nil UUID
+    ≔ nil = uuid_nil();
+    assert_eq(nil, "00000000-0000-0000-0000-000000000000");
+    assert_true(uuid_is_valid(nil));
+
+    // uuid_is_valid - validates UUID format
+    assert_true(uuid_is_valid("550e8400-e29b-41d4-a716-446655440000"));
+    assert_true(uuid_is_valid("00000000-0000-0000-0000-000000000000"));
+    assert_false(uuid_is_valid("not-a-uuid"));
+    assert_false(uuid_is_valid(""));
+    assert_false(uuid_is_valid("550e8400-e29b-41d4-a716"));  // too short
+
+    // Generated UUIDs should be unique
+    ≔ u2 = uuid_v4();
+    assert_true(u1 != u2);
+
+    println("ALL UUID TESTS PASSED!");
+}

@@ -1,20 +1,20 @@
-// Test: If-else chain (multiple else if)
+// Test: If-⎉ chain (multiple ⎉ if)
 // Spec: 02-SYNTAX.md § 4.1 Conditional Expressions
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate if-else-if-else chaining works correctly.
+// Validate if-else-if-⎉ chaining works correctly.
 //
 // Expected behavior:
 // Should execute the second branch and print 2.
 
-fn main() {
-    let x: !i32 = 5;
-    if x < 3 {
+rite main() {
+    ≔ x: !i32 = 5;
+    ⎇ x < 3 {
         println(1);
-    } else if x < 10 {
+    } ⎉ ⎇ x < 10 {
         println(2);
-    } else {
+    } ⎉ {
         println(3);
     }
 }

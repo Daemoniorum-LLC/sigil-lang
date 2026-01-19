@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print: C:\path\to\file
 
-fn main() {
-    let s: !String = r"C:\path\to\file";
+rite main() {
+    ≔ s: !String = r"C:\path\to\file";
     println(s);
 }

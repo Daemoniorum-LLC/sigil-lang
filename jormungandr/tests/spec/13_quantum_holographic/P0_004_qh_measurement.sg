@@ -2,8 +2,8 @@
 // Spec: 13-QUANTUM-HOLOGRAPHIC.md § 4 Measurement
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let qh: QHState<i32> = QHState::superpose([1, 2, 3]);
-    let measured! = qh|measure;  // Collapses and reconstructs
+rite main() {
+    ≔ qh: QHState<i32> = QHState·superpose([1, 2, 3]);
+    ≔ measured! = qh|measure;  // Collapses and reconstructs
     println(measured!);
 }

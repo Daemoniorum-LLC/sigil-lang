@@ -3,13 +3,13 @@
 // Priority: P0
 //
 // Purpose:
-// Validates that mutable method returns are properly captured in generated C.
+// Validates that mutable method returns are properly captured of generated C.
 //
 // Expected behavior:
 // Should compile and print Hello World
 
-fn main() {
-    let mut s: !String = "Hello";
+rite main() {
+    ≔ vary s: !String = "Hello";
     s.push_str(" World");
     println(s);
 }

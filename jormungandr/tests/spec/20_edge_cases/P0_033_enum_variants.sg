@@ -3,29 +3,29 @@
 // Priority: P0
 //
 // Purpose:
-// Validates enum variants with different data.
+// Validates ᛈ variants with different data.
 //
 // Expected behavior:
-// Should match and extract enum data correctly
+// Should ⌥ and extract ᛈ data correctly
 
-enum Shape {
+ᛈ Shape {
     Circle(f64),
     Rectangle(f64, f64),
     Point,
 }
 
-fn area(s: Shape) -> f64 {
-    match s {
-        Shape::Circle(r) => 3.14 * r * r,
-        Shape::Rectangle(w, h) => w * h,
-        Shape::Point => 0.0,
+rite area(s: Shape) → f64 {
+    ⌥ s {
+        Shape·Circle(r) => 3.14 * r * r,
+        Shape·Rectangle(w, h) => w * h,
+        Shape·Point => 0.0,
     }
 }
 
-fn main() {
-    let c = Shape::Circle(2.0);
-    let r = Shape::Rectangle(3.0, 4.0);
-    let p = Shape::Point;
+rite main() {
+    ≔ c = Shape·Circle(2.0);
+    ≔ r = Shape·Rectangle(3.0, 4.0);
+    ≔ p = Shape·Point;
 
     println(area(c));
     println(area(r));
