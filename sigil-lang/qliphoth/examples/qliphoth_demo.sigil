@@ -1,0 +1,215 @@
+// Qliphoth Demo - Simplified web app showcasing Sigil
+//
+// Demonstrates:
+// - Struct-based state management
+// - Page routing simulation
+// - Theme and counter features
+//
+// P0-compatible rewrite.
+
+/// Application state
+/// - page: 0=Home, 1=Products, 2=About, 3=Contact
+/// - theme: 0=Dark, 1=Light
+sigil AppState {
+    current_page: i64,
+    counter: i64,
+    theme: i64,
+}
+
+⊢ AppState {
+    rite new() → AppState {
+        AppState {
+            current_page: 0,
+            counter: 0,
+            theme: 0
+        }
+    }
+
+    /// Navigate to a page
+    rite navigate(&vary this, page: i64) {
+        this.current_page = page;
+        ≔ name = this.page_name();
+        println(f"[NAVIGATE] {name}");
+        this.render_page();
+    }
+
+    /// Get current page name
+    rite page_name(&this) → str {
+        ⎇ this.current_page == 0 { "Home" }
+        ⎉ ⎇ this.current_page == 1 { "Products" }
+        ⎉ ⎇ this.current_page == 2 { "About" }
+        ⎉ { "Contact" }
+    }
+
+    /// Toggle theme
+    rite toggle_theme(&vary this) {
+        ⎇ this.theme == 0 {
+            this.theme = 1;
+            println("[THEME] light");
+        } ⎉ {
+            this.theme = 0;
+            println("[THEME] dark");
+        }
+    }
+
+    /// Get theme name
+    rite theme_name(&this) → str {
+        ⎇ this.theme == 0 { "dark" } ⎉ { "light" }
+    }
+
+    /// Counter: increment
+    rite increment(&vary this) {
+        this.counter = this.counter + 1;
+        println(f"[COUNTER] {this.counter}");
+    }
+
+    /// Counter: decrement
+    rite decrement(&vary this) {
+        this.counter = this.counter - 1;
+        println(f"[COUNTER] {this.counter}");
+    }
+
+    /// Counter: reset
+    rite reset_counter(&vary this) {
+        this.counter = 0;
+        println("[COUNTER] 0");
+    }
+
+    /// Render current page
+    rite render_page(&this) {
+        ⎇ this.current_page == 0 {
+            this.render_home();
+        } ⎉ ⎇ this.current_page == 1 {
+            this.render_products();
+        } ⎉ ⎇ this.current_page == 2 {
+            this.render_about();
+        } ⎉ {
+            this.render_contact();
+        }
+    }
+
+    rite render_home(&this) {
+        println("[PAGE:home]");
+        println("[RENDER] <section id='hero'>");
+        println("[RENDER]   <h1>Welcome to Daemoniorum</h1>");
+        println("[RENDER]   <p>The platform that builds platforms.</p>");
+        println(f"[RENDER]   <p>Counter: {this.counter}</p>");
+        println("[RENDER] </section>");
+    }
+
+    rite render_products(&this) {
+        println("[PAGE:products]");
+        println("[RENDER] <section id='products'>");
+        println("[RENDER]   <h2>Our Products</h2>");
+        println("[RENDER]   <ul>");
+        println("[RENDER]     <li>Sigil - AI-native programming language</li>");
+        println("[RENDER]     <li>Styx - AI-native git platform</li>");
+        println("[RENDER]     <li>Infernum - Local LLM inference</li>");
+        println("[RENDER]   </ul>");
+        println("[RENDER] </section>");
+    }
+
+    rite render_about(&this) {
+        println("[PAGE:about]");
+        println("[RENDER] <section id='about'>");
+        println("[RENDER]   <h2>About Qliphoth</h2>");
+        println("[RENDER]   <p>Qliphoth is the dark mirror of the Sephirot.</p>");
+        println("[RENDER]   <p>It symbolizes the infrastructure layer.</p>");
+        println("[RENDER] </section>");
+    }
+
+    rite render_contact(&this) {
+        println("[PAGE:contact]");
+        println("[RENDER] <section id='contact'>");
+        println("[RENDER]   <h2>Contact Us</h2>");
+        println("[RENDER]   <p>Reach out through the void.</p>");
+        println("[RENDER] </section>");
+    }
+
+    /// Render status bar
+    rite render_status(&this) {
+        ≔ page = this.page_name();
+        ≔ theme = this.theme_name();
+        println("");
+        println("┌─────────────────────────────────────┐");
+        println(f"│ Page: {page}  Theme: {theme}");
+        println(f"│ Counter: {this.counter}");
+        println("└─────────────────────────────────────┘");
+    }
+}
+
+/// Demo runner - simulates user interactions
+sigil Demo {
+    state: AppState,
+}
+
+⊢ Demo {
+    rite new() → Demo {
+        Demo {
+            state: AppState·new()
+        }
+    }
+
+    rite run(&vary this) {
+        println("╔═══════════════════════════════════════╗");
+        println("║         Qliphoth Demo                 ║");
+        println("║   A Sigil-powered web application     ║");
+        println("╚═══════════════════════════════════════╝");
+        println("");
+
+        // Show initial page
+        println("→ Initial render (Home)");
+        this.state.render_page();
+        this.state.render_status();
+        println("");
+
+        // Navigate to Products
+        println("→ Navigating to Products...");
+        this.state.navigate(1);
+        this.state.render_status();
+        println("");
+
+        // Interact with counter
+        println("→ Counter interactions...");
+        this.state.increment();
+        this.state.increment();
+        this.state.increment();
+        this.state.decrement();
+        this.state.render_status();
+        println("");
+
+        // Toggle theme
+        println("→ Toggling theme...");
+        this.state.toggle_theme();
+        this.state.render_status();
+        println("");
+
+        // Navigate to About
+        println("→ Navigating to About...");
+        this.state.navigate(2);
+        this.state.render_status();
+        println("");
+
+        // Back to Home
+        println("→ Back to Home...");
+        this.state.navigate(0);
+        this.state.render_status();
+        println("");
+
+        // Reset counter
+        println("→ Resetting counter...");
+        this.state.reset_counter();
+        this.state.render_status();
+
+        println("");
+        println("╔═══════════════════════════════════════╗");
+        println("║         Demo Complete                 ║");
+        println("╚═══════════════════════════════════════╝");
+    }
+}
+
+/// Main entry point
+rite main() {
+    ≔ vary demo = Demo·new();
+    demo.run();
+}

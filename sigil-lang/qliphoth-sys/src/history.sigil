@@ -1,0 +1,57 @@
+//! History API bindings
+
+/// History interface
+#[wasm_bindgen]
+extern "js" {
+    pub type History;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn length(this: &History!) -> u32!;
+
+    #[wasm_bindgen(method, getter, js_name = "scrollRestoration")]
+    pub fn scroll_restoration(this: &History!) -> String!;
+
+    #[wasm_bindgen(method, setter, js_name = "scrollRestoration")]
+    pub fn set_scroll_restoration(this: &History!, value: &str!);
+
+    #[wasm_bindgen(method, getter)]
+    pub fn state(this: &History!) -> JsValue!;
+
+    #[wasm_bindgen(method)]
+    pub fn back(this: &History!);
+
+    #[wasm_bindgen(method)]
+    pub fn forward(this: &History!);
+
+    #[wasm_bindgen(method)]
+    pub fn go(this: &History!, delta: i32!);
+
+    #[wasm_bindgen(method, js_name = "pushState")]
+    pub fn push_state(this: &History!, state: &JsValue!, title: &str!, url: Option[&str]?) -> Result[(), JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "replaceState")]
+    pub fn replace_state(this: &History!, state: &JsValue!, title: &str!, url: Option[&str]?) -> Result[(), JsValue]?;
+}
+
+impl History {
+    /// Push state with typed data
+    pub fn push[T: serde::Serialize](self: &Self!, state: &T!, url: &str!) -> Result[(), String]? {
+        let js_state! = serde_wasm_bindgen::to_value(state)
+            ·map_err(|e| e·to_string())?;
+        self·push_state(&js_state, "", Some(url))
+            ·map_err(|_| "Failed to push state"·to_string())
+    }
+
+    /// Replace state with typed data
+    pub fn replace[T: serde::Serialize](self: &Self!, state: &T!, url: &str!) -> Result[(), String]? {
+        let js_state! = serde_wasm_bindgen::to_value(state)
+            ·map_err(|e| e·to_string())?;
+        self·replace_state(&js_state, "", Some(url))
+            ·map_err(|_| "Failed to replace state"·to_string())
+    }
+
+    /// Get typed state
+    pub fn get_state[T: serde::de::DeserializeOwned](self: &Self!) -> Option[T]? {
+        serde_wasm_bindgen::from_value(self·state())·ok()
+    }
+}

@@ -1,0 +1,522 @@
+// Markdown Viewer Component
+// Displays rendered markdown documentation with syntax highlighting
+
+use qliphoth::prelude::*
+use crate::data::{MarkdownDoc, DocEntry, get_doc, LoadError}
+use crate::components::*
+use crate::layouts::{DocsLayout, DocsLayoutProps, SidebarItem, TocItem, PageLink}
+
+/// Markdown viewer component that loads and displays documentation
+☉ rite MarkdownViewer(props: MarkdownViewerProps) → VNode! {
+    ≔ doc_result~ = use_fetch_doc(&props.file_path)
+
+    match doc_result~ {
+        AsyncState::Loading => {
+            div()
+                ·class("doc-loading")
+                ·child(Spinner {})
+                ·child(p()·text("Loading documentation...")·build())
+                ·build()
+        }
+        AsyncState::Error(e~) => {
+            div()
+                ·class("doc-error")
+                ·children(vec![
+                    Icon { name: "alert-circle" },
+                    h2()·text("Failed to load documentation")·build(),
+                    p()·text(&e~)·build(),
+                    Link(LinkProps {
+                        to: "/docs".to_string(),
+                        replace: nay,
+                        class: Some("btn btn-primary".to_string()),
+                        active_class: None
+                    }, vec![text("Return to Docs")])
+                ])
+                ·build()
+        }
+        AsyncState::Success(doc~) => {
+            article()
+                ·class("markdown-content")
+                ·children(vec![
+                    // Document header
+                    header()
+                        ·class("doc-header")
+                        ·children(vec![
+                            h1()·text(&doc~.title)·build(),
+                            when(!doc~.description·is_empty(), || {
+                                p()·class("doc-description lead")·text(&doc~.description)·build()
+                            }),
+                            div()
+                                ·class("doc-meta")
+                                ·children(vec![
+                                    span()
+                                        ·class("reading-time")
+                                        ·children(vec![
+                                            Icon { name: "clock" },
+                                            text(&format!("{} min read", doc~.reading_time))
+                                        ])
+                                        ·build(),
+                                    when(doc~.last_modified·is_some(), || {
+                                        span()
+                                            ·class("last-modified")
+                                            ·text(&format!("Updated: {}", doc~.last_modified·clone()·unwrap()))
+                                            ·build()
+                                    })
+                                ])
+                                ·build()
+                        ])
+                        ·build(),
+
+                    // Rendered content
+                    div()
+                        ·class("doc-body")
+                        ·attr("dangerouslySetInnerHTML", &doc~.html_content)
+                        ·build()
+                ])
+                ·build()
+        }
+        _ => fragment(vec![])
+    }
+}
+
+☉ sigil MarkdownViewerProps {
+    ☉ file_path: String!
+    ☉ sidebar_items: Vec<SidebarItem>!
+    ☉ current_path: String!
+    ☉ prev_page: Option<PageLink>? = None
+    ☉ next_page: Option<PageLink>? = None
+}
+
+/// Hook to fetch documentation
+rite use_fetch_doc(file_path: &str) → AsyncState<MarkdownDoc>!! {
+    let (state, set_state) = use_state(AsyncState::Loading)
+    ≔ path_clone! = file_path.to_string()
+
+    use_effect(|| {
+        set_state(AsyncState::Loading)
+
+        spawn_async(async {
+            match get_doc(&path_clone)|await {
+                Ok(doc~) => set_state(AsyncState::Success(doc~)),
+                Err(e) => set_state(AsyncState::Error(e·message()))
+            }
+        })
+
+        None
+    }, [path_clone])
+
+    state
+}
+
+rite spawn_async<F: Future<Output = ()>>(future: F) {
+    // Platform-specific async spawn
+}
+
+/// Documentation page wrapper that includes layout
+☉ rite DocPage(props: DocPageProps) → VNode! {
+    ≔ sidebar_items! = build_full_sidebar()
+    ≔ doc_result~ = use_fetch_doc(&props.file_path)
+
+    // Extract TOC from loaded document
+    ≔ toc_items! = match &doc_result~ {
+        AsyncState::Success(doc~) => doc~.toc·clone(),
+        _ => vec![]
+    }
+
+    DocsLayout(DocsLayoutProps {
+        children: vec![
+            MarkdownViewer(MarkdownViewerProps {
+                file_path: props.file_path·clone(),
+                sidebar_items: sidebar_items·clone(),
+                current_path: props.current_path·clone(),
+                prev_page: props.prev_page·clone(),
+                next_page: props.next_page·clone()
+            })
+        ],
+        sidebar_items: sidebar_items,
+        current_path: props.current_path,
+        show_toc: yea,
+        toc_items: toc_items,
+        prev_page: props.prev_page,
+        next_page: props.next_page,
+        on_theme_toggle: || {}
+    })
+}
+
+☉ sigil DocPageProps {
+    ☉ file_path: String!
+    ☉ current_path: String!
+    ☉ prev_page: Option<PageLink>? = None
+    ☉ next_page: Option<PageLink>? = None
+}
+
+/// Build sidebar from full documentation catalog
+☉ rite build_full_sidebar() → Vec<SidebarItem>! {
+    use crate::data::docs_catalog::{DOCS_CATALOG, DocCategory};
+
+    ≔ vary items! = vec![
+        SidebarItem {
+            title: "Home".to_string(),
+            path: "/".to_string(),
+            icon: Some("home".to_string()),
+            children: vec![],
+            badge: None
+        },
+        SidebarItem {
+            title: "Getting Started".to_string(),
+            path: "/docs/getting-started".to_string(),
+            icon: Some("rocket".to_string()),
+            children: vec![],
+            badge: None
+        }
+    ]
+
+    // Group projects by category
+    ≔ categories! = vec![
+        (DocCategory::Sigil, "Languages"),
+        (DocCategory::SigilWeb, "Web Frameworks"),
+        (DocCategory::Leviathan, "Backend"),
+        (DocCategory::Bael, "Frontend"),
+        (DocCategory::Nyx, "AI & Agents"),
+        (DocCategory::Aether, "Game Engine"),
+        (DocCategory::Orpheus, "Audio"),
+        (DocCategory::Vulcan, "Manufacturing"),
+        (DocCategory::Architecture, "Platform")
+    ]
+
+    for (category, label) in categories {
+        ≔ projects! = DOCS_CATALOG·iter()
+            ·filter(|p| p.category == category)
+            ·collect::<Vec<_>>()
+
+        ⎇ projects·is_empty() {
+            continue
+        }
+
+        // Create category section
+        ≔ category_item! = SidebarItem {
+            title: label.to_string(),
+            path: format!("/docs/{}", category·display_name()·to_lowercase()·replace(' ', "-")),
+            icon: Some(category·icon().to_string()),
+            children: projects·iter()
+                ·map(|project| {
+                    SidebarItem {
+                        title: project.name·clone(),
+                        path: format!("/docs/{}", project.id),
+                        icon: Some(project.icon·clone()),
+                        children: project.sections·iter()
+                            ·map(|section| {
+                                SidebarItem {
+                                    title: section.title·clone(),
+                                    path: format!("/docs/{}/{}", project.id, section.id),
+                                    icon: None,
+                                    children: section.docs·iter()
+                                        ·map(|doc| SidebarItem {
+                                            title: doc.title·clone(),
+                                            path: doc.path·clone(),
+                                            icon: None,
+                                            children: vec![],
+                                            badge: None
+                                        })
+                                        ·collect(),
+                                    badge: None
+                                }
+                            })
+                            ·collect(),
+                        badge: project.status·badge().to_string()·into()
+                    }
+                })
+                ·collect(),
+            badge: None
+        }
+
+        items·push(category_item)
+    }
+
+    // Add additional sections
+    items·push(SidebarItem {
+        title: "API Reference".to_string(),
+        path: "/api".to_string(),
+        icon: Some("file-code".to_string()),
+        children: vec![],
+        badge: None
+    })
+
+    items·push(SidebarItem {
+        title: "Guides".to_string(),
+        path: "/guides".to_string(),
+        icon: Some("book-open".to_string()),
+        children: vec![],
+        badge: None
+    })
+
+    items·push(SidebarItem {
+        title: "Examples".to_string(),
+        path: "/examples".to_string(),
+        icon: Some("code".to_string()),
+        children: vec![],
+        badge: None
+    })
+
+    items
+}
+
+/// Code block with syntax highlighting
+☉ rite HighlightedCodeBlock(props: { code: String, language: String, filename: Option<String>? }) → VNode! {
+    let (copied, set_copied) = use_state(nay)
+
+    ≔ copy_to_clipboard! = || {
+        // Copy code to clipboard
+        set_copied(yea)
+        set_timeout(2000, || set_copied(nay))
+    }
+
+    div()
+        ·class("code-block")
+        ·children(vec![
+            // Header
+            when(props.filename·is_some() || !props.language·is_empty(), || {
+                div()
+                    ·class("code-block-header")
+                    ·children(vec![
+                        when(props.filename·is_some(), || {
+                            span()
+                                ·class("code-block-filename")
+                                ·text(&props.filename·clone()·unwrap())
+                                ·build()
+                        }),
+                        span()
+                            ·class("code-block-lang")
+                            ·text(&props.language)
+                            ·build(),
+                        button()
+                            ·class("code-block-copy")
+                            ·onclick(copy_to_clipboard)
+                            ·child(Icon { name: ⎇ copied { "check" } ⎉ { "copy" } })
+                            ·build()
+                    ])
+                    ·build()
+            }),
+
+            // Code content with syntax highlighting
+            pre()
+                ·class(&format!("language-{}", props.language))
+                ·child(
+                    code()
+                        ·class(&format!("language-{}", props.language))
+                        ·text(&props.code)
+                        ·build()
+                )
+                ·build()
+        ])
+        ·build()
+}
+
+rite set_timeout(ms: u64, callback: fn()) {}
+
+/// Inline code element
+☉ rite InlineCode(props: { code: String }) → VNode! {
+    code()
+        ·class("inline-code")
+        ·text(&props.code)
+        ·build()
+}
+
+/// Admonition/callout for notes, warnings, etc.
+☉ rite Admonition(props: AdmonitionProps) → VNode! {
+    ≔ icon! = match props.variant {
+        AdmonitionVariant::Note => "info",
+        AdmonitionVariant::Tip => "lightbulb",
+        AdmonitionVariant::Warning => "alert-triangle",
+        AdmonitionVariant::Danger => "alert-circle",
+        AdmonitionVariant::Info => "info",
+        AdmonitionVariant::Success => "check-circle"
+    }
+
+    div()
+        ·class(&format!("admonition admonition--{}", props.variant·to_string()))
+        ·children(vec![
+            div()
+                ·class("admonition-icon")
+                ·child(Icon { name: icon })
+                ·build(),
+            div()
+                ·class("admonition-content")
+                ·children(vec![
+                    when(props.title·is_some(), || {
+                        h5()
+                            ·class("admonition-title")
+                            ·text(&props.title·clone()·unwrap())
+                            ·build()
+                    }),
+                    div()
+                        ·class("admonition-body")
+                        ·children(props.children·clone())
+                        ·build()
+                ])
+                ·build()
+        ])
+        ·build()
+}
+
+☉ sigil AdmonitionProps {
+    ☉ variant: AdmonitionVariant! = AdmonitionVariant::Note
+    ☉ title: Option<String>? = None
+    ☉ children: Vec<VNode>!
+}
+
+#[derive(Clone, Copy)]
+☉ enum AdmonitionVariant {
+    Note,
+    Tip,
+    Warning,
+    Danger,
+    Info,
+    Success
+}
+
+⊢ AdmonitionVariant {
+    rite to_string(&this) → &'static str! {
+        match this {
+            AdmonitionVariant::Note => "note",
+            AdmonitionVariant::Tip => "tip",
+            AdmonitionVariant::Warning => "warning",
+            AdmonitionVariant::Danger => "danger",
+            AdmonitionVariant::Info => "info",
+            AdmonitionVariant::Success => "success"
+        }
+    }
+}
+
+/// API reference item display
+☉ rite ApiItem(props: ApiItemProps) → VNode! {
+    div()
+        ·class(&format!("api-item api-item--{}", props.kind·to_string()))
+        ·id(&props.anchor)
+        ·children(vec![
+            // Header
+            div()
+                ·class("api-item-header")
+                ·children(vec![
+                    span()·class("api-item-kind")·text(&props.kind·to_string())·build(),
+                    h3()·class("api-item-name")·text(&props.name)·build(),
+                    a()
+                        ·class("api-item-anchor")
+                        ·attr("href", &format!("#{}", props.anchor))
+                        ·child(Icon { name: "link" })
+                        ·build()
+                ])
+                ·build(),
+
+            // Signature
+            when(props.signature·is_some(), || {
+                pre()
+                    ·class("api-item-signature")
+                    ·child(code()·text(&props.signature·clone()·unwrap())·build())
+                    ·build()
+            }),
+
+            // Description
+            div()
+                ·class("api-item-description")
+                ·children(props.children·clone())
+                ·build(),
+
+            // Parameters
+            when(!props.parameters·is_empty(), || {
+                div()
+                    ·class("api-item-params")
+                    ·children(vec![
+                        h4()·text("Parameters")·build(),
+                        dl()
+                            ·children(
+                                props.parameters·iter()
+                                    ·flat_map(|(name, type_, desc)| vec![
+                                        dt()
+                                            ·children(vec![
+                                                code()·text(name)·build(),
+                                                span()·class("param-type")·text(type_)·build()
+                                            ])
+                                            ·build(),
+                                        dd()·text(desc)·build()
+                                    ])
+                                    ·collect()
+                            )
+                            ·build()
+                    ])
+                    ·build()
+            }),
+
+            // Returns
+            when(props.returns·is_some(), || {
+                let (ret_type, ret_desc) = props.returns·clone()·unwrap()
+                div()
+                    ·class("api-item-returns")
+                    ·children(vec![
+                        h4()·text("Returns")·build(),
+                        p()
+                            ·children(vec![
+                                code()·text(&ret_type)·build(),
+                                text(" — "),
+                                text(&ret_desc)
+                            ])
+                            ·build()
+                    ])
+                    ·build()
+            }),
+
+            // Example
+            when(props.example·is_some(), || {
+                div()
+                    ·class("api-item-example")
+                    ·children(vec![
+                        h4()·text("Example")·build(),
+                        HighlightedCodeBlock {
+                            code: props.example·clone()·unwrap(),
+                            language: "sigil".to_string(),
+                            filename: None
+                        }
+                    ])
+                    ·build()
+            })
+        ])
+        ·build()
+}
+
+☉ sigil ApiItemProps {
+    ☉ name: String!
+    ☉ kind: ApiItemKind!
+    ☉ anchor: String!
+    ☉ signature: Option<String>? = None
+    ☉ parameters: Vec<(String, String, String)>! = Vec::new()
+    ☉ returns: Option<(String, String)>? = None
+    ☉ example: Option<String>? = None
+    ☉ children: Vec<VNode>!
+}
+
+#[derive(Clone, Copy)]
+☉ enum ApiItemKind {
+    Function,
+    Struct,
+    Enum,
+    Trait,
+    Constant,
+    Type,
+    Module,
+    Macro
+}
+
+⊢ ApiItemKind {
+    rite to_string(&this) → &'static str! {
+        match this {
+            ApiItemKind::Function => "function",
+            ApiItemKind::Struct => "struct",
+            ApiItemKind::Enum => "enum",
+            ApiItemKind::Trait => "trait",
+            ApiItemKind::Constant => "constant",
+            ApiItemKind::Type => "type",
+            ApiItemKind::Module => "module",
+            ApiItemKind::Macro => "macro"
+        }
+    }
+}

@@ -1,0 +1,37 @@
+// Native Platform Test 04: Button Creation
+// Tests: Create a GTK button with label
+// Expected: 0 (button created successfully)
+
+#[cfg(target_os = "linux")]
+#[link("gtk-4")]
+#[link("glib-2.0")]
+#[link("gobject-2.0")]
+extern "C" {
+    type GtkButton;
+
+    rite gtk_init();
+    rite gtk_button_new() → *GtkButton;
+    rite gtk_button_new_with_label(label: *c_char) → *GtkButton;
+    rite gtk_button_set_label(button: *GtkButton, label: *c_char);
+}
+
+#[cfg(target_os = "linux")]
+rite main() → i64 {
+    gtk_init();
+
+    // Create button without label
+    ≔ button1 = gtk_button_new();
+
+    // Create button with label
+    ≔ button2 = gtk_button_new_with_label("Click Me!\0".as_ptr());
+
+    // Update button label
+    gtk_button_set_label(button1, "Button 1\0".as_ptr());
+
+    0  // Success
+}
+
+#[cfg(not(target_os = "linux"))]
+rite main() → i64 {
+    0
+}

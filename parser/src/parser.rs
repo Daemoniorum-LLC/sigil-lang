@@ -1007,7 +1007,66 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Static) => Item::Static(self.parse_static(visibility)?),
             Some(Token::Actor) => Item::Actor(self.parse_actor(visibility)?),
-            Some(Token::Extern) => Item::ExternBlock(self.parse_extern_block()?),
+            Some(Token::Extern) => {
+                // Peek ahead to determine if this is an extern block or extern function
+                // extern "C" { ... } -> extern block
+                // extern "C" fn/rite ... -> extern function
+                self.advance(); // consume 'extern'
+
+                // Parse optional ABI string
+                let abi = if let Some(Token::StringLit(s)) = self.current_token().cloned() {
+                    self.advance();
+                    s
+                } else {
+                    "C".to_string()
+                };
+
+                if self.check(&Token::LBrace) {
+                    // It's an extern block
+                    self.expect(Token::LBrace)?;
+                    let mut items = Vec::new();
+                    while !self.check(&Token::RBrace) && !self.is_eof() {
+                        self.skip_comments();
+                        if self.check(&Token::RBrace) { break; }
+                        let vis = self.parse_visibility()?;
+                        self.skip_comments();
+                        match self.current_token() {
+                            Some(Token::Fn) | Some(Token::Lambda) => {
+                                items.push(ExternItem::Function(self.parse_extern_function(vis)?));
+                            }
+                            Some(Token::Static) => {
+                                items.push(ExternItem::Static(self.parse_extern_static(vis)?));
+                            }
+                            Some(Token::Type) => {
+                                items.push(ExternItem::Type(self.parse_extern_type(vis)?));
+                            }
+                            Some(token) => {
+                                return Err(ParseError::UnexpectedToken {
+                                    expected: "fn, static, or type".to_string(),
+                                    found: token.clone(),
+                                    span: self.current_span(),
+                                });
+                            }
+                            None => return Err(ParseError::UnexpectedEof),
+                        }
+                    }
+                    self.expect(Token::RBrace)?;
+                    Item::ExternBlock(ExternBlock { abi, items, outer_attrs })
+                } else if self.check(&Token::Fn) || self.check(&Token::Lambda) {
+                    // It's an extern function: extern "C" fn/rite name(...) { ... }
+                    let mut func = self.parse_function_with_attrs(visibility, outer_attrs)?;
+                    // Set no_mangle by default for extern functions
+                    func.attrs.no_mangle = true;
+                    func.attrs.calling_convention = Some(abi);
+                    Item::Function(func)
+                } else {
+                    return Err(ParseError::UnexpectedToken {
+                        expected: "{ or fn".to_string(),
+                        found: self.current_token().cloned().unwrap_or(Token::Semi),
+                        span: self.current_span(),
+                    });
+                }
+            }
             Some(Token::Macro) | Some(Token::MacroRules) => {
                 Item::Macro(self.parse_macro_def(visibility)?)
             }
@@ -1216,6 +1275,7 @@ impl<'a> Parser<'a> {
             is_const,
             is_unsafe,
             attrs,
+            outer_attrs,
             name,
             aspect,
             generics,
@@ -2179,7 +2239,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse an extern block: `extern "C" { ... }`
-    fn parse_extern_block(&mut self) -> ParseResult<ExternBlock> {
+    fn parse_extern_block(&mut self, outer_attrs: Vec<Attribute>) -> ParseResult<ExternBlock> {
         self.expect(Token::Extern)?;
 
         // Parse ABI string (default to "C")
@@ -2195,10 +2255,19 @@ impl<'a> Parser<'a> {
         let mut items = Vec::new();
 
         while !self.check(&Token::RBrace) && !self.is_eof() {
+            // Skip comments inside extern block
+            self.skip_comments();
+            if self.check(&Token::RBrace) {
+                break;
+            }
+
             let visibility = self.parse_visibility()?;
 
+            // Skip comments after visibility
+            self.skip_comments();
+
             match self.current_token() {
-                Some(Token::Fn) => {
+                Some(Token::Fn) | Some(Token::Lambda) => {
                     items.push(ExternItem::Function(
                         self.parse_extern_function(visibility)?,
                     ));
@@ -2206,9 +2275,12 @@ impl<'a> Parser<'a> {
                 Some(Token::Static) => {
                     items.push(ExternItem::Static(self.parse_extern_static(visibility)?));
                 }
+                Some(Token::Type) => {
+                    items.push(ExternItem::Type(self.parse_extern_type(visibility)?));
+                }
                 Some(token) => {
                     return Err(ParseError::UnexpectedToken {
-                        expected: "fn or static".to_string(),
+                        expected: "fn, static, or type".to_string(),
                         found: token.clone(),
                         span: self.current_span(),
                     });
@@ -2219,7 +2291,7 @@ impl<'a> Parser<'a> {
 
         self.expect(Token::RBrace)?;
 
-        Ok(ExternBlock { abi, items })
+        Ok(ExternBlock { abi, items, outer_attrs })
     }
 
     /// Parse an extern function declaration (no body).
@@ -2289,6 +2361,30 @@ impl<'a> Parser<'a> {
         Ok(ExternStatic {
             visibility,
             mutable,
+            name,
+            ty,
+        })
+    }
+
+    /// Parse an extern type: either opaque (`type Name;`) or alias (`type Name = T;`)
+    fn parse_extern_type(&mut self, visibility: Visibility) -> ParseResult<ExternType> {
+        self.expect(Token::Type)?;
+        let name = self.parse_ident()?;
+
+        // Check for opaque type (no body) vs type alias
+        let ty = if self.check(&Token::Eq) {
+            // Type alias: type Callback = rite(i32) → i32;
+            self.advance(); // consume '='
+            Some(self.parse_type()?)
+        } else {
+            // Opaque type: type GtkWidget;
+            None
+        };
+
+        self.expect(Token::Semi)?;
+
+        Ok(ExternType {
+            visibility,
             name,
             ty,
         })

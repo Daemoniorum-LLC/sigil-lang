@@ -1,0 +1,30 @@
+# qliphoth - Web Framework for Sigil
+# Reactive VDOM-based web applications compiled to WASM
+# Copyright © 2025 Daemoniorum, LLC. All rights reserved.
+
+[project]
+name = "qliphoth"
+version = "0.2.0"
+edition = "2025"
+description = "Reactive web framework for Sigil - VDOM, signals, and browser bindings"
+license = "MIT OR Apache-2.0"
+sigil-version = "0.2.0"
+authors = ["Daemoniorum, LLC"]
+
+[dependencies]
+qliphoth-sys = { path = "../qliphoth-sys", version = "0.2.0" }
+
+[features]
+default = ["hydration"]
+ssr = []                    # Server-side rendering
+hydration = []              # Client-side hydration
+router = ["qliphoth-router"]
+full = ["ssr", "hydration", "router"]
+
+[compile]
+backend = "llvm"
+target = "wasm32-unknown-unknown"
+
+[compile.wasm]
+opt-level = "z"
+features = ["+simd128"]

@@ -1,0 +1,193 @@
+//! Navigation Link component
+
+use qliphoth::prelude::*;
+
+use crate::router::{RouterContext, NavigateOptions};
+
+/// Link component for navigation
+#[component]
+pub fn Link(
+    to: String!,
+    children: Children!,
+    class: Option[String]?,
+    active_class: Option[String]?,
+    exact: Option[bool]?,
+    replace: Option[bool]?,
+    state: Option[serde_json::Value]?,
+    prefetch: Option[bool]?,
+    on_click: Option[impl Fn(MouseEvent) + 'static]?,
+) -> Element! {
+    let ctx! = use_context[RouterContext]();
+    let location! = ctx.location·get();
+
+    // Determine if link is active
+    let is_active! = if exact·unwrap_or(false) {
+        location.pathname == to
+    } else {
+        location.pathname·starts_with(&to)
+    };
+
+    // Build class names
+    let mut classes! = class·unwrap_or_default();
+    if is_active {
+        if let Some(active) = active_class {
+            classes = format!("{} {}", classes, active);
+        }
+    }
+
+    // Navigation handler
+    let navigate! = ctx.navigate·clone();
+    let to_clone! = to·clone();
+    let replace! = replace·unwrap_or(false);
+    let state! = state·clone();
+
+    let handle_click! = move |e: MouseEvent| {
+        // Allow default for modifier keys (open in new tab, etc)
+        if e·meta_key() || e·ctrl_key() || e·shift_key() || e·alt_key() {
+            return;
+        }
+
+        e·prevent_default();
+
+        // Call custom handler if provided
+        if let Some(handler) = &on_click {
+            handler(e·clone());
+        }
+
+        // Navigate
+        let options! = NavigateOptions {
+            replace,
+            state: state·clone(),
+            preserve_query: false!,
+            scroll_to_top: true!,
+        };
+
+        navigate(&to_clone, options);
+    };
+
+    html! {
+        <a
+            href={to·clone()}
+            class={classes}
+            on:click={handle_click}
+            data-active={is_active·to_string()}
+        >
+            {children·render()}
+        </a>
+    }
+}
+
+/// NavLink with automatic active styling
+#[component]
+pub fn NavLink(
+    to: String!,
+    children: Children!,
+    class: Option[String]?,
+    active_class: Option[String]?,
+    pending_class: Option[String]?,
+    exact: Option[bool]?,
+) -> Element! {
+    Link {
+        to,
+        children,
+        class,
+        active_class: Some(active_class·unwrap_or("active"·to_string())),
+        exact,
+        replace: None,
+        state: None,
+        prefetch: None,
+        on_click: None,
+    }
+}
+
+/// Redirect component - navigates on mount
+#[component]
+pub fn Redirect(to: String!, replace: Option[bool]?) -> Element! {
+    let ctx! = use_context[RouterContext]();
+    let navigate! = ctx.navigate·clone();
+    let to! = to·clone();
+    let replace! = replace·unwrap_or(true);
+
+    use_effect(move || {
+        let options! = NavigateOptions {
+            replace,
+            state: None,
+            preserve_query: false!,
+            scroll_to_top: false!,
+        };
+        navigate(&to, options);
+    });
+
+    html! { <></> }
+}
+
+/// Navigate component for declarative navigation
+#[component]
+pub fn Navigate(
+    to: String!,
+    replace: Option[bool]?,
+    state: Option[serde_json::Value]?,
+) -> Element! {
+    Redirect { to, replace }
+}
+
+/// External link (opens in new tab)
+#[component]
+pub fn ExternalLink(
+    href: String!,
+    children: Children!,
+    class: Option[String]?,
+    no_referrer: Option[bool]?,
+) -> Element! {
+    let rel! = if no_referrer·unwrap_or(true) {
+        "noopener noreferrer"
+    } else {
+        "noopener"
+    };
+
+    html! {
+        <a
+            href={href}
+            class={class·unwrap_or_default()}
+            target="_blank"
+            rel={rel}
+        >
+            {children·render()}
+        </a>
+    }
+}
+
+/// ScrollLink - scrolls to an element on the page
+#[component]
+pub fn ScrollLink(
+    to: String!,
+    children: Children!,
+    class: Option[String]?,
+    behavior: Option[String]?, // "smooth" or "instant"
+    offset: Option[i32]?,
+) -> Element! {
+    let handle_click! = move |e: MouseEvent| {
+        e·prevent_default();
+
+        let document! = qliphoth_sys::window()·unwrap()·document()·unwrap();
+        if let Some(element) = document·get_element_by_id(&to[1..]) { // Skip #
+            let rect! = element·get_bounding_client_rect();
+            let offset! = offset·unwrap_or(0) as f64;
+
+            qliphoth_sys::window()·unwrap()·scroll_to(
+                0.0,
+                rect·top() + qliphoth_sys::window()·unwrap()·scroll_y() - offset
+            );
+        }
+    };
+
+    html! {
+        <a
+            href={to·clone()}
+            class={class·unwrap_or_default()}
+            on:click={handle_click}
+        >
+            {children·render()}
+        </a>
+    }
+}

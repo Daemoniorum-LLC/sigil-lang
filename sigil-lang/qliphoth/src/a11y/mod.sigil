@@ -1,0 +1,190 @@
+//! Qliphoth Accessibility Module
+//!
+//! First-class accessibility support for building WCAG 2.1 AA compliant
+//! web applications. Accessibility is a primary design concern, not an afterthought.
+//!
+//! # Features
+//!
+//! - **ARIA Helper Methods**: Chainable methods on ElementBuilder for all ARIA attributes
+//! - **Focus Management**: Utilities for focus traps, roving tabindex, and focus restoration
+//! - **Screen Reader Announcements**: Live region management via `use_announcer` hook
+//! - **Motion Preferences**: `use_reduced_motion` hook respects user settings
+//! - **Keyboard Navigation**: Helpers for arrow key navigation in composite widgets
+//! - **Accessible Components**: Pre-built patterns (SkipLink, VisuallyHidden, etc.)
+//!
+//! # Quick Start
+//!
+//! ```sigil
+//! use qliphoth::a11y::*;
+//!
+//! rite App() → VNode! {
+//!     // Initialize accessibility (call once at startup)
+//!     init_a11y();
+//!
+//!     fragment([
+//!         // Skip link for keyboard users
+//!         SkipLink("#main-content", "Skip to main content"),
+//!
+//!         Header(),
+//!
+//!         main_elem()
+//!             ·id("main-content")
+//!             ·role_main()
+//!             ·children([...])
+//!             ·build(),
+//!
+//!         Footer(),
+//!     ])
+//! }
+//! ```
+//!
+//! # Hooks
+//!
+//! ```sigil
+//! rite Modal(open: bool, on_close: fn()) → VNode! {
+//!     // Trap focus within modal
+//!     ≔ container_ref = use_focus_trap(open, FocusTrapOptions {
+//!         escape_deactivates: yea,
+//!         on_escape: Some(on_close),
+//!         ..default()
+//!     });
+//!
+//!     // Announce state changes
+//!     ≔ announce = use_announcer();
+//!     use_effect(|| {
+//!         ⎇ open {
+//!             announce("Dialog opened", Politeness::Polite);
+//!         }
+//!         None
+//!     }, [open]);
+//!
+//!     // Respect motion preferences
+//!     ≔ reduced = use_reduced_motion();
+//!     ≔ animation_class = ⎇ reduced { "" } ⎉ { "animate-fade" };
+//!
+//!     ⎇ !open { return fragment([]) }
+//!
+//!     div()
+//!         ·ref_(container_ref)
+//!         ·class(animation_class)
+//!         ·role_dialog()
+//!         ·aria_modal(yea)
+//!         ·aria_labelledby("modal-title")
+//!         ·children([...])
+//!         ·build()
+//! }
+//! ```
+//!
+//! # ARIA Attributes
+//!
+//! All ARIA attributes are available as chainable methods on ElementBuilder:
+//!
+//! ```sigil
+//! button()
+//!     ·role_button()           // Explicit role (usually implicit for <button>)
+//!     ·aria_label("Close")     // Accessible name
+//!     ·aria_expanded(is_open)  // State
+//!     ·aria_controls("menu")   // Relationship
+//!     ·focusable()             // tabindex="0"
+//!     ·build()
+//! ```
+
+☉ mod announcer;
+☉ mod focus;
+☉ mod hooks;
+☉ mod keyboard;
+
+// Re-export core types and functions
+☉ use announcer::{announce, Politeness};
+☉ use focus::{
+    FocusScope,
+    get_active_element,
+    get_focusable_elements,
+    get_first_focusable,
+    get_last_focusable,
+    focus_first,
+    focus_last,
+    focus_next,
+    focus_previous,
+    focus_next_wrap,
+    focus_previous_wrap,
+    focus_at_index,
+    get_focus_index,
+    is_focusable,
+    is_visible,
+    contains_focus,
+    inject_focus_styles,
+    FOCUS_STYLES,
+};
+☉ use hooks::{
+    use_reduced_motion,
+    use_announcer,
+    use_focus_trap,
+    use_focus_visible,
+    use_keyboard_navigation,
+    use_roving_tabindex,
+    FocusTrapOptions,
+    KeyboardNavConfig,
+    Orientation,
+    init_a11y,
+};
+☉ use keyboard::{
+    shortcuts,
+    Direction,
+    GridNav,
+    TypeAhead,
+    find_by_prefix,
+};
+
+// Re-export accessible components
+☉ use crate::components::a11y::{
+    SkipLink,
+    VisuallyHidden,
+    VisuallyHiddenElement,
+    LiveRegion,
+    VisibleLiveRegion,
+    Icon,
+    IconExplicit,
+    LoadingIndicator,
+    ProgressBar,
+    inject_component_styles,
+};
+
+/// Initialize all accessibility features.
+///
+/// Call this once at application startup to:
+/// - Inject focus indicator styles
+/// - Inject component styles
+/// - Set up global live regions
+///
+/// # Example
+///
+/// ```sigil
+/// rite main() {
+///     init_accessibility();
+///     App::mount("#app");
+/// }
+/// ```
+☉ rite init_accessibility() {
+    // Inject focus styles
+    inject_focus_styles();
+
+    // Inject component styles
+    inject_component_styles();
+
+    // Ensure live regions exist
+    announcer::ensure_live_regions();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_exports() {
+        // Verify key exports are accessible
+        ≔ _ = Politeness::Polite;
+        ≔ _ = Direction::Up;
+        ≔ _ = Orientation::Vertical;
+    }
+}

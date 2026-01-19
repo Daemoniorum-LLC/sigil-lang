@@ -10,7 +10,7 @@ use super::error::{WasmError, WasmResult};
 #[cfg(test)]
 use super::types::CompiledFunction;
 use super::WasmCompiler;
-use crate::ast::{Literal, NumBase};
+use crate::ast::{InterpolationPart, Literal, NumBase};
 
 impl WasmCompiler {
     /// Compile a literal value, pushing the result onto the WASM stack.
@@ -60,10 +60,76 @@ impl WasmCompiler {
                 func.push(Instruction::I32Const(offset as i32));
                 func.push(Instruction::I64ExtendI32U);
             }
-            Literal::InterpolatedString { .. } => {
-                // Interpolated strings require expression compilation
-                // For now, return a placeholder
-                return Err(WasmError::unsupported("interpolated strings"));
+            Literal::InterpolatedString { parts } => {
+                // Drop the func borrow before we start - we'll get it again as needed
+                drop(func);
+
+                // Handle empty interpolated string
+                if parts.is_empty() {
+                    let offset = self.add_string("");
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::I32Const(offset as i32));
+                    func.push(Instruction::I64ExtendI32U);
+                    return Ok(());
+                }
+
+                let mut first = true;
+
+                for part in parts {
+                    match part {
+                        InterpolationPart::Text(s) => {
+                            // Add string literal to data section
+                            let str_offset = self.add_string(s);
+                            let func = self.current_function_mut().unwrap();
+                            func.push(Instruction::I32Const(str_offset as i32));
+
+                            if !first {
+                                // Concat with accumulator (which is below on stack)
+                                // Stack: [acc, new] -> string.concat(acc, new)
+                                // But we just pushed new on top, so we need to swap
+                                // Actually: concat(str1, str2) takes bottom, top order
+                                // So if acc is below and new is on top, that's correct order
+                                // But wait - we pushed new AFTER acc, so order is [acc, new]
+                                // That's the right order for concat
+                                // WRONG: concat expects (str1, str2) where str1 is FIRST pushed
+                                // So we need to swap: new is on top, acc is below
+                                // Actually looking at WASM call convention: first arg is popped first
+                                // So Call(concat) pops [top=str2, next=str1]
+                                // We have [acc, new] on stack, str1=acc, str2=new. That's right!
+                                let concat_idx = self.imports.get_func("string_concat")
+                                    .ok_or_else(|| WasmError::internal("string_concat not registered"))?;
+                                let func = self.current_function_mut().unwrap();
+                                func.push(Instruction::Call(concat_idx));
+                            }
+                            first = false;
+                        }
+                        InterpolationPart::Expr(expr) => {
+                            // Compile expression - puts i64 value on stack
+                            self.compile_expr(expr)?;
+
+                            // Convert to string using string_from_int
+                            let from_int_idx = self.imports.get_func("string_from_int")
+                                .ok_or_else(|| WasmError::internal("string_from_int not registered"))?;
+                            let func = self.current_function_mut().unwrap();
+                            func.push(Instruction::Call(from_int_idx));
+                            // Result is i32 string pointer
+
+                            if !first {
+                                // Concat with accumulator
+                                let concat_idx = self.imports.get_func("string_concat")
+                                    .ok_or_else(|| WasmError::internal("string_concat not registered"))?;
+                                let func = self.current_function_mut().unwrap();
+                                func.push(Instruction::Call(concat_idx));
+                            }
+                            first = false;
+                        }
+                    }
+                }
+
+                // Extend i32 string pointer to i64 for uniform value representation
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::I64ExtendI32U);
+                return Ok(());
             }
             Literal::Char(c) => {
                 func.push(Instruction::I64Const(*c as i64));
@@ -458,12 +524,54 @@ mod tests {
     }
 
     #[test]
-    fn test_interpolated_string_unsupported() {
+    fn test_interpolated_string_empty() {
         let mut compiler = create_test_compiler_with_function();
 
         let lit = Literal::InterpolatedString { parts: vec![] };
 
+        // Empty interpolated string should compile successfully
         let result = compiler.compile_literal(&lit);
-        assert!(result.is_err());
+        assert!(result.is_ok());
+
+        let func = compiler.current_function().unwrap();
+        // Should push string pointer (I32Const) and extend to I64
+        assert!(func.instructions.len() >= 2);
+    }
+
+    #[test]
+    fn test_interpolated_string_text_only() {
+        let mut compiler = create_test_compiler_with_function();
+
+        let lit = Literal::InterpolatedString {
+            parts: vec![InterpolationPart::Text("hello".to_string())],
+        };
+
+        // Single text part should work without concat
+        let result = compiler.compile_literal(&lit);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_interpolated_string_concat() {
+        let mut compiler = create_test_compiler_with_function();
+
+        // Two text parts need string_concat
+        let lit = Literal::InterpolatedString {
+            parts: vec![
+                InterpolationPart::Text("hello ".to_string()),
+                InterpolationPart::Text("world".to_string()),
+            ],
+        };
+
+        // Should succeed - default compiler has string_concat registered
+        let result = compiler.compile_literal(&lit);
+        assert!(result.is_ok());
+
+        // Should have called string_concat import
+        let func = compiler.current_function().unwrap();
+        assert!(func
+            .instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::Call(_))));
     }
 }

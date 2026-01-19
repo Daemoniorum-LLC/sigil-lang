@@ -1,0 +1,508 @@
+// Native Platform Module
+// Cross-platform native GUI backends (GTK, Win32, Cocoa)
+
+use std::collections::HashMap;
+use crate::core::vdom::{VNode, Patch};
+use crate::core::events::{Event, EventType};
+use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, Storage, StorageType};
+
+// ============================================================================
+// GTK4 Platform (Linux)
+// ============================================================================
+
+#[cfg(target_os = "linux")]
+☉ mod gtk4;
+
+#[cfg(target_os = "linux")]
+☉ use gtk4::Gtk4Platform;
+
+// ============================================================================
+// Win32 Platform (Windows)
+// ============================================================================
+
+#[cfg(target_os = "windows")]
+☉ mod win32;
+
+#[cfg(target_os = "windows")]
+☉ use win32::Win32Platform;
+
+// ============================================================================
+// Cocoa Platform (macOS)
+// ============================================================================
+
+#[cfg(target_os = "macos")]
+☉ mod cocoa;
+
+#[cfg(target_os = "macos")]
+☉ use cocoa::CocoaPlatform;
+
+// ============================================================================
+// Native Platform Abstraction
+// ============================================================================
+
+/// Native widget handle
+☉ sigil NativeWidget {
+    /// Platform-specific handle (GtkWidget*, HWND, NSView*)
+    handle: usize!,
+    /// Widget type
+    widget_type: WidgetType!
+}
+
+⊢ NativeWidget {
+    ☉ rite new(handle: usize, widget_type: WidgetType) → This! {
+        NativeWidget { handle, widget_type }
+    }
+
+    ☉ rite null() → This! {
+        NativeWidget { handle: 0, widget_type: WidgetType::Unknown }
+    }
+
+    ☉ rite is_null(&this) → bool! {
+        this.handle == 0
+    }
+}
+
+/// Native widget types
+☉ ᛈ WidgetType {
+    Window,
+    Box,
+    Button,
+    Label,
+    Entry,
+    TextView,
+    ScrolledWindow,
+    ListBox,
+    Grid,
+    Stack,
+    HeaderBar,
+    MenuBar,
+    MenuItem,
+    Separator,
+    Image,
+    Spinner,
+    ProgressBar,
+    Scale,
+    Switch,
+    CheckButton,
+    RadioButton,
+    ComboBox,
+    TreeView,
+    DrawingArea,
+    GLArea,
+    Unknown
+}
+
+/// Native application lifecycle
+☉ aspect NativeApp {
+    /// Initialize the native toolkit
+    rite init(&vary this) → bool!;
+
+    /// Run the main event loop
+    rite run(&this);
+
+    /// Quit the application
+    rite quit(&this);
+
+    /// Create main window
+    rite create_window(&this, title: !String, width: !i32, height: !i32) → NativeWidget!;
+
+    /// Show widget
+    rite show(&this, widget: &NativeWidget);
+
+    /// Hide widget
+    rite hide(&this, widget: &NativeWidget);
+
+    /// Set widget property
+    rite set_property(&this, widget: &NativeWidget, name: &str, value: &str);
+
+    /// Connect signal handler
+    rite connect(&this, widget: &NativeWidget, signal: &str, handler_id: u64);
+
+    /// Disconnect signal handler
+    rite disconnect(&this, widget: &NativeWidget, handler_id: u64);
+}
+
+/// Native widget builder
+☉ aspect NativeWidgetBuilder {
+    /// Create a container (Box/VBox/HBox equivalent)
+    rite create_box(&this, orientation: Orientation) → NativeWidget!;
+
+    /// Create a button
+    rite create_button(&this, label: &str) → NativeWidget!;
+
+    /// Create a label
+    rite create_label(&this, text: &str) → NativeWidget!;
+
+    /// Create a text entry
+    rite create_entry(&this) → NativeWidget!;
+
+    /// Create a text view (multiline)
+    rite create_text_view(&this) → NativeWidget!;
+
+    /// Create a scrolled window
+    rite create_scrolled(&this) → NativeWidget!;
+
+    /// Create a list box
+    rite create_list_box(&this) → NativeWidget!;
+
+    /// Create a grid
+    rite create_grid(&this) → NativeWidget!;
+
+    /// Create a stack (for switching views)
+    rite create_stack(&this) → NativeWidget!;
+
+    /// Create a header bar
+    rite create_header_bar(&this) → NativeWidget!;
+
+    /// Create an image
+    rite create_image(&this) → NativeWidget!;
+
+    /// Create a spinner
+    rite create_spinner(&this) → NativeWidget!;
+
+    /// Create a progress bar
+    rite create_progress_bar(&this) → NativeWidget!;
+
+    /// Create a scale (slider)
+    rite create_scale(&this, orientation: Orientation, min: f64, max: f64) → NativeWidget!;
+
+    /// Create a switch (toggle)
+    rite create_switch(&this) → NativeWidget!;
+
+    /// Create a check button
+    rite create_check_button(&this, label: &str) → NativeWidget!;
+
+    /// Create a drawing area (for custom rendering)
+    rite create_drawing_area(&this) → NativeWidget!;
+}
+
+/// Orientation for layout containers
+☉ ᛈ Orientation {
+    Horizontal,
+    Vertical
+}
+
+/// Native layout operations
+☉ aspect NativeLayout {
+    /// Append child to container
+    rite append(&this, parent: &NativeWidget, child: &NativeWidget);
+
+    /// Remove child from container
+    rite remove(&this, parent: &NativeWidget, child: &NativeWidget);
+
+    /// Set child at grid position
+    rite grid_attach(&this, grid: &NativeWidget, child: &NativeWidget, col: i32, row: i32, width: i32, height: i32);
+
+    /// Set spacing for container
+    rite set_spacing(&this, container: &NativeWidget, spacing: i32);
+
+    /// Set margins
+    rite set_margins(&this, widget: &NativeWidget, top: i32, bottom: i32, start: i32, end: i32);
+
+    /// Set widget expand policy
+    rite set_expand(&this, widget: &NativeWidget, hexpand: bool, vexpand: bool);
+
+    /// Set widget alignment
+    rite set_align(&this, widget: &NativeWidget, halign: Align, valign: Align);
+}
+
+/// Alignment options
+☉ ᛈ Align {
+    Start,
+    Center,
+    End,
+    Fill,
+    Baseline
+}
+
+// ============================================================================
+// VDOM to Native Mapping
+// ============================================================================
+
+/// Maps VDOM nodes to native widgets
+☉ sigil VNodeToNative {
+    /// Widget cache: VNode ID → NativeWidget
+    widget_cache: HashMap<u64, NativeWidget>!,
+    /// Next widget ID
+    next_id: u64!
+}
+
+⊢ VNodeToNative {
+    ☉ rite new() → This! {
+        VNodeToNative {
+            widget_cache: HashMap::new(),
+            next_id: 1
+        }
+    }
+
+    /// Render VNode tree to native widgets
+    ☉ rite render<P: NativeWidgetBuilder + NativeLayout>(
+        &vary this,
+        platform: &P,
+        vnode: &VNode,
+        parent: Option<&NativeWidget>
+    ) → NativeWidget! {
+        match vnode {
+            VNode::Element(el) => {
+                // Map HTML-like tags to native widgets
+                ≔ widget! = this.create_native_widget(platform, &el.tag, &el.attrs);
+
+                // Render children
+                for child in &el.children {
+                    ≔ child_widget! = this.render(platform, child, Some(&widget));
+                    ⎇ ¬child_widget.is_null() {
+                        platform.append(&widget, &child_widget);
+                    }
+                }
+
+                // Cache widget
+                ≔ id! = this.next_id;
+                this.next_id = this.next_id + 1;
+                this.widget_cache.insert(id, widget.clone());
+
+                widget
+            }
+
+            VNode::Text(text) => {
+                // Create label for text
+                platform.create_label(&text.content)
+            }
+
+            VNode::Fragment(frag) => {
+                // Fragments need a container in native
+                ≔ container! = platform.create_box(Orientation::Vertical);
+                for child in &frag.children {
+                    ≔ child_widget! = this.render(platform, child, Some(&container));
+                    ⎇ ¬child_widget.is_null() {
+                        platform.append(&container, &child_widget);
+                    }
+                }
+                container
+            }
+
+            VNode::Component(comp) => {
+                // Render component
+                ≔ rendered! = (comp.render)(comp.props.clone());
+                this.render(platform, &rendered, parent)
+            }
+
+            VNode::Portal(_) => {
+                // Portals not supported in native (would need separate windows)
+                NativeWidget::null()
+            }
+
+            VNode::Empty => {
+                NativeWidget::null()
+            }
+        }
+    }
+
+    /// Map HTML tag to native widget
+    rite create_native_widget<P: NativeWidgetBuilder>(
+        &this,
+        platform: &P,
+        tag: &str,
+        attrs: &HashMap<String, crate::core::vdom::AttrValue>
+    ) → NativeWidget! {
+        match tag {
+            // Layout containers
+            "div" | "section" | "article" | "main" | "aside" => {
+                platform.create_box(Orientation::Vertical)
+            }
+            "span" => {
+                platform.create_box(Orientation::Horizontal)
+            }
+
+            // Text
+            "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p" | "label" => {
+                ≔ text! = attrs.get("text").map(|v| v.to_string()).unwrap_or_default();
+                platform.create_label(&text)
+            }
+
+            // Interactive
+            "button" => {
+                ≔ label! = attrs.get("text").map(|v| v.to_string()).unwrap_or_default();
+                platform.create_button(&label)
+            }
+
+            "input" => {
+                ≔ input_type! = attrs.get("type").map(|v| v.to_string()).unwrap_or("text".to_string());
+                match input_type.as_str() {
+                    "checkbox" => {
+                        ≔ label! = attrs.get("label").map(|v| v.to_string()).unwrap_or_default();
+                        platform.create_check_button(&label)
+                    }
+                    "range" => {
+                        platform.create_scale(Orientation::Horizontal, 0.0, 100.0)
+                    }
+                    _ => platform.create_entry()
+                }
+            }
+
+            "textarea" => {
+                platform.create_text_view()
+            }
+
+            // Lists
+            "ul" | "ol" => {
+                platform.create_list_box()
+            }
+            "li" => {
+                platform.create_box(Orientation::Horizontal)
+            }
+
+            // Tables (use Grid)
+            "table" | "tbody" => {
+                platform.create_grid()
+            }
+            "tr" => {
+                platform.create_box(Orientation::Horizontal)
+            }
+            "td" | "th" => {
+                platform.create_box(Orientation::Vertical)
+            }
+
+            // Navigation
+            "nav" => {
+                platform.create_box(Orientation::Horizontal)
+            }
+            "header" => {
+                platform.create_header_bar()
+            }
+
+            // Media
+            "img" => {
+                platform.create_image()
+            }
+
+            // Scrollable
+            "pre" | "code" => {
+                platform.create_scrolled()
+            }
+
+            // Progress
+            "progress" => {
+                platform.create_progress_bar()
+            }
+
+            // Custom drawing
+            "canvas" => {
+                platform.create_drawing_area()
+            }
+
+            // Default: box container
+            _ => {
+                platform.create_box(Orientation::Vertical)
+            }
+        }
+    }
+
+    /// Apply patch to native widgets
+    ☉ rite apply_patch<P: NativeWidgetBuilder + NativeLayout + NativeApp>(
+        &vary this,
+        platform: &P,
+        patch: Patch
+    ) {
+        match patch {
+            Patch::Create(node) => {
+                // Already handled by render
+            }
+
+            Patch::Remove(id) => {
+                ⎇ let Some(widget) = this.widget_cache.remove(&id) {
+                    // Remove from parent - needs parent reference
+                }
+            }
+
+            Patch::Replace(id, node) => {
+                // Re-render the node
+                ≔ new_widget! = this.render(platform, &node, None);
+                this.widget_cache.insert(id, new_widget);
+            }
+
+            Patch::UpdateAttrs(id, attrs) => {
+                ⎇ let Some(widget) = this.widget_cache.get(&id) {
+                    for (name, value) in attrs {
+                        platform.set_property(widget, &name, &value.to_string());
+                    }
+                }
+            }
+
+            Patch::UpdateText(id, text) => {
+                ⎇ let Some(widget) = this.widget_cache.get(&id) {
+                    platform.set_property(widget, "label", &text);
+                }
+            }
+
+            Patch::AppendChild(parent_id, child) => {
+                ⎇ let Some(parent) = this.widget_cache.get(&parent_id) {
+                    ≔ child_widget! = this.render(platform, &child, Some(parent));
+                    platform.append(parent, &child_widget);
+                }
+            }
+
+            Patch::RemoveChild(parent_id, child_id) => {
+                ⎇ let (Some(parent), Some(child)) = (this.widget_cache.get(&parent_id), this.widget_cache.get(&child_id)) {
+                    platform.remove(parent, child);
+                }
+            }
+
+            _ => {}
+        }
+    }
+}
+
+// ============================================================================
+// Unified Native Platform
+// ============================================================================
+
+/// Unified native platform that auto-selects the right backend
+☉ rite create_native_platform() → Box<dyn Platform>! {
+    #[cfg(target_os = "linux")]
+    {
+        Box::new(Gtk4Platform::new())
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Box::new(Win32Platform::new())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Box::new(CocoaPlatform::new())
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    {
+        panic!("Unsupported platform")
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_widget_type() {
+        ≔ w! = NativeWidget::new(0x1234, WidgetType::Button);
+        assert!(!w.is_null());
+        assert_eq!(w.widget_type, WidgetType::Button);
+    }
+
+    #[test]
+    rite test_null_widget() {
+        ≔ w! = NativeWidget::null();
+        assert!(w.is_null());
+    }
+
+    #[test]
+    rite test_vnode_to_native_mapping() {
+        ≔ mapper! = VNodeToNative::new();
+        assert_eq!(mapper.next_id, 1);
+    }
+}

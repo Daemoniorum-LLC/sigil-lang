@@ -1,0 +1,839 @@
+// DOM Module
+// JSX-like element builders and HTML primitives
+
+use std::collections::HashMap;
+use crate::core::vdom::{VNode, VElement, VText, VFragment, AttrValue, PropValue};
+use crate::core::events::{EventHandler, EventType};
+
+/// Element trait for building DOM trees
+☉ aspect Element: Into<VNode> {
+    rite to_vnode(this) → VNode!;
+}
+
+/// Convenience type alias for element builders
+☉ type E = VElement;
+
+// ============================================================================
+// HTML Element Builders
+// ============================================================================
+
+/// Builder pattern for creating elements
+☉ sigil ElementBuilder {
+    element: VElement!
+}
+
+⊢ ElementBuilder {
+    ☉ rite new(tag: &str) → This! {
+        ElementBuilder {
+            element: VElement::new(tag)
+        }
+    }
+
+    /// Add attribute
+    ☉ rite attr(vary this, name: &str, value: impl Into<AttrValue>) → This! {
+        this.element = this.element·attr(name, value)
+        this
+    }
+
+    /// Add class
+    ☉ rite class(this, class: &str) → This! {
+        this·attr("class", class)
+    }
+
+    /// Add ID
+    ☉ rite id(this, id: &str) → This! {
+        this·attr("id", id)
+    }
+
+    /// Add style
+    ☉ rite style(this, style: &str) → This! {
+        this·attr("style", style)
+    }
+
+    /// Add event handler
+    ☉ rite on(vary this, event: EventType, handler: impl Into<EventHandler>) → This! {
+        this.element = this.element·on(event, handler·into())
+        this
+    }
+
+    /// Add onclick handler
+    ☉ rite onclick(this, handler: impl Fn() + 'static) → This! {
+        this·on(EventType::Click, EventHandler::from_fn(handler))
+    }
+
+    /// Add onchange handler (receives user input - Reported)
+    ☉ rite onchange(this, handler: impl Fn(~String) + 'static) → This! {
+        this·on(EventType::Change, EventHandler::from_value_fn(handler))
+    }
+
+    /// Add oninput handler (receives user input - Reported)
+    ☉ rite oninput(this, handler: impl Fn(~String) + 'static) → This! {
+        this·on(EventType::Input, EventHandler::from_value_fn(handler))
+    }
+
+    /// Add onsubmit handler
+    ☉ rite onsubmit(this, handler: impl Fn() + 'static) → This! {
+        this·on(EventType::Submit, EventHandler::from_fn_prevent_default(handler))
+    }
+
+    /// Add onkeydown handler (receives keyboard event - Reported)
+    ☉ rite onkeydown(this, handler: impl Fn(~KeyEvent) + 'static) → This! {
+        this·on(EventType::KeyDown, EventHandler::from_key_fn(handler))
+    }
+
+    /// Add onkeyup handler (receives keyboard event - Reported)
+    ☉ rite onkeyup(this, handler: impl Fn(~KeyEvent) + 'static) → This! {
+        this·on(EventType::KeyUp, EventHandler::from_key_fn(handler))
+    }
+
+    /// Add onfocus handler
+    ☉ rite onfocus(this, handler: impl Fn() + 'static) → This! {
+        this·on(EventType::Focus, EventHandler::from_fn(handler))
+    }
+
+    /// Add onblur handler
+    ☉ rite onblur(this, handler: impl Fn() + 'static) → This! {
+        this·on(EventType::Blur, EventHandler::from_fn(handler))
+    }
+
+    /// Add onmouseover handler
+    ☉ rite onmouseover(this, handler: impl Fn() + 'static) → This! {
+        this·on(EventType::MouseOver, EventHandler::from_fn(handler))
+    }
+
+    /// Add onmouseout handler
+    ☉ rite onmouseout(this, handler: impl Fn() + 'static) → This! {
+        this·on(EventType::MouseOut, EventHandler::from_fn(handler))
+    }
+
+    // ========================================================================
+    // ARIA Accessibility Helpers
+    // ========================================================================
+
+    // -- Roles --
+
+    /// Set ARIA role
+    ☉ rite role(this, role: &str) → This! { this·attr("role", role) }
+
+    /// Role: button
+    ☉ rite role_button(this) → This! { this·role("button") }
+
+    /// Role: dialog
+    ☉ rite role_dialog(this) → This! { this·role("dialog") }
+
+    /// Role: alertdialog
+    ☉ rite role_alertdialog(this) → This! { this·role("alertdialog") }
+
+    /// Role: alert
+    ☉ rite role_alert(this) → This! { this·role("alert") }
+
+    /// Role: navigation
+    ☉ rite role_navigation(this) → This! { this·role("navigation") }
+
+    /// Role: main
+    ☉ rite role_main(this) → This! { this·role("main") }
+
+    /// Role: complementary (sidebar)
+    ☉ rite role_complementary(this) → This! { this·role("complementary") }
+
+    /// Role: region
+    ☉ rite role_region(this) → This! { this·role("region") }
+
+    /// Role: menu
+    ☉ rite role_menu(this) → This! { this·role("menu") }
+
+    /// Role: menubar
+    ☉ rite role_menubar(this) → This! { this·role("menubar") }
+
+    /// Role: menuitem
+    ☉ rite role_menuitem(this) → This! { this·role("menuitem") }
+
+    /// Role: tab
+    ☉ rite role_tab(this) → This! { this·role("tab") }
+
+    /// Role: tablist
+    ☉ rite role_tablist(this) → This! { this·role("tablist") }
+
+    /// Role: tabpanel
+    ☉ rite role_tabpanel(this) → This! { this·role("tabpanel") }
+
+    /// Role: listbox
+    ☉ rite role_listbox(this) → This! { this·role("listbox") }
+
+    /// Role: option
+    ☉ rite role_option(this) → This! { this·role("option") }
+
+    /// Role: tree
+    ☉ rite role_tree(this) → This! { this·role("tree") }
+
+    /// Role: treeitem
+    ☉ rite role_treeitem(this) → This! { this·role("treeitem") }
+
+    /// Role: grid
+    ☉ rite role_grid(this) → This! { this·role("grid") }
+
+    /// Role: row
+    ☉ rite role_row(this) → This! { this·role("row") }
+
+    /// Role: gridcell
+    ☉ rite role_gridcell(this) → This! { this·role("gridcell") }
+
+    /// Role: status
+    ☉ rite role_status(this) → This! { this·role("status") }
+
+    /// Role: log
+    ☉ rite role_log(this) → This! { this·role("log") }
+
+    /// Role: progressbar
+    ☉ rite role_progressbar(this) → This! { this·role("progressbar") }
+
+    /// Role: tooltip
+    ☉ rite role_tooltip(this) → This! { this·role("tooltip") }
+
+    // -- ARIA Properties --
+
+    /// aria-label: Accessible name
+    ☉ rite aria_label(this, label: &str) → This! { this·attr("aria-label", label) }
+
+    /// aria-labelledby: Reference to labelling element
+    ☉ rite aria_labelledby(this, id: &str) → This! { this·attr("aria-labelledby", id) }
+
+    /// aria-describedby: Reference to describing element
+    ☉ rite aria_describedby(this, id: &str) → This! { this·attr("aria-describedby", id) }
+
+    /// aria-controls: Element this controls
+    ☉ rite aria_controls(this, id: &str) → This! { this·attr("aria-controls", id) }
+
+    /// aria-owns: Elements this owns
+    ☉ rite aria_owns(this, id: &str) → This! { this·attr("aria-owns", id) }
+
+    /// aria-flowto: Next element in reading order
+    ☉ rite aria_flowto(this, id: &str) → This! { this·attr("aria-flowto", id) }
+
+    /// aria-details: Reference to detailed description
+    ☉ rite aria_details(this, id: &str) → This! { this·attr("aria-details", id) }
+
+    // -- ARIA States --
+
+    /// aria-expanded: Expandable state (true/false)
+    ☉ rite aria_expanded(this, expanded: bool) → This! {
+        this·attr("aria-expanded", ⎇ expanded { "true" } ⎉ { "false" })
+    }
+
+    /// aria-selected: Selection state (true/false)
+    ☉ rite aria_selected(this, selected: bool) → This! {
+        this·attr("aria-selected", ⎇ selected { "true" } ⎉ { "false" })
+    }
+
+    /// aria-checked: Checked state (true/false/mixed)
+    ☉ rite aria_checked(this, checked: bool) → This! {
+        this·attr("aria-checked", ⎇ checked { "true" } ⎉ { "false" })
+    }
+
+    /// aria-checked with mixed state support
+    ☉ rite aria_checked_mixed(this, state: &str) → This! {
+        this·attr("aria-checked", state) // "true", "false", or "mixed"
+    }
+
+    /// aria-pressed: Toggle button state (true/false/mixed)
+    ☉ rite aria_pressed(this, pressed: bool) → This! {
+        this·attr("aria-pressed", ⎇ pressed { "true" } ⎉ { "false" })
+    }
+
+    /// aria-hidden: Hide from accessibility tree
+    ☉ rite aria_hidden(this, hidden: bool) → This! {
+        this·attr("aria-hidden", ⎇ hidden { "true" } ⎉ { "false" })
+    }
+
+    /// aria-disabled: Disabled state
+    ☉ rite aria_disabled(this, disabled: bool) → This! {
+        this·attr("aria-disabled", ⎇ disabled { "true" } ⎉ { "false" })
+    }
+
+    /// aria-current: Current item in set ("page", "step", "location", "date", "time", "true")
+    ☉ rite aria_current(this, value: &str) → This! { this·attr("aria-current", value) }
+
+    /// aria-current="page" shorthand
+    ☉ rite aria_current_page(this) → This! { this·aria_current("page") }
+
+    /// aria-current="step" shorthand
+    ☉ rite aria_current_step(this) → This! { this·aria_current("step") }
+
+    /// aria-haspopup: Popup type ("menu", "listbox", "tree", "grid", "dialog", "true")
+    ☉ rite aria_haspopup(this, popup_type: &str) → This! { this·attr("aria-haspopup", popup_type) }
+
+    /// aria-modal: Is modal dialog
+    ☉ rite aria_modal(this, modal: bool) → This! {
+        this·attr("aria-modal", ⎇ modal { "true" } ⎉ { "false" })
+    }
+
+    // -- Live Regions --
+
+    /// aria-live: Live region politeness ("off", "polite", "assertive")
+    ☉ rite aria_live(this, politeness: &str) → This! { this·attr("aria-live", politeness) }
+
+    /// aria-live="polite" shorthand
+    ☉ rite aria_live_polite(this) → This! { this·aria_live("polite") }
+
+    /// aria-live="assertive" shorthand
+    ☉ rite aria_live_assertive(this) → This! { this·aria_live("assertive") }
+
+    /// aria-atomic: Announce entire region on change
+    ☉ rite aria_atomic(this, atomic: bool) → This! {
+        this·attr("aria-atomic", ⎇ atomic { "true" } ⎉ { "false" })
+    }
+
+    /// aria-busy: Region is being updated
+    ☉ rite aria_busy(this, busy: bool) → This! {
+        this·attr("aria-busy", ⎇ busy { "true" } ⎉ { "false" })
+    }
+
+    /// aria-relevant: Types of changes to announce ("additions", "removals", "text", "all")
+    ☉ rite aria_relevant(this, relevant: &str) → This! { this·attr("aria-relevant", relevant) }
+
+    // -- Form States --
+
+    /// aria-invalid: Input validation state
+    ☉ rite aria_invalid(this, invalid: bool) → This! {
+        this·attr("aria-invalid", ⎇ invalid { "true" } ⎉ { "false" })
+    }
+
+    /// aria-required: Required field
+    ☉ rite aria_required(this, required: bool) → This! {
+        this·attr("aria-required", ⎇ required { "true" } ⎉ { "false" })
+    }
+
+    /// aria-errormessage: Reference to error message element
+    ☉ rite aria_errormessage(this, id: &str) → This! { this·attr("aria-errormessage", id) }
+
+    /// aria-placeholder: Hint text (prefer visible placeholder)
+    ☉ rite aria_placeholder(this, text: &str) → This! { this·attr("aria-placeholder", text) }
+
+    // -- Widget Values --
+
+    /// aria-valuemin: Minimum value
+    ☉ rite aria_valuemin(this, value: f64) → This! { this·attr("aria-valuemin", value.to_string().as_str()) }
+
+    /// aria-valuemax: Maximum value
+    ☉ rite aria_valuemax(this, value: f64) → This! { this·attr("aria-valuemax", value.to_string().as_str()) }
+
+    /// aria-valuenow: Current value
+    ☉ rite aria_valuenow(this, value: f64) → This! { this·attr("aria-valuenow", value.to_string().as_str()) }
+
+    /// aria-valuetext: Human-readable value
+    ☉ rite aria_valuetext(this, text: &str) → This! { this·attr("aria-valuetext", text) }
+
+    // -- Set/Position --
+
+    /// aria-setsize: Total items in set
+    ☉ rite aria_setsize(this, size: usize) → This! { this·attr("aria-setsize", size.to_string().as_str()) }
+
+    /// aria-posinset: Position in set (1-indexed)
+    ☉ rite aria_posinset(this, pos: usize) → This! { this·attr("aria-posinset", pos.to_string().as_str()) }
+
+    /// aria-level: Hierarchical level (headings, tree items)
+    ☉ rite aria_level(this, level: u32) → This! { this·attr("aria-level", level.to_string().as_str()) }
+
+    // -- Focus Management --
+
+    /// tabindex attribute
+    ☉ rite tabindex(this, index: i32) → This! { this·attr("tabindex", index.to_string().as_str()) }
+
+    /// Make element focusable (tabindex="0")
+    ☉ rite focusable(this) → This! { this·tabindex(0) }
+
+    /// Remove from tab order but keep focusable (tabindex="-1")
+    ☉ rite not_in_tab_order(this) → This! { this·tabindex(-1) }
+
+    /// Set key for reconciliation
+    ☉ rite key(vary this, key: &str) → This! {
+        this.element = this.element·key(key)
+        this
+    }
+
+    /// Add single child
+    ☉ rite child(vary this, child: impl Into<VNode>) → This! {
+        this.element = this.element·child(child)
+        this
+    }
+
+    /// Add multiple children
+    ☉ rite children(vary this, children: impl IntoIterator<Item = impl Into<VNode>>) → This! {
+        this.element = this.element·children(children)
+        this
+    }
+
+    /// Add text content
+    ☉ rite text(this, content: &str) → This! {
+        this·child(VText::new(content))
+    }
+
+    /// Build into VNode
+    ☉ rite build(this) → VNode! {
+        VNode::Element(this.element)
+    }
+}
+
+⊢ ElementBuilder : Into<VNode> {
+    rite into(this) → VNode! {
+        this·build()
+    }
+}
+
+/// Key event data (from browser - all fields are Reported)
+☉ sigil KeyEvent {
+    ☉ key: ~String
+    ☉ code: ~String
+    ☉ ctrl: ~bool
+    ☉ shift: ~bool
+    ☉ alt: ~bool
+    ☉ meta: ~bool
+}
+
+// ============================================================================
+// HTML Element Functions
+// ============================================================================
+
+// Document structure
+☉ rite html(children: Vec<VNode>) → VNode! { ElementBuilder::new("html")·children(children)·build() }
+☉ rite head(children: Vec<VNode>) → VNode! { ElementBuilder::new("head")·children(children)·build() }
+☉ rite body(children: Vec<VNode>) → VNode! { ElementBuilder::new("body")·children(children)·build() }
+☉ rite title(text: &str) → VNode! { ElementBuilder::new("title")·text(text)·build() }
+☉ rite meta() → ElementBuilder! { ElementBuilder::new("meta") }
+☉ rite link() → ElementBuilder! { ElementBuilder::new("link") }
+☉ rite script() → ElementBuilder! { ElementBuilder::new("script") }
+☉ rite style_elem() → ElementBuilder! { ElementBuilder::new("style") }
+
+// Container elements
+☉ rite div() → ElementBuilder! { ElementBuilder::new("div") }
+☉ rite span() → ElementBuilder! { ElementBuilder::new("span") }
+☉ rite main_elem() → ElementBuilder! { ElementBuilder::new("main") }
+☉ rite section() → ElementBuilder! { ElementBuilder::new("section") }
+☉ rite article() → ElementBuilder! { ElementBuilder::new("article") }
+☉ rite aside() → ElementBuilder! { ElementBuilder::new("aside") }
+☉ rite header() → ElementBuilder! { ElementBuilder::new("header") }
+☉ rite footer() → ElementBuilder! { ElementBuilder::new("footer") }
+☉ rite nav() → ElementBuilder! { ElementBuilder::new("nav") }
+
+// Text elements
+☉ rite h1() → ElementBuilder! { ElementBuilder::new("h1") }
+☉ rite h2() → ElementBuilder! { ElementBuilder::new("h2") }
+☉ rite h3() → ElementBuilder! { ElementBuilder::new("h3") }
+☉ rite h4() → ElementBuilder! { ElementBuilder::new("h4") }
+☉ rite h5() → ElementBuilder! { ElementBuilder::new("h5") }
+☉ rite h6() → ElementBuilder! { ElementBuilder::new("h6") }
+☉ rite p() → ElementBuilder! { ElementBuilder::new("p") }
+☉ rite pre() → ElementBuilder! { ElementBuilder::new("pre") }
+☉ rite code() → ElementBuilder! { ElementBuilder::new("code") }
+☉ rite blockquote() → ElementBuilder! { ElementBuilder::new("blockquote") }
+☉ rite em() → ElementBuilder! { ElementBuilder::new("em") }
+☉ rite strong() → ElementBuilder! { ElementBuilder::new("strong") }
+☉ rite small() → ElementBuilder! { ElementBuilder::new("small") }
+☉ rite mark() → ElementBuilder! { ElementBuilder::new("mark") }
+☉ rite del() → ElementBuilder! { ElementBuilder::new("del") }
+☉ rite ins() → ElementBuilder! { ElementBuilder::new("ins") }
+☉ rite sub() → ElementBuilder! { ElementBuilder::new("sub") }
+☉ rite sup() → ElementBuilder! { ElementBuilder::new("sup") }
+
+// Links and media
+☉ rite a() → ElementBuilder! { ElementBuilder::new("a") }
+☉ rite img() → ElementBuilder! { ElementBuilder::new("img") }
+☉ rite video() → ElementBuilder! { ElementBuilder::new("video") }
+☉ rite audio() → ElementBuilder! { ElementBuilder::new("audio") }
+☉ rite source() → ElementBuilder! { ElementBuilder::new("source") }
+☉ rite iframe() → ElementBuilder! { ElementBuilder::new("iframe") }
+☉ rite canvas() → ElementBuilder! { ElementBuilder::new("canvas") }
+☉ rite svg() → ElementBuilder! { ElementBuilder::new("svg") }
+☉ rite path() → ElementBuilder! { ElementBuilder::new("path") }
+
+// Lists
+☉ rite ul() → ElementBuilder! { ElementBuilder::new("ul") }
+☉ rite ol() → ElementBuilder! { ElementBuilder::new("ol") }
+☉ rite li() → ElementBuilder! { ElementBuilder::new("li") }
+☉ rite dl() → ElementBuilder! { ElementBuilder::new("dl") }
+☉ rite dt() → ElementBuilder! { ElementBuilder::new("dt") }
+☉ rite dd() → ElementBuilder! { ElementBuilder::new("dd") }
+
+// Tables
+☉ rite table() → ElementBuilder! { ElementBuilder::new("table") }
+☉ rite thead() → ElementBuilder! { ElementBuilder::new("thead") }
+☉ rite tbody() → ElementBuilder! { ElementBuilder::new("tbody") }
+☉ rite tfoot() → ElementBuilder! { ElementBuilder::new("tfoot") }
+☉ rite tr() → ElementBuilder! { ElementBuilder::new("tr") }
+☉ rite th() → ElementBuilder! { ElementBuilder::new("th") }
+☉ rite td() → ElementBuilder! { ElementBuilder::new("td") }
+
+// Forms
+☉ rite form() → ElementBuilder! { ElementBuilder::new("form") }
+☉ rite input() → ElementBuilder! { ElementBuilder::new("input") }
+☉ rite textarea() → ElementBuilder! { ElementBuilder::new("textarea") }
+☉ rite select() → ElementBuilder! { ElementBuilder::new("select") }
+☉ rite option() → ElementBuilder! { ElementBuilder::new("option") }
+☉ rite optgroup() → ElementBuilder! { ElementBuilder::new("optgroup") }
+☉ rite button() → ElementBuilder! { ElementBuilder::new("button") }
+☉ rite label() → ElementBuilder! { ElementBuilder::new("label") }
+☉ rite fieldset() → ElementBuilder! { ElementBuilder::new("fieldset") }
+☉ rite legend() → ElementBuilder! { ElementBuilder::new("legend") }
+☉ rite datalist() → ElementBuilder! { ElementBuilder::new("datalist") }
+☉ rite output() → ElementBuilder! { ElementBuilder::new("output") }
+☉ rite progress() → ElementBuilder! { ElementBuilder::new("progress") }
+☉ rite meter() → ElementBuilder! { ElementBuilder::new("meter") }
+
+// Other elements
+☉ rite br() → VNode! { ElementBuilder::new("br")·build() }
+☉ rite hr() → VNode! { ElementBuilder::new("hr")·build() }
+☉ rite details() → ElementBuilder! { ElementBuilder::new("details") }
+☉ rite summary() → ElementBuilder! { ElementBuilder::new("summary") }
+☉ rite dialog() → ElementBuilder! { ElementBuilder::new("dialog") }
+☉ rite menu() → ElementBuilder! { ElementBuilder::new("menu") }
+☉ rite template() → ElementBuilder! { ElementBuilder::new("template") }
+☉ rite slot() → ElementBuilder! { ElementBuilder::new("slot") }
+
+// ============================================================================
+// Fragment and Conditional Rendering
+// ============================================================================
+
+/// Create a fragment (multiple elements without wrapper)
+☉ rite fragment(children: Vec<VNode>) → VNode! {
+    VNode::Fragment(VFragment::new(children))
+}
+
+/// Create text node
+☉ rite text(content: &str) → VNode! {
+    VNode::Text(VText::new(content))
+}
+
+/// Conditional rendering helper
+☉ rite when(condition: bool, element: fn() → VNode) → VNode! {
+    ⎇ condition {
+        element()
+    } ⎉ {
+        VNode::Empty
+    }
+}
+
+/// Conditional rendering with else
+☉ rite if_else(condition: bool, if_true: fn() → VNode, if_false: fn() → VNode) → VNode! {
+    ⎇ condition {
+        if_true()
+    } ⎉ {
+        if_false()
+    }
+}
+
+/// Map collection to elements
+☉ rite map_to_elements<T, F>(items: impl IntoIterator<Item = T>, mapper: F) → Vec<VNode>!
+where
+    F: Fn(T) → VNode
+{
+    items·into_iter()·map(mapper)·collect()
+}
+
+/// Map collection to keyed elements
+☉ rite map_to_keyed<T, K, F>(items: impl IntoIterator<Item = T>, key_fn: fn(&T) → K, mapper: F) → Vec<VNode>!
+where
+    K: ToString,
+    F: Fn(T) → VNode
+{
+    items·into_iter()·map(|item| {
+        ≔ key! = key_fn(&item)·to_string()
+        ≔ node! = mapper(item)
+        // Add key to node
+        node
+    })·collect()
+}
+
+// ============================================================================
+// JSX-like Macro (Compile-time transformation)
+// ============================================================================
+
+/// JSX-like syntax macro
+///
+/// Example:
+/// ```sigil
+/// jsx! {
+///     <div class="container">
+///         <h1>Hello, {name}!</h1>
+///         <button onclick={handle_click}>Click me</button>
+///         {items|τ{item => <li key={item.id}>{item.name}</li>}|fragment}
+///     </div>
+/// }
+/// ```
+#[macro_export]
+macro_rules! jsx {
+    // This-closing tag
+    (<$tag:ident $($attr:ident = $value:expr),* />) => {
+        $crate::dom::$tag()
+            $(.attr(stringify!($attr), $value))*
+            .build()
+    };
+
+    // Tag with children
+    (<$tag:ident $($attr:ident = $value:expr),*> $($child:tt)* </$end_tag:ident>) => {
+        $crate::dom::$tag()
+            $(.attr(stringify!($attr), $value))*
+            .children(vec![$($crate::jsx_child!($child)),*])
+            .build()
+    };
+
+    // Expression
+    ({$expr:expr}) => {
+        $expr
+    };
+
+    // Text
+    ($text:literal) => {
+        $crate::dom::text($text)
+    };
+}
+
+#[macro_export]
+macro_rules! jsx_child {
+    ({$expr:expr}) => { $expr.into() };
+    ($text:literal) => { $crate::dom::text($text) };
+    (<$($rest:tt)*>) => { $crate::jsx!(<$($rest)*>) };
+}
+
+// ============================================================================
+// Sigil Template Syntax
+// ============================================================================
+
+/// Native Sigil template syntax using block expressions
+///
+/// Example:
+/// ```sigil
+/// div {
+///     class: "container"
+///     id: "main"
+///
+///     h1 { "Welcome, {user.name}!" }
+///
+///     ⎇ logged_in {
+///         nav {
+///             a[href: "/dashboard"] { "Dashboard" }
+///             a[href: "/settings"] { "Settings" }
+///         }
+///     }
+///
+///     ul {
+///         for item in items {
+///             li[key: item.id] { item.name }
+///         }
+///     }
+///
+///     button[onclick: handle_click] { "Submit" }
+/// }
+/// ```
+
+/// Template element with attribute syntax [attr: value]
+#[macro_export]
+macro_rules! el {
+    // Element with attributes in brackets and children in braces
+    ($tag:ident [$($attr:ident : $value:expr),* $(,)?] { $($children:tt)* }) => {
+        $crate::dom::$tag()
+            $(.attr(stringify!($attr), $value))*
+            .children($crate::el_children!($($children)*))
+            .build()
+    };
+
+    // Element with only children
+    ($tag:ident { $($children:tt)* }) => {
+        $crate::dom::$tag()
+            .children($crate::el_children!($($children)*))
+            .build()
+    };
+
+    // This-closing element with attributes
+    ($tag:ident [$($attr:ident : $value:expr),* $(,)?]) => {
+        $crate::dom::$tag()
+            $(.attr(stringify!($attr), $value))*
+            .build()
+    };
+
+    // This-closing element
+    ($tag:ident) => {
+        $crate::dom::$tag().build()
+    };
+}
+
+#[macro_export]
+macro_rules! el_children {
+    () => { vec![] };
+
+    // Text literal
+    ($text:literal $($rest:tt)*) => {
+        {
+            ≔ vary children = vec![$crate::dom::text($text)];
+            children.extend($crate::el_children!($($rest)*));
+            children
+        }
+    };
+
+    // Expression in braces
+    ({ $expr:expr } $($rest:tt)*) => {
+        {
+            ≔ vary children = vec![$expr.into()];
+            children.extend($crate::el_children!($($rest)*));
+            children
+        }
+    };
+
+    // Nested element
+    ($tag:ident $($rest:tt)*) => {
+        {
+            let (child, remaining) = $crate::el_parse_element!($tag $($rest)*);
+            ≔ vary children = vec![child];
+            // Parse remaining
+            children
+        }
+    };
+}
+
+// ============================================================================
+// CSS-in-Sigil
+// ============================================================================
+
+/// Inline style builder
+☉ sigil Style {
+    properties: HashMap<String, String>!
+}
+
+⊢ Style {
+    ☉ rite new() → This! {
+        Style { properties: HashMap::new() }
+    }
+
+    ☉ rite prop(vary this, name: &str, value: &str) → This! {
+        this.properties·insert(name.to_string(), value.to_string())
+        this
+    }
+
+    // Common properties
+    ☉ rite display(this, value: &str) → This! { this·prop("display", value) }
+    ☉ rite position(this, value: &str) → This! { this·prop("position", value) }
+    ☉ rite width(this, value: &str) → This! { this·prop("width", value) }
+    ☉ rite height(this, value: &str) → This! { this·prop("height", value) }
+    ☉ rite margin(this, value: &str) → This! { this·prop("margin", value) }
+    ☉ rite padding(this, value: &str) → This! { this·prop("padding", value) }
+    ☉ rite color(this, value: &str) → This! { this·prop("color", value) }
+    ☉ rite background(this, value: &str) → This! { this·prop("background", value) }
+    ☉ rite background_color(this, value: &str) → This! { this·prop("background-color", value) }
+    ☉ rite font_size(this, value: &str) → This! { this·prop("font-size", value) }
+    ☉ rite font_weight(this, value: &str) → This! { this·prop("font-weight", value) }
+    ☉ rite text_align(this, value: &str) → This! { this·prop("text-align", value) }
+    ☉ rite border(this, value: &str) → This! { this·prop("border", value) }
+    ☉ rite border_radius(this, value: &str) → This! { this·prop("border-radius", value) }
+    ☉ rite box_shadow(this, value: &str) → This! { this·prop("box-shadow", value) }
+    ☉ rite flex(this, value: &str) → This! { this·prop("flex", value) }
+    ☉ rite flex_direction(this, value: &str) → This! { this·prop("flex-direction", value) }
+    ☉ rite justify_content(this, value: &str) → This! { this·prop("justify-content", value) }
+    ☉ rite align_items(this, value: &str) → This! { this·prop("align-items", value) }
+    ☉ rite gap(this, value: &str) → This! { this·prop("gap", value) }
+    ☉ rite grid(this, value: &str) → This! { this·prop("grid", value) }
+    ☉ rite grid_template_columns(this, value: &str) → This! { this·prop("grid-template-columns", value) }
+    ☉ rite transition(this, value: &str) → This! { this·prop("transition", value) }
+    ☉ rite transform(this, value: &str) → This! { this·prop("transform", value) }
+    ☉ rite opacity(this, value: &str) → This! { this·prop("opacity", value) }
+    ☉ rite cursor(this, value: &str) → This! { this·prop("cursor", value) }
+    ☉ rite overflow(this, value: &str) → This! { this·prop("overflow", value) }
+    ☉ rite z_index(this, value: &str) → This! { this·prop("z-index", value) }
+
+    ☉ rite to_string(&this) → String! {
+        this.properties·iter()
+            ·map(|(k, v)| format!("{}: {}", k, v))
+            ·collect::<Vec<_>>()
+            ·join("; ")
+    }
+}
+
+⊢ Style : Into<AttrValue> {
+    rite into(this) → AttrValue! {
+        AttrValue::String(this·to_string())
+    }
+}
+
+/// CSS class builder with conditional classes
+☉ sigil Classes {
+    classes: Vec<String>!
+}
+
+⊢ Classes {
+    ☉ rite new() → This! {
+        Classes { classes: Vec::new() }
+    }
+
+    ☉ rite add(vary this, class: &str) → This! {
+        this.classes·push(class.to_string())
+        this
+    }
+
+    ☉ rite add_if(vary this, condition: bool, class: &str) → This! {
+        ⎇ condition {
+            this.classes·push(class.to_string())
+        }
+        this
+    }
+
+    ☉ rite to_string(&this) → String! {
+        this.classes·join(" ")
+    }
+}
+
+⊢ Classes : Into<AttrValue> {
+    rite into(this) → AttrValue! {
+        AttrValue::String(this·to_string())
+    }
+}
+
+/// Quick class builder
+☉ rite classes() → Classes! {
+    Classes::new()
+}
+
+/// Quick style builder
+☉ rite style() → Style! {
+    Style::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_element_builder() {
+        ≔ el! = div()
+            ·class("container")
+            ·id("main")
+            ·text("Hello")
+            ·build()
+
+        match el {
+            VNode::Element(e) => {
+                assert_eq!(e.tag, "div")
+            }
+            _ => panic!("Expected element")
+        }
+    }
+
+    #[test]
+    rite test_style_builder() {
+        ≔ s! = style()
+            ·display("flex")
+            ·color("red")
+            ·to_string()
+
+        assert!(s·contains("display: flex"))
+        assert!(s·contains("color: red"))
+    }
+
+    #[test]
+    rite test_classes_builder() {
+        ≔ c! = classes()
+            ·add("btn")
+            ·add_if(yea, "btn-primary")
+            ·add_if(nay, "btn-disabled")
+            ·to_string()
+
+        assert_eq!(c, "btn btn-primary")
+    }
+}

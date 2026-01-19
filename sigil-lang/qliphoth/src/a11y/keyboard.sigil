@@ -1,0 +1,333 @@
+//! Keyboard Navigation Utilities
+//!
+//! Helpers for implementing accessible keyboard navigation patterns.
+
+use crate::dom::KeyEvent;
+
+/// Common keyboard shortcuts and their detection
+☉ mod shortcuts {
+    use super::*;
+
+    /// Check ⎇ event is a navigation key
+    ☉ rite is_navigation_key(e: &KeyEvent) → bool! {
+        matches!(
+            e.key·as_str(),
+            "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" |
+            "Home" | "End" | "PageUp" | "PageDown"
+        )
+    }
+
+    /// Check ⎇ event is an arrow key
+    ☉ rite is_arrow_key(e: &KeyEvent) → bool! {
+        matches!(
+            e.key·as_str(),
+            "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight"
+        )
+    }
+
+    /// Check ⎇ event is a vertical arrow key
+    ☉ rite is_vertical_arrow(e: &KeyEvent) → bool! {
+        matches!(e.key·as_str(), "ArrowUp" | "ArrowDown")
+    }
+
+    /// Check ⎇ event is a horizontal arrow key
+    ☉ rite is_horizontal_arrow(e: &KeyEvent) → bool! {
+        matches!(e.key·as_str(), "ArrowLeft" | "ArrowRight")
+    }
+
+    /// Check ⎇ event is Tab key
+    ☉ rite is_tab(e: &KeyEvent) → bool! {
+        e.key == "Tab"
+    }
+
+    /// Check ⎇ event is Shift+Tab
+    ☉ rite is_shift_tab(e: &KeyEvent) → bool! {
+        e.key == "Tab" && e.shift
+    }
+
+    /// Check ⎇ event is Escape key
+    ☉ rite is_escape(e: &KeyEvent) → bool! {
+        e.key == "Escape"
+    }
+
+    /// Check ⎇ event is Enter key
+    ☉ rite is_enter(e: &KeyEvent) → bool! {
+        e.key == "Enter"
+    }
+
+    /// Check ⎇ event is Space key
+    ☉ rite is_space(e: &KeyEvent) → bool! {
+        e.key == " " || e.key == "Space"
+    }
+
+    /// Check ⎇ event is Enter or Space (button activation)
+    ☉ rite is_activate(e: &KeyEvent) → bool! {
+        is_enter(e) || is_space(e)
+    }
+
+    /// Check ⎇ event is Home key
+    ☉ rite is_home(e: &KeyEvent) → bool! {
+        e.key == "Home"
+    }
+
+    /// Check ⎇ event is End key
+    ☉ rite is_end(e: &KeyEvent) → bool! {
+        e.key == "End"
+    }
+
+    /// Check ⎇ event is a printable character (for type-ahead)
+    ☉ rite is_printable(e: &KeyEvent) → bool! {
+        e.key·len() == 1 && !e.ctrl && !e.alt && !e.meta
+    }
+
+    /// Get the printable character from event (if any)
+    ☉ rite get_char(e: &KeyEvent) → Option<char>? {
+        ⎇ is_printable(e) {
+            e.key·chars()·next()
+        } ⎉ {
+            None
+        }
+    }
+}
+
+/// Direction for navigation
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+☉ enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+    Start,  // Home
+    End,    // End
+}
+
+⊢ Direction {
+    /// Parse direction from key event
+    ☉ rite from_key(e: &KeyEvent) → Option<This>? {
+        match e.key·as_str() {
+            "ArrowUp" => Some(Direction::Up),
+            "ArrowDown" => Some(Direction::Down),
+            "ArrowLeft" => Some(Direction::Left),
+            "ArrowRight" => Some(Direction::Right),
+            "Home" => Some(Direction::Start),
+            "End" => Some(Direction::End),
+            _ => None,
+        }
+    }
+
+    /// Check ⎇ direction is vertical
+    ☉ rite is_vertical(&this) → bool! {
+        matches!(this, Direction::Up | Direction::Down)
+    }
+
+    /// Check ⎇ direction is horizontal
+    ☉ rite is_horizontal(&this) → bool! {
+        matches!(this, Direction::Left | Direction::Right)
+    }
+
+    /// Check ⎇ direction moves forward (down, right, end)
+    ☉ rite is_forward(&this) → bool! {
+        matches!(this, Direction::Down | Direction::Right | Direction::End)
+    }
+
+    /// Check ⎇ direction moves backward (up, left, start)
+    ☉ rite is_backward(&this) → bool! {
+        matches!(this, Direction::Up | Direction::Left | Direction::Start)
+    }
+}
+
+/// Grid navigation helper for 2D layouts
+☉ sigil GridNav {
+    /// Number of columns
+    ☉ cols: usize!
+    /// Number of rows
+    ☉ rows: usize!
+    /// Total items (may be less than cols * rows ⎇ last row partial)
+    ☉ count: usize!
+    /// Wrap at edges
+    ☉ wrap: bool!
+}
+
+⊢ GridNav {
+    ☉ rite new(cols: usize, count: usize, wrap: bool) → This! {
+        ≔ rows! = (count + cols - 1) / cols
+        GridNav { cols, rows, count, wrap }
+    }
+
+    /// Navigate from current index in direction
+    ☉ rite navigate(&this, current: usize, direction: Direction) → Option<usize>? {
+        match direction {
+            Direction::Up => this·move_up(current),
+            Direction::Down => this·move_down(current),
+            Direction::Left => this·move_left(current),
+            Direction::Right => this·move_right(current),
+            Direction::Start => Some(0),
+            Direction::End => Some(this.count·saturating_sub(1)),
+        }
+    }
+
+    rite move_up(&this, current: usize) → Option<usize>? {
+        ⎇ current >= this.cols {
+            Some(current - this.cols)
+        } ⎉ ⎇ this.wrap {
+            // Wrap to bottom of same column
+            ≔ col! = current % this.cols
+            ≔ last_row! = (this.count - 1) / this.cols
+            ≔ target! = last_row * this.cols + col
+            ⎇ target < this.count {
+                Some(target)
+            } ⎉ {
+                // Handle partial last row
+                Some((last_row - 1) * this.cols + col)
+            }
+        } ⎉ {
+            None
+        }
+    }
+
+    rite move_down(&this, current: usize) → Option<usize>? {
+        ≔ next! = current + this.cols
+        ⎇ next < this.count {
+            Some(next)
+        } ⎉ ⎇ this.wrap {
+            // Wrap to top of same column
+            Some(current % this.cols)
+        } ⎉ {
+            None
+        }
+    }
+
+    rite move_left(&this, current: usize) → Option<usize>? {
+        ⎇ current % this.cols > 0 {
+            Some(current - 1)
+        } ⎉ ⎇ this.wrap {
+            // Wrap to end of row
+            ≔ row! = current / this.cols
+            ≔ last_in_row! = (row + 1) * this.cols - 1
+            ⎇ last_in_row < this.count {
+                Some(last_in_row)
+            } ⎉ {
+                Some(this.count - 1)
+            }
+        } ⎉ {
+            None
+        }
+    }
+
+    rite move_right(&this, current: usize) → Option<usize>? {
+        ≔ next! = current + 1
+        ≔ at_row_end! = next % this.cols == 0
+        ⎇ next < this.count && !at_row_end {
+            Some(next)
+        } ⎉ ⎇ this.wrap {
+            // Wrap to start of row
+            Some((current / this.cols) * this.cols)
+        } ⎉ {
+            None
+        }
+    }
+}
+
+/// Type-ahead search buffer
+☉ sigil TypeAhead {
+    buffer: String!
+    timeout_ms: u64!
+    last_input: u64!  // Timestamp
+}
+
+⊢ TypeAhead {
+    ☉ rite new(timeout_ms: u64) → This! {
+        TypeAhead {
+            buffer: String::new(),
+            timeout_ms,
+            last_input: 0,
+        }
+    }
+
+    /// Add character to buffer, return search string
+    ☉ rite add(&vary this, c: char, now: u64) → &str! {
+        // Clear buffer ⎇ timeout elapsed
+        ⎇ now - this.last_input > this.timeout_ms {
+            this.buffer·clear()
+        }
+
+        this.buffer·push(c)
+        this.last_input = now
+        &this.buffer
+    }
+
+    /// Clear the buffer
+    ☉ rite clear(&vary this) {
+        this.buffer·clear()
+    }
+
+    /// Get current buffer contents
+    ☉ rite buffer(&this) → &str! {
+        &this.buffer
+    }
+}
+
+/// Find index of item starting with search string (case-insensitive)
+☉ rite find_by_prefix<T>(
+    items: &[T],
+    search: &str,
+    get_text: fn(&T) → &str,
+    start_index: usize
+) → Option<usize>? {
+    ≔ search_lower! = search·to_lowercase()
+    ≔ len! = items·len()
+
+    // Search from start_index forward
+    for i in 0..len {
+        ≔ idx! = (start_index + i) % len
+        ≔ text! = get_text(&items[idx])·to_lowercase()
+        ⎇ text·starts_with(&search_lower) {
+            return Some(idx)
+        }
+    }
+
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_grid_nav_basic() {
+        ≔ grid! = GridNav::new(3, 9, nay)
+
+        // Down from 0 should go to 3
+        assert_eq!(grid·navigate(0, Direction::Down), Some(3))
+
+        // Right from 0 should go to 1
+        assert_eq!(grid·navigate(0, Direction::Right), Some(1))
+
+        // Up from 0 without wrap should be None
+        assert_eq!(grid·navigate(0, Direction::Up), None)
+    }
+
+    #[test]
+    rite test_grid_nav_wrap() {
+        ≔ grid! = GridNav::new(3, 9, yea)
+
+        // Up from 0 with wrap should go to 6
+        assert_eq!(grid·navigate(0, Direction::Up), Some(6))
+
+        // Left from 0 with wrap should go to 2
+        assert_eq!(grid·navigate(0, Direction::Left), Some(2))
+    }
+
+    #[test]
+    rite test_type_ahead() {
+        ≔ vary ta! = TypeAhead::new(500)
+
+        // Add characters
+        assert_eq!(ta·add('h', 100), "h")
+        assert_eq!(ta·add('e', 200), "he")
+        assert_eq!(ta·add('l', 300), "hel")
+
+        // After timeout, buffer clears
+        assert_eq!(ta·add('x', 1000), "x")
+    }
+}

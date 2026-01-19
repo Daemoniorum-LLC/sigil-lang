@@ -357,6 +357,8 @@ pub enum MacroDelimiter {
 pub struct ExternBlock {
     pub abi: String, // "C", "Rust", "system", etc.
     pub items: Vec<ExternItem>,
+    /// Outer attributes like #[link("lib")] and #[cfg(...)]
+    pub outer_attrs: Vec<Attribute>,
 }
 
 /// Items that can appear in an extern block.
@@ -364,6 +366,19 @@ pub struct ExternBlock {
 pub enum ExternItem {
     Function(ExternFunction),
     Static(ExternStatic),
+    /// Type alias for callback/function pointer types: `type Callback = rite(i32) → i32;`
+    Type(ExternType),
+}
+
+/// Foreign type: either an opaque type (`type Name;`) or a type alias (`type Name = T;`).
+/// Opaque types are used for FFI pointer types like `type GtkWidget;`
+/// Type aliases are used for callback types like `type Callback = rite(i32) → i32;`
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternType {
+    pub visibility: Visibility,
+    pub name: Ident,
+    /// None for opaque types, Some for type aliases
+    pub ty: Option<TypeExpr>,
 }
 
 /// Foreign function declaration (no body).
@@ -450,6 +465,8 @@ pub struct Function {
     pub is_const: bool,
     pub is_unsafe: bool,
     pub attrs: FunctionAttrs,
+    /// Raw outer attributes (preserved for cfg evaluation)
+    pub outer_attrs: Vec<Attribute>,
     pub name: Ident,
     pub aspect: Option<Aspect>, // Verb aspect: ·ing, ·ed, ·able, ·ive
     pub generics: Option<Generics>,

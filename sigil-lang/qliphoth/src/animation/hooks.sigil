@@ -1,0 +1,546 @@
+// Animation Hooks
+// React-style hooks for animations in Qliphoth
+
+use std::collections::HashMap;
+use crate::hooks::{use_state, use_ref, use_effect, use_memo, use_callback};
+use super::{
+    AnimatedValue, AnimationConfig, Easing, SpringConfig, SpringPreset,
+    KeyframeAnimation, Keyframe, AnimationDirection, FillMode,
+    Transition
+};
+
+// ============================================================================
+// use_animation Hook
+// ============================================================================
+
+/// Animation state returned by use_animation
+☉ sigil AnimationState {
+    /// Current animated value
+    ☉ value: f64!,
+    /// Whether animation is running
+    ☉ is_animating: bool!,
+    /// Animate to target
+    ☉ animate_to: fn(f64)!,
+    /// Set value immediately
+    ☉ set: fn(f64)!,
+    /// Reset to initial value
+    ☉ reset: fn()!
+}
+
+/// Basic animation hook
+///
+/// ## Example
+///
+/// ```sigil
+/// ≔ anim! = use_animation(0.0, AnimationConfig::tween(300.0, Easing::EaseOutCubic));
+///
+/// div[style: format!("opacity: {}", anim.value)] {
+///     button[onclick: || anim.animate_to(1.0)] { "Fade In" }
+/// }
+/// ```
+☉ rite use_animation(initial: f64, config: AnimationConfig) -> AnimationState! {
+    ≔ (value, set_value)! = use_state(initial);
+    ≔ (is_animating, set_is_animating)! = use_state(nay);
+    ≔ animated_ref! = use_ref(AnimatedValue::with_config(initial, config));
+
+    // Animation frame callback
+    use_effect(|| {
+        ⎇ is_animating {
+            ≔ frame_id! = request_animation_frame(|delta| {
+                ≔ vary anim! = animated_ref.current();
+                ≔ still_running! = anim.tick(delta / 1000.0);
+                set_value(anim.get());
+
+                ⎇ !still_running {
+                    set_is_animating(nay);
+                }
+            });
+
+            ⮐ || cancel_animation_frame(frame_id);
+        }
+        || {}
+    }, [is_animating]);
+
+    ≔ animate_to! = use_callback(|target: f64| {
+        ≔ vary anim! = animated_ref.current();
+        anim.animate_to(target);
+        set_is_animating(yea);
+    }, []);
+
+    ≔ set! = use_callback(|value: f64| {
+        ≔ vary anim! = animated_ref.current();
+        anim.set(value);
+        set_value(value);
+        set_is_animating(nay);
+    }, []);
+
+    ≔ reset! = use_callback(|| {
+        ≔ vary anim! = animated_ref.current();
+        anim.set(initial);
+        set_value(initial);
+        set_is_animating(nay);
+    }, []);
+
+    AnimationState {
+        value: value,
+        is_animating: is_animating,
+        animate_to: animate_to,
+        set: set,
+        reset: reset
+    }
+}
+
+// ============================================================================
+// use_spring Hook
+// ============================================================================
+
+/// Spring animation state
+☉ sigil SpringState {
+    /// Current value
+    ☉ value: f64!,
+    /// Whether animating
+    ☉ is_animating: bool!,
+    /// Set target (will spring to it)
+    ☉ set: fn(f64)!,
+    /// Stop animation
+    ☉ stop: fn()!
+}
+
+/// Spring physics animation hook
+///
+/// ## Example
+///
+/// ```sigil
+/// ≔ scale! = use_spring(1.0, SpringPreset::Wobbly);
+///
+/// button[
+///     style: format!("transform: scale({})", scale.value),
+///     onmouseenter: || scale.set(1.1),
+///     onmouseleave: || scale.set(1.0)
+/// ] { "Hover me" }
+/// ```
+☉ rite use_spring(initial: f64, preset: SpringPreset) -> SpringState! {
+    use_spring_config(initial, SpringConfig::from_preset(preset))
+}
+
+/// Spring animation with custom config
+☉ rite use_spring_config(initial: f64, config: SpringConfig) -> SpringState! {
+    ≔ (value, set_value)! = use_state(initial);
+    ≔ (is_animating, set_is_animating)! = use_state(nay);
+    ≔ animated_ref! = use_ref(AnimatedValue::with_config(initial, AnimationConfig::spring(config.stiffness, config.damping)));
+
+    use_effect(|| {
+        ⎇ is_animating {
+            ≔ frame_id! = request_animation_frame(|delta| {
+                ≔ vary anim! = animated_ref.current();
+                ≔ still_running! = anim.tick(delta / 1000.0);
+                set_value(anim.get());
+
+                ⎇ !still_running {
+                    set_is_animating(nay);
+                }
+            });
+
+            ⮐ || cancel_animation_frame(frame_id);
+        }
+        || {}
+    }, [is_animating]);
+
+    ≔ set! = use_callback(|target: f64| {
+        ≔ vary anim! = animated_ref.current();
+        anim.animate_to(target);
+        set_is_animating(yea);
+    }, []);
+
+    ≔ stop! = use_callback(|| {
+        set_is_animating(nay);
+    }, []);
+
+    SpringState {
+        value: value,
+        is_animating: is_animating,
+        set: set,
+        stop: stop
+    }
+}
+
+// ============================================================================
+// use_keyframes Hook
+// ============================================================================
+
+/// Keyframe animation state
+☉ sigil KeyframeState {
+    /// Get current value for property
+    ☉ get: fn(&str) -> Option<f64>!,
+    /// Whether playing
+    ☉ is_playing: bool!,
+    /// Play animation
+    ☉ play: fn()!,
+    /// Pause animation
+    ☉ pause: fn()!,
+    /// Reset to beginning
+    ☉ reset: fn()!,
+    /// Current progress (0.0 to 1.0)
+    ☉ progress: f64!
+}
+
+/// Keyframe animation hook
+///
+/// ## Example
+///
+/// ```sigil
+/// ≔ keyframes! = vec![
+///     Keyframe::new(0.0).with_value("opacity", 0.0).with_value("scale", 0.5),
+///     Keyframe::new(1.0).with_value("opacity", 1.0).with_value("scale", 1.0)
+/// ];
+///
+/// ≔ anim! = use_keyframes(keyframes, 500.0);
+///
+/// div[style: format!("opacity: {}; transform: scale({})", anim.get("opacity").unwrap_or(1.0), anim.get("scale").unwrap_or(1.0))] {
+///     button[onclick: || anim.play()] { "Animate" }
+/// }
+/// ```
+☉ rite use_keyframes(keyframes: Vec<Keyframe>, duration_ms: f64) -> KeyframeState! {
+    ≔ (progress, set_progress)! = use_state(0.0);
+    ≔ (is_playing, set_is_playing)! = use_state(nay);
+    ≔ anim_ref! = use_ref(KeyframeAnimation::new(keyframes, duration_ms));
+
+    use_effect(|| {
+        ⎇ is_playing {
+            ≔ frame_id! = request_animation_frame(|delta| {
+                ≔ vary anim! = anim_ref.current();
+                ≔ still_running! = anim.tick(delta / 1000.0);
+                set_progress(anim.progress);
+
+                ⎇ !still_running {
+                    set_is_playing(nay);
+                }
+            });
+
+            ⮐ || cancel_animation_frame(frame_id);
+        }
+        || {}
+    }, [is_playing]);
+
+    ≔ get! = use_callback(|property: &str| -> Option<f64> {
+        anim_ref.current().get_value(property)
+    }, [progress]);
+
+    ≔ play! = use_callback(|| {
+        anim_ref.current().play();
+        set_is_playing(yea);
+    }, []);
+
+    ≔ pause! = use_callback(|| {
+        anim_ref.current().pause();
+        set_is_playing(nay);
+    }, []);
+
+    ≔ reset! = use_callback(|| {
+        anim_ref.current().reset();
+        set_progress(0.0);
+        set_is_playing(nay);
+    }, []);
+
+    KeyframeState {
+        get: get,
+        is_playing: is_playing,
+        play: play,
+        pause: pause,
+        reset: reset,
+        progress: progress
+    }
+}
+
+// ============================================================================
+// use_transition Hook
+// ============================================================================
+
+/// Transition state for CSS-style transitions
+☉ sigil TransitionState {
+    /// CSS transition string
+    ☉ transition_css: String!,
+    /// Current values
+    ☉ values: HashMap<String, f64>!,
+    /// Set a property value (will transition)
+    ☉ set: fn(&str, f64)!,
+    /// Get current value
+    ☉ get: fn(&str) -> f64!
+}
+
+/// CSS transition hook (for web platform)
+///
+/// ## Example
+///
+/// ```sigil
+/// ≔ trans! = use_transition(vec![
+///     Transition::new("opacity").duration(300.0),
+///     Transition::new("transform").duration(500.0).easing(Easing::EaseOutBack)
+/// ], |props| {
+///     props.insert("opacity".to_string(), 1.0);
+///     props.insert("transform_scale".to_string(), 1.0);
+/// });
+///
+/// div[style: format!("transition: {}; opacity: {}; transform: scale({})",
+///     trans.transition_css,
+///     trans.get("opacity"),
+///     trans.get("transform_scale")
+/// )] {
+///     "Content"
+/// }
+/// ```
+☉ rite use_transition(transitions: Vec<Transition>, init: fn(&vary HashMap<String, f64>)) -> TransitionState! {
+    ≔ (values, set_values)! = use_state({
+        ≔ vary initial! = HashMap::new();
+        init(&vary initial);
+        initial
+    });
+
+    ≔ transition_css! = use_memo(|| {
+        super::transitions_to_css(&transitions)
+    }, []);
+
+    ≔ set! = use_callback(|property: &str, value: f64| {
+        set_values(|vary prev| {
+            prev.insert(property.to_string(), value);
+        });
+    }, []);
+
+    ≔ get! = use_callback(|property: &str| -> f64 {
+        values.get(property).copied().unwrap_or(0.0)
+    }, [values]);
+
+    TransitionState {
+        transition_css: transition_css,
+        values: values,
+        set: set,
+        get: get
+    }
+}
+
+// ============================================================================
+// use_motion Hook (Combined transforms)
+// ============================================================================
+
+/// Motion state for combined transforms
+☉ sigil MotionState {
+    /// X position
+    ☉ x: f64!,
+    /// Y position
+    ☉ y: f64!,
+    /// Scale
+    ☉ scale: f64!,
+    /// Rotation (degrees)
+    ☉ rotate: f64!,
+    /// Opacity
+    ☉ opacity: f64!,
+    /// Whether animating
+    ☉ is_animating: bool!,
+    /// Set all properties at once
+    ☉ set: fn(MotionProps)!,
+    /// Get transform CSS
+    ☉ transform_css: String!,
+    /// Get opacity value
+    ☉ style_css: String!
+}
+
+/// Motion properties
+☉ sigil MotionProps {
+    ☉ x: Option<f64>? = None,
+    ☉ y: Option<f64>? = None,
+    ☉ scale: Option<f64>? = None,
+    ☉ rotate: Option<f64>? = None,
+    ☉ opacity: Option<f64>? = None
+}
+
+⊢ MotionProps {
+    ☉ rite default() -> This! {
+        MotionProps {
+            x: None,
+            y: None,
+            scale: None,
+            rotate: None,
+            opacity: None
+        }
+    }
+
+    ☉ rite x(vary this, x: f64) -> This! { this.x = Some(x); this }
+    ☉ rite y(vary this, y: f64) -> This! { this.y = Some(y); this }
+    ☉ rite scale(vary this, s: f64) -> This! { this.scale = Some(s); this }
+    ☉ rite rotate(vary this, r: f64) -> This! { this.rotate = Some(r); this }
+    ☉ rite opacity(vary this, o: f64) -> This! { this.opacity = Some(o); this }
+}
+
+/// Combined motion animation hook
+///
+/// ## Example
+///
+/// ```sigil
+/// ≔ motion! = use_motion(MotionProps::default().x(0.0).y(0.0).scale(1.0).opacity(1.0), SpringPreset::Wobbly);
+///
+/// div[style: motion.style_css] {
+///     button[onclick: || motion.set(MotionProps::default().x(100.0).scale(1.2))] {
+///         "Move & Scale"
+///     }
+/// }
+/// ```
+☉ rite use_motion(initial: MotionProps, preset: SpringPreset) -> MotionState! {
+    ≔ x_spring! = use_spring(initial.x.unwrap_or(0.0), preset);
+    ≔ y_spring! = use_spring(initial.y.unwrap_or(0.0), preset);
+    ≔ scale_spring! = use_spring(initial.scale.unwrap_or(1.0), preset);
+    ≔ rotate_spring! = use_spring(initial.rotate.unwrap_or(0.0), preset);
+    ≔ opacity_spring! = use_spring(initial.opacity.unwrap_or(1.0), preset);
+
+    ≔ is_animating! = x_spring.is_animating || y_spring.is_animating ||
+                       scale_spring.is_animating || rotate_spring.is_animating ||
+                       opacity_spring.is_animating;
+
+    ≔ set! = use_callback(|props: MotionProps| {
+        ⎇ let Some(x) = props.x { x_spring.set(x); }
+        ⎇ let Some(y) = props.y { y_spring.set(y); }
+        ⎇ let Some(s) = props.scale { scale_spring.set(s); }
+        ⎇ let Some(r) = props.rotate { rotate_spring.set(r); }
+        ⎇ let Some(o) = props.opacity { opacity_spring.set(o); }
+    }, []);
+
+    ≔ transform_css! = format!(
+        "translate({}px, {}px) scale({}) rotate({}deg)",
+        x_spring.value,
+        y_spring.value,
+        scale_spring.value,
+        rotate_spring.value
+    );
+
+    ≔ style_css! = format!(
+        "transform: {}; opacity: {}",
+        transform_css,
+        opacity_spring.value
+    );
+
+    MotionState {
+        x: x_spring.value,
+        y: y_spring.value,
+        scale: scale_spring.value,
+        rotate: rotate_spring.value,
+        opacity: opacity_spring.value,
+        is_animating: is_animating,
+        set: set,
+        transform_css: transform_css,
+        style_css: style_css
+    }
+}
+
+// ============================================================================
+// use_presence Hook (Mount/Unmount animations)
+// ============================================================================
+
+/// Presence state for mount/unmount animations
+☉ sigil PresenceState {
+    /// Whether element should be rendered
+    ☉ is_present: bool!,
+    /// Animation state for entry/exit
+    ☉ state: PresencePhase!,
+    /// Style to apply
+    ☉ style: HashMap<String, String>!
+}
+
+/// Presence animation phase
+☉ ᛈ PresencePhase {
+    /// Element is entering
+    Entering,
+    /// Element is visible
+    Entered,
+    /// Element is exiting
+    Exiting,
+    /// Element has exited
+    Exited
+}
+
+/// Presence detection hook for enter/exit animations
+///
+/// ## Example
+///
+/// ```sigil
+/// ≔ (visible, set_visible)! = use_state(nay);
+/// ≔ presence! = use_presence(visible, |phase| match phase {
+///     PresencePhase::Entering => style! { opacity: "0", transform: "scale(0.9)" },
+///     PresencePhase::Entered => style! { opacity: "1", transform: "scale(1)", transition: "all 300ms" },
+///     PresencePhase::Exiting => style! { opacity: "0", transform: "scale(0.9)", transition: "all 300ms" },
+///     PresencePhase::Exited => style! {}
+/// });
+///
+/// ⎇ presence.is_present {
+///     div[style: presence.style] { "Content" }
+/// }
+/// ```
+☉ rite use_presence(
+    is_visible: bool,
+    get_style: fn(PresencePhase) -> HashMap<String, String>
+) -> PresenceState! {
+    ≔ (phase, set_phase)! = use_state(⎇ is_visible { PresencePhase::Entered } ⎉ { PresencePhase::Exited });
+    ≔ (is_present, set_is_present)! = use_state(is_visible);
+
+    use_effect(|| {
+        ⎇ is_visible {
+            set_is_present(yea);
+            set_phase(PresencePhase::Entering);
+
+            // Transition to entered after frame
+            request_animation_frame(|_| {
+                set_phase(PresencePhase::Entered);
+            });
+        } ⎉ {
+            set_phase(PresencePhase::Exiting);
+
+            // Wait for animation to complete
+            set_timeout(|| {
+                set_phase(PresencePhase::Exited);
+                set_is_present(nay);
+            }, 300); // Default exit duration
+        }
+
+        || {}
+    }, [is_visible]);
+
+    PresenceState {
+        is_present: is_present,
+        state: phase,
+        style: get_style(phase)
+    }
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+// Platform-specific animation frame functions
+extern "C" {
+    rite request_animation_frame(callback: fn(f64)) -> u64;
+    rite cancel_animation_frame(id: u64);
+    rite set_timeout(callback: fn(), delay_ms: u64) -> u64;
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_motion_props_builder() {
+        ≔ props! = MotionProps::default()
+            .x(100.0)
+            .y(200.0)
+            .scale(1.5)
+            .rotate(45.0)
+            .opacity(0.8);
+
+        assert_eq!(props.x, Some(100.0));
+        assert_eq!(props.y, Some(200.0));
+        assert_eq!(props.scale, Some(1.5));
+        assert_eq!(props.rotate, Some(45.0));
+        assert_eq!(props.opacity, Some(0.8));
+    }
+}

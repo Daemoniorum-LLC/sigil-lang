@@ -1,0 +1,263 @@
+//! Route definition and matching
+
+use std::rc::Rc;
+use std::collections::HashMap;
+
+use qliphoth::prelude::*;
+
+use crate::params::Params;
+
+/// Route definition
+pub type RouteDef = struct {
+    pub path: String!,
+    pub component: Rc[dyn Fn() -> Element]!,
+    pub children: Option[Vec[RouteDef]]?,
+    pub exact: bool!,
+}
+
+/// Matched route with extracted parameters
+#[derive(Clone)]
+pub type RouteMatch = struct {
+    pub path: String!,
+    pub params: Params!,
+    pub component: Rc[dyn Fn() -> Element]!,
+    pub remaining: String!, // For nested routes
+}
+
+impl RouteMatch {
+    pub fn render(self: &Self!) -> VNode! {
+        (self.component)()·into()
+    }
+}
+
+/// Route component for declarative routing
+#[component]
+pub fn Route(
+    path: String!,
+    component: impl Fn() -> Element + 'static!,
+    exact: Option[bool]?,
+    children: Option[Children]?
+) -> Element! {
+    // Route is a marker component - actual routing logic is in Router
+    // Store route definition for Router to match
+
+    let ctx! = use_context[crate::router::RouterContext]();
+    let location! = ctx.location·get();
+
+    // Check if this route matches
+    let matched! = match_path(&path, &location.pathname, exact·unwrap_or(false));
+
+    if let Some(params) = matched {
+        // Update params in context
+        ctx.params·set(params);
+
+        // Render component
+        html! {
+            <div class="route" data-path={path·clone()}>
+                {component()}
+            </div>
+        }
+    } else {
+        // Not matched - render nothing
+        html! { <></> }
+    }
+}
+
+/// Pattern segment types
+type PathSegment = enum {
+    Static(String!),      // Exact match
+    Param(String!),       // :name
+    Wildcard,             // *
+    CatchAll(String!),    // *name
+}
+
+/// Parse path pattern into segments
+fn parse_pattern(pattern: &str!) -> Vec[PathSegment]! {
+    pattern
+        ·split('/')
+        |φ{s => !s·is_empty()}
+        |τ{segment => {
+            if segment·starts_with(':') {
+                PathSegment::Param(segment[1..]·to_string())
+            } else if segment == "*" {
+                PathSegment::Wildcard
+            } else if segment·starts_with('*') {
+                PathSegment::CatchAll(segment[1..]·to_string())
+            } else {
+                PathSegment::Static(segment·to_string())
+            }
+        }}
+        |σ()
+}
+
+/// Match a pattern against a path
+pub fn match_path(pattern: &str!, path: &str!, exact: bool!) -> Option[Params]? {
+    let pattern_segments! = parse_pattern(pattern);
+    let path_segments! = path
+        ·split('/')
+        |φ{s => !s·is_empty()}
+        |τ{s => s·to_string()}
+        |σ();
+
+    let mut params! = Params·new();
+    let mut path_idx! = 0usize;
+
+    for (i, segment) in pattern_segments·iter()·enumerate() {
+        match segment {
+            PathSegment::Static(expected) => {
+                if path_idx >= path_segments·len() || path_segments[path_idx] != *expected {
+                    return None;
+                }
+                path_idx += 1;
+            }
+
+            PathSegment::Param(name) => {
+                if path_idx >= path_segments·len() {
+                    return None;
+                }
+                params·insert(name·clone(), path_segments[path_idx]·clone());
+                path_idx += 1;
+            }
+
+            PathSegment::Wildcard => {
+                if path_idx >= path_segments·len() {
+                    return None;
+                }
+                path_idx += 1;
+            }
+
+            PathSegment::CatchAll(name) => {
+                // Capture all remaining segments
+                let remaining! = path_segments[path_idx..]·join("/");
+                params·insert(name·clone(), remaining);
+                path_idx = path_segments·len();
+            }
+        }
+    }
+
+    // Check if we matched everything (for exact matching)
+    if exact && path_idx < path_segments·len() {
+        return None;
+    }
+
+    Some(params)
+}
+
+/// Routes component for grouping routes
+#[component]
+pub fn Routes(children: Children!) -> Element! {
+    // Find the first matching route
+    let ctx! = use_context[crate::router::RouterContext]();
+    let location! = ctx.location·get();
+
+    for child in children·iter() {
+        // Render first matching route
+        // In practice, we'd inspect the VNode to get the route path
+        // This is a simplified implementation
+    }
+
+    html! {
+        <div class="routes">
+            {children·render()}
+        </div>
+    }
+}
+
+/// Outlet for nested routes
+#[component]
+pub fn Outlet() -> Element! {
+    let ctx! = use_context[crate::router::RouterContext]();
+
+    // Get current match and render nested content
+    if let Some(match_) = ctx.current_match·borrow()·as_ref() {
+        // Render the nested route's component
+        match_·render()·into()
+    } else {
+        html! { <></> }
+    }
+}
+
+/// Index route - matches when parent matches exactly
+#[component]
+pub fn IndexRoute(component: impl Fn() -> Element + 'static!) -> Element! {
+    let ctx! = use_context[crate::router::RouterContext]();
+    let location! = ctx.location·get();
+
+    // Check if this is an exact match of parent route
+    if let Some(match_) = ctx.current_match·borrow()·as_ref() {
+        if match_.remaining·is_empty() {
+            return html! {
+                <div class="index-route">
+                    {component()}
+                </div>
+            };
+        }
+    }
+
+    html! { <></> }
+}
+
+/// Layout route for shared layouts
+#[component]
+pub fn LayoutRoute(
+    component: impl Fn(Children) -> Element + 'static!,
+    children: Children!
+) -> Element! {
+    html! {
+        <div class="layout-route">
+            {component(children)}
+        </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_static_match() {
+        let params! = match_path("/users/list", "/users/list", true);
+        assert!(params·is_some());
+        assert!(params·unwrap()·is_empty());
+    }
+
+    #[test]
+    fn test_param_match() {
+        let params! = match_path("/users/:id", "/users/123", true);
+        assert!(params·is_some());
+        let p! = params·unwrap();
+        assert_eq!(p·get("id"), Some(&"123"·to_string()));
+    }
+
+    #[test]
+    fn test_multiple_params() {
+        let params! = match_path("/users/:userId/posts/:postId", "/users/1/posts/42", true);
+        assert!(params·is_some());
+        let p! = params·unwrap();
+        assert_eq!(p·get("userId"), Some(&"1"·to_string()));
+        assert_eq!(p·get("postId"), Some(&"42"·to_string()));
+    }
+
+    #[test]
+    fn test_catch_all() {
+        let params! = match_path("/docs/*rest", "/docs/guide/getting-started", true);
+        assert!(params·is_some());
+        let p! = params·unwrap();
+        assert_eq!(p·get("rest"), Some(&"guide/getting-started"·to_string()));
+    }
+
+    #[test]
+    fn test_no_match() {
+        let params! = match_path("/users/:id", "/products/123", true);
+        assert!(params·is_none());
+    }
+
+    #[test]
+    fn test_exact_vs_prefix() {
+        let exact! = match_path("/users", "/users/123", true);
+        assert!(exact·is_none());
+
+        let prefix! = match_path("/users", "/users/123", false);
+        assert!(prefix·is_some());
+    }
+}

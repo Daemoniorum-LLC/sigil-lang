@@ -391,6 +391,10 @@ pub mod jit {
                             stat.name.name
                         );
                     }
+                    ExternItem::Type(_) => {
+                        // Type aliases are handled at parse time for JIT
+                        // No additional codegen needed
+                    }
                 }
             }
 

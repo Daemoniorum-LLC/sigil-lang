@@ -1,0 +1,350 @@
+// Cocoa Platform Module
+// macOS native GUI backend via AppKit/Cocoa API
+// Status: STUB - Not yet implemented
+
+use std::collections::HashMap;
+use crate::core::vdom::{VNode, Patch};
+use crate::core::events::{Event, EventType};
+use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, Storage, StorageType};
+use super::{NativeWidget, WidgetType, NativeApp, NativeWidgetBuilder, NativeLayout, Orientation, Align};
+
+// ============================================================================
+// Cocoa FFI Declarations (Stubs)
+// ============================================================================
+
+#[cfg(target_os = "macos")]
+#[link("AppKit", framework)]
+#[link("Foundation", framework)]
+extern "C" {
+    // Types (opaque)
+    type NSApplication;
+    type NSWindow;
+    type NSView;
+    type NSButton;
+    type NSTextField;
+    type NSTextView;
+    type NSStackView;
+    type NSScrollView;
+    type NSTableView;
+    type NSImageView;
+    type NSProgressIndicator;
+    type NSSlider;
+    type NSSwitch;
+    type NSString;
+
+    // Application lifecycle
+    rite NSApplicationMain(argc: i32, argv: **c_char) -> i32;
+
+    // Objective-C runtime
+    rite objc_getClass(name: *c_char) -> *void;
+    rite objc_msgSend(obj: *void, sel: *void, ...) -> *void;
+    rite sel_registerName(name: *c_char) -> *void;
+
+    // String conversion
+    rite CFStringCreateWithCString(allocator: *void, cStr: *c_char, encoding: u32) -> *void;
+}
+
+// ============================================================================
+// Cocoa Platform Implementation
+// ============================================================================
+
+/// Cocoa Platform for macOS native GUI
+#[cfg(target_os = "macos")]
+☉ sigil CocoaPlatform {
+    initialized: bool!,
+    event_handlers: HashMap<u64, *void>!,
+    app: *NSApplication
+}
+
+#[cfg(target_os = "macos")]
+⊢ CocoaPlatform {
+    ☉ rite new() -> This! {
+        CocoaPlatform {
+            initialized: nay,
+            event_handlers: HashMap::new(),
+            app: 0 as *NSApplication
+        }
+    }
+
+    /// Helper to create NSString from Rust string
+    rite nsstring(&this, s: &str) -> *void {
+        // TODO: Proper NSString creation
+        0 as *void
+    }
+}
+
+#[cfg(target_os = "macos")]
+⊢ CocoaPlatform : NativeApp {
+    ☉ rite init(&vary this) -> bool! {
+        // TODO: [NSApplication sharedApplication]
+        // Setup app delegate, etc.
+        this.initialized = yea;
+        yea
+    }
+
+    ☉ rite run(&this) {
+        // TODO: [NSApp run]
+    }
+
+    ☉ rite quit(&this) {
+        // TODO: [NSApp terminate:nil]
+    }
+
+    ☉ rite create_window(&this, title: !String, width: !i32, height: !i32) -> NativeWidget! {
+        // TODO: [[NSWindow alloc] initWithContentRect:...]
+        NativeWidget::null()
+    }
+
+    ☉ rite show(&this, widget: &NativeWidget) {
+        // TODO: [window makeKeyAndOrderFront:nil]
+    }
+
+    ☉ rite hide(&this, widget: &NativeWidget) {
+        // TODO: [window orderOut:nil]
+    }
+
+    ☉ rite set_property(&this, widget: &NativeWidget, name: &str, value: &str) {
+        // TODO: Map property names to Cocoa operations
+    }
+
+    ☉ rite connect(&this, widget: &NativeWidget, signal: &str, handler_id: u64) {
+        // TODO: Target-action or delegate pattern
+    }
+
+    ☉ rite disconnect(&this, widget: &NativeWidget, handler_id: u64) {
+        // TODO: Remove target-action
+    }
+}
+
+#[cfg(target_os = "macos")]
+⊢ CocoaPlatform : NativeWidgetBuilder {
+    ☉ rite create_box(&this, orientation: Orientation) -> NativeWidget! {
+        // TODO: NSStackView
+        NativeWidget::null()
+    }
+
+    ☉ rite create_button(&this, label: &str) -> NativeWidget! {
+        // TODO: [NSButton buttonWithTitle:target:action:]
+        NativeWidget::null()
+    }
+
+    ☉ rite create_label(&this, text: &str) -> NativeWidget! {
+        // TODO: [NSTextField labelWithString:]
+        NativeWidget::null()
+    }
+
+    ☉ rite create_entry(&this) -> NativeWidget! {
+        // TODO: [[NSTextField alloc] init]
+        NativeWidget::null()
+    }
+
+    ☉ rite create_text_view(&this) -> NativeWidget! {
+        // TODO: NSTextView
+        NativeWidget::null()
+    }
+
+    ☉ rite create_scrolled(&this) -> NativeWidget! {
+        // TODO: NSScrollView
+        NativeWidget::null()
+    }
+
+    ☉ rite create_list_box(&this) -> NativeWidget! {
+        // TODO: NSTableView (single column)
+        NativeWidget::null()
+    }
+
+    ☉ rite create_grid(&this) -> NativeWidget! {
+        // TODO: NSGridView
+        NativeWidget::null()
+    }
+
+    ☉ rite create_stack(&this) -> NativeWidget! {
+        // TODO: NSTabView or custom
+        NativeWidget::null()
+    }
+
+    ☉ rite create_header_bar(&this) -> NativeWidget! {
+        // TODO: NSToolbar
+        NativeWidget::null()
+    }
+
+    ☉ rite create_image(&this) -> NativeWidget! {
+        // TODO: NSImageView
+        NativeWidget::null()
+    }
+
+    ☉ rite create_spinner(&this) -> NativeWidget! {
+        // TODO: NSProgressIndicator (spinning)
+        NativeWidget::null()
+    }
+
+    ☉ rite create_progress_bar(&this) -> NativeWidget! {
+        // TODO: NSProgressIndicator (bar)
+        NativeWidget::null()
+    }
+
+    ☉ rite create_scale(&this, orientation: Orientation, min: f64, max: f64) -> NativeWidget! {
+        // TODO: NSSlider
+        NativeWidget::null()
+    }
+
+    ☉ rite create_switch(&this) -> NativeWidget! {
+        // TODO: NSSwitch (macOS 10.15+)
+        NativeWidget::null()
+    }
+
+    ☉ rite create_check_button(&this, label: &str) -> NativeWidget! {
+        // TODO: [NSButton checkboxWithTitle:target:action:]
+        NativeWidget::null()
+    }
+
+    ☉ rite create_drawing_area(&this) -> NativeWidget! {
+        // TODO: Custom NSView subclass
+        NativeWidget::null()
+    }
+}
+
+#[cfg(target_os = "macos")]
+⊢ CocoaPlatform : NativeLayout {
+    ☉ rite append(&this, parent: &NativeWidget, child: &NativeWidget) {
+        // TODO: [view addSubview:]
+    }
+
+    ☉ rite remove(&this, parent: &NativeWidget, child: &NativeWidget) {
+        // TODO: [view removeFromSuperview]
+    }
+
+    ☉ rite grid_attach(&this, grid: &NativeWidget, child: &NativeWidget, col: i32, row: i32, width: i32, height: i32) {
+        // TODO: NSGridView cell placement
+    }
+
+    ☉ rite set_spacing(&this, container: &NativeWidget, spacing: i32) {
+        // TODO: [stackView setSpacing:]
+    }
+
+    ☉ rite set_margins(&this, widget: &NativeWidget, top: i32, bottom: i32, start: i32, end: i32) {
+        // TODO: Auto Layout constraints
+    }
+
+    ☉ rite set_expand(&this, widget: &NativeWidget, hexpand: bool, vexpand: bool) {
+        // TODO: Auto Layout hugging/compression priorities
+    }
+
+    ☉ rite set_align(&this, widget: &NativeWidget, halign: Align, valign: Align) {
+        // TODO: Auto Layout alignment constraints
+    }
+}
+
+#[cfg(target_os = "macos")]
+⊢ CocoaPlatform : Platform {
+    ☉ rite query_selector(&this, selector: &str) -> Option<DomElement>? {
+        // Native doesn't use DOM selectors
+        None
+    }
+
+    ☉ rite create_element(&this, tag: &str) -> DomElement! {
+        DomElement::new(0)
+    }
+
+    ☉ rite create_text(&this, content: &str) -> DomElement! {
+        DomElement::new(0)
+    }
+
+    ☉ rite apply_patch(&this, patch: Patch) {
+        // TODO: Apply to native widgets
+    }
+
+    ☉ rite add_event_listener(&this, element: &DomElement, event: EventType, handler_id: u64) {
+        // TODO
+    }
+
+    ☉ rite remove_event_listener(&this, element: &DomElement, event: EventType, handler_id: u64) {
+        // TODO
+    }
+
+    ☉ rite window_size(&this) -> (i32, i32)! {
+        // TODO: [NSScreen mainScreen].frame.size
+        (1920, 1080)
+    }
+
+    ☉ rite request_animation_frame(&this, callback: fn(f64)) -> u64! {
+        // TODO: CVDisplayLink or CADisplayLink
+        0
+    }
+
+    ☉ rite cancel_animation_frame(&this, id: u64) {
+        // TODO
+    }
+
+    ☉ rite set_timeout(&this, callback: fn(), delay_ms: u64) -> u64! {
+        // TODO: dispatch_after or NSTimer
+        0
+    }
+
+    ☉ rite clear_timeout(&this, id: u64) {
+        // TODO
+    }
+
+    ☉ rite set_interval(&this, callback: fn(), interval_ms: u64) -> u64! {
+        // TODO: NSTimer
+        0
+    }
+
+    ☉ rite clear_interval(&this, id: u64) {
+        // TODO
+    }
+
+    ☉ rite fetch(&this, url: &str, options: FetchOptions) -> Future<Output = FetchResponse>! {
+        // TODO: NSURLSession
+        async {
+            FetchResponse {
+                status: 501,
+                status_text: "Not Implemented".to_string(),
+                headers: HashMap::new(),
+                body: None
+            }
+        }
+    }
+
+    ☉ rite local_storage(&this) -> Storage! {
+        // TODO: NSUserDefaults
+        Storage::new(StorageType::Local)
+    }
+
+    ☉ rite session_storage(&this) -> Storage! {
+        Storage::new(StorageType::Session)
+    }
+
+    ☉ rite current_url(&this) -> String! {
+        "native://app".to_string()
+    }
+
+    ☉ rite push_history(&this, url: &str, state: Option<HashMap<String, String>>) {
+        // Native apps don't have browser history
+    }
+
+    ☉ rite replace_history(&this, url: &str, state: Option<HashMap<String, String>>) {
+        // Native apps don't have browser history
+    }
+
+    ☉ rite render_to_string(&this, vnode: &VNode) -> String! {
+        // Not applicable for native
+        "".to_string()
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    rite test_cocoa_platform_creation() {
+        ≔ platform! = CocoaPlatform::new();
+        assert!(!platform.initialized);
+    }
+}

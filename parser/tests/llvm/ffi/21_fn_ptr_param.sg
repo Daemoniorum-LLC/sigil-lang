@@ -1,0 +1,10 @@
+// FFI Test 21: Function taking callback parameter
+// Tests: Inline function pointer type in parameter
+
+extern "C" {
+    rite atexit(func: rite()) → c_int;
+}
+
+rite main() → i64 {
+    0
+}

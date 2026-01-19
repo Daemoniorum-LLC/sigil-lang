@@ -78,6 +78,20 @@ impl ImportRegistry {
         func_idx
     }
 
+    /// Add an import from another WASM module (for multi-module linking).
+    /// This is used when one Sigil module imports from another.
+    pub fn add_wasm_module_import(
+        &mut self,
+        wasm_module_name: &str,
+        func_name: &str,
+        params: Vec<ValType>,
+        results: Vec<ValType>,
+    ) -> u32 {
+        // WASM modules are prefixed with "$" to distinguish from JS runtime
+        let module = format!("${}", wasm_module_name);
+        self.add_import(&module, func_name, params, results)
+    }
+
     /// Look up a function index by qualified name.
     pub fn get_func(&self, qualified_name: &str) -> Option<u32> {
         self.func_map.get(qualified_name).copied()
@@ -138,6 +152,10 @@ impl ImportRegistry {
         self.add_import("console", "log_str", vec![I32, I32], vec![]);
         // Register 'print' as a builtin with direct lookup alias
         self.add_import_with_alias("console", "print", "print", vec![I64], vec![]);
+        // Register 'println' variants for WASM output
+        self.add_import_with_alias("console", "println_i64", "println", vec![I64], vec![]);
+        self.add_import_with_alias("console", "println_f64", "println_f64", vec![F64], vec![]);
+        self.add_import_with_alias("console", "println_str", "println_str", vec![I32, I32], vec![]);
     }
 
     fn register_string_imports(&mut self) {
@@ -502,5 +520,82 @@ mod tests {
                 type_idx
             );
         }
+    }
+
+    // ============================================
+    // Multi-Module Linking Tests
+    // ============================================
+
+    #[test]
+    fn test_wasm_module_import() {
+        let mut registry = ImportRegistry::empty();
+
+        // Import a function from another WASM module
+        let func_idx = registry.add_wasm_module_import(
+            "math_lib",
+            "add",
+            vec![ValType::I64, ValType::I64],
+            vec![ValType::I64],
+        );
+
+        assert_eq!(func_idx, 0);
+        // WASM module imports use "$" prefix to distinguish from JS runtime
+        assert_eq!(registry.get_func("$math_lib_add"), Some(0));
+    }
+
+    #[test]
+    fn test_multiple_wasm_module_imports() {
+        let mut registry = ImportRegistry::empty();
+
+        // Import from first module
+        let idx1 = registry.add_wasm_module_import("module_a", "foo", vec![], vec![ValType::I64]);
+
+        // Import from second module
+        let idx2 = registry.add_wasm_module_import("module_b", "bar", vec![], vec![ValType::I64]);
+
+        // Import another function from first module
+        let idx3 = registry.add_wasm_module_import("module_a", "baz", vec![], vec![ValType::I64]);
+
+        assert_eq!(idx1, 0);
+        assert_eq!(idx2, 1);
+        assert_eq!(idx3, 2);
+
+        // All should be findable
+        assert!(registry.get_func("$module_a_foo").is_some());
+        assert!(registry.get_func("$module_b_bar").is_some());
+        assert!(registry.get_func("$module_a_baz").is_some());
+    }
+
+    #[test]
+    fn test_wasm_import_has_correct_module_name() {
+        let mut registry = ImportRegistry::empty();
+
+        registry.add_wasm_module_import("other_module", "helper", vec![], vec![]);
+
+        let import = &registry.imports()[0];
+        assert_eq!(import.module, "$other_module");
+        assert_eq!(import.name, "helper");
+    }
+
+    #[test]
+    fn test_mixed_js_and_wasm_imports() {
+        let mut registry = ImportRegistry::empty();
+
+        // Add a JS runtime import
+        let js_idx = registry.add_import("console", "log", vec![ValType::I64], vec![]);
+
+        // Add a WASM module import
+        let wasm_idx = registry.add_wasm_module_import("my_lib", "calc", vec![], vec![ValType::I64]);
+
+        // Both should coexist
+        assert_eq!(registry.get_func("console_log"), Some(js_idx));
+        assert_eq!(registry.get_func("$my_lib_calc"), Some(wasm_idx));
+
+        // Check that the modules are different
+        let js_import = &registry.imports()[js_idx as usize];
+        let wasm_import = &registry.imports()[wasm_idx as usize];
+
+        assert_eq!(js_import.module, "console");
+        assert_eq!(wasm_import.module, "$my_lib");
     }
 }

@@ -1,0 +1,121 @@
+//! Node API bindings
+
+use crate::document::NodeList;
+
+/// The Node interface - base for all DOM nodes
+#[wasm_bindgen]
+extern "js" {
+    pub type Node;
+
+    #[wasm_bindgen(method, getter, js_name = "nodeType")]
+    pub fn node_type(this: &Node!) -> u16!;
+
+    #[wasm_bindgen(method, getter, js_name = "nodeName")]
+    pub fn node_name(this: &Node!) -> String!;
+
+    #[wasm_bindgen(method, getter, js_name = "nodeValue")]
+    pub fn node_value(this: &Node!) -> Option[String]?;
+
+    #[wasm_bindgen(method, setter, js_name = "nodeValue")]
+    pub fn set_node_value(this: &Node!, value: Option[&str]?);
+
+    #[wasm_bindgen(method, getter, js_name = "textContent")]
+    pub fn text_content(this: &Node!) -> Option[String]?;
+
+    #[wasm_bindgen(method, setter, js_name = "textContent")]
+    pub fn set_text_content(this: &Node!, text: Option[&str]?);
+
+    #[wasm_bindgen(method, getter, js_name = "parentNode")]
+    pub fn parent_node(this: &Node!) -> Option[Node]?;
+
+    #[wasm_bindgen(method, getter, js_name = "parentElement")]
+    pub fn parent_element(this: &Node!) -> Option[Element]?;
+
+    #[wasm_bindgen(method, getter, js_name = "childNodes")]
+    pub fn child_nodes(this: &Node!) -> NodeList!;
+
+    #[wasm_bindgen(method, getter, js_name = "firstChild")]
+    pub fn first_child(this: &Node!) -> Option[Node]?;
+
+    #[wasm_bindgen(method, getter, js_name = "lastChild")]
+    pub fn last_child(this: &Node!) -> Option[Node]?;
+
+    #[wasm_bindgen(method, getter, js_name = "previousSibling")]
+    pub fn previous_sibling(this: &Node!) -> Option[Node]?;
+
+    #[wasm_bindgen(method, getter, js_name = "nextSibling")]
+    pub fn next_sibling(this: &Node!) -> Option[Node]?;
+
+    #[wasm_bindgen(method, getter, js_name = "ownerDocument")]
+    pub fn owner_document(this: &Node!) -> Option[Document]?;
+
+    #[wasm_bindgen(method, getter, js_name = "isConnected")]
+    pub fn is_connected(this: &Node!) -> bool!;
+
+    #[wasm_bindgen(method, js_name = "hasChildNodes")]
+    pub fn has_child_nodes(this: &Node!) -> bool!;
+
+    #[wasm_bindgen(method, js_name = "appendChild")]
+    pub fn append_child(this: &Node!, child: &Node!) -> Result[Node, JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "insertBefore")]
+    pub fn insert_before(this: &Node!, new_child: &Node!, ref_child: Option[&Node]?) -> Result[Node, JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "replaceChild")]
+    pub fn replace_child(this: &Node!, new_child: &Node!, old_child: &Node!) -> Result[Node, JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "removeChild")]
+    pub fn remove_child(this: &Node!, child: &Node!) -> Result[Node, JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "cloneNode")]
+    pub fn clone_node(this: &Node!) -> Result[Node, JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "cloneNode")]
+    pub fn clone_node_with_deep(this: &Node!, deep: bool!) -> Result[Node, JsValue]?;
+
+    #[wasm_bindgen(method)]
+    pub fn normalize(this: &Node!);
+
+    #[wasm_bindgen(method)]
+    pub fn contains(this: &Node!, other: Option[&Node]?) -> bool!;
+
+    #[wasm_bindgen(method, js_name = "compareDocumentPosition")]
+    pub fn compare_document_position(this: &Node!, other: &Node!) -> u16!;
+
+    #[wasm_bindgen(method, js_name = "getRootNode")]
+    pub fn get_root_node(this: &Node!) -> Node!;
+
+    #[wasm_bindgen(method, js_name = "isEqualNode")]
+    pub fn is_equal_node(this: &Node!, other: Option[&Node]?) -> bool!;
+
+    #[wasm_bindgen(method, js_name = "isSameNode")]
+    pub fn is_same_node(this: &Node!, other: Option[&Node]?) -> bool!;
+
+    #[wasm_bindgen(method, js_name = "lookupPrefix")]
+    pub fn lookup_prefix(this: &Node!, namespace: Option[&str]?) -> Option[String]?;
+
+    #[wasm_bindgen(method, js_name = "lookupNamespaceURI")]
+    pub fn lookup_namespace_uri(this: &Node!, prefix: Option[&str]?) -> Option[String]?;
+
+    #[wasm_bindgen(method, js_name = "isDefaultNamespace")]
+    pub fn is_default_namespace(this: &Node!, namespace: Option[&str]?) -> bool!;
+}
+
+// Node type constants
+pub const ELEMENT_NODE: u16 = 1;
+pub const ATTRIBUTE_NODE: u16 = 2;
+pub const TEXT_NODE: u16 = 3;
+pub const CDATA_SECTION_NODE: u16 = 4;
+pub const PROCESSING_INSTRUCTION_NODE: u16 = 7;
+pub const COMMENT_NODE: u16 = 8;
+pub const DOCUMENT_NODE: u16 = 9;
+pub const DOCUMENT_TYPE_NODE: u16 = 10;
+pub const DOCUMENT_FRAGMENT_NODE: u16 = 11;
+
+// Document position constants
+pub const DOCUMENT_POSITION_DISCONNECTED: u16 = 0x01;
+pub const DOCUMENT_POSITION_PRECEDING: u16 = 0x02;
+pub const DOCUMENT_POSITION_FOLLOWING: u16 = 0x04;
+pub const DOCUMENT_POSITION_CONTAINS: u16 = 0x08;
+pub const DOCUMENT_POSITION_CONTAINED_BY: u16 = 0x10;
+pub const DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC: u16 = 0x20;

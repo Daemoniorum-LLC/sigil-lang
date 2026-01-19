@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Google Analytics -->
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+
+    // Default: deny analytics until user consents
+    gtag('consent', 'default', {
+      'analytics_storage': 'denied'
+    });
+
+    // Initialize GA4 after consent is granted
+    function initGA4() {
+      gtag('consent', 'update', { 'analytics_storage': 'granted' });
+      gtag('js', new Date());
+      gtag('config', 'G-J7K2SF002F');
+    }
+
+    // Check for existing consent
+    if (localStorage.getItem('analytics_consent') === 'granted') {
+      initGA4();
+    }
+  </script>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-J7K2SF002F"></script>
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sigil - Infrastructure for AI Minds | Data Provenance at the Type Level</title>
+  <meta name="description" content="Sigil is a programming language designed for AI agents. Evidentiality markers track data provenance in the type system. 9-layer agent infrastructure for memory, planning, collaboration, and safety.">
+
+  <!-- Fonts & Styles -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/images/sigil-icon.svg">
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <div id="app"></div>
+
+  <script type="module">
+    import { SigilRuntime } from './sigil_runtime.js';
+
+    async function run() {
+      try {
+        const runtime = new SigilRuntime();
+        const response = await fetch('./public/wasm/index.wasm');
+        const bytes = await response.arrayBuffer();
+        const { instance } = await WebAssembly.instantiate(bytes, runtime.getImports());
+        runtime.init(instance);
+
+        if (instance.exports.main) {
+          instance.exports.main();
+        }
+      } catch (error) {
+        console.error('WASM Error:', error);
+        document.getElementById('app').innerHTML = '<p style="color: red; padding: 2rem;">Error loading page: ' + error.message + '</p>';
+      }
+    }
+
+    run();
+  </script>
+</body>
+</html>

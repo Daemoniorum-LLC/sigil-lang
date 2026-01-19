@@ -1,0 +1,423 @@
+//! DOM Event Handling
+//!
+//! Type-safe event handlers and synthetic events.
+
+use std::rc::Rc;
+
+/// Event handler function type
+☉ type EventHandler = Rc[dyn Fn(Event)];
+
+/// Synthetic event wrapper
+☉ type Event = struct {
+    inner: crate::web_sys::Event!,
+}
+
+⊢ Event {
+    /// Wrap a native event
+    ☉ rite new(native: crate::web_sys::Event!) → This! {
+        Event { inner: native }
+    }
+
+    /// Prevent default behavior
+    ☉ rite prevent_default(this: &This!) {
+        this.inner·prevent_default();
+    }
+
+    /// Stop propagation
+    ☉ rite stop_propagation(this: &This!) {
+        this.inner·stop_propagation();
+    }
+
+    /// Stop immediate propagation
+    ☉ rite stop_immediate_propagation(this: &This!) {
+        this.inner·stop_immediate_propagation();
+    }
+
+    /// Get event type
+    ☉ rite event_type(this: &This!) → String! {
+        this.inner·type_()
+    }
+
+    /// Get target element
+    ☉ rite target(this: &This!) → Option[crate::web_sys::Element]? {
+        this.inner·target()·and_then(|t| t·dyn_into()·ok())
+    }
+
+    /// Get current target element
+    ☉ rite current_target(this: &This!) → Option[crate::web_sys::Element]? {
+        this.inner·current_target()·and_then(|t| t·dyn_into()·ok())
+    }
+
+    /// Is default prevented?
+    ☉ rite default_prevented(this: &This!) → bool! {
+        this.inner·default_prevented()
+    }
+
+    /// Event phase
+    ☉ rite phase(this: &This!) → EventPhase! {
+        match this.inner·event_phase() {
+            1 => EventPhase::Capturing,
+            2 => EventPhase::AtTarget,
+            3 => EventPhase::Bubbling,
+            _ => EventPhase::None,
+        }
+    }
+
+    /// Get native event
+    ☉ rite native(this: &This!) → &crate::web_sys::Event! {
+        &this.inner
+    }
+}
+
+/// Event propagation phase
+☉ type EventPhase = enum {
+    None,
+    Capturing,
+    AtTarget,
+    Bubbling,
+}
+
+/// Mouse event with position and button info
+☉ type MouseEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::MouseEvent!,
+}
+
+⊢ MouseEvent {
+    ☉ rite new(native: crate::web_sys::MouseEvent!) → This! {
+        MouseEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    /// Client X coordinate
+    ☉ rite client_x(this: &This!) → i32! {
+        this.inner·client_x()
+    }
+
+    /// Client Y coordinate
+    ☉ rite client_y(this: &This!) → i32! {
+        this.inner·client_y()
+    }
+
+    /// Page X coordinate
+    ☉ rite page_x(this: &This!) → i32! {
+        this.inner·page_x()
+    }
+
+    /// Page Y coordinate
+    ☉ rite page_y(this: &This!) → i32! {
+        this.inner·page_y()
+    }
+
+    /// Screen X coordinate
+    ☉ rite screen_x(this: &This!) → i32! {
+        this.inner·screen_x()
+    }
+
+    /// Screen Y coordinate
+    ☉ rite screen_y(this: &This!) → i32! {
+        this.inner·screen_y()
+    }
+
+    /// Mouse button (0=left, 1=middle, 2=right)
+    ☉ rite button(this: &This!) → i16! {
+        this.inner·button()
+    }
+
+    /// Alt key pressed?
+    ☉ rite alt_key(this: &This!) → bool! {
+        this.inner·alt_key()
+    }
+
+    /// Ctrl key pressed?
+    ☉ rite ctrl_key(this: &This!) → bool! {
+        this.inner·ctrl_key()
+    }
+
+    /// Shift key pressed?
+    ☉ rite shift_key(this: &This!) → bool! {
+        this.inner·shift_key()
+    }
+
+    /// Meta key pressed? (Cmd on Mac)
+    ☉ rite meta_key(this: &This!) → bool! {
+        this.inner·meta_key()
+    }
+
+    /// Delegate to Event
+    ☉ rite prevent_default(this: &This!) { this.event·prevent_default(); }
+    ☉ rite stop_propagation(this: &This!) { this.event·stop_propagation(); }
+}
+
+/// Keyboard event
+☉ type KeyboardEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::KeyboardEvent!,
+}
+
+⊢ KeyboardEvent {
+    ☉ rite new(native: crate::web_sys::KeyboardEvent!) → This! {
+        KeyboardEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    /// Key value
+    ☉ rite key(this: &This!) → String! {
+        this.inner·key()
+    }
+
+    /// Key code
+    ☉ rite code(this: &This!) → String! {
+        this.inner·code()
+    }
+
+    /// Is repeat?
+    ☉ rite repeat(this: &This!) → bool! {
+        this.inner·repeat()
+    }
+
+    /// Modifier keys
+    ☉ rite alt_key(this: &This!) → bool! { this.inner·alt_key() }
+    ☉ rite ctrl_key(this: &This!) → bool! { this.inner·ctrl_key() }
+    ☉ rite shift_key(this: &This!) → bool! { this.inner·shift_key() }
+    ☉ rite meta_key(this: &This!) → bool! { this.inner·meta_key() }
+
+    ☉ rite prevent_default(this: &This!) { this.event·prevent_default(); }
+    ☉ rite stop_propagation(this: &This!) { this.event·stop_propagation(); }
+}
+
+/// Input event (for form elements)
+☉ type InputEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::InputEvent!,
+}
+
+⊢ InputEvent {
+    ☉ rite new(native: crate::web_sys::InputEvent!) → This! {
+        InputEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    /// Input data
+    ☉ rite data(this: &This!) → Option[String]? {
+        this.inner·data()
+    }
+
+    /// Input type
+    ☉ rite input_type(this: &This!) → String! {
+        this.inner·input_type()
+    }
+
+    /// Is composing?
+    ☉ rite is_composing(this: &This!) → bool! {
+        this.inner·is_composing()
+    }
+
+    /// Get current input value
+    ☉ rite value(this: &This!) → String! {
+        this.event·target()
+            ·and_then(|t| t·dyn_into[crate::web_sys::HtmlInputElement]()·ok())
+            ·map(|el| el·value())
+            ·unwrap_or_default()
+    }
+
+    ☉ rite prevent_default(this: &This!) { this.event·prevent_default(); }
+}
+
+/// Focus event
+☉ type FocusEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::FocusEvent!,
+}
+
+⊢ FocusEvent {
+    ☉ rite new(native: crate::web_sys::FocusEvent!) → This! {
+        FocusEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    /// Related target (element losing/gaining focus)
+    ☉ rite related_target(this: &This!) → Option[crate::web_sys::Element]? {
+        this.inner·related_target()·and_then(|t| t·dyn_into()·ok())
+    }
+
+    ☉ rite prevent_default(this: &This!) { this.event·prevent_default(); }
+}
+
+/// Form submit event
+☉ type SubmitEvent = struct {
+    event: Event!,
+}
+
+⊢ SubmitEvent {
+    ☉ rite new(native: crate::web_sys::Event!) → This! {
+        SubmitEvent { event: Event::new(native) }
+    }
+
+    /// Get form data
+    ☉ rite form_data(this: &This!) → crate::web_sys::FormData! {
+        ≔ form! = this.event·target()
+            ·unwrap()
+            ·dyn_into[crate::web_sys::HtmlFormElement]()
+            ·unwrap();
+        crate::web_sys::FormData::new_with_form(&form)·unwrap()
+    }
+
+    ☉ rite prevent_default(this: &This!) { this.event·prevent_default(); }
+}
+
+/// Touch event
+☉ type TouchEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::TouchEvent!,
+}
+
+⊢ TouchEvent {
+    ☉ rite new(native: crate::web_sys::TouchEvent!) → This! {
+        TouchEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    /// Active touches
+    ☉ rite touches(this: &This!) → Vec[Touch]! {
+        ≔ list! = this.inner·touches();
+        (0..list·length())
+            |τ{i => Touch::new(list·get(i)·unwrap())}
+            |σ()
+    }
+
+    /// Changed touches
+    ☉ rite changed_touches(this: &This!) → Vec[Touch]! {
+        ≔ list! = this.inner·changed_touches();
+        (0..list·length())
+            |τ{i => Touch::new(list·get(i)·unwrap())}
+            |σ()
+    }
+
+    ☉ rite prevent_default(this: &This!) { this.event·prevent_default(); }
+}
+
+/// Individual touch point
+☉ type Touch = struct {
+    inner: crate::web_sys::Touch!,
+}
+
+⊢ Touch {
+    ☉ rite new(native: crate::web_sys::Touch!) → This! {
+        Touch { inner: native }
+    }
+
+    ☉ rite identifier(this: &This!) → i32! { this.inner·identifier() }
+    ☉ rite client_x(this: &This!) → i32! { this.inner·client_x() }
+    ☉ rite client_y(this: &This!) → i32! { this.inner·client_y() }
+    ☉ rite page_x(this: &This!) → i32! { this.inner·page_x() }
+    ☉ rite page_y(this: &This!) → i32! { this.inner·page_y() }
+}
+
+/// Wheel/scroll event
+☉ type WheelEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::WheelEvent!,
+}
+
+⊢ WheelEvent {
+    ☉ rite new(native: crate::web_sys::WheelEvent!) → This! {
+        WheelEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    ☉ rite delta_x(this: &This!) → f64! { this.inner·delta_x() }
+    ☉ rite delta_y(this: &This!) → f64! { this.inner·delta_y() }
+    ☉ rite delta_z(this: &This!) → f64! { this.inner·delta_z() }
+
+    ☉ rite delta_mode(this: &This!) → DeltaMode! {
+        match this.inner·delta_mode() {
+            0 => DeltaMode::Pixel,
+            1 => DeltaMode::Line,
+            2 => DeltaMode::Page,
+            _ => DeltaMode::Pixel,
+        }
+    }
+
+    ☉ rite prevent_default(this: &This!) { this.event·prevent_default(); }
+}
+
+☉ type DeltaMode = enum {
+    Pixel,
+    Line,
+    Page,
+}
+
+/// Drag event
+☉ type DragEvent = struct {
+    event: Event!,
+    mouse: MouseEvent!,
+    inner: crate::web_sys::DragEvent!,
+}
+
+⊢ DragEvent {
+    ☉ rite new(native: crate::web_sys::DragEvent!) → This! {
+        DragEvent {
+            event: Event::new(native·clone()·into()),
+            mouse: MouseEvent::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    /// Get data transfer object
+    ☉ rite data_transfer(this: &This!) → Option[crate::web_sys::DataTransfer]? {
+        this.inner·data_transfer()
+    }
+
+    ☉ rite prevent_default(this: &This!) { this.event·prevent_default(); }
+}
+
+/// Animation event
+☉ type AnimationEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::AnimationEvent!,
+}
+
+⊢ AnimationEvent {
+    ☉ rite new(native: crate::web_sys::AnimationEvent!) → This! {
+        AnimationEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    ☉ rite animation_name(this: &This!) → String! { this.inner·animation_name() }
+    ☉ rite elapsed_time(this: &This!) → f32! { this.inner·elapsed_time() }
+    ☉ rite pseudo_element(this: &This!) → String! { this.inner·pseudo_element() }
+}
+
+/// Transition event
+☉ type TransitionEvent = struct {
+    event: Event!,
+    inner: crate::web_sys::TransitionEvent!,
+}
+
+⊢ TransitionEvent {
+    ☉ rite new(native: crate::web_sys::TransitionEvent!) → This! {
+        TransitionEvent {
+            event: Event::new(native·clone()·into()),
+            inner: native,
+        }
+    }
+
+    ☉ rite property_name(this: &This!) → String! { this.inner·property_name() }
+    ☉ rite elapsed_time(this: &This!) → f32! { this.inner·elapsed_time() }
+    ☉ rite pseudo_element(this: &This!) → String! { this.inner·pseudo_element() }
+}

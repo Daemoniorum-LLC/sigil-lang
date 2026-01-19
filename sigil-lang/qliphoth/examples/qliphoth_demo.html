@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qliphoth Demo - Sigil WASM</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: rgba(255, 255, 255, 0.03);
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+            --accent-primary: #9d4edd;
+            --accent-secondary: #7b2cbf;
+            --accent-glow: rgba(157, 78, 221, 0.3);
+            --success: #50fa7b;
+            --info: #7ec8e3;
+        }
+        .light-theme {
+            --bg-primary: #f5f5f7;
+            --bg-secondary: #ffffff;
+            --bg-card: rgba(0, 0, 0, 0.03);
+            --text-primary: #1a1a1a;
+            --text-secondary: #666;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            transition: background 0.3s, color 0.3s;
+        }
+        header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid rgba(157, 78, 221, 0.2);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+        .logo-text {
+            font-size: 1.5rem;
+            font-weight: bold;
+            background: linear-gradient(135deg, var(--accent-primary), #e0aaff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        nav {
+            display: flex;
+            gap: 8px;
+        }
+        nav button {
+            background: transparent;
+            border: 1px solid rgba(157, 78, 221, 0.3);
+            color: var(--text-primary);
+            padding: 8px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        nav button:hover, nav button.active {
+            background: linear-gradient(135deg, var(--accent-secondary) 0%, var(--accent-primary) 100%);
+            border-color: var(--accent-primary);
+            color: white;
+        }
+        .theme-toggle {
+            background: var(--bg-card);
+            border: 1px solid rgba(157, 78, 221, 0.3);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.2rem;
+        }
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .hero {
+            text-align: center;
+            padding: 4rem 2rem;
+            background: var(--bg-card);
+            border-radius: 20px;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(157, 78, 221, 0.1);
+        }
+        .hero h1 {
+            font-size: 3rem;
+            background: linear-gradient(135deg, var(--accent-primary), #e0aaff, var(--accent-primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 1rem;
+            text-shadow: 0 0 40px var(--accent-glow);
+        }
+        .hero p {
+            color: var(--text-secondary);
+            font-size: 1.2rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 3rem;
+            margin-top: 2rem;
+        }
+        .stat {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--accent-primary);
+        }
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        .counter-widget {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(157, 78, 221, 0.1);
+        }
+        .counter-widget h2 {
+            color: var(--accent-primary);
+            margin-bottom: 1rem;
+        }
+        .counter-display {
+            font-size: 4rem;
+            font-weight: bold;
+            text-align: center;
+            color: #e0aaff;
+            margin: 1rem 0;
+            text-shadow: 0 0 20px var(--accent-glow);
+            transition: transform 0.1s;
+        }
+        .counter-display.bump {
+            transform: scale(1.1);
+        }
+        .counter-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+        }
+        .counter-buttons button {
+            background: linear-gradient(135deg, var(--accent-secondary) 0%, var(--accent-primary) 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-width: 50px;
+        }
+        .counter-buttons button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px var(--accent-glow);
+        }
+        .counter-buttons button.reset {
+            background: linear-gradient(135deg, #3c096c 0%, #5a189a 100%);
+        }
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        .product-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid rgba(157, 78, 221, 0.1);
+            transition: all 0.2s;
+        }
+        .product-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--accent-primary);
+            box-shadow: 0 8px 32px var(--accent-glow);
+        }
+        .product-card h3 {
+            color: var(--accent-primary);
+            margin-bottom: 0.5rem;
+        }
+        .product-card p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        .badge {
+            display: inline-block;
+            background: var(--accent-primary);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+        .console {
+            background: #0f0f23;
+            border-radius: 12px;
+            padding: 1rem;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.85rem;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 2rem;
+            border: 1px solid rgba(157, 78, 221, 0.2);
+        }
+        .console-line {
+            margin: 4px 0;
+            color: var(--info);
+        }
+        .console-line.navigate { color: #ffb86c; }
+        .console-line.counter { color: var(--success); }
+        .console-line.theme { color: #bd93f9; }
+        .console-line.page { color: #ff79c6; }
+        .console-line.render { color: #8be9fd; opacity: 0.7; }
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        footer a {
+            color: var(--accent-primary);
+            text-decoration: none;
+        }
+        #page-content {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(157, 78, 221, 0.1);
+            min-height: 200px;
+        }
+        #page-content h2 {
+            color: var(--accent-primary);
+            margin-bottom: 1rem;
+        }
+        #page-content ul {
+            list-style: none;
+            padding: 0;
+        }
+        #page-content li {
+            padding: 0.5rem 0;
+            padding-left: 1.5rem;
+            position: relative;
+        }
+        #page-content li::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            color: var(--accent-primary);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <div class="logo-icon">Q</div>
+            <span class="logo-text">Qliphoth</span>
+            <span class="badge">WASM</span>
+        </div>
+        <nav id="nav">
+            <button onclick="navigate(0)" data-page="0">Home</button>
+            <button onclick="navigate(1)" data-page="1">Products</button>
+            <button onclick="navigate(2)" data-page="2">About</button>
+            <button onclick="navigate(3)" data-page="3">Contact</button>
+        </nav>
+        <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">&#x263C;</button>
+    </header>
+
+    <main>
+        <div id="page-content">
+            <!-- Dynamic content rendered here -->
+        </div>
+
+        <div class="counter-widget">
+            <h2>Interactive Counter</h2>
+            <div class="counter-display" id="counter">0</div>
+            <div class="counter-buttons">
+                <button onclick="decrement()">-</button>
+                <button onclick="increment()">+</button>
+                <button class="reset" onclick="resetCounter()">Reset</button>
+            </div>
+        </div>
+
+        <div class="console" id="console"></div>
+    </main>
+
+    <footer>
+        Powered by <a href="#">Sigil</a> + WebAssembly |
+        <a href="#">Daemoniorum</a> Platform
+    </footer>
+
+    <script type="module">
+        // === Sigil WASM Runtime ===
+        const strings = new Map();
+        let stringCounter = 0x30000;
+
+        function allocString(str) {
+            const id = ++stringCounter;
+            strings.set(id, str);
+            return id;
+        }
+
+        function loadDataStrings(memory) {
+            const view = new Uint8Array(memory.buffer);
+            for (let i = 0; i < Math.min(view.length - 4, 0x20000); i++) {
+                const len = view[i] | (view[i+1] << 8) | (view[i+2] << 16) | (view[i+3] << 24);
+                if (len > 0 && len < 500 && i + 4 + len <= view.length) {
+                    const bytes = view.slice(i + 4, i + 4 + len);
+                    let valid = true;
+                    for (const b of bytes) {
+                        if (b !== 0x09 && b !== 0x0A && b !== 0x0D && (b < 0x20 || b > 0x7E)) {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    if (valid) {
+                        strings.set(i, new TextDecoder().decode(bytes));
+                    }
+                }
+            }
+        }
+
+        const consoleEl = document.getElementById('console');
+        const counterEl = document.getElementById('counter');
+        const pageContentEl = document.getElementById('page-content');
+
+        function log(msg) {
+            const line = document.createElement('div');
+            line.className = 'console-line';
+
+            // Color coding
+            if (msg.includes('[NAVIGATE]')) line.classList.add('navigate');
+            else if (msg.includes('[COUNTER]')) line.classList.add('counter');
+            else if (msg.includes('[THEME]')) line.classList.add('theme');
+            else if (msg.includes('[PAGE:')) line.classList.add('page');
+            else if (msg.includes('[RENDER]')) line.classList.add('render');
+
+            line.textContent = msg;
+            consoleEl.appendChild(line);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+
+            // Handle special messages
+            if (msg.startsWith('[COUNTER]')) {
+                const val = msg.replace('[COUNTER] ', '');
+                counterEl.textContent = val;
+                counterEl.classList.add('bump');
+                setTimeout(() => counterEl.classList.remove('bump'), 100);
+            } else if (msg.startsWith('[THEME]')) {
+                const theme = msg.includes('light') ? 'light' : 'dark';
+                document.body.classList.toggle('light-theme', theme === 'light');
+                document.getElementById('theme-btn').textContent = theme === 'light' ? '\u263E' : '\u263C';
+            } else if (msg.startsWith('[PAGE:')) {
+                const page = msg.match(/\[PAGE:(\w+)\]/)?.[1];
+                updateNav(page);
+            }
+        }
+
+        function updateNav(page) {
+            const pageMap = { home: 0, products: 1, about: 2, contact: 3 };
+            const pageIndex = pageMap[page] ?? 0;
+            document.querySelectorAll('nav button').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.page == pageIndex);
+            });
+        }
+
+        // Page content templates
+        const pageTemplates = {
+            home: `
+                <div class="hero">
+                    <h1>Welcome to Daemoniorum</h1>
+                    <p>The platform that builds platforms. 8.7M lines of code powering the future of AI-native development.</p>
+                    <div class="stats">
+                        <div class="stat"><div class="stat-value">8</div><div class="stat-label">Major Products</div></div>
+                        <div class="stat"><div class="stat-value">76</div><div class="stat-label">Skills</div></div>
+                        <div class="stat"><div class="stat-value">233</div><div class="stat-label">Tests Passing</div></div>
+                    </div>
+                </div>
+            `,
+            products: `
+                <h2>Our Products</h2>
+                <div class="products-grid">
+                    <div class="product-card">
+                        <h3>Sigil</h3>
+                        <p>AI-native programming language with evidentiality markers and compile-time safety.</p>
+                    </div>
+                    <div class="product-card">
+                        <h3>Styx</h3>
+                        <p>AI-native git platform with pure implementation, federation support, and code review AI.</p>
+                    </div>
+                    <div class="product-card">
+                        <h3>Infernum</h3>
+                        <p>Local LLM inference engine with speculative decoding and multi-GPU support.</p>
+                    </div>
+                    <div class="product-card">
+                        <h3>Grimoire</h3>
+                        <p>AI persona framework with 50+ specialized agents and dynamic prompt loading.</p>
+                    </div>
+                </div>
+            `,
+            about: `
+                <h2>About Qliphoth</h2>
+                <p style="margin-bottom: 1rem;">Qliphoth is the dark mirror of the Sephirot in Kabbalistic tradition. It represents the shells and husks of existence - the infrastructure that supports creation.</p>
+                <p style="margin-bottom: 1rem;">In our platform, Qliphoth symbolizes the foundational infrastructure layer that powers all Daemoniorum products.</p>
+                <p>This demo is powered entirely by Sigil compiled to WebAssembly.</p>
+            `,
+            contact: `
+                <h2>Contact</h2>
+                <p style="margin-bottom: 1rem;">Reach out through the void.</p>
+                <p>This is a demo application showcasing Sigil's WASM capabilities.</p>
+            `
+        };
+
+        const imports = {
+            console: {
+                log_i64: (val) => log(`[i64] ${val}`),
+                log_f64: (val) => log(`[f64] ${val}`),
+                log_str: (ptr) => log(strings.get(ptr) || `[ptr:${ptr}]`),
+                print: (val) => {
+                    const v = Number(val);
+                    const str = strings.get(v);
+                    if (str !== undefined && str.length > 0) {
+                        log(str);
+                        // Update page content based on [PAGE:xxx] markers
+                        if (str.startsWith('[PAGE:')) {
+                            const page = str.match(/\[PAGE:(\w+)\]/)?.[1];
+                            if (page && pageTemplates[page]) {
+                                pageContentEl.innerHTML = pageTemplates[page];
+                            }
+                        }
+                    }
+                },
+            },
+            string: {
+                concat: (a, b) => allocString((strings.get(a) || '') + (strings.get(b) || '')),
+                from_int: (n) => allocString(String(n)),
+                from_float: (n) => allocString(String(n)),
+                length: (s) => (strings.get(s) || '').length,
+                slice: (s, start, end) => allocString((strings.get(s) || '').slice(Number(start), Number(end))),
+                eq: (a, b) => (strings.get(a) || '') === (strings.get(b) || '') ? 1 : 0,
+                parse_int: (s) => BigInt(parseInt(strings.get(s) || '0')),
+                parse_float: (s) => parseFloat(strings.get(s) || '0'),
+                lines: () => 0, split_whitespace: () => 0, split: () => 0,
+                trim: (s) => allocString((strings.get(s) || '').trim()),
+                trim_start: (s) => allocString((strings.get(s) || '').trimStart()),
+                trim_end: (s) => allocString((strings.get(s) || '').trimEnd()),
+                to_uppercase: (s) => allocString((strings.get(s) || '').toUpperCase()),
+                to_lowercase: (s) => allocString((strings.get(s) || '').toLowerCase()),
+                contains: (a, b) => (strings.get(a) || '').includes(strings.get(b) || '') ? 1 : 0,
+                starts_with: (a, b) => (strings.get(a) || '').startsWith(strings.get(b) || '') ? 1 : 0,
+                ends_with: (a, b) => (strings.get(a) || '').endsWith(strings.get(b) || '') ? 1 : 0,
+                replace: (s, a, b) => allocString((strings.get(s) || '').replaceAll(strings.get(a) || '', strings.get(b) || '')),
+                chars: () => 0,
+            },
+            morpheme: { array_new: () => 0, array_push: () => {}, array_get: () => BigInt(0), array_set: () => {}, array_len: () => 0, array_map: () => 0, array_filter: () => 0, array_parallel_map: () => 0, array_parallel_filter: () => 0, array_parallel_reduce: () => BigInt(0), array_reduce: () => BigInt(0), array_sort: () => 0, array_first: () => BigInt(0), array_last: () => BigInt(0), array_nth: () => BigInt(0), array_sum: () => BigInt(0), array_product: () => BigInt(1), array_min: () => BigInt(0), array_max: () => BigInt(0), array_all: () => 0, array_any: () => 0, array_random_element: () => BigInt(0) },
+            math: { sqrt: Math.sqrt, sin: Math.sin, cos: Math.cos, tan: Math.tan, pow: Math.pow, exp: Math.exp, log: Math.log, floor: Math.floor, ceil: Math.ceil, round: Math.round, abs: Math.abs, abs_int: (x) => x < 0n ? -x : x, random: Math.random, clamp: (x, min, max) => Math.max(min, Math.min(max, x)), clamp_int: (x, min, max) => x < min ? min : x > max ? max : x, min: Math.min, max: Math.max, min_int: (a, b) => a < b ? a : b, max_int: (a, b) => a > b ? a : b, signum: Math.sign, signum_int: (x) => x < 0n ? -1n : x > 0n ? 1n : 0n },
+            dom: { create_element: () => 0, create_text: () => 0, set_attribute: () => {}, remove_attribute: () => {}, set_property: () => {}, append_child: () => {}, insert_before: () => {}, remove_child: () => {}, replace_child: () => {}, set_text_content: () => {}, get_element_by_id: () => 0, query_selector: () => 0, clone_node: () => 0 },
+            events: { add_listener: () => 0, remove_listener: () => {}, prevent_default: () => {}, stop_propagation: () => {}, get_target: () => 0, get_value: () => 0 },
+            timing: { now: () => Date.now(), set_timeout: () => 0, clear_timeout: () => {}, set_interval: () => 0, clear_interval: () => {}, request_animation_frame: () => 0 },
+            fetch: { start: () => 0, poll: () => 0, get_status: () => 0, get_body: () => 0, abort: () => {} },
+            storage: { local_get: () => 0, local_set: () => {}, local_remove: () => {} },
+            router: { push_state: () => {}, replace_state: () => {}, get_pathname: () => 0 },
+            memory: { alloc: (n) => Number(n), realloc: (p, n) => Number(n), free: () => {}, heap_alloc: (n) => n },
+            vdom: { create_vnode: () => 1, create_text_vnode: () => 2, create_fragment: () => 3, set_vnode_prop: () => {}, set_vnode_str_prop: () => {}, append_vnode_child: () => {}, diff_and_patch: () => {}, mount_vnode: () => 1, dispose: () => {} },
+            signal: { create: () => 0, get: () => BigInt(0), set: () => {}, subscribe: () => 0, unsubscribe: () => {}, batch_start: () => {}, batch_end: () => {}, computed: () => 0, effect: () => 0 },
+            async: { promise_new: () => 0, promise_resolve: () => {}, promise_reject: () => {}, promise_then: () => 0, promise_catch: () => 0, promise_all: () => 0, promise_race: () => 0, spawn: () => 0, yield_now: () => {}, await_promise: () => BigInt(0), create_continuation: () => 0, resume: () => {} },
+            browser: { window: () => 0, document: () => 0, inner_width: () => 0, inner_height: () => 0, add_event_listener: () => 0, remove_event_listener: () => {}, match_media: () => 0, mql_matches: () => 0, mql_add_listener: () => 0, mql_remove_listener: () => {} },
+        };
+
+        // Load and run WASM
+        async function loadWasm() {
+            try {
+                const response = await fetch('qliphoth_demo.wasm');
+                const buffer = await response.arrayBuffer();
+                const { instance } = await WebAssembly.instantiate(buffer, imports);
+
+                window.instance = instance;
+
+                if (instance.exports.memory) {
+                    loadDataStrings(instance.exports.memory);
+                }
+
+                log('WASM module loaded successfully');
+
+                // Run main
+                instance.exports.main?.();
+
+                // Update initial counter display
+                const count = instance.exports.get_counter?.();
+                if (count !== undefined) {
+                    counterEl.textContent = Number(count);
+                }
+
+            } catch (err) {
+                log('Error loading WASM: ' + err.message);
+                console.error(err);
+            }
+        }
+
+        // Global functions for UI
+        window.navigate = function(page) {
+            window.instance?.exports.navigate?.(BigInt(page));
+        };
+
+        window.toggleTheme = function() {
+            window.instance?.exports.toggle_theme?.();
+        };
+
+        window.increment = function() {
+            window.instance?.exports.increment?.();
+        };
+
+        window.decrement = function() {
+            window.instance?.exports.decrement?.();
+        };
+
+        window.resetCounter = function() {
+            window.instance?.exports.reset_counter?.();
+        };
+
+        // Load on page ready
+        loadWasm();
+    </script>
+</body>
+</html>

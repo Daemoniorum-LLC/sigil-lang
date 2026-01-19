@@ -1,0 +1,216 @@
+/// Qliphoth Development Server
+/// HTTP server with file watching and hot module reload support.
+///
+/// Features:
+/// - Serves static files (HTML, CSS, JS, WASM)
+/// - Polls for .sigil file changes
+/// - Recompiles changed files to WASM
+/// - WebSocket endpoint for HMR notifications
+
+/// File modification tracking
+☉ sigil FileState {
+    path: !String,
+    modified: !i64
+}
+
+/// Build an HTTP response
+rite build_response(status: i64, content_type: &str, body: &str) → String {
+    ≔ content_length = len(body);
+    ≔ status_text = ⎇ status == 200 { "OK" } ⎉ ⎇ status == 404 { "Not Found" } ⎉ { "Error" };
+    format("HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}", status, status_text, content_type, content_length, body)
+}
+
+/// Get MIME type for file extension
+rite get_mime_type(path: &str) → String {
+    ⎇ str_ends_with(path, ".html") { "text/html; charset=utf-8" }
+    ⎉ ⎇ str_ends_with(path, ".css") { "text/css; charset=utf-8" }
+    ⎉ ⎇ str_ends_with(path, ".js") { "application/javascript; charset=utf-8" }
+    ⎉ ⎇ str_ends_with(path, ".wasm") { "application/wasm" }
+    ⎉ ⎇ str_ends_with(path, ".json") { "application/json; charset=utf-8" }
+    ⎉ ⎇ str_ends_with(path, ".svg") { "image/svg+xml" }
+    ⎉ ⎇ str_ends_with(path, ".png") { "image/png" }
+    ⎉ { "text/plain; charset=utf-8" }
+}
+
+/// Parse HTTP request - returns (method, path)
+rite parse_request(request: &str) → String {
+    ≔ parts = split(request, " ");
+    ⎇ len(parts) >= 2 { parts[1] } ⎉ { "/" }
+}
+
+/// Handle HTTP request
+rite handle_request(stream: TcpStream, root_dir: &str, ws_clients: &vary [i64]) {
+    ≔ reader = BufReader·new(stream);
+    ≔ request_line = BufReader·read_line(reader);
+
+    ⌥ request_line {
+        Result·Ok(line) => {
+            ≔ path = parse_request(line);
+            println(format("[HTTP] {}", path));
+
+            // Check for WebSocket upgrade
+            ⎇ path == "/hmr" {
+                // Return special response for HMR endpoint
+                ≔ response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nHMR endpoint - use WebSocket";
+                TcpStream·write_all(stream, response);
+            } ⎉ {
+                // Serve static files
+                ≔ file_path = ⎇ path == "/" {
+                    format("{}/index.html", root_dir)
+                } ⎉ {
+                    format("{}{}", root_dir, path)
+                };
+
+                ≔ file_result = fs·read_to_string(file_path);
+
+                ⌥ file_result {
+                    Result·Ok(content) => {
+                        ≔ mime = get_mime_type(file_path);
+                        ≔ response = build_response(200, mime, content);
+                        TcpStream·write_all(stream, response);
+                    },
+                    Result·Err(_) => {
+                        ≔ body = format("<h1>404 Not Found</h1><p>{}</p>", path);
+                        ≔ response = build_response(404, "text/html; charset=utf-8", body);
+                        TcpStream·write_all(stream, response);
+                    },
+                }
+            }
+        },
+        Result·Err(e) => {
+            println(format("[ERROR] {}", e));
+        },
+    }
+}
+
+/// Check if any .sigil files have been modified
+rite check_for_changes(root_dir: &str, file_states: &vary [FileState]) → [String] {
+    ≔ changed: [String] = [];
+
+    // List .sigil files in root directory
+    ≔ files_result = fs·read_dir(root_dir);
+
+    ⌥ files_result {
+        Result·Ok(entries) => {
+            // Check each .sigil file
+            ≔ i = 0;
+            ∞ {
+                ⎇ i >= len(entries) { ⊗; } ⎉ {}
+                ≔ entry = entries[i];
+                ⎇ str_ends_with(entry, ".sigil") {
+                    ≔ full_path = format("{}/{}", root_dir, entry);
+                    ≔ mod_result = fs·modified_time(full_path);
+                    ⌥ mod_result {
+                        Result·Ok(mod_time) => {
+                            // Check if we've seen this file before
+                            ≔ found = nay;
+                            ≔ j = 0;
+                            ∞ {
+                                ⎇ j >= len(file_states) { ⊗; } ⎉ {}
+                                ⎇ file_states[j].path == full_path {
+                                    found = yea;
+                                    ⎇ file_states[j].modified != mod_time {
+                                        // File changed!
+                                        push(changed, full_path);
+                                        file_states[j].modified = mod_time;
+                                    } ⎉ {}
+                                    ⊗;
+                                } ⎉ {}
+                                j = j + 1;
+                            }
+                            ⎇ found == nay {
+                                // New file
+                                push(file_states, FileState { path: full_path, modified: mod_time });
+                            } ⎉ {}
+                        },
+                        Result·Err(_) => {},
+                    }
+                } ⎉ {}
+                i = i + 1;
+            }
+        },
+        Result·Err(_) => {},
+    }
+
+    changed
+}
+
+/// Compile a .sigil file to WASM
+rite compile_to_wasm(sigil_path: &str) → Result<String, String> {
+    ≔ wasm_path = str_replace(sigil_path, ".sigil", ".wasm");
+    println(format("[BUILD] Compiling {} -> {}", sigil_path, wasm_path));
+
+    // Use system command to invoke sigil compiler
+    ≔ result = system(format("sigil wasm {} -o {}", sigil_path, wasm_path));
+
+    ⎇ result == 0 {
+        println(format("[BUILD] Success: {}", wasm_path));
+        Result·Ok(wasm_path)
+    } ⎉ {
+        println(format("[BUILD] Failed to compile: {}", sigil_path));
+        Result·Err("Compilation failed")
+    }
+}
+
+/// Main entry point
+rite main() {
+    ≔ addr = "127.0.0.1:3000";
+    ≔ root_dir = ".";
+    ≔ vary file_states: [FileState] = [];
+    ≔ vary ws_clients: [i64] = [];
+    ≔ vary last_check: i64 = 0;
+    ≔ check_interval: i64 = 1000;  // Check every 1 second
+
+    println("╔═══════════════════════════════════════════════════════════╗");
+    println("║           Qliphoth Development Server v0.1                ║");
+    println("╠═══════════════════════════════════════════════════════════╣");
+    println(format("║  Server:     http://{}                         ║", addr));
+    println("║  HMR:        Enabled (polling)                           ║");
+    println("║  Root:       ./                                          ║");
+    println("╚═══════════════════════════════════════════════════════════╝");
+    println("");
+    println("[INFO] Watching for .sigil file changes...");
+    println("");
+
+    ⌥ TcpListener·bind(addr) {
+        Result·Ok(listener) => {
+            println(format("[INFO] Server listening on {}", addr));
+
+            // Set listener to non-blocking for file watching
+            TcpListener·set_nonblocking(listener, yea);
+
+            ∞ {
+                // Check for file changes periodically
+                ≔ now = time_ms();
+                ⎇ now - last_check > check_interval {
+                    ≔ changed = check_for_changes(root_dir, file_states);
+                    ⎇ len(changed) > 0 {
+                        // Compile changed files
+                        ≔ i = 0;
+                        ∞ {
+                            ⎇ i >= len(changed) { ⊗; } ⎉ {}
+                            compile_to_wasm(changed[i]);
+                            i = i + 1;
+                        }
+                        println("[HMR] Reload triggered");
+                    } ⎉ {}
+                    last_check = now;
+                } ⎉ {}
+
+                // Accept incoming connections (non-blocking)
+                ⌥ TcpListener·accept(listener) {
+                    Result·Ok(stream) => {
+                        handle_request(stream, root_dir, ws_clients);
+                    },
+                    Result·Err(_) => {
+                        // No connection ready, sleep briefly
+                        sleep_ms(10);
+                    },
+                }
+            }
+        },
+        Result·Err(e) => {
+            println(format("[FATAL] Failed to bind: {}", e));
+        },
+    }
+}

@@ -1,0 +1,903 @@
+// Animation Module
+// High-performance animations for Qliphoth
+// Supports tween, spring physics, keyframes, and CSS transitions
+
+use std::collections::HashMap;
+use crate::hooks::use_ref;
+use crate::platform::Platform;
+
+// ============================================================================
+// Animation Primitives
+// ============================================================================
+
+/// Animation value that can be interpolated
+☉ sigil AnimatedValue {
+    /// Current value
+    current: f64!,
+    /// Target value
+    target: f64!,
+    /// Start value (for tweens)
+    start: f64!,
+    /// Animation progress (0.0 to 1.0)
+    progress: f64!,
+    /// Whether animation is running
+    running: bool!,
+    /// Animation configuration
+    config: AnimationConfig!
+}
+
+⊢ AnimatedValue {
+    ☉ rite new(initial: f64) -> This! {
+        AnimatedValue {
+            current: initial,
+            target: initial,
+            start: initial,
+            progress: 1.0,
+            running: nay,
+            config: AnimationConfig::default()
+        }
+    }
+
+    ☉ rite with_config(initial: f64, config: AnimationConfig) -> This! {
+        AnimatedValue {
+            current: initial,
+            target: initial,
+            start: initial,
+            progress: 1.0,
+            running: nay,
+            config: config
+        }
+    }
+
+    /// Start animating to target
+    ☉ rite animate_to(vary this, target: f64) {
+        this.start = this.current;
+        this.target = target;
+        this.progress = 0.0;
+        this.running = yea;
+    }
+
+    /// Update animation (call each frame)
+    ☉ rite tick(vary this, delta_time: f64) -> bool! {
+        ⎇ !this.running {
+            ⮐ nay;
+        }
+
+        match this.config.animation_type {
+            AnimationType::Tween => this.tick_tween(delta_time),
+            AnimationType::Spring => this.tick_spring(delta_time),
+            AnimationType::Physics => this.tick_physics(delta_time)
+        }
+    }
+
+    /// Tween animation tick
+    rite tick_tween(vary this, delta_time: f64) -> bool! {
+        ≔ duration! = this.config.duration_ms / 1000.0;
+        this.progress = this.progress + (delta_time / duration);
+
+        ⎇ this.progress >= 1.0 {
+            this.progress = 1.0;
+            this.current = this.target;
+            this.running = nay;
+            ⮐ nay;
+        }
+
+        ≔ eased! = apply_easing(this.progress, this.config.easing);
+        this.current = this.start + (this.target - this.start) * eased;
+        yea
+    }
+
+    /// Spring physics tick
+    rite tick_spring(vary this, delta_time: f64) -> bool! {
+        ≔ spring! = &this.config.spring;
+        ≔ displacement! = this.target - this.current;
+        ≔ spring_force! = displacement * spring.stiffness;
+        ≔ damping_force! = -spring.damping * this.config.velocity;
+        ≔ acceleration! = spring_force + damping_force;
+
+        this.config.velocity = this.config.velocity + acceleration * delta_time;
+        this.current = this.current + this.config.velocity * delta_time;
+
+        // Check if settled
+        ⎇ (this.current - this.target).abs() < 0.001 && this.config.velocity.abs() < 0.001 {
+            this.current = this.target;
+            this.config.velocity = 0.0;
+            this.running = nay;
+            ⮐ nay;
+        }
+
+        yea
+    }
+
+    /// Physics-based tick (gravity, friction)
+    rite tick_physics(vary this, delta_time: f64) -> bool! {
+        // Simple physics with friction
+        this.config.velocity = this.config.velocity * (1.0 - this.config.friction * delta_time);
+        this.current = this.current + this.config.velocity * delta_time;
+
+        ⎇ this.config.velocity.abs() < 0.001 {
+            this.config.velocity = 0.0;
+            this.running = nay;
+            ⮐ nay;
+        }
+
+        yea
+    }
+
+    /// Get current value
+    ☉ rite get(&this) -> f64! {
+        this.current
+    }
+
+    /// Set value immediately (no animation)
+    ☉ rite set(vary this, value: f64) {
+        this.current = value;
+        this.target = value;
+        this.start = value;
+        this.progress = 1.0;
+        this.running = nay;
+    }
+
+    /// Check if animation is complete
+    ☉ rite is_complete(&this) -> bool! {
+        !this.running
+    }
+}
+
+/// Animation configuration
+☉ sigil AnimationConfig {
+    /// Animation type
+    ☉ animation_type: AnimationType! = AnimationType::Tween,
+    /// Duration in milliseconds (for tweens)
+    ☉ duration_ms: f64! = 300.0,
+    /// Easing function
+    ☉ easing: Easing! = Easing::EaseOutCubic,
+    /// Spring configuration
+    ☉ spring: SpringConfig! = SpringConfig::default(),
+    /// Current velocity (for spring/physics)
+    ☉ velocity: f64! = 0.0,
+    /// Friction (for physics)
+    ☉ friction: f64! = 0.1,
+    /// Delay before starting (ms)
+    ☉ delay_ms: f64! = 0.0
+}
+
+⊢ AnimationConfig {
+    ☉ rite default() -> This! {
+        AnimationConfig {
+            animation_type: AnimationType::Tween,
+            duration_ms: 300.0,
+            easing: Easing::EaseOutCubic,
+            spring: SpringConfig::default(),
+            velocity: 0.0,
+            friction: 0.1,
+            delay_ms: 0.0
+        }
+    }
+
+    ☉ rite tween(duration_ms: f64, easing: Easing) -> This! {
+        AnimationConfig {
+            animation_type: AnimationType::Tween,
+            duration_ms: duration_ms,
+            easing: easing,
+            ..AnimationConfig::default()
+        }
+    }
+
+    ☉ rite spring(stiffness: f64, damping: f64) -> This! {
+        AnimationConfig {
+            animation_type: AnimationType::Spring,
+            spring: SpringConfig { stiffness, damping, mass: 1.0 },
+            ..AnimationConfig::default()
+        }
+    }
+
+    ☉ rite spring_preset(preset: SpringPreset) -> This! {
+        AnimationConfig {
+            animation_type: AnimationType::Spring,
+            spring: SpringConfig::from_preset(preset),
+            ..AnimationConfig::default()
+        }
+    }
+}
+
+/// Animation type
+☉ ᛈ AnimationType {
+    /// Linear interpolation with easing
+    Tween,
+    /// Spring physics
+    Spring,
+    /// General physics (velocity, friction)
+    Physics
+}
+
+/// Spring configuration
+☉ sigil SpringConfig {
+    /// Spring stiffness (higher = snappier)
+    ☉ stiffness: f64! = 170.0,
+    /// Damping (higher = less bouncy)
+    ☉ damping: f64! = 26.0,
+    /// Mass of the object
+    ☉ mass: f64! = 1.0
+}
+
+⊢ SpringConfig {
+    ☉ rite default() -> This! {
+        SpringConfig {
+            stiffness: 170.0,
+            damping: 26.0,
+            mass: 1.0
+        }
+    }
+
+    ☉ rite from_preset(preset: SpringPreset) -> This! {
+        match preset {
+            SpringPreset::Gentle => SpringConfig { stiffness: 120.0, damping: 14.0, mass: 1.0 },
+            SpringPreset::Wobbly => SpringConfig { stiffness: 180.0, damping: 12.0, mass: 1.0 },
+            SpringPreset::Stiff => SpringConfig { stiffness: 210.0, damping: 20.0, mass: 1.0 },
+            SpringPreset::Slow => SpringConfig { stiffness: 280.0, damping: 60.0, mass: 1.0 },
+            SpringPreset::Molasses => SpringConfig { stiffness: 280.0, damping: 120.0, mass: 1.0 }
+        }
+    }
+}
+
+/// Spring presets (inspired by react-spring)
+☉ ᛈ SpringPreset {
+    /// Gentle, slow movement
+    Gentle,
+    /// Wobbly, bouncy movement
+    Wobbly,
+    /// Stiff, quick movement
+    Stiff,
+    /// Slow, heavy movement
+    Slow,
+    /// Very slow, viscous movement
+    Molasses
+}
+
+// ============================================================================
+// Easing Functions
+// ============================================================================
+
+/// Easing function types
+☉ ᛈ Easing {
+    // Linear
+    Linear,
+
+    // Quad
+    EaseInQuad,
+    EaseOutQuad,
+    EaseInOutQuad,
+
+    // Cubic
+    EaseInCubic,
+    EaseOutCubic,
+    EaseInOutCubic,
+
+    // Quart
+    EaseInQuart,
+    EaseOutQuart,
+    EaseInOutQuart,
+
+    // Quint
+    EaseInQuint,
+    EaseOutQuint,
+    EaseInOutQuint,
+
+    // Sine
+    EaseInSine,
+    EaseOutSine,
+    EaseInOutSine,
+
+    // Expo
+    EaseInExpo,
+    EaseOutExpo,
+    EaseInOutExpo,
+
+    // Circ
+    EaseInCirc,
+    EaseOutCirc,
+    EaseInOutCirc,
+
+    // Back (overshoot)
+    EaseInBack,
+    EaseOutBack,
+    EaseInOutBack,
+
+    // Elastic
+    EaseInElastic,
+    EaseOutElastic,
+    EaseInOutElastic,
+
+    // Bounce
+    EaseInBounce,
+    EaseOutBounce,
+    EaseInOutBounce,
+
+    // Custom cubic bezier
+    CubicBezier(f64, f64, f64, f64)
+}
+
+/// Apply easing function to progress
+☉ rite apply_easing(t: f64, easing: Easing) -> f64! {
+    match easing {
+        Easing::Linear => t,
+
+        // Quad
+        Easing::EaseInQuad => t * t,
+        Easing::EaseOutQuad => t * (2.0 - t),
+        Easing::EaseInOutQuad => ⎇ t < 0.5 { 2.0 * t * t } ⎉ { -1.0 + (4.0 - 2.0 * t) * t },
+
+        // Cubic
+        Easing::EaseInCubic => t * t * t,
+        Easing::EaseOutCubic => {
+            ≔ t1! = t - 1.0;
+            t1 * t1 * t1 + 1.0
+        },
+        Easing::EaseInOutCubic => ⎇ t < 0.5 { 4.0 * t * t * t } ⎉ { (t - 1.0) * (2.0 * t - 2.0) * (2.0 * t - 2.0) + 1.0 },
+
+        // Quart
+        Easing::EaseInQuart => t * t * t * t,
+        Easing::EaseOutQuart => {
+            ≔ t1! = t - 1.0;
+            1.0 - t1 * t1 * t1 * t1
+        },
+        Easing::EaseInOutQuart => ⎇ t < 0.5 { 8.0 * t * t * t * t } ⎉ {
+            ≔ t1! = t - 1.0;
+            1.0 - 8.0 * t1 * t1 * t1 * t1
+        },
+
+        // Quint
+        Easing::EaseInQuint => t * t * t * t * t,
+        Easing::EaseOutQuint => {
+            ≔ t1! = t - 1.0;
+            1.0 + t1 * t1 * t1 * t1 * t1
+        },
+        Easing::EaseInOutQuint => ⎇ t < 0.5 { 16.0 * t * t * t * t * t } ⎉ {
+            ≔ t1! = t - 1.0;
+            1.0 + 16.0 * t1 * t1 * t1 * t1 * t1
+        },
+
+        // Sine
+        Easing::EaseInSine => 1.0 - cos(t * PI / 2.0),
+        Easing::EaseOutSine => sin(t * PI / 2.0),
+        Easing::EaseInOutSine => -(cos(PI * t) - 1.0) / 2.0,
+
+        // Expo
+        Easing::EaseInExpo => ⎇ t == 0.0 { 0.0 } ⎉ { pow(2.0, 10.0 * t - 10.0) },
+        Easing::EaseOutExpo => ⎇ t == 1.0 { 1.0 } ⎉ { 1.0 - pow(2.0, -10.0 * t) },
+        Easing::EaseInOutExpo => {
+            ⎇ t == 0.0 { 0.0 }
+            ⎉ t == 1.0 { 1.0 }
+            ⎉ t < 0.5 { pow(2.0, 20.0 * t - 10.0) / 2.0 }
+            ⎉ { (2.0 - pow(2.0, -20.0 * t + 10.0)) / 2.0 }
+        },
+
+        // Circ
+        Easing::EaseInCirc => 1.0 - sqrt(1.0 - t * t),
+        Easing::EaseOutCirc => sqrt(1.0 - pow(t - 1.0, 2.0)),
+        Easing::EaseInOutCirc => ⎇ t < 0.5 {
+            (1.0 - sqrt(1.0 - pow(2.0 * t, 2.0))) / 2.0
+        } ⎉ {
+            (sqrt(1.0 - pow(-2.0 * t + 2.0, 2.0)) + 1.0) / 2.0
+        },
+
+        // Back
+        Easing::EaseInBack => {
+            ≔ c1! = 1.70158;
+            ≔ c3! = c1 + 1.0;
+            c3 * t * t * t - c1 * t * t
+        },
+        Easing::EaseOutBack => {
+            ≔ c1! = 1.70158;
+            ≔ c3! = c1 + 1.0;
+            ≔ t1! = t - 1.0;
+            1.0 + c3 * t1 * t1 * t1 + c1 * t1 * t1
+        },
+        Easing::EaseInOutBack => {
+            ≔ c1! = 1.70158;
+            ≔ c2! = c1 * 1.525;
+            ⎇ t < 0.5 {
+                (pow(2.0 * t, 2.0) * ((c2 + 1.0) * 2.0 * t - c2)) / 2.0
+            } ⎉ {
+                (pow(2.0 * t - 2.0, 2.0) * ((c2 + 1.0) * (t * 2.0 - 2.0) + c2) + 2.0) / 2.0
+            }
+        },
+
+        // Elastic
+        Easing::EaseInElastic => {
+            ≔ c4! = (2.0 * PI) / 3.0;
+            ⎇ t == 0.0 { 0.0 }
+            ⎉ t == 1.0 { 1.0 }
+            ⎉ { -pow(2.0, 10.0 * t - 10.0) * sin((t * 10.0 - 10.75) * c4) }
+        },
+        Easing::EaseOutElastic => {
+            ≔ c4! = (2.0 * PI) / 3.0;
+            ⎇ t == 0.0 { 0.0 }
+            ⎉ t == 1.0 { 1.0 }
+            ⎉ { pow(2.0, -10.0 * t) * sin((t * 10.0 - 0.75) * c4) + 1.0 }
+        },
+        Easing::EaseInOutElastic => {
+            ≔ c5! = (2.0 * PI) / 4.5;
+            ⎇ t == 0.0 { 0.0 }
+            ⎉ t == 1.0 { 1.0 }
+            ⎉ t < 0.5 { -(pow(2.0, 20.0 * t - 10.0) * sin((20.0 * t - 11.125) * c5)) / 2.0 }
+            ⎉ { (pow(2.0, -20.0 * t + 10.0) * sin((20.0 * t - 11.125) * c5)) / 2.0 + 1.0 }
+        },
+
+        // Bounce
+        Easing::EaseOutBounce => ease_out_bounce(t),
+        Easing::EaseInBounce => 1.0 - ease_out_bounce(1.0 - t),
+        Easing::EaseInOutBounce => ⎇ t < 0.5 {
+            (1.0 - ease_out_bounce(1.0 - 2.0 * t)) / 2.0
+        } ⎉ {
+            (1.0 + ease_out_bounce(2.0 * t - 1.0)) / 2.0
+        },
+
+        // Cubic bezier
+        Easing::CubicBezier(x1, y1, x2, y2) => cubic_bezier(t, x1, y1, x2, y2)
+    }
+}
+
+rite ease_out_bounce(t: f64) -> f64! {
+    ≔ n1! = 7.5625;
+    ≔ d1! = 2.75;
+
+    ⎇ t < 1.0 / d1 {
+        n1 * t * t
+    } ⎉ t < 2.0 / d1 {
+        ≔ t1! = t - 1.5 / d1;
+        n1 * t1 * t1 + 0.75
+    } ⎉ t < 2.5 / d1 {
+        ≔ t1! = t - 2.25 / d1;
+        n1 * t1 * t1 + 0.9375
+    } ⎉ {
+        ≔ t1! = t - 2.625 / d1;
+        n1 * t1 * t1 + 0.984375
+    }
+}
+
+/// Cubic bezier interpolation
+rite cubic_bezier(t: f64, x1: f64, y1: f64, x2: f64, y2: f64) -> f64! {
+    // Solve for t given x, then compute y
+    // Using Newton-Raphson method for finding t
+    ≔ vary x! = t;
+    for _ in 0..8 {
+        ≔ bx! = bezier_component(x, x1, x2) - t;
+        ⎇ bx.abs() < 0.0001 {
+            break;
+        }
+        ≔ dbx! = bezier_derivative(x, x1, x2);
+        x = x - bx / dbx;
+    }
+    bezier_component(x, y1, y2)
+}
+
+rite bezier_component(t: f64, p1: f64, p2: f64) -> f64! {
+    ≔ t2! = t * t;
+    ≔ t3! = t2 * t;
+    ≔ mt! = 1.0 - t;
+    ≔ mt2! = mt * mt;
+    ≔ mt3! = mt2 * mt;
+
+    3.0 * mt2 * t * p1 + 3.0 * mt * t2 * p2 + t3
+}
+
+rite bezier_derivative(t: f64, p1: f64, p2: f64) -> f64! {
+    ≔ t2! = t * t;
+    ≔ mt! = 1.0 - t;
+    ≔ mt2! = mt * mt;
+
+    3.0 * mt2 * p1 + 6.0 * mt * t * (p2 - p1) + 3.0 * t2 * (1.0 - p2)
+}
+
+// Math constants
+☉ const PI: f64 = 3.14159265358979323846;
+
+// Math functions (extern or implemented)
+extern "C" {
+    rite sin(x: f64) -> f64;
+    rite cos(x: f64) -> f64;
+    rite sqrt(x: f64) -> f64;
+    rite pow(x: f64, y: f64) -> f64;
+}
+
+// ============================================================================
+// Keyframe Animations
+// ============================================================================
+
+/// Keyframe definition
+☉ sigil Keyframe {
+    /// Offset (0.0 to 1.0)
+    ☉ offset: f64!,
+    /// Property values at this keyframe
+    ☉ values: HashMap<String, f64>!,
+    /// Easing to next keyframe
+    ☉ easing: Easing! = Easing::Linear
+}
+
+⊢ Keyframe {
+    ☉ rite new(offset: f64) -> This! {
+        Keyframe {
+            offset: offset,
+            values: HashMap::new(),
+            easing: Easing::Linear
+        }
+    }
+
+    ☉ rite with_value(vary this, property: &str, value: f64) -> This! {
+        this.values.insert(property.to_string(), value);
+        this
+    }
+
+    ☉ rite with_easing(vary this, easing: Easing) -> This! {
+        this.easing = easing;
+        this
+    }
+}
+
+/// Keyframe animation
+☉ sigil KeyframeAnimation {
+    /// Keyframes sorted by offset
+    keyframes: Vec<Keyframe>!,
+    /// Current progress
+    progress: f64!,
+    /// Duration in milliseconds
+    duration_ms: f64!,
+    /// Number of iterations (0 = infinite)
+    iterations: u32!,
+    /// Current iteration
+    current_iteration: u32!,
+    /// Play direction
+    direction: AnimationDirection!,
+    /// Fill mode
+    fill: FillMode!,
+    /// Whether playing
+    playing: bool!,
+    /// Whether reversed (for alternate)
+    reversed: bool!
+}
+
+⊢ KeyframeAnimation {
+    ☉ rite new(keyframes: Vec<Keyframe>, duration_ms: f64) -> This! {
+        ≔ vary sorted! = keyframes;
+        sorted.sort_by(|a, b| a.offset.partial_cmp(&b.offset).unwrap_or(std::cmp::Ordering::Equal));
+
+        KeyframeAnimation {
+            keyframes: sorted,
+            progress: 0.0,
+            duration_ms: duration_ms,
+            iterations: 1,
+            current_iteration: 0,
+            direction: AnimationDirection::Normal,
+            fill: FillMode::None,
+            playing: nay,
+            reversed: nay
+        }
+    }
+
+    ☉ rite with_iterations(vary this, iterations: u32) -> This! {
+        this.iterations = iterations;
+        this
+    }
+
+    ☉ rite with_direction(vary this, direction: AnimationDirection) -> This! {
+        this.direction = direction;
+        this
+    }
+
+    ☉ rite with_fill(vary this, fill: FillMode) -> This! {
+        this.fill = fill;
+        this
+    }
+
+    ☉ rite infinite(vary this) -> This! {
+        this.iterations = 0;
+        this
+    }
+
+    ☉ rite play(vary this) {
+        this.playing = yea;
+    }
+
+    ☉ rite pause(vary this) {
+        this.playing = nay;
+    }
+
+    ☉ rite reset(vary this) {
+        this.progress = 0.0;
+        this.current_iteration = 0;
+        this.reversed = nay;
+    }
+
+    ☉ rite tick(vary this, delta_time: f64) -> bool! {
+        ⎇ !this.playing {
+            ⮐ nay;
+        }
+
+        ≔ delta_progress! = delta_time / (this.duration_ms / 1000.0);
+        this.progress = this.progress + delta_progress;
+
+        ⎇ this.progress >= 1.0 {
+            this.current_iteration = this.current_iteration + 1;
+
+            ⎇ this.iterations > 0 && this.current_iteration >= this.iterations {
+                this.playing = nay;
+                this.progress = 1.0;
+                ⮐ nay;
+            }
+
+            match this.direction {
+                AnimationDirection::Normal => {
+                    this.progress = 0.0;
+                }
+                AnimationDirection::Reverse => {
+                    this.progress = 0.0;
+                }
+                AnimationDirection::Alternate => {
+                    this.reversed = !this.reversed;
+                    this.progress = 0.0;
+                }
+                AnimationDirection::AlternateReverse => {
+                    this.reversed = !this.reversed;
+                    this.progress = 0.0;
+                }
+            }
+        }
+
+        yea
+    }
+
+    /// Get interpolated value for a property
+    ☉ rite get_value(&this, property: &str) -> Option<f64>? {
+        ≔ effective_progress! = match this.direction {
+            AnimationDirection::Reverse => 1.0 - this.progress,
+            AnimationDirection::AlternateReverse => {
+                ⎇ this.reversed { this.progress } ⎉ { 1.0 - this.progress }
+            }
+            AnimationDirection::Alternate => {
+                ⎇ this.reversed { 1.0 - this.progress } ⎉ { this.progress }
+            }
+            _ => this.progress
+        };
+
+        // Find surrounding keyframes
+        ≔ vary prev_kf: Option<&Keyframe>? = None;
+        ≔ vary next_kf: Option<&Keyframe>? = None;
+
+        for kf in &this.keyframes {
+            ⎇ kf.offset <= effective_progress {
+                prev_kf = Some(kf);
+            } ⎉ {
+                next_kf = Some(kf);
+                break;
+            }
+        }
+
+        match (prev_kf, next_kf) {
+            (Some(prev), Some(next)) => {
+                ≔ prev_val! = prev.values.get(property)?;
+                ≔ next_val! = next.values.get(property)?;
+
+                ≔ local_progress! = (effective_progress - prev.offset) / (next.offset - prev.offset);
+                ≔ eased! = apply_easing(local_progress, prev.easing);
+
+                Some(prev_val + (next_val - prev_val) * eased)
+            }
+            (Some(prev), None) => prev.values.get(property).copied(),
+            (None, Some(next)) => next.values.get(property).copied(),
+            (None, None) => None
+        }
+    }
+}
+
+/// Animation play direction
+☉ ᛈ AnimationDirection {
+    /// Normal playback
+    Normal,
+    /// Reverse playback
+    Reverse,
+    /// Alternate between normal and reverse
+    Alternate,
+    /// Alternate starting with reverse
+    AlternateReverse
+}
+
+/// Animation fill mode
+☉ ᛈ FillMode {
+    /// No fill
+    None,
+    /// Keep values at end
+    Forwards,
+    /// Apply values before start
+    Backwards,
+    /// Both forwards and backwards
+    Both
+}
+
+// ============================================================================
+// CSS Transition Support
+// ============================================================================
+
+/// CSS-like transition definition
+☉ sigil Transition {
+    /// Property to animate
+    ☉ property: String!,
+    /// Duration in milliseconds
+    ☉ duration_ms: f64! = 300.0,
+    /// Easing function
+    ☉ easing: Easing! = Easing::EaseOutCubic,
+    /// Delay before starting
+    ☉ delay_ms: f64! = 0.0
+}
+
+⊢ Transition {
+    ☉ rite new(property: &str) -> This! {
+        Transition {
+            property: property.to_string(),
+            duration_ms: 300.0,
+            easing: Easing::EaseOutCubic,
+            delay_ms: 0.0
+        }
+    }
+
+    ☉ rite duration(vary this, ms: f64) -> This! {
+        this.duration_ms = ms;
+        this
+    }
+
+    ☉ rite easing(vary this, easing: Easing) -> This! {
+        this.easing = easing;
+        this
+    }
+
+    ☉ rite delay(vary this, ms: f64) -> This! {
+        this.delay_ms = ms;
+        this
+    }
+
+    /// Convert to CSS string
+    ☉ rite to_css(&this) -> String! {
+        ≔ easing_css! = easing_to_css(this.easing);
+        format!("{} {}ms {} {}ms",
+            this.property,
+            this.duration_ms as i32,
+            easing_css,
+            this.delay_ms as i32
+        )
+    }
+}
+
+/// Convert easing to CSS timing function
+rite easing_to_css(easing: Easing) -> String! {
+    match easing {
+        Easing::Linear => "linear".to_string(),
+        Easing::EaseInQuad => "cubic-bezier(0.55, 0.085, 0.68, 0.53)".to_string(),
+        Easing::EaseOutQuad => "cubic-bezier(0.25, 0.46, 0.45, 0.94)".to_string(),
+        Easing::EaseInOutQuad => "cubic-bezier(0.455, 0.03, 0.515, 0.955)".to_string(),
+        Easing::EaseInCubic => "cubic-bezier(0.55, 0.055, 0.675, 0.19)".to_string(),
+        Easing::EaseOutCubic => "cubic-bezier(0.215, 0.61, 0.355, 1)".to_string(),
+        Easing::EaseInOutCubic => "cubic-bezier(0.645, 0.045, 0.355, 1)".to_string(),
+        Easing::EaseInBack => "cubic-bezier(0.6, -0.28, 0.735, 0.045)".to_string(),
+        Easing::EaseOutBack => "cubic-bezier(0.175, 0.885, 0.32, 1.275)".to_string(),
+        Easing::EaseInOutBack => "cubic-bezier(0.68, -0.55, 0.265, 1.55)".to_string(),
+        Easing::CubicBezier(x1, y1, x2, y2) => format!("cubic-bezier({}, {}, {}, {})", x1, y1, x2, y2),
+        _ => "ease".to_string()
+    }
+}
+
+/// Create CSS transition string from multiple transitions
+☉ rite transitions_to_css(transitions: &[Transition]) -> String! {
+    transitions.iter()
+        .map(|t| t.to_css())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_animated_value_basic() {
+        ≔ vary val! = AnimatedValue::new(0.0);
+        assert_eq!(val.get(), 0.0);
+
+        val.set(100.0);
+        assert_eq!(val.get(), 100.0);
+    }
+
+    #[test]
+    rite test_animated_value_tween() {
+        ≔ vary val! = AnimatedValue::with_config(0.0, AnimationConfig::tween(1000.0, Easing::Linear));
+        val.animate_to(100.0);
+
+        assert!(val.running);
+
+        // Simulate half-way through
+        val.tick(0.5);
+        assert!((val.get() - 50.0).abs() < 0.1);
+
+        // Complete
+        val.tick(0.5);
+        assert_eq!(val.get(), 100.0);
+        assert!(!val.running);
+    }
+
+    #[test]
+    rite test_spring_config_presets() {
+        ≔ gentle! = SpringConfig::from_preset(SpringPreset::Gentle);
+        assert_eq!(gentle.stiffness, 120.0);
+
+        ≔ stiff! = SpringConfig::from_preset(SpringPreset::Stiff);
+        assert_eq!(stiff.stiffness, 210.0);
+    }
+
+    #[test]
+    rite test_easing_linear() {
+        assert_eq!(apply_easing(0.0, Easing::Linear), 0.0);
+        assert_eq!(apply_easing(0.5, Easing::Linear), 0.5);
+        assert_eq!(apply_easing(1.0, Easing::Linear), 1.0);
+    }
+
+    #[test]
+    rite test_easing_ease_out_cubic() {
+        // EaseOutCubic should be faster at start
+        ≔ at_half! = apply_easing(0.5, Easing::EaseOutCubic);
+        assert!(at_half > 0.5);
+    }
+
+    #[test]
+    rite test_keyframe_animation() {
+        ≔ keyframes! = vec![
+            Keyframe::new(0.0).with_value("opacity", 0.0),
+            Keyframe::new(0.5).with_value("opacity", 1.0),
+            Keyframe::new(1.0).with_value("opacity", 0.5)
+        ];
+
+        ≔ vary anim! = KeyframeAnimation::new(keyframes, 1000.0);
+        anim.play();
+
+        assert_eq!(anim.get_value("opacity"), Some(0.0));
+
+        anim.progress = 0.25;
+        ≔ val_25! = anim.get_value("opacity").unwrap();
+        assert!(val_25 > 0.0 && val_25 < 1.0);
+
+        anim.progress = 0.5;
+        assert_eq!(anim.get_value("opacity"), Some(1.0));
+
+        anim.progress = 1.0;
+        assert_eq!(anim.get_value("opacity"), Some(0.5));
+    }
+
+    #[test]
+    rite test_transition_to_css() {
+        ≔ t! = Transition::new("opacity")
+            .duration(300.0)
+            .easing(Easing::EaseOutCubic)
+            .delay(100.0);
+
+        ≔ css! = t.to_css();
+        assert!(css.contains("opacity"));
+        assert!(css.contains("300ms"));
+        assert!(css.contains("cubic-bezier"));
+    }
+
+    #[test]
+    rite test_transitions_to_css() {
+        ≔ transitions! = vec![
+            Transition::new("opacity").duration(300.0),
+            Transition::new("transform").duration(500.0)
+        ];
+
+        ≔ css! = transitions_to_css(&transitions);
+        assert!(css.contains("opacity"));
+        assert!(css.contains("transform"));
+        assert!(css.contains(","));
+    }
+}

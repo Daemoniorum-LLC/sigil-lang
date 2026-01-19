@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qliphoth WASM Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+            min-height: 100vh;
+            color: #e5e5e5;
+            padding: 2rem;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 {
+            font-size: 2rem;
+            background: linear-gradient(90deg, #e94560, #6366f1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+        }
+        .status {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .status.loading { border-color: #f59e0b; }
+        .status.success { border-color: #10b981; }
+        .status.error { border-color: #ef4444; }
+        .console {
+            background: #0d0d0d;
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9rem;
+            min-height: 200px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .console-line { margin: 0.25rem 0; }
+        .console-line.info { color: #60a5fa; }
+        .console-line.output { color: #34d399; }
+        .console-line.error { color: #f87171; }
+        .demo-section {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        h2 { color: #a78bfa; margin-bottom: 1rem; font-size: 1.25rem; }
+        button {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+            margin-right: 0.5rem;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #e94560, #c03548);
+            color: white;
+        }
+        .btn-secondary {
+            background: rgba(99, 102, 241, 0.2);
+            color: #818cf8;
+            border: 1px solid #6366f1;
+        }
+        button:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        .code {
+            background: #1e1e2e;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            overflow-x: auto;
+        }
+        pre { color: #cdd6f4; font-family: 'Fira Code', monospace; font-size: 0.85rem; }
+        .keyword { color: #f38ba8; }
+        .function { color: #89b4fa; }
+        .string { color: #a6e3a1; }
+        .comment { color: #6c7086; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Qliphoth WASM Demo</h1>
+
+        <div id="status" class="status loading">
+            Loading WASM module...
+        </div>
+
+        <div class="console" id="console"></div>
+
+        <div class="demo-section">
+            <h2>Source Code (hello_wasm.sigil)</h2>
+            <div class="code">
+<pre><span class="comment">/// Simple WASM test</span>
+
+<span class="keyword">rite</span> <span class="function">main</span>() {
+    <span class="function">println</span>(<span class="string">42</span>);
+    <span class="function">println</span>(<span class="string">"Hello from WASM!"</span>);
+}</pre>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>Interactive Demo</h2>
+            <button class="btn-primary" onclick="runWasm()">Run WASM</button>
+            <button class="btn-secondary" onclick="clearConsole()">Clear Console</button>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import the Sigil runtime
+        import { SigilRuntime, loadSigilModule } from './runtime/sigil_runtime.js';
+
+        // Redirect console.log to our UI console
+        const consoleEl = document.getElementById('console');
+        const statusEl = document.getElementById('status');
+
+        function logToConsole(message, type = 'output') {
+            const line = document.createElement('div');
+            line.className = `console-line ${type}`;
+            line.textContent = `> ${message}`;
+            consoleEl.appendChild(line);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        // Store original console.log
+        const originalLog = console.log;
+
+        // Global runtime and instance
+        window.sigilRuntime = null;
+        window.sigilInstance = null;
+
+        async function initWasm() {
+            try {
+                logToConsole('Initializing Sigil WASM Runtime...', 'info');
+
+                const runtime = new SigilRuntime();
+
+                // Override console methods to capture output
+                const imports = runtime.getImports();
+                const originalPrint = imports.console.println_i64;
+                const originalPrintStr = imports.console.println_str;
+
+                imports.console.println_i64 = (val) => {
+                    logToConsole(String(Number(val)));
+                    originalPrint(val);
+                };
+
+                imports.console.println_str = (ptr, len) => {
+                    const str = runtime.readString(ptr);
+                    logToConsole(str);
+                    originalPrintStr(ptr, len);
+                };
+
+                imports.console.print = (val) => {
+                    const str = runtime.strings.get(Number(val));
+                    if (str !== undefined) {
+                        logToConsole(str);
+                    } else {
+                        logToConsole(String(Number(val)));
+                    }
+                };
+
+                logToConsole('Fetching WASM module...', 'info');
+                const response = await fetch('./hello.wasm');
+
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch WASM: ${response.status}`);
+                }
+
+                const wasmBuffer = await response.arrayBuffer();
+                logToConsole(`WASM loaded: ${wasmBuffer.byteLength} bytes`, 'info');
+
+                logToConsole('Instantiating WebAssembly module...', 'info');
+                const { instance } = await WebAssembly.instantiate(wasmBuffer, imports);
+
+                runtime.init(instance);
+                window.sigilRuntime = runtime;
+                window.sigilInstance = instance;
+
+                statusEl.className = 'status success';
+                statusEl.textContent = 'WASM module loaded successfully!';
+                logToConsole('Ready! Click "Run WASM" to execute.', 'info');
+
+            } catch (err) {
+                statusEl.className = 'status error';
+                statusEl.textContent = `Error: ${err.message}`;
+                logToConsole(`Error: ${err.message}`, 'error');
+                console.error(err);
+            }
+        }
+
+        window.runWasm = function() {
+            if (!window.sigilInstance) {
+                logToConsole('WASM not loaded yet!', 'error');
+                return;
+            }
+
+            logToConsole('--- Running main() ---', 'info');
+
+            try {
+                if (window.sigilInstance.exports.main) {
+                    window.sigilInstance.exports.main();
+                    logToConsole('--- Execution complete ---', 'info');
+                } else {
+                    logToConsole('No main() function exported', 'error');
+                }
+            } catch (err) {
+                logToConsole(`Runtime error: ${err.message}`, 'error');
+            }
+        };
+
+        window.clearConsole = function() {
+            consoleEl.innerHTML = '';
+            logToConsole('Console cleared', 'info');
+        };
+
+        // Initialize on load
+        initWasm();
+    </script>
+</body>
+</html>

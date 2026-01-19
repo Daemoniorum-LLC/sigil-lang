@@ -1,0 +1,6 @@
+/// Simple WASM test
+
+☉ rite main() {
+    println(42);
+    println("Hello from WASM!");
+}

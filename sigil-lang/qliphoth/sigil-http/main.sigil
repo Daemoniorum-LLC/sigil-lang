@@ -1,0 +1,89 @@
+/// Sigil HTTP Server - Minimal Version
+/// A simple static file server written in Sigil.
+
+/// Build an HTTP response
+rite build_response(status: i64, content_type: &str, body: &str) → String {
+    ≔ content_length = len(body);
+    ≔ status_text = ⎇ status == 200 { "OK" } ⎉ ⎇ status == 404 { "Not Found" } ⎉ { "Error" };
+    format("HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", status, status_text, content_type, content_length, body)
+}
+
+/// Parse HTTP request path
+rite parse_request(request: &str) → String {
+    ≔ parts = split(request, " ");
+    ⎇ len(parts) >= 2 {
+        parts[1]
+    } ⎉ {
+        "/"
+    }
+}
+
+/// Handle a single HTTP request
+rite handle_request(stream: TcpStream, root_dir: &str) {
+    println("[DEBUG] handle_request start");
+
+    ≔ reader = BufReader·new(stream);
+    ≔ request_line = BufReader·read_line(reader);
+
+    ⌥ request_line {
+        Result·Ok(line) => {
+            ≔ path = parse_request(line);
+            println(format("[HTTP] {}", path));
+
+            ≔ file_path = ⎇ path == "/" {
+                format("{}/index.html", root_dir)
+            } ⎉ {
+                format("{}{}", root_dir, path)
+            };
+
+            ≔ file_result = fs·read_to_string(file_path);
+
+            ⌥ file_result {
+                Result·Ok(content) => {
+                    ≔ response = build_response(200, "text/html; charset=utf-8", content);
+                    TcpStream·write_all(stream, response);
+                },
+                Result·Err(_) => {
+                    ≔ body = format("<h1>404 Not Found</h1><p>{}</p>", path);
+                    ≔ response = build_response(404, "text/html; charset=utf-8", body);
+                    TcpStream·write_all(stream, response);
+                },
+            }
+        },
+        Result·Err(e) => {
+            println(format("[ERROR] {}", e));
+        },
+    }
+}
+
+/// Main entry point
+rite main() {
+    ≔ addr = "127.0.0.1:9999";
+    ≔ root_dir = ".";
+
+    println("╔═════════════════════════════════════════╗");
+    println("║        Sigil HTTP Server v0.2           ║");
+    println("╠═════════════════════════════════════════╣");
+    println(format("║  http://{}                 ║", addr));
+    println("╚═════════════════════════════════════════╝");
+
+    ⌥ TcpListener·bind(addr) {
+        Result·Ok(listener) => {
+            println(format("[INFO] Listening on {}", addr));
+
+            ∞ {
+                ⌥ TcpListener·accept(listener) {
+                    Result·Ok(stream) => {
+                        handle_request(stream, root_dir);
+                    },
+                    Result·Err(e) => {
+                        println(format("[ERROR] Accept: {}", e));
+                    },
+                }
+            }
+        },
+        Result·Err(e) => {
+            println(format("[FATAL] Bind failed: {}", e));
+        },
+    }
+}

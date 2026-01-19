@@ -1,0 +1,820 @@
+// Gesture Support Module
+// Touch and pointer gesture recognition for Qliphoth
+
+use std::collections::HashMap;
+use crate::hooks::{use_state, use_ref, use_effect, use_callback};
+use crate::core::events::{Event, EventType};
+
+// ============================================================================
+// Gesture Types
+// ============================================================================
+
+/// Point in 2D space
+☉ sigil Point {
+    ☉ x: f64!,
+    ☉ y: f64!
+}
+
+⊢ Point {
+    ☉ rite new(x: f64, y: f64) -> This! {
+        Point { x, y }
+    }
+
+    ☉ rite zero() -> This! {
+        Point { x: 0.0, y: 0.0 }
+    }
+
+    ☉ rite distance(&this, other: &Point) -> f64! {
+        ≔ dx! = this.x - other.x;
+        ≔ dy! = this.y - other.y;
+        sqrt(dx * dx + dy * dy)
+    }
+
+    ☉ rite angle(&this, other: &Point) -> f64! {
+        atan2(other.y - this.y, other.x - this.x)
+    }
+}
+
+/// Velocity in 2D space
+☉ sigil Velocity {
+    ☉ x: f64!,
+    ☉ y: f64!
+}
+
+⊢ Velocity {
+    ☉ rite zero() -> This! {
+        Velocity { x: 0.0, y: 0.0 }
+    }
+
+    ☉ rite magnitude(&this) -> f64! {
+        sqrt(this.x * this.x + this.y * this.y)
+    }
+}
+
+/// Gesture state
+☉ ᛈ GestureState {
+    /// No active gesture
+    Idle,
+    /// Gesture started
+    Started,
+    /// Gesture in progress
+    Active,
+    /// Gesture completed
+    Ended,
+    /// Gesture cancelled
+    Cancelled
+}
+
+// ============================================================================
+// Pan Gesture
+// ============================================================================
+
+/// Pan gesture state
+☉ sigil PanState {
+    /// Current state
+    ☉ state: GestureState!,
+    /// Current position delta from start
+    ☉ delta: Point!,
+    /// Absolute position
+    ☉ position: Point!,
+    /// Start position
+    ☉ start: Point!,
+    /// Current velocity
+    ☉ velocity: Velocity!,
+    /// Direction of movement
+    ☉ direction: PanDirection!
+}
+
+/// Pan direction
+☉ ᛈ PanDirection {
+    None,
+    Up,
+    Down,
+    Left,
+    Right
+}
+
+/// Pan gesture hook
+///
+/// ## Example
+///
+/// ```sigil
+/// ≔ pan! = use_pan(|state| {
+///     // Handle pan gesture
+///     println!("Pan delta: ({}, {})", state.delta.x, state.delta.y);
+/// });
+///
+/// div[
+///     onpointerdown: pan.handlers.on_pointer_down,
+///     onpointermove: pan.handlers.on_pointer_move,
+///     onpointerup: pan.handlers.on_pointer_up,
+///     style: format!("transform: translate({}px, {}px)", pan.state.delta.x, pan.state.delta.y)
+/// ] {
+///     "Drag me!"
+/// }
+/// ```
+☉ rite use_pan(on_pan: fn(&PanState)) -> PanGesture! {
+    use_pan_config(PanConfig::default(), on_pan)
+}
+
+/// Pan configuration
+☉ sigil PanConfig {
+    /// Minimum distance before pan starts
+    ☉ threshold: f64! = 5.0,
+    /// Lock to axis after threshold
+    ☉ lock_axis: bool! = nay,
+    /// Enable momentum after release
+    ☉ momentum: bool! = yea,
+    /// Momentum friction
+    ☉ friction: f64! = 0.95
+}
+
+⊢ PanConfig {
+    ☉ rite default() -> This! {
+        PanConfig {
+            threshold: 5.0,
+            lock_axis: nay,
+            momentum: yea,
+            friction: 0.95
+        }
+    }
+}
+
+/// Pan gesture handler
+☉ sigil PanGesture {
+    /// Current pan state
+    ☉ state: PanState!,
+    /// Event handlers to attach
+    ☉ handlers: PanHandlers!
+}
+
+/// Pan event handlers
+☉ sigil PanHandlers {
+    ☉ on_pointer_down: fn(Event)!,
+    ☉ on_pointer_move: fn(Event)!,
+    ☉ on_pointer_up: fn(Event)!,
+    ☉ on_pointer_cancel: fn(Event)!
+}
+
+☉ rite use_pan_config(config: PanConfig, on_pan: fn(&PanState)) -> PanGesture! {
+    ≔ (state, set_state)! = use_state(PanState {
+        state: GestureState::Idle,
+        delta: Point::zero(),
+        position: Point::zero(),
+        start: Point::zero(),
+        velocity: Velocity::zero(),
+        direction: PanDirection::None
+    });
+
+    ≔ last_position! = use_ref(Point::zero());
+    ≔ last_time! = use_ref(0.0);
+    ≔ is_panning! = use_ref(nay);
+
+    ≔ on_pointer_down! = use_callback(|event: Event| {
+        ≔ pos! = Point::new(event.client_x, event.client_y);
+        last_position.set(pos.clone());
+        last_time.set(event.timestamp);
+        is_panning.set(yea);
+
+        set_state(|vary s| {
+            s.state = GestureState::Started;
+            s.start = pos.clone();
+            s.position = pos;
+            s.delta = Point::zero();
+            s.velocity = Velocity::zero();
+        });
+    }, []);
+
+    ≔ on_pointer_move! = use_callback(|event: Event| {
+        ⎇ !is_panning.current() {
+            ⮐;
+        }
+
+        ≔ pos! = Point::new(event.client_x, event.client_y);
+        ≔ last! = last_position.current();
+        ≔ dt! = (event.timestamp - last_time.current()) / 1000.0;
+
+        // Calculate velocity
+        ≔ vx! = ⎇ dt > 0.0 { (pos.x - last.x) / dt } ⎉ { 0.0 };
+        ≔ vy! = ⎇ dt > 0.0 { (pos.y - last.y) / dt } ⎉ { 0.0 };
+
+        last_position.set(pos.clone());
+        last_time.set(event.timestamp);
+
+        set_state(|vary s| {
+            s.state = GestureState::Active;
+            s.position = pos.clone();
+            s.delta = Point::new(pos.x - s.start.x, pos.y - s.start.y);
+            s.velocity = Velocity { x: vx, y: vy };
+
+            // Determine direction
+            s.direction = ⎇ vx.abs() > vy.abs() {
+                ⎇ vx > 0.0 { PanDirection::Right } ⎉ { PanDirection::Left }
+            } ⎉ {
+                ⎇ vy > 0.0 { PanDirection::Down } ⎉ { PanDirection::Up }
+            };
+        });
+
+        on_pan(&state);
+    }, [state]);
+
+    ≔ on_pointer_up! = use_callback(|event: Event| {
+        is_panning.set(nay);
+
+        set_state(|vary s| {
+            s.state = GestureState::Ended;
+        });
+
+        on_pan(&state);
+    }, [state]);
+
+    ≔ on_pointer_cancel! = use_callback(|event: Event| {
+        is_panning.set(nay);
+
+        set_state(|vary s| {
+            s.state = GestureState::Cancelled;
+            s.delta = Point::zero();
+            s.velocity = Velocity::zero();
+        });
+    }, []);
+
+    PanGesture {
+        state: state,
+        handlers: PanHandlers {
+            on_pointer_down: on_pointer_down,
+            on_pointer_move: on_pointer_move,
+            on_pointer_up: on_pointer_up,
+            on_pointer_cancel: on_pointer_cancel
+        }
+    }
+}
+
+// ============================================================================
+// Pinch Gesture
+// ============================================================================
+
+/// Pinch gesture state
+☉ sigil PinchState {
+    /// Current state
+    ☉ state: GestureState!,
+    /// Current scale factor
+    ☉ scale: f64!,
+    /// Scale delta from last update
+    ☉ scale_delta: f64!,
+    /// Center point between touches
+    ☉ center: Point!,
+    /// Distance between touches
+    ☉ distance: f64!
+}
+
+/// Pinch gesture hook (for touch devices)
+///
+/// ## Example
+///
+/// ```sigil
+/// ≔ pinch! = use_pinch(|state| {
+///     println!("Scale: {}", state.scale);
+/// });
+///
+/// div[
+///     ontouchstart: pinch.handlers.on_touch_start,
+///     ontouchmove: pinch.handlers.on_touch_move,
+///     ontouchend: pinch.handlers.on_touch_end,
+///     style: format!("transform: scale({})", pinch.state.scale)
+/// ] {
+///     "Pinch to zoom"
+/// }
+/// ```
+☉ rite use_pinch(on_pinch: fn(&PinchState)) -> PinchGesture! {
+    ≔ (state, set_state)! = use_state(PinchState {
+        state: GestureState::Idle,
+        scale: 1.0,
+        scale_delta: 0.0,
+        center: Point::zero(),
+        distance: 0.0
+    });
+
+    ≔ initial_distance! = use_ref(0.0);
+    ≔ initial_scale! = use_ref(1.0);
+
+    ≔ on_touch_start! = use_callback(|event: Event| {
+        ⎇ event.touches.len() == 2 {
+            ≔ t1! = &event.touches[0];
+            ≔ t2! = &event.touches[1];
+            ≔ p1! = Point::new(t1.client_x, t1.client_y);
+            ≔ p2! = Point::new(t2.client_x, t2.client_y);
+
+            ≔ dist! = p1.distance(&p2);
+            initial_distance.set(dist);
+            initial_scale.set(state.scale);
+
+            set_state(|vary s| {
+                s.state = GestureState::Started;
+                s.center = Point::new(
+                    (p1.x + p2.x) / 2.0,
+                    (p1.y + p2.y) / 2.0
+                );
+                s.distance = dist;
+            });
+        }
+    }, [state]);
+
+    ≔ on_touch_move! = use_callback(|event: Event| {
+        ⎇ event.touches.len() == 2 {
+            ≔ t1! = &event.touches[0];
+            ≔ t2! = &event.touches[1];
+            ≔ p1! = Point::new(t1.client_x, t1.client_y);
+            ≔ p2! = Point::new(t2.client_x, t2.client_y);
+
+            ≔ dist! = p1.distance(&p2);
+            ≔ init_dist! = initial_distance.current();
+            ≔ init_scale! = initial_scale.current();
+
+            ≔ new_scale! = ⎇ init_dist > 0.0 { init_scale * (dist / init_dist) } ⎉ { 1.0 };
+
+            set_state(|vary s| {
+                s.state = GestureState::Active;
+                s.scale_delta = new_scale - s.scale;
+                s.scale = new_scale;
+                s.center = Point::new(
+                    (p1.x + p2.x) / 2.0,
+                    (p1.y + p2.y) / 2.0
+                );
+                s.distance = dist;
+            });
+
+            on_pinch(&state);
+        }
+    }, [state]);
+
+    ≔ on_touch_end! = use_callback(|event: Event| {
+        set_state(|vary s| {
+            s.state = GestureState::Ended;
+            s.scale_delta = 0.0;
+        });
+        on_pinch(&state);
+    }, [state]);
+
+    PinchGesture {
+        state: state,
+        handlers: PinchHandlers {
+            on_touch_start: on_touch_start,
+            on_touch_move: on_touch_move,
+            on_touch_end: on_touch_end
+        }
+    }
+}
+
+/// Pinch gesture handler
+☉ sigil PinchGesture {
+    ☉ state: PinchState!,
+    ☉ handlers: PinchHandlers!
+}
+
+/// Pinch event handlers
+☉ sigil PinchHandlers {
+    ☉ on_touch_start: fn(Event)!,
+    ☉ on_touch_move: fn(Event)!,
+    ☉ on_touch_end: fn(Event)!
+}
+
+// ============================================================================
+// Rotate Gesture
+// ============================================================================
+
+/// Rotate gesture state
+☉ sigil RotateState {
+    ☉ state: GestureState!,
+    /// Current rotation in degrees
+    ☉ rotation: f64!,
+    /// Rotation delta from last update
+    ☉ rotation_delta: f64!,
+    /// Center point
+    ☉ center: Point!
+}
+
+/// Rotate gesture hook
+☉ rite use_rotate(on_rotate: fn(&RotateState)) -> RotateGesture! {
+    ≔ (state, set_state)! = use_state(RotateState {
+        state: GestureState::Idle,
+        rotation: 0.0,
+        rotation_delta: 0.0,
+        center: Point::zero()
+    });
+
+    ≔ initial_angle! = use_ref(0.0);
+    ≔ initial_rotation! = use_ref(0.0);
+
+    ≔ on_touch_start! = use_callback(|event: Event| {
+        ⎇ event.touches.len() == 2 {
+            ≔ t1! = &event.touches[0];
+            ≔ t2! = &event.touches[1];
+            ≔ p1! = Point::new(t1.client_x, t1.client_y);
+            ≔ p2! = Point::new(t2.client_x, t2.client_y);
+
+            ≔ angle! = p1.angle(&p2) * 180.0 / PI;
+            initial_angle.set(angle);
+            initial_rotation.set(state.rotation);
+
+            set_state(|vary s| {
+                s.state = GestureState::Started;
+                s.center = Point::new(
+                    (p1.x + p2.x) / 2.0,
+                    (p1.y + p2.y) / 2.0
+                );
+            });
+        }
+    }, [state]);
+
+    ≔ on_touch_move! = use_callback(|event: Event| {
+        ⎇ event.touches.len() == 2 {
+            ≔ t1! = &event.touches[0];
+            ≔ t2! = &event.touches[1];
+            ≔ p1! = Point::new(t1.client_x, t1.client_y);
+            ≔ p2! = Point::new(t2.client_x, t2.client_y);
+
+            ≔ angle! = p1.angle(&p2) * 180.0 / PI;
+            ≔ init_angle! = initial_angle.current();
+            ≔ init_rotation! = initial_rotation.current();
+
+            ≔ new_rotation! = init_rotation + (angle - init_angle);
+
+            set_state(|vary s| {
+                s.state = GestureState::Active;
+                s.rotation_delta = new_rotation - s.rotation;
+                s.rotation = new_rotation;
+                s.center = Point::new(
+                    (p1.x + p2.x) / 2.0,
+                    (p1.y + p2.y) / 2.0
+                );
+            });
+
+            on_rotate(&state);
+        }
+    }, [state]);
+
+    ≔ on_touch_end! = use_callback(|event: Event| {
+        set_state(|vary s| {
+            s.state = GestureState::Ended;
+            s.rotation_delta = 0.0;
+        });
+        on_rotate(&state);
+    }, [state]);
+
+    RotateGesture {
+        state: state,
+        handlers: RotateHandlers {
+            on_touch_start: on_touch_start,
+            on_touch_move: on_touch_move,
+            on_touch_end: on_touch_end
+        }
+    }
+}
+
+/// Rotate gesture handler
+☉ sigil RotateGesture {
+    ☉ state: RotateState!,
+    ☉ handlers: RotateHandlers!
+}
+
+/// Rotate event handlers
+☉ sigil RotateHandlers {
+    ☉ on_touch_start: fn(Event)!,
+    ☉ on_touch_move: fn(Event)!,
+    ☉ on_touch_end: fn(Event)!
+}
+
+// ============================================================================
+// Swipe Gesture
+// ============================================================================
+
+/// Swipe direction
+☉ ᛈ SwipeDirection {
+    None,
+    Up,
+    Down,
+    Left,
+    Right
+}
+
+/// Swipe gesture state
+☉ sigil SwipeState {
+    /// Detected swipe direction
+    ☉ direction: SwipeDirection!,
+    /// Swipe velocity
+    ☉ velocity: f64!,
+    /// Whether swipe was detected
+    ☉ swiped: bool!
+}
+
+/// Swipe gesture configuration
+☉ sigil SwipeConfig {
+    /// Minimum velocity to trigger swipe (px/s)
+    ☉ velocity_threshold: f64! = 300.0,
+    /// Minimum distance to trigger swipe
+    ☉ distance_threshold: f64! = 30.0,
+    /// Maximum time for swipe (ms)
+    ☉ time_threshold: f64! = 300.0
+}
+
+⊢ SwipeConfig {
+    ☉ rite default() -> This! {
+        SwipeConfig {
+            velocity_threshold: 300.0,
+            distance_threshold: 30.0,
+            time_threshold: 300.0
+        }
+    }
+}
+
+/// Swipe gesture hook
+///
+/// ## Example
+///
+/// ```sigil
+/// ≔ swipe! = use_swipe(SwipeConfig::default(), |state| {
+///     match state.direction {
+///         SwipeDirection::Left => show_next_page(),
+///         SwipeDirection::Right => show_prev_page(),
+///         _ => {}
+///     }
+/// });
+///
+/// div[
+///     onpointerdown: swipe.handlers.on_pointer_down,
+///     onpointermove: swipe.handlers.on_pointer_move,
+///     onpointerup: swipe.handlers.on_pointer_up
+/// ] {
+///     "Swipe left/right"
+/// }
+/// ```
+☉ rite use_swipe(config: SwipeConfig, on_swipe: fn(&SwipeState)) -> SwipeGesture! {
+    ≔ (state, set_state)! = use_state(SwipeState {
+        direction: SwipeDirection::None,
+        velocity: 0.0,
+        swiped: nay
+    });
+
+    ≔ start_pos! = use_ref(Point::zero());
+    ≔ start_time! = use_ref(0.0);
+    ≔ is_tracking! = use_ref(nay);
+
+    ≔ on_pointer_down! = use_callback(|event: Event| {
+        start_pos.set(Point::new(event.client_x, event.client_y));
+        start_time.set(event.timestamp);
+        is_tracking.set(yea);
+
+        set_state(|vary s| {
+            s.direction = SwipeDirection::None;
+            s.velocity = 0.0;
+            s.swiped = nay;
+        });
+    }, []);
+
+    ≔ on_pointer_move! = use_callback(|event: Event| {
+        // Just track, don't process yet
+    }, []);
+
+    ≔ on_pointer_up! = use_callback(|event: Event| {
+        ⎇ !is_tracking.current() {
+            ⮐;
+        }
+        is_tracking.set(nay);
+
+        ≔ end_pos! = Point::new(event.client_x, event.client_y);
+        ≔ start! = start_pos.current();
+        ≔ dt! = (event.timestamp - start_time.current()) / 1000.0;
+
+        ≔ dx! = end_pos.x - start.x;
+        ≔ dy! = end_pos.y - start.y;
+        ≔ distance! = sqrt(dx * dx + dy * dy);
+        ≔ velocity! = ⎇ dt > 0.0 { distance / dt } ⎉ { 0.0 };
+
+        // Check if it qualifies as a swipe
+        ⎇ velocity >= config.velocity_threshold &&
+           distance >= config.distance_threshold &&
+           dt * 1000.0 <= config.time_threshold {
+
+            ≔ direction! = ⎇ dx.abs() > dy.abs() {
+                ⎇ dx > 0.0 { SwipeDirection::Right } ⎉ { SwipeDirection::Left }
+            } ⎉ {
+                ⎇ dy > 0.0 { SwipeDirection::Down } ⎉ { SwipeDirection::Up }
+            };
+
+            set_state(|vary s| {
+                s.direction = direction;
+                s.velocity = velocity;
+                s.swiped = yea;
+            });
+
+            on_swipe(&state);
+        }
+    }, [state]);
+
+    SwipeGesture {
+        state: state,
+        handlers: SwipeHandlers {
+            on_pointer_down: on_pointer_down,
+            on_pointer_move: on_pointer_move,
+            on_pointer_up: on_pointer_up
+        }
+    }
+}
+
+/// Swipe gesture handler
+☉ sigil SwipeGesture {
+    ☉ state: SwipeState!,
+    ☉ handlers: SwipeHandlers!
+}
+
+/// Swipe event handlers
+☉ sigil SwipeHandlers {
+    ☉ on_pointer_down: fn(Event)!,
+    ☉ on_pointer_move: fn(Event)!,
+    ☉ on_pointer_up: fn(Event)!
+}
+
+// ============================================================================
+// Long Press Gesture
+// ============================================================================
+
+/// Long press gesture state
+☉ sigil LongPressState {
+    /// Whether currently pressing
+    ☉ is_pressing: bool!,
+    /// Whether long press was triggered
+    ☉ triggered: bool!,
+    /// Press position
+    ☉ position: Point!
+}
+
+/// Long press configuration
+☉ sigil LongPressConfig {
+    /// Duration before long press triggers (ms)
+    ☉ duration: f64! = 500.0,
+    /// Maximum movement allowed
+    ☉ movement_threshold: f64! = 10.0
+}
+
+⊢ LongPressConfig {
+    ☉ rite default() -> This! {
+        LongPressConfig {
+            duration: 500.0,
+            movement_threshold: 10.0
+        }
+    }
+}
+
+/// Long press gesture hook
+///
+/// ## Example
+///
+/// ```sigil
+/// ≔ long_press! = use_long_press(LongPressConfig::default(), || {
+///     show_context_menu();
+/// });
+///
+/// div[
+///     onpointerdown: long_press.handlers.on_pointer_down,
+///     onpointermove: long_press.handlers.on_pointer_move,
+///     onpointerup: long_press.handlers.on_pointer_up,
+///     onpointercancel: long_press.handlers.on_pointer_cancel
+/// ] {
+///     "Long press me"
+/// }
+/// ```
+☉ rite use_long_press(config: LongPressConfig, on_long_press: fn()) -> LongPressGesture! {
+    ≔ (state, set_state)! = use_state(LongPressState {
+        is_pressing: nay,
+        triggered: nay,
+        position: Point::zero()
+    });
+
+    ≔ timer_id! = use_ref(0u64);
+    ≔ start_pos! = use_ref(Point::zero());
+
+    ≔ cancel_timer! = use_callback(|| {
+        ≔ id! = timer_id.current();
+        ⎇ id > 0 {
+            clear_timeout(id);
+            timer_id.set(0);
+        }
+    }, []);
+
+    ≔ on_pointer_down! = use_callback(|event: Event| {
+        ≔ pos! = Point::new(event.client_x, event.client_y);
+        start_pos.set(pos.clone());
+
+        set_state(|vary s| {
+            s.is_pressing = yea;
+            s.triggered = nay;
+            s.position = pos;
+        });
+
+        // Start timer
+        ≔ id! = set_timeout(|| {
+            set_state(|vary s| {
+                s.triggered = yea;
+            });
+            on_long_press();
+        }, config.duration as u64);
+
+        timer_id.set(id);
+    }, []);
+
+    ≔ on_pointer_move! = use_callback(|event: Event| {
+        ⎇ state.is_pressing && !state.triggered {
+            ≔ pos! = Point::new(event.client_x, event.client_y);
+            ≔ start! = start_pos.current();
+
+            ⎇ pos.distance(&start) > config.movement_threshold {
+                // Moved too much, cancel
+                cancel_timer();
+                set_state(|vary s| {
+                    s.is_pressing = nay;
+                });
+            }
+        }
+    }, [state]);
+
+    ≔ on_pointer_up! = use_callback(|event: Event| {
+        cancel_timer();
+        set_state(|vary s| {
+            s.is_pressing = nay;
+        });
+    }, []);
+
+    ≔ on_pointer_cancel! = use_callback(|event: Event| {
+        cancel_timer();
+        set_state(|vary s| {
+            s.is_pressing = nay;
+            s.triggered = nay;
+        });
+    }, []);
+
+    LongPressGesture {
+        state: state,
+        handlers: LongPressHandlers {
+            on_pointer_down: on_pointer_down,
+            on_pointer_move: on_pointer_move,
+            on_pointer_up: on_pointer_up,
+            on_pointer_cancel: on_pointer_cancel
+        }
+    }
+}
+
+/// Long press gesture handler
+☉ sigil LongPressGesture {
+    ☉ state: LongPressState!,
+    ☉ handlers: LongPressHandlers!
+}
+
+/// Long press event handlers
+☉ sigil LongPressHandlers {
+    ☉ on_pointer_down: fn(Event)!,
+    ☉ on_pointer_move: fn(Event)!,
+    ☉ on_pointer_up: fn(Event)!,
+    ☉ on_pointer_cancel: fn(Event)!
+}
+
+// ============================================================================
+// Math helpers
+// ============================================================================
+
+☉ const PI: f64 = 3.14159265358979323846;
+
+extern "C" {
+    rite sqrt(x: f64) -> f64;
+    rite atan2(y: f64, x: f64) -> f64;
+    rite set_timeout(callback: fn(), delay_ms: u64) -> u64;
+    rite clear_timeout(id: u64);
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_point_distance() {
+        ≔ p1! = Point::new(0.0, 0.0);
+        ≔ p2! = Point::new(3.0, 4.0);
+        assert!((p1.distance(&p2) - 5.0).abs() < 0.001);
+    }
+
+    #[test]
+    rite test_velocity_magnitude() {
+        ≔ v! = Velocity { x: 3.0, y: 4.0 };
+        assert!((v.magnitude() - 5.0).abs() < 0.001);
+    }
+
+    #[test]
+    rite test_swipe_config_default() {
+        ≔ config! = SwipeConfig::default();
+        assert_eq!(config.velocity_threshold, 300.0);
+        assert_eq!(config.distance_threshold, 30.0);
+    }
+}

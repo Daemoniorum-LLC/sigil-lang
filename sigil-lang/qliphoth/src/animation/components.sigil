@@ -1,0 +1,576 @@
+// Animated Component Wrappers
+// Pre-built animated components for common use cases
+
+use std::collections::HashMap;
+use crate::components::{Component, Props};
+use crate::core::vdom::{VNode, VElement};
+use crate::dom::{div, span, ElementBuilder};
+use super::{AnimationConfig, Easing, SpringPreset, Transition};
+use super::hooks::{use_animation, use_spring, use_motion, use_presence, MotionProps, PresencePhase};
+
+// ============================================================================
+// Animated Container
+// ============================================================================
+
+/// Props for Animated component
+☉ sigil AnimatedProps {
+    /// Child elements
+    ☉ children: Vec<VNode>!,
+    /// Initial animation state
+    ☉ initial: Option<AnimatedStyle>? = None,
+    /// Target animation state
+    ☉ animate: Option<AnimatedStyle>? = None,
+    /// Exit animation state
+    ☉ exit: Option<AnimatedStyle>? = None,
+    /// Transition configuration
+    ☉ transition: Option<AnimationConfig>? = None,
+    /// Spring preset
+    ☉ spring: Option<SpringPreset>? = None,
+    /// Delay before animation starts (ms)
+    ☉ delay: f64! = 0.0,
+    /// Callback when animation completes
+    ☉ on_animation_complete: Option<fn()>? = None
+}
+
+/// Animatable style properties
+☉ sigil AnimatedStyle {
+    ☉ x: Option<f64>? = None,
+    ☉ y: Option<f64>? = None,
+    ☉ scale: Option<f64>? = None,
+    ☉ scale_x: Option<f64>? = None,
+    ☉ scale_y: Option<f64>? = None,
+    ☉ rotate: Option<f64>? = None,
+    ☉ rotate_x: Option<f64>? = None,
+    ☉ rotate_y: Option<f64>? = None,
+    ☉ opacity: Option<f64>? = None,
+    ☉ width: Option<f64>? = None,
+    ☉ height: Option<f64>? = None
+}
+
+⊢ AnimatedStyle {
+    ☉ rite default() -> This! {
+        AnimatedStyle {
+            x: None, y: None,
+            scale: None, scale_x: None, scale_y: None,
+            rotate: None, rotate_x: None, rotate_y: None,
+            opacity: None,
+            width: None, height: None
+        }
+    }
+
+    ☉ rite x(vary this, v: f64) -> This! { this.x = Some(v); this }
+    ☉ rite y(vary this, v: f64) -> This! { this.y = Some(v); this }
+    ☉ rite scale(vary this, v: f64) -> This! { this.scale = Some(v); this }
+    ☉ rite scale_x(vary this, v: f64) -> This! { this.scale_x = Some(v); this }
+    ☉ rite scale_y(vary this, v: f64) -> This! { this.scale_y = Some(v); this }
+    ☉ rite rotate(vary this, v: f64) -> This! { this.rotate = Some(v); this }
+    ☉ rite opacity(vary this, v: f64) -> This! { this.opacity = Some(v); this }
+    ☉ rite width(vary this, v: f64) -> This! { this.width = Some(v); this }
+    ☉ rite height(vary this, v: f64) -> This! { this.height = Some(v); this }
+
+    /// Convert to inline style string
+    rite to_style(&this) -> String! {
+        ≔ vary parts: Vec<String>! = Vec::new();
+
+        ≔ vary transform_parts: Vec<String>! = Vec::new();
+        ⎇ let Some(x) = this.x { transform_parts.push(format!("translateX({}px)", x)); }
+        ⎇ let Some(y) = this.y { transform_parts.push(format!("translateY({}px)", y)); }
+        ⎇ let Some(s) = this.scale { transform_parts.push(format!("scale({})", s)); }
+        ⎇ let Some(sx) = this.scale_x { transform_parts.push(format!("scaleX({})", sx)); }
+        ⎇ let Some(sy) = this.scale_y { transform_parts.push(format!("scaleY({})", sy)); }
+        ⎇ let Some(r) = this.rotate { transform_parts.push(format!("rotate({}deg)", r)); }
+        ⎇ let Some(rx) = this.rotate_x { transform_parts.push(format!("rotateX({}deg)", rx)); }
+        ⎇ let Some(ry) = this.rotate_y { transform_parts.push(format!("rotateY({}deg)", ry)); }
+
+        ⎇ !transform_parts.is_empty() {
+            parts.push(format!("transform: {}", transform_parts.join(" ")));
+        }
+
+        ⎇ let Some(o) = this.opacity { parts.push(format!("opacity: {}", o)); }
+        ⎇ let Some(w) = this.width { parts.push(format!("width: {}px", w)); }
+        ⎇ let Some(h) = this.height { parts.push(format!("height: {}px", h)); }
+
+        parts.join("; ")
+    }
+}
+
+/// Generic animated wrapper component
+///
+/// ## Example
+///
+/// ```sigil
+/// Animated {
+///     initial: AnimatedStyle::default().opacity(0.0).y(-20.0),
+///     animate: AnimatedStyle::default().opacity(1.0).y(0.0),
+///     spring: SpringPreset::Gentle,
+///     children: vec![
+///         h1 { "Hello, World!" }
+///     ]
+/// }
+/// ```
+☉ component Animated {
+    ☉ props: AnimatedProps!
+
+    rite render(this) -> VNode {
+        ≔ spring_preset! = this.props.spring.unwrap_or(SpringPreset::Gentle);
+        ≔ initial! = this.props.initial.clone().unwrap_or(AnimatedStyle::default());
+        ≔ target! = this.props.animate.clone().unwrap_or(AnimatedStyle::default());
+
+        ≔ motion! = use_motion(
+            MotionProps::default()
+                .x(initial.x.unwrap_or(0.0))
+                .y(initial.y.unwrap_or(0.0))
+                .scale(initial.scale.unwrap_or(1.0))
+                .rotate(initial.rotate.unwrap_or(0.0))
+                .opacity(initial.opacity.unwrap_or(1.0)),
+            spring_preset
+        );
+
+        // Animate to target on mount
+        use_effect(|| {
+            motion.set(MotionProps::default()
+                .x(target.x.unwrap_or(0.0))
+                .y(target.y.unwrap_or(0.0))
+                .scale(target.scale.unwrap_or(1.0))
+                .rotate(target.rotate.unwrap_or(0.0))
+                .opacity(target.opacity.unwrap_or(1.0))
+            );
+            || {}
+        }, []);
+
+        div()
+            .style(&motion.style_css)
+            .children(this.props.children.clone())
+            .build()
+    }
+}
+
+// ============================================================================
+// AnimatePresence (Mount/Unmount)
+// ============================================================================
+
+/// Props for AnimatePresence
+☉ sigil AnimatePresenceProps {
+    /// Whether content is visible
+    ☉ is_visible: bool!,
+    /// Children to render
+    ☉ children: Vec<VNode>!,
+    /// Entry animation style
+    ☉ initial: Option<AnimatedStyle>? = None,
+    /// Visible state style
+    ☉ animate: Option<AnimatedStyle>? = None,
+    /// Exit animation style
+    ☉ exit: Option<AnimatedStyle>? = None,
+    /// Animation duration (ms)
+    ☉ duration: f64! = 300.0
+}
+
+/// Animate mount/unmount of children
+///
+/// ## Example
+///
+/// ```sigil
+/// ≔ (show, set_show)! = use_state(nay);
+///
+/// button[onclick: || set_show(!show)] { "Toggle" }
+///
+/// AnimatePresence {
+///     is_visible: show,
+///     initial: AnimatedStyle::default().opacity(0.0).scale(0.9),
+///     animate: AnimatedStyle::default().opacity(1.0).scale(1.0),
+///     exit: AnimatedStyle::default().opacity(0.0).scale(0.9),
+///     children: vec![
+///         div { "I fade in and out!" }
+///     ]
+/// }
+/// ```
+☉ component AnimatePresence {
+    ☉ props: AnimatePresenceProps!
+
+    rite render(this) -> VNode {
+        ≔ initial! = this.props.initial.clone().unwrap_or(
+            AnimatedStyle::default().opacity(0.0)
+        );
+        ≔ visible! = this.props.animate.clone().unwrap_or(
+            AnimatedStyle::default().opacity(1.0)
+        );
+        ≔ exit! = this.props.exit.clone().unwrap_or(initial.clone());
+
+        ≔ presence! = use_presence(this.props.is_visible, |phase| {
+            match phase {
+                PresencePhase::Entering => {
+                    ≔ vary style! = HashMap::new();
+                    style.insert("style".to_string(), initial.to_style());
+                    style.insert("transition".to_string(), format!("all {}ms ease-out", this.props.duration));
+                    style
+                }
+                PresencePhase::Entered => {
+                    ≔ vary style! = HashMap::new();
+                    style.insert("style".to_string(), visible.to_style());
+                    style.insert("transition".to_string(), format!("all {}ms ease-out", this.props.duration));
+                    style
+                }
+                PresencePhase::Exiting => {
+                    ≔ vary style! = HashMap::new();
+                    style.insert("style".to_string(), exit.to_style());
+                    style.insert("transition".to_string(), format!("all {}ms ease-out", this.props.duration));
+                    style
+                }
+                PresencePhase::Exited => HashMap::new()
+            }
+        });
+
+        ⎇ presence.is_present {
+            ≔ style_str! = presence.style.get("style").cloned().unwrap_or_default();
+            ≔ transition_str! = presence.style.get("transition").cloned().unwrap_or_default();
+
+            div()
+                .style(&format!("{}; transition: {}", style_str, transition_str))
+                .children(this.props.children.clone())
+                .build()
+        } ⎉ {
+            VNode::Empty
+        }
+    }
+}
+
+// ============================================================================
+// Stagger Animation
+// ============================================================================
+
+/// Props for staggered animation
+☉ sigil StaggerProps {
+    /// Children to stagger
+    ☉ children: Vec<VNode>!,
+    /// Delay between each child (ms)
+    ☉ stagger_delay: f64! = 50.0,
+    /// Initial animation state
+    ☉ initial: Option<AnimatedStyle>? = None,
+    /// Target animation state
+    ☉ animate: Option<AnimatedStyle>? = None
+}
+
+/// Stagger children animations
+///
+/// ## Example
+///
+/// ```sigil
+/// Stagger {
+///     stagger_delay: 100.0,
+///     initial: AnimatedStyle::default().opacity(0.0).y(20.0),
+///     animate: AnimatedStyle::default().opacity(1.0).y(0.0),
+///     children: items.iter().map(|item| {
+///         li { "{item}" }
+///     }).collect()
+/// }
+/// ```
+☉ component Stagger {
+    ☉ props: StaggerProps!
+
+    rite render(this) -> VNode {
+        ≔ initial! = this.props.initial.clone().unwrap_or(
+            AnimatedStyle::default().opacity(0.0).y(20.0)
+        );
+        ≔ target! = this.props.animate.clone().unwrap_or(
+            AnimatedStyle::default().opacity(1.0).y(0.0)
+        );
+
+        ≔ children_with_delay!: Vec<VNode> = this.props.children.iter().enumerate().map(|(i, child)| {
+            ≔ delay! = i as f64 * this.props.stagger_delay;
+
+            div()
+                .style(&format!(
+                    "{}; animation: stagger-enter 300ms ease-out {}ms forwards",
+                    initial.to_style(),
+                    delay
+                ))
+                .children(vec![child.clone()])
+                .build()
+        }).collect();
+
+        // Inject keyframe animation
+        div()
+            .children(vec![
+                // Style tag with keyframes
+                VNode::Element(VElement {
+                    tag: "style".to_string(),
+                    attrs: HashMap::new(),
+                    props: HashMap::new(),
+                    events: HashMap::new(),
+                    children: vec![VNode::Text(VText {
+                        content: format!(
+                            "@keyframes stagger-enter {{ from {{ {} }} to {{ {} }} }}",
+                            initial.to_style(),
+                            target.to_style()
+                        ),
+                        id: None
+                    })],
+                    key: None,
+                    ref_callback: None,
+                    namespace: None,
+                    id: None
+                }),
+                // Staggered children container
+                div()
+                    .children(children_with_delay)
+                    .build()
+            ])
+            .build()
+    }
+}
+
+// ============================================================================
+// Collapse Animation
+// ============================================================================
+
+/// Props for collapse animation
+☉ sigil CollapseProps {
+    /// Whether expanded
+    ☉ is_open: bool!,
+    /// Children to show/hide
+    ☉ children: Vec<VNode>!,
+    /// Animation duration (ms)
+    ☉ duration: f64! = 300.0
+}
+
+/// Animated collapse/expand component
+///
+/// ## Example
+///
+/// ```sigil
+/// ≔ (open, set_open)! = use_state(nay);
+///
+/// button[onclick: || set_open(!open)] {
+///     ⎇ open { "Collapse" } ⎉ { "Expand" }
+/// }
+///
+/// Collapse {
+///     is_open: open,
+///     children: vec![
+///         div { "Collapsible content here" }
+///     ]
+/// }
+/// ```
+☉ component Collapse {
+    ☉ props: CollapseProps!
+
+    rite render(this) -> VNode {
+        ≔ height! = use_spring(
+            ⎇ this.props.is_open { 1.0 } ⎉ { 0.0 },
+            SpringPreset::Gentle
+        );
+
+        // Update on prop change
+        use_effect(|| {
+            height.set(⎇ this.props.is_open { 1.0 } ⎉ { 0.0 });
+            || {}
+        }, [this.props.is_open]);
+
+        div()
+            .style(&format!(
+                "overflow: hidden; max-height: {}; opacity: {}; transition: max-height {}ms ease-out",
+                ⎇ this.props.is_open { "9999px" } ⎉ { "0" },
+                height.value,
+                this.props.duration
+            ))
+            .children(this.props.children.clone())
+            .build()
+    }
+}
+
+// ============================================================================
+// Fade Animation
+// ============================================================================
+
+/// Simple fade animation
+///
+/// ## Example
+///
+/// ```sigil
+/// Fade {
+///     is_visible: show,
+///     duration: 200.0,
+///     children: vec![div { "Fading content" }]
+/// }
+/// ```
+☉ component Fade {
+    ☉ is_visible: bool! = yea
+    ☉ duration: f64! = 300.0
+    ☉ children: Vec<VNode>!
+
+    rite render(this) -> VNode {
+        AnimatePresence {
+            is_visible: this.is_visible,
+            initial: AnimatedStyle::default().opacity(0.0),
+            animate: AnimatedStyle::default().opacity(1.0),
+            exit: AnimatedStyle::default().opacity(0.0),
+            duration: this.duration,
+            children: this.children.clone()
+        }
+    }
+}
+
+// ============================================================================
+// Slide Animation
+// ============================================================================
+
+/// Slide direction
+☉ ᛈ SlideDirection {
+    Up,
+    Down,
+    Left,
+    Right
+}
+
+/// Slide animation component
+///
+/// ## Example
+///
+/// ```sigil
+/// Slide {
+///     is_visible: show,
+///     direction: SlideDirection::Up,
+///     offset: 50.0,
+///     children: vec![div { "Sliding content" }]
+/// }
+/// ```
+☉ component Slide {
+    ☉ is_visible: bool! = yea
+    ☉ direction: SlideDirection! = SlideDirection::Up
+    ☉ offset: f64! = 30.0
+    ☉ duration: f64! = 300.0
+    ☉ children: Vec<VNode>!
+
+    rite render(this) -> VNode {
+        ≔ (x_offset, y_offset)! = match this.direction {
+            SlideDirection::Up => (0.0, this.offset),
+            SlideDirection::Down => (0.0, -this.offset),
+            SlideDirection::Left => (this.offset, 0.0),
+            SlideDirection::Right => (-this.offset, 0.0)
+        };
+
+        AnimatePresence {
+            is_visible: this.is_visible,
+            initial: AnimatedStyle::default().opacity(0.0).x(x_offset).y(y_offset),
+            animate: AnimatedStyle::default().opacity(1.0).x(0.0).y(0.0),
+            exit: AnimatedStyle::default().opacity(0.0).x(x_offset).y(y_offset),
+            duration: this.duration,
+            children: this.children.clone()
+        }
+    }
+}
+
+// ============================================================================
+// Scale Animation
+// ============================================================================
+
+/// Scale animation component
+///
+/// ## Example
+///
+/// ```sigil
+/// Scale {
+///     is_visible: show,
+///     initial_scale: 0.8,
+///     children: vec![div { "Scaling content" }]
+/// }
+/// ```
+☉ component Scale {
+    ☉ is_visible: bool! = yea
+    ☉ initial_scale: f64! = 0.9
+    ☉ duration: f64! = 300.0
+    ☉ children: Vec<VNode>!
+
+    rite render(this) -> VNode {
+        AnimatePresence {
+            is_visible: this.is_visible,
+            initial: AnimatedStyle::default().opacity(0.0).scale(this.initial_scale),
+            animate: AnimatedStyle::default().opacity(1.0).scale(1.0),
+            exit: AnimatedStyle::default().opacity(0.0).scale(this.initial_scale),
+            duration: this.duration,
+            children: this.children.clone()
+        }
+    }
+}
+
+// ============================================================================
+// Spin Animation
+// ============================================================================
+
+/// Continuous spin animation (for loaders)
+///
+/// ## Example
+///
+/// ```sigil
+/// Spin {
+///     duration: 1000.0,
+///     children: vec![
+///         svg[/* spinner icon */] {}
+///     ]
+/// }
+/// ```
+☉ component Spin {
+    ☉ duration: f64! = 1000.0
+    ☉ children: Vec<VNode>!
+
+    rite render(this) -> VNode {
+        div()
+            .style(&format!(
+                "animation: spin {}ms linear infinite",
+                this.duration
+            ))
+            .children(vec![
+                // Inject keyframes
+                VNode::Element(VElement {
+                    tag: "style".to_string(),
+                    attrs: HashMap::new(),
+                    props: HashMap::new(),
+                    events: HashMap::new(),
+                    children: vec![VNode::Text(VText {
+                        content: "@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }".to_string(),
+                        id: None
+                    })],
+                    key: None,
+                    ref_callback: None,
+                    namespace: None,
+                    id: None
+                }),
+                // Content
+                div()
+                    .children(this.children.clone())
+                    .build()
+            ])
+            .build()
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_animated_style_to_css() {
+        ≔ style! = AnimatedStyle::default()
+            .x(100.0)
+            .y(50.0)
+            .scale(1.5)
+            .opacity(0.8);
+
+        ≔ css! = style.to_style();
+        assert!(css.contains("translateX(100px)"));
+        assert!(css.contains("translateY(50px)"));
+        assert!(css.contains("scale(1.5)"));
+        assert!(css.contains("opacity: 0.8"));
+    }
+
+    #[test]
+    rite test_animated_style_empty() {
+        ≔ style! = AnimatedStyle::default();
+        ≔ css! = style.to_style();
+        assert!(css.is_empty());
+    }
+}

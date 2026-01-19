@@ -410,6 +410,18 @@ impl WasmCompiler {
                     .map(|s| s.ident.name.as_str())
                     .unwrap_or("");
 
+                // Handle Vec::new() -> array_new
+                if name == "Vec_new" && args.is_empty() {
+                    let array_new_idx = self.imports.get_func("array_new")
+                        .ok_or_else(|| WasmError::internal("array_new not registered"))?;
+                    let func = self.current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    func.push(Instruction::Call(array_new_idx));
+                    // array_new returns I32, extend to I64
+                    func.push(Instruction::I64ExtendI32U);
+                    return Ok(());
+                }
+
                 // Check for import function first to get parameter types
                 if let Some(func_idx) = self.imports.get_func(name) {
                     // Get parameter and return types before compilation
@@ -460,7 +472,10 @@ impl WasmCompiler {
                 }
 
                 // Check for direct function call (user-defined functions)
-                if let Some(func_idx) = self.get_func(simple_name) {
+                // Try qualified name first (for static methods like Counter·new -> Counter_new)
+                // Then fall back to simple name (for regular functions)
+                let func_idx_opt = self.get_func(name).or_else(|| self.get_func(simple_name));
+                if let Some(func_idx) = func_idx_opt {
                     // Check if function returns void
                     let returns_void = self.func_returns_void(func_idx);
 
@@ -649,6 +664,74 @@ impl WasmCompiler {
     ) -> WasmResult<()> {
         // Compile receiver as first argument
         self.compile_expr(receiver)?;
+
+        // Handle builtin methods
+        if method == "to_string" && args.is_empty() {
+            // Receiver is on stack as i64
+            // Call string_from_int to convert
+            let from_int_idx = self.imports.get_func("string_from_int")
+                .ok_or_else(|| WasmError::internal("string_from_int not registered"))?;
+
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::Call(from_int_idx));
+            // Extend i32 result to i64 for consistency
+            func.push(Instruction::I64ExtendI32U);
+            return Ok(());
+        }
+
+        // Handle vec.push(value)
+        if method == "push" && args.len() == 1 {
+            // Receiver (array ptr) is on stack as I64
+            // Wrap to I32 for array_push
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I32WrapI64);
+            drop(func);
+
+            // Compile the value to push
+            self.compile_expr(&args[0])?;
+
+            // Call array_push(arr: I32, value: I64) -> ()
+            let push_idx = self.imports.get_func("array_push")
+                .ok_or_else(|| WasmError::internal("array_push not registered"))?;
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::Call(push_idx));
+            // Push returns void, put 0 on stack for expression result
+            func.push(Instruction::I64Const(0));
+            return Ok(());
+        }
+
+        // Handle vec.len() and string.len()
+        if method == "len" && args.is_empty() {
+            // Get import index first to avoid borrow issues
+            let len_idx = self.imports.get_func("array_len")
+                .ok_or_else(|| WasmError::internal("array_len not registered"))?;
+
+            // Receiver (array/string ptr) is on stack as I64
+            // Wrap to I32 for array_len
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I32WrapI64);
+            // Call array_len(arr: I32) -> I32
+            func.push(Instruction::Call(len_idx));
+            // Extend I32 result to I64
+            func.push(Instruction::I64ExtendI32U);
+            return Ok(());
+        }
+
+        // Handle .clone() - for primitive types, just return the value (it's already copied)
+        if method == "clone" && args.is_empty() {
+            // Receiver is already on stack as i64
+            // For value types (primitives, pointers), clone is a no-op
+            // The value is already copied on the stack
+            return Ok(());
+        }
 
         // Compile remaining arguments
         for arg in args {
@@ -939,6 +1022,7 @@ impl<'a> CaptureAnalyzer<'a> {
 
             Expr::Closure {
                 params,
+                return_type: _,
                 body,
                 is_move: _,
             } => {
@@ -1052,7 +1136,9 @@ mod tests {
                 },
                 ty: None,
             }],
+            return_type: None,
             body: Box::new(body),
+            is_move: false,
         }
     }
 
@@ -1143,6 +1229,7 @@ mod tests {
                 pattern: Pattern::Wildcard,
                 ty: None,
             }],
+            return_type: None,
             body: Box::new(Expr::Block(crate::ast::Block {
                 stmts: vec![crate::ast::Stmt::Semi(Expr::Assign {
                     target: Box::new(make_path("counter")),
@@ -1154,6 +1241,7 @@ mod tests {
                 })],
                 expr: Some(Box::new(make_path("counter"))),
             })),
+            is_move: false,
         };
 
         // Mark counter as mutable capture
@@ -1188,6 +1276,7 @@ mod tests {
         // First closure: increment
         let inc_closure = Expr::Closure {
             params: vec![],
+            return_type: None,
             body: Box::new(Expr::Block(crate::ast::Block {
                 stmts: vec![crate::ast::Stmt::Semi(Expr::Assign {
                     target: Box::new(make_path("counter")),
@@ -1199,6 +1288,7 @@ mod tests {
                 })],
                 expr: Some(Box::new(make_path("counter"))),
             })),
+            is_move: false,
         };
 
         compiler.compile_expr(&inc_closure).unwrap();
@@ -1206,7 +1296,9 @@ mod tests {
         // Second closure: read counter
         let read_closure = Expr::Closure {
             params: vec![],
+            return_type: None,
             body: Box::new(make_path("counter")),
+            is_move: false,
         };
 
         compiler.compile_expr(&read_closure).unwrap();
@@ -1236,6 +1328,7 @@ mod tests {
                 },
                 ty: None,
             }],
+            return_type: None,
             body: Box::new(Expr::Binary {
                 left: Box::new(Expr::Binary {
                     left: Box::new(make_path("x")),
@@ -1245,6 +1338,7 @@ mod tests {
                 op: crate::ast::BinOp::Add,
                 right: Box::new(make_path("z")),
             }),
+            is_move: false,
         };
 
         let outer_closure = Expr::Closure {
@@ -1256,7 +1350,9 @@ mod tests {
                 },
                 ty: None,
             }],
+            return_type: None,
             body: Box::new(inner_closure),
+            is_move: false,
         };
 
         compiler.compile_expr(&outer_closure).unwrap();
@@ -1288,6 +1384,7 @@ mod tests {
                 },
                 ty: None,
             }],
+            return_type: None,
             body: Box::new(Expr::Binary {
                 left: Box::new(Expr::Binary {
                     left: Box::new(make_path("outer_var")),
@@ -1297,6 +1394,7 @@ mod tests {
                 op: crate::ast::BinOp::Add,
                 right: Box::new(make_path("b")),
             }),
+            is_move: false,
         };
 
         let outer = Expr::Closure {
@@ -1308,7 +1406,9 @@ mod tests {
                 },
                 ty: None,
             }],
+            return_type: None,
             body: Box::new(inner),
+            is_move: false,
         };
 
         compiler.compile_expr(&outer).unwrap();

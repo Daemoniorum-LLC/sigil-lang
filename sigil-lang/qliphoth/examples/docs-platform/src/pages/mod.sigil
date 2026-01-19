@@ -1,0 +1,899 @@
+// Pages Module
+// Page components for the documentation platform
+
+use qliphoth::prelude::*
+use crate::components::*
+use crate::layouts::*
+use crate::data::catalog::{PRODUCT_CATALOG, Product, ProductCategory}
+use crate::main::use_theme
+
+// ============================================================================
+// Landing Page
+// ============================================================================
+
+/// Home page
+☉ rite Home() → VNode! {
+    LandingLayout(LandingLayoutProps {
+        children: vec![
+            // Hero section
+            section()
+                ·class("hero")
+                ·children(vec![
+                    div()
+                        ·class("hero-content")
+                        ·children(vec![
+                            h1()
+                                ·class("hero-title")
+                                ·children(vec![
+                                    text("Build the "),
+                                    span()·class("hero-highlight")·text("impossible")·build(),
+                                    text(" with Daemoniorum")
+                                ])
+                                ·build(),
+                            p()
+                                ·class("hero-description")
+                                ·text("A comprehensive suite of tools and frameworks for building high-performance applications. From systems programming with Sigil to full-stack development with Leviathan.")
+                                ·build(),
+                            div()
+                                ·class("hero-actions")
+                                ·children(vec![
+                                    Link(LinkProps {
+                                        to: "/docs".to_string(),
+                                        replace: nay,
+                                        class: Some("btn btn-primary btn-lg".to_string()),
+                                        active_class: None
+                                    }, vec![text("Get Started")]),
+                                    Link(LinkProps {
+                                        to: "/playground".to_string(),
+                                        replace: nay,
+                                        class: Some("btn btn-secondary btn-lg".to_string()),
+                                        active_class: None
+                                    }, vec![text("Try Playground")])
+                                ])
+                                ·build()
+                        ])
+                        ·build(),
+                    div()
+                        ·class("hero-code")
+                        ·child(CodeBlock(CodeBlockProps {
+                            code: r#"use qliphoth::prelude::*
+
+component Counter {
+    state count: i64! = 0
+
+    rite render(this) → VNode {
+        div {
+            h1 { "Count: {this.count}" }
+            button[onclick: || this.count += 1] { "+" }
+        }
+    }
+}
+
+rite main() {
+    App::mount("#root", Counter::new())
+}"#.to_string(),
+                            language: Some("sigil".to_string()),
+                            filename: Some("counter.sigil".to_string()),
+                            highlight_lines: vec![],
+                            show_line_numbers: yea
+                        }))
+                        ·build()
+                ])
+                ·build(),
+
+            // Products section
+            section()
+                ·class("products-section")
+                ·children(vec![
+                    h2()·class("section-title")·text("Our Products")·build(),
+                    p()·class("section-description")·text("Everything you need to build, deploy, and scale modern applications")·build(),
+                    div()
+                        ·class("products-grid")
+                        ·children(
+                            PRODUCT_CATALOG·iter()
+                                ·map(|product| ProductCard { product: product·clone() })
+                                ·collect()
+                        )
+                        ·build()
+                ])
+                ·build(),
+
+            // Features section
+            section()
+                ·class("features-section")
+                ·children(vec![
+                    h2()·class("section-title")·text("Why Daemoniorum?")·build(),
+                    div()
+                        ·class("features-grid")
+                        ·children(vec![
+                            FeatureCard {
+                                icon: "zap",
+                                title: "Blazing Fast",
+                                description: "Native performance with Sigil's LLVM backend. Zero-cost abstractions that compile to optimal machine code."
+                            },
+                            FeatureCard {
+                                icon: "shield",
+                                title: "Type-Safe",
+                                description: "Catch errors at compile time with Sigil's evidentiality type system. Track data provenance through your entire application."
+                            },
+                            FeatureCard {
+                                icon: "layers",
+                                title: "Full Stack",
+                                description: "From low-level systems programming to web UIs. One ecosystem, one language, unlimited possibilities."
+                            },
+                            FeatureCard {
+                                icon: "users",
+                                title: "Developer First",
+                                description: "Excellent tooling, comprehensive documentation, and an active community. We're here to help you succeed."
+                            }
+                        ])
+                        ·build()
+                ])
+                ·build(),
+
+            // CTA section
+            section()
+                ·class("cta-section")
+                ·children(vec![
+                    h2()·text("Ready to get started?")·build(),
+                    p()·text("Join thousands of developers building with Daemoniorum.")·build(),
+                    Link(LinkProps {
+                        to: "/docs/getting-started".to_string(),
+                        replace: nay,
+                        class: Some("btn btn-primary btn-lg".to_string()),
+                        active_class: None
+                    }, vec![text("Read the Docs")])
+                ])
+                ·build()
+        ],
+        on_theme_toggle: || {}
+    })
+}
+
+rite ProductCard(props: { product: Product }) → VNode! {
+    Card(CardProps {
+        title: props.product.name·clone(),
+        description: Some(props.product.description·clone()),
+        icon: Some(props.product.icon·clone()),
+        href: Some(format!("/docs/{}", props.product.id))
+    })
+}
+
+rite FeatureCard(props: { icon: &str, title: &str, description: &str }) → VNode! {
+    div()
+        ·class("feature-card")
+        ·children(vec![
+            div()·class("feature-icon")·child(Icon { name: props.icon })·build(),
+            h3()·class("feature-title")·text(props.title)·build(),
+            p()·class("feature-description")·text(props.description)·build()
+        ])
+        ·build()
+}
+
+// ============================================================================
+// Documentation Pages
+// ============================================================================
+
+/// Documentation index
+☉ rite DocsIndex() → VNode! {
+    ≔ sidebar_items! = build_docs_sidebar()
+
+    DocsLayout(DocsLayoutProps {
+        children: vec![
+            h1()·text("Documentation")·build(),
+            p()·class("lead")·text("Learn how to build with the Daemoniorum platform.")·build(),
+
+            // Product categories
+            PRODUCT_CATALOG·iter()
+                ·group_by(|p| p.category·clone())
+                ·map(|(category, products)| {
+                    section()
+                        ·class("docs-category")
+                        ·children(vec![
+                            h2()·text(&category·to_string())·build(),
+                            div()
+                                ·class("docs-cards")
+                                ·children(
+                                    products·map(|p| Card(CardProps {
+                                        title: p.name·clone(),
+                                        description: Some(p.tagline·clone()),
+                                        icon: Some(p.icon·clone()),
+                                        href: Some(format!("/docs/{}", p.id))
+                                    }))·collect()
+                                )
+                                ·build()
+                        ])
+                        ·build()
+                })
+                ·collect::<Vec<_>>()
+                |into_fragment
+        ],
+        sidebar_items: sidebar_items,
+        current_path: "/docs".to_string(),
+        show_toc: nay,
+        toc_items: vec![],
+        prev_page: None,
+        next_page: Some(PageLink {
+            title: "Getting Started".to_string(),
+            path: "/docs/getting-started".to_string()
+        }),
+        on_theme_toggle: || {}
+    })
+}
+
+/// Product documentation page
+☉ rite ProductDocs(props: { product_id: String }) → VNode! {
+    ≔ product? = PRODUCT_CATALOG·iter()·find(|p| p.id == props.product_id)
+    ≔ sidebar_items! = build_docs_sidebar()
+
+    match product? {
+        Some(p) => {
+            DocsLayout(DocsLayoutProps {
+                children: vec![
+                    // Product header
+                    div()
+                        ·class("product-header")
+                        ·children(vec![
+                            Icon { name: &p.icon },
+                            div()
+                                ·children(vec![
+                                    h1()·text(&p.name)·build(),
+                                    p()·class("lead")·text(&p.tagline)·build()
+                                ])
+                                ·build(),
+                            VersionBadge { version: &p.version, href: Some(&format!("/changelog/{}", p.id)) }
+                        ])
+                        ·build(),
+
+                    // Quick start
+                    section()
+                        ·children(vec![
+                            h2()·text("Quick Start")·build(),
+                            CodeBlock(CodeBlockProps {
+                                code: p.quick_start·clone(),
+                                language: Some("sigil".to_string()),
+                                filename: None,
+                                highlight_lines: vec![],
+                                show_line_numbers: yea
+                            })
+                        ])
+                        ·build(),
+
+                    // Features
+                    section()
+                        ·children(vec![
+                            h2()·text("Features")·build(),
+                            ul()
+                                ·class("feature-list")
+                                ·children(
+                                    p.features·iter()
+                                        ·map(|f| li()·text(f)·build())
+                                        ·collect()
+                                )
+                                ·build()
+                        ])
+                        ·build(),
+
+                    // Sections
+                    section()
+                        ·children(vec![
+                            h2()·text("Documentation")·build(),
+                            div()
+                                ·class("section-cards")
+                                ·children(
+                                    p.sections·iter()
+                                        ·map(|s| Card(CardProps {
+                                            title: s.title·clone(),
+                                            description: Some(s.description·clone()),
+                                            icon: None,
+                                            href: Some(format!("/docs/{}/{}", p.id, s.id))
+                                        }))
+                                        ·collect()
+                                )
+                                ·build()
+                        ])
+                        ·build()
+                ],
+                sidebar_items: sidebar_items,
+                current_path: format!("/docs/{}", props.product_id),
+                show_toc: yea,
+                toc_items: vec![
+                    TocItem { title: "Quick Start".to_string(), anchor: "quick-start".to_string(), level: 2, children: vec![] },
+                    TocItem { title: "Features".to_string(), anchor: "features".to_string(), level: 2, children: vec![] },
+                    TocItem { title: "Documentation".to_string(), anchor: "documentation".to_string(), level: 2, children: vec![] }
+                ],
+                prev_page: None,
+                next_page: p.sections·first()·map(|s| PageLink {
+                    title: s.title·clone(),
+                    path: format!("/docs/{}/{}", p.id, s.id)
+                }),
+                on_theme_toggle: || {}
+            })
+        }
+        None => NotFound()
+    }
+}
+
+/// Product section page
+☉ rite ProductSection(props: { product_id: String, section_id: String }) → VNode! {
+    ≔ product? = PRODUCT_CATALOG·iter()·find(|p| p.id == props.product_id)
+    ≔ sidebar_items! = build_docs_sidebar()
+
+    match product? {
+        Some(p) => {
+            ≔ section? = p.sections·iter()·find(|s| s.id == props.section_id)
+
+            match section? {
+                Some(s) => {
+                    DocsLayout(DocsLayoutProps {
+                        children: vec![
+                            h1()·text(&s.title)·build(),
+                            // Section content would be loaded from markdown
+                            div()·class("markdown-content")·text(&s.content)·build()
+                        ],
+                        sidebar_items: sidebar_items,
+                        current_path: format!("/docs/{}/{}", props.product_id, props.section_id),
+                        show_toc: yea,
+                        toc_items: s.toc·clone(),
+                        prev_page: None, // Calculate based on section order
+                        next_page: None,
+                        on_theme_toggle: || {}
+                    })
+                }
+                None => NotFound()
+            }
+        }
+        None => NotFound()
+    }
+}
+
+// ============================================================================
+// API Reference Pages
+// ============================================================================
+
+/// API reference index
+☉ rite ApiIndex() → VNode! {
+    ≔ modules! = PRODUCT_CATALOG·iter()
+        ·map(|p| ApiModuleInfo {
+            name: p.name·clone(),
+            path: format!("/api/{}", p.id),
+            description: p.tagline·clone(),
+            items_count: p.api_items_count
+        })
+        ·collect()
+
+    ApiLayout(ApiLayoutProps {
+        children: vec![
+            h1()·text("API Reference")·build(),
+            p()·class("lead")·text("Complete API documentation for all Daemoniorum products.")·build(),
+
+            div()
+                ·class("api-overview")
+                ·children(
+                    PRODUCT_CATALOG·iter()
+                        ·map(|p| Card(CardProps {
+                            title: p.name·clone(),
+                            description: Some(format!("{} API items", p.api_items_count)),
+                            icon: Some(p.icon·clone()),
+                            href: Some(format!("/api/{}", p.id))
+                        }))
+                        ·collect()
+                )
+                ·build()
+        ],
+        modules: modules,
+        current_module: None,
+        on_theme_toggle: || {}
+    })
+}
+
+/// Product API reference
+☉ rite ApiReference(props: { product_id: String }) → VNode! {
+    ≔ product? = PRODUCT_CATALOG·iter()·find(|p| p.id == props.product_id)
+
+    match product? {
+        Some(p) => {
+            ≔ modules! = PRODUCT_CATALOG·iter()
+                ·map(|p| ApiModuleInfo {
+                    name: p.name·clone(),
+                    path: format!("/api/{}", p.id),
+                    description: p.tagline·clone(),
+                    items_count: p.api_items_count
+                })
+                ·collect()
+
+            ApiLayout(ApiLayoutProps {
+                children: vec![
+                    h1()·text(&format!("{} API", p.name))·build(),
+                    p()·class("lead")·text(&p.api_description)·build(),
+
+                    // API modules/namespaces
+                    section()
+                        ·children(vec![
+                            h2()·text("Modules")·build(),
+                            div()
+                                ·class("api-modules-grid")
+                                ·children(
+                                    p.api_modules·iter()
+                                        ·map(|m| Card(CardProps {
+                                            title: m.name·clone(),
+                                            description: Some(m.description·clone()),
+                                            icon: None,
+                                            href: Some(format!("/api/{}/{}", p.id, m.id))
+                                        }))
+                                        ·collect()
+                                )
+                                ·build()
+                        ])
+                        ·build()
+                ],
+                modules: modules,
+                current_module: Some(p.id·clone()),
+                on_theme_toggle: || {}
+            })
+        }
+        None => NotFound()
+    }
+}
+
+/// API module page
+☉ rite ApiModule(props: { product_id: String, module_id: String }) → VNode! {
+    // Detailed API documentation for a specific module
+    div()·text(&format!("API Module: {}/{}", props.product_id, props.module_id))·build()
+}
+
+// ============================================================================
+// Guide Pages
+// ============================================================================
+
+/// Guides index
+☉ rite GuidesIndex() → VNode! {
+    ≔ sidebar_items! = build_docs_sidebar()
+
+    DocsLayout(DocsLayoutProps {
+        children: vec![
+            h1()·text("Guides")·build(),
+            p()·class("lead")·text("Step-by-step tutorials and best practices for building with Daemoniorum.")·build(),
+
+            section()
+                ·children(vec![
+                    h2()·text("Getting Started")·build(),
+                    div()
+                        ·class("guides-grid")
+                        ·children(vec![
+                            GuideCard {
+                                title: "Your First Sigil App",
+                                description: "Learn the basics of Sigil by building a simple application.",
+                                duration: "15 min",
+                                difficulty: "Beginner",
+                                href: "/guides/first-sigil-app"
+                            },
+                            GuideCard {
+                                title: "Building with Sigil Web",
+                                description: "Create reactive web applications with Sigil Web framework.",
+                                duration: "30 min",
+                                difficulty: "Intermediate",
+                                href: "/guides/qliphoth-basics"
+                            },
+                            GuideCard {
+                                title: "State Management Patterns",
+                                description: "Master actor-based state management in Sigil applications.",
+                                duration: "45 min",
+                                difficulty: "Advanced",
+                                href: "/guides/state-management"
+                            }
+                        ])
+                        ·build()
+                ])
+                ·build(),
+
+            section()
+                ·children(vec![
+                    h2()·text("Integration Guides")·build(),
+                    div()
+                        ·class("guides-grid")
+                        ·children(vec![
+                            GuideCard {
+                                title: "Connecting to Leviathan",
+                                description: "Integrate your Sigil Web app with Leviathan backend.",
+                                duration: "20 min",
+                                difficulty: "Intermediate",
+                                href: "/guides/leviathan-integration"
+                            },
+                            GuideCard {
+                                title: "Using Nyx Agents",
+                                description: "Build AI-powered features with Nyx agent framework.",
+                                duration: "40 min",
+                                difficulty: "Advanced",
+                                href: "/guides/nyx-agents"
+                            }
+                        ])
+                        ·build()
+                ])
+                ·build()
+        ],
+        sidebar_items: sidebar_items,
+        current_path: "/guides".to_string(),
+        show_toc: nay,
+        toc_items: vec![],
+        prev_page: None,
+        next_page: None,
+        on_theme_toggle: || {}
+    })
+}
+
+rite GuideCard(props: { title: &str, description: &str, duration: &str, difficulty: &str, href: &str }) → VNode! {
+    Link(LinkProps {
+        to: props.href.to_string(),
+        replace: nay,
+        class: Some("guide-card".to_string()),
+        active_class: None
+    }, vec![
+        h3()·class("guide-title")·text(props.title)·build(),
+        p()·class("guide-description")·text(props.description)·build(),
+        div()
+            ·class("guide-meta")
+            ·children(vec![
+                span()·class("guide-duration")·children(vec![Icon { name: "clock" }, text(props.duration)])·build(),
+                span()·class(&format!("guide-difficulty guide-difficulty--{}", props.difficulty·to_lowercase()))·text(props.difficulty)·build()
+            ])
+            ·build()
+    ])
+}
+
+/// Individual guide page
+☉ rite Guide(props: { guide_id: String }) → VNode! {
+    ≔ sidebar_items! = build_docs_sidebar()
+
+    DocsLayout(DocsLayoutProps {
+        children: vec![
+            h1()·text(&format!("Guide: {}", props.guide_id))·build(),
+            // Guide content would be loaded from markdown
+            div()·class("markdown-content")·text("Guide content here...")·build()
+        ],
+        sidebar_items: sidebar_items,
+        current_path: format!("/guides/{}", props.guide_id),
+        show_toc: yea,
+        toc_items: vec![],
+        prev_page: None,
+        next_page: None,
+        on_theme_toggle: || {}
+    })
+}
+
+// ============================================================================
+// Examples and Playground
+// ============================================================================
+
+/// Examples index
+☉ rite ExamplesIndex() → VNode! {
+    div()
+        ·class("examples-page")
+        ·children(vec![
+            h1()·text("Examples")·build(),
+            p()·class("lead")·text("Explore working examples and templates.")·build(),
+
+            // Example categories
+            section()
+                ·children(vec![
+                    h2()·text("Basic Examples")·build(),
+                    div()
+                        ·class("examples-grid")
+                        ·children(vec![
+                            ExampleCard {
+                                title: "Counter",
+                                description: "Simple state management example",
+                                tags: vec!["state", "basics"],
+                                href: "/examples/counter"
+                            },
+                            ExampleCard {
+                                title: "Todo App",
+                                description: "CRUD operations with local state",
+                                tags: vec!["state", "forms"],
+                                href: "/examples/todo"
+                            },
+                            ExampleCard {
+                                title: "Form Validation",
+                                description: "Input validation patterns",
+                                tags: vec!["forms", "validation"],
+                                href: "/examples/form-validation"
+                            }
+                        ])
+                        ·build()
+                ])
+                ·build(),
+
+            section()
+                ·children(vec![
+                    h2()·text("Advanced Examples")·build(),
+                    div()
+                        ·class("examples-grid")
+                        ·children(vec![
+                            ExampleCard {
+                                title: "Data Fetching",
+                                description: "Async data loading with hooks",
+                                tags: vec!["async", "hooks"],
+                                href: "/examples/data-fetching"
+                            },
+                            ExampleCard {
+                                title: "Real-time Chat",
+                                description: "WebSocket integration example",
+                                tags: vec!["websocket", "realtime"],
+                                href: "/examples/chat"
+                            },
+                            ExampleCard {
+                                title: "Dashboard",
+                                description: "Complex layout with routing",
+                                tags: vec!["routing", "layout"],
+                                href: "/examples/dashboard"
+                            }
+                        ])
+                        ·build()
+                ])
+                ·build()
+        ])
+        ·build()
+}
+
+rite ExampleCard(props: { title: &str, description: &str, tags: Vec<&str>, href: &str }) → VNode! {
+    Link(LinkProps {
+        to: props.href.to_string(),
+        replace: nay,
+        class: Some("example-card".to_string()),
+        active_class: None
+    }, vec![
+        h3()·class("example-title")·text(props.title)·build(),
+        p()·class("example-description")·text(props.description)·build(),
+        div()
+            ·class("example-tags")
+            ·children(
+                props.tags·iter()
+                    ·map(|tag| span()·class("example-tag")·text(tag)·build())
+                    ·collect()
+            )
+            ·build()
+    ])
+}
+
+/// Interactive playground
+☉ rite Playground() → VNode! {
+    let (code, set_code) = use_state(DEFAULT_PLAYGROUND_CODE.to_string())
+    let (output, set_output) = use_state("")
+    let (running, set_running) = use_state(nay)
+
+    ≔ run_code! = || {
+        set_running(yea)
+        // Compile and run code
+        // This would use WASM compilation
+        set_output("Output here...")
+        set_running(nay)
+    }
+
+    PlaygroundLayout(PlaygroundLayoutProps {
+        children: vec![
+            div()
+                ·class("playground-container")
+                ·children(vec![
+                    // Editor panel
+                    div()
+                        ·class("playground-editor")
+                        ·children(vec![
+                            div()
+                                ·class("playground-toolbar")
+                                ·children(vec![
+                                    button()
+                                        ·class("btn btn-primary")
+                                        ·onclick(run_code)
+                                        ·attr("disabled", running)
+                                        ·children(vec![
+                                            Icon { name: "play" },
+                                            text(if running { "Running..." } ⎉ { "Run" })
+                                        ])
+                                        ·build(),
+                                    button()
+                                        ·class("btn btn-secondary")
+                                        ·onclick(|| set_code(DEFAULT_PLAYGROUND_CODE.to_string()))
+                                        ·child(text("Reset"))
+                                        ·build()
+                                ])
+                                ·build(),
+                            // Code editor would be a Monaco/CodeMirror integration
+                            textarea()
+                                ·class("playground-code")
+                                ·attr("value", &code)
+                                ·oninput(set_code)
+                                ·build()
+                        ])
+                        ·build(),
+
+                    // Preview panel
+                    div()
+                        ·class("playground-preview")
+                        ·children(vec![
+                            div()
+                                ·class("playground-preview-header")
+                                ·child(text("Preview"))
+                                ·build(),
+                            div()
+                                ·class("playground-preview-content")
+                                ·attr("id", "preview-target")
+                                ·build(),
+                            div()
+                                ·class("playground-console")
+                                ·children(vec![
+                                    div()·class("console-header")·text("Console")·build(),
+                                    pre()·class("console-output")·text(&output)·build()
+                                ])
+                                ·build()
+                        ])
+                        ·build()
+                ])
+                ·build()
+        ],
+        on_theme_toggle: || {}
+    })
+}
+
+const DEFAULT_PLAYGROUND_CODE: &str = r#"use qliphoth::prelude::*
+
+component HelloWorld {
+    state name: String! = "World"
+
+    rite render(this) → VNode {
+        div {
+            h1 { "Hello, {this.name}!" }
+            input[
+                value: this.name,
+                oninput: |v| this.name = v
+            ]
+        }
+    }
+}
+
+rite main() {
+    App::mount("#preview-target", HelloWorld::new())
+}
+"#;
+
+// ============================================================================
+// Other Pages
+// ============================================================================
+
+/// Search results page
+☉ rite SearchResults() → VNode! {
+    ≔ query! = use_query()
+    ≔ search_term! = query·get("q")·unwrap_or(&"".to_string())·clone()
+    ≔ results~ = use_fetch::<Vec<SearchResult>>(&format!("/api/search?q={}", search_term))
+
+    div()
+        ·class("search-results-page")
+        ·children(vec![
+            h1()·text(&format!("Search results for \"{}\"", search_term))·build(),
+            match results~ {
+                AsyncState::Loading => div()·class("loading")·child(Spinner {})·build(),
+                AsyncState::Error(e~) => div()·class("error")·text(&e~)·build(),
+                AsyncState::Success(items~) => {
+                    ⎇ items~·is_empty() {
+                        div()·class("no-results")·text("No results found.")·build()
+                    } ⎉ {
+                        ul()
+                            ·class("search-results")
+                            ·children(
+                                items~·iter()
+                                    ·map(|item| {
+                                        li()
+                                            ·class("search-result")
+                                            ·child(Link(LinkProps {
+                                                to: item.path·clone(),
+                                                replace: nay,
+                                                class: None,
+                                                active_class: None
+                                            }, vec![
+                                                h3()·text(&item.title)·build(),
+                                                p()·text(&item.excerpt)·build()
+                                            ]))
+                                            ·build()
+                                    })
+                                    ·collect()
+                            )
+                            ·build()
+                    }
+                }
+                _ => fragment(vec![])
+            }
+        ])
+        ·build()
+}
+
+/// Changelog page
+☉ rite Changelog() → VNode! {
+    div()
+        ·class("changelog-page")
+        ·children(vec![
+            h1()·text("Changelog")·build(),
+            p()·class("lead")·text("Release notes and version history for all Daemoniorum products.")·build()
+            // Changelog entries would be loaded from data
+        ])
+        ·build()
+}
+
+/// Release notes for specific version
+☉ rite ReleaseNotes(props: { version: String }) → VNode! {
+    div()
+        ·class("release-notes-page")
+        ·children(vec![
+            h1()·text(&format!("Release {}", props.version))·build()
+            // Release content
+        ])
+        ·build()
+}
+
+/// 404 page
+☉ rite NotFound() → VNode! {
+    div()
+        ·class("not-found-page")
+        ·children(vec![
+            h1()·text("404")·build(),
+            p()·text("Page not found")·build(),
+            Link(LinkProps {
+                to: "/".to_string(),
+                replace: nay,
+                class: Some("btn btn-primary".to_string()),
+                active_class: None
+            }, vec![text("Go Home")])
+        ])
+        ·build()
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+rite build_docs_sidebar() → Vec<SidebarItem>! {
+    vec![
+        SidebarItem {
+            title: "Getting Started".to_string(),
+            path: "/docs/getting-started".to_string(),
+            icon: Some("rocket".to_string()),
+            children: vec![],
+            badge: None
+        },
+        SidebarItem {
+            title: "Products".to_string(),
+            path: "/docs".to_string(),
+            icon: Some("package".to_string()),
+            children: PRODUCT_CATALOG·iter()
+                ·map(|p| SidebarItem {
+                    title: p.name·clone(),
+                    path: format!("/docs/{}", p.id),
+                    icon: Some(p.icon·clone()),
+                    children: p.sections·iter()
+                        ·map(|s| SidebarItem {
+                            title: s.title·clone(),
+                            path: format!("/docs/{}/{}", p.id, s.id),
+                            icon: None,
+                            children: vec![],
+                            badge: None
+                        })
+                        ·collect(),
+                    badge: None
+                })
+                ·collect(),
+            badge: None
+        },
+        SidebarItem {
+            title: "API Reference".to_string(),
+            path: "/api".to_string(),
+            icon: Some("code".to_string()),
+            children: vec![],
+            badge: None
+        },
+        SidebarItem {
+            title: "Guides".to_string(),
+            path: "/guides".to_string(),
+            icon: Some("book-open".to_string()),
+            children: vec![],
+            badge: None
+        }
+    ]
+}

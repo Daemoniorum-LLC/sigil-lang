@@ -55,7 +55,7 @@
     "programmingLanguage": "Sigil",
     "codeRepository": "https://github.com/Daemoniorum-LLC/sigil-lang",
     "license": "https://opensource.org/licenses/MIT",
-    "version": "0.1.1",
+    "version": "0.3.0",
     "author": {
       "@type": "Organization",
       "name": "Daemoniorum LLC",
@@ -106,9 +106,9 @@
   <nav class="nav" role="navigation" aria-label="Main navigation">
     <div class="nav-container">
       <a href="/" class="nav-logo" aria-label="Sigil home">
-        <span class="logo-icon" aria-hidden="true">⛤</span>
+        <img src="/images/sigil-icon.svg" alt="" class="logo-icon" aria-hidden="true" width="24" height="24">
         <span class="logo-text">Sigil</span>
-        <span class="version-badge">0.1</span>
+        <span class="version-badge">0.3</span>
       </a>
 
       <div class="nav-links" id="nav-links">
@@ -171,8 +171,8 @@
               <span class="panel-badge badge-danger">Compiles. Vulnerable.</span>
             </div>
             <pre class="code-block"><code><span class="comment">// This compiles in every mainstream language</span>
-<span class="keyword">async fn</span> <span class="function">get_user_profile</span>(id: <span class="type">String</span>) -> <span class="type">Profile</span> {
-    <span class="keyword">let</span> response = http::get(<span class="string">"/api/users/{id}"</span>).<span class="keyword">await</span>;
+<span class="keyword">async fn</span> <span class="function">get_user_profile</span>(id: <span class="type">String</span>) → <span class="type">Profile</span> {
+    <span class="keyword">let</span> response = http·get(<span class="string">"/api/users/{id}"</span>).<span class="keyword">await</span>;
     <span class="keyword">let</span> profile: <span class="type">Profile</span> = response.json();
 
     <span class="comment">// profile is type Profile</span>
@@ -190,9 +190,9 @@
               <span class="panel-icon">Sigil</span>
               <span class="panel-badge badge-success">Type Error. Safe.</span>
             </div>
-            <pre class="code-block"><code><span class="keyword">async fn</span> <span class="function">get_user_profile</span>(id: <span class="type">Str</span>) -> <span class="type">Profile</span><span class="ev-known">!</span> {
-    <span class="keyword">let</span> response<span class="ev-reported">~</span> = http::get(<span class="string">"/api/users/{id}"</span>).<span class="keyword">await</span>;
-    <span class="keyword">let</span> profile<span class="ev-reported">~</span>: <span class="type">Profile</span><span class="ev-reported">~</span> = response.json();
+            <pre class="code-block"><code><span class="keyword">async rite</span> <span class="function">get_user_profile</span>(id: <span class="type">!Str</span>) → <span class="type">Profile</span><span class="ev-known">!</span> {
+    <span class="keyword">≔</span> response<span class="ev-reported">~</span> = http·get(<span class="string">"/api/users/{id}"</span>).<span class="keyword">await</span>;
+    <span class="keyword">≔</span> profile<span class="ev-reported">~</span>: <span class="type">Profile</span><span class="ev-reported">~</span> = response.json();
 
     <span class="comment">// profile~ is type Profile~ (Reported)</span>
     <span class="comment">// The ~ marker propagates automatically</span>
@@ -200,7 +200,7 @@
     save_to_database(profile);  <span class="error">// ERROR: expected Profile!, got Profile~</span>
 
     <span class="comment">// Must validate first:</span>
-    <span class="keyword">let</span> verified<span class="ev-known">!</span> = profile |<span class="keyword">validate</span><span class="ev-known">!</span>{ verify_signature() };
+    <span class="keyword">≔</span> verified<span class="ev-known">!</span> = profile |<span class="keyword">validate</span><span class="ev-known">!</span>{ verify_signature() };
     save_to_database(verified);  <span class="comment">// OK: Profile!</span>
     verified
 }</code></pre>
@@ -232,8 +232,8 @@
               </div>
             </div>
             <p>Data you computed yourself, or explicitly verified. Safe to trust.</p>
-            <pre class="code-block code-sm"><code><span class="keyword">let</span> sum<span class="ev-known">!</span> = <span class="number">2</span> + <span class="number">2</span>           <span class="comment">// Computed locally</span>
-<span class="keyword">let</span> valid<span class="ev-known">!</span> = input |<span class="keyword">validate</span><span class="ev-known">!</span>{ check() }</code></pre>
+            <pre class="code-block code-sm"><code><span class="keyword">≔</span> sum<span class="ev-known">!</span> = <span class="number">2</span> + <span class="number">2</span>           <span class="comment">// Computed locally</span>
+<span class="keyword">≔</span> valid<span class="ev-known">!</span> = input |<span class="keyword">validate</span><span class="ev-known">!</span>{ check() }</code></pre>
           </article>
 
           <article class="evidence-card">
@@ -245,8 +245,8 @@
               </div>
             </div>
             <p>Data that might not exist. Like Option/Maybe, but tracked in the type.</p>
-            <pre class="code-block code-sm"><code><span class="keyword">let</span> user<span class="ev-uncertain">?</span> = database.find(id)  <span class="comment">// Might not exist</span>
-<span class="keyword">let</span> name<span class="ev-uncertain">?</span> = user?.profile?.name   <span class="comment">// Propagates</span></code></pre>
+            <pre class="code-block code-sm"><code><span class="keyword">≔</span> user<span class="ev-uncertain">?</span> = database.find(id)  <span class="comment">// Might not exist</span>
+<span class="keyword">≔</span> name<span class="ev-uncertain">?</span> = user?.profile?.name   <span class="comment">// Propagates</span></code></pre>
           </article>
 
           <article class="evidence-card">
@@ -258,8 +258,8 @@
               </div>
             </div>
             <p>Data from APIs, user input, files. <strong>Never trust without validation.</strong></p>
-            <pre class="code-block code-sm"><code><span class="keyword">let</span> data<span class="ev-reported">~</span> = api.fetch(url)     <span class="comment">// External</span>
-<span class="keyword">let</span> input<span class="ev-reported">~</span> = form.get(<span class="string">"email"</span>)   <span class="comment">// User input</span></code></pre>
+            <pre class="code-block code-sm"><code><span class="keyword">≔</span> data<span class="ev-reported">~</span> = api.fetch(url)     <span class="comment">// External</span>
+<span class="keyword">≔</span> input<span class="ev-reported">~</span> = form.get(<span class="string">"email"</span>)   <span class="comment">// User input</span></code></pre>
           </article>
 
           <article class="evidence-card">
@@ -271,7 +271,7 @@
               </div>
             </div>
             <p>Explicit "I know what I'm doing" escape hatch. Use sparingly.</p>
-            <pre class="code-block code-sm"><code><span class="keyword">let</span> ptr<span class="ev-paradox">‽</span> = <span class="keyword">unsafe</span> { raw_pointer }
+            <pre class="code-block code-sm"><code><span class="keyword">≔</span> ptr<span class="ev-paradox">‽</span> = <span class="keyword">unsafe</span> { raw_pointer }
 <span class="comment">// You're taking responsibility</span></code></pre>
           </article>
         </div>
@@ -279,9 +279,9 @@
         <div class="evidence-rule">
           <h4>The Propagation Rule</h4>
           <p>When you combine data, the result inherits the <em>worst</em> evidence level:</p>
-          <pre class="code-block"><code><span class="keyword">let</span> local<span class="ev-known">!</span> = <span class="number">100</span>                    <span class="comment">// Known</span>
-<span class="keyword">let</span> remote<span class="ev-reported">~</span> = api.get_multiplier()   <span class="comment">// Reported</span>
-<span class="keyword">let</span> result<span class="ev-reported">~</span> = local * remote          <span class="comment">// Known + Reported = Reported</span>
+          <pre class="code-block"><code><span class="keyword">≔</span> local<span class="ev-known">!</span> = <span class="number">100</span>                    <span class="comment">// Known</span>
+<span class="keyword">≔</span> remote<span class="ev-reported">~</span> = api.get_multiplier()   <span class="comment">// Reported</span>
+<span class="keyword">≔</span> result<span class="ev-reported">~</span> = local * remote          <span class="comment">// Known + Reported = Reported</span>
 <span class="comment">//       ^ automatically inferred as ~ because remote is untrusted</span></code></pre>
         </div>
       </div>
@@ -296,7 +296,7 @@
         </div>
 
         <div class="morpheme-demo">
-          <pre class="code-block code-lg"><code><span class="keyword">let</span> result = users<span class="ev-reported">~</span>
+          <pre class="code-block code-lg"><code><span class="keyword">≔</span> result = users<span class="ev-reported">~</span>
     |<span class="morpheme">φ</span>{.active}              <span class="comment">// φ filter: keep active users</span>
     |<span class="morpheme">φ</span>{.age >= <span class="number">18</span>}           <span class="comment">// φ filter: adults only</span>
     |<span class="morpheme">τ</span>{.normalize()}         <span class="comment">// τ transform: normalize each</span>
@@ -388,8 +388,8 @@
                   <p>Four memory types: instant (context window), episodic (experiences), semantic (knowledge graph), procedural (skills). Agents remember what matters.</p>
                   <pre class="code-block code-sm"><code><span class="keyword">memory</span>: <span class="type">Engram</span> {
     instant: <span class="number">8192</span>,      <span class="comment">// tokens</span>
-    episodic: <span class="keyword">true</span>,
-    semantic: <span class="keyword">true</span>,
+    episodic: <span class="keyword">yea</span>,
+    semantic: <span class="keyword">yea</span>,
 }</code></pre>
                 </div>
               </article>
@@ -400,7 +400,7 @@
                   <h5>Omen</h5>
                   <p class="layer-subtitle">Planning</p>
                   <p>Goal decomposition, belief revision, causal modeling. Agents break complex tasks into achievable steps.</p>
-                  <pre class="code-block code-sm"><code><span class="keyword">let</span> plan = agent.omen.decompose(goal)
+                  <pre class="code-block code-sm"><code><span class="keyword">≔</span> plan = agent.omen.decompose(goal)
     |<span class="morpheme">φ</span>{.feasible()}
     |<span class="morpheme">σ</span>·by{.priority}</code></pre>
                 </div>
@@ -426,7 +426,7 @@
                   <h5>Oracle</h5>
                   <p class="layer-subtitle">Explainability</p>
                   <p>Decision traces, counterfactuals, confidence scores. Every decision is auditable.</p>
-                  <pre class="code-block code-sm"><code><span class="keyword">let</span> trace<span class="ev-known">!</span> = agent.oracle.explain(decision)
+                  <pre class="code-block code-sm"><code><span class="keyword">≔</span> trace<span class="ev-known">!</span> = agent.oracle.explain(decision)
 <span class="comment">// "I chose X because Y, with 87% confidence"</span></code></pre>
                 </div>
               </article>
@@ -460,8 +460,8 @@
                   <h5>Commune</h5>
                   <p class="layer-subtitle">Communication</p>
                   <p>Multi-agent messaging, trust propagation, swarm coordination. Agents work together.</p>
-                  <pre class="code-block code-sm"><code>agent_a ! <span class="type">Message</span>::Request(task)
-<span class="keyword">let</span> response = agent_b ? <span class="type">Message</span>::Response</code></pre>
+                  <pre class="code-block code-sm"><code>agent_a ! <span class="type">Message</span>·Request(task)
+<span class="keyword">≔</span> response = agent_b ? <span class="type">Message</span>·Response</code></pre>
                 </div>
               </article>
             </div>
@@ -548,30 +548,30 @@
                 <span class="stat"><strong>1,247</strong> chars</span>
               </div>
             </div>
-            <pre class="code-block code-density"><code><span class="keyword">type</span> <span class="type">Todo</span> = <span class="keyword">struct</span> { id: <span class="type">u64</span>, text: <span class="type">Str</span>, done: <span class="type">bool</span> }
-<span class="keyword">type</span> <span class="type">Store</span> = <span class="keyword">struct</span> { todos: <span class="type">Vec</span>[<span class="type">Todo</span>], next_id: <span class="type">u64</span> }
+            <pre class="code-block code-density"><code><span class="keyword">sigil</span> <span class="type">Todo</span> { id: <span class="type">!u64</span>, text: <span class="type">!Str</span>, done: <span class="type">!bool</span> }
+<span class="keyword">sigil</span> <span class="type">Store</span> { todos: <span class="type">!Vec</span>[<span class="type">Todo</span>], next_id: <span class="type">!u64</span> }
 
-<span class="keyword">impl</span> <span class="type">Store</span> {
-    <span class="keyword">fn</span> <span class="function">new</span>() -> <span class="type">Self</span><span class="ev-known">!</span> { <span class="type">Store</span> { todos: [], next_id: <span class="number">1</span> } }
+<span class="keyword">⊢</span> <span class="type">Store</span> {
+    <span class="keyword">rite</span> <span class="function">new</span>() → <span class="type">This</span><span class="ev-known">!</span> { <span class="type">Store</span> { todos: [], next_id: <span class="number">1</span> } }
 
-    <span class="keyword">fn</span> <span class="function">add</span>(&<span class="keyword">mut</span> self, text: <span class="type">Str</span><span class="ev-reported">~</span>) -> <span class="type">Todo</span><span class="ev-known">!</span> {
-        <span class="keyword">let</span> clean<span class="ev-known">!</span> = text |<span class="keyword">validate</span><span class="ev-known">!</span>{ .trim().non_empty() }
-        <span class="keyword">let</span> todo<span class="ev-known">!</span> = <span class="type">Todo</span> { id: self.next_id, text: clean, done: <span class="keyword">false</span> }
-        self.todos.push(todo)
-        self.next_id += <span class="number">1</span>
+    <span class="keyword">rite</span> <span class="function">add</span>(<span class="keyword">vary</span> this, text: <span class="type">Str</span><span class="ev-reported">~</span>) → <span class="type">Todo</span><span class="ev-known">!</span> {
+        <span class="keyword">≔</span> clean<span class="ev-known">!</span> = text |<span class="keyword">validate</span><span class="ev-known">!</span>{ .trim().non_empty() }
+        <span class="keyword">≔</span> todo<span class="ev-known">!</span> = <span class="type">Todo</span> { id: this.next_id, text: clean, done: <span class="keyword">nay</span> }
+        this.todos.push(todo)
+        this.next_id += <span class="number">1</span>
         todo
     }
 
-    <span class="keyword">fn</span> <span class="function">toggle</span>(&<span class="keyword">mut</span> self, id: <span class="type">u64</span>) -> <span class="type">Option</span>[<span class="type">Todo</span>]<span class="ev-uncertain">?</span> {
-        self.todos |<span class="morpheme">τ</span>{|t| <span class="keyword">if</span> t.id == id { t.done = !t.done } }
-        self.todos |<span class="morpheme">φ</span>{.id == id} |<span class="morpheme">α</span>
+    <span class="keyword">rite</span> <span class="function">toggle</span>(<span class="keyword">vary</span> this, id: <span class="type">!u64</span>) → <span class="type">?Todo</span> {
+        this.todos |<span class="morpheme">τ</span>{|t| <span class="keyword">⎇</span> t.id == id { t.done = !t.done } }
+        this.todos |<span class="morpheme">φ</span>{.id == id} |<span class="morpheme">α</span>
     }
 
-    <span class="keyword">fn</span> <span class="function">remove</span>(&<span class="keyword">mut</span> self, id: <span class="type">u64</span>) { self.todos |<span class="morpheme">φ</span>{.id != id} }
+    <span class="keyword">rite</span> <span class="function">remove</span>(<span class="keyword">vary</span> this, id: <span class="type">!u64</span>) { this.todos |<span class="morpheme">φ</span>{.id != id} }
 
-    <span class="keyword">fn</span> <span class="function">active</span>(&self) -> <span class="type">Vec</span>[<span class="type">Todo</span>]<span class="ev-known">!</span> { self.todos |<span class="morpheme">φ</span>{!.done} }
-    <span class="keyword">fn</span> <span class="function">completed</span>(&self) -> <span class="type">Vec</span>[<span class="type">Todo</span>]<span class="ev-known">!</span> { self.todos |<span class="morpheme">φ</span>{.done} }
-    <span class="keyword">fn</span> <span class="function">clear_done</span>(&<span class="keyword">mut</span> self) { self.todos |<span class="morpheme">φ</span>{!.done} }
+    <span class="keyword">rite</span> <span class="function">active</span>(this) → <span class="type">!Vec</span>[<span class="type">Todo</span>] { this.todos |<span class="morpheme">φ</span>{!.done} }
+    <span class="keyword">rite</span> <span class="function">completed</span>(this) → <span class="type">!Vec</span>[<span class="type">Todo</span>] { this.todos |<span class="morpheme">φ</span>{.done} }
+    <span class="keyword">rite</span> <span class="function">clear_done</span>(<span class="keyword">vary</span> this) { this.todos |<span class="morpheme">φ</span>{!.done} }
 }</code></pre>
           </div>
 
@@ -677,8 +677,8 @@
               <li>Type-safe routing</li>
             </ul>
             <pre class="code-block code-sm"><code>#[component]
-<span class="keyword">fn</span> <span class="function">Dashboard</span>() -> <span class="type">Element</span><span class="ev-known">!</span> {
-    <span class="keyword">let</span> data<span class="ev-reported">~</span> = use_fetch(<span class="string">"/api/stats"</span>)
+<span class="keyword">rite</span> <span class="function">Dashboard</span>() → <span class="type">Element</span><span class="ev-known">!</span> {
+    <span class="keyword">≔</span> data<span class="ev-reported">~</span> = use_fetch(<span class="string">"/api/stats"</span>)
     html! {
         &lt;<span class="type">Card</span>&gt;
             &lt;<span class="type">BarChart</span> data={data |<span class="morpheme">τ</span>{.to_points()}} /&gt;
@@ -698,8 +698,8 @@
               <li>LLVM AOT compilation</li>
               <li>Scientific A/B comparison (WIP)</li>
             </ul>
-            <pre class="code-block code-sm"><code><span class="keyword">fn</span> <span class="function">update</span>(world: &<span class="keyword">mut</span> <span class="type">World</span>) {
-    world.query::&lt;<span class="type">Transform</span>, <span class="type">Velocity</span>&gt;()
+            <pre class="code-block code-sm"><code><span class="keyword">rite</span> <span class="function">update</span>(world: <span class="keyword">vary</span> <span class="type">World</span>) {
+    world.query·&lt;<span class="type">Transform</span>, <span class="type">Velocity</span>&gt;()
         |<span class="morpheme">τ</span>{|(t, v)| t.pos += v.dir * dt<span class="ev-known">!</span>}
 }</code></pre>
           </article>
@@ -715,14 +715,74 @@
               <li>FP8 tensor core support</li>
               <li>No runtime tape overhead</li>
             </ul>
-            <pre class="code-block code-sm"><code><span class="keyword">let</span> a: <span class="type">Tensor</span>&lt;[<span class="number">3</span>, <span class="number">4</span>]&gt; = randn()
-<span class="keyword">let</span> b: <span class="type">Tensor</span>&lt;[<span class="number">4</span>, <span class="number">5</span>]&gt; = randn()
-<span class="keyword">let</span> c: <span class="type">Tensor</span>&lt;[<span class="number">3</span>, <span class="number">5</span>]&gt; = a @ b  <span class="comment">// Verified at compile time</span></code></pre>
+            <pre class="code-block code-sm"><code><span class="keyword">≔</span> a: <span class="type">!Tensor</span>&lt;[<span class="number">3</span>, <span class="number">4</span>]&gt; = randn()
+<span class="keyword">≔</span> b: <span class="type">!Tensor</span>&lt;[<span class="number">4</span>, <span class="number">5</span>]&gt; = randn()
+<span class="keyword">≔</span> c: <span class="type">!Tensor</span>&lt;[<span class="number">3</span>, <span class="number">5</span>]&gt; = a @ b  <span class="comment">// Verified at compile time</span></code></pre>
           </article>
         </div>
 
         <div class="ecosystem-note">
           <p><strong>Built on Rust.</strong> Sigil compiles via LLVM and inherits Rust's memory safety model. The compiler, standard library, and toolchain are implemented in Rust.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Compute Backends -->
+    <section class="section section-dark" id="compute">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-eyebrow">New in 0.3.0</span>
+          <h2>Compute Backends</h2>
+          <p>Native SIMD and CUDA support for numerical workloads.</p>
+        </div>
+
+        <div class="comparison">
+          <div class="comparison-panel">
+            <div class="panel-header panel-header-good">
+              <span class="panel-icon">SIMD (AVX-512)</span>
+              <span class="panel-badge badge-success">16-lane vectors</span>
+            </div>
+            <pre class="code-block"><code><span class="comment">// F32x16: 16-lane packed f32 vector</span>
+<span class="keyword">≔</span> a = F32x16·alloc(<span class="number">16</span>);
+<span class="keyword">≔</span> b = F32x16·alloc(<span class="number">16</span>);
+<span class="keyword">≔</span> result = F32x16·alloc(<span class="number">16</span>);
+
+F32x16·splat(a, <span class="number">2.0</span>);
+F32x16·splat(b, <span class="number">3.0</span>);
+
+<span class="comment">// Vector operations</span>
+F32x16·add(result, a, b);      <span class="comment">// result = a + b</span>
+F32x16·fmadd(result, a, b, c); <span class="comment">// result = a * b + c</span>
+
+<span class="comment">// Reductions</span>
+<span class="keyword">≔</span> sum<span class="ev-known">!</span> = F32x16·reduce_add(a);
+<span class="keyword">≔</span> dot<span class="ev-known">!</span> = F32x16·dot(a, b);</code></pre>
+          </div>
+
+          <div class="comparison-panel">
+            <div class="panel-header panel-header-good">
+              <span class="panel-icon">CUDA</span>
+              <span class="panel-badge badge-success">GPU compute</span>
+            </div>
+            <pre class="code-block"><code><span class="comment">// Compile with: sigil compile program.sg --cuda</span>
+<span class="keyword">≔</span> ok<span class="ev-known">!</span> = Cuda·init();
+<span class="keyword">≔</span> devices<span class="ev-known">!</span> = Cuda·device_count();
+
+<span class="comment">// Device memory</span>
+<span class="keyword">≔</span> d_ptr = Cuda·malloc(<span class="number">1024</span>);
+Cuda·memcpy_h2d(d_ptr, h_ptr, size);
+
+<span class="comment">// Compile and launch kernels</span>
+<span class="keyword">≔</span> kernel = Cuda·compile_kernel(src, <span class="string">"add"</span>);
+<span class="keyword">≔</span> result = Cuda·launch_1d(kernel, grid, block, args, n);
+
+Cuda·sync();
+Cuda·cleanup();</code></pre>
+          </div>
+        </div>
+
+        <div class="compute-note">
+          <p>SIMD uses AVX-512 intrinsics with scalar fallback. CUDA uses the Driver API and links <code>-lcuda -lnvrtc</code>.</p>
         </div>
       </div>
     </section>
@@ -754,8 +814,8 @@ cd sigil-lang/parser && cargo build --release
             <div class="step-content">
               <h4>Write</h4>
               <pre class="code-block"><code><span class="comment">// hello.sigil</span>
-<span class="keyword">fn</span> <span class="function">main</span>() {
-    <span class="keyword">let</span> name<span class="ev-known">!</span> = <span class="string">"World"</span>
+<span class="keyword">rite</span> <span class="function">main</span>() {
+    <span class="keyword">≔</span> name<span class="ev-known">!</span> = <span class="string">"World"</span>
     <span class="function">println</span>(<span class="string">"Hello, {name}!"</span>)
 }</code></pre>
             </div>
@@ -832,6 +892,29 @@ Hello, World!</code></pre>
               <dd>MIT</dd>
             </div>
           </dl>
+
+          <div class="ai-syntax-table">
+            <h4>Native Syntax Keywords (v0.3.0)</h4>
+            <table class="syntax-keywords">
+              <thead>
+                <tr><th>Sigil</th><th>Meaning</th><th>Traditional</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>rite</code></td><td>Function</td><td><code>fn</code></td></tr>
+                <tr><td><code>sigil</code></td><td>Struct</td><td><code>struct</code></td></tr>
+                <tr><td><code>aspect</code></td><td>Trait</td><td><code>trait</code></td></tr>
+                <tr><td><code>⊢</code></td><td>Impl</td><td><code>impl</code></td></tr>
+                <tr><td><code>≔</code></td><td>Let binding</td><td><code>let</code></td></tr>
+                <tr><td><code>vary</code></td><td>Mutable</td><td><code>mut</code></td></tr>
+                <tr><td><code>this/This</code></td><td>Self</td><td><code>self/Self</code></td></tr>
+                <tr><td><code>⎇/⎉</code></td><td>If/Else</td><td><code>if/else</code></td></tr>
+                <tr><td><code>yea/nay</code></td><td>Booleans</td><td><code>true/false</code></td></tr>
+                <tr><td><code>→</code></td><td>Return type</td><td><code>-&gt;</code></td></tr>
+                <tr><td><code>·</code></td><td>Path separator</td><td><code>::</code></td></tr>
+                <tr><td><code>☉</code></td><td>Public</td><td><code>pub</code></td></tr>
+              </tbody>
+            </table>
+          </div>
           </div>
         </details>
       </div>
@@ -843,7 +926,7 @@ Hello, World!</code></pre>
     <div class="footer-container">
       <div class="footer-brand">
         <a href="/" class="footer-logo">
-          <span class="logo-icon">⛤</span>
+          <img src="/images/sigil-icon.svg" alt="" class="logo-icon" aria-hidden="true" width="20" height="20">
           <span>Sigil</span>
         </a>
         <p>Infrastructure for minds that don't yet know what they are.</p>

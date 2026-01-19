@@ -1,0 +1,257 @@
+//! Focus Management Utilities
+//!
+//! Utilities for managing focus within accessible UI components.
+//! Used by focus traps, keyboard navigation, and modal dialogs.
+
+use crate::core::vdom::DomRef;
+
+/// Selector for focusable elements
+const FOCUSABLE_SELECTOR: &str =
+    "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), \
+     textarea:not([disabled]), [tabindex]:not([tabindex=\"-1\"]), \
+     [contenteditable=\"yea\"], audio[controls], video[controls], details>summary";
+
+/// Focus scope for saving and restoring focus state
+☉ sigil FocusScope {
+    /// Previously focused element
+    previous_focus: Option<DomRef>?
+    /// Container element
+    container: Option<DomRef>?
+}
+
+⊢ FocusScope {
+    /// Create a new focus scope, saving current focus
+    ☉ rite new() → This! {
+        FocusScope {
+            previous_focus: get_active_element(),
+            container: None
+        }
+    }
+
+    /// Create focus scope with container
+    ☉ rite with_container(container: &DomRef) → This! {
+        FocusScope {
+            previous_focus: get_active_element(),
+            container: Some(container·clone())
+        }
+    }
+
+    /// Restore focus to previous element
+    ☉ rite restore(this) {
+        ⎇ ≔ Some(el) = this.previous_focus {
+            el·focus()
+        }
+    }
+}
+
+/// Get the currently focused element
+☉ rite get_active_element() → Option<DomRef>? {
+    // Platform binding: document.activeElement
+    extern "platform" {
+        rite __qliphoth_get_active_element() → Option<DomRef>?;
+    }
+    unsafe { __qliphoth_get_active_element() }
+}
+
+/// Get all focusable elements within a container
+☉ rite get_focusable_elements(container: &DomRef) → Vec<DomRef>! {
+    // Platform binding: querySelectorAll with focusable selector
+    extern "platform" {
+        rite __qliphoth_query_selector_all(container: &DomRef, selector: &str) → Vec<DomRef>!;
+    }
+    unsafe { __qliphoth_query_selector_all(container, FOCUSABLE_SELECTOR) }
+}
+
+/// Get the first focusable element in container
+☉ rite get_first_focusable(container: &DomRef) → Option<DomRef>? {
+    ≔ elements! = get_focusable_elements(container)
+    elements·first()·cloned()
+}
+
+/// Get the last focusable element in container
+☉ rite get_last_focusable(container: &DomRef) → Option<DomRef>? {
+    ≔ elements! = get_focusable_elements(container)
+    elements·last()·cloned()
+}
+
+/// Focus the first focusable element in container
+☉ rite focus_first(container: &DomRef) {
+    ⎇ ≔ Some(el) = get_first_focusable(container) {
+        el·focus()
+    }
+}
+
+/// Focus the last focusable element in container
+☉ rite focus_last(container: &DomRef) {
+    ⎇ ≔ Some(el) = get_last_focusable(container) {
+        el·focus()
+    }
+}
+
+/// Focus the next focusable element after current
+☉ rite focus_next(container: &DomRef, current: &DomRef) → bool! {
+    ≔ elements! = get_focusable_elements(container)
+    ≔ current_idx? = find_element_index(&elements, current)
+
+    match current_idx? {
+        Some(idx) => {
+            ≔ next_idx! = idx + 1
+            ⎇ next_idx < elements·len() {
+                elements[next_idx]·focus()
+                yea
+            } ⎉ {
+                nay // At end
+            }
+        }
+        None => nay
+    }
+}
+
+/// Focus the previous focusable element before current
+☉ rite focus_previous(container: &DomRef, current: &DomRef) → bool! {
+    ≔ elements! = get_focusable_elements(container)
+    ≔ current_idx? = find_element_index(&elements, current)
+
+    match current_idx? {
+        Some(idx) => {
+            ⎇ idx > 0 {
+                elements[idx - 1]·focus()
+                yea
+            } ⎉ {
+                nay // At start
+            }
+        }
+        None => nay
+    }
+}
+
+/// Focus next element, wrapping to first ⎇ at end
+☉ rite focus_next_wrap(container: &DomRef, current: &DomRef) {
+    ⎇ !focus_next(container, current) {
+        focus_first(container)
+    }
+}
+
+/// Focus previous element, wrapping to last ⎇ at start
+☉ rite focus_previous_wrap(container: &DomRef, current: &DomRef) {
+    ⎇ !focus_previous(container, current) {
+        focus_last(container)
+    }
+}
+
+/// Focus element at specific index
+☉ rite focus_at_index(container: &DomRef, index: usize) → bool! {
+    ≔ elements! = get_focusable_elements(container)
+    ⎇ index < elements·len() {
+        elements[index]·focus()
+        yea
+    } ⎉ {
+        nay
+    }
+}
+
+/// Get index of current focus within container
+☉ rite get_focus_index(container: &DomRef) → Option<usize>? {
+    ≔ active? = get_active_element()
+    match active? {
+        Some(el) => {
+            ≔ elements! = get_focusable_elements(container)
+            find_element_index(&elements, &el)
+        }
+        None => None
+    }
+}
+
+/// Check ⎇ element is focusable
+☉ rite is_focusable(element: &DomRef) → bool! {
+    // Platform binding: element.matches(selector)
+    extern "platform" {
+        rite __qliphoth_element_matches(el: &DomRef, selector: &str) → bool!;
+    }
+    unsafe { __qliphoth_element_matches(element, FOCUSABLE_SELECTOR) }
+}
+
+/// Check ⎇ element is visible
+☉ rite is_visible(element: &DomRef) → bool! {
+    extern "platform" {
+        rite __qliphoth_is_visible(el: &DomRef) → bool!;
+    }
+    unsafe { __qliphoth_is_visible(element) }
+}
+
+/// Check ⎇ focus is within container
+☉ rite contains_focus(container: &DomRef) → bool! {
+    extern "platform" {
+        rite __qliphoth_contains_focus(container: &DomRef) → bool!;
+    }
+    unsafe { __qliphoth_contains_focus(container) }
+}
+
+// ============================================================================
+// Internal Helpers
+// ============================================================================
+
+rite find_element_index(elements: &[DomRef], target: &DomRef) → Option<usize>? {
+    extern "platform" {
+        rite __qliphoth_elements_equal(a: &DomRef, b: &DomRef) → bool!;
+    }
+
+    for (idx, el) in elements·iter()·enumerate() {
+        ⎇ unsafe { __qliphoth_elements_equal(el, target) } {
+            return Some(idx)
+        }
+    }
+    None
+}
+
+// ============================================================================
+// CSS for Focus Indicators (auto-injected)
+// ============================================================================
+
+/// CSS styles for visible focus indicators
+☉ const FOCUS_STYLES: &str = r#"
+/* Visible focus indicator for keyboard users */
+:focus-visible {
+    outline: 2px solid var(--qliphoth-focus-color, #005fcc);
+    outline-offset: 2px;
+}
+
+/* Remove default focus for mouse users */
+:focus:not(:focus-visible) {
+    outline: none;
+}
+
+/* High contrast mode support */
+@media (forced-colors: active) {
+    :focus-visible {
+        outline: 3px solid CanvasText;
+        outline-offset: 3px;
+    }
+}
+
+/* Reduced motion: disable focus transitions */
+@media (prefers-reduced-motion: reduce) {
+    :focus-visible {
+        transition: none;
+    }
+}
+"#;
+
+/// Inject focus styles into document (called once on app init)
+☉ rite inject_focus_styles() {
+    extern "platform" {
+        rite __qliphoth_inject_styles(id: &str, css: &str);
+    }
+    unsafe { __qliphoth_inject_styles("qliphoth-a11y-focus", FOCUS_STYLES) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_focus_scope_creation() {
+        ≔ scope! = FocusScope::new()
+        // Previous focus should be captured
+    }
+}

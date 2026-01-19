@@ -5914,6 +5914,61 @@ fn register_concurrency(interp: &mut Interpreter) {
         })
     });
 
+    // TcpListener::accept - accept a connection from the listener
+    define(interp, "TcpListener·accept", Some(1), |_, args| {
+        let listener_id = match &args[0] {
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::Int(id)) = borrowed.get("__listener_id__") {
+                    *id as u64
+                } else {
+                    return Err(RuntimeError::new("TcpListener missing __listener_id__"));
+                }
+            }
+            _ => return Err(RuntimeError::new("TcpListener::accept requires TcpListener")),
+        };
+
+        if let Some(guard) = get_listener_registry().lock().ok() {
+            if let Some(listener) = guard.get(&listener_id) {
+                match listener.accept() {
+                    Ok((stream, addr)) => {
+                        // Store the stream in the stream registry
+                        let stream_id = store_tcp_stream(stream);
+
+                        let mut map = HashMap::new();
+                        map.insert(
+                            "__type__".to_string(),
+                            Value::String(Rc::new("TcpStream".to_string())),
+                        );
+                        map.insert(
+                            "__stream_id__".to_string(),
+                            Value::Int(stream_id as i64),
+                        );
+                        map.insert(
+                            "peer_addr".to_string(),
+                            Value::String(Rc::new(addr.to_string())),
+                        );
+
+                        Ok(Value::Variant {
+                            enum_name: "Result".to_string(),
+                            variant_name: "Ok".to_string(),
+                            fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
+                        })
+                    }
+                    Err(e) => Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+                    }),
+                }
+            } else {
+                Err(RuntimeError::new("TcpListener not found in registry"))
+            }
+        } else {
+            Err(RuntimeError::new("Failed to lock listener registry"))
+        }
+    });
+
     // SocketAddr::parse - parse a socket address string
     define(interp, "SocketAddr·parse", Some(1), |_, args| {
         let addr_str = match &args[0] {

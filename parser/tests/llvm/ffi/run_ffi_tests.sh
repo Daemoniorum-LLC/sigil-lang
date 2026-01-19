@@ -95,6 +95,40 @@ run_test "$SCRIPT_DIR/14_extern_static_read.sg" 1 "no"
 run_test "$SCRIPT_DIR/15_extern_static_mutable.sg" 55 "no"
 run_test "$SCRIPT_DIR/16_extern_static_immutable_error.sg" 0 "yes"
 
+# Sprint 1: Function Pointer Types
+run_test "$SCRIPT_DIR/20_fn_ptr_type_decl.sg" 0 "no"
+run_test "$SCRIPT_DIR/21_fn_ptr_param.sg" 0 "no"
+run_test "$SCRIPT_DIR/22_fn_ptr_return.sg" 0 "no"
+run_test "$SCRIPT_DIR/23_fn_ptr_typedef.sg" 0 "no"
+
+# Sprint 2: Function Pointer Values
+run_test "$SCRIPT_DIR/24_fn_addr.sg" 1 "no"
+run_test "$SCRIPT_DIR/25_fn_ptr_call.sg" 42 "no"
+run_test "$SCRIPT_DIR/26_fn_ptr_assign.sg" 100 "no"
+
+# Sprint 3: C Callbacks
+run_test "$SCRIPT_DIR/27_c_callback_simple.sg" 50 "no"
+run_test "$SCRIPT_DIR/28_callback_with_args.sg" 99 "no"
+run_test "$SCRIPT_DIR/29_callback_chain.sg" 24 "no"
+
+# Sprint 4: Platform Infrastructure
+run_test "$SCRIPT_DIR/30_cfg_linux.sg" 1 "no"
+run_test "$SCRIPT_DIR/31_cfg_feature.sg" 42 "no"
+run_test "$SCRIPT_DIR/32_cfg_any.sg" 1 "no"
+run_test "$SCRIPT_DIR/33_link_attr.sg" 0 "no"
+run_test "$SCRIPT_DIR/34_link_multiple.sg" 1 "no"
+
+# Sprint 5: GTK Bindings (Linux only, requires GTK4)
+if pkg-config --exists gtk4 2>/dev/null; then
+    run_test "$SCRIPT_DIR/40_gtk_init.sg" 0 "no"
+    run_test "$SCRIPT_DIR/41_gtk_window.sg" 0 "no"
+    run_test "$SCRIPT_DIR/42_gtk_button.sg" 0 "no"
+    run_test "$SCRIPT_DIR/43_gtk_signal.sg" 0 "no"
+    run_test "$SCRIPT_DIR/44_gtk_button_clicked.sg" 0 "no"
+else
+    echo -e "${YELLOW}Skipping GTK tests (GTK4 not installed)${NC}"
+fi
+
 echo ""
 echo "========================================"
 echo "Results: $PASSED/$TOTAL passed"

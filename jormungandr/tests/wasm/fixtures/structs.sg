@@ -1,0 +1,13 @@
+// EXPECTED_OUTPUT: Alice is 30 years old
+// EXPECTED_EXIT: 0
+
+sigil Person {
+    name: String,
+    age: i64,
+}
+
+rite main() -> i64 {
+    let person = Person { name: "Alice", age: 30 };
+    println(person.name ++ " is " ++ str(person.age) ++ " years old");
+    0
+}

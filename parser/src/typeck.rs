@@ -468,6 +468,125 @@ impl TypeChecker {
         checker
     }
 
+    // ========================================================================
+    // Conditional compilation (#[cfg(...)] evaluation)
+    // ========================================================================
+
+    /// Evaluate a cfg condition against the current target.
+    /// Returns true if the condition matches.
+    fn evaluate_cfg(&self, attr: &Attribute) -> bool {
+        if attr.name.name != "cfg" {
+            return true; // Not a cfg attribute, always include
+        }
+
+        match &attr.args {
+            Some(AttrArgs::Paren(args)) => {
+                if args.len() == 1 {
+                    self.evaluate_cfg_arg(&args[0])
+                } else {
+                    true // Invalid cfg, include by default
+                }
+            }
+            _ => true, // Invalid cfg format
+        }
+    }
+
+    /// Evaluate a single cfg argument.
+    fn evaluate_cfg_arg(&self, arg: &AttrArg) -> bool {
+        match arg {
+            // cfg(target_os = "linux")
+            AttrArg::KeyValue { key, value } => {
+                if key.name == "target_os" {
+                    if let Expr::Literal(Literal::String(os)) = value.as_ref() {
+                        return self.matches_target_os(os);
+                    }
+                } else if key.name == "feature" {
+                    // Feature flags - currently not implemented, return false
+                    return false;
+                }
+                true // Unknown key, include
+            }
+            // cfg(not(...)) or cfg(any(...)) via nested attribute
+            AttrArg::Nested(nested) => self.evaluate_cfg_predicate(nested),
+            // Simple identifier like cfg(unix)
+            AttrArg::Ident(ident) => self.evaluate_cfg_simple(&ident.name),
+            _ => true,
+        }
+    }
+
+    /// Evaluate cfg predicates like not(...), any(...), all(...).
+    fn evaluate_cfg_predicate(&self, attr: &Attribute) -> bool {
+        match attr.name.name.as_str() {
+            "not" => {
+                if let Some(AttrArgs::Paren(args)) = &attr.args {
+                    if args.len() == 1 {
+                        return !self.evaluate_cfg_arg(&args[0]);
+                    }
+                }
+                true
+            }
+            "any" => {
+                if let Some(AttrArgs::Paren(args)) = &attr.args {
+                    return args.iter().any(|a| self.evaluate_cfg_arg(a));
+                }
+                true
+            }
+            "all" => {
+                if let Some(AttrArgs::Paren(args)) = &attr.args {
+                    return args.iter().all(|a| self.evaluate_cfg_arg(a));
+                }
+                true
+            }
+            "target_os" => {
+                // Handle nested target_os = "value" form
+                if let Some(AttrArgs::Eq(value)) = &attr.args {
+                    if let Expr::Literal(Literal::String(os)) = value.as_ref() {
+                        return self.matches_target_os(os);
+                    }
+                }
+                true
+            }
+            _ => true, // Unknown predicate
+        }
+    }
+
+    /// Evaluate simple cfg identifiers like unix, windows.
+    fn evaluate_cfg_simple(&self, name: &str) -> bool {
+        match name {
+            "unix" => cfg!(unix),
+            "windows" => cfg!(windows),
+            "linux" => cfg!(target_os = "linux"),
+            "macos" => cfg!(target_os = "macos"),
+            _ => false, // Unknown simple cfg
+        }
+    }
+
+    /// Check if the current target OS matches.
+    fn matches_target_os(&self, os: &str) -> bool {
+        match os {
+            "linux" => cfg!(target_os = "linux"),
+            "macos" => cfg!(target_os = "macos"),
+            "windows" => cfg!(target_os = "windows"),
+            "ios" => cfg!(target_os = "ios"),
+            "android" => cfg!(target_os = "android"),
+            "freebsd" => cfg!(target_os = "freebsd"),
+            "none" => false, // Bare metal, not supported
+            _ => false,
+        }
+    }
+
+    /// Check if a function should be included based on its cfg attributes.
+    fn should_include_function(&self, func: &Function) -> bool {
+        for attr in &func.outer_attrs {
+            if attr.name.name == "cfg" {
+                if !self.evaluate_cfg(attr) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
     fn register_builtins(&mut self) {
         // Helper to create a function type
         let func = |params: Vec<Type>, ret: Type| Type::Function {
@@ -1191,6 +1310,11 @@ impl TypeChecker {
     fn collect_fn_sig(&mut self, item: &Item) {
         match item {
             Item::Function(f) => {
+                // Skip functions that don't match cfg conditions
+                if !self.should_include_function(f) {
+                    return;
+                }
+
                 let params: Vec<Type> = f.params.iter().map(|p| self.convert_type(&p.ty)).collect();
 
                 let return_type = f
@@ -1281,7 +1405,12 @@ impl TypeChecker {
     /// Check an item (third pass)
     fn check_item(&mut self, item: &Item) {
         match item {
-            Item::Function(f) => self.check_function(f),
+            Item::Function(f) => {
+                // Skip functions that don't match cfg conditions
+                if self.should_include_function(f) {
+                    self.check_function(f);
+                }
+            }
             Item::Const(c) => {
                 let declared = self.convert_type(&c.ty);
                 let inferred = self.infer_expr(&c.value);

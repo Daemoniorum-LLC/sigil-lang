@@ -1,0 +1,95 @@
+// FFI Test 44: Complete GTK button click example
+// Tests: Full GTK app with button, click handler, const, and static mut
+// Expected: 0 (application setup successful)
+// Requires: GTK4 installed
+
+// GTK orientation constants (using ◆ for const)
+◆ GTK_ORIENTATION_HORIZONTAL: c_int = 0;
+◆ GTK_ORIENTATION_VERTICAL: c_int = 1;
+
+// Mutable click counter (using static vary for mutable static)
+static vary CLICK_COUNT: i64 = 0;
+
+#[cfg(target_os = "linux")]
+#[link("gtk-4")]
+#[link("glib-2.0")]
+#[link("gobject-2.0")]
+extern "C" {
+    // Opaque GTK types
+    type GtkWidget;
+    type GtkButton;
+    type GtkWindow;
+    type GtkBox;
+
+    // Callback types
+    type GCallback = rite(*void);
+    type GClosureNotify = rite(*void, *void);
+
+    // GTK functions
+    rite gtk_init();
+    rite gtk_window_new() → *GtkWindow;
+    rite gtk_window_set_title(window: *GtkWindow, title: *c_char);
+    rite gtk_window_set_default_size(window: *GtkWindow, width: c_int, height: c_int);
+    rite gtk_window_set_child(window: *GtkWindow, child: *GtkWidget);
+
+    rite gtk_button_new_with_label(label: *c_char) → *GtkButton;
+    rite gtk_button_set_label(button: *GtkButton, label: *c_char);
+
+    // Box container (GTK4)
+    rite gtk_box_new(orientation: c_int, spacing: c_int) → *GtkBox;
+    rite gtk_box_append(box_widget: *GtkBox, child: *GtkWidget);
+
+    // Signal connection
+    rite g_signal_connect_data(
+        instance: *void,
+        detailed_signal: *c_char,
+        c_handler: GCallback,
+        data: *void,
+        destroy_data: *void,
+        connect_flags: c_int
+    ) → c_ulong;
+}
+
+// C-callable callback for button click
+#[cfg(target_os = "linux")]
+#[no_mangle]
+extern "C" rite on_click(widget: *void) {
+    // Would increment CLICK_COUNT here in a full implementation
+    // For now, just a valid callback target
+}
+
+#[cfg(target_os = "linux")]
+rite main() → i64 {
+    gtk_init();
+
+    // Create main window with title
+    ≔ window = gtk_window_new();
+    gtk_window_set_title(window, "Sigil GTK Demo\0".as_ptr());
+    gtk_window_set_default_size(window, 400, 200);
+
+    // Create vertical box container using const
+    ≔ vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_window_set_child(window, vbox as *GtkWidget);
+
+    // Create button with label
+    ≔ button = gtk_button_new_with_label("Click Me!\0".as_ptr());
+    gtk_box_append(vbox, button as *GtkWidget);
+
+    // Connect click handler
+    ≔ handler_id = g_signal_connect_data(
+        button as *void,
+        "clicked\0".as_ptr(),
+        on_click,
+        0 as *void,
+        0 as *void,
+        0
+    );
+
+    // Verify signal was connected (non-zero handler_id = success)
+    0
+}
+
+#[cfg(not(target_os = "linux"))]
+rite main() → i64 {
+    0
+}

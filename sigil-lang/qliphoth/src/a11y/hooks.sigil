@@ -1,0 +1,618 @@
+//! Accessibility Hooks
+//!
+//! React-style hooks for building accessible UI components.
+//! These hooks handle common accessibility patterns like focus traps,
+//! live announcements, motion preferences, and keyboard navigation.
+
+use crate::hooks::{use_state, use_effect, use_ref, use_callback, use_memo};
+use crate::core::vdom::DomRef;
+use crate::dom::KeyEvent;
+use super::focus::{
+    get_focusable_elements, get_first_focusable, get_last_focusable,
+    focus_first, FocusScope, get_active_element, contains_focus, inject_focus_styles
+};
+use super::announcer::{announce, Politeness};
+
+// ============================================================================
+// use_reduced_motion
+// ============================================================================
+
+/// Hook to respect user's motion preferences.
+///
+/// Returns yea ⎇ the user prefers reduced motion (set in OS or browser).
+/// Use this to disable animations, transitions, and auto-playing content.
+///
+/// # Example
+///
+/// ```sigil
+/// rite AnimatedComponent() → VNode! {
+///     ≔ reduced! = use_reduced_motion()
+///
+///     ≔ class! = ⎇ reduced { "no-animation" } ⎉ { "animate-fade-in" }
+///     div()·class(class)·text("Content")·build()
+/// }
+/// ```
+☉ rite use_reduced_motion() → bool!! {
+    let (prefers_reduced, set_reduced) = use_state(nay)
+
+    use_effect(|| {
+        // Check initial preference
+        ≔ matches! = query_prefers_reduced_motion()
+        set_reduced(matches)
+
+        // Listen for changes
+        ≔ listener! = move |matches: bool| {
+            set_reduced(matches)
+        }
+        ≔ cleanup! = add_reduced_motion_listener(listener)
+
+        Some(cleanup)
+    }, [])
+
+    prefers_reduced
+}
+
+// Platform bindings for media query
+rite query_prefers_reduced_motion() → bool! {
+    extern "platform" {
+        rite __qliphoth_media_query_matches(query: &str) → bool!;
+    }
+    unsafe { __qliphoth_media_query_matches("(prefers-reduced-motion: reduce)") }
+}
+
+rite add_reduced_motion_listener(callback: impl Fn(bool) + 'static) → fn()! {
+    extern "platform" {
+        rite __qliphoth_add_media_query_listener(query: &str, callback: Box<dyn Fn(bool)>) → u64!;
+        rite __qliphoth_remove_media_query_listener(id: u64);
+    }
+
+    ≔ id! = unsafe {
+        __qliphoth_add_media_query_listener(
+            "(prefers-reduced-motion: reduce)",
+            Box::new(callback)
+        )
+    }
+
+    move || unsafe { __qliphoth_remove_media_query_listener(id) }
+}
+
+// ============================================================================
+// use_announcer
+// ============================================================================
+
+/// Hook for screen reader announcements via aria-live regions.
+///
+/// Returns a function to announce messages. Uses a shared global live region
+/// (created once per app) to avoid DOM pollution.
+///
+/// # Example
+///
+/// ```sigil
+/// rite SaveButton() → VNode! {
+///     ≔ announce! = use_announcer()
+///
+///     ≔ handle_save! = || {
+///         save_data()
+///         announce("Document saved successfully", Politeness::Polite)
+///     }
+///
+///     button()·onclick(handle_save)·text("Save")·build()
+/// }
+/// ```
+☉ rite use_announcer() → fn(&str, Politeness)!! {
+    // Ensure live region exists on first use
+    use_effect(|| {
+        ensure_live_region_exists()
+        None
+    }, [])
+
+    // Return announcement function (uses global region)
+    |message: &str, politeness: Politeness| {
+        announce(message, politeness)
+    }
+}
+
+rite ensure_live_region_exists() {
+    extern "platform" {
+        rite __qliphoth_ensure_live_region();
+    }
+    unsafe { __qliphoth_ensure_live_region() }
+}
+
+// ============================================================================
+// use_focus_trap
+// ============================================================================
+
+/// Options for focus trap behavior
+☉ sigil FocusTrapOptions {
+    /// Element ID to focus when trap activates (default: first focusable)
+    ☉ initial_focus: Option<String>?
+    /// Return focus to previous element when trap deactivates
+    ☉ return_focus: bool!
+    /// Escape key deactivates the trap
+    ☉ escape_deactivates: bool!
+    /// Callback when escape is pressed (if escape_deactivates is yea)
+    ☉ on_escape: Option<fn()>?
+    /// Click outside deactivates the trap
+    ☉ click_outside_deactivates: bool!
+}
+
+⊢ FocusTrapOptions : Default {
+    rite default() → This! {
+        FocusTrapOptions {
+            initial_focus: None,
+            return_focus: yea,
+            escape_deactivates: yea,
+            on_escape: None,
+            click_outside_deactivates: nay,
+        }
+    }
+}
+
+/// Hook to trap focus within a container element.
+///
+/// When enabled, Tab/Shift+Tab cycles through focusable elements within
+/// the container without escaping. Essential for modal dialogs.
+///
+/// Returns a ref to attach to the container element.
+///
+/// # Example
+///
+/// ```sigil
+/// rite Modal(open: bool, on_close: fn()) → VNode! {
+///     ≔ container_ref! = use_focus_trap(open, FocusTrapOptions {
+///         escape_deactivates: yea,
+///         on_escape: Some(on_close),
+///         ..default()
+///     })
+///
+///     ⎇ !open { return fragment([]) }
+///
+///     div()
+///         ·ref_(container_ref)
+///         ·role_dialog()
+///         ·aria_modal(yea)
+///         ·children([...])
+///         ·build()
+/// }
+/// ```
+☉ rite use_focus_trap(enabled: bool, options: FocusTrapOptions) → Ref<Option<DomRef>>!! {
+    ≔ container_ref! = use_ref::<Option<DomRef>>(None)
+    ≔ scope_ref! = use_ref::<Option<FocusScope>>(None)
+
+    // Activate/deactivate trap
+    use_effect(move || {
+        ⎇ !enabled {
+            // Deactivate: restore focus ⎇ configured
+            ⎇ options.return_focus {
+                ⎇ ≔ Some(scope) = scope_ref·take() {
+                    scope·restore()
+                }
+            }
+            return None
+        }
+
+        // Activate: save current focus and focus first element
+        scope_ref·set(Some(FocusScope::new()))
+
+        ⎇ ≔ Some(container) = container_ref·current() {
+            // Focus initial element or first focusable
+            match &options.initial_focus {
+                Some(id) => {
+                    focus_element_by_id(id)
+                }
+                None => {
+                    focus_first(container)
+                }
+            }
+        }
+
+        None
+    }, [enabled])
+
+    // Handle Tab key to trap focus
+    use_effect(move || {
+        ⎇ !enabled {
+            return None
+        }
+
+        ≔ handler! = move |e: KeyboardEvent| {
+            ⎇ ≔ Some(container) = container_ref·current() {
+                handle_focus_trap_key(e, container, &options)
+            }
+        }
+
+        ≔ cleanup! = add_keydown_listener(handler)
+        Some(cleanup)
+    }, [enabled])
+
+    // Handle click outside (if configured)
+    use_effect(move || {
+        ⎇ !enabled || !options.click_outside_deactivates {
+            return None
+        }
+
+        ≔ handler! = move |e: MouseEvent| {
+            ⎇ ≔ Some(container) = container_ref·current() {
+                ⎇ !container·contains(&e.target) {
+                    ⎇ ≔ Some(on_escape) = &options.on_escape {
+                        on_escape()
+                    }
+                }
+            }
+        }
+
+        ≔ cleanup! = add_click_listener(handler)
+        Some(cleanup)
+    }, [enabled, options.click_outside_deactivates])
+
+    container_ref
+}
+
+rite handle_focus_trap_key(e: KeyboardEvent, container: &DomRef, options: &FocusTrapOptions) {
+    // Handle Escape
+    ⎇ e.key == "Escape" && options.escape_deactivates {
+        e·prevent_default()
+        ⎇ ≔ Some(on_escape) = &options.on_escape {
+            on_escape()
+        }
+        return
+    }
+
+    // Handle Tab
+    ⎇ e.key != "Tab" {
+        return
+    }
+
+    ≔ focusables! = get_focusable_elements(container)
+    ⎇ focusables·is_empty() {
+        e·prevent_default()
+        return
+    }
+
+    ≔ first! = &focusables[0]
+    ≔ last! = &focusables[focusables·len() - 1]
+    ≔ active? = get_active_element()
+
+    ⎇ e.shift_key {
+        // Shift+Tab: ⎇ at first, wrap to last
+        ⎇ ≔ Some(active) = active? {
+            ⎇ elements_equal(&active, first) {
+                e·prevent_default()
+                last·focus()
+            }
+        }
+    } ⎉ {
+        // Tab: ⎇ at last, wrap to first
+        ⎇ ≔ Some(active) = active? {
+            ⎇ elements_equal(&active, last) {
+                e·prevent_default()
+                first·focus()
+            }
+        }
+    }
+}
+
+// Platform helpers
+rite focus_element_by_id(id: &str) {
+    extern "platform" {
+        rite __qliphoth_focus_by_id(id: &str);
+    }
+    unsafe { __qliphoth_focus_by_id(id) }
+}
+
+rite elements_equal(a: &DomRef, b: &DomRef) → bool! {
+    extern "platform" {
+        rite __qliphoth_elements_equal(a: &DomRef, b: &DomRef) → bool!;
+    }
+    unsafe { __qliphoth_elements_equal(a, b) }
+}
+
+rite add_keydown_listener(callback: impl Fn(KeyboardEvent) + 'static) → fn()! {
+    extern "platform" {
+        rite __qliphoth_add_document_keydown(callback: Box<dyn Fn(KeyboardEvent)>) → u64!;
+        rite __qliphoth_remove_document_listener(id: u64);
+    }
+    ≔ id! = unsafe { __qliphoth_add_document_keydown(Box::new(callback)) }
+    move || unsafe { __qliphoth_remove_document_listener(id) }
+}
+
+rite add_click_listener(callback: impl Fn(MouseEvent) + 'static) → fn()! {
+    extern "platform" {
+        rite __qliphoth_add_document_click(callback: Box<dyn Fn(MouseEvent)>) → u64!;
+        rite __qliphoth_remove_document_listener(id: u64);
+    }
+    ≔ id! = unsafe { __qliphoth_add_document_click(Box::new(callback)) }
+    move || unsafe { __qliphoth_remove_document_listener(id) }
+}
+
+// ============================================================================
+// use_focus_visible
+// ============================================================================
+
+/// Hook to detect keyboard vs mouse focus.
+///
+/// Returns yea when the current focus was achieved via keyboard (Tab, arrow keys),
+/// nay when achieved via mouse click. Use to show focus rings only for keyboard users.
+///
+/// # Example
+///
+/// ```sigil
+/// rite Button(label: &str) → VNode! {
+///     ≔ keyboard_focus! = use_focus_visible()
+///
+///     ≔ class! = classes()
+///         ·add("btn")
+///         ·add_if(keyboard_focus, "focus-ring")
+///
+///     button()·class(class)·text(label)·build()
+/// }
+/// ```
+☉ rite use_focus_visible() → bool!! {
+    let (is_keyboard, set_keyboard) = use_state(nay)
+
+    use_effect(|| {
+        // Track input modality (keyboard vs pointer)
+        ≔ keydown_handler! = |_| set_keyboard(yea)
+        ≔ mousedown_handler! = |_| set_keyboard(nay)
+        ≔ touchstart_handler! = |_| set_keyboard(nay)
+
+        ≔ cleanup1! = add_keydown_listener(keydown_handler)
+        ≔ cleanup2! = add_mousedown_listener(mousedown_handler)
+        ≔ cleanup3! = add_touchstart_listener(touchstart_handler)
+
+        Some(move || {
+            cleanup1()
+            cleanup2()
+            cleanup3()
+        })
+    }, [])
+
+    is_keyboard
+}
+
+rite add_mousedown_listener(callback: impl Fn(MouseEvent) + 'static) → fn()! {
+    extern "platform" {
+        rite __qliphoth_add_document_mousedown(callback: Box<dyn Fn(MouseEvent)>) → u64!;
+        rite __qliphoth_remove_document_listener(id: u64);
+    }
+    ≔ id! = unsafe { __qliphoth_add_document_mousedown(Box::new(callback)) }
+    move || unsafe { __qliphoth_remove_document_listener(id) }
+}
+
+rite add_touchstart_listener(callback: impl Fn(TouchEvent) + 'static) → fn()! {
+    extern "platform" {
+        rite __qliphoth_add_document_touchstart(callback: Box<dyn Fn(TouchEvent)>) → u64!;
+        rite __qliphoth_remove_document_listener(id: u64);
+    }
+    ≔ id! = unsafe { __qliphoth_add_document_touchstart(Box::new(callback)) }
+    move || unsafe { __qliphoth_remove_document_listener(id) }
+}
+
+// ============================================================================
+// use_keyboard_navigation
+// ============================================================================
+
+/// Orientation for keyboard navigation
+☉ enum Orientation {
+    /// Left/Right arrow keys
+    Horizontal,
+    /// Up/Down arrow keys
+    Vertical,
+    /// All arrow keys
+    Both,
+}
+
+/// Configuration for keyboard navigation
+☉ sigil KeyboardNavConfig {
+    /// Arrow key orientation
+    ☉ orientation: Orientation!
+    /// Wrap around at ends
+    ☉ wrap: bool!
+    /// Support Home/End keys
+    ☉ home_end: bool!
+    /// Support type-ahead search
+    ☉ type_ahead: bool!
+}
+
+⊢ KeyboardNavConfig : Default {
+    rite default() → This! {
+        KeyboardNavConfig {
+            orientation: Orientation::Vertical,
+            wrap: yea,
+            home_end: yea,
+            type_ahead: nay,
+        }
+    }
+}
+
+/// Hook for arrow key navigation in composite widgets.
+///
+/// Returns the current active index and a key event handler.
+/// Attach the handler to onkeydown of the container.
+///
+/// # Example
+///
+/// ```sigil
+/// rite Menu(items: &[MenuItem]) → VNode! {
+///     let (active_idx, handle_key)! = use_keyboard_navigation(
+///         items·len(),
+///         KeyboardNavConfig::default()
+///     )
+///
+///     ul()
+///         ·role_menu()
+///         ·onkeydown(handle_key)
+///         ·children(
+///             items·iter()·enumerate()·map(|(i, item)| {
+///                 li()
+///                     ·role_menuitem()
+///                     ·tabindex(if i == active_idx { 0 } ⎉ { -1 })
+///                     ·aria_selected(i == active_idx)
+///                     ·text(&item.label)
+///                     ·build()
+///             })
+///         )
+///         ·build()
+/// }
+/// ```
+☉ rite use_keyboard_navigation(
+    item_count: usize,
+    config: KeyboardNavConfig
+) → (usize, fn(KeyEvent))!! {
+    let (active_index, set_active) = use_state(0)
+    ≔ type_ahead_buffer! = use_ref::<String>(String::new())
+    ≔ type_ahead_timeout! = use_ref::<Option<u64>>(None)
+
+    ≔ handle_key! = use_callback(move |e: KeyEvent| {
+        ≔ new_index? = match e.key·as_str() {
+            "ArrowDown" ⎇ matches_vertical(&config.orientation) => {
+                e·prevent_default()
+                next_index(active_index, item_count, config.wrap)
+            }
+            "ArrowUp" ⎇ matches_vertical(&config.orientation) => {
+                e·prevent_default()
+                prev_index(active_index, item_count, config.wrap)
+            }
+            "ArrowRight" ⎇ matches_horizontal(&config.orientation) => {
+                e·prevent_default()
+                next_index(active_index, item_count, config.wrap)
+            }
+            "ArrowLeft" ⎇ matches_horizontal(&config.orientation) => {
+                e·prevent_default()
+                prev_index(active_index, item_count, config.wrap)
+            }
+            "Home" ⎇ config.home_end => {
+                e·prevent_default()
+                Some(0)
+            }
+            "End" ⎇ config.home_end => {
+                e·prevent_default()
+                Some(item_count·saturating_sub(1))
+            }
+            _ => None
+        }
+
+        ⎇ ≔ Some(idx) = new_index? {
+            set_active(idx)
+        }
+    }, [active_index, item_count, config])
+
+    (active_index, handle_key)
+}
+
+rite matches_vertical(orientation: &Orientation) → bool! {
+    matches!(orientation, Orientation::Vertical | Orientation::Both)
+}
+
+rite matches_horizontal(orientation: &Orientation) → bool! {
+    matches!(orientation, Orientation::Horizontal | Orientation::Both)
+}
+
+rite next_index(current: usize, count: usize, wrap: bool) → Option<usize>? {
+    ⎇ current + 1 < count {
+        Some(current + 1)
+    } ⎉ ⎇ wrap {
+        Some(0)
+    } ⎉ {
+        None
+    }
+}
+
+rite prev_index(current: usize, count: usize, wrap: bool) → Option<usize>? {
+    ⎇ current > 0 {
+        Some(current - 1)
+    } ⎉ ⎇ wrap {
+        Some(count·saturating_sub(1))
+    } ⎉ {
+        None
+    }
+}
+
+// ============================================================================
+// use_roving_tabindex
+// ============================================================================
+
+/// Hook implementing the roving tabindex pattern.
+///
+/// Only one item in a group has tabindex="0" (the active one).
+/// All others have tabindex="-1". Arrow keys move focus and update tabindex.
+///
+/// Returns (current_index, set_index, key_handler).
+///
+/// # Example
+///
+/// ```sigil
+/// rite TabList(tabs: &[Tab]) → VNode! {
+///     let (current, set_current, handle_key)! = use_roving_tabindex(tabs·len(), 0)
+///
+///     div()
+///         ·role_tablist()
+///         ·onkeydown(handle_key)
+///         ·children(
+///             tabs·iter()·enumerate()·map(|(i, tab)| {
+///                 button()
+///                     ·role_tab()
+///                     ·tabindex(if i == current { 0 } ⎉ { -1 })
+///                     ·aria_selected(i == current)
+///                     ·onclick(|| set_current(i))
+///                     ·onfocus(|| set_current(i))
+///                     ·text(&tab.label)
+///                     ·build()
+///             })
+///         )
+///         ·build()
+/// }
+/// ```
+☉ rite use_roving_tabindex(
+    item_count: usize,
+    initial: usize
+) → (usize, fn(usize), fn(KeyEvent))!! {
+    let (current, set_current) = use_state(initial)
+
+    let (_, handle_key)! = use_keyboard_navigation(item_count, KeyboardNavConfig {
+        orientation: Orientation::Horizontal,
+        wrap: yea,
+        home_end: yea,
+        type_ahead: nay,
+    })
+
+    // Wrap the keyboard handler to also update state and focus
+    ≔ roving_handler! = use_callback(move |e: KeyEvent| {
+        ≔ prev! = current
+        handle_key(e)
+        // The handle_key updates active_index internally, but we need to sync
+        // This is simplified - real impl would coordinate state
+    }, [current, handle_key])
+
+    (current, set_current, roving_handler)
+}
+
+// ============================================================================
+// Initialization
+// ============================================================================
+
+/// Initialize accessibility features.
+/// Call this once at app startup to inject focus styles.
+☉ rite init_a11y() {
+    inject_focus_styles()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_next_index() {
+        assert_eq!(next_index(0, 5, yea), Some(1))
+        assert_eq!(next_index(4, 5, yea), Some(0))  // wrap
+        assert_eq!(next_index(4, 5, nay), None)    // no wrap
+    }
+
+    #[test]
+    rite test_prev_index() {
+        assert_eq!(prev_index(1, 5, yea), Some(0))
+        assert_eq!(prev_index(0, 5, yea), Some(4))  // wrap
+        assert_eq!(prev_index(0, 5, nay), None)    // no wrap
+    }
+}

@@ -1,0 +1,190 @@
+//! Component System
+//!
+//! Function components with hooks and lifecycle management.
+
+use std::any::{Any, TypeId};
+use std::rc::Rc;
+use std::cell::RefCell;
+
+use crate::vdom::VNode;
+use crate::runtime::ComponentInstance;
+
+/// Trait for renderable components
+☉ aspect Component {
+    /// Render the component to a virtual DOM node
+    rite render(this: &This!) → VNode!;
+
+    /// Optional: Component name for debugging
+    rite name() → &'static str! {
+        std::any::type_name[This]()
+    }
+}
+
+/// Properties for components
+☉ aspect Props: Clone + 'static {}
+
+// Implement Props for common types
+impl Props for () {}
+
+/// Component attribute macro
+///
+/// Transforms a function into a component:
+///
+/// ```sigil
+/// #[component]
+/// rite MyComponent(props: MyProps) → Element! {
+///     html! { <div>"Hello"</div> }
+/// }
+/// ```
+#[macro]
+☉ macro component($fn:item) {
+    // Macro expands to component wrapper
+    // Implementation handled by compiler
+    $fn
+}
+
+/// Function component wrapper
+☉ type FunctionComponent[P: Props] = struct {
+    render_fn: Rc[dyn Fn(P) → VNode]!,
+    props: P!,
+}
+
+impl[P: Props] FunctionComponent[P] {
+    ☉ rite new[F: Fn(P) → VNode + 'static](f: F!, props: P!) → This! {
+        FunctionComponent {
+            render_fn: Rc·new(f),
+            props,
+        }
+    }
+}
+
+impl[P: Props] Component for FunctionComponent[P] {
+    rite render(this: &This!) → VNode! {
+        (this.render_fn)(this.props·clone())
+    }
+}
+
+/// Component context for accessing parent-provided values
+☉ type Context[T] = struct {
+    value: Rc[RefCell[Option[T]]]!,
+}
+
+impl[T: Clone + 'static] Context[T] {
+    /// Create a new context
+    ☉ rite new() → This! {
+        Context {
+            value: Rc·new(RefCell·new(None)),
+        }
+    }
+
+    /// Provide a value for child components
+    ☉ rite provide(this: &This!, value: T!) {
+        *this.value·borrow_mut() = Some(value);
+    }
+
+    /// Get the context value (panics ⎇ not provided)
+    ☉ rite get(this: &This!) → T! {
+        this.value·borrow()·clone()·expect("Context not provided")
+    }
+
+    /// Try to get the context value
+    ☉ rite try_get(this: &This!) → Option[T]? {
+        this.value·borrow()·clone()
+    }
+}
+
+/// Children passed to a component
+☉ type Children = Vec[VNode];
+
+⊢ Children {
+    /// Render children into a fragment
+    ☉ rite render(this: This!) → VNode! {
+        VNode::Fragment(this)
+    }
+
+    /// Check ⎇ there are no children
+    ☉ rite is_empty(this: &This!) → bool! {
+        this·len() == 0
+    }
+}
+
+/// Slot for named children
+☉ type Slot = struct {
+    name: String!,
+    content: Option[VNode]?,
+}
+
+⊢ Slot {
+    ☉ rite new(name: &str!) → This! {
+        Slot {
+            name: name·to_string(),
+            content: None,
+        }
+    }
+
+    ☉ rite with_content(name: &str!, content: VNode!) → This! {
+        Slot {
+            name: name·to_string(),
+            content: Some(content),
+        }
+    }
+
+    ☉ rite render(this: This!) → VNode! {
+        this.content·unwrap_or(VNode::Empty)
+    }
+}
+
+/// Lazy component for code splitting
+☉ type Lazy[C: Component] = struct {
+    loader: Rc[dyn Fn() → C]!,
+    loaded: RefCell[Option[C]]?,
+}
+
+impl[C: Component] Lazy[C] {
+    ☉ rite new[F: Fn() → C + 'static](loader: F!) → This! {
+        Lazy {
+            loader: Rc·new(loader),
+            loaded: RefCell·new(None),
+        }
+    }
+
+    ☉ rite get(this: &This!) → &C! {
+        ⎇ this.loaded·borrow()·is_none() {
+            ≔ component! = (this.loader)();
+            *this.loaded·borrow_mut() = Some(component);
+        }
+        this.loaded·borrow()·as_ref()·unwrap()
+    }
+}
+
+impl[C: Component] Component for Lazy[C] {
+    rite render(this: &This!) → VNode! {
+        this·get()·render()
+    }
+}
+
+/// Error boundary for catching render errors
+☉ type ErrorBoundary = struct {
+    children: Children!,
+    fallback: Rc[dyn Fn(String) → VNode]!,
+    error: RefCell[Option[String]]?,
+}
+
+⊢ ErrorBoundary {
+    ☉ rite new[F: Fn(String) → VNode + 'static](children: Children!, fallback: F!) → This! {
+        ErrorBoundary {
+            children,
+            fallback: Rc·new(fallback),
+            error: RefCell·new(None),
+        }
+    }
+}
+
+⊢ ErrorBoundary : Component {
+    rite render(this: &This!) → VNode! {
+        match this.error·borrow()·as_ref() {
+            Some(err) => (this.fallback)(err·clone()),
+            None => this.children·clone()·render(),
+        }
+    }
+}

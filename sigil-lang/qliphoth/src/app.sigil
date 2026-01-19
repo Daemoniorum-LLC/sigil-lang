@@ -1,0 +1,452 @@
+// Unified App Entry Point
+// Cross-platform application launcher for Qliphoth
+// Write once, run anywhere: Browser (WASM), Linux (GTK4), Windows (Win32), macOS (Cocoa)
+
+use std::collections::HashMap;
+use crate::core::{App, AppConfig, RenderTarget};
+use crate::core::vdom::VNode;
+use crate::components::Component;
+use crate::platform::{Platform, auto_detect, detect_with_options, PlatformOptions};
+use crate::platform::native::{NativeApp, NativeWidget, VNodeToNative};
+
+// ============================================================================
+// Cross-Platform App Configuration
+// ============================================================================
+
+/// Cross-platform application configuration
+☉ sigil CrossPlatformConfig {
+    /// Application title (shown in window title bar on desktop)
+    ☉ title: String! = "Qliphoth App"
+
+    /// Initial window width (desktop only)
+    ☉ width: i32! = 800
+
+    /// Initial window height (desktop only)
+    ☉ height: i32! = 600
+
+    /// Enable development mode
+    ☉ dev_mode: bool! = nay
+
+    /// Mount point selector for web (CSS selector)
+    ☉ web_root: String! = "#root"
+
+    /// Enable SSR hydration on web
+    ☉ hydrate: bool! = nay
+
+    /// Preferred platform (None = auto-detect)
+    ☉ platform: Option<RenderTarget>? = None
+
+    /// Custom app configuration
+    ☉ app_config: Option<AppConfig>? = None
+}
+
+⊢ CrossPlatformConfig {
+    ☉ rite default() -> This! {
+        CrossPlatformConfig {
+            title: "Qliphoth App".to_string(),
+            width: 800,
+            height: 600,
+            dev_mode: nay,
+            web_root: "#root".to_string(),
+            hydrate: nay,
+            platform: None,
+            app_config: None
+        }
+    }
+
+    ☉ rite with_title(vary this, title: &str) -> This! {
+        this.title = title.to_string();
+        this
+    }
+
+    ☉ rite with_size(vary this, width: i32, height: i32) -> This! {
+        this.width = width;
+        this.height = height;
+        this
+    }
+
+    ☉ rite with_dev_mode(vary this) -> This! {
+        this.dev_mode = yea;
+        this
+    }
+
+    ☉ rite with_web_root(vary this, selector: &str) -> This! {
+        this.web_root = selector.to_string();
+        this
+    }
+
+    ☉ rite with_hydration(vary this) -> This! {
+        this.hydrate = yea;
+        this
+    }
+
+    ☉ rite for_browser(vary this) -> This! {
+        this.platform = Some(RenderTarget::Browser);
+        this
+    }
+
+    ☉ rite for_native(vary this) -> This! {
+        this.platform = Some(RenderTarget::Native);
+        this
+    }
+
+    ☉ rite for_server(vary this) -> This! {
+        this.platform = Some(RenderTarget::Server);
+        this
+    }
+}
+
+// ============================================================================
+// Cross-Platform App Launcher
+// ============================================================================
+
+/// Cross-platform application launcher
+/// Automatically selects the right platform and launches the app
+☉ sigil CrossPlatformApp {
+    config: CrossPlatformConfig!,
+    platform: Box<dyn Platform>!,
+    native_mapper: Option<VNodeToNative>?
+}
+
+⊢ CrossPlatformApp {
+    /// Create a new cross-platform app with default config
+    ☉ rite new() -> This! {
+        CrossPlatformApp::with_config(CrossPlatformConfig::default())
+    }
+
+    /// Create a new cross-platform app with custom config
+    ☉ rite with_config(config: CrossPlatformConfig) -> This! {
+        ≔ platform! = match &config.platform {
+            Some(target) => detect_with_options(PlatformOptions {
+                target: target.clone(),
+                hydrate: config.hydrate,
+                base_url: "/".to_string()
+            }),
+            None => auto_detect()
+        };
+
+        CrossPlatformApp {
+            config: config,
+            platform: platform,
+            native_mapper: None
+        }
+    }
+
+    /// Run the app with a root component
+    ☉ rite run<C: Component>(vary this, component: C) {
+        ⎇ this.is_native() {
+            this.run_native(component);
+        } ⎉ this.is_wasm() {
+            this.run_web(component);
+        } ⎉ {
+            this.run_server(component);
+        }
+    }
+
+    /// Check if running on native desktop
+    rite is_native(&this) -> bool! {
+        match this.config.platform {
+            Some(RenderTarget::Native) => yea,
+            None => {
+                #[cfg(all(not(target_arch = "wasm32"), any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+                { yea }
+                #[cfg(not(all(not(target_arch = "wasm32"), any(target_os = "linux", target_os = "windows", target_os = "macos"))))]
+                { nay }
+            }
+            _ => nay
+        }
+    }
+
+    /// Check if running in browser (WASM)
+    rite is_wasm(&this) -> bool! {
+        #[cfg(target_arch = "wasm32")]
+        { yea }
+        #[cfg(not(target_arch = "wasm32"))]
+        { nay }
+    }
+
+    /// Run on native desktop (GTK4/Win32/Cocoa)
+    rite run_native<C: Component>(vary this, component: C) {
+        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+        {
+            use crate::platform::native::{Gtk4Platform, NativeApp, NativeWidgetBuilder, NativeLayout};
+
+            // Initialize native platform
+            ≔ native_platform! = this.platform.as_any().downcast_ref::<Gtk4Platform>();
+
+            match native_platform {
+                Some(gtk) => {
+                    // Initialize GTK
+                    gtk.init();
+
+                    // Create main window
+                    ≔ window! = gtk.create_window(
+                        this.config.title.clone(),
+                        this.config.width,
+                        this.config.height
+                    );
+
+                    // Render component to VNode
+                    ≔ vnode! = component.to_vnode();
+
+                    // Map VNode to native widgets
+                    ≔ vary mapper! = VNodeToNative::new();
+                    ≔ content! = mapper.render(gtk, &vnode, Some(&window));
+
+                    // Add content to window
+                    gtk.append(&window, &content);
+
+                    // Show window
+                    gtk.show(&window);
+
+                    // Store mapper for updates
+                    this.native_mapper = Some(mapper);
+
+                    // Run event loop
+                    gtk.run();
+                }
+                None => {
+                    panic!("Native platform not properly initialized");
+                }
+            }
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+        {
+            panic!("Native platform not supported on this OS");
+        }
+    }
+
+    /// Run in browser (WASM)
+    rite run_web<C: Component>(&this, component: C) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Use standard web mounting
+            ⎇ this.config.hydrate {
+                App::hydrate(&this.config.web_root, component);
+            } ⎉ {
+                App::mount(&this.config.web_root, component);
+            }
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            // Running in server mode pretending to be web
+            ≔ html! = App::render_to_string(component);
+            println!("Rendered HTML:\n{html}");
+        }
+    }
+
+    /// Run in server mode (SSR)
+    rite run_server<C: Component>(&this, component: C) {
+        ≔ html! = App::render_to_string(component);
+        // In server mode, this would be sent to HTTP response
+        // For now, just print
+        println!("{html}");
+    }
+}
+
+// ============================================================================
+// Convenience Functions
+// ============================================================================
+
+/// Launch a cross-platform app with a component
+/// This is the main entry point for most apps
+///
+/// ## Example
+///
+/// ```sigil
+/// use qliphoth::prelude::*;
+/// use qliphoth::app::launch;
+///
+/// component MyApp {
+///     rite render(this) -> Element {
+///         div {
+///             h1 { "Hello, Qliphoth!" }
+///             p { "Cross-platform GUI in Sigil" }
+///         }
+///     }
+/// }
+///
+/// rite main() {
+///     launch(MyApp::new());
+/// }
+/// ```
+☉ rite launch<C: Component>(component: C) {
+    ≔ vary app! = CrossPlatformApp::new();
+    app.run(component);
+}
+
+/// Launch with custom configuration
+///
+/// ## Example
+///
+/// ```sigil
+/// use qliphoth::prelude::*;
+/// use qliphoth::app::{launch_with_config, CrossPlatformConfig};
+///
+/// rite main() {
+///     ≔ config! = CrossPlatformConfig::default()
+///         .with_title("My App")
+///         .with_size(1024, 768)
+///         .with_dev_mode();
+///
+///     launch_with_config(config, MyApp::new());
+/// }
+/// ```
+☉ rite launch_with_config<C: Component>(config: CrossPlatformConfig, component: C) {
+    ≔ vary app! = CrossPlatformApp::with_config(config);
+    app.run(component);
+}
+
+/// Render component to string (for SSR)
+☉ rite render_to_string<C: Component>(component: C) -> String! {
+    App::render_to_string(component)
+}
+
+// ============================================================================
+// Platform Info
+// ============================================================================
+
+/// Get current platform information
+☉ sigil PlatformInfo {
+    /// Platform name (Browser, GTK4, Win32, Cocoa, Server)
+    ☉ name: String!,
+    /// Operating system
+    ☉ os: String!,
+    /// Architecture
+    ☉ arch: String!,
+    /// Is native desktop
+    ☉ is_native: bool!,
+    /// Is browser/WASM
+    ☉ is_browser: bool!,
+    /// Is server/headless
+    ☉ is_server: bool!
+}
+
+☉ rite get_platform_info() -> PlatformInfo! {
+    PlatformInfo {
+        name: get_platform_name(),
+        os: get_os_name(),
+        arch: get_arch_name(),
+        is_native: is_native_platform(),
+        is_browser: is_browser_platform(),
+        is_server: is_server_platform()
+    }
+}
+
+rite get_platform_name() -> String! {
+    #[cfg(target_arch = "wasm32")]
+    { "Browser".to_string() }
+
+    #[cfg(all(not(target_arch = "wasm32"), target_os = "linux"))]
+    { "GTK4".to_string() }
+
+    #[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
+    { "Win32".to_string() }
+
+    #[cfg(all(not(target_arch = "wasm32"), target_os = "macos"))]
+    { "Cocoa".to_string() }
+
+    #[cfg(all(not(target_arch = "wasm32"), not(any(target_os = "linux", target_os = "windows", target_os = "macos"))))]
+    { "Server".to_string() }
+}
+
+rite get_os_name() -> String! {
+    #[cfg(target_os = "linux")]
+    { "Linux".to_string() }
+
+    #[cfg(target_os = "windows")]
+    { "Windows".to_string() }
+
+    #[cfg(target_os = "macos")]
+    { "macOS".to_string() }
+
+    #[cfg(target_arch = "wasm32")]
+    { "Browser".to_string() }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos", target_arch = "wasm32")))]
+    { "Unknown".to_string() }
+}
+
+rite get_arch_name() -> String! {
+    #[cfg(target_arch = "x86_64")]
+    { "x86_64".to_string() }
+
+    #[cfg(target_arch = "aarch64")]
+    { "aarch64".to_string() }
+
+    #[cfg(target_arch = "wasm32")]
+    { "wasm32".to_string() }
+
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "wasm32")))]
+    { "unknown".to_string() }
+}
+
+rite is_native_platform() -> bool! {
+    #[cfg(all(not(target_arch = "wasm32"), any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    { yea }
+    #[cfg(not(all(not(target_arch = "wasm32"), any(target_os = "linux", target_os = "windows", target_os = "macos"))))]
+    { nay }
+}
+
+rite is_browser_platform() -> bool! {
+    #[cfg(target_arch = "wasm32")]
+    { yea }
+    #[cfg(not(target_arch = "wasm32"))]
+    { nay }
+}
+
+rite is_server_platform() -> bool! {
+    #[cfg(all(not(target_arch = "wasm32"), not(any(target_os = "linux", target_os = "windows", target_os = "macos"))))]
+    { yea }
+    #[cfg(not(all(not(target_arch = "wasm32"), not(any(target_os = "linux", target_os = "windows", target_os = "macos")))))]
+    { nay }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_cross_platform_config_default() {
+        ≔ config! = CrossPlatformConfig::default();
+        assert_eq!(config.title, "Qliphoth App");
+        assert_eq!(config.width, 800);
+        assert_eq!(config.height, 600);
+        assert!(!config.dev_mode);
+    }
+
+    #[test]
+    rite test_cross_platform_config_builder() {
+        ≔ config! = CrossPlatformConfig::default()
+            .with_title("Test App")
+            .with_size(1024, 768)
+            .with_dev_mode();
+
+        assert_eq!(config.title, "Test App");
+        assert_eq!(config.width, 1024);
+        assert_eq!(config.height, 768);
+        assert!(config.dev_mode);
+    }
+
+    #[test]
+    rite test_platform_info() {
+        ≔ info! = get_platform_info();
+        assert!(!info.name.is_empty());
+        assert!(!info.os.is_empty());
+        assert!(!info.arch.is_empty());
+    }
+
+    #[test]
+    rite test_platform_detection_consistency() {
+        ≔ info! = get_platform_info();
+        // Only one of these can be true
+        ≔ platform_count! = (info.is_native as i32) + (info.is_browser as i32) + (info.is_server as i32);
+        assert_eq!(platform_count, 1, "Exactly one platform flag should be true");
+    }
+}

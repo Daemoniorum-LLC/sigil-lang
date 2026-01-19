@@ -1,0 +1,689 @@
+// GTK4 Platform Implementation
+// Linux native GUI backend using GTK4 via FFI
+
+use std::collections::HashMap;
+use crate::core::vdom::{VNode, Patch};
+use crate::core::events::{Event, EventType};
+use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, Storage, StorageType};
+use super::{NativeWidget, WidgetType, NativeApp, NativeWidgetBuilder, NativeLayout, Orientation, Align};
+
+// ============================================================================
+// GTK4 FFI Bindings
+// ============================================================================
+
+#[link("gtk-4")]
+#[link("gobject-2.0")]
+#[link("glib-2.0")]
+extern "C" {
+    // Application
+    rite gtk_init();
+    rite gtk_main();
+    rite gtk_main_quit();
+
+    // Windows
+    rite gtk_window_new() → *GtkWidget;
+    rite gtk_window_set_title(window: *GtkWidget, title: *c_char);
+    rite gtk_window_set_default_size(window: *GtkWidget, width: c_int, height: c_int);
+    rite gtk_window_set_child(window: *GtkWidget, child: *GtkWidget);
+    rite gtk_window_present(window: *GtkWidget);
+    rite gtk_window_close(window: *GtkWidget);
+
+    // Widgets
+    rite gtk_widget_show(widget: *GtkWidget);
+    rite gtk_widget_hide(widget: *GtkWidget);
+    rite gtk_widget_set_visible(widget: *GtkWidget, visible: c_int);
+    rite gtk_widget_set_sensitive(widget: *GtkWidget, sensitive: c_int);
+    rite gtk_widget_set_margin_top(widget: *GtkWidget, margin: c_int);
+    rite gtk_widget_set_margin_bottom(widget: *GtkWidget, margin: c_int);
+    rite gtk_widget_set_margin_start(widget: *GtkWidget, margin: c_int);
+    rite gtk_widget_set_margin_end(widget: *GtkWidget, margin: c_int);
+    rite gtk_widget_set_hexpand(widget: *GtkWidget, expand: c_int);
+    rite gtk_widget_set_vexpand(widget: *GtkWidget, expand: c_int);
+    rite gtk_widget_set_halign(widget: *GtkWidget, align: c_int);
+    rite gtk_widget_set_valign(widget: *GtkWidget, align: c_int);
+    rite gtk_widget_add_css_class(widget: *GtkWidget, class_name: *c_char);
+    rite gtk_widget_remove_css_class(widget: *GtkWidget, class_name: *c_char);
+
+    // Box
+    rite gtk_box_new(orientation: c_int, spacing: c_int) → *GtkWidget;
+    rite gtk_box_append(box: *GtkWidget, child: *GtkWidget);
+    rite gtk_box_remove(box: *GtkWidget, child: *GtkWidget);
+    rite gtk_box_set_spacing(box: *GtkWidget, spacing: c_int);
+    rite gtk_box_set_homogeneous(box: *GtkWidget, homogeneous: c_int);
+
+    // Button
+    rite gtk_button_new() → *GtkWidget;
+    rite gtk_button_new_with_label(label: *c_char) → *GtkWidget;
+    rite gtk_button_set_label(button: *GtkWidget, label: *c_char);
+
+    // Label
+    rite gtk_label_new(text: *c_char) → *GtkWidget;
+    rite gtk_label_set_text(label: *GtkWidget, text: *c_char);
+    rite gtk_label_set_markup(label: *GtkWidget, markup: *c_char);
+    rite gtk_label_set_wrap(label: *GtkWidget, wrap: c_int);
+    rite gtk_label_set_selectable(label: *GtkWidget, selectable: c_int);
+
+    // Entry (text input)
+    rite gtk_entry_new() → *GtkWidget;
+    rite gtk_entry_set_text(entry: *GtkWidget, text: *c_char);
+    rite gtk_entry_get_text(entry: *GtkWidget) → *c_char;
+    rite gtk_entry_set_placeholder_text(entry: *GtkWidget, text: *c_char);
+    rite gtk_editable_get_text(editable: *GtkWidget) → *c_char;
+    rite gtk_editable_set_text(editable: *GtkWidget, text: *c_char);
+
+    // TextView (multiline text)
+    rite gtk_text_view_new() → *GtkWidget;
+    rite gtk_text_view_get_buffer(view: *GtkWidget) → *GtkTextBuffer;
+    rite gtk_text_buffer_set_text(buffer: *GtkTextBuffer, text: *c_char, len: c_int);
+    rite gtk_text_buffer_get_text(buffer: *GtkTextBuffer, start: *GtkTextIter, end: *GtkTextIter, include_hidden: c_int) → *c_char;
+
+    // ScrolledWindow
+    rite gtk_scrolled_window_new() → *GtkWidget;
+    rite gtk_scrolled_window_set_child(sw: *GtkWidget, child: *GtkWidget);
+    rite gtk_scrolled_window_set_policy(sw: *GtkWidget, hpolicy: c_int, vpolicy: c_int);
+
+    // ListBox
+    rite gtk_list_box_new() → *GtkWidget;
+    rite gtk_list_box_append(box: *GtkWidget, child: *GtkWidget);
+    rite gtk_list_box_remove(box: *GtkWidget, child: *GtkWidget);
+    rite gtk_list_box_set_selection_mode(box: *GtkWidget, mode: c_int);
+
+    // Grid
+    rite gtk_grid_new() → *GtkWidget;
+    rite gtk_grid_attach(grid: *GtkWidget, child: *GtkWidget, col: c_int, row: c_int, width: c_int, height: c_int);
+    rite gtk_grid_remove(grid: *GtkWidget, child: *GtkWidget);
+    rite gtk_grid_set_row_spacing(grid: *GtkWidget, spacing: c_int);
+    rite gtk_grid_set_column_spacing(grid: *GtkWidget, spacing: c_int);
+
+    // Stack
+    rite gtk_stack_new() → *GtkWidget;
+    rite gtk_stack_add_named(stack: *GtkWidget, child: *GtkWidget, name: *c_char);
+    rite gtk_stack_set_visible_child_name(stack: *GtkWidget, name: *c_char);
+
+    // HeaderBar
+    rite gtk_header_bar_new() → *GtkWidget;
+    rite gtk_header_bar_set_title_widget(bar: *GtkWidget, title_widget: *GtkWidget);
+    rite gtk_header_bar_pack_start(bar: *GtkWidget, child: *GtkWidget);
+    rite gtk_header_bar_pack_end(bar: *GtkWidget, child: *GtkWidget);
+
+    // Image
+    rite gtk_image_new() → *GtkWidget;
+    rite gtk_image_new_from_file(filename: *c_char) → *GtkWidget;
+    rite gtk_image_set_from_file(image: *GtkWidget, filename: *c_char);
+
+    // Spinner
+    rite gtk_spinner_new() → *GtkWidget;
+    rite gtk_spinner_start(spinner: *GtkWidget);
+    rite gtk_spinner_stop(spinner: *GtkWidget);
+
+    // ProgressBar
+    rite gtk_progress_bar_new() → *GtkWidget;
+    rite gtk_progress_bar_set_fraction(bar: *GtkWidget, fraction: c_double);
+    rite gtk_progress_bar_pulse(bar: *GtkWidget);
+
+    // Scale
+    rite gtk_scale_new_with_range(orientation: c_int, min: c_double, max: c_double, step: c_double) → *GtkWidget;
+    rite gtk_range_get_value(range: *GtkWidget) → c_double;
+    rite gtk_range_set_value(range: *GtkWidget, value: c_double);
+
+    // Switch
+    rite gtk_switch_new() → *GtkWidget;
+    rite gtk_switch_get_active(switch: *GtkWidget) → c_int;
+    rite gtk_switch_set_active(switch: *GtkWidget, active: c_int);
+
+    // CheckButton
+    rite gtk_check_button_new() → *GtkWidget;
+    rite gtk_check_button_new_with_label(label: *c_char) → *GtkWidget;
+    rite gtk_check_button_get_active(button: *GtkWidget) → c_int;
+    rite gtk_check_button_set_active(button: *GtkWidget, active: c_int);
+
+    // DrawingArea
+    rite gtk_drawing_area_new() → *GtkWidget;
+    rite gtk_drawing_area_set_content_width(area: *GtkWidget, width: c_int);
+    rite gtk_drawing_area_set_content_height(area: *GtkWidget, height: c_int);
+
+    // Signals
+    rite g_signal_connect_data(
+        instance: *void,
+        detailed_signal: *c_char,
+        c_handler: *void,
+        data: *void,
+        destroy_data: *void,
+        connect_flags: c_uint
+    ) → c_ulong;
+    rite g_signal_handler_disconnect(instance: *void, handler_id: c_ulong);
+
+    // CSS
+    rite gtk_css_provider_new() → *GtkCssProvider;
+    rite gtk_css_provider_load_from_data(provider: *GtkCssProvider, data: *c_char, length: c_long);
+    rite gtk_style_context_add_provider_for_display(
+        display: *GdkDisplay,
+        provider: *GtkStyleProvider,
+        priority: c_uint
+    );
+    rite gdk_display_get_default() → *GdkDisplay;
+}
+
+// Opaque types
+type GtkWidget;
+type GtkTextBuffer;
+type GtkTextIter;
+type GtkCssProvider;
+type GtkStyleProvider;
+type GdkDisplay;
+
+// Constants
+const GTK_ORIENTATION_HORIZONTAL: c_int = 0;
+const GTK_ORIENTATION_VERTICAL: c_int = 1;
+
+const GTK_ALIGN_FILL: c_int = 0;
+const GTK_ALIGN_START: c_int = 1;
+const GTK_ALIGN_END: c_int = 2;
+const GTK_ALIGN_CENTER: c_int = 3;
+const GTK_ALIGN_BASELINE: c_int = 4;
+
+const GTK_POLICY_AUTOMATIC: c_int = 1;
+const GTK_SELECTION_NONE: c_int = 0;
+const GTK_SELECTION_SINGLE: c_int = 1;
+
+// ============================================================================
+// GTK4 Platform Implementation
+// ============================================================================
+
+/// GTK4 Platform for Linux
+☉ sigil Gtk4Platform {
+    initialized: !bool,
+    event_handlers: HashMap<u64, *void>!,
+    next_handler_id: u64!,
+    css_provider: *GtkCssProvider
+}
+
+⊢ Gtk4Platform {
+    ☉ rite new() → This! {
+        Gtk4Platform {
+            initialized: ⊥,
+            event_handlers: HashMap::new(),
+            next_handler_id: 1,
+            css_provider: 0 as *GtkCssProvider
+        }
+    }
+
+    /// Load CSS styling
+    ☉ rite load_css(&vary this, css: &str) {
+        unsafe {
+            ⎇ this.css_provider as usize == 0 {
+                this.css_provider = gtk_css_provider_new();
+            }
+            gtk_css_provider_load_from_data(
+                this.css_provider,
+                css.as_ptr() as *c_char,
+                css.len() as c_long
+            );
+            ≔ display = gdk_display_get_default();
+            gtk_style_context_add_provider_for_display(
+                display,
+                this.css_provider as *GtkStyleProvider,
+                800 // GTK_STYLE_PROVIDER_PRIORITY_USER
+            );
+        }
+    }
+}
+
+⊢ Gtk4Platform : NativeApp {
+    rite init(&vary this) → bool! {
+        ⎇ ¬this.initialized {
+            unsafe { gtk_init(); }
+            this.initialized = ⊤;
+        }
+        ⊤
+    }
+
+    rite run(&this) {
+        unsafe { gtk_main(); }
+    }
+
+    rite quit(&this) {
+        unsafe { gtk_main_quit(); }
+    }
+
+    rite create_window(&this, title: !String, width: !i32, height: !i32) → NativeWidget! {
+        unsafe {
+            ≔ window = gtk_window_new();
+            gtk_window_set_title(window, title.as_ptr() as *c_char);
+            gtk_window_set_default_size(window, width, height);
+            NativeWidget::new(window as usize, WidgetType::Window)
+        }
+    }
+
+    rite show(&this, widget: &NativeWidget) {
+        unsafe {
+            ⌥ widget.widget_type {
+                WidgetType::Window => {
+                    gtk_window_present(widget.handle as *GtkWidget);
+                }
+                _ => {
+                    gtk_widget_show(widget.handle as *GtkWidget);
+                }
+            }
+        }
+    }
+
+    rite hide(&this, widget: &NativeWidget) {
+        unsafe {
+            gtk_widget_hide(widget.handle as *GtkWidget);
+        }
+    }
+
+    rite set_property(&this, widget: &NativeWidget, name: &str, value: &str) {
+        unsafe {
+            ⌥ (widget.widget_type, name) {
+                (WidgetType::Label, "text") => {
+                    gtk_label_set_text(widget.handle as *GtkWidget, value.as_ptr() as *c_char);
+                }
+                (WidgetType::Label, "markup") => {
+                    gtk_label_set_markup(widget.handle as *GtkWidget, value.as_ptr() as *c_char);
+                }
+                (WidgetType::Button, "label") => {
+                    gtk_button_set_label(widget.handle as *GtkWidget, value.as_ptr() as *c_char);
+                }
+                (WidgetType::Entry, "text") => {
+                    gtk_editable_set_text(widget.handle as *GtkWidget, value.as_ptr() as *c_char);
+                }
+                (WidgetType::Entry, "placeholder") => {
+                    gtk_entry_set_placeholder_text(widget.handle as *GtkWidget, value.as_ptr() as *c_char);
+                }
+                (WidgetType::Image, "file") => {
+                    gtk_image_set_from_file(widget.handle as *GtkWidget, value.as_ptr() as *c_char);
+                }
+                (WidgetType::ProgressBar, "fraction") => {
+                    ≔ fraction! = value.parse::<f64>().unwrap_or(0.0);
+                    gtk_progress_bar_set_fraction(widget.handle as *GtkWidget, fraction);
+                }
+                (_, "visible") => {
+                    ≔ visible! = value == "true" || value == "1";
+                    gtk_widget_set_visible(widget.handle as *GtkWidget, ⎇ visible { 1 } ⎉ { 0 });
+                }
+                (_, "sensitive") => {
+                    ≔ sensitive! = value == "true" || value == "1";
+                    gtk_widget_set_sensitive(widget.handle as *GtkWidget, ⎇ sensitive { 1 } ⎉ { 0 });
+                }
+                (_, "css_class") => {
+                    gtk_widget_add_css_class(widget.handle as *GtkWidget, value.as_ptr() as *c_char);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    rite connect(&this, widget: &NativeWidget, signal: &str, handler_id: u64) {
+        // Signal connection requires callback setup
+        // This is a simplified version
+    }
+
+    rite disconnect(&this, widget: &NativeWidget, handler_id: u64) {
+        unsafe {
+            g_signal_handler_disconnect(widget.handle as *void, handler_id as c_ulong);
+        }
+    }
+}
+
+⊢ Gtk4Platform : NativeWidgetBuilder {
+    rite create_box(&this, orientation: Orientation) → NativeWidget! {
+        unsafe {
+            ≔ gtk_orientation! = ⌥ orientation {
+                Orientation::Horizontal => GTK_ORIENTATION_HORIZONTAL,
+                Orientation::Vertical => GTK_ORIENTATION_VERTICAL
+            };
+            ≔ widget = gtk_box_new(gtk_orientation, 0);
+            NativeWidget::new(widget as usize, WidgetType::Box)
+        }
+    }
+
+    rite create_button(&this, label: &str) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_button_new_with_label(label.as_ptr() as *c_char);
+            NativeWidget::new(widget as usize, WidgetType::Button)
+        }
+    }
+
+    rite create_label(&this, text: &str) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_label_new(text.as_ptr() as *c_char);
+            NativeWidget::new(widget as usize, WidgetType::Label)
+        }
+    }
+
+    rite create_entry(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_entry_new();
+            NativeWidget::new(widget as usize, WidgetType::Entry)
+        }
+    }
+
+    rite create_text_view(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_text_view_new();
+            NativeWidget::new(widget as usize, WidgetType::TextView)
+        }
+    }
+
+    rite create_scrolled(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_scrolled_window_new();
+            gtk_scrolled_window_set_policy(widget, GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+            NativeWidget::new(widget as usize, WidgetType::ScrolledWindow)
+        }
+    }
+
+    rite create_list_box(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_list_box_new();
+            NativeWidget::new(widget as usize, WidgetType::ListBox)
+        }
+    }
+
+    rite create_grid(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_grid_new();
+            NativeWidget::new(widget as usize, WidgetType::Grid)
+        }
+    }
+
+    rite create_stack(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_stack_new();
+            NativeWidget::new(widget as usize, WidgetType::Stack)
+        }
+    }
+
+    rite create_header_bar(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_header_bar_new();
+            NativeWidget::new(widget as usize, WidgetType::HeaderBar)
+        }
+    }
+
+    rite create_image(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_image_new();
+            NativeWidget::new(widget as usize, WidgetType::Image)
+        }
+    }
+
+    rite create_spinner(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_spinner_new();
+            NativeWidget::new(widget as usize, WidgetType::Spinner)
+        }
+    }
+
+    rite create_progress_bar(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_progress_bar_new();
+            NativeWidget::new(widget as usize, WidgetType::ProgressBar)
+        }
+    }
+
+    rite create_scale(&this, orientation: Orientation, min: f64, max: f64) → NativeWidget! {
+        unsafe {
+            ≔ gtk_orientation! = ⌥ orientation {
+                Orientation::Horizontal => GTK_ORIENTATION_HORIZONTAL,
+                Orientation::Vertical => GTK_ORIENTATION_VERTICAL
+            };
+            ≔ widget = gtk_scale_new_with_range(gtk_orientation, min, max, 1.0);
+            NativeWidget::new(widget as usize, WidgetType::Scale)
+        }
+    }
+
+    rite create_switch(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_switch_new();
+            NativeWidget::new(widget as usize, WidgetType::Switch)
+        }
+    }
+
+    rite create_check_button(&this, label: &str) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_check_button_new_with_label(label.as_ptr() as *c_char);
+            NativeWidget::new(widget as usize, WidgetType::CheckButton)
+        }
+    }
+
+    rite create_drawing_area(&this) → NativeWidget! {
+        unsafe {
+            ≔ widget = gtk_drawing_area_new();
+            NativeWidget::new(widget as usize, WidgetType::DrawingArea)
+        }
+    }
+}
+
+⊢ Gtk4Platform : NativeLayout {
+    rite append(&this, parent: &NativeWidget, child: &NativeWidget) {
+        unsafe {
+            ⌥ parent.widget_type {
+                WidgetType::Window => {
+                    gtk_window_set_child(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                WidgetType::Box => {
+                    gtk_box_append(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                WidgetType::ListBox => {
+                    gtk_list_box_append(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                WidgetType::ScrolledWindow => {
+                    gtk_scrolled_window_set_child(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                WidgetType::HeaderBar => {
+                    gtk_header_bar_pack_start(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    rite remove(&this, parent: &NativeWidget, child: &NativeWidget) {
+        unsafe {
+            ⌥ parent.widget_type {
+                WidgetType::Box => {
+                    gtk_box_remove(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                WidgetType::ListBox => {
+                    gtk_list_box_remove(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                WidgetType::Grid => {
+                    gtk_grid_remove(parent.handle as *GtkWidget, child.handle as *GtkWidget);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    rite grid_attach(&this, grid: &NativeWidget, child: &NativeWidget, col: i32, row: i32, width: i32, height: i32) {
+        unsafe {
+            gtk_grid_attach(
+                grid.handle as *GtkWidget,
+                child.handle as *GtkWidget,
+                col, row, width, height
+            );
+        }
+    }
+
+    rite set_spacing(&this, container: &NativeWidget, spacing: i32) {
+        unsafe {
+            ⌥ container.widget_type {
+                WidgetType::Box => {
+                    gtk_box_set_spacing(container.handle as *GtkWidget, spacing);
+                }
+                WidgetType::Grid => {
+                    gtk_grid_set_row_spacing(container.handle as *GtkWidget, spacing);
+                    gtk_grid_set_column_spacing(container.handle as *GtkWidget, spacing);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    rite set_margins(&this, widget: &NativeWidget, top: i32, bottom: i32, start: i32, end: i32) {
+        unsafe {
+            gtk_widget_set_margin_top(widget.handle as *GtkWidget, top);
+            gtk_widget_set_margin_bottom(widget.handle as *GtkWidget, bottom);
+            gtk_widget_set_margin_start(widget.handle as *GtkWidget, start);
+            gtk_widget_set_margin_end(widget.handle as *GtkWidget, end);
+        }
+    }
+
+    rite set_expand(&this, widget: &NativeWidget, hexpand: bool, vexpand: bool) {
+        unsafe {
+            gtk_widget_set_hexpand(widget.handle as *GtkWidget, ⎇ hexpand { 1 } ⎉ { 0 });
+            gtk_widget_set_vexpand(widget.handle as *GtkWidget, ⎇ vexpand { 1 } ⎉ { 0 });
+        }
+    }
+
+    rite set_align(&this, widget: &NativeWidget, halign: Align, valign: Align) {
+        unsafe {
+            ≔ gtk_halign! = align_to_gtk(halign);
+            ≔ gtk_valign! = align_to_gtk(valign);
+            gtk_widget_set_halign(widget.handle as *GtkWidget, gtk_halign);
+            gtk_widget_set_valign(widget.handle as *GtkWidget, gtk_valign);
+        }
+    }
+}
+
+/// Convert Align to GTK constant
+rite align_to_gtk(align: Align) → c_int! {
+    ⌥ align {
+        Align::Start => GTK_ALIGN_START,
+        Align::Center => GTK_ALIGN_CENTER,
+        Align::End => GTK_ALIGN_END,
+        Align::Fill => GTK_ALIGN_FILL,
+        Align::Baseline => GTK_ALIGN_BASELINE
+    }
+}
+
+// ============================================================================
+// Platform Trait Implementation
+// ============================================================================
+
+⊢ Gtk4Platform : Platform {
+    rite query_selector(&this, selector: &str) → Option<DomElement>? {
+        None // Not applicable for native
+    }
+
+    rite create_element(&this, tag: &str) → DomElement! {
+        // Create native widget based on tag
+        ≔ widget! = ⌥ tag {
+            "div" | "section" => this.create_box(Orientation::Vertical),
+            "button" => this.create_button(""),
+            "label" | "span" | "p" => this.create_label(""),
+            "input" => this.create_entry(),
+            _ => this.create_box(Orientation::Vertical)
+        };
+        DomElement::new(widget.handle)
+    }
+
+    rite create_text(&this, content: &str) → DomElement! {
+        ≔ label! = this.create_label(content);
+        DomElement::new(label.handle)
+    }
+
+    rite apply_patch(&this, patch: Patch) {
+        // Handled by VNodeToNative
+    }
+
+    rite add_event_listener(&this, element: &DomElement, event: EventType, handler_id: u64) {
+        // Connect GTK signal
+    }
+
+    rite remove_event_listener(&this, element: &DomElement, event: EventType, handler_id: u64) {
+        unsafe {
+            g_signal_handler_disconnect(element.handle as *void, handler_id as c_ulong);
+        }
+    }
+
+    rite window_size(&this) → (i32, i32)! {
+        (800, 600) // Default
+    }
+
+    rite request_animation_frame(&this, callback: fn(f64)) → u64! {
+        0 // Use g_idle_add
+    }
+
+    rite cancel_animation_frame(&this, id: u64) {
+        // Use g_source_remove
+    }
+
+    rite set_timeout(&this, callback: fn(), delay_ms: u64) → u64! {
+        0 // Use g_timeout_add
+    }
+
+    rite clear_timeout(&this, id: u64) {
+        // Use g_source_remove
+    }
+
+    rite set_interval(&this, callback: fn(), interval_ms: u64) → u64! {
+        0 // Use g_timeout_add
+    }
+
+    rite clear_interval(&this, id: u64) {
+        // Use g_source_remove
+    }
+
+    rite fetch(&this, url: &str, options: FetchOptions) → Future<Output = FetchResponse>! {
+        async {
+            // Use libsoup or libcurl
+            FetchResponse {
+                ok: ⊥,
+                status: 0,
+                status_text: "Not implemented".to_string(),
+                headers: HashMap::new(),
+                body: Vec::new()
+            }
+        }
+    }
+
+    rite local_storage(&this) → Storage! {
+        Storage { storage_type: StorageType::Local }
+    }
+
+    rite session_storage(&this) → Storage! {
+        Storage { storage_type: StorageType::Session }
+    }
+
+    rite current_url(&this) → String! {
+        "/".to_string()
+    }
+
+    rite push_history(&this, url: &str, state: Option<HashMap<String, String>>) {
+        // Not applicable for native
+    }
+
+    rite replace_history(&this, url: &str, state: Option<HashMap<String, String>>) {
+        // Not applicable for native
+    }
+
+    rite render_to_string(&this, vnode: &VNode) → String! {
+        panic!("render_to_string not supported in native platform")
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_gtk4_platform_creation() {
+        ≔ platform! = Gtk4Platform::new();
+        assert!(!platform.initialized);
+    }
+
+    #[test]
+    rite test_align_conversion() {
+        assert_eq!(align_to_gtk(Align::Center), GTK_ALIGN_CENTER);
+        assert_eq!(align_to_gtk(Align::Start), GTK_ALIGN_START);
+        assert_eq!(align_to_gtk(Align::Fill), GTK_ALIGN_FILL);
+    }
+}

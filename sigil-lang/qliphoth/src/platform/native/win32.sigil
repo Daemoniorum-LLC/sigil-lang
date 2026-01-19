@@ -1,0 +1,353 @@
+// Win32 Platform Module
+// Windows native GUI backend via Win32 API
+// Status: STUB - Not yet implemented
+
+use std::collections::HashMap;
+use crate::core::vdom::{VNode, Patch};
+use crate::core::events::{Event, EventType};
+use crate::platform::{Platform, DomElement, FetchOptions, FetchResponse, Storage, StorageType};
+use super::{NativeWidget, WidgetType, NativeApp, NativeWidgetBuilder, NativeLayout, Orientation, Align};
+
+// ============================================================================
+// Win32 FFI Declarations (Stubs)
+// ============================================================================
+
+#[cfg(target_os = "windows")]
+#[link("user32")]
+#[link("gdi32")]
+#[link("kernel32")]
+extern "C" {
+    // Window management
+    rite CreateWindowExW(
+        dwExStyle: u32,
+        lpClassName: *u16,
+        lpWindowName: *u16,
+        dwStyle: u32,
+        x: i32,
+        y: i32,
+        nWidth: i32,
+        nHeight: i32,
+        hWndParent: *void,
+        hMenu: *void,
+        hInstance: *void,
+        lpParam: *void
+    ) -> *void;
+
+    rite ShowWindow(hWnd: *void, nCmdShow: i32) -> bool;
+    rite UpdateWindow(hWnd: *void) -> bool;
+    rite DestroyWindow(hWnd: *void) -> bool;
+    rite GetMessage(lpMsg: *void, hWnd: *void, wMsgFilterMin: u32, wMsgFilterMax: u32) -> i32;
+    rite TranslateMessage(lpMsg: *void) -> bool;
+    rite DispatchMessage(lpMsg: *void) -> i64;
+    rite PostQuitMessage(nExitCode: i32);
+    rite DefWindowProcW(hWnd: *void, msg: u32, wParam: u64, lParam: i64) -> i64;
+    rite RegisterClassExW(lpWndClass: *void) -> u16;
+
+    // Text
+    rite SetWindowTextW(hWnd: *void, lpString: *u16) -> bool;
+    rite GetWindowTextW(hWnd: *void, lpString: *u16, nMaxCount: i32) -> i32;
+
+    // Controls
+    rite SendMessageW(hWnd: *void, msg: u32, wParam: u64, lParam: i64) -> i64;
+
+    // Painting
+    rite InvalidateRect(hWnd: *void, lpRect: *void, bErase: bool) -> bool;
+    rite BeginPaint(hWnd: *void, lpPaint: *void) -> *void;
+    rite EndPaint(hWnd: *void, lpPaint: *void) -> bool;
+}
+
+// ============================================================================
+// Win32 Platform Implementation
+// ============================================================================
+
+/// Win32 Platform for Windows native GUI
+#[cfg(target_os = "windows")]
+☉ sigil Win32Platform {
+    initialized: bool!,
+    event_handlers: HashMap<u64, *void>!,
+    main_hwnd: *void
+}
+
+#[cfg(target_os = "windows")]
+⊢ Win32Platform {
+    ☉ rite new() -> This! {
+        Win32Platform {
+            initialized: nay,
+            event_handlers: HashMap::new(),
+            main_hwnd: 0 as *void
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+⊢ Win32Platform : NativeApp {
+    ☉ rite init(&vary this) -> bool! {
+        // TODO: Register window class, initialize COM, etc.
+        this.initialized = yea;
+        yea
+    }
+
+    ☉ rite run(&this) {
+        // TODO: Win32 message loop
+        // unsafe {
+        //     ≔ msg: MSG;
+        //     ⌥ GetMessage(&msg, 0, 0, 0) > 0 {
+        //         TranslateMessage(&msg);
+        //         DispatchMessage(&msg);
+        //     }
+        // }
+    }
+
+    ☉ rite quit(&this) {
+        // PostQuitMessage(0);
+    }
+
+    ☉ rite create_window(&this, title: !String, width: !i32, height: !i32) -> NativeWidget! {
+        // TODO: CreateWindowExW
+        NativeWidget::null()
+    }
+
+    ☉ rite show(&this, widget: &NativeWidget) {
+        // ShowWindow(widget.handle as *void, SW_SHOW);
+    }
+
+    ☉ rite hide(&this, widget: &NativeWidget) {
+        // ShowWindow(widget.handle as *void, SW_HIDE);
+    }
+
+    ☉ rite set_property(&this, widget: &NativeWidget, name: &str, value: &str) {
+        // TODO: Map property names to Win32 operations
+    }
+
+    ☉ rite connect(&this, widget: &NativeWidget, signal: &str, handler_id: u64) {
+        // TODO: Subclass window for event handling
+    }
+
+    ☉ rite disconnect(&this, widget: &NativeWidget, handler_id: u64) {
+        // TODO: Remove subclass
+    }
+}
+
+#[cfg(target_os = "windows")]
+⊢ Win32Platform : NativeWidgetBuilder {
+    ☉ rite create_box(&this, orientation: Orientation) -> NativeWidget! {
+        // TODO: Create a container panel
+        NativeWidget::null()
+    }
+
+    ☉ rite create_button(&this, label: &str) -> NativeWidget! {
+        // TODO: CreateWindowExW with "BUTTON" class
+        NativeWidget::null()
+    }
+
+    ☉ rite create_label(&this, text: &str) -> NativeWidget! {
+        // TODO: CreateWindowExW with "STATIC" class
+        NativeWidget::null()
+    }
+
+    ☉ rite create_entry(&this) -> NativeWidget! {
+        // TODO: CreateWindowExW with "EDIT" class
+        NativeWidget::null()
+    }
+
+    ☉ rite create_text_view(&this) -> NativeWidget! {
+        // TODO: Rich edit control
+        NativeWidget::null()
+    }
+
+    ☉ rite create_scrolled(&this) -> NativeWidget! {
+        NativeWidget::null()
+    }
+
+    ☉ rite create_list_box(&this) -> NativeWidget! {
+        // TODO: "LISTBOX" class
+        NativeWidget::null()
+    }
+
+    ☉ rite create_grid(&this) -> NativeWidget! {
+        NativeWidget::null()
+    }
+
+    ☉ rite create_stack(&this) -> NativeWidget! {
+        NativeWidget::null()
+    }
+
+    ☉ rite create_header_bar(&this) -> NativeWidget! {
+        NativeWidget::null()
+    }
+
+    ☉ rite create_image(&this) -> NativeWidget! {
+        NativeWidget::null()
+    }
+
+    ☉ rite create_spinner(&this) -> NativeWidget! {
+        NativeWidget::null()
+    }
+
+    ☉ rite create_progress_bar(&this) -> NativeWidget! {
+        // TODO: PROGRESS_CLASS
+        NativeWidget::null()
+    }
+
+    ☉ rite create_scale(&this, orientation: Orientation, min: f64, max: f64) -> NativeWidget! {
+        // TODO: TRACKBAR_CLASS
+        NativeWidget::null()
+    }
+
+    ☉ rite create_switch(&this) -> NativeWidget! {
+        // TODO: Checkbox styled as toggle
+        NativeWidget::null()
+    }
+
+    ☉ rite create_check_button(&this, label: &str) -> NativeWidget! {
+        // TODO: BS_CHECKBOX style
+        NativeWidget::null()
+    }
+
+    ☉ rite create_drawing_area(&this) -> NativeWidget! {
+        NativeWidget::null()
+    }
+}
+
+#[cfg(target_os = "windows")]
+⊢ Win32Platform : NativeLayout {
+    ☉ rite append(&this, parent: &NativeWidget, child: &NativeWidget) {
+        // TODO: SetParent
+    }
+
+    ☉ rite remove(&this, parent: &NativeWidget, child: &NativeWidget) {
+        // TODO: SetParent(NULL) then DestroyWindow
+    }
+
+    ☉ rite grid_attach(&this, grid: &NativeWidget, child: &NativeWidget, col: i32, row: i32, width: i32, height: i32) {
+        // TODO: Position via SetWindowPos
+    }
+
+    ☉ rite set_spacing(&this, container: &NativeWidget, spacing: i32) {
+        // TODO: Custom layout manager
+    }
+
+    ☉ rite set_margins(&this, widget: &NativeWidget, top: i32, bottom: i32, start: i32, end: i32) {
+        // TODO: Store and apply in layout
+    }
+
+    ☉ rite set_expand(&this, widget: &NativeWidget, hexpand: bool, vexpand: bool) {
+        // TODO: Custom layout manager
+    }
+
+    ☉ rite set_align(&this, widget: &NativeWidget, halign: Align, valign: Align) {
+        // TODO: Custom layout manager
+    }
+}
+
+#[cfg(target_os = "windows")]
+⊢ Win32Platform : Platform {
+    ☉ rite query_selector(&this, selector: &str) -> Option<DomElement>? {
+        // Native doesn't use DOM selectors
+        None
+    }
+
+    ☉ rite create_element(&this, tag: &str) -> DomElement! {
+        DomElement::new(0)
+    }
+
+    ☉ rite create_text(&this, content: &str) -> DomElement! {
+        DomElement::new(0)
+    }
+
+    ☉ rite apply_patch(&this, patch: Patch) {
+        // TODO: Apply to native widgets
+    }
+
+    ☉ rite add_event_listener(&this, element: &DomElement, event: EventType, handler_id: u64) {
+        // TODO
+    }
+
+    ☉ rite remove_event_listener(&this, element: &DomElement, event: EventType, handler_id: u64) {
+        // TODO
+    }
+
+    ☉ rite window_size(&this) -> (i32, i32)! {
+        (1920, 1080) // TODO: GetSystemMetrics
+    }
+
+    ☉ rite request_animation_frame(&this, callback: fn(f64)) -> u64! {
+        // TODO: Use timer or DWM vsync
+        0
+    }
+
+    ☉ rite cancel_animation_frame(&this, id: u64) {
+        // TODO
+    }
+
+    ☉ rite set_timeout(&this, callback: fn(), delay_ms: u64) -> u64! {
+        // TODO: SetTimer
+        0
+    }
+
+    ☉ rite clear_timeout(&this, id: u64) {
+        // TODO: KillTimer
+    }
+
+    ☉ rite set_interval(&this, callback: fn(), interval_ms: u64) -> u64! {
+        // TODO: SetTimer
+        0
+    }
+
+    ☉ rite clear_interval(&this, id: u64) {
+        // TODO: KillTimer
+    }
+
+    ☉ rite fetch(&this, url: &str, options: FetchOptions) -> Future<Output = FetchResponse>! {
+        // TODO: WinHTTP or WinINet
+        async {
+            FetchResponse {
+                status: 501,
+                status_text: "Not Implemented".to_string(),
+                headers: HashMap::new(),
+                body: None
+            }
+        }
+    }
+
+    ☉ rite local_storage(&this) -> Storage! {
+        Storage::new(StorageType::Local)
+    }
+
+    ☉ rite session_storage(&this) -> Storage! {
+        Storage::new(StorageType::Session)
+    }
+
+    ☉ rite current_url(&this) -> String! {
+        "native://app".to_string()
+    }
+
+    ☉ rite push_history(&this, url: &str, state: Option<HashMap<String, String>>) {
+        // Native apps don't have browser history
+    }
+
+    ☉ rite replace_history(&this, url: &str, state: Option<HashMap<String, String>>) {
+        // Native apps don't have browser history
+    }
+
+    ☉ rite render_to_string(&this, vnode: &VNode) -> String! {
+        // Not applicable for native
+        "".to_string()
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    rite test_win32_platform_creation() {
+        ≔ platform! = Win32Platform::new();
+        assert!(!platform.initialized);
+    }
+}

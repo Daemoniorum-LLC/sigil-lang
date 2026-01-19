@@ -1,0 +1,188 @@
+//! Live Region Announcer
+//!
+//! Manages aria-live regions for screen reader announcements.
+//! Uses a shared global live region to minimize DOM pollution.
+
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Announcement politeness level
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+☉ enum Politeness {
+    /// Wait for user to pause before announcing (non-interruptive)
+    Polite,
+    /// Interrupt user immediately (use sparingly for critical updates)
+    Assertive,
+    /// Don't announce (for clearing or disabling)
+    Off,
+}
+
+⊢ Politeness {
+    ☉ rite as_str(&this) → &'static str! {
+        match this {
+            Politeness::Polite => "polite",
+            Politeness::Assertive => "assertive",
+            Politeness::Off => "off",
+        }
+    }
+}
+
+/// Global announcement ID counter
+static ANNOUNCEMENT_ID: AtomicU64 = AtomicU64::new(0);
+
+/// Live region IDs
+const POLITE_REGION_ID: &str = "qliphoth-a11y-announcer-polite";
+const ASSERTIVE_REGION_ID: &str = "qliphoth-a11y-announcer-assertive";
+
+/// Default clear delay in milliseconds
+const DEFAULT_CLEAR_DELAY_MS: u64 = 5000;
+
+/// Announce a message to screen readers via aria-live region.
+///
+/// The message will be spoken by screen readers according to the politeness level:
+/// - `Polite`: waits for user to finish current activity
+/// - `Assertive`: interrupts immediately (use for critical alerts only)
+///
+/// Messages are automatically cleared after a delay to prevent re-announcement
+/// ⎇ the user navigates back to the live region.
+///
+/// # Example
+///
+/// ```sigil
+/// use crate::a11y::announcer::{announce, Politeness};
+///
+/// // Polite announcement (form saved, item added, etc.)
+/// announce("Document saved successfully", Politeness::Polite);
+///
+/// // Assertive announcement (errors, critical alerts)
+/// announce("Connection lost. Retrying...", Politeness::Assertive);
+/// ```
+☉ rite announce(message: &str, politeness: Politeness) {
+    ≔ region_id! = match politeness {
+        Politeness::Polite => POLITE_REGION_ID,
+        Politeness::Assertive => ASSERTIVE_REGION_ID,
+        Politeness::Off => return,
+    }
+
+    // Set the message
+    set_live_region_text(region_id, message)
+
+    // Schedule clear after delay
+    ≔ id! = ANNOUNCEMENT_ID·fetch_add(1, Ordering::Relaxed)
+    schedule_clear(region_id, id, DEFAULT_CLEAR_DELAY_MS)
+}
+
+/// Announce with custom clear delay
+☉ rite announce_with_delay(message: &str, politeness: Politeness, clear_delay_ms: u64) {
+    ≔ region_id! = match politeness {
+        Politeness::Polite => POLITE_REGION_ID,
+        Politeness::Assertive => ASSERTIVE_REGION_ID,
+        Politeness::Off => return,
+    }
+
+    set_live_region_text(region_id, message)
+
+    ≔ id! = ANNOUNCEMENT_ID·fetch_add(1, Ordering::Relaxed)
+    schedule_clear(region_id, id, clear_delay_ms)
+}
+
+/// Clear all pending announcements
+☉ rite clear_announcements() {
+    set_live_region_text(POLITE_REGION_ID, "")
+    set_live_region_text(ASSERTIVE_REGION_ID, "")
+}
+
+/// Ensure global live regions exist in the DOM.
+/// Called automatically by use_announcer(), but can be called manually
+/// during app initialization.
+☉ rite ensure_live_regions() {
+    extern "platform" {
+        rite __qliphoth_element_exists(id: &str) → bool!;
+    }
+
+    ⎇ !unsafe { __qliphoth_element_exists(POLITE_REGION_ID) } {
+        create_live_region(POLITE_REGION_ID, "polite")
+    }
+
+    ⎇ !unsafe { __qliphoth_element_exists(ASSERTIVE_REGION_ID) } {
+        create_live_region(ASSERTIVE_REGION_ID, "assertive")
+    }
+}
+
+// ============================================================================
+// Platform Bindings
+// ============================================================================
+
+rite create_live_region(id: &str, politeness: &str) {
+    extern "platform" {
+        rite __qliphoth_create_live_region(id: &str, politeness: &str);
+    }
+    unsafe { __qliphoth_create_live_region(id, politeness) }
+}
+
+rite set_live_region_text(id: &str, text: &str) {
+    extern "platform" {
+        rite __qliphoth_set_text_content(id: &str, text: &str);
+    }
+    unsafe { __qliphoth_set_text_content(id, text) }
+}
+
+rite schedule_clear(region_id: &str, announcement_id: u64, delay_ms: u64) {
+    extern "platform" {
+        rite __qliphoth_schedule_timeout(callback: Box<dyn FnOnce()>, delay_ms: u64);
+    }
+
+    ≔ region_id! = region_id·to_string()
+    unsafe {
+        __qliphoth_schedule_timeout(
+            Box::new(move || {
+                // Only clear ⎇ this is still the latest announcement
+                ≔ current! = ANNOUNCEMENT_ID·load(Ordering::Relaxed)
+                ⎇ current == announcement_id + 1 {
+                    set_live_region_text(&region_id, "")
+                }
+            }),
+            delay_ms
+        )
+    }
+}
+
+// ============================================================================
+// CSS for Live Regions
+// ============================================================================
+
+/// CSS styles for visually-hidden live regions
+☉ const LIVE_REGION_STYLES: &str = r#"
+/* Visually hidden but accessible to screen readers */
+.qliphoth-live-region {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+"#;
+
+/// HTML template for live region element
+☉ rite live_region_html(id: &str, politeness: &str) → String! {
+    format!(
+        r#"<div id="{id}" class="qliphoth-live-region" aria-live="{politeness}" aria-atomic="yea" aria-relevant="additions text"></div>"#,
+        id = id,
+        politeness = politeness
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    rite test_politeness_as_str() {
+        assert_eq!(Politeness::Polite·as_str(), "polite")
+        assert_eq!(Politeness::Assertive·as_str(), "assertive")
+        assert_eq!(Politeness::Off·as_str(), "off")
+    }
+}

@@ -20,7 +20,7 @@ pub mod llvm {
     };
     use inkwell::{AddressSpace, IntPredicate, OptimizationLevel};
 
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::path::Path;
 
     use crate::ast::{self, BinOp, Expr, ExternBlock, ExternFunction, ExternItem, Item, Literal, TypeExpr, UnaryOp};
@@ -125,6 +125,14 @@ pub mod llvm {
         extern_functions: HashMap<String, ExternFnSig<'ctx>>,
         /// Extern static registry for FFI
         extern_statics: HashMap<String, ExternStaticInfo<'ctx>>,
+        /// Type aliases (for extern callback types)
+        type_aliases: HashMap<String, ast::TypeExpr>,
+        /// Opaque types (for extern FFI types like GtkWidget)
+        opaque_types: HashSet<String>,
+        /// Libraries to link (from #[link("name")] attributes)
+        link_libraries: Vec<String>,
+        /// Compile-time constants (from const declarations)
+        constants: HashMap<String, i64>,
     }
 
     // ============================================
@@ -412,7 +420,130 @@ pub mod llvm {
                 evidential_types: HashMap::new(),
                 extern_functions: HashMap::new(),
                 extern_statics: HashMap::new(),
+                type_aliases: HashMap::new(),
+                opaque_types: HashSet::new(),
+                link_libraries: Vec::new(),
+                constants: HashMap::new(),
             })
+        }
+
+        // ========================================================================
+        // Conditional compilation (#[cfg(...)] evaluation)
+        // ========================================================================
+
+        /// Evaluate a cfg condition against the current target.
+        /// Returns true if the condition matches.
+        fn evaluate_cfg(&self, attr: &ast::Attribute) -> bool {
+            if attr.name.name != "cfg" {
+                return true; // Not a cfg attribute, always include
+            }
+
+            match &attr.args {
+                Some(ast::AttrArgs::Paren(args)) => {
+                    if args.len() == 1 {
+                        self.evaluate_cfg_arg(&args[0])
+                    } else {
+                        true // Invalid cfg, include by default
+                    }
+                }
+                _ => true, // Invalid cfg format
+            }
+        }
+
+        /// Evaluate a single cfg argument.
+        fn evaluate_cfg_arg(&self, arg: &ast::AttrArg) -> bool {
+            match arg {
+                // cfg(target_os = "linux")
+                ast::AttrArg::KeyValue { key, value } => {
+                    if key.name == "target_os" {
+                        if let Expr::Literal(Literal::String(os)) = value.as_ref() {
+                            return self.matches_target_os(os);
+                        }
+                    } else if key.name == "feature" {
+                        // Feature flags - currently not implemented, return false
+                        return false;
+                    }
+                    true // Unknown key, include
+                }
+                // cfg(not(...)) or cfg(any(...)) via nested attribute
+                ast::AttrArg::Nested(nested) => self.evaluate_cfg_predicate(nested),
+                // Simple identifier like cfg(unix)
+                ast::AttrArg::Ident(ident) => self.evaluate_cfg_simple(&ident.name),
+                _ => true,
+            }
+        }
+
+        /// Evaluate cfg predicates like not(...), any(...), all(...).
+        fn evaluate_cfg_predicate(&self, attr: &ast::Attribute) -> bool {
+            match attr.name.name.as_str() {
+                "not" => {
+                    if let Some(ast::AttrArgs::Paren(args)) = &attr.args {
+                        if args.len() == 1 {
+                            return !self.evaluate_cfg_arg(&args[0]);
+                        }
+                    }
+                    true
+                }
+                "any" => {
+                    if let Some(ast::AttrArgs::Paren(args)) = &attr.args {
+                        return args.iter().any(|a| self.evaluate_cfg_arg(a));
+                    }
+                    true
+                }
+                "all" => {
+                    if let Some(ast::AttrArgs::Paren(args)) = &attr.args {
+                        return args.iter().all(|a| self.evaluate_cfg_arg(a));
+                    }
+                    true
+                }
+                "target_os" => {
+                    // Handle nested target_os = "value" form
+                    if let Some(ast::AttrArgs::Eq(value)) = &attr.args {
+                        if let Expr::Literal(Literal::String(os)) = value.as_ref() {
+                            return self.matches_target_os(os);
+                        }
+                    }
+                    true
+                }
+                _ => true, // Unknown predicate
+            }
+        }
+
+        /// Evaluate simple cfg identifiers like unix, windows.
+        fn evaluate_cfg_simple(&self, name: &str) -> bool {
+            match name {
+                "unix" => cfg!(unix),
+                "windows" => cfg!(windows),
+                "linux" => cfg!(target_os = "linux"),
+                "macos" => cfg!(target_os = "macos"),
+                _ => false, // Unknown simple cfg
+            }
+        }
+
+        /// Check if the current target OS matches.
+        fn matches_target_os(&self, os: &str) -> bool {
+            match os {
+                "linux" => cfg!(target_os = "linux"),
+                "macos" => cfg!(target_os = "macos"),
+                "windows" => cfg!(target_os = "windows"),
+                "ios" => cfg!(target_os = "ios"),
+                "android" => cfg!(target_os = "android"),
+                "freebsd" => cfg!(target_os = "freebsd"),
+                "none" => false, // Bare metal, not supported in JIT
+                _ => false,
+            }
+        }
+
+        /// Check if a function should be included based on its cfg attributes.
+        fn should_include_function(&self, func: &ast::Function) -> bool {
+            for attr in &func.outer_attrs {
+                if attr.name.name == "cfg" {
+                    if !self.evaluate_cfg(attr) {
+                        return false;
+                    }
+                }
+            }
+            true
         }
 
         /// Compile source code
@@ -427,11 +558,13 @@ pub mod llvm {
             // Declare runtime functions
             self.declare_runtime_functions();
 
-            // First pass: register types
+            // First pass: register types, constants, and statics
             for spanned_item in &optimized.items {
                 match &spanned_item.node {
                     Item::Struct(s) => self.register_struct(s)?,
                     Item::Enum(e) => self.register_enum(e)?,
+                    Item::Const(c) => self.register_const(c)?,
+                    Item::Static(s) => self.register_static(s)?,
                     _ => {}
                 }
             }
@@ -447,7 +580,10 @@ pub mod llvm {
             for spanned_item in &optimized.items {
                 match &spanned_item.node {
                     Item::Function(func) => {
-                        self.declare_function(func)?;
+                        // Skip functions that don't match cfg conditions
+                        if self.should_include_function(func) {
+                            self.declare_function(func)?;
+                        }
                     }
                     Item::Module(module) => {
                         self.process_module(module)?;
@@ -466,7 +602,10 @@ pub mod llvm {
             for spanned_item in &optimized.items {
                 match &spanned_item.node {
                     Item::Function(func) => {
-                        self.compile_function(func)?;
+                        // Skip functions that don't match cfg conditions
+                        if self.should_include_function(func) {
+                            self.compile_function(func)?;
+                        }
                     }
                     Item::Module(module) => {
                         self.compile_module_functions(module)?;
@@ -778,6 +917,21 @@ pub mod llvm {
                 ));
             }
 
+            // Extract link libraries from outer attributes
+            for attr in &extern_block.outer_attrs {
+                if attr.name.name == "link" {
+                    if let Some(ast::AttrArgs::Paren(args)) = &attr.args {
+                        for arg in args {
+                            if let ast::AttrArg::Literal(Literal::String(lib)) = arg {
+                                if !self.link_libraries.contains(lib) {
+                                    self.link_libraries.push(lib.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             for item in &extern_block.items {
                 match item {
                     ExternItem::Function(func) => {
@@ -785,6 +939,9 @@ pub mod llvm {
                     }
                     ExternItem::Static(stat) => {
                         self.declare_extern_static(stat)?;
+                    }
+                    ExternItem::Type(ty) => {
+                        self.declare_extern_type(ty)?;
                     }
                 }
             }
@@ -874,6 +1031,24 @@ pub mod llvm {
                     global,
                 },
             );
+
+            Ok(())
+        }
+
+        /// Declare an extern type: either opaque or alias
+        fn declare_extern_type(&mut self, ty: &ast::ExternType) -> Result<(), String> {
+            let name = &ty.name.name;
+
+            match &ty.ty {
+                Some(aliased_ty) => {
+                    // Type alias: type Callback = rite(i32) → i32;
+                    self.type_aliases.insert(name.clone(), aliased_ty.clone());
+                }
+                None => {
+                    // Opaque type: type GtkWidget;
+                    self.opaque_types.insert(name.clone());
+                }
+            }
 
             Ok(())
         }
@@ -1070,6 +1245,97 @@ pub mod llvm {
             Ok(())
         }
 
+        /// Register a const declaration
+        fn register_const(&mut self, const_def: &ast::ConstDef) -> Result<(), String> {
+            let name = const_def.name.name.clone();
+
+            // Evaluate the constant expression at compile time
+            let value = self.eval_const_expr(&const_def.value)?;
+            self.constants.insert(name, value);
+            Ok(())
+        }
+
+        /// Evaluate a constant expression at compile time
+        fn eval_const_expr(&self, expr: &Expr) -> Result<i64, String> {
+            match expr {
+                Expr::Literal(lit) => match lit {
+                    Literal::Int { value, .. } => {
+                        value.parse().map_err(|_| "Invalid integer constant".to_string())
+                    }
+                    Literal::Bool(b) => Ok(if *b { 1 } else { 0 }),
+                    _ => Err("Only integer and boolean constants are supported".to_string()),
+                },
+                Expr::Unary { op, expr, .. } => {
+                    let val = self.eval_const_expr(expr)?;
+                    match op {
+                        UnaryOp::Neg => Ok(-val),
+                        UnaryOp::Not => Ok(!val),
+                        _ => Err("Unsupported unary operator in constant".to_string()),
+                    }
+                }
+                Expr::Binary { left, op, right, .. } => {
+                    let l = self.eval_const_expr(left)?;
+                    let r = self.eval_const_expr(right)?;
+                    match op {
+                        BinOp::Add => Ok(l + r),
+                        BinOp::Sub => Ok(l - r),
+                        BinOp::Mul => Ok(l * r),
+                        BinOp::Div => Ok(l / r),
+                        BinOp::Rem => Ok(l % r),
+                        BinOp::BitAnd => Ok(l & r),
+                        BinOp::BitOr => Ok(l | r),
+                        BinOp::BitXor => Ok(l ^ r),
+                        BinOp::Shl => Ok(l << r),
+                        BinOp::Shr => Ok(l >> r),
+                        _ => Err("Unsupported binary operator in constant".to_string()),
+                    }
+                }
+                Expr::Path(path) => {
+                    // Look up other constants
+                    if let Some(segment) = path.segments.last() {
+                        let name = &segment.ident.name;
+                        self.constants.get(name).copied()
+                            .ok_or_else(|| format!("Unknown constant: {}", name))
+                    } else {
+                        Err("Empty path in constant expression".to_string())
+                    }
+                }
+                _ => Err("Unsupported expression in constant".to_string()),
+            }
+        }
+
+        /// Register a static variable declaration
+        fn register_static(&mut self, static_def: &ast::StaticDef) -> Result<(), String> {
+            let name = &static_def.name.name;
+
+            // Evaluate the initial value at compile time
+            let init_value = self.eval_const_expr(&static_def.value).unwrap_or(0);
+
+            // Create a global variable
+            let i64_type = self.context.i64_type();
+            let global = self.module.add_global(i64_type, None, name);
+            global.set_initializer(&i64_type.const_int(init_value as u64, init_value < 0));
+
+            // If mutable, it's writable; otherwise set as constant
+            if !static_def.mutable {
+                global.set_constant(true);
+            }
+            global.set_linkage(inkwell::module::Linkage::Internal);
+
+            // Store in extern_statics registry (reuse existing infrastructure)
+            self.extern_statics.insert(
+                name.clone(),
+                ExternStaticInfo {
+                    name: name.clone(),
+                    global,
+                    ty: i64_type.into(),
+                    mutable: static_def.mutable,
+                },
+            );
+
+            Ok(())
+        }
+
         /// Convert a TypeExpr to an LLVM BasicTypeEnum
         fn type_expr_to_llvm(
             &mut self,
@@ -1092,12 +1358,21 @@ pub mod llvm {
                             return self.primitive_to_llvm(concrete);
                         }
 
+                        // Check if it's a type alias (e.g., extern callback type)
+                        if let Some(aliased_type) = self.type_aliases.get(name).cloned() {
+                            return self.type_expr_to_llvm(&aliased_type, substitutions);
+                        }
+
                         // Check for primitive types
                         match name.as_str() {
                             "i8" | "u8" => i8_type.into(),
                             "i16" | "u16" => self.context.i16_type().into(),
-                            "i32" | "u32" => i32_type.into(),
-                            "i64" | "u64" | "isize" | "usize" => i64_type.into(),
+                            "i32" | "u32" | "c_int" | "c_uint" => i32_type.into(),
+                            "i64" | "u64" | "isize" | "usize" | "c_long" | "c_ulong" | "size_t" | "c_longlong" | "c_ulonglong" => i64_type.into(),
+                            "c_short" | "c_ushort" => self.context.i16_type().into(),
+                            "c_char" | "c_schar" | "c_uchar" => i8_type.into(),
+                            "c_float" => self.context.f32_type().into(),
+                            "c_double" => f64_type.into(),
                             "f32" => self.context.f32_type().into(),
                             "f64" => f64_type.into(),
                             "bool" => bool_type.into(),
@@ -1154,14 +1429,46 @@ pub mod llvm {
         /// Convert a primitive type name to LLVM type
         fn primitive_to_llvm(&self, name: &str) -> BasicTypeEnum<'ctx> {
             match name {
-                "i8" | "u8" => self.context.i8_type().into(),
-                "i16" | "u16" => self.context.i16_type().into(),
-                "i32" | "u32" => self.context.i32_type().into(),
-                "i64" | "u64" | "isize" | "usize" => self.context.i64_type().into(),
-                "f32" => self.context.f32_type().into(),
-                "f64" => self.context.f64_type().into(),
+                "i8" | "u8" | "c_char" | "c_schar" | "c_uchar" => self.context.i8_type().into(),
+                "i16" | "u16" | "c_short" | "c_ushort" => self.context.i16_type().into(),
+                "i32" | "u32" | "c_int" | "c_uint" => self.context.i32_type().into(),
+                "i64" | "u64" | "isize" | "usize" | "c_long" | "c_ulong" | "size_t" | "c_longlong" | "c_ulonglong" => self.context.i64_type().into(),
+                "f32" | "c_float" => self.context.f32_type().into(),
+                "f64" | "c_double" => self.context.f64_type().into(),
                 "bool" => self.context.bool_type().into(),
                 _ => self.context.i64_type().into(),
+            }
+        }
+
+        /// Check if an expression returns a float type
+        fn expr_returns_float(&self, expr: &Expr) -> bool {
+            match expr {
+                Expr::Literal(Literal::Float { .. }) => true,
+                Expr::Call { func, .. } => {
+                    // Check if calling an extern function that returns float
+                    if let Expr::Path(path) = func.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            let fn_name = &seg.ident.name;
+                            if let Some(extern_fn) = self.extern_functions.get(fn_name) {
+                                if let Some(ret_type) = &extern_fn.return_type {
+                                    return matches!(ret_type, BasicTypeEnum::FloatType(_));
+                                }
+                            }
+                        }
+                    }
+                    false
+                }
+                Expr::Path(path) => {
+                    // Check if variable was assigned from a float-returning function
+                    // For now, we can't track this easily, so return false
+                    false
+                }
+                Expr::Binary { left, right, .. } => {
+                    // If either operand is float, result is float
+                    self.expr_returns_float(left) || self.expr_returns_float(right)
+                }
+                Expr::Unary { expr, .. } => self.expr_returns_float(expr),
+                _ => false,
             }
         }
 
@@ -1575,22 +1882,28 @@ pub mod llvm {
         ) -> Result<FunctionValue<'ctx>, String> {
             let name = &func.name.name;
 
-            // Build mangled name with module path (skip "crate" prefix)
-            let mangled_name = if self.current_module.len() > 1 {
-                let module_path = self.current_module[1..].join("_");
-                format!("{}_{}", module_path, name)
-            } else {
+            // Check for #[no_mangle] - if set, use the raw name without mangling
+            let actual_name = if func.attrs.no_mangle {
+                // #[no_mangle] functions use their exact name (for C interop)
                 name.clone()
-            };
-
-            // In AOT mode, rename "main" to "main_sigil" so it doesn't conflict with C runtime
-            let actual_name = if self.compile_mode == CompileMode::Aot
-                && name == "main"
-                && self.current_module.len() == 1
-            {
-                "main_sigil".to_string()
             } else {
-                mangled_name.clone()
+                // Build mangled name with module path (skip "crate" prefix)
+                let mangled_name = if self.current_module.len() > 1 {
+                    let module_path = self.current_module[1..].join("_");
+                    format!("{}_{}", module_path, name)
+                } else {
+                    name.clone()
+                };
+
+                // In AOT mode, rename "main" to "main_sigil" so it doesn't conflict with C runtime
+                if self.compile_mode == CompileMode::Aot
+                    && name == "main"
+                    && self.current_module.len() == 1
+                {
+                    "main_sigil".to_string()
+                } else {
+                    mangled_name
+                }
             };
 
             let i64_type = self.context.i64_type();
@@ -1796,6 +2109,10 @@ pub mod llvm {
             expr: &Expr,
         ) -> Result<IntValue<'ctx>, String> {
             match expr {
+                // Special case for interpolated strings (f-strings)
+                Expr::Literal(Literal::InterpolatedString { parts }) => {
+                    self.compile_interpolated_string(fn_value, scope, parts)
+                }
                 Expr::Literal(lit) => self.compile_literal(lit),
                 Expr::Path(path) => {
                     // Check for qualified enum variant path (e.g., Color::Blue)
@@ -1816,6 +2133,11 @@ pub mod llvm {
                         .last()
                         .map(|s| s.ident.name.as_str())
                         .ok_or("Empty path")?;
+
+                    // Check for compile-time constants first
+                    if let Some(&value) = self.constants.get(name) {
+                        return Ok(self.context.i64_type().const_int(value as u64, value < 0));
+                    }
 
                     if let Some(&ptr) = scope.vars.get(name) {
                         let val = self
@@ -1855,6 +2177,20 @@ pub mod llvm {
                             }
                             _ => Ok(self.context.i64_type().const_int(0, false)),
                         }
+                    } else if let Some(func_val) = self.functions.get(name).copied() {
+                        // Function reference - convert function pointer to i64
+                        let fn_ptr = func_val.as_global_value().as_pointer_value();
+                        let ptr_int = self.builder
+                            .build_ptr_to_int(fn_ptr, self.context.i64_type(), "fn_ptr")
+                            .map_err(|e| e.to_string())?;
+                        Ok(ptr_int)
+                    } else if let Some(extern_fn) = self.extern_functions.get(name).cloned() {
+                        // Extern function reference - convert function pointer to i64
+                        let fn_ptr = extern_fn.fn_value.as_global_value().as_pointer_value();
+                        let ptr_int = self.builder
+                            .build_ptr_to_int(fn_ptr, self.context.i64_type(), "extern_fn_ptr")
+                            .map_err(|e| e.to_string())?;
+                        Ok(ptr_int)
                     } else {
                         // Check if it's an unqualified enum variant (search all enums)
                         for (_, enum_info) in &self.enum_types {
@@ -1871,6 +2207,30 @@ pub mod llvm {
                     self.compile_binary_op(*op, lhs, rhs)
                 }
                 Expr::Unary { op, expr: inner } => {
+                    // Special case: &func_name to get function address
+                    if matches!(op, UnaryOp::Ref | UnaryOp::RefMut) {
+                        if let Expr::Path(path) = inner.as_ref() {
+                            if let Some(segment) = path.segments.last() {
+                                let name = &segment.ident.name;
+                                // Check if it's a function
+                                if let Some(fn_val) = self.module.get_function(name) {
+                                    let fn_ptr = fn_val.as_global_value().as_pointer_value();
+                                    let ptr_int = self.builder
+                                        .build_ptr_to_int(fn_ptr, self.context.i64_type(), "fn_addr")
+                                        .map_err(|e| e.to_string())?;
+                                    return Ok(ptr_int);
+                                }
+                                // Check if it's an extern function
+                                if let Some(extern_fn) = self.extern_functions.get(name) {
+                                    let fn_ptr = extern_fn.fn_value.as_global_value().as_pointer_value();
+                                    let ptr_int = self.builder
+                                        .build_ptr_to_int(fn_ptr, self.context.i64_type(), "extern_fn_addr")
+                                        .map_err(|e| e.to_string())?;
+                                    return Ok(ptr_int);
+                                }
+                            }
+                        }
+                    }
                     let val = self.compile_expr(fn_value, scope, inner)?;
                     self.compile_unary_op(*op, val)
                 }
@@ -2284,6 +2644,11 @@ pub mod llvm {
                                 .map(|v| v.into_int_value())
                                 .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                         }
+                        "as_ptr" => {
+                            // For strings: "hello".as_ptr() returns the pointer to the string data
+                            // The receiver_val is already the pointer as i64, just return it
+                            return Ok(receiver_val);
+                        }
                         _ => {}
                     }
 
@@ -2392,9 +2757,34 @@ pub mod llvm {
                 }
 
                 // Cast/type coercion
-                Expr::Cast { expr, .. } => {
-                    // Types are erased, just compile the expression
-                    self.compile_expr(fn_value, scope, expr)
+                Expr::Cast { expr, ty } => {
+                    let val = self.compile_expr(fn_value, scope, expr)?;
+
+                    // Check if target type is specified
+                    if let TypeExpr::Path(path) = ty {
+                        if let Some(seg) = path.segments.first() {
+                            let ty_name = &seg.ident.name;
+
+                            // Check if source expression is a float type that needs conversion
+                            let source_is_float = self.expr_returns_float(expr);
+
+                            // If casting to integer type from float, convert properly
+                            if source_is_float && matches!(ty_name.as_str(), "i64" | "i32" | "i16" | "i8" | "u64" | "u32" | "u16" | "u8" | "isize" | "usize") {
+                                // val is f64 bits stored as i64 - convert to f64 then truncate
+                                let f64_val = self.builder
+                                    .build_bit_cast(val, self.context.f64_type(), "bits2f")
+                                    .map_err(|e| e.to_string())?;
+                                let int_val = self.builder
+                                    .build_float_to_signed_int(f64_val.into_float_value(), self.context.i64_type(), "f2i_trunc")
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(int_val);
+                            }
+
+                            // Integer-to-integer cast: just return the value (already i64)
+                            // Sign extension was already done during the extern call
+                        }
+                    }
+                    Ok(val)
                 }
 
                 // Address-of: &expr, &mut expr
@@ -2575,6 +2965,112 @@ pub mod llvm {
                 Literal::Char(c) => Ok(self.context.i64_type().const_int(*c as u64, false)),
                 _ => Ok(self.context.i64_type().const_int(0, false)),
             }
+        }
+
+        /// Compile an interpolated string (f-string) like f"Hello {name}, you are {age} years old"
+        fn compile_interpolated_string(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            parts: &[ast::InterpolationPart],
+        ) -> Result<IntValue<'ctx>, String> {
+            use ast::InterpolationPart;
+
+            let i64_type = self.context.i64_type();
+            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+
+            // Build format string and collect expression values
+            let mut format_string = String::new();
+            let mut expr_values: Vec<IntValue<'ctx>> = Vec::new();
+
+            for part in parts {
+                match part {
+                    InterpolationPart::Text(text) => {
+                        // Escape % characters for printf format
+                        format_string.push_str(&text.replace('%', "%%"));
+                    }
+                    InterpolationPart::Expr(expr) => {
+                        // Compile the expression
+                        let value = self.compile_expr(fn_value, scope, expr)?;
+                        expr_values.push(value);
+                        // Use %ld for i64 values
+                        format_string.push_str("%ld");
+                    }
+                }
+            }
+
+            // Add null terminator
+            format_string.push('\0');
+
+            // If no expressions, treat like a regular string
+            if expr_values.is_empty() {
+                // Remove the null terminator we added (compile_literal adds its own)
+                format_string.pop();
+                return self.compile_literal(&ast::Literal::String(format_string));
+            }
+
+            // Create format string as global constant
+            let counter = self.string_counter.get();
+            self.string_counter.set(counter + 1);
+            let fmt_name = format!(".fstr.fmt.{}", counter);
+
+            let fmt_bytes = format_string.as_bytes();
+            let fmt_const = self.context.const_string(fmt_bytes, false);
+            let fmt_global = self.module.add_global(fmt_const.get_type(), None, &fmt_name);
+            fmt_global.set_initializer(&fmt_const);
+            fmt_global.set_constant(true);
+            fmt_global.set_linkage(inkwell::module::Linkage::Private);
+            let fmt_ptr = fmt_global.as_pointer_value();
+
+            // Allocate buffer for result string (1024 bytes should be enough for most cases)
+            let buffer_size = 1024u64;
+            let i8_array_type = self.context.i8_type().array_type(buffer_size as u32);
+            let buffer = self.builder
+                .build_alloca(i8_array_type, "fstr_buf")
+                .map_err(|e| e.to_string())?;
+
+            // Get or declare snprintf
+            let snprintf_fn = self.get_or_declare_snprintf();
+
+            // Build snprintf call: snprintf(buffer, size, format, args...)
+            let mut call_args: Vec<inkwell::values::BasicMetadataValueEnum> = Vec::new();
+            call_args.push(buffer.into());
+            call_args.push(i64_type.const_int(buffer_size, false).into());
+            call_args.push(fmt_ptr.into());
+
+            for val in &expr_values {
+                call_args.push((*val).into());
+            }
+
+            self.builder
+                .build_call(snprintf_fn, &call_args, "snprintf_result")
+                .map_err(|e| e.to_string())?;
+
+            // Return buffer pointer as i64
+            let ptr_as_int = self.builder
+                .build_ptr_to_int(buffer, i64_type, "fstr_ptr")
+                .map_err(|e| e.to_string())?;
+
+            Ok(ptr_as_int)
+        }
+
+        /// Get or declare the snprintf function
+        fn get_or_declare_snprintf(&self) -> FunctionValue<'ctx> {
+            if let Some(f) = self.module.get_function("snprintf") {
+                return f;
+            }
+
+            let i32_type = self.context.i32_type();
+            let i64_type = self.context.i64_type();
+            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+
+            // snprintf(char *str, size_t size, const char *format, ...) -> int
+            let snprintf_type = i32_type.fn_type(
+                &[ptr_type.into(), i64_type.into(), ptr_type.into()],
+                true, // variadic
+            );
+
+            self.module.add_function("snprintf", snprintf_type, None)
         }
 
         /// Compile a pipe expression: data |τ{f} |φ{p} |ρ+
@@ -4320,6 +4816,53 @@ pub mod llvm {
                     .collect();
                 let short_name = segments.last().copied().ok_or("Empty path")?;
                 let full = segments.join("::");
+
+                // Check if this is a variable containing a function pointer (indirect call)
+                if segments.len() == 1 {
+                    if let Some(&ptr) = scope.vars.get(short_name) {
+                        // This is a variable - check if it contains a function pointer
+                        // Load the function pointer from the variable
+                        let fn_ptr_int = self
+                            .builder
+                            .build_load(self.context.i64_type(), ptr, "fn_ptr_load")
+                            .map_err(|e| e.to_string())?
+                            .into_int_value();
+
+                        // Convert i64 to pointer
+                        let fn_ptr = self.builder
+                            .build_int_to_ptr(
+                                fn_ptr_int,
+                                self.context.ptr_type(AddressSpace::default()),
+                                "fn_ptr"
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        // Compile arguments
+                        let mut arg_vals: Vec<BasicMetadataValueEnum> = Vec::new();
+                        for arg in args {
+                            let val = self.compile_expr(fn_value, scope, arg)?;
+                            arg_vals.push(val.into());
+                        }
+
+                        // Build function type: (i64, ...) -> i64
+                        let i64_type = self.context.i64_type();
+                        let param_types: Vec<BasicMetadataTypeEnum> =
+                            (0..args.len()).map(|_| i64_type.into()).collect();
+                        let fn_type = i64_type.fn_type(&param_types, false);
+
+                        // Build indirect call
+                        let call = self.builder
+                            .build_indirect_call(fn_type, fn_ptr, &arg_vals, "indirect_call")
+                            .map_err(|e| e.to_string())?;
+
+                        return Ok(call
+                            .try_as_basic_value()
+                            .left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                    }
+                }
+
                 (short_name, full)
             } else {
                 return Err("Expected function name".to_string());
@@ -5323,6 +5866,82 @@ pub mod llvm {
                 full_path.clone()
             };
 
+            // Check if this is an extern function call that needs type conversion
+            if let Some(extern_fn) = self.extern_functions.get(fn_name).cloned() {
+                // Compile arguments with proper type conversion
+                let mut converted_args: Vec<BasicMetadataValueEnum> = Vec::new();
+                for (i, arg) in args.iter().enumerate() {
+                    let arg_val = self.compile_expr(fn_value, scope, arg)?;
+
+                    // Get expected parameter type
+                    if i < extern_fn.param_types.len() {
+                        let expected_type = extern_fn.param_types[i];
+                        match expected_type {
+                            BasicTypeEnum::FloatType(ft) => {
+                                // Convert i64 bits to float
+                                let converted = self.builder
+                                    .build_bit_cast(arg_val, ft, "i2f")
+                                    .map_err(|e| e.to_string())?;
+                                converted_args.push(converted.into());
+                            }
+                            BasicTypeEnum::IntType(it) => {
+                                // Truncate i64 to smaller int types (e.g., c_int = i32)
+                                if it.get_bit_width() < 64 {
+                                    let truncated = self.builder
+                                        .build_int_truncate(arg_val, it, "trunc")
+                                        .map_err(|e| e.to_string())?;
+                                    converted_args.push(truncated.into());
+                                } else {
+                                    converted_args.push(arg_val.into());
+                                }
+                            }
+                            _ => {
+                                converted_args.push(arg_val.into());
+                            }
+                        }
+                    } else {
+                        converted_args.push(arg_val.into());
+                    }
+                }
+
+                // Build call
+                let call = self.builder
+                    .build_call(extern_fn.fn_value, &converted_args, "extern_call")
+                    .map_err(|e| e.to_string())?;
+
+                // Handle return value - convert to i64
+                let result = call.try_as_basic_value().left();
+                return match result {
+                    Some(BasicValueEnum::IntValue(iv)) => {
+                        // Sign-extend smaller integers to i64
+                        let i64_type = self.context.i64_type();
+                        if iv.get_type().get_bit_width() < 64 {
+                            let extended = self.builder
+                                .build_int_s_extend(iv, i64_type, "sext")
+                                .map_err(|e| e.to_string())?;
+                            Ok(extended)
+                        } else {
+                            Ok(iv)
+                        }
+                    }
+                    Some(BasicValueEnum::FloatValue(fv)) => {
+                        // Store float bits in i64 for Sigil's type system
+                        // This preserves the full precision for later use
+                        let bitcast = self.builder
+                            .build_bit_cast(fv, self.context.i64_type(), "f_bits")
+                            .map_err(|e| e.to_string())?;
+                        Ok(bitcast.into_int_value())
+                    }
+                    Some(BasicValueEnum::PointerValue(pv)) => {
+                        let ptr_int = self.builder
+                            .build_ptr_to_int(pv, self.context.i64_type(), "p2i")
+                            .map_err(|e| e.to_string())?;
+                        Ok(ptr_int)
+                    }
+                    _ => Ok(self.context.i64_type().const_int(0, false)),
+                };
+            }
+
             // Get the function - try resolved path first, then various lookups
             let callee = if let Some(f) = self.functions.get(&resolved_path) {
                 *f
@@ -5357,12 +5976,26 @@ pub mod llvm {
             // The optimizer will determine if it's actually in tail position
             call.set_tail_call(true);
 
-            // Get return value
-            Ok(call
-                .try_as_basic_value()
-                .left()
-                .map(|v| v.into_int_value())
-                .unwrap_or_else(|| self.context.i64_type().const_int(0, false)))
+            // Get return value - handle both int and float returns
+            let result = call.try_as_basic_value().left();
+            match result {
+                Some(BasicValueEnum::IntValue(iv)) => Ok(iv),
+                Some(BasicValueEnum::FloatValue(fv)) => {
+                    // Bitcast float to i64 to preserve bits
+                    let bitcast = self.builder
+                        .build_bit_cast(fv, self.context.i64_type(), "f2i")
+                        .map_err(|e| e.to_string())?;
+                    Ok(bitcast.into_int_value())
+                }
+                Some(BasicValueEnum::PointerValue(pv)) => {
+                    // Convert pointer to i64
+                    let ptr_int = self.builder
+                        .build_ptr_to_int(pv, self.context.i64_type(), "p2i")
+                        .map_err(|e| e.to_string())?;
+                    Ok(ptr_int)
+                }
+                _ => Ok(self.context.i64_type().const_int(0, false)),
+            }
         }
 
         /// Compile println! and print! macros
@@ -5608,7 +6241,10 @@ pub mod llvm {
                 for spanned_item in items {
                     match &spanned_item.node {
                         Item::Function(func) => {
-                            self.declare_function(func)?;
+                            // Skip functions that don't match cfg conditions
+                            if self.should_include_function(func) {
+                                self.declare_function(func)?;
+                            }
                         }
                         Item::Module(m) => {
                             self.process_module(m)?;
@@ -5634,7 +6270,10 @@ pub mod llvm {
                 for spanned_item in items {
                     match &spanned_item.node {
                         Item::Function(func) => {
-                            self.compile_function(func)?;
+                            // Skip functions that don't match cfg conditions
+                            if self.should_include_function(func) {
+                                self.compile_function(func)?;
+                            }
                         }
                         Item::Module(m) => {
                             self.compile_module_functions(m)?;
@@ -5848,6 +6487,11 @@ pub mod llvm {
         /// Get LLVM IR as string
         pub fn get_ir(&self) -> String {
             self.module.print_to_string().to_string()
+        }
+
+        /// Get the list of libraries to link (from #[link("name")] attributes)
+        pub fn get_link_libraries(&self) -> &[String] {
+            &self.link_libraries
         }
     }
 

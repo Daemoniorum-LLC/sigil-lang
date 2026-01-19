@@ -1,0 +1,224 @@
+// Todo App Example
+// Demonstrates CRUD operations, lists, and struct-based state
+//
+// This is a P0-compatible rewrite using integer filters.
+
+/// Todo item structure
+sigil Todo {
+    id: i64,
+    text: String,
+    completed: bool,
+}
+
+⊢ Todo {
+    rite new(id: i64, text: String) → Todo {
+        Todo {
+            id: id,
+            text: text,
+            completed: nay
+        }
+    }
+
+    rite display(&this) → String {
+        ≔ status = ⎇ this.completed { "[x]" } ⎉ { "[ ]" };
+        f"{status} {this.id}. {this.text}"
+    }
+}
+
+/// Todo list state
+/// Filter: 0=All, 1=Active, 2=Completed
+sigil TodoState {
+    todos: Vec<Todo>,
+    next_id: i64,
+    filter: i64,
+}
+
+⊢ TodoState {
+    rite new() → TodoState {
+        TodoState {
+            todos: Vec·new(),
+            next_id: 1,
+            filter: 0
+        }
+    }
+
+    /// Add a new todo
+    rite add(&vary this, text: String) {
+        ≔ todo = Todo·new(this.next_id, text.clone());
+        this.todos.push(todo);
+        this.next_id = this.next_id + 1;
+        println(f"Added: \"{text}\"");
+    }
+
+    /// Toggle completion status
+    rite toggle(&vary this, id: i64) {
+        ≔ vary i = 0;
+        ⟳ i < this.todos.len() {
+            ⎇ this.todos[i].id == id {
+                this.todos[i].completed = !this.todos[i].completed;
+                ≔ status = ⎇ this.todos[i].completed { "completed" } ⎉ { "active" };
+                println(f"Toggled #{id} → {status}");
+                ↩
+            }
+            i = i + 1;
+        }
+    }
+
+    /// Toggle all todos
+    rite toggle_all(&vary this) {
+        ≔ all_done = this.all_completed();
+        ≔ vary i = 0;
+        ⟳ i < this.todos.len() {
+            this.todos[i].completed = !all_done;
+            i = i + 1;
+        }
+        ⎇ all_done {
+            println("Marked all as active");
+        } ⎉ {
+            println("Marked all as completed");
+        }
+    }
+
+    /// Clear completed todos
+    rite clear_completed(&vary this) {
+        ≔ vary new_todos: Vec<Todo> = Vec·new();
+        ≔ vary cleared = 0;
+        ≔ vary i = 0;
+        ⟳ i < this.todos.len() {
+            ⎇ !this.todos[i].completed {
+                new_todos.push(this.todos[i].clone());
+            } ⎉ {
+                cleared = cleared + 1;
+            }
+            i = i + 1;
+        }
+        this.todos = new_todos;
+        println(f"Cleared {cleared} completed items");
+    }
+
+    /// Set filter (0=All, 1=Active, 2=Completed)
+    rite set_filter(&vary this, filter: i64) {
+        this.filter = filter;
+        ≔ name = ⎇ filter == 0 { "All" } ⎉ ⎇ filter == 1 { "Active" } ⎉ { "Completed" };
+        println(f"Filter: {name}");
+    }
+
+    /// Check if all todos are completed
+    rite all_completed(&this) → bool {
+        ⎇ this.todos.len() == 0 {
+            ↩ nay
+        }
+        ≔ vary i = 0;
+        ⟳ i < this.todos.len() {
+            ⎇ !this.todos[i].completed {
+                ↩ nay
+            }
+            i = i + 1;
+        }
+        yea
+    }
+
+    /// Count active todos
+    rite active_count(&this) → i64 {
+        ≔ vary count = 0;
+        ≔ vary i = 0;
+        ⟳ i < this.todos.len() {
+            ⎇ !this.todos[i].completed {
+                count = count + 1;
+            }
+            i = i + 1;
+        }
+        count
+    }
+
+    /// Render the todo list
+    rite render(&this) {
+        println("");
+        println("╔═══════════════════════════════╗");
+        println("║       Sigil Todo App          ║");
+        println("╠═══════════════════════════════╣");
+
+        ⎇ this.todos.len() == 0 {
+            println("║  (no items)                   ║");
+        } ⎉ {
+            ≔ vary i = 0;
+            ⟳ i < this.todos.len() {
+                // Filter: 0=All, 1=Active only, 2=Completed only
+                ≔ show = ⎇ this.filter == 0 { yea } ⎉ ⎇ this.filter == 1 { !this.todos[i].completed } ⎉ { this.todos[i].completed };
+                ⎇ show {
+                    ≔ line = this.todos[i].display();
+                    println(f"║  {line}");
+                }
+                i = i + 1;
+            }
+        }
+
+        println("╠═══════════════════════════════╣");
+        ≔ active = this.active_count();
+        ≔ total = this.todos.len();
+        println(f"║  {active} active / {total} total");
+        println("╚═══════════════════════════════╝");
+    }
+}
+
+/// Application runner
+sigil App {
+    state: TodoState,
+}
+
+⊢ App {
+    rite new() → App {
+        App { state: TodoState·new() }
+    }
+
+    rite run(&vary this) {
+        println("=== Sigil Todo Demo ===");
+
+        this.state.render();
+
+        // Add todos
+        println("→ Adding todos...");
+        this.state.add("Learn Sigil".to_string());
+        this.state.add("Build app".to_string());
+        this.state.add("Write docs".to_string());
+        this.state.render();
+
+        // Toggle some
+        println("→ Completing tasks...");
+        this.state.toggle(1);
+        this.state.toggle(3);
+        this.state.render();
+
+        // Filter active
+        println("→ Filter: Active only");
+        this.state.set_filter(1);
+        this.state.render();
+
+        // Filter completed
+        println("→ Filter: Completed only");
+        this.state.set_filter(2);
+        this.state.render();
+
+        // Show all
+        println("→ Filter: All");
+        this.state.set_filter(0);
+        this.state.render();
+
+        // Toggle all
+        println("→ Toggle all");
+        this.state.toggle_all();
+        this.state.render();
+
+        // Clear completed
+        println("→ Clear completed");
+        this.state.clear_completed();
+        this.state.render();
+
+        println("=== Demo Complete ===");
+    }
+}
+
+rite main() {
+    ≔ vary app = App·new();
+    app.run();
+}
