@@ -1,0 +1,46 @@
+// Stdlib Tests: regex
+// Regular expression functions with REAL assertions
+// All functions use (pattern, text) order
+
+rite main() {
+    println("=== Testing regex ===");
+
+    // regex_match(pattern, text) - check if pattern matches
+    assert_true(regex_match("hello", "hello"));
+    assert_true(regex_match("h.llo", "hello"));
+    assert_true(regex_match("h.*o", "hello"));
+    assert_false(regex_match("world", "hello"));
+
+    // regex_find(pattern, text) - find first match
+    ≔ found = regex_find("o", "hello world");
+    assert_eq(found, "o");
+
+    ≔ word = regex_find("\\w+", "hello world");
+    assert_eq(word, "hello");
+
+    // regex_find_all(pattern, text) - find all matches
+    ≔ all_o = regex_find_all("o", "hello world");
+    assert_eq(len(all_o), 2);
+
+    ≔ all_words = regex_find_all("\\w+", "hello world test");
+    assert_eq(len(all_words), 3);
+
+    // regex_replace(pattern, text, replacement)
+    ≔ replaced = regex_replace("l", "hello", "w");
+    assert_eq(replaced, "hewlo");
+
+    // regex_replace_all(pattern, text, replacement)
+    ≔ replaced_all = regex_replace_all("l", "hello", "w");
+    assert_eq(replaced_all, "hewwo");
+
+    // regex_split(pattern, text)
+    ≔ parts = regex_split("[,;]", "a,b;c");
+    assert_eq(len(parts), 3);
+    assert_eq(parts[0], "a");
+
+    // Extract numbers
+    ≔ nums = regex_find_all("\\d+", "abc123def456ghi789");
+    assert_eq(len(nums), 3);
+
+    println("ALL REGEX TESTS PASSED!");
+}

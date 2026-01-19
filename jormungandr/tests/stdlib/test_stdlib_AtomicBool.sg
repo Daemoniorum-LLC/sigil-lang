@@ -1,0 +1,15 @@
+// Stdlib Tests: AtomicBool
+// AtomicBool type with REAL assertions
+
+rite main() {
+    println("=== Testing AtomicBool ===");
+
+    // AtomicBool·new - creates atomic boolean
+    ≔ b = AtomicBool·new(yea);
+    assert_eq(type_of(b), "struct:AtomicBool");
+
+    ≔ b2 = AtomicBool·new(nay);
+    assert_eq(type_of(b2), "struct:AtomicBool");
+
+    println("ALL ATOMICBOOL TESTS PASSED!");
+}

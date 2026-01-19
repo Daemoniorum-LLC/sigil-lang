@@ -6188,6 +6188,196 @@ pub mod llvm {
             global.as_pointer_value()
         }
 
+        /// Compile println! and print! macros
+        fn compile_print_macro(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            tokens: &str,
+            newline: bool,
+        ) -> Result<(), String> {
+            // Parse the macro tokens to extract format string and arguments
+            // Format: "format string", arg1, arg2, ...
+            let tokens = tokens.trim();
+
+            if tokens.is_empty() {
+                // println!() with no args - just print newline
+                if newline {
+                    let empty_str = self.create_global_string("\n", "empty_nl");
+                    let print_fn = self
+                        .module
+                        .get_function("sigil_print_str")
+                        .ok_or("sigil_print_str not declared")?;
+                    self.builder
+                        .build_call(print_fn, &[empty_str.into()], "")
+                        .map_err(|e| e.to_string())?;
+                }
+                return Ok(());
+            }
+
+            // Find the format string (first quoted string)
+            let (format_str, args_str) = if tokens.starts_with('"') {
+                // Find the closing quote (handling escaped quotes)
+                let mut chars = tokens[1..].chars().peekable();
+                let mut format_content = String::new();
+                let mut escaped = false;
+
+                while let Some(c) = chars.next() {
+                    if escaped {
+                        format_content.push(c);
+                        escaped = false;
+                    } else if c == '\\' {
+                        format_content.push(c);
+                        escaped = true;
+                    } else if c == '"' {
+                        break;
+                    } else {
+                        format_content.push(c);
+                    }
+                }
+
+                // Remaining args after the format string
+                let remaining: String = chars.collect();
+                let args_owned = remaining.trim_start_matches(',').trim().to_string();
+                (format_content, args_owned)
+            } else {
+                // No format string, treat as expression to print
+                (String::new(), tokens.to_string())
+            };
+
+            // Check if format string has placeholders
+            let has_placeholders = format_str.contains("{}");
+
+            if !has_placeholders && args_str.is_empty() {
+                // Simple string literal - use write_str (no newline) then add newline if needed
+                let output = format_str.replace("\\n", "\n").replace("\\t", "\t");
+
+                let write_str_fn = self
+                    .module
+                    .get_function("sigil_write_str")
+                    .ok_or("sigil_write_str not declared")?;
+
+                let str_ptr = self.create_global_string(&output, "print_str");
+                self.builder
+                    .build_call(write_str_fn, &[str_ptr.into()], "")
+                    .map_err(|e| e.to_string())?;
+
+                // Add newline if println!
+                if newline {
+                    let nl_str = self.create_global_string("\n", "newline");
+                    self.builder
+                        .build_call(write_str_fn, &[nl_str.into()], "")
+                        .map_err(|e| e.to_string())?;
+                }
+            } else if has_placeholders {
+                // Format string with placeholders - parse and substitute
+                // Split format string by {} and interleave with arguments
+                let parts: Vec<&str> = format_str.split("{}").collect();
+                let args: Vec<&str> = args_str.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+
+                // Get write functions (no newline versions for inline output)
+                let write_str_fn = self
+                    .module
+                    .get_function("sigil_write_str")
+                    .ok_or("sigil_write_str not declared")?;
+                let write_int_fn = self
+                    .module
+                    .get_function("sigil_write_int")
+                    .ok_or("sigil_write_int not declared")?;
+
+                for (i, part) in parts.iter().enumerate() {
+                    // Print the static part (no newline)
+                    if !part.is_empty() {
+                        let part_str = part.replace("\\n", "\n").replace("\\t", "\t");
+                        let str_ptr = self.create_global_string(&part_str, "fmt_part");
+                        self.builder
+                            .build_call(write_str_fn, &[str_ptr.into()], "")
+                            .map_err(|e| e.to_string())?;
+                    }
+
+                    // Print the argument (if there's one for this placeholder)
+                    if i < args.len() {
+                        let arg_str = args[i];
+                        // Parse and compile the argument expression
+                        let arg_value = self.compile_format_arg(fn_value, scope, arg_str)?;
+                        self.builder
+                            .build_call(write_int_fn, &[arg_value.into()], "")
+                            .map_err(|e| e.to_string())?;
+                    }
+                }
+
+                // Add newline if println!
+                if newline {
+                    let nl_str = self.create_global_string("\n", "newline");
+                    self.builder
+                        .build_call(write_str_fn, &[nl_str.into()], "")
+                        .map_err(|e| e.to_string())?;
+                }
+            } else if !args_str.is_empty() {
+                // No format string, just print the expression value
+                let arg_value = self.compile_format_arg(fn_value, scope, &args_str)?;
+                let print_int_fn = self
+                    .module
+                    .get_function("sigil_print_int")
+                    .ok_or("sigil_print_int not declared")?;
+                self.builder
+                    .build_call(print_int_fn, &[arg_value.into()], "")
+                    .map_err(|e| e.to_string())?;
+            }
+
+            Ok(())
+        }
+
+        /// Compile a format argument expression (simple variable lookup or literal)
+        fn compile_format_arg(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            arg_str: &str,
+        ) -> Result<IntValue<'ctx>, String> {
+            let arg_str = arg_str.trim();
+
+            // Try to parse as integer literal
+            if let Ok(n) = arg_str.parse::<i64>() {
+                return Ok(self.context.i64_type().const_int(n as u64, n < 0));
+            }
+
+            // Try to look up as variable
+            if let Some(var) = scope.vars.get(arg_str) {
+                let loaded = self
+                    .builder
+                    .build_load(self.context.i64_type(), *var, arg_str)
+                    .map_err(|e| e.to_string())?;
+                return Ok(loaded.into_int_value());
+            }
+
+            // Try to parse as more complex expression
+            let mut parser = Parser::new(arg_str);
+            if let Ok(expr) = parser.parse_expr() {
+                return self.compile_expr(fn_value, scope, &expr);
+            }
+
+            // Fallback: return 0
+            Ok(self.context.i64_type().const_int(0, false))
+        }
+
+        /// Create a global string constant and return pointer to it
+        fn create_global_string(&self, s: &str, name: &str) -> PointerValue<'ctx> {
+            let counter = self.string_counter.get();
+            self.string_counter.set(counter + 1);
+            let unique_name = format!("{}_{}", name, counter);
+
+            // Create a null-terminated string constant
+            let string_val = self.context.const_string(s.as_bytes(), true);
+            let global = self.module.add_global(string_val.get_type(), None, &unique_name);
+            global.set_initializer(&string_val);
+            global.set_constant(true);
+            global.set_linkage(inkwell::module::Linkage::Private);
+
+            // Get pointer to the first element
+            global.as_pointer_value()
+        }
+
         /// Process a use declaration to register imports
         fn process_use(&mut self, use_decl: &ast::UseDecl) -> Result<(), String> {
             self.process_use_tree(&use_decl.tree, &[])

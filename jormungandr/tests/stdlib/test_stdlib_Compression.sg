@@ -1,0 +1,13 @@
+// Stdlib Tests: Compression
+// Compression type with REAL assertions
+// TODO: Expand coverage - currently only tests constructor, needs compress/decompress testing
+
+rite main() {
+    println("=== Testing Compression ===");
+
+    // Compression·new - creates compression handler (returns map)
+    ≔ c = Compression·new();
+    assert_eq(type_of(c), "map");
+
+    println("ALL COMPRESSION TESTS PASSED!");
+}

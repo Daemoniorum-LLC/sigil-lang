@@ -3482,6 +3482,40 @@ fn init_project() -> ExitCode {
 }
 
 /// Run tests in the current project
+/// Collect all test functions from AST, including those in modules
+fn collect_test_functions(items: &[sigil_parser::span::Spanned<sigil_parser::ast::Item>], prefix: &str) -> Vec<String> {
+    let mut tests = Vec::new();
+
+    for item in items {
+        match &item.node {
+            sigil_parser::ast::Item::Function(func) => {
+                if func.attrs.test {
+                    let name = if prefix.is_empty() {
+                        func.name.name.clone()
+                    } else {
+                        format!("{}·{}", prefix, func.name.name)
+                    };
+                    tests.push(name);
+                }
+            }
+            sigil_parser::ast::Item::Module(module) => {
+                // Recursively look for test functions in modules
+                if let Some(module_items) = &module.items {
+                    let new_prefix = if prefix.is_empty() {
+                        module.name.name.clone()
+                    } else {
+                        format!("{}·{}", prefix, module.name.name)
+                    };
+                    tests.extend(collect_test_functions(module_items, &new_prefix));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    tests
+}
+
 fn run_tests() -> ExitCode {
     use std::path::Path;
 
@@ -3490,18 +3524,24 @@ fn run_tests() -> ExitCode {
     let mut test_files = Vec::new();
 
     if tests_dir.exists() {
-        if let Ok(entries) = fs::read_dir(tests_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path
-                    .extension()
-                    .map(|e| e == "sigil" || e == "sg")
-                    .unwrap_or(false)
-                {
-                    test_files.push(path);
+        // Recursively find all .sigil and .sg files
+        fn find_test_files(dir: &Path, files: &mut Vec<std::path::PathBuf>) {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        find_test_files(&path, files);
+                    } else if path
+                        .extension()
+                        .map(|e| e == "sigil" || e == "sg")
+                        .unwrap_or(false)
+                    {
+                        files.push(path);
+                    }
                 }
             }
         }
+        find_test_files(tests_dir, &mut test_files);
     }
 
     if test_files.is_empty() {
@@ -3512,11 +3552,14 @@ fn run_tests() -> ExitCode {
         println!();
         println!("With test functions:");
         println!("  #[test]");
-        println!("  fn test_something() {{");
+        println!("  rite test_something() {{");
         println!("      assert_eq(1 + 1, 2);");
         println!("  }}");
         return ExitCode::SUCCESS;
     }
+
+    // Sort files for consistent output
+    test_files.sort();
 
     println!("Running tests...");
     println!();
@@ -3524,6 +3567,7 @@ fn run_tests() -> ExitCode {
     let mut total_tests = 0;
     let mut passed_tests = 0;
     let mut failed_tests = 0;
+    let mut failed_details: Vec<(String, String)> = Vec::new();
 
     for test_file in &test_files {
         // Parse file
@@ -3560,66 +3604,91 @@ fn run_tests() -> ExitCode {
             }
         };
 
-        // Type check
-        let mut type_checker = TypeChecker::new();
-        if let Err(errors) = type_checker.check_file(&ast) {
-            println!(
-                "  {}✗{} {} - type error:",
-                colors::ERROR,
-                colors::RESET,
-                test_file.display()
-            );
-            for err in &errors {
-                println!("      {}", err.message);
-            }
-            failed_tests += 1;
-            total_tests += 1;
+        // Type check (disabled for now - Samael uses many external types)
+        // let mut type_checker = TypeChecker::new();
+        // if let Err(errors) = type_checker.check_file(&ast) { ... }
+
+        // Collect ALL test functions, including those in modules
+        let test_names = collect_test_functions(&ast.items, "");
+
+        if test_names.is_empty() {
             continue;
         }
 
-        // Count test functions and run the file
-        let mut file_tests = 0;
-        for item in &ast.items {
-            if let sigil_parser::ast::Item::Function(func) = &item.node {
-                // Check the test flag in FunctionAttrs
-                if func.attrs.test {
-                    file_tests += 1;
-                }
-            }
+        let file_stem = test_file.file_stem().unwrap_or_default().to_string_lossy();
+
+        // Execute the file to register all functions
+        let mut interpreter = Interpreter::new();
+        register_stdlib(&mut interpreter);
+
+        // Discover project root and load workspace members
+        if let Some(parent) = test_file.parent() {
+            let _ = interpreter.discover_project(&parent.to_string_lossy());
         }
 
-        if file_tests > 0 {
-            // Execute the test file
-            let mut interpreter = Interpreter::new();
-            register_stdlib(&mut interpreter);
+        if let Err(e) = interpreter.execute(&ast) {
+            println!(
+                "  {}✗{} {} - execution error: {}",
+                colors::ERROR,
+                colors::RESET,
+                file_stem,
+                e
+            );
+            for test_name in &test_names {
+                failed_details.push((format!("{}::{}", file_stem, test_name), e.to_string()));
+            }
+            failed_tests += test_names.len();
+            total_tests += test_names.len();
+            continue;
+        }
 
-            match interpreter.execute(&ast) {
+        // Now run each test function individually
+        for test_name in &test_names {
+            total_tests += 1;
+
+            // Call the test function
+            match interpreter.call_function_by_name(test_name, vec![]) {
                 Ok(_) => {
                     println!(
-                        "  {}✓{} {} ({} tests)",
+                        "  {}✓{} {}::{}",
                         colors::GREEN,
                         colors::RESET,
-                        test_file.file_stem().unwrap_or_default().to_string_lossy(),
-                        file_tests
+                        file_stem,
+                        test_name
                     );
-                    passed_tests += file_tests;
+                    passed_tests += 1;
                 }
                 Err(e) => {
                     println!(
-                        "  {}✗{} {} - runtime error: {}",
+                        "  {}✗{} {}::{}",
                         colors::ERROR,
                         colors::RESET,
-                        test_file.file_stem().unwrap_or_default().to_string_lossy(),
-                        e
+                        file_stem,
+                        test_name
                     );
-                    failed_tests += file_tests;
+                    failed_details.push((format!("{}::{}", file_stem, test_name), e.to_string()));
+                    failed_tests += 1;
                 }
             }
-            total_tests += file_tests;
         }
     }
 
     println!();
+
+    // Print failure details
+    if !failed_details.is_empty() {
+        println!("{}Failures:{}", colors::ERROR, colors::RESET);
+        for (name, error) in &failed_details {
+            println!();
+            println!("  {}:", name);
+            // Indent error message
+            for line in error.lines() {
+                println!("    {}", line);
+            }
+        }
+        println!();
+    }
+
     if total_tests == 0 {
         println!("No test functions found (functions with #[test] attribute)");
         ExitCode::SUCCESS

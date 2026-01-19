@@ -1,0 +1,40 @@
+// Stdlib Tests: HashMap
+// HashMap collection with REAL assertions using method syntax
+
+rite main() {
+    println("=== Testing HashMap ===");
+
+    // HashMap·new - create empty map
+    ≔ vary m = HashMap·new();
+    assert_eq(m.len(), 0);
+
+    // Insert values
+    m.insert("name", "Alice");
+    m.insert("age", 30);
+    assert_eq(m.len(), 2);
+
+    // Get values
+    assert_eq(m.get("name"), "Alice");
+    assert_eq(m.get("age"), 30);
+
+    // Check key existence
+    assert_true(m.contains_key("name"));
+    assert_false(m.contains_key("missing"));
+
+    // Update value
+    m.insert("age", 31);
+    assert_eq(m.get("age"), 31);
+
+    // Get keys and values
+    ≔ keys = m.keys();
+    assert_eq(len(keys), 2);
+
+    ≔ vals = m.values();
+    assert_eq(len(vals), 2);
+
+    // HashMap·with_capacity
+    ≔ m2 = HashMap·with_capacity(100);
+    assert_eq(m2.len(), 0);
+
+    println("ALL HASHMAP TESTS PASSED!");
+}

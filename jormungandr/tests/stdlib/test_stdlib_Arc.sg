@@ -1,0 +1,19 @@
+// Stdlib Tests: Arc
+// Arc (Atomic Reference Counted) type with REAL assertions
+
+rite main() {
+    println("=== Testing Arc ===");
+
+    // Arc·new - creates atomic reference (returns ref type)
+    ≔ a = Arc·new(42);
+    assert_eq(type_of(a), "ref");
+
+    // Arc with different types
+    ≔ str_arc = Arc·new("hello");
+    assert_eq(type_of(str_arc), "ref");
+
+    ≔ arr_arc = Arc·new([1, 2, 3]);
+    assert_eq(type_of(arr_arc), "ref");
+
+    println("ALL ARC TESTS PASSED!");
+}

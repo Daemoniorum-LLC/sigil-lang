@@ -1,0 +1,20 @@
+// Stdlib Tests: Path
+// Path type with REAL assertions
+
+rite main() {
+    println("=== Testing Path ===");
+
+    // Path·new - creates path (returns string)
+    ≔ p = Path·new("/tmp/test");
+    assert_eq(type_of(p), "string");
+    assert_eq(p, "/tmp/test");
+
+    // Different paths
+    ≔ p2 = Path·new("/home/user/file.txt");
+    assert_true(len(p2) > 0);
+
+    ≔ p3 = Path·new("relative/path");
+    assert_eq(p3, "relative/path");
+
+    println("ALL PATH TESTS PASSED!");
+}

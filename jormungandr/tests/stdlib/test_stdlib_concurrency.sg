@@ -1,0 +1,46 @@
+// Stdlib Tests: concurrency
+// Concurrency primitives with REAL assertions
+
+rite main() {
+    println("=== Testing concurrency ===");
+
+    // thread_yield - yields current thread
+    thread_yield();
+
+    // thread_id - returns thread ID (as string)
+    ≔ tid = thread_id();
+    assert_eq(type_of(tid), "string");
+    assert_true(len(tid) > 0);
+
+    // mutex_new - creates mutex
+    ≔ m = mutex_new(42);
+    assert_true(m != null);
+
+    // mutex_lock and unlock
+    ≔ guard = mutex_lock(m);
+    mutex_unlock(m, guard);
+
+    // atomic_new - creates atomic value
+    ≔ a = atomic_new(0);
+    assert_true(a != null);
+
+    // atomic_load - reads atomic value
+    ≔ val = atomic_load(a);
+    assert_eq(val, 0);
+
+    // atomic_store - writes atomic value
+    atomic_store(a, 100);
+    assert_eq(atomic_load(a), 100);
+
+    // atomic_add - adds to atomic value
+    ≔ old = atomic_add(a, 5);
+    assert_eq(old, 100);
+    assert_eq(atomic_load(a), 105);
+
+    // atomic_cas - compare and swap
+    ≔ success = atomic_cas(a, 105, 200);
+    assert_true(success);
+    assert_eq(atomic_load(a), 200);
+
+    println("ALL CONCURRENCY TESTS PASSED!");
+}
