@@ -15380,23 +15380,23 @@ mod tests {
     #[test]
     fn test_arithmetic() {
         assert!(matches!(
-            run("rite main() { return 2 + 3; }"),
+            run("rite main() { ⤺ 2 + 3; }"),
             Ok(Value::Int(5))
         ));
         assert!(matches!(
-            run("rite main() { return 10 - 4; }"),
+            run("rite main() { ⤺ 10 - 4; }"),
             Ok(Value::Int(6))
         ));
         assert!(matches!(
-            run("rite main() { return 3 * 4; }"),
+            run("rite main() { ⤺ 3 * 4; }"),
             Ok(Value::Int(12))
         ));
         assert!(matches!(
-            run("rite main() { return 15 / 3; }"),
+            run("rite main() { ⤺ 15 / 3; }"),
             Ok(Value::Int(5))
         ));
         assert!(matches!(
-            run("rite main() { return 2 ** 10; }"),
+            run("rite main() { ⤺ 2 ** 10; }"),
             Ok(Value::Int(1024))
         ));
     }
@@ -15404,7 +15404,7 @@ mod tests {
     #[test]
     fn test_variables() {
         assert!(matches!(
-            run("rite main() { let x = 42; return x; }"),
+            run("rite main() { ≔ x = 42; ⤺ x; }"),
             Ok(Value::Int(42))
         ));
     }
@@ -15412,11 +15412,11 @@ mod tests {
     #[test]
     fn test_conditionals() {
         assert!(matches!(
-            run("rite main() { if true { return 1; } else { return 2; } }"),
+            run("rite main() { ⎇ yea { ⤺ 1; } ⎉ { ⤺ 2; } }"),
             Ok(Value::Int(1))
         ));
         assert!(matches!(
-            run("rite main() { if false { return 1; } else { return 2; } }"),
+            run("rite main() { ⎇ nay { ⤺ 1; } ⎉ { ⤺ 2; } }"),
             Ok(Value::Int(2))
         ));
     }
@@ -15424,7 +15424,7 @@ mod tests {
     #[test]
     fn test_arrays() {
         assert!(matches!(
-            run("rite main() { return [1, 2, 3][1]; }"),
+            run("rite main() { ⤺ [1, 2, 3][1]; }"),
             Ok(Value::Int(2))
         ));
     }
@@ -15432,21 +15432,21 @@ mod tests {
     #[test]
     fn test_functions() {
         let result = run("
-            fn double(x: i64) -> i64 { return x * 2; }
-            rite main() { return double(21); }
+            rite double(x: i64) → i64 { ⤺ x * 2; }
+            rite main() { ⤺ double(21); }
         ");
         assert!(matches!(result, Ok(Value::Int(42))));
     }
 
     #[test]
     fn test_pipe_transform() {
-        let result = run("rite main() { return [1, 2, 3]|τ{_ * 2}|sum; }");
+        let result = run("rite main() { ⤺ [1, 2, 3]|τ{_ * 2}|sum; }");
         assert!(matches!(result, Ok(Value::Int(12))));
     }
 
     #[test]
     fn test_pipe_filter() {
-        let result = run("rite main() { return [1, 2, 3, 4, 5]|φ{_ > 2}|sum; }");
+        let result = run("rite main() { ⤺ [1, 2, 3, 4, 5]|φ{_ > 2}|sum; }");
         assert!(matches!(result, Ok(Value::Int(12)))); // 3 + 4 + 5
     }
 
@@ -15455,14 +15455,16 @@ mod tests {
         // Test that evidentiality propagates through string interpolation
         // When an evidential value is interpolated, the result string should carry that evidentiality
         let result = run(r#"
+
             rite main() {
-                let rep = reported(42);
+                ≔ rep = reported(42);
 
                 // Interpolating a reported value should make the string reported
-                let s = f"Value: {rep}";
-                return s;
+                ≔ s = f"Value: {rep}";
+                ⤺ s;
             }
-        "#);
+        
+"#);
 
         match result {
             Ok(Value::Evidential {
@@ -15481,15 +15483,17 @@ mod tests {
     fn test_interpolation_worst_evidence_wins() {
         // When multiple evidential values are interpolated, the worst evidence level wins
         let result = run(r#"
+
             rite main() {
-                let k = known(1);         // Known is best
-                let u = uncertain(2);     // Uncertain is worse
+                ≔ k = known(1);         // Known is best
+                ≔ u = uncertain(2);     // Uncertain is worse
 
                 // Combining known and uncertain should yield uncertain
-                let s = f"{k} and {u}";
-                return s;
+                ≔ s = f"{k} and {u}";
+                ⤺ s;
             }
-        "#);
+        
+"#);
 
         match result {
             Ok(Value::Evidential {
@@ -15505,12 +15509,14 @@ mod tests {
     fn test_interpolation_no_evidential_plain_string() {
         // When no evidential values are interpolated, the result is a plain string
         let result = run(r#"
+
             rite main() {
-                let x = 42;
-                let s = f"Value: {x}";
-                return s;
+                ≔ x = 42;
+                ≔ s = f"Value: {x}";
+                ⤺ s;
             }
-        "#);
+        
+"#);
 
         match result {
             Ok(Value::String(s)) => {

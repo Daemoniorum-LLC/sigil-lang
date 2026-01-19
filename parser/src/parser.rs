@@ -8752,7 +8752,7 @@ mod tests {
     #[test]
     fn test_parse_function() {
         // Simple function with semicolon-terminated statement
-        let source = "fn hello(name: str) -> str { return name; }";
+        let source = "rite hello(name: str) → str { ⤺ name; }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -8760,7 +8760,7 @@ mod tests {
 
     #[test]
     fn test_parse_pipe_chain() {
-        let source = "rite main() { let result = data|τ{_ * 2}|φ{_ > 0}|σ; }";
+        let source = "rite main() { ≔ result = data|τ{_ * 2}|φ{_ > 0}|σ; }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -8768,7 +8768,7 @@ mod tests {
 
     #[test]
     fn test_parse_async_function() {
-        let source = "async fn fetch(url: str) -> Response~ { return client·get(url)|await; }";
+        let source = "async rite fetch(url: str) → Response~ { ⤺ client·get(url)|await; }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -8776,7 +8776,7 @@ mod tests {
 
     #[test]
     fn test_parse_struct() {
-        let source = "struct Point { x: f64, y: f64 }";
+        let source = "sigil Point { x: f64, y: f64 }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -8786,11 +8786,13 @@ mod tests {
     fn test_parse_actor() {
         // Simplified actor without compound assignment
         let source = r#"
+
             actor Counter {
                 state: i64 = 0
-                on Increment(n: i64) { return self.state + n; }
+                on Increment(n: i64) { ⤺ ξ.state + n; }
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -8798,7 +8800,7 @@ mod tests {
 
     #[test]
     fn test_parse_number_bases() {
-        let source = "fn bases() { let a = 42; let b = 0b101010; let c = 0x2A; let d = 0v22; }";
+        let source = "rite bases() { ≔ a = 42; ≔ b = 0b101010; ≔ c = 0x2A; ≔ d = 0v22; }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -8808,28 +8810,32 @@ mod tests {
     fn test_parse_labeled_loops() {
         // Test labeled loop with break
         let source = r#"
-            fn test() {
-                'outer: loop {
-                    'inner: while true {
-                        break 'outer;
+
+            rite test() {
+                'outer: forever {
+                    'inner: ⟳ yea {
+                        ⊲ 'outer;
                     }
                 }
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
 
         // Test labeled for with continue
         let source2 = r#"
-            fn test2() {
-                'rows: for i in 0..10 {
-                    'cols: for j in 0..10 {
-                        if j == 5 { continue 'rows; }
+
+            rite test2() {
+                'rows: each i of 0..10 {
+                    'cols: each j of 0..10 {
+                        ⎇ j == 5 { ⊳ 'rows; }
                     }
                 }
             }
-        "#;
+        
+"#;
         let mut parser2 = Parser::new(source2);
         let file2 = parser2.parse_file().unwrap();
         assert_eq!(file2.items.len(), 1);
@@ -8838,13 +8844,15 @@ mod tests {
     #[test]
     fn test_parse_inline_asm() {
         let source = r#"
-            fn outb(port: u16, value: u8) {
+
+            rite outb(port: u16, value: u8) {
                 asm!("out dx, al",
-                    in("dx") port,
-                    in("al") value,
+                    of("dx") port,
+                    of("al") value,
                     options(nostack));
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -8859,15 +8867,17 @@ mod tests {
     #[test]
     fn test_parse_inline_asm_with_outputs() {
         let source = r#"
-            fn inb(port: u16) -> u8 {
-                let result: u8 = 0;
-                asm!("in al, dx",
+
+            rite inb(port: u16) → u8 {
+                ≔ result: u8 = 0;
+                asm!("of al, dx",
                     out("al") result,
-                    in("dx") port,
+                    of("dx") port,
                     options(nostack, nomem));
-                return result;
+                ⤺ result;
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -8876,10 +8886,12 @@ mod tests {
     #[test]
     fn test_parse_volatile_read() {
         let source = r#"
-            fn read_mmio(addr: *mut u32) -> u32 {
-                return volatile read<u32>(addr);
+
+            rite read_mmio(addr: *vary u32) → u32 {
+                ⤺ volatile read<u32>(addr);
             }
-        "#;
+
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -8888,10 +8900,12 @@ mod tests {
     #[test]
     fn test_parse_volatile_write() {
         let source = r#"
-            fn write_mmio(addr: *mut u32, value: u32) {
+
+            rite write_mmio(addr: *vary u32, value: u32) {
                 volatile write<u32>(addr, value);
             }
-        "#;
+
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -8900,11 +8914,13 @@ mod tests {
     #[test]
     fn test_parse_naked_function() {
         let source = r#"
-            naked fn interrupt_handler() {
+
+            naked rite interrupt_handler() {
                 asm!("push rax; push rbx; call handler_impl; pop rbx; pop rax; iretq",
                     options(nostack));
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -8919,7 +8935,8 @@ mod tests {
     #[test]
     fn test_parse_packed_struct() {
         let source = r#"
-            packed struct GDTEntry {
+
+            packed sigil GDTEntry {
                 limit_low: u16,
                 base_low: u16,
                 base_middle: u8,
@@ -8927,7 +8944,8 @@ mod tests {
                 granularity: u8,
                 base_high: u8,
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -8948,13 +8966,15 @@ mod tests {
     #[test]
     fn test_parse_no_std_attribute() {
         let source = r#"
+
             #![no_std]
             #![no_main]
 
-            fn kernel_main() -> ! {
-                loop {}
+            rite kernel_main() → ! {
+                forever {}
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -8966,10 +8986,12 @@ mod tests {
     #[test]
     fn test_parse_feature_attribute() {
         let source = r#"
+
             #![feature(asm, naked_functions)]
 
-            rite main() -> i64 { 0 }
-        "#;
+            rite main() → i64 { 0 }
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -8984,11 +9006,13 @@ mod tests {
     #[test]
     fn test_parse_target_attribute() {
         let source = r#"
+
             #![no_std]
             #![target(arch = "x86_64", os = "none")]
 
-            fn kernel_main() { }
-        "#;
+            rite kernel_main() { }
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -9005,13 +9029,15 @@ mod tests {
     #[test]
     fn test_parse_panic_handler() {
         let source = r#"
+
             #![no_std]
 
             #[panic_handler]
-            fn panic(info: *const PanicInfo) -> ! {
-                loop {}
+            rite panic(info: *◆ PanicInfo) → ! {
+                forever {}
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -9029,15 +9055,17 @@ mod tests {
     #[test]
     fn test_parse_entry_point() {
         let source = r#"
+
             #![no_std]
             #![no_main]
 
             #[entry]
             #[no_mangle]
-            fn _start() -> ! {
-                loop {}
+            rite _start() → ! {
+                forever {}
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -9053,9 +9081,11 @@ mod tests {
     #[test]
     fn test_parse_link_section() {
         let source = r#"
+
             #[link_section = ".text.boot"]
-            fn boot_code() { }
-        "#;
+            rite boot_code() { }
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -9070,14 +9100,16 @@ mod tests {
     #[test]
     fn test_parse_linker_config() {
         let source = r#"
+
             #![no_std]
             #![linker_script = "kernel.ld"]
             #![entry_point = "_start"]
             #![base_address = 0x100000]
             #![stack_size = 0x4000]
 
-            fn kernel_main() { }
-        "#;
+            rite kernel_main() { }
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -9095,12 +9127,14 @@ mod tests {
     #[test]
     fn test_parse_interrupt_handler() {
         let source = r#"
+
             #[interrupt(32)]
             #[naked]
-            fn timer_handler() {
+            rite timer_handler() {
                 asm!("iretq", options(nostack));
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -9115,15 +9149,17 @@ mod tests {
     #[test]
     fn test_parse_inline_attributes() {
         let source = r#"
+
             #[inline]
-            fn fast() -> i64 { 0 }
+            rite fast() → i64 { 0 }
 
             #[inline(always)]
-            fn very_fast() -> i64 { 0 }
+            rite very_fast() → i64 { 0 }
 
             #[inline(never)]
-            fn never_inline() -> i64 { 0 }
-        "#;
+            rite never_inline() → i64 { 0 }
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -9143,10 +9179,12 @@ mod tests {
     #[test]
     fn test_parse_simd_type() {
         let source = r#"
-            fn vec_add(a: simd<f32, 4>, b: simd<f32, 4>) -> simd<f32, 4> {
-                return simd.add(a, b);
+
+            rite vec_add(a: simd<f32, 4>, b: simd<f32, 4>) → simd<f32, 4> {
+                ⤺ simd.add(a, b);
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9170,10 +9208,12 @@ mod tests {
     #[test]
     fn test_parse_simd_literal() {
         let source = r#"
-            fn make_vec() -> simd<f32, 4> {
-                return simd[1.0, 2.0, 3.0, 4.0];
+
+            rite make_vec() → simd<f32, 4> {
+                ⤺ simd[1.0, 2.0, 3.0, 4.0];
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9182,11 +9222,13 @@ mod tests {
     #[test]
     fn test_parse_simd_intrinsics() {
         let source = r#"
-            fn dot_product(a: simd<f32, 4>, b: simd<f32, 4>) -> f32 {
-                let prod = simd.mul(a, b);
-                return simd.hadd(prod);
+
+            rite dot_product(a: simd<f32, 4>, b: simd<f32, 4>) → f32 {
+                ≔ prod = simd.mul(a, b);
+                ⤺ simd.hadd(prod);
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9195,10 +9237,12 @@ mod tests {
     #[test]
     fn test_parse_simd_shuffle() {
         let source = r#"
-            fn interleave(a: simd<f32, 4>, b: simd<f32, 4>) -> simd<f32, 4> {
-                return simd.shuffle(a, b, [0, 4, 1, 5]);
+
+            rite interleave(a: simd<f32, 4>, b: simd<f32, 4>) → simd<f32, 4> {
+                ⤺ simd.shuffle(a, b, [0, 4, 1, 5]);
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9207,10 +9251,12 @@ mod tests {
     #[test]
     fn test_parse_atomic_type() {
         let source = r#"
-            struct Counter {
+
+            sigil Counter {
                 value: atomic<i64>,
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9233,10 +9279,12 @@ mod tests {
     #[test]
     fn test_parse_atomic_operations() {
         let source = r#"
-            fn increment(ptr: *mut i64) -> i64 {
-                return atomic.fetch_add(ptr, 1, SeqCst);
+
+            rite increment(ptr: *vary i64) → i64 {
+                ⤺ atomic.fetch_add(ptr, 1, SeqCst);
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9245,11 +9293,13 @@ mod tests {
     #[test]
     fn test_parse_atomic_compare_exchange() {
         let source = r#"
-            fn cas(ptr: *mut i64, expected: i64, new: i64) -> bool {
-                let result = atomic.compare_exchange(ptr, expected, new, AcqRel, Relaxed);
-                return result;
+
+            rite cas(ptr: *vary i64, expected: i64, new: i64) → bool {
+                ≔ result = atomic.compare_exchange(ptr, expected, new, AcqRel, Relaxed);
+                ⤺ result;
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9258,10 +9308,12 @@ mod tests {
     #[test]
     fn test_parse_atomic_fence() {
         let source = r#"
-            fn memory_barrier() {
+
+            rite memory_barrier() {
                 atomic.fence(SeqCst);
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9270,13 +9322,15 @@ mod tests {
     #[test]
     fn test_parse_derive_macro() {
         let source = r#"
+
             #[derive(Debug, Clone, Component)]
-            struct Position {
+            sigil Position {
                 x: f32,
                 y: f32,
                 z: f32,
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9294,11 +9348,13 @@ mod tests {
     #[test]
     fn test_parse_repr_c_struct() {
         let source = r#"
+
             #[repr(C)]
-            struct FFIStruct {
+            sigil FFIStruct {
                 field: i32,
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9313,13 +9369,15 @@ mod tests {
     #[test]
     fn test_parse_allocator_trait() {
         let source = r#"
-            trait Allocator {
+
+            aspect Allocator {
                 type Error;
 
-                fn allocate(size: usize, align: usize) -> *mut u8;
-                fn deallocate(ptr: *mut u8, size: usize, align: usize);
+                rite allocate(size: usize, align: usize) → *vary u8;
+                rite deallocate(ptr: *vary u8, size: usize, align: usize);
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9336,13 +9394,15 @@ mod tests {
     #[test]
     fn test_parse_where_clause() {
         let source = r#"
-            fn alloc_array<T, A>(allocator: &mut A, count: usize) -> *mut T
-            where
+
+            rite alloc_array<T, A>(allocator: &vary A, count: usize) → *vary T
+            ∋
                 A: Allocator,
             {
-                return allocator.allocate(count, 8);
+                ⤺ allocator.allocate(count, 8);
             }
-        "#;
+        
+"#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
