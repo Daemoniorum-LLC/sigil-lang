@@ -143,151 +143,149 @@ rite main() → i64 {
 }`,
 
   variables: `// Variables and Types
-fn main() {
+rite main() → i64 {
     // Immutable by default
-    let x = 42;
-    let name = "Sigil";
-    let pi = 3.14159;
-    let flag = true;
+    ≔ x = 42;
+    ≔ name = "Sigil";
+    ≔ pi = 3.14159;
+    ≔ flag = yea;
 
     // Mutable variables
-    let mut counter = 0;
+    vary counter = 0;
     counter = counter + 1;
 
     // Explicit types
-    let age: i64 = 25;
-    let price: f64 = 19.99;
+    ≔ age: i64 = 25;
+    ≔ price: f64 = 19.99;
 
-    print("x = " + str(x));
-    print("name = " + name);
-    print("counter = " + str(counter));
+    println("x = " ++ x.to_string());
+    println("name = " ++ name);
+    println("counter = " ++ counter.to_string());
 
-    return 0;
+    0
 }`,
 
   functions: `// Functions in Sigil
-fn add(a: i64, b: i64) -> i64 {
+rite add(a: i64, b: i64) → i64 {
     a + b  // Implicit return
 }
 
-fn greet(name: Str) {
-    print("Hello, " + name + "!");
+rite greet(name: String) {
+    println("Hello, " ++ name ++ "!");
 }
 
-fn factorial(n: i64) -> i64 {
-    if n <= 1 {
-        return 1;
-    }
-    n * factorial(n - 1)
+rite factorial(n: i64) → i64 {
+    ⎇ n <= 1 { 1 }
+    ⎉ { n * factorial(n - 1) }
 }
 
-fn main() {
-    let sum = add(10, 20);
-    print("10 + 20 = " + str(sum));
+rite main() → i64 {
+    ≔ sum = add(10, 20);
+    println("10 + 20 = " ++ sum.to_string());
 
     greet("World");
 
-    let fact5 = factorial(5);
-    print("5! = " + str(fact5));
+    ≔ fact5 = factorial(5);
+    println("5! = " ++ fact5.to_string());
 
-    return 0;
+    0
 }`,
 
   // Morphemes
   pipes: `// Morpheme Pipelines
-fn main() {
-    let nums = [1, 2, 3, 4, 5];
+rite main() → i64 {
+    ≔ nums = [1, 2, 3, 4, 5];
 
     // τ (tau) - Transform each element
-    let doubled = nums|τ{_ * 2};
-    print("Doubled: " + str(doubled));
+    ≔ doubled = nums |τ{. * 2};
+    println("Doubled: " ++ doubled.to_string());
 
     // φ (phi) - Filter elements
-    let evens = nums|φ{_ % 2 == 0};
-    print("Evens: " + str(evens));
+    ≔ evens = nums |φ{. % 2 == 0};
+    println("Evens: " ++ evens.to_string());
 
     // Σ (sigma) - Sum all elements
-    let total = nums|Σ;
-    print("Sum: " + str(total));
+    ≔ total = nums |Σ;
+    println("Sum: " ++ total.to_string());
 
     // Chain them together!
-    let result = nums|τ{_ * 2}|φ{_ > 5}|Σ;
-    print("Double, keep >5, sum: " + str(result));
+    ≔ result = nums |τ{. * 2} |φ{. > 5} |Σ;
+    println("Double, keep >5, sum: " ++ result.to_string());
 
-    return 0;
+    0
 }`,
 
   transform: `// Transform (τ) - Map operations
-fn main() {
-    let numbers = [1, 2, 3, 4, 5];
+rite main() → i64 {
+    ≔ numbers = [1, 2, 3, 4, 5];
 
     // Double each number
-    let doubled = numbers|τ{_ * 2};
-    print("Doubled: " + str(doubled));
+    ≔ doubled = numbers |τ{. * 2};
+    println("Doubled: " ++ doubled.to_string());
 
     // Square each number
-    let squared = numbers|τ{_ * _};
-    print("Squared: " + str(squared));
+    ≔ squared = numbers |τ{. * .};
+    println("Squared: " ++ squared.to_string());
 
     // Add 10 to each
-    let added = numbers|τ{_ + 10};
-    print("Added 10: " + str(added));
+    ≔ added = numbers |τ{. + 10};
+    println("Added 10: " ++ added.to_string());
 
     // Chain transforms
-    let chained = numbers|τ{_ * 2}|τ{_ + 1};
-    print("*2 then +1: " + str(chained));
+    ≔ chained = numbers |τ{. * 2} |τ{. + 1};
+    println("*2 then +1: " ++ chained.to_string());
 
-    return 0;
+    0
 }`,
 
   filter: `// Filter (φ) - Select elements
-fn main() {
-    let numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+rite main() → i64 {
+    ≔ numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
     // Keep even numbers
-    let evens = numbers|φ{_ % 2 == 0};
-    print("Evens: " + str(evens));
+    ≔ evens = numbers |φ{. % 2 == 0};
+    println("Evens: " ++ evens.to_string());
 
     // Keep numbers > 5
-    let big = numbers|φ{_ > 5};
-    print("Greater than 5: " + str(big));
+    ≔ big = numbers |φ{. > 5};
+    println("Greater than 5: " ++ big.to_string());
 
     // Keep odd numbers < 8
-    let filtered = numbers|φ{_ % 2 != 0}|φ{_ < 8};
-    print("Odd and < 8: " + str(filtered));
+    ≔ filtered = numbers |φ{. % 2 != 0} |φ{. < 8};
+    println("Odd and < 8: " ++ filtered.to_string());
 
-    return 0;
+    0
 }`,
 
   aggregate: `// Aggregate Morphemes: Σ, Π, μ, α, ω
-fn main() {
-    let nums = [1, 2, 3, 4, 5];
+rite main() → i64 {
+    ≔ nums = [1, 2, 3, 4, 5];
 
     // Σ (sigma) - Sum
-    let sum = nums|Σ;
-    print("Σ Sum: " + str(sum));
+    ≔ sum = nums |Σ;
+    println("Σ Sum: " ++ sum.to_string());
 
     // Π (pi) - Product
-    let product = nums|Π;
-    print("Π Product: " + str(product));
+    ≔ product = nums |Π;
+    println("Π Product: " ++ product.to_string());
 
     // μ (mu) - Mean/Average
-    let avg = nums|μ;
-    print("μ Mean: " + str(avg));
+    ≔ avg = nums |μ;
+    println("μ Mean: " ++ avg.to_string());
 
     // α (alpha) - First element
-    let first = nums|α;
-    print("α First: " + str(first));
+    ≔ first = nums |α;
+    println("α First: " ++ first.to_string());
 
     // ω (omega) - Last element
-    let last = nums|ω;
-    print("ω Last: " + str(last));
+    ≔ last = nums |ω;
+    println("ω Last: " ++ last.to_string());
 
     // λ (lambda) - Length
-    let len = nums|λ;
-    print("λ Length: " + str(len));
+    ≔ len = nums |λ;
+    println("λ Length: " ++ len.to_string());
 
-    return 0;
+    0
 }`,
 
   // Evidentiality
@@ -299,180 +297,180 @@ fn main() {
 //   ~ (reported)  - External data, untrusted
 //   ‽ (paradox)   - Trust boundary crossing
 
-fn main() {
-    print("=== Evidence Chain: ~ -> ? -> ! ===");
-    print("");
+rite main() → i64 {
+    println("=== Evidence Chain: ~ -> ? -> ! ===");
+    println("");
 
     // Stage 1: External data arrives as reported (~)
-    print("Stage 1: External data (reported ~)");
-    let raw_data~ = 42;  // Marked as external
-    print("  raw_data~ received from API");
+    println("Stage 1: External data (reported ~)");
+    ≔ raw_data~ = 42;  // Marked as external
+    println("  raw_data~ received from API");
 
     // Stage 2: Validation promotes to uncertain (?)
-    print("");
-    print("Stage 2: After validation (uncertain ?)");
-    let validated? = raw_data~;  // Still not fully trusted
-    print("  validated? passed basic checks");
+    println("");
+    println("Stage 2: After validation (uncertain ?)");
+    ≔ validated? = raw_data~;  // Still not fully trusted
+    println("  validated? passed basic checks");
 
     // Stage 3: Computation produces known (!)
-    print("");
-    print("Stage 3: After verification (known !)");
-    let result! = validated? * 2;  // Now trusted
-    print("  result! = " + str(result!));
+    println("");
+    println("Stage 3: After verification (known !)");
+    ≔ result! = validated? * 2;  // Now trusted
+    println("  result! = " ++ result!.to_string());
 
-    print("");
-    print("Evidence promotes pessimistically:");
-    print("  ! + ~ = ~ (known polluted by reported)");
+    println("");
+    println("Evidence promotes pessimistically:");
+    println("  ! + ~ = ~ (known polluted by reported)");
 
-    return 0;
+    0
 }`,
 
   validation: `// Data Validation with Evidence
-fn main() {
+rite main() → i64 {
     // Simulate external API data
-    let api_response~ = 100;
+    ≔ api_response~ = 100;
 
     // Validation pipeline
-    print("Raw data from API: " + str(api_response~));
+    println("Raw data from API: " ++ api_response~.to_string());
 
     // Check if positive (promotes ~ to ?)
-    let checked? = api_response~;
-    if checked? > 0 {
-        print("✓ Passed: value is positive");
+    ≔ checked? = api_response~;
+    ⎇ checked? > 0 {
+        println("✓ Passed: value is positive");
     }
 
     // Verify bounds (promotes ? to !)
-    let safe! = checked?;
-    if safe! >= 0 && safe! <= 1000 {
-        print("✓ Verified: value in safe range");
+    ≔ safe! = checked?;
+    ⎇ safe! >= 0 ∧ safe! <= 1000 {
+        println("✓ Verified: value in safe range");
     }
 
     // Now we can use it with confidence
-    let result! = safe! * 2;
-    print("Final result!: " + str(result!));
+    ≔ result! = safe! * 2;
+    println("Final result!: " ++ result!.to_string());
 
-    return 0;
+    0
 }`,
 
   // Patterns
-  structs: `// Structs and Implementations
-struct Point {
+  structs: `// Sigils (Structs) and Implementations
+sigil Point {
     x: i64,
     y: i64,
 }
 
 impl Point {
-    fn new(x: i64, y: i64) -> Point {
+    rite new(x: i64, y: i64) → Point {
         Point { x: x, y: y }
     }
 
-    fn origin() -> Point {
-        Point::new(0, 0)
+    rite origin() → Point {
+        Point·new(0, 0)
     }
 
-    fn distance_from_origin(self) -> f64 {
-        let x2 = (self.x * self.x) as f64;
-        let y2 = (self.y * self.y) as f64;
+    rite distance_from_origin(self) → f64 {
+        ≔ x2 = (self.x * self.x) as f64;
+        ≔ y2 = (self.y * self.y) as f64;
         (x2 + y2).sqrt()
     }
 
-    fn translate(self, dx: i64, dy: i64) -> Point {
-        Point::new(self.x + dx, self.y + dy)
+    rite translate(self, dx: i64, dy: i64) → Point {
+        Point·new(self.x + dx, self.y + dy)
     }
 }
 
-fn main() {
-    let p1 = Point::new(3, 4);
-    print("Point: (" + str(p1.x) + ", " + str(p1.y) + ")");
+rite main() → i64 {
+    ≔ p1 = Point·new(3, 4);
+    println("Point: (" ++ p1.x.to_string() ++ ", " ++ p1.y.to_string() ++ ")");
 
-    let dist = p1.distance_from_origin();
-    print("Distance from origin: " + str(dist));
+    ≔ dist = p1.distance_from_origin();
+    println("Distance from origin: " ++ dist.to_string());
 
-    let p2 = p1.translate(2, 3);
-    print("Translated: (" + str(p2.x) + ", " + str(p2.y) + ")");
+    ≔ p2 = p1.translate(2, 3);
+    println("Translated: (" ++ p2.x.to_string() ++ ", " ++ p2.y.to_string() ++ ")");
 
-    return 0;
+    0
 }`,
 
   matching: `// Pattern Matching
 enum Status {
     Active,
-    Pending(Str),
+    Pending(String),
     Completed(i64),
-    Failed(Str, i64),
+    Failed(String, i64),
 }
 
-fn describe_status(s: Status) -> Str {
-    match s {
-        Status::Active => "Currently active",
-        Status::Pending(reason) => "Pending: " + reason,
-        Status::Completed(code) => "Done with code " + str(code),
-        Status::Failed(msg, code) => msg + " (error " + str(code) + ")",
+rite describe_status(s: Status) → String {
+    ⌥ s {
+        Status·Active => "Currently active",
+        Status·Pending(reason) => "Pending: " ++ reason,
+        Status·Completed(code) => "Done with code " ++ code.to_string(),
+        Status·Failed(msg, code) => msg ++ " (error " ++ code.to_string() ++ ")",
     }
 }
 
-fn main() {
-    let s1 = Status::Active;
-    let s2 = Status::Pending("Awaiting approval");
-    let s3 = Status::Completed(0);
-    let s4 = Status::Failed("Connection lost", 503);
+rite main() → i64 {
+    ≔ s1 = Status·Active;
+    ≔ s2 = Status·Pending("Awaiting approval");
+    ≔ s3 = Status·Completed(0);
+    ≔ s4 = Status·Failed("Connection lost", 503);
 
-    print(describe_status(s1));
-    print(describe_status(s2));
-    print(describe_status(s3));
-    print(describe_status(s4));
+    println(describe_status(s1));
+    println(describe_status(s2));
+    println(describe_status(s3));
+    println(describe_status(s4));
 
     // Pattern matching with guards
-    let value = 42;
-    let description = match value {
+    ≔ value = 42;
+    ≔ description = ⌥ value {
         0 => "zero",
-        n if n < 0 => "negative",
-        n if n > 100 => "large",
+        n ⎇ n < 0 => "negative",
+        n ⎇ n > 100 => "large",
         _ => "normal positive",
     };
-    print("42 is: " + description);
+    println("42 is: " ++ description);
 
-    return 0;
+    0
 }`,
 
   pipeline: `// Full Data Processing Pipeline
-fn main() {
-    print("=== Sigil Data Pipeline Demo ===");
-    print("");
+rite main() → i64 {
+    println("=== Sigil Data Pipeline Demo ===");
+    println("");
 
     // Source data
-    let data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    print("Source: " + str(data));
-    print("");
+    ≔ data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    println("Source: " ++ data.to_string());
+    println("");
 
     // Step 1: Transform (double each value)
-    let step1 = data|τ{_ * 2};
-    print("After τ{_ * 2}: " + str(step1));
+    ≔ step1 = data |τ{. * 2};
+    println("After τ{. * 2}: " ++ step1.to_string());
 
     // Step 2: Filter (keep values > 10)
-    let step2 = step1|φ{_ > 10};
-    print("After φ{_ > 10}: " + str(step2));
+    ≔ step2 = step1 |φ{. > 10};
+    println("After φ{. > 10}: " ++ step2.to_string());
 
     // Step 3: Sort (σ)
-    let step3 = step2|σ;
-    print("After σ (sort): " + str(step3));
+    ≔ step3 = step2 |σ;
+    println("After σ (sort): " ++ step3.to_string());
 
     // Step 4: Aggregate
-    let sum = step3|Σ;
-    let count = step3|λ;
-    let avg = step3|μ;
-    print("");
-    print("Σ Sum: " + str(sum));
-    print("λ Count: " + str(count));
-    print("μ Average: " + str(avg));
+    ≔ sum = step3 |Σ;
+    ≔ count = step3 |λ;
+    ≔ avg = step3 |μ;
+    println("");
+    println("Σ Sum: " ++ sum.to_string());
+    println("λ Count: " ++ count.to_string());
+    println("μ Average: " ++ avg.to_string());
 
     // Or all in one pipeline!
-    print("");
-    print("=== Same as single pipeline ===");
-    let result = data|τ{_ * 2}|φ{_ > 10}|σ|Σ;
-    print("data|τ{_ * 2}|φ{_ > 10}|σ|Σ = " + str(result));
+    println("");
+    println("=== Same as single pipeline ===");
+    ≔ result = data |τ{. * 2} |φ{. > 10} |σ |Σ;
+    println("data|τ{. * 2}|φ{. > 10}|σ|Σ = " ++ result.to_string());
 
-    return 0;
+    0
 }`
 };
 
