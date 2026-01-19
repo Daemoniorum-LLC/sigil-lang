@@ -197,11 +197,11 @@ rite main() → i64 {
     ≔ nums = [1, 2, 3, 4, 5];
 
     // τ (tau) - Transform each element
-    ≔ doubled = nums |τ{. * 2};
+    ≔ doubled = nums |τ{_ * 2};
     println("Doubled: " ++ doubled.to_string());
 
     // φ (phi) - Filter elements
-    ≔ evens = nums |φ{. % 2 == 0};
+    ≔ evens = nums |φ{_ % 2 == 0};
     println("Evens: " ++ evens.to_string());
 
     // Σ (sigma) - Sum all elements
@@ -209,7 +209,7 @@ rite main() → i64 {
     println("Sum: " ++ total.to_string());
 
     // Chain them together!
-    ≔ result = nums |τ{. * 2} |φ{. > 5} |Σ;
+    ≔ result = nums |τ{_ * 2} |φ{_ > 5} |Σ;
     println("Double, keep >5, sum: " ++ result.to_string());
 
     0
@@ -220,19 +220,19 @@ rite main() → i64 {
     ≔ numbers = [1, 2, 3, 4, 5];
 
     // Double each number
-    ≔ doubled = numbers |τ{. * 2};
+    ≔ doubled = numbers |τ{_ * 2};
     println("Doubled: " ++ doubled.to_string());
 
     // Square each number
-    ≔ squared = numbers |τ{. * .};
+    ≔ squared = numbers |τ{_ * _};
     println("Squared: " ++ squared.to_string());
 
     // Add 10 to each
-    ≔ added = numbers |τ{. + 10};
+    ≔ added = numbers |τ{_ + 10};
     println("Added 10: " ++ added.to_string());
 
     // Chain transforms
-    ≔ chained = numbers |τ{. * 2} |τ{. + 1};
+    ≔ chained = numbers |τ{_ * 2} |τ{_ + 1};
     println("*2 then +1: " ++ chained.to_string());
 
     0
@@ -243,15 +243,15 @@ rite main() → i64 {
     ≔ numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
     // Keep even numbers
-    ≔ evens = numbers |φ{. % 2 == 0};
+    ≔ evens = numbers |φ{_ % 2 == 0};
     println("Evens: " ++ evens.to_string());
 
     // Keep numbers > 5
-    ≔ big = numbers |φ{. > 5};
+    ≔ big = numbers |φ{_ > 5};
     println("Greater than 5: " ++ big.to_string());
 
     // Keep odd numbers < 8
-    ≔ filtered = numbers |φ{. % 2 != 0} |φ{. < 8};
+    ≔ filtered = numbers |φ{_ % 2 != 0} |φ{_ < 8};
     println("Odd and < 8: " ++ filtered.to_string());
 
     0
@@ -444,12 +444,12 @@ rite main() → i64 {
     println("");
 
     // Step 1: Transform (double each value)
-    ≔ step1 = data |τ{. * 2};
-    println("After τ{. * 2}: " ++ step1.to_string());
+    ≔ step1 = data |τ{_ * 2};
+    println("After τ{_ * 2}: " ++ step1.to_string());
 
     // Step 2: Filter (keep values > 10)
-    ≔ step2 = step1 |φ{. > 10};
-    println("After φ{. > 10}: " ++ step2.to_string());
+    ≔ step2 = step1 |φ{_ > 10};
+    println("After φ{_ > 10}: " ++ step2.to_string());
 
     // Step 3: Sort (σ)
     ≔ step3 = step2 |σ;
@@ -467,8 +467,8 @@ rite main() → i64 {
     // Or all in one pipeline!
     println("");
     println("=== Same as single pipeline ===");
-    ≔ result = data |τ{. * 2} |φ{. > 10} |σ |Σ;
-    println("data|τ{. * 2}|φ{. > 10}|σ|Σ = " ++ result.to_string());
+    ≔ result = data |τ{_ * 2} |φ{_ > 10} |σ |Σ;
+    println("data|τ{_ * 2}|φ{_ > 10}|σ|Σ = " ++ result.to_string());
 
     0
 }`
