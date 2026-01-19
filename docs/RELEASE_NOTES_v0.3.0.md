@@ -5,7 +5,42 @@
 
 ---
 
+## The Headline
+
+**The Sigil website is rendered entirely by Sigil. Zero JavaScript.**
+
+Visit [sigil-lang.com](https://sigil-lang.com) and view source. The entire site - docs, playground, component library - is 5,500+ lines of Sigil compiled to WebAssembly. No React. No JavaScript framework. Just Sigil.
+
+This isn't a demo. It's the production site.
+
+---
+
 ## Highlights
+
+### Qliphoth: React-Inspired Web Framework
+
+A complete web framework written in and for Sigil:
+
+- **40+ components** - Context, ErrorBoundary, Suspense, Memo, Portal, Lazy, Fragment...
+- **25 React-style hooks** - use_state, use_effect, use_memo, use_reducer, use_context...
+- **Signal-based reactivity** - Fine-grained updates without virtual DOM diffing
+- **Evidentiality in state** - `count: i64! = 0` marks state as *known* because it's computed locally
+
+```sigil
+#[component]
+sigil Counter {
+    count: i64! = 0  // Known, computed state
+}
+
+⊢ Counter {
+    rite render(&this) → Element! {
+        div {
+            h1 { "Count: {this.count}" }
+            button[onclick: || this.count += 1] { "+" }
+        }
+    }
+}
+```
 
 ### Browser Playground
 
@@ -13,19 +48,12 @@ Write and run Sigil code directly in your browser - no installation required.
 
 **[playground.sigil-lang.com](https://playground.sigil-lang.com)**
 
+The playground itself is a Sigil application. A Sigil editor, written in Sigil, editing Sigil.
+
 - Full syntax highlighting with morpheme and evidentiality marker support
 - Multiple execution backends (interpreter, JIT, LLVM)
 - Share code via URL
 - Live type checking
-
-### Cross-Platform GUI Library
-
-Build native applications for Linux, macOS, Windows, iOS, Android, and Web from a single Sigil codebase.
-
-- Declarative component model
-- Full accessibility (a11y) support built-in
-- Native performance via LLVM compilation
-- Reactive state management
 
 ### Self-Parsing AST Introspection
 

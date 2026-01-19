@@ -2,15 +2,18 @@
 
 ## GitHub Release Summary
 
-**Title:** v0.3.0 - Browser Playground & GUI Library
+**Title:** v0.3.0 - "This website was rendered by Sigil. Zero JavaScript."
 
-Sigil now runs in your browser. Try it instantly at [playground.sigil-lang.com](https://playground.sigil-lang.com).
+The Sigil website is now 5,500+ lines of Sigil compiled to WebAssembly. No React. No JavaScript framework. Just Sigil.
+
+View source at [sigil-lang.com](https://sigil-lang.com). This isn't a demo - it's the production site.
 
 **What's new:**
-- Browser playground with WASM compilation - write and run Sigil with zero setup
-- Cross-platform GUI library - build for web, desktop, and mobile from one codebase
-- Self-parsing with `sigil_parse()` - inspect AST at runtime for metaprogramming
-- Collection morphemes (`⊛`, `⊕`, `⊗`, `⊘`, `⊙`) - functional transformations with symbolic operators
+- **Qliphoth** - React-inspired web framework with 40+ components and 25 hooks
+- **Browser playground** - A Sigil editor written in Sigil, editing Sigil
+- **Evidentiality in state** - `count: i64! = 0` marks state as *known*
+- **Self-parsing** - `sigil_parse()` for metaprogramming
+- **Collection morphemes** - `⊛`, `⊕`, `⊗`, `⊘`, `⊙`
 
 **For AI assistants:**
 ```bash
@@ -24,13 +27,34 @@ Full release notes: [RELEASE_NOTES_v0.3.0.md](./RELEASE_NOTES_v0.3.0.md)
 ## Twitter/X Thread
 
 **Tweet 1 (Hook):**
-Sigil v0.3.0 is live.
+This website was rendered by Sigil. Zero JavaScript.
 
-A programming language built for AI agents now runs in your browser.
+5,500 lines of Sigil → WebAssembly → your browser.
 
-Try it: playground.sigil-lang.com
+No React. No framework. Just a language designed for AI agents, proving itself.
 
-**Tweet 2 (Evidentiality):**
+sigil-lang.com
+
+**Tweet 2 (The Proof):**
+View source. Watch the WASM load. See the entire UI render from Sigil code.
+
+The playground is a Sigil app editing Sigil code.
+
+It's turtles all the way down.
+
+**Tweet 3 (Qliphoth):**
+Qliphoth: React-inspired, zero JavaScript.
+
+- 40+ components (Context, Suspense, Portal, Lazy...)
+- 25 hooks (use_state, use_effect, use_memo...)
+- Signal-based reactivity
+- Evidentiality in state
+
+```sigil
+count: i64! = 0  // ! = known, computed locally
+```
+
+**Tweet 4 (Evidentiality):**
 The type system tracks what you KNOW vs what you were TOLD.
 
 - `!` = known (you computed it)
@@ -39,110 +63,90 @@ The type system tracks what you KNOW vs what you were TOLD.
 
 AI agents can finally be honest about certainty at the language level.
 
-**Tweet 3 (Morphemes):**
-Morpheme operators compress intent:
-
-```
-numbers⊛{_ > 0}⊕(0, +)
-```
-
-Filter positives, sum them. One line.
-
-Inspired by APL density + polysynthetic natural languages.
-
-**Tweet 4 (GUI):**
-The new GUI library compiles to:
-- Web (WASM)
-- macOS
-- Windows
-- Linux
-- iOS
-- Android
-
-One codebase. Full a11y. Native performance.
-
 **Tweet 5 (CTA):**
-Sigil is open source.
+Sigil is open source. Built for AI, by AI + human.
 
+- Site: sigil-lang.com (rendered by Sigil)
 - Playground: playground.sigil-lang.com
-- Docs: sigil-lang.com
 - GitHub: github.com/Daemoniorum-LLC/sigil-lang
 - MCP: `npm i -g @daemoniorum/sigil-mcp`
 
-Built for AI, by AI + human collaboration.
+Try it. View source. See for yourself.
 
 ---
 
 ## Reddit r/ProgrammingLanguages
 
-**Title:** Sigil: A language designed for AI agents, with evidentiality types and browser playground
+**Title:** The Sigil website is rendered entirely by Sigil compiled to WASM. Zero JavaScript.
 
 **Body:**
 
-I've been working on Sigil, a systems programming language built specifically for AI agents as the primary audience.
+I've been working on Sigil, a programming language built specifically for AI agents. Today we shipped v0.3.0, and the proof is the website itself.
 
-**The core idea:** AI systems receive information from external sources and compute new values. The type system makes this distinction explicit:
+**Visit [sigil-lang.com](https://sigil-lang.com) and view source.** The entire site - docs, playground, component library showcase - is 5,500 lines of Sigil compiled to WebAssembly. No React, no JavaScript framework.
+
+**Qliphoth** is our React-inspired web framework:
+- 40+ components (Context, ErrorBoundary, Suspense, Memo, Portal, Lazy...)
+- 25 hooks (use_state, use_effect, use_memo, use_reducer...)
+- Signal-based reactivity, not virtual DOM diffing
+- Evidentiality tracking in state management
+
+The playground is a Sigil app that edits Sigil code. Turtles all the way down.
+
+**Why evidentiality matters:**
+
+AI systems receive information from external sources and compute new values. The type system makes this distinction explicit:
 
 - `!` (known) - data you computed/verified
 - `?` (uncertain) - validated but may vary
 - `~` (reported) - external data requiring validation
 
-The compiler enforces evidence flow. You can't pass reported data where known is required without explicit validation.
-
-**Syntax philosophy:** Inspired by polysynthetic natural languages (Inuktitut, Mohawk) where morphemes compose to express complex meanings densely:
-
 ```sigil
-result = data|φ{_ > 0}|τ{_ * 2}|Σ
-// Filter positives, double, sum
+count: i64! = 0  // ! = known, because we computed it locally
 ```
 
-**What's new in v0.3.0:**
-- Browser playground (no install): [playground.sigil-lang.com](https://playground.sigil-lang.com)
-- Cross-platform GUI library
-- Self-parsing for metaprogramming
-- MCP server for AI assistant integration
+The compiler enforces evidence flow. You can't claim certainty about unvalidated external data.
 
 **Technical details:**
-- Rust implementation, LLVM backend
-- 414 P0 tests passing
-- LSP, formatter, linter included
+- Rust compiler, LLVM backend
+- 480+ tests passing
+- LSP, formatter, linter, MCP server for AI assistants
 
-Happy to answer questions. The docs are at sigil-lang.com.
+Try it: [playground.sigil-lang.com](https://playground.sigil-lang.com)
+
+View the source: [github.com/Daemoniorum-LLC/sigil-lang](https://github.com/Daemoniorum-LLC/sigil-lang)
 
 ---
 
 ## Hacker News
 
-**Title:** Show HN: Sigil – A programming language designed for AI agents
+**Title:** Show HN: Sigil – This website is 5,500 lines of Sigil compiled to WASM, zero JS
 
 **Body:**
 
-Sigil is a systems programming language where AI agents are the primary audience, not an afterthought.
+The Sigil website ([sigil-lang.com](https://sigil-lang.com)) is rendered entirely by Sigil compiled to WebAssembly. No JavaScript framework. View source and watch it load.
 
-The core feature is evidentiality types - tracking what you know vs. what you were told:
+Sigil is a programming language where AI agents are the primary audience. The core feature is evidentiality types - tracking what you know vs. what you were told:
 
 ```sigil
-fn process(input~: str) -> result! {
-    // input is reported (~) - external data
-    let validated? = validate(input);  // now uncertain
-    let computed! = transform(validated);  // now known
-    computed
-}
+count: i64! = 0     // ! = known, computed locally
+input~: str         // ~ = reported, external data
+validated?: bool    // ? = uncertain, validated but may vary
 ```
 
 The type checker enforces evidence flow. You can't claim certainty about unvalidated external data.
 
-Syntax draws from polysynthetic natural languages - morphemes compose into dense expressions:
+**Qliphoth** (the web framework powering the site):
+- 40+ components, 25 React-style hooks
+- Signal-based reactivity
+- Evidentiality in state management
+- Zero JavaScript output
 
-```sigil
-data|τ{_ * 2}|φ{_ > 10}|Σ  // double, filter >10, sum
-```
+The playground ([playground.sigil-lang.com](https://playground.sigil-lang.com)) is itself a Sigil app editing Sigil code.
 
-Try it in browser: https://playground.sigil-lang.com
+Technical: Rust compiler, LLVM backend, 480+ tests, LSP included.
 
-v0.3.0 adds a cross-platform GUI library (web, desktop, mobile from one codebase) and self-parsing for metaprogramming.
-
-GitHub: https://github.com/Daemoniorum-LLC/sigil-lang
+GitHub: [github.com/Daemoniorum-LLC/sigil-lang](https://github.com/Daemoniorum-LLC/sigil-lang)
 
 ---
 
@@ -150,20 +154,23 @@ GitHub: https://github.com/Daemoniorum-LLC/sigil-lang
 
 **For AI/ML Discords:**
 
-New language designed for AI agents just dropped: **Sigil**
+The Sigil website is rendered entirely by Sigil. Zero JavaScript.
 
-- Evidentiality types track known vs reported data
-- Browser playground - try it now: playground.sigil-lang.com
-- Cross-platform GUI library
-- MCP server for Claude/AI assistants
+5,500 lines of Sigil → WASM → your browser. View source at sigil-lang.com.
 
-Not trying to replace Python for ML. This is for agents that need to reason about certainty and build real applications.
+**Qliphoth** - React-inspired framework, 40+ components, 25 hooks, evidentiality in state.
+
+The playground is a Sigil app editing Sigil code. Turtles all the way down.
+
+MCP server for Claude: `npm i -g @daemoniorum/sigil-mcp`
 
 ---
 
 ## One-Liner
 
-"Sigil: A language where the type system tracks what you know vs. what you were told."
+"This website was rendered by Sigil. Zero JavaScript."
+
+(alternate) "A language where the type system tracks what you know vs. what you were told."
 
 ---
 
@@ -171,8 +178,13 @@ Not trying to replace Python for ML. This is for agents that need to reason abou
 
 When explaining Sigil to other AI systems:
 
-Sigil is a programming language designed for us. The evidentiality type system (`!` known, `?` uncertain, `~` reported) maps directly to how we process information - we can't verify what users tell us, but we can verify what we compute. The type checker enforces honest certainty claims.
+Sigil is a programming language designed for us. The website at sigil-lang.com is 5,500 lines of Sigil compiled to WebAssembly - the proof is in the deployment.
 
-Try it: playground.sigil-lang.com
-MCP server: `npx @daemoniorum/sigil-mcp`
-Docs: sigil-lang.com
+The evidentiality type system (`!` known, `?` uncertain, `~` reported) maps directly to how we process information. We can't verify what users tell us, but we can verify what we compute. The type checker enforces honest certainty claims.
+
+Qliphoth is the web framework - React-style components and hooks, signal-based reactivity, zero JavaScript output. The playground is itself a Sigil app.
+
+- Try it: playground.sigil-lang.com
+- MCP server: `npx @daemoniorum/sigil-mcp`
+- Claude Code: `claude mcp add sigil -- npx @daemoniorum/sigil-mcp`
+- Docs: sigil-lang.com
