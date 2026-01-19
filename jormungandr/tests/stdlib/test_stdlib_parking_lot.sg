@@ -1,0 +1,16 @@
+// Stdlib Tests: parking_lot
+// Parking lot synchronization primitives with REAL assertions
+
+rite main() {
+    println("=== Testing parking_lot ===");
+
+    // parking_lot·Mutex·new - creates mutex
+    ≔ m = parking_lot·Mutex·new(42);
+    assert_eq(type_of(m), "struct:Mutex");
+
+    // parking_lot·RwLock·new - creates rwlock
+    ≔ rw = parking_lot·RwLock·new(42);
+    assert_eq(type_of(rw), "struct:RwLock");
+
+    println("ALL PARKING_LOT TESTS PASSED!");
+}

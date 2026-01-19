@@ -602,6 +602,159 @@ fn tensor_shape_from_fields(fields: &HashMap<String, Value>) -> Option<Vec<usize
     }
 }
 
+// ============================================================================
+// AST to Value conversion for sigil_parse (Option D - self-parsing)
+// ============================================================================
+
+use crate::ast::{SourceFile, Item, StructFields, Visibility as AstVisibility};
+use crate::span::Spanned;
+
+/// Convert a SourceFile AST to an inspectable Value
+fn ast_to_value_source_file(sf: &SourceFile) -> Value {
+    let mut fields = HashMap::new();
+
+    // Convert items
+    let items: Vec<Value> = sf.items.iter().map(|item| ast_to_value_item(item)).collect();
+    fields.insert("items".to_string(), Value::Array(Rc::new(RefCell::new(items))));
+    fields.insert("item_count".to_string(), Value::Int(sf.items.len() as i64));
+
+    // Wrap in Result::Ok
+    Value::Variant {
+        enum_name: "Result".to_string(),
+        variant_name: "Ok".to_string(),
+        fields: Some(Rc::new(vec![Value::Struct {
+            name: "SourceFile".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        }])),
+    }
+}
+
+/// Convert a Spanned<Item> to a Value
+fn ast_to_value_item(item: &Spanned<Item>) -> Value {
+    let mut fields = HashMap::new();
+
+    // Add span info
+    fields.insert("start".to_string(), Value::Int(item.span.start as i64));
+    fields.insert("end".to_string(), Value::Int(item.span.end as i64));
+
+    // Add item-specific info
+    match &item.node {
+        Item::Function(f) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("Function".to_string())));
+            fields.insert("name".to_string(), Value::String(Rc::new(f.name.name.clone())));
+            fields.insert("visibility".to_string(), Value::String(Rc::new(visibility_to_string(&f.visibility))));
+            fields.insert("is_async".to_string(), Value::Bool(f.is_async));
+            fields.insert("param_count".to_string(), Value::Int(f.params.len() as i64));
+            fields.insert("has_return_type".to_string(), Value::Bool(f.return_type.is_some()));
+
+            // Parameter info (simplified - just count)
+            let params: Vec<Value> = f.params.iter().map(|p| {
+                let mut pf = HashMap::new();
+                pf.insert("type".to_string(), Value::String(Rc::new(format!("{:?}", p.ty))));
+                Value::Struct { name: "Param".to_string(), fields: Rc::new(RefCell::new(pf)) }
+            }).collect();
+            fields.insert("params".to_string(), Value::Array(Rc::new(RefCell::new(params))));
+        }
+        Item::Struct(s) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("Struct".to_string())));
+            fields.insert("name".to_string(), Value::String(Rc::new(s.name.name.clone())));
+            fields.insert("visibility".to_string(), Value::String(Rc::new(visibility_to_string(&s.visibility))));
+
+            // Handle StructFields enum
+            let (field_count, field_names) = match &s.fields {
+                StructFields::Named(fields_vec) => {
+                    let names: Vec<Value> = fields_vec.iter().map(|f| {
+                        Value::String(Rc::new(f.name.name.clone()))
+                    }).collect();
+                    (fields_vec.len() as i64, names)
+                }
+                StructFields::Tuple(types) => (types.len() as i64, vec![]),
+                StructFields::Unit => (0, vec![]),
+            };
+            fields.insert("field_count".to_string(), Value::Int(field_count));
+            fields.insert("fields".to_string(), Value::Array(Rc::new(RefCell::new(field_names))));
+        }
+        Item::Enum(e) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("Enum".to_string())));
+            fields.insert("name".to_string(), Value::String(Rc::new(e.name.name.clone())));
+            fields.insert("visibility".to_string(), Value::String(Rc::new(visibility_to_string(&e.visibility))));
+            fields.insert("variant_count".to_string(), Value::Int(e.variants.len() as i64));
+
+            // Variant names
+            let variants: Vec<Value> = e.variants.iter().map(|v| {
+                Value::String(Rc::new(v.name.name.clone()))
+            }).collect();
+            fields.insert("variants".to_string(), Value::Array(Rc::new(RefCell::new(variants))));
+        }
+        Item::Trait(t) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("Trait".to_string())));
+            fields.insert("name".to_string(), Value::String(Rc::new(t.name.name.clone())));
+            fields.insert("visibility".to_string(), Value::String(Rc::new(visibility_to_string(&t.visibility))));
+            fields.insert("method_count".to_string(), Value::Int(t.items.len() as i64));
+        }
+        Item::Impl(i) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("Impl".to_string())));
+            if let Some(trait_path) = &i.trait_ {
+                fields.insert("trait_name".to_string(), Value::String(Rc::new(format!("{:?}", trait_path))));
+            }
+            fields.insert("method_count".to_string(), Value::Int(i.items.len() as i64));
+        }
+        Item::TypeAlias(t) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("TypeAlias".to_string())));
+            fields.insert("name".to_string(), Value::String(Rc::new(t.name.name.clone())));
+        }
+        Item::Module(m) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("Module".to_string())));
+            fields.insert("name".to_string(), Value::String(Rc::new(m.name.name.clone())));
+        }
+        Item::Use(u) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("Use".to_string())));
+            fields.insert("path".to_string(), Value::String(Rc::new(format!("{:?}", u.tree))));
+        }
+        Item::Const(c) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("Const".to_string())));
+            fields.insert("name".to_string(), Value::String(Rc::new(c.name.name.clone())));
+        }
+        Item::Static(s) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("Static".to_string())));
+            fields.insert("name".to_string(), Value::String(Rc::new(s.name.name.clone())));
+        }
+        Item::Actor(a) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("Actor".to_string())));
+            fields.insert("name".to_string(), Value::String(Rc::new(a.name.name.clone())));
+        }
+        Item::ExternBlock(_) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("ExternBlock".to_string())));
+        }
+        Item::Macro(m) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("Macro".to_string())));
+            fields.insert("name".to_string(), Value::String(Rc::new(m.name.name.clone())));
+        }
+        Item::MacroInvocation(m) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("MacroInvocation".to_string())));
+            fields.insert("path".to_string(), Value::String(Rc::new(format!("{:?}", m.path))));
+        }
+        Item::Plurality(_) => {
+            fields.insert("kind".to_string(), Value::String(Rc::new("Plurality".to_string())));
+        }
+    }
+
+    Value::Struct {
+        name: "Item".to_string(),
+        fields: Rc::new(RefCell::new(fields)),
+    }
+}
+
+/// Convert Visibility to string
+fn visibility_to_string(vis: &AstVisibility) -> String {
+    match vis {
+        AstVisibility::Private => "private".to_string(),
+        AstVisibility::Public => "public".to_string(),
+        AstVisibility::Crate => "crate".to_string(),
+        AstVisibility::Super => "super".to_string(),
+    }
+}
+
 /// Runtime error codes for structured diagnostics
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeErrorCode {
@@ -2042,6 +2195,99 @@ impl Interpreter {
                 )))
             } else {
                 Err(RuntimeError::new("Byte range out of bounds"))
+            }
+        });
+
+        // ============================================================
+        // Sigil self-parsing built-ins (Option D - eat your own dogfood)
+        // ============================================================
+
+        // sigil_parse - parse Sigil source code and return AST as inspectable Value
+        self.define_builtin("sigil_parse", Some(1), |_, args| {
+            let source = match &args[0] {
+                Value::String(s) => s.to_string(),
+                Value::Ref(r) => {
+                    if let Value::String(s) = &*r.borrow() {
+                        s.to_string()
+                    } else {
+                        return Err(RuntimeError::new("sigil_parse expects string source"));
+                    }
+                }
+                _ => return Err(RuntimeError::new("sigil_parse expects string source")),
+            };
+
+            // Parse using Sigil's own parser
+            let mut parser = crate::Parser::new(&source);
+            match parser.parse_file() {
+                Ok(source_file) => {
+                    // Convert AST to inspectable Value
+                    Ok(ast_to_value_source_file(&source_file))
+                }
+                Err(e) => {
+                    // Return error as Result::Err variant
+                    let mut fields = HashMap::new();
+                    fields.insert("message".to_string(), Value::String(Rc::new(format!("{}", e))));
+                    Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::Struct {
+                            name: "ParseError".to_string(),
+                            fields: Rc::new(RefCell::new(fields)),
+                        }])),
+                    })
+                }
+            }
+        });
+
+        // sigil_parse_file - read and parse a Sigil file
+        self.define_builtin("sigil_parse_file", Some(1), |_, args| {
+            let path = match &args[0] {
+                Value::String(s) => s.to_string(),
+                Value::Ref(r) => {
+                    if let Value::String(s) = &*r.borrow() {
+                        s.to_string()
+                    } else {
+                        return Err(RuntimeError::new("sigil_parse_file expects string path"));
+                    }
+                }
+                _ => return Err(RuntimeError::new("sigil_parse_file expects string path")),
+            };
+
+            // Read file
+            let source = match std::fs::read_to_string(&path) {
+                Ok(s) => s,
+                Err(e) => {
+                    let mut fields = HashMap::new();
+                    fields.insert("message".to_string(), Value::String(Rc::new(format!("IO error: {}", e))));
+                    return Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::Struct {
+                            name: "ParseError".to_string(),
+                            fields: Rc::new(RefCell::new(fields)),
+                        }])),
+                    });
+                }
+            };
+
+            // Parse using Sigil's own parser
+            let mut parser = crate::Parser::new(&source);
+            match parser.parse_file() {
+                Ok(source_file) => {
+                    Ok(ast_to_value_source_file(&source_file))
+                }
+                Err(e) => {
+                    let mut fields = HashMap::new();
+                    fields.insert("message".to_string(), Value::String(Rc::new(format!("{}", e))));
+                    Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::Struct {
+                            name: "ParseError".to_string(),
+                            fields: Rc::new(RefCell::new(fields)),
+                        }])),
+                    })
+                }
             }
         });
 

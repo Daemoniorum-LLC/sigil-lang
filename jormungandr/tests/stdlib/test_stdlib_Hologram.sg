@@ -1,0 +1,16 @@
+// Stdlib Tests: Hologram
+// Hologram type with REAL assertions
+
+rite main() {
+    println("=== Testing Hologram ===");
+
+    // Hologram·new - creates hologram
+    ≔ h = Hologram·new();
+    assert_eq(type_of(h), "struct:Hologram");
+
+    // Hologram·encode - encodes value into hologram
+    ≔ he = Hologram·encode(42);
+    assert_eq(type_of(he), "struct:Hologram");
+
+    println("ALL HOLOGRAM TESTS PASSED!");
+}

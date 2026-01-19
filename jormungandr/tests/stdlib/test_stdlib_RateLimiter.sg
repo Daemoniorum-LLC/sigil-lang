@@ -1,0 +1,12 @@
+// Stdlib Tests: RateLimiter
+// Rate limiter with REAL assertions
+
+rite main() {
+    println("=== Testing RateLimiter ===");
+
+    // RateLimiter·new - creates rate limiter (returns map)
+    ≔ rl = RateLimiter·new();
+    assert_eq(type_of(rl), "map");
+
+    println("ALL RATELIMITER TESTS PASSED!");
+}

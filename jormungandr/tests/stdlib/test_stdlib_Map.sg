@@ -1,0 +1,12 @@
+// Stdlib Tests: Map
+// Map type with REAL assertions
+
+rite main() {
+    println("=== Testing Map ===");
+
+    // Map·new - creates empty map (returns struct:Map)
+    ≔ m = Map·new();
+    assert_eq(type_of(m), "struct:Map");
+
+    println("ALL MAP TESTS PASSED!");
+}

@@ -1,0 +1,12 @@
+// Stdlib Tests: QHCompressed
+// Compressed quantum hypergraph with REAL assertions
+
+rite main() {
+    println("=== Testing QHCompressed ===");
+
+    // QHCompressed·new - creates compressed quantum hypergraph
+    ≔ qhc = QHCompressed·new(42);
+    assert_eq(type_of(qhc), "struct:QHCompressed");
+
+    println("ALL QHCOMPRESSED TESTS PASSED!");
+}

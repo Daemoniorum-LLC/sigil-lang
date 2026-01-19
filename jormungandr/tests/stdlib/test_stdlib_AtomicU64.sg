@@ -1,0 +1,15 @@
+// Stdlib Tests: AtomicU64
+// AtomicU64 type with REAL assertions
+
+rite main() {
+    println("=== Testing AtomicU64 ===");
+
+    // AtomicU64·new - creates atomic u64
+    ≔ a = AtomicU64·new(42);
+    assert_eq(type_of(a), "struct:AtomicU64");
+
+    ≔ a2 = AtomicU64·new(0);
+    assert_eq(type_of(a2), "struct:AtomicU64");
+
+    println("ALL ATOMICU64 TESTS PASSED!");
+}

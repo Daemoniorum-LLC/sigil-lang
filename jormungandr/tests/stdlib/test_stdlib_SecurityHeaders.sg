@@ -1,0 +1,12 @@
+// Stdlib Tests: SecurityHeaders
+// Security headers with REAL assertions
+
+rite main() {
+    println("=== Testing SecurityHeaders ===");
+
+    // SecurityHeaders·new - creates security headers (returns map)
+    ≔ sh = SecurityHeaders·new();
+    assert_eq(type_of(sh), "map");
+
+    println("ALL SECURITYHEADERS TESTS PASSED!");
+}

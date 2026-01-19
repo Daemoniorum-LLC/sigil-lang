@@ -1,0 +1,12 @@
+// Stdlib Tests: Logger
+// Logger type with REAL assertions
+
+rite main() {
+    println("=== Testing Logger ===");
+
+    // Logger·new - creates logger (returns map)
+    ≔ logger = Logger·new();
+    assert_eq(type_of(logger), "map");
+
+    println("ALL LOGGER TESTS PASSED!");
+}

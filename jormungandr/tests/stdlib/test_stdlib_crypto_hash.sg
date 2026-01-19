@@ -1,0 +1,48 @@
+// Stdlib Tests: crypto_hash
+// Cryptographic hash functions with REAL assertions
+
+rite main() {
+    println("=== Testing crypto_hash ===");
+
+    // sha256 - returns 64 char hex string (256 bits)
+    ≔ h256 = sha256("hello");
+    assert_eq(len(h256), 64);
+    // Known hash value for "hello"
+    assert_eq(h256, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+
+    // sha512 - returns 128 char hex string (512 bits)
+    ≔ h512 = sha512("hello");
+    assert_eq(len(h512), 128);
+
+    // sha3_256 - returns 64 char hex string
+    ≔ h3_256 = sha3_256("hello");
+    assert_eq(len(h3_256), 64);
+
+    // sha3_512 - returns 128 char hex string
+    ≔ h3_512 = sha3_512("hello");
+    assert_eq(len(h3_512), 128);
+
+    // blake3 - returns 64 char hex string
+    ≔ b3 = blake3("hello");
+    assert_eq(len(b3), 64);
+
+    // md5 - returns 32 char hex string (128 bits)
+    ≔ md = md5("hello");
+    assert_eq(len(md), 32);
+    assert_eq(md, "5d41402abc4b2a76b9719d911017c592");
+
+    // hmac_sha256 - keyed hash
+    ≔ hmac256 = hmac_sha256("secret_key", "message");
+    assert_eq(len(hmac256), 64);
+
+    // hmac_sha512 - keyed hash
+    ≔ hmac512 = hmac_sha512("secret_key", "message");
+    assert_eq(len(hmac512), 128);
+
+    // Same input produces same hash
+    assert_eq(sha256("test"), sha256("test"));
+    // Different input produces different hash
+    assert_true(sha256("test1") != sha256("test2"));
+
+    println("ALL CRYPTO_HASH TESTS PASSED!");
+}

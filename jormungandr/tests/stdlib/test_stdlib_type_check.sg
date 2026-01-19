@@ -1,0 +1,107 @@
+// Stdlib Tests: type_check
+// Type checking functions with REAL assertions
+
+rite main() {
+    println("=== Testing type_check ===");
+
+    // type_of
+    assert_eq(type_of(42), "int");
+    assert_eq(type_of(3.14), "float");
+    assert_eq(type_of("hi"), "string");
+    assert_eq(type_of(yea), "bool");
+    assert_eq(type_of([1, 2]), "array");
+
+    // is_nan
+    assert_true(is_nan(0.0 / 0.0));
+    assert_false(is_nan(42.0));
+
+    // is_infinite
+    assert_true(is_infinite(1.0 / 0.0));
+    assert_false(is_infinite(42.0));
+
+    // is_finite
+    assert_true(is_finite(42.0));
+    assert_false(is_finite(1.0 / 0.0));
+
+    // is_even
+    assert_true(is_even(42));
+    assert_true(is_even(0));
+    assert_false(is_even(43));
+
+    // is_odd
+    assert_true(is_odd(43));
+    assert_false(is_odd(42));
+
+    // is_prime
+    assert_true(is_prime(7));
+    assert_true(is_prime(2));
+    assert_false(is_prime(4));
+    assert_false(is_prime(1));
+
+    // is_empty
+    assert_true(is_empty(""));
+    assert_true(is_empty([]));
+    assert_false(is_empty("hi"));
+    assert_false(is_empty([1]));
+
+    // is_alpha
+    assert_true(is_alpha("abc"));
+    assert_false(is_alpha("abc123"));
+    assert_false(is_alpha(""));
+
+    // is_digit
+    assert_true(is_digit("123"));
+    assert_false(is_digit("123abc"));
+
+    // is_alnum
+    assert_true(is_alnum("abc123"));
+    assert_false(is_alnum("abc 123"));
+
+    // is_space
+    assert_true(is_space("   "));
+    assert_false(is_space("hi"));
+
+    // is_null - note: () is unit, not null; null comes from Option unwraps
+    // Skipped direct test, but functions like println return null
+    assert_false(is_null(42));
+
+    // is_bool
+    assert_true(is_bool(yea));
+    assert_true(is_bool(nay));
+    assert_false(is_bool(42));
+
+    // is_int
+    assert_true(is_int(42));
+    assert_false(is_int(3.14));
+    assert_false(is_int("42"));
+
+    // is_float
+    assert_true(is_float(3.14));
+    assert_false(is_float(42));
+
+    // is_number
+    assert_true(is_number(42));
+    assert_true(is_number(3.14));
+    assert_false(is_number("42"));
+
+    // is_string
+    assert_true(is_string("hi"));
+    assert_false(is_string(42));
+
+    // is_array
+    assert_true(is_array([1, 2]));
+    assert_false(is_array("hi"));
+
+    // Note: is_positive/is_negative are for sentiment analysis, not numbers
+    // Use sign() for number sign checking
+    assert_eq(sign(42), 1);
+    assert_eq(sign(-42), -1);
+    assert_eq(sign(0), 0);
+
+    // is_fibonacci
+    assert_true(is_fibonacci(8));
+    assert_true(is_fibonacci(13));
+    assert_false(is_fibonacci(4));
+
+    println("ALL TYPE_CHECK TESTS PASSED!");
+}

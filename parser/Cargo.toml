@@ -13,7 +13,7 @@ keywords = ["parser", "compiler", "programming-language", "jit", "ai"]
 categories = ["compilers", "development-tools"]
 
 [features]
-default = ["jit"]
+default = ["jit", "http-client"]
 jit = ["cranelift-codegen", "cranelift-frontend", "cranelift-jit", "cranelift-module", "cranelift-native"]
 llvm = ["inkwell"]
 wasm = ["wasm-encoder"]

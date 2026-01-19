@@ -1,0 +1,12 @@
+// Stdlib Tests: Cors
+// CORS configuration with REAL assertions
+
+rite main() {
+    println("=== Testing Cors ===");
+
+    // Cors·new - creates CORS configuration (returns map)
+    ≔ cors = Cors·new();
+    assert_eq(type_of(cors), "map");
+
+    println("ALL CORS TESTS PASSED!");
+}

@@ -1,0 +1,52 @@
+// Stdlib Tests: math_int
+// Integer math functions with REAL assertions
+
+rite main() {
+    println("=== Testing math_int ===");
+
+    // gcd - greatest common divisor
+    assert_eq(gcd(12, 8), 4);
+    assert_eq(gcd(48, 18), 6);
+    assert_eq(gcd(7, 5), 1);
+    assert_eq(gcd(0, 5), 5);
+
+    // lcm - least common multiple
+    assert_eq(lcm(4, 6), 12);
+    assert_eq(lcm(3, 5), 15);
+    assert_eq(lcm(6, 8), 24);
+
+    // factorial
+    assert_eq(factorial(0), 1);
+    assert_eq(factorial(1), 1);
+    assert_eq(factorial(5), 120);
+    assert_eq(factorial(10), 3628800);
+
+    // fibonacci - returns array of fibonacci sequence
+    ≔ fib10 = fibonacci(10);
+    assert_eq(len(fib10), 10);
+    assert_eq(fib10[0], 0);
+    assert_eq(fib10[1], 1);
+    assert_eq(fib10[9], 34);  // 10th fibonacci number (0-indexed)
+
+    // mod_add - modular addition
+    assert_eq(mod_add(7, 5, 10), 2);
+    assert_eq(mod_add(3, 4, 10), 7);
+
+    // mod_sub - modular subtraction
+    assert_eq(mod_sub(3, 5, 10), 8);
+    assert_eq(mod_sub(7, 3, 10), 4);
+
+    // mod_mul - modular multiplication
+    assert_eq(mod_mul(7, 8, 10), 6);
+    assert_eq(mod_mul(3, 4, 5), 2);
+
+    // mod_pow - modular exponentiation
+    assert_eq(mod_pow(2, 10, 1000), 24);
+    assert_eq(mod_pow(3, 4, 5), 1);
+
+    // mode - statistical mode (most frequent)
+    assert_eq(mode([1, 2, 2, 3]), 2);
+    assert_eq(mode([1, 1, 1, 2, 2]), 1);
+
+    println("ALL MATH_INT TESTS PASSED!");
+}
