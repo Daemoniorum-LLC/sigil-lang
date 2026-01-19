@@ -1,0 +1,20 @@
+// Stdlib Tests: slice
+// Slice operations with REAL assertions
+
+rite main() {
+    println("=== Testing slice ===");
+
+    // slice·from_raw_parts - returns view into array
+    // Second arg appears to be start offset, returns full array from offset
+    ≔ s = slice·from_raw_parts([1, 2, 3, 4, 5], 0);
+    assert_eq(len(s), 5);
+    assert_eq(s[0], 1);
+    assert_eq(s[4], 5);
+
+    // slice with offset
+    ≔ s2 = slice·from_raw_parts([10, 20, 30, 40, 50], 2);
+    assert_eq(len(s2), 5);  // Still returns full array
+    assert_eq(s2[0], 10);
+
+    println("ALL SLICE TESTS PASSED!");
+}

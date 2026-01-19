@@ -604,6 +604,11 @@ fn register_core(interp: &mut Interpreter) {
 
     // Result::Ok - create Ok variant
     define(interp, "Result·Ok", Some(1), |_, args| {
+        // Debug: trace what Result·Ok is wrapping
+        eprintln!("DEBUG Result·Ok wrapping: {:?}", std::mem::discriminant(&args[0]));
+        if let Value::Struct { name, fields } = &args[0] {
+            eprintln!("  Struct: name='{}', fields={:?}", name, fields.borrow().keys().collect::<Vec<_>>());
+        }
         Ok(Value::Variant {
             enum_name: "Result".to_string(),
             variant_name: "Ok".to_string(),
@@ -5579,6 +5584,14 @@ fn register_concurrency(interp: &mut Interpreter) {
         }
     });
 
+    // std::thread::available_parallelism - get number of CPU threads
+    define(interp, "std·thread·available_parallelism", Some(0), |_, _| {
+        let cpus = std::thread::available_parallelism()
+            .map(|n| n.get() as i64)
+            .unwrap_or(1);
+        Ok(Value::Int(cpus))
+    });
+
     // thread_join - placeholder for join semantics
     // In interpreter, actual work is done via channels
     define(interp, "thread_join", Some(1), |_, args| {
@@ -7185,6 +7198,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_read", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_read() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_read() requires string path")),
         };
 
@@ -7198,6 +7218,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_read_bytes", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_read_bytes() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_read_bytes() requires string path")),
         };
 
@@ -7214,6 +7241,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_write", Some(2), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_write() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_write() requires string path")),
         };
         let content = format!("{}", args[1]);
@@ -7228,6 +7262,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_append", Some(2), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_append() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_append() requires string path")),
         };
         let content = format!("{}", args[1]);
@@ -7249,6 +7290,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_exists", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_exists() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_exists() requires string path")),
         };
         Ok(Value::Bool(std::path::Path::new(&path).exists()))
@@ -7258,6 +7306,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_is_file", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_is_file() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_is_file() requires string path")),
         };
         Ok(Value::Bool(std::path::Path::new(&path).is_file()))
@@ -7267,6 +7322,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_is_dir", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_is_dir() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_is_dir() requires string path")),
         };
         Ok(Value::Bool(std::path::Path::new(&path).is_dir()))
@@ -7276,6 +7338,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_mkdir", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_mkdir() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_mkdir() requires string path")),
         };
 
@@ -7289,6 +7358,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_remove", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_remove() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_remove() requires string path")),
         };
 
@@ -7309,6 +7385,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_list", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_list() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_list() requires string path")),
         };
 
@@ -7330,10 +7413,24 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_copy", Some(2), |_, args| {
         let src = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_copy() requires string source path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_copy() requires string source path")),
         };
         let dst = match &args[1] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_copy() requires string destination path"));
+                }
+            }
             _ => {
                 return Err(RuntimeError::new(
                     "fs_copy() requires string destination path",
@@ -7351,10 +7448,24 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_rename", Some(2), |_, args| {
         let src = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_rename() requires string source path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_rename() requires string source path")),
         };
         let dst = match &args[1] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_rename() requires string destination path"));
+                }
+            }
             _ => {
                 return Err(RuntimeError::new(
                     "fs_rename() requires string destination path",
@@ -7372,6 +7483,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "fs_size", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("fs_size() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("fs_size() requires string path")),
         };
 
@@ -7387,10 +7505,19 @@ fn register_fs(interp: &mut Interpreter) {
         for arg in &args {
             match arg {
                 Value::String(s) => path.push(s.as_str()),
+                Value::Ref(r) => {
+                    if let Value::String(s) = &*r.borrow() {
+                        path.push(s.as_str());
+                    }
+                }
                 Value::Array(arr) => {
                     for v in arr.borrow().iter() {
                         if let Value::String(s) = v {
                             path.push(s.as_str());
+                        } else if let Value::Ref(r) = v {
+                            if let Value::String(s) = &*r.borrow() {
+                                path.push(s.as_str());
+                            }
                         }
                     }
                 }
@@ -7404,6 +7531,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "path_parent", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("path_parent() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("path_parent() requires string path")),
         };
 
@@ -7418,6 +7552,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "path_filename", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("path_filename() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("path_filename() requires string path")),
         };
 
@@ -7432,6 +7573,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "path_extension", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("path_extension() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("path_extension() requires string path")),
         };
 

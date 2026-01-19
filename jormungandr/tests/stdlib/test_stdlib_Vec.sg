@@ -1,0 +1,17 @@
+// Stdlib Tests: Vec
+// Vec type with REAL assertions
+
+rite main() {
+    println("=== Testing Vec ===");
+
+    // Vec·new - creates empty vector (returns array)
+    ≔ v = Vec·new();
+    assert_eq(type_of(v), "array");
+    assert_eq(len(v), 0);
+
+    // Vec·with_capacity - creates vector with capacity (returns struct)
+    ≔ v2 = Vec·with_capacity(10);
+    assert_eq(type_of(v2), "struct:Vec");
+
+    println("ALL VEC TESTS PASSED!");
+}

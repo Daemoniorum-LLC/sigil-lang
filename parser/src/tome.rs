@@ -481,24 +481,88 @@ pub fn forge(path: &Path) -> Result<ForgeResult, String> {
         }
     }
 
-    // Find main source file
-    let src_dir = path.join("src");
-    let main_file = if src_dir.join("main.sg").exists() {
-        src_dir.join("main.sg")
-    } else if src_dir.join("main.sigil").exists() {
-        src_dir.join("main.sigil")
-    } else if src_dir.join("lib.sg").exists() {
-        src_dir.join("lib.sg")
-    } else if src_dir.join("lib.sigil").exists() {
-        src_dir.join("lib.sigil")
-    } else {
-        return Err("No main.sg, main.sigil, lib.sg, or lib.sigil found in src/".to_string());
-    };
+    // Check if this is a workspace
+    if let Some(workspace) = &grimoire.workspace {
+        if !workspace.members.is_empty() {
+            return forge_workspace(path, &grimoire, workspace);
+        }
+    }
+
+    // Find main source file for single-tome project
+    let main_file = find_main_source(path)?;
 
     result.main_file = Some(main_file);
     result.tome_name = grimoire.tome.name.clone();
     result.version = grimoire.tome.version.clone();
 
+    Ok(result)
+}
+
+/// Find the main source file in a tome directory
+fn find_main_source(path: &Path) -> Result<PathBuf, String> {
+    let src_dir = path.join("src");
+
+    // Check standard locations
+    for filename in &["main.sg", "main.sigil", "lib.sg", "lib.sigil"] {
+        let file_path = src_dir.join(filename);
+        if file_path.exists() {
+            return Ok(file_path);
+        }
+    }
+
+    Err(format!(
+        "No main.sg, main.sigil, lib.sg, or lib.sigil found in {}/src/",
+        path.display()
+    ))
+}
+
+/// Forge a workspace with multiple member tomes
+fn forge_workspace(
+    workspace_path: &Path,
+    _grimoire: &Grimoire,
+    workspace: &Workspace,
+) -> Result<ForgeResult, String> {
+    let mut result = ForgeResult::default();
+    result.tome_name = "workspace".to_string();
+
+    eprintln!("Forging workspace with {} members...", workspace.members.len());
+
+    for member_path in &workspace.members {
+        let member_full_path = workspace_path.join(member_path);
+
+        // Check if member has a Grimoire.toml
+        let member_grimoire_path = member_full_path.join(GRIMOIRE_TOML);
+        if !member_grimoire_path.exists() {
+            eprintln!("  Skipping {}: no Grimoire.toml found", member_path);
+            continue;
+        }
+
+        // Load and forge the member
+        match Grimoire::load(&member_full_path) {
+            Ok(member_grimoire) => {
+                eprintln!("  Forging {}...", member_grimoire.tome.name);
+
+                // Find the main source file for this member
+                match find_main_source(&member_full_path) {
+                    Ok(main_file) => {
+                        result.artifacts.push(main_file);
+                    }
+                    Err(e) => {
+                        eprintln!("    Warning: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("  Warning: Failed to load {}: {}", member_path, e);
+            }
+        }
+    }
+
+    if result.artifacts.is_empty() {
+        return Err("No buildable members found in workspace".to_string());
+    }
+
+    eprintln!("Found {} buildable members", result.artifacts.len());
     Ok(result)
 }
 
