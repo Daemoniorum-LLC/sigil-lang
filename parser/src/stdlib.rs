@@ -31719,6 +31719,27 @@ mod tests {
     // ========== CORE FUNCTIONS ==========
 
     #[test]
+    fn test_boolean_and_or() {
+        // Simple boolean and (∧ is Sigil's native AND operator)
+        assert!(matches!(
+            eval("rite main() → bool { ⤺ yea ∧ yea; }"),
+            Ok(Value::Bool(true))
+        ));
+
+        // Simple boolean or (∨ is Sigil's native OR operator)
+        assert!(matches!(
+            eval("rite main() → bool { ⤺ nay ∨ yea; }"),
+            Ok(Value::Bool(true))
+        ));
+
+        // Chained ∧
+        assert!(matches!(
+            eval("rite main() → bool { ≔ a = yea; ≔ b = yea; ≔ c = yea; ⤺ a ∧ b ∧ c; }"),
+            Ok(Value::Bool(true))
+        ));
+    }
+
+    #[test]
     fn test_math_functions() {
         assert!(matches!(
             eval("rite main() { ⤺ abs(-5); }"),
@@ -34331,9 +34352,12 @@ mod tests {
                     ≔ diff_y = get(ab, 1) + get(ba, 1);
                     ≔ diff_z = get(ab, 2) + get(ba, 2);
                     ≔ eps = 0.001;
-                    ⤺ eps > abs(diff_x) && eps > abs(diff_y) && eps > abs(diff_z);
+                    ≔ ok_x = eps > abs(diff_x);
+                    ≔ ok_y = eps > abs(diff_y);
+                    ≔ ok_z = eps > abs(diff_z);
+                    ⤺ ok_x ∧ ok_y ∧ ok_z;
                 }}
-            
+
 "#, x1, y1, z1, x2, y2, z2);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
@@ -34372,9 +34396,12 @@ mod tests {
                     ≔ diff_y = abs(get(v, 1) - get(rotated, 1));
                     ≔ diff_z = abs(get(v, 2) - get(rotated, 2));
                     ≔ eps = 0.001;
-                    ⤺ eps > diff_x && eps > diff_y && eps > diff_z;
+                    ≔ ok_x = eps > diff_x;
+                    ≔ ok_y = eps > diff_y;
+                    ≔ ok_z = eps > diff_z;
+                    ⤺ ok_x ∧ ok_y ∧ ok_z;
                 }}
-            
+
 "#, x, y, z);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
@@ -34393,15 +34420,17 @@ mod tests {
                     ≔ q2 = quat_from_axis_angle(axis, {} * 2.0);
                     ≔ q1q1 = quat_mul(q1, q1);
                     ≔ eps = 0.01;
-                    ≔ same = eps > abs(get(q2, 0) - get(q1q1, 0)) &&
-                               eps > abs(get(q2, 1) - get(q1q1, 1)) &&
-                               eps > abs(get(q2, 2) - get(q1q1, 2)) &&
-                               eps > abs(get(q2, 3) - get(q1q1, 3));
-                    ≔ neg_same = eps > abs(get(q2, 0) + get(q1q1, 0)) &&
-                                   eps > abs(get(q2, 1) + get(q1q1, 1)) &&
-                                   eps > abs(get(q2, 2) + get(q1q1, 2)) &&
-                                   eps > abs(get(q2, 3) + get(q1q1, 3));
-                    ⤺ same || neg_same;
+                    ≔ ok0 = eps > abs(get(q2, 0) - get(q1q1, 0));
+                    ≔ ok1 = eps > abs(get(q2, 1) - get(q1q1, 1));
+                    ≔ ok2 = eps > abs(get(q2, 2) - get(q1q1, 2));
+                    ≔ ok3 = eps > abs(get(q2, 3) - get(q1q1, 3));
+                    ≔ same = ok0 ∧ ok1 ∧ ok2 ∧ ok3;
+                    ≔ neg0 = eps > abs(get(q2, 0) + get(q1q1, 0));
+                    ≔ neg1 = eps > abs(get(q2, 1) + get(q1q1, 1));
+                    ≔ neg2 = eps > abs(get(q2, 2) + get(q1q1, 2));
+                    ≔ neg3 = eps > abs(get(q2, 3) + get(q1q1, 3));
+                    ≔ neg_same = neg0 ∧ neg1 ∧ neg2 ∧ neg3;
+                    ⤺ same ∨ neg_same;
                 }}
             
 "#, x, y, z, angle, angle);
@@ -34426,7 +34455,10 @@ mod tests {
                     ≔ diff_y = abs(get(ab_c, 1) - get(a_bc, 1));
                     ≔ diff_z = abs(get(ab_c, 2) - get(a_bc, 2));
                     ≔ eps = 0.001;
-                    ⤺ eps > diff_x && eps > diff_y && eps > diff_z;
+                    ≔ ok_x = eps > diff_x;
+                    ≔ ok_y = eps > diff_y;
+                    ≔ ok_z = eps > diff_z;
+                    ⤺ ok_x ∧ ok_y ∧ ok_z;
                 }}
             
 "#, x1, y1, z1, x2, y2, z2, x3, y3, z3);
@@ -34450,7 +34482,10 @@ mod tests {
                     ≔ diff_y = abs(get(combined, 1) - get(separate, 1));
                     ≔ diff_z = abs(get(combined, 2) - get(separate, 2));
                     ≔ eps = 0.01;
-                    ⤺ eps > diff_x && eps > diff_y && eps > diff_z;
+                    ≔ ok_x = eps > diff_x;
+                    ≔ ok_y = eps > diff_y;
+                    ≔ ok_z = eps > diff_z;
+                    ⤺ ok_x ∧ ok_y ∧ ok_z;
                 }}
             
 "#, x, y, z, s1, s2);
@@ -34541,35 +34576,35 @@ mod tests {
 
         #[test]
         fn test_addition_commutative(a in -1000i64..1000, b in -1000i64..1000) {
-            let code = format!("rite main() {{ return {} + {} == {} + {}; }}", a, b, b, a);
+            let code = format!("rite main() {{ ⤺ {} + {} == {} + {}; }}", a, b, b, a);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
 
         #[test]
         fn test_multiplication_commutative(a in -100i64..100, b in -100i64..100) {
-            let code = format!("rite main() {{ return {} * {} == {} * {}; }}", a, b, b, a);
+            let code = format!("rite main() {{ ⤺ {} * {} == {} * {}; }}", a, b, b, a);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
 
         #[test]
         fn test_addition_identity(a in -1000i64..1000) {
-            let code = format!("rite main() {{ return {} + 0 == {}; }}", a, a);
+            let code = format!("rite main() {{ ⤺ {} + 0 == {}; }}", a, a);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
 
         #[test]
         fn test_multiplication_identity(a in -1000i64..1000) {
-            let code = format!("rite main() {{ return {} * 1 == {}; }}", a, a);
+            let code = format!("rite main() {{ ⤺ {} * 1 == {}; }}", a, a);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
 
         #[test]
         fn test_distributive_property(a in -20i64..20, b in -20i64..20, c in -20i64..20) {
-            let code = format!("rite main() {{ return {} * ({} + {}) == {} * {} + {} * {}; }}", a, b, c, a, b, a, c);
+            let code = format!("rite main() {{ ⤺ {} * ({} + {}) == {} * {} + {} * {}; }}", a, b, c, a, b, a, c);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34625,7 +34660,7 @@ mod tests {
         fn test_sum_equals_manual_sum(elements in prop::collection::vec(-100i64..100, 0..20)) {
             let arr_str = elements.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ");
             let expected_sum: i64 = elements.iter().sum();
-            let code = format!("rite main() {{ return sum([{}]); }}", arr_str);
+            let code = format!("rite main() {{ ⤺ sum([{}]); }}", arr_str);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Int(n)) if n == expected_sum));
         }
