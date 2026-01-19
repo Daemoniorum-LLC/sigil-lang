@@ -15430,7 +15430,7 @@ mod tests {
     }
 
     #[test]
-    rite test_functions() {
+    fn test_functions() {
         let result = run("
             fn double(x: i64) -> i64 { return x * 2; }
             rite main() { return double(21); }

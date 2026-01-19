@@ -29760,7 +29760,7 @@ fn register_agent_vectors(interp: &mut Interpreter) {
             return Err(RuntimeError::new("Vectors must have same dimension"));
         }
 
-        let mut sum_sq = 0.0;
+        let mut sum_sq: f64 = 0.0;
         for (a, b) in vec_a.iter().zip(vec_b.iter()) {
             let a_val = match a {
                 Value::Float(f) => *f,
@@ -29820,7 +29820,7 @@ fn register_agent_vectors(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("vec_normalize requires array")),
         };
 
-        let mut mag = 0.0;
+        let mut mag: f64 = 0.0;
         for v in vec.iter() {
             let val = match v {
                 Value::Float(f) => *f,
@@ -29899,9 +29899,9 @@ fn register_agent_vectors(interp: &mut Interpreter) {
                 continue;
             }
 
-            let mut dot = 0.0;
-            let mut mag_a = 0.0;
-            let mut mag_b = 0.0;
+            let mut dot: f64 = 0.0;
+            let mut mag_a: f64 = 0.0;
+            let mut mag_b: f64 = 0.0;
 
             for (a, b) in query.iter().zip(vec_b.iter()) {
                 let a_val = match a {
@@ -30065,9 +30065,9 @@ fn register_agent_vectors(interp: &mut Interpreter) {
                 continue;
             }
 
-            let mut dot = 0.0;
-            let mut mag_a = 0.0;
-            let mut mag_b = 0.0;
+            let mut dot: f64 = 0.0;
+            let mut mag_a: f64 = 0.0;
+            let mut mag_b: f64 = 0.0;
 
             for (a, b) in query.iter().zip(vec_b.iter()) {
                 let a_val = match a {
@@ -30881,7 +30881,7 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
                     all_satisfied = false;
                 }
 
-                let mut r = HashMap::new();
+                let mut r: HashMap<String, Value> = HashMap::new();
                 r.insert("constraint".to_string(), constraint.clone());
                 r.insert("satisfied".to_string(), Value::Bool(satisfied));
                 results.push(Value::Map(Rc::new(RefCell::new(r))));
