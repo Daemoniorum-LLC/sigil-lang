@@ -1,5 +1,6 @@
 // Stdlib Tests: SecurityHeaders
 // Security headers with REAL assertions
+// TODO: Expand coverage - currently only tests constructor, needs header configuration testing
 
 rite main() {
     println("=== Testing SecurityHeaders ===");

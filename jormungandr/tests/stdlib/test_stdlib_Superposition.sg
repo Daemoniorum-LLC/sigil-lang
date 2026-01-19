@@ -1,5 +1,6 @@
 // Stdlib Tests: Superposition
 // Superposition type with REAL assertions
+// TODO: Expand coverage - currently only tests constructor, needs collapse/observe testing
 
 rite main() {
     println("=== Testing Superposition ===");

@@ -1,5 +1,6 @@
 // Stdlib Tests: Cors
 // CORS configuration with REAL assertions
+// TODO: Expand coverage - currently only tests constructor, needs method testing
 
 rite main() {
     println("=== Testing Cors ===");

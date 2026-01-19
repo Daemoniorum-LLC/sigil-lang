@@ -1,5 +1,6 @@
 // Stdlib Tests: QRegister
 // Quantum register type with REAL assertions
+// TODO: Expand coverage - currently only tests constructor, needs gate/measurement testing
 
 rite main() {
     println("=== Testing QRegister ===");

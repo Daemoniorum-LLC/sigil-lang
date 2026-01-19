@@ -1,5 +1,6 @@
 // Stdlib Tests: Map
 // Map type with REAL assertions
+// TODO: Expand coverage - currently only tests constructor, needs insert/get/remove testing
 
 rite main() {
     println("=== Testing Map ===");

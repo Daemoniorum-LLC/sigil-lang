@@ -1,5 +1,6 @@
 // Stdlib Tests: RateLimiter
 // Rate limiter with REAL assertions
+// TODO: Expand coverage - currently only tests constructor, needs acquire/check testing
 
 rite main() {
     println("=== Testing RateLimiter ===");

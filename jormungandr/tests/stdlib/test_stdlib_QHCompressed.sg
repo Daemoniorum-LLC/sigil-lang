@@ -1,5 +1,6 @@
 // Stdlib Tests: QHCompressed
 // Compressed quantum hypergraph with REAL assertions
+// TODO: Expand coverage - currently only tests constructor, needs quantum operation testing
 
 rite main() {
     println("=== Testing QHCompressed ===");

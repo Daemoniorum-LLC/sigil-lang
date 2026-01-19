@@ -1,5 +1,6 @@
 // Stdlib Tests: Compression
 // Compression type with REAL assertions
+// TODO: Expand coverage - currently only tests constructor, needs compress/decompress testing
 
 rite main() {
     println("=== Testing Compression ===");
