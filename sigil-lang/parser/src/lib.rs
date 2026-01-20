@@ -62,6 +62,11 @@ pub mod stdlib;
 pub mod typeck;
 pub mod tree_sitter_support;
 
+// New v0.4.0 features
+pub mod fmt;
+pub mod lsp;
+pub mod tome;
+
 #[cfg(feature = "jit")]
 pub mod codegen;
 

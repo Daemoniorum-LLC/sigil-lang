@@ -503,6 +503,116 @@ pub mod llvm {
             // sigil_file_write_all(path: ptr, content: ptr) -> i64 (bytes written or -1)
             let file_write_all_type = i64_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
             self.module.add_function("sigil_file_write_all", file_write_all_type, None);
+
+            // SIMD Functions (F32x16)
+            let f32_type = self.context.f32_type();
+
+            // sigil_simd_alloc(num_floats: i64) -> ptr
+            let simd_alloc_type = ptr_type.fn_type(&[i64_type.into()], false);
+            self.module.add_function("sigil_simd_alloc", simd_alloc_type, None);
+
+            // sigil_simd_free(ptr: ptr) -> void
+            let simd_free_type = void_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_simd_free", simd_free_type, None);
+
+            // sigil_simd_splat_f32x16(dest: ptr, value: f32) -> void
+            let simd_splat_type = void_type.fn_type(&[ptr_type.into(), f32_type.into()], false);
+            self.module.add_function("sigil_simd_splat_f32x16", simd_splat_type, None);
+
+            // sigil_simd_load_f32x16(dest: ptr, src: ptr) -> void
+            let simd_load_type = void_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
+            self.module.add_function("sigil_simd_load_f32x16", simd_load_type, None);
+
+            // sigil_simd_store_f32x16(dest: ptr, src: ptr) -> void
+            let simd_store_type = void_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
+            self.module.add_function("sigil_simd_store_f32x16", simd_store_type, None);
+
+            // sigil_simd_add_f32x16(dest: ptr, a: ptr, b: ptr) -> void
+            let simd_binop_type = void_type.fn_type(&[ptr_type.into(), ptr_type.into(), ptr_type.into()], false);
+            self.module.add_function("sigil_simd_add_f32x16", simd_binop_type, None);
+
+            // sigil_simd_sub_f32x16(dest: ptr, a: ptr, b: ptr) -> void
+            self.module.add_function("sigil_simd_sub_f32x16", simd_binop_type, None);
+
+            // sigil_simd_mul_f32x16(dest: ptr, a: ptr, b: ptr) -> void
+            self.module.add_function("sigil_simd_mul_f32x16", simd_binop_type, None);
+
+            // sigil_simd_div_f32x16(dest: ptr, a: ptr, b: ptr) -> void
+            self.module.add_function("sigil_simd_div_f32x16", simd_binop_type, None);
+
+            // sigil_simd_fmadd_f32x16(dest: ptr, a: ptr, b: ptr, c: ptr) -> void
+            let simd_fmadd_type = void_type.fn_type(&[ptr_type.into(), ptr_type.into(), ptr_type.into(), ptr_type.into()], false);
+            self.module.add_function("sigil_simd_fmadd_f32x16", simd_fmadd_type, None);
+
+            // sigil_simd_reduce_add_f32x16(src: ptr) -> f32
+            let simd_reduce_type = f32_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_simd_reduce_add_f32x16", simd_reduce_type, None);
+
+            // sigil_simd_extract_f32x16(src: ptr, index: i64) -> f32
+            let simd_extract_type = f32_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_simd_extract_f32x16", simd_extract_type, None);
+
+            // sigil_simd_dot_f32x16(a: ptr, b: ptr) -> f32
+            let simd_dot_type = f32_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
+            self.module.add_function("sigil_simd_dot_f32x16", simd_dot_type, None);
+
+            // CUDA Functions
+            // sigil_cuda_init() -> i64
+            let cuda_init_type = i64_type.fn_type(&[], false);
+            self.module.add_function("sigil_cuda_init", cuda_init_type, None);
+
+            // sigil_cuda_cleanup() -> void
+            let cuda_cleanup_type = void_type.fn_type(&[], false);
+            self.module.add_function("sigil_cuda_cleanup", cuda_cleanup_type, None);
+
+            // sigil_cuda_get_device_count() -> i64
+            let cuda_device_count_type = i64_type.fn_type(&[], false);
+            self.module.add_function("sigil_cuda_get_device_count", cuda_device_count_type, None);
+
+            // sigil_cuda_malloc(size: i64) -> i64 (device ptr)
+            let cuda_malloc_type = i64_type.fn_type(&[i64_type.into()], false);
+            self.module.add_function("sigil_cuda_malloc", cuda_malloc_type, None);
+
+            // sigil_cuda_free(device_ptr: i64) -> void
+            let cuda_free_type = void_type.fn_type(&[i64_type.into()], false);
+            self.module.add_function("sigil_cuda_free", cuda_free_type, None);
+
+            // sigil_cuda_memcpy_h2d(dst: i64, src: ptr, size: i64) -> i64
+            let cuda_h2d_type = i64_type.fn_type(&[i64_type.into(), ptr_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_cuda_memcpy_h2d", cuda_h2d_type, None);
+
+            // sigil_cuda_memcpy_d2h(dst: ptr, src: i64, size: i64) -> i64
+            let cuda_d2h_type = i64_type.fn_type(&[ptr_type.into(), i64_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_cuda_memcpy_d2h", cuda_d2h_type, None);
+
+            // sigil_cuda_memcpy_d2d(dst: i64, src: i64, size: i64) -> i64
+            let cuda_d2d_type = i64_type.fn_type(&[i64_type.into(), i64_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_cuda_memcpy_d2d", cuda_d2d_type, None);
+
+            // sigil_cuda_sync() -> void
+            let cuda_sync_type = void_type.fn_type(&[], false);
+            self.module.add_function("sigil_cuda_sync", cuda_sync_type, None);
+
+            // sigil_cuda_compile_kernel(cuda_src: ptr, kernel_name: ptr) -> i64 (handle)
+            let cuda_compile_type = i64_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
+            self.module.add_function("sigil_cuda_compile_kernel", cuda_compile_type, None);
+
+            // sigil_cuda_load_ptx(ptx: ptr, kernel_name: ptr) -> i64 (handle)
+            self.module.add_function("sigil_cuda_load_ptx", cuda_compile_type, None);
+
+            // sigil_cuda_launch_kernel_1d(handle: i64, grid_x: i64, block_x: i64, args: ptr, num_args: i64) -> i64
+            let cuda_launch_1d_type = i64_type.fn_type(&[
+                i64_type.into(), i64_type.into(), i64_type.into(),
+                ptr_type.into(), i64_type.into()
+            ], false);
+            self.module.add_function("sigil_cuda_launch_kernel_1d", cuda_launch_1d_type, None);
+
+            // sigil_cuda_launch_kernel_2d(handle: i64, gx: i64, gy: i64, bx: i64, by: i64, args: ptr, num_args: i64) -> i64
+            let cuda_launch_2d_type = i64_type.fn_type(&[
+                i64_type.into(), i64_type.into(), i64_type.into(),
+                i64_type.into(), i64_type.into(), ptr_type.into(), i64_type.into()
+            ], false);
+            self.module.add_function("sigil_cuda_launch_kernel_2d", cuda_launch_2d_type, None);
         }
 
         /// Register a struct type in the type registry
