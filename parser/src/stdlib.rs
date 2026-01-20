@@ -7792,6 +7792,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "std·fs·create_dir_all", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("create_dir_all() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("create_dir_all() requires string path")),
         };
         match std::fs::create_dir_all(&path) {
