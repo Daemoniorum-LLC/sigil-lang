@@ -203,9 +203,9 @@ impl<'a> Parser<'a> {
             None => return Err(ParseError::UnexpectedEof),
         };
 
-        // Check for path continuation: attr_name::next_segment::...
+        // Check for path continuation: attr_name::next_segment or attr_name·next_segment
         let mut full_name = first_name;
-        while self.consume_if(&Token::ColonColon) {
+        while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
             let segment = match self.current_token().cloned() {
                 Some(Token::Ident(name)) => {
                     self.advance();
@@ -213,13 +213,14 @@ impl<'a> Parser<'a> {
                 }
                 Some(t) => {
                     return Err(ParseError::UnexpectedToken {
-                        expected: "identifier after ::".to_string(),
+                        expected: "identifier after path separator".to_string(),
                         found: t,
                         span: self.current_span(),
                     })
                 }
                 None => return Err(ParseError::UnexpectedEof),
             };
+            // Normalize to :: for consistency in AST
             full_name = format!("{}::{}", full_name, segment);
         }
 
@@ -3481,15 +3482,15 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse either a type or a lifetime (for trait bounds like `T: Trait + 'static`)
-    /// Also handles HRTB: `for<'de> Deserialize<'de>`
+    /// Also handles HRTB: `∀<'de> Deserialize<'de>` (or `for<'de>`)
     /// Also handles associated type bindings: `Output = Type`
     fn parse_type_or_lifetime(&mut self) -> ParseResult<TypeExpr> {
         if let Some(Token::Lifetime(name)) = self.current_token().cloned() {
             self.advance();
             Ok(TypeExpr::Lifetime(name))
-        } else if self.check(&Token::For) {
-            // Higher-ranked trait bound: for<'a, 'b> Trait<'a, 'b>
-            self.advance(); // consume 'for'
+        } else if self.check(&Token::ForAll) || self.check(&Token::For) {
+            // Higher-ranked trait bound: ∀<'a, 'b> Trait<'a, 'b>
+            self.advance(); // consume '∀' or 'for'
             self.expect(Token::Lt)?; // <
             let mut lifetimes = Vec::new();
             if let Some(Token::Lifetime(lt)) = self.current_token().cloned() {
