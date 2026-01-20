@@ -122,9 +122,8 @@ impl Formatter {
             }
 
             // Adjust indent for closing braces at start of line
-            let starts_with_close = trimmed.starts_with('}')
-                || trimmed.starts_with(')')
-                || trimmed.starts_with(']');
+            let starts_with_close =
+                trimmed.starts_with('}') || trimmed.starts_with(')') || trimmed.starts_with(']');
 
             if starts_with_close && indent_level > 0 {
                 indent_level -= 1;
@@ -433,7 +432,9 @@ pub fn format_directory(
         .filter(|e| {
             let path = e.path();
             path.is_file()
-                && (path.extension().map_or(false, |ext| ext == "sg" || ext == "sigil"))
+                && (path
+                    .extension()
+                    .map_or(false, |ext| ext == "sg" || ext == "sigil"))
         })
     {
         let path = entry.path();

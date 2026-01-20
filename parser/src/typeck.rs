@@ -297,8 +297,11 @@ impl TypeError {
 
     /// Type mismatch error: expected X, found Y
     pub fn type_mismatch(expected: &str, found: &str) -> Self {
-        Self::new(format!("type mismatch: expected `{}`, found `{}`", expected, found))
-            .with_code(TypeErrorCode::TypeMismatch)
+        Self::new(format!(
+            "type mismatch: expected `{}`, found `{}`",
+            expected, found
+        ))
+        .with_code(TypeErrorCode::TypeMismatch)
     }
 
     /// Undefined name error
@@ -309,8 +312,11 @@ impl TypeError {
 
     /// Condition must be boolean error
     pub fn non_bool_condition(context: &str, found: &str) -> Self {
-        Self::new(format!("{} condition must be `bool`, found `{}`", context, found))
-            .with_code(TypeErrorCode::NonBoolCondition)
+        Self::new(format!(
+            "{} condition must be `bool`, found `{}`",
+            context, found
+        ))
+        .with_code(TypeErrorCode::NonBoolCondition)
     }
 
     /// Array elements must have same type
@@ -336,14 +342,16 @@ impl TypeError {
 
     /// Missing match arm
     pub fn missing_match_arm() -> Self {
-        Self::new("match expression has no arms")
-            .with_code(TypeErrorCode::MissingMatchArm)
+        Self::new("match expression has no arms").with_code(TypeErrorCode::MissingMatchArm)
     }
 
     /// Invalid reduction
     pub fn invalid_reduction(op: &str, found: &str) -> Self {
-        Self::new(format!("`{}` requires array or slice, found `{}`", op, found))
-            .with_code(TypeErrorCode::InvalidReduction)
+        Self::new(format!(
+            "`{}` requires array or slice, found `{}`",
+            op, found
+        ))
+        .with_code(TypeErrorCode::InvalidReduction)
     }
 }
 
@@ -1705,7 +1713,10 @@ impl TypeChecker {
                     for elem in &elements[1..] {
                         let t = self.infer_expr(elem);
                         if !self.unify(&elem_ty, &t) {
-                            self.error(TypeError::heterogeneous_array(&format!("{}", elem_ty), &format!("{}", t)));
+                            self.error(TypeError::heterogeneous_array(
+                                &format!("{}", elem_ty),
+                                &format!("{}", t),
+                            ));
                         }
                     }
                     Type::Array {
@@ -1770,7 +1781,10 @@ impl TypeChecker {
             } => {
                 let cond_ty = self.infer_expr(condition);
                 if !self.unify(&Type::Bool, &cond_ty) {
-                    self.error(TypeError::non_bool_condition("while", &format!("{}", cond_ty)));
+                    self.error(TypeError::non_bool_condition(
+                        "while",
+                        &format!("{}", cond_ty),
+                    ));
                 }
                 self.check_block(body);
                 Type::Unit
@@ -1879,7 +1893,10 @@ impl TypeChecker {
                     if let Some(ref guard) = arm.guard {
                         let guard_ty = self.infer_expr(guard);
                         if !self.unify(&Type::Bool, &guard_ty) {
-                            self.error(TypeError::non_bool_condition("match guard", &format!("{}", guard_ty)));
+                            self.error(TypeError::non_bool_condition(
+                                "match guard",
+                                &format!("{}", guard_ty),
+                            ));
                         }
                     }
 
@@ -2239,13 +2256,13 @@ impl TypeChecker {
                 // Numeric type promotion: if either operand is float, result is float
                 match (&left_inner, &right_inner) {
                     // Both floats: use larger precision (f64 > f32)
-                    (Type::Float(l), Type::Float(r)) => {
-                        Type::Float(if matches!(l, FloatSize::F64) || matches!(r, FloatSize::F64) {
+                    (Type::Float(l), Type::Float(r)) => Type::Float(
+                        if matches!(l, FloatSize::F64) || matches!(r, FloatSize::F64) {
                             FloatSize::F64
                         } else {
                             *l
-                        })
-                    }
+                        },
+                    ),
                     // Float + Int: promote to float's size
                     (Type::Float(f), Type::Int(_)) | (Type::Int(_), Type::Float(f)) => {
                         Type::Float(*f)
@@ -2289,12 +2306,16 @@ impl TypeChecker {
             // Logical: bool -> bool
             BinOp::And | BinOp::Or => {
                 if !self.unify(&Type::Bool, &left_inner) {
-                    self.error(TypeError::invalid_operand("&&/||", &format!("{}", left_inner))
-                        .with_note("logical operators require boolean operands"));
+                    self.error(
+                        TypeError::invalid_operand("&&/||", &format!("{}", left_inner))
+                            .with_note("logical operators require boolean operands"),
+                    );
                 }
                 if !self.unify(&Type::Bool, &right_inner) {
-                    self.error(TypeError::invalid_operand("&&/||", &format!("{}", right_inner))
-                        .with_note("logical operators require boolean operands"));
+                    self.error(
+                        TypeError::invalid_operand("&&/||", &format!("{}", right_inner))
+                            .with_note("logical operators require boolean operands"),
+                    );
                 }
                 Type::Bool
             }
@@ -2305,8 +2326,10 @@ impl TypeChecker {
             // String concatenation
             BinOp::Concat => {
                 if !self.unify(&Type::Str, &left_inner) {
-                    self.error(TypeError::invalid_operand("++", &format!("{}", left_inner))
-                        .with_note("string concatenation requires string operands"));
+                    self.error(
+                        TypeError::invalid_operand("++", &format!("{}", left_inner))
+                            .with_note("string concatenation requires string operands"),
+                    );
                 }
                 Type::Str
             }
@@ -2422,7 +2445,10 @@ impl TypeChecker {
                     // For bootstrapping: return fresh type variable when input is unknown
                     self.fresh_var()
                 } else {
-                    self.error(TypeError::invalid_reduction("reduce", &format!("{}", inner)));
+                    self.error(TypeError::invalid_reduction(
+                        "reduce",
+                        &format!("{}", inner),
+                    ));
                     Type::Error
                 }
             }
@@ -2447,7 +2473,10 @@ impl TypeChecker {
                         Type::Int(_) | Type::Float(_) => *element,
                         Type::Var(_) => *element, // For bootstrapping: allow type variables
                         _ => {
-                            self.error(TypeError::invalid_operand("numeric reduction", &format!("{}", element)));
+                            self.error(TypeError::invalid_operand(
+                                "numeric reduction",
+                                &format!("{}", element),
+                            ));
                             Type::Error
                         }
                     }
@@ -2455,7 +2484,10 @@ impl TypeChecker {
                     // For bootstrapping: return fresh type variable when input is unknown
                     self.fresh_var()
                 } else {
-                    self.error(TypeError::invalid_reduction("numeric reduction", &format!("{}", inner)));
+                    self.error(TypeError::invalid_reduction(
+                        "numeric reduction",
+                        &format!("{}", inner),
+                    ));
                     Type::Error
                 }
             }
@@ -2467,8 +2499,13 @@ impl TypeChecker {
                         Type::Array { .. } => *element,
                         Type::Var(_) => self.fresh_var(), // For bootstrapping
                         _ => {
-                            self.error(TypeError::invalid_operand("concat reduction", &format!("{}", element))
-                                .with_note("concat requires strings or arrays"));
+                            self.error(
+                                TypeError::invalid_operand(
+                                    "concat reduction",
+                                    &format!("{}", element),
+                                )
+                                .with_note("concat requires strings or arrays"),
+                            );
                             Type::Error
                         }
                     }
@@ -2476,7 +2513,10 @@ impl TypeChecker {
                     // For bootstrapping: return fresh type variable
                     self.fresh_var()
                 } else {
-                    self.error(TypeError::invalid_reduction("concat reduction", &format!("{}", inner)));
+                    self.error(TypeError::invalid_reduction(
+                        "concat reduction",
+                        &format!("{}", inner),
+                    ));
                     Type::Error
                 }
             }
@@ -2487,8 +2527,13 @@ impl TypeChecker {
                         Type::Bool => Type::Bool,
                         Type::Var(_) => Type::Bool, // For bootstrapping: assume bool
                         _ => {
-                            self.error(TypeError::invalid_operand("boolean reduction", &format!("{}", element))
-                                .with_note("all/any requires array of booleans"));
+                            self.error(
+                                TypeError::invalid_operand(
+                                    "boolean reduction",
+                                    &format!("{}", element),
+                                )
+                                .with_note("all/any requires array of booleans"),
+                            );
                             Type::Error
                         }
                     }
@@ -2496,7 +2541,10 @@ impl TypeChecker {
                     // For bootstrapping: return bool
                     Type::Bool
                 } else {
-                    self.error(TypeError::invalid_reduction("boolean reduction", &format!("{}", inner)));
+                    self.error(TypeError::invalid_reduction(
+                        "boolean reduction",
+                        &format!("{}", inner),
+                    ));
                     Type::Error
                 }
             }
@@ -3251,8 +3299,18 @@ impl TypeChecker {
     fn is_reference_coercion(expected: &Type, actual: &Type) -> bool {
         match (expected, actual) {
             // &mut T can coerce to &T (but not vice versa)
-            (Type::Ref { inner: exp_inner, mutable: false, .. },
-             Type::Ref { inner: act_inner, mutable: true, .. }) => {
+            (
+                Type::Ref {
+                    inner: exp_inner,
+                    mutable: false,
+                    ..
+                },
+                Type::Ref {
+                    inner: act_inner,
+                    mutable: true,
+                    ..
+                },
+            ) => {
                 // Inner types must match (handling evidential wrappers)
                 Self::types_match(exp_inner.as_ref(), act_inner.as_ref())
             }
@@ -3272,8 +3330,18 @@ impl TypeChecker {
     fn is_deref_coercion(expected: &Type, actual: &Type) -> bool {
         match (expected, actual) {
             // Reference coercions with mutability consistency
-            (Type::Ref { inner: exp_inner, mutable: exp_mut, .. },
-             Type::Ref { inner: act_inner, mutable: act_mut, .. }) => {
+            (
+                Type::Ref {
+                    inner: exp_inner,
+                    mutable: exp_mut,
+                    ..
+                },
+                Type::Ref {
+                    inner: act_inner,
+                    mutable: act_mut,
+                    ..
+                },
+            ) => {
                 // For deref coercion, mutability must be consistent:
                 // &T → &T (ok), &mut T → &mut T (ok), &mut T → &T (ok, handled by is_reference_coercion)
                 // But &T → &mut T is NOT allowed
@@ -3325,18 +3393,46 @@ impl TypeChecker {
     fn is_string_coercion(expected: &Type, actual: &Type) -> bool {
         match (expected, actual) {
             // str → String (via to_string())
-            (Type::Named { name, generics }, Type::Str) if name == "String" && generics.is_empty() => true,
+            (Type::Named { name, generics }, Type::Str)
+                if name == "String" && generics.is_empty() =>
+            {
+                true
+            }
             // String → str (via deref)
-            (Type::Str, Type::Named { name, generics }) if name == "String" && generics.is_empty() => true,
+            (Type::Str, Type::Named { name, generics })
+                if name == "String" && generics.is_empty() =>
+            {
+                true
+            }
             // &str → String
-            (Type::Named { name, generics }, Type::Ref { inner, mutable: false, .. })
-                if name == "String" && generics.is_empty() && matches!(inner.as_ref(), Type::Str) => true,
+            (
+                Type::Named { name, generics },
+                Type::Ref {
+                    inner,
+                    mutable: false,
+                    ..
+                },
+            ) if name == "String" && generics.is_empty() && matches!(inner.as_ref(), Type::Str) => {
+                true
+            }
             // String → &str (via deref coercion)
-            (Type::Ref { inner, mutable: false, .. }, Type::Named { name, generics })
-                if matches!(inner.as_ref(), Type::Str) && name == "String" && generics.is_empty() => true,
+            (
+                Type::Ref {
+                    inner,
+                    mutable: false,
+                    ..
+                },
+                Type::Named { name, generics },
+            ) if matches!(inner.as_ref(), Type::Str) && name == "String" && generics.is_empty() => {
+                true
+            }
             // Handle through evidential wrappers
-            (Type::Evidential { inner: exp, .. }, actual) => Self::is_string_coercion(exp.as_ref(), actual),
-            (expected, Type::Evidential { inner: act, .. }) => Self::is_string_coercion(expected, act.as_ref()),
+            (Type::Evidential { inner: exp, .. }, actual) => {
+                Self::is_string_coercion(exp.as_ref(), actual)
+            }
+            (expected, Type::Evidential { inner: act, .. }) => {
+                Self::is_string_coercion(expected, act.as_ref())
+            }
             _ => false,
         }
     }

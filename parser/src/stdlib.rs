@@ -605,9 +605,16 @@ fn register_core(interp: &mut Interpreter) {
     // Result::Ok - create Ok variant
     define(interp, "Result·Ok", Some(1), |_, args| {
         // Debug: trace what Result·Ok is wrapping
-        eprintln!("DEBUG Result·Ok wrapping: {:?}", std::mem::discriminant(&args[0]));
+        eprintln!(
+            "DEBUG Result·Ok wrapping: {:?}",
+            std::mem::discriminant(&args[0])
+        );
         if let Value::Struct { name, fields } = &args[0] {
-            eprintln!("  Struct: name='{}', fields={:?}", name, fields.borrow().keys().collect::<Vec<_>>());
+            eprintln!(
+                "  Struct: name='{}', fields={:?}",
+                name,
+                fields.borrow().keys().collect::<Vec<_>>()
+            );
         }
         Ok(Value::Variant {
             enum_name: "Result".to_string(),
@@ -5585,12 +5592,17 @@ fn register_concurrency(interp: &mut Interpreter) {
     });
 
     // std::thread::available_parallelism - get number of CPU threads
-    define(interp, "std·thread·available_parallelism", Some(0), |_, _| {
-        let cpus = std::thread::available_parallelism()
-            .map(|n| n.get() as i64)
-            .unwrap_or(1);
-        Ok(Value::Int(cpus))
-    });
+    define(
+        interp,
+        "std·thread·available_parallelism",
+        Some(0),
+        |_, _| {
+            let cpus = std::thread::available_parallelism()
+                .map(|n| n.get() as i64)
+                .unwrap_or(1);
+            Ok(Value::Int(cpus))
+        },
+    );
 
     // thread_join - placeholder for join semantics
     // In interpreter, actual work is done via channels
@@ -7428,7 +7440,9 @@ fn register_fs(interp: &mut Interpreter) {
                 if let Value::String(s) = &*r.borrow() {
                     s.to_string()
                 } else {
-                    return Err(RuntimeError::new("fs_copy() requires string destination path"));
+                    return Err(RuntimeError::new(
+                        "fs_copy() requires string destination path",
+                    ));
                 }
             }
             _ => {
@@ -7463,7 +7477,9 @@ fn register_fs(interp: &mut Interpreter) {
                 if let Value::String(s) = &*r.borrow() {
                     s.to_string()
                 } else {
-                    return Err(RuntimeError::new("fs_rename() requires string destination path"));
+                    return Err(RuntimeError::new(
+                        "fs_rename() requires string destination path",
+                    ));
                 }
             }
             _ => {
@@ -13724,14 +13740,23 @@ fn register_tensor(interp: &mut Interpreter) {
     define(interp, "zeros", Some(0), |interp, _| {
         let mut fields = std::collections::HashMap::new();
         // Get shape from type annotation or use default
-        let shape_dims: Vec<i64> = interp.type_context.tensor_shape.borrow()
+        let shape_dims: Vec<i64> = interp
+            .type_context
+            .tensor_shape
+            .borrow()
             .clone()
             .unwrap_or_else(|| vec![3, 4]);
         let shape: Vec<Value> = shape_dims.iter().map(|&d| Value::Int(d)).collect();
         let size: usize = shape_dims.iter().map(|&d| d as usize).product();
         let data: Vec<Value> = vec![Value::Float(0.0); size];
-        fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape))));
-        fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(data))));
+        fields.insert(
+            "shape".to_string(),
+            Value::Array(Rc::new(RefCell::new(shape))),
+        );
+        fields.insert(
+            "data".to_string(),
+            Value::Array(Rc::new(RefCell::new(data))),
+        );
         fields.insert("requires_grad".to_string(), Value::Bool(false));
         Ok(Value::Struct {
             name: "Tensor".to_string(),
@@ -13744,14 +13769,23 @@ fn register_tensor(interp: &mut Interpreter) {
     define(interp, "ones", Some(0), |interp, _| {
         let mut fields = std::collections::HashMap::new();
         // Get shape from type annotation or use default
-        let shape_dims: Vec<i64> = interp.type_context.tensor_shape.borrow()
+        let shape_dims: Vec<i64> = interp
+            .type_context
+            .tensor_shape
+            .borrow()
             .clone()
             .unwrap_or_else(|| vec![2, 3]);
         let shape: Vec<Value> = shape_dims.iter().map(|&d| Value::Int(d)).collect();
         let size: usize = shape_dims.iter().map(|&d| d as usize).product();
         let data: Vec<Value> = vec![Value::Float(1.0); size];
-        fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape))));
-        fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(data))));
+        fields.insert(
+            "shape".to_string(),
+            Value::Array(Rc::new(RefCell::new(shape))),
+        );
+        fields.insert(
+            "data".to_string(),
+            Value::Array(Rc::new(RefCell::new(data))),
+        );
         fields.insert("requires_grad".to_string(), Value::Bool(false));
         Ok(Value::Struct {
             name: "Tensor".to_string(),
@@ -13768,23 +13802,34 @@ fn register_tensor(interp: &mut Interpreter) {
 
         let mut fields = std::collections::HashMap::new();
         // Get shape from type annotation or use default [2, 3]
-        let shape_dims: Vec<i64> = interp.type_context.tensor_shape.borrow()
+        let shape_dims: Vec<i64> = interp
+            .type_context
+            .tensor_shape
+            .borrow()
             .clone()
             .unwrap_or_else(|| vec![2, 3]);
         let shape: Vec<Value> = shape_dims.iter().map(|&d| Value::Int(d)).collect();
         let size: usize = shape_dims.iter().map(|&d| d as usize).product();
 
         // Generate standard normal values using Box-Muller transform
-        let data: Vec<Value> = (0..size).map(|_| {
-            // Box-Muller: generate two uniform values, produce one normal value
-            let u1: f64 = rng.gen_range(1e-10..1.0); // Avoid log(0)
-            let u2: f64 = rng.gen_range(0.0..1.0);
-            let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
-            Value::Float(z)
-        }).collect();
+        let data: Vec<Value> = (0..size)
+            .map(|_| {
+                // Box-Muller: generate two uniform values, produce one normal value
+                let u1: f64 = rng.gen_range(1e-10..1.0); // Avoid log(0)
+                let u2: f64 = rng.gen_range(0.0..1.0);
+                let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+                Value::Float(z)
+            })
+            .collect();
 
-        fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape))));
-        fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(data))));
+        fields.insert(
+            "shape".to_string(),
+            Value::Array(Rc::new(RefCell::new(shape))),
+        );
+        fields.insert(
+            "data".to_string(),
+            Value::Array(Rc::new(RefCell::new(data))),
+        );
         fields.insert("requires_grad".to_string(), Value::Bool(false));
         Ok(Value::Struct {
             name: "Tensor".to_string(),
@@ -13797,8 +13842,14 @@ fn register_tensor(interp: &mut Interpreter) {
         match &args[0] {
             Value::Float(f) => {
                 let mut fields = std::collections::HashMap::new();
-                fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
-                fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::Float(*f)]))));
+                fields.insert(
+                    "shape".to_string(),
+                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                );
+                fields.insert(
+                    "data".to_string(),
+                    Value::Array(Rc::new(RefCell::new(vec![Value::Float(*f)]))),
+                );
                 fields.insert("requires_grad".to_string(), Value::Bool(false));
                 fields.insert("_value".to_string(), Value::Float(*f));
                 Ok(Value::Struct {
@@ -13808,8 +13859,14 @@ fn register_tensor(interp: &mut Interpreter) {
             }
             Value::Int(n) => {
                 let mut fields = std::collections::HashMap::new();
-                fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
-                fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::Float(*n as f64)]))));
+                fields.insert(
+                    "shape".to_string(),
+                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                );
+                fields.insert(
+                    "data".to_string(),
+                    Value::Array(Rc::new(RefCell::new(vec![Value::Float(*n as f64)]))),
+                );
                 fields.insert("requires_grad".to_string(), Value::Bool(false));
                 fields.insert("_value".to_string(), Value::Float(*n as f64));
                 Ok(Value::Struct {
@@ -13857,15 +13914,23 @@ fn register_tensor(interp: &mut Interpreter) {
                 }
 
                 let mut fields = std::collections::HashMap::new();
-                fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape))));
-                fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(data))));
+                fields.insert(
+                    "shape".to_string(),
+                    Value::Array(Rc::new(RefCell::new(shape))),
+                );
+                fields.insert(
+                    "data".to_string(),
+                    Value::Array(Rc::new(RefCell::new(data))),
+                );
                 fields.insert("requires_grad".to_string(), Value::Bool(false));
                 Ok(Value::Struct {
                     name: "Tensor".to_string(),
                     fields: Rc::new(RefCell::new(fields)),
                 })
             }
-            _ => Err(RuntimeError::new("Tensor::from() requires numeric value or array")),
+            _ => Err(RuntimeError::new(
+                "Tensor::from() requires numeric value or array",
+            )),
         }
     });
 
@@ -21291,7 +21356,10 @@ fn register_sketch(interp: &mut Interpreter) {
         // Create a verifiable data struct with value 42
         let mut fields = std::collections::HashMap::new();
         fields.insert("value".to_string(), Value::Int(42));
-        fields.insert("hash".to_string(), Value::String(Rc::new("abc123".to_string())));
+        fields.insert(
+            "hash".to_string(),
+            Value::String(Rc::new("abc123".to_string())),
+        );
         fields.insert("_verified".to_string(), Value::Bool(false));
 
         let data = Value::Struct {
@@ -21404,8 +21472,20 @@ fn register_sketch(interp: &mut Interpreter) {
     // Cbit - classical bit (result of measurement)
     define(interp, "Cbit·new", Some(1), |_, args| {
         let value = match &args[0] {
-            Value::Int(n) => if *n == 0 { 0 } else { 1 },
-            Value::Bool(b) => if *b { 1 } else { 0 },
+            Value::Int(n) => {
+                if *n == 0 {
+                    0
+                } else {
+                    1
+                }
+            }
+            Value::Bool(b) => {
+                if *b {
+                    1
+                } else {
+                    0
+                }
+            }
             _ => return Err(RuntimeError::new("Cbit::new() requires int or bool")),
         };
         Ok(Value::Int(value))
@@ -21502,15 +21582,16 @@ fn register_sketch(interp: &mut Interpreter) {
     // State vector has 2^N complex amplitudes for each basis state
     define(interp, "QRegister·zeros", Some(0), |interp, _| {
         // Get the size from expected_struct_generics (e.g., QRegister<3> -> size=3)
-        let size = if let Some((name, generics)) = interp.type_context.struct_generics.borrow().clone() {
-            if name == "QRegister" && !generics.is_empty() {
-                generics[0] as usize
+        let size =
+            if let Some((name, generics)) = interp.type_context.struct_generics.borrow().clone() {
+                if name == "QRegister" && !generics.is_empty() {
+                    generics[0] as usize
+                } else {
+                    1
+                }
             } else {
                 1
-            }
-        } else {
-            1
-        };
+            };
 
         // Create state vector: |00...0⟩ state (first basis state has amplitude 1, rest 0)
         let dim = 1 << size; // 2^N
@@ -21519,7 +21600,10 @@ fn register_sketch(interp: &mut Interpreter) {
 
         let mut fields = std::collections::HashMap::new();
         fields.insert("_size".to_string(), Value::Int(size as i64));
-        fields.insert("_state".to_string(), Value::Array(Rc::new(RefCell::new(state))));
+        fields.insert(
+            "_state".to_string(),
+            Value::Array(Rc::new(RefCell::new(state))),
+        );
 
         Ok(Value::Struct {
             name: "QRegister".to_string(),
@@ -21534,7 +21618,10 @@ fn register_sketch(interp: &mut Interpreter) {
         let mut fields = std::collections::HashMap::new();
         fields.insert("value".to_string(), args[0].clone());
         fields.insert("_is_superposition".to_string(), Value::Bool(false));
-        fields.insert("_amplitudes".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::Float(1.0)]))));
+        fields.insert(
+            "_amplitudes".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![Value::Float(1.0)]))),
+        );
         Ok(Value::Struct {
             name: "QHState".to_string(),
             fields: Rc::new(RefCell::new(fields)),
@@ -21552,9 +21639,15 @@ fn register_sketch(interp: &mut Interpreter) {
         let amplitudes: Vec<Value> = (0..n).map(|_| Value::Float(amplitude)).collect();
 
         let mut fields = std::collections::HashMap::new();
-        fields.insert("value".to_string(), Value::Array(Rc::new(RefCell::new(values))));
+        fields.insert(
+            "value".to_string(),
+            Value::Array(Rc::new(RefCell::new(values))),
+        );
         fields.insert("_is_superposition".to_string(), Value::Bool(true));
-        fields.insert("_amplitudes".to_string(), Value::Array(Rc::new(RefCell::new(amplitudes))));
+        fields.insert(
+            "_amplitudes".to_string(),
+            Value::Array(Rc::new(RefCell::new(amplitudes))),
+        );
         Ok(Value::Struct {
             name: "QHState".to_string(),
             fields: Rc::new(RefCell::new(fields)),
@@ -21566,7 +21659,10 @@ fn register_sketch(interp: &mut Interpreter) {
         let mut fields = std::collections::HashMap::new();
         fields.insert("value".to_string(), args[0].clone());
         fields.insert("_is_superposition".to_string(), Value::Bool(false));
-        fields.insert("_amplitudes".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::Float(1.0)]))));
+        fields.insert(
+            "_amplitudes".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![Value::Float(1.0)]))),
+        );
         fields.insert("_encoded".to_string(), Value::Bool(true));
         Ok(Value::Struct {
             name: "QHState".to_string(),
@@ -21580,7 +21676,10 @@ fn register_sketch(interp: &mut Interpreter) {
         fields.insert("value".to_string(), args[0].clone());
         fields.insert("_data_shards".to_string(), Value::Int(3));
         fields.insert("_parity_shards".to_string(), Value::Int(2));
-        fields.insert("shards".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+        fields.insert(
+            "shards".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![]))),
+        );
         Ok(Value::Struct {
             name: "Hologram".to_string(),
             fields: Rc::new(RefCell::new(fields)),
@@ -21598,8 +21697,14 @@ fn register_sketch(interp: &mut Interpreter) {
         let amplitudes: Vec<Value> = (0..n).map(|_| Value::Float(amplitude)).collect();
 
         let mut fields = std::collections::HashMap::new();
-        fields.insert("states".to_string(), Value::Array(Rc::new(RefCell::new(values))));
-        fields.insert("_amplitudes".to_string(), Value::Array(Rc::new(RefCell::new(amplitudes))));
+        fields.insert(
+            "states".to_string(),
+            Value::Array(Rc::new(RefCell::new(values))),
+        );
+        fields.insert(
+            "_amplitudes".to_string(),
+            Value::Array(Rc::new(RefCell::new(amplitudes))),
+        );
         Ok(Value::Struct {
             name: "Superposition".to_string(),
             fields: Rc::new(RefCell::new(fields)),
@@ -21632,11 +21737,17 @@ fn register_sketch(interp: &mut Interpreter) {
     // bell_state() - Create a Bell state (maximally entangled pair)
     define(interp, "bell_state", Some(0), |_, _| {
         let mut fields_a = std::collections::HashMap::new();
-        fields_a.insert("_state".to_string(), Value::String(Rc::new("bell".to_string())));
+        fields_a.insert(
+            "_state".to_string(),
+            Value::String(Rc::new("bell".to_string())),
+        );
         fields_a.insert("_is_pure".to_string(), Value::Bool(true));
 
         let mut fields_b = std::collections::HashMap::new();
-        fields_b.insert("_state".to_string(), Value::String(Rc::new("bell".to_string())));
+        fields_b.insert(
+            "_state".to_string(),
+            Value::String(Rc::new("bell".to_string())),
+        );
         fields_b.insert("_is_pure".to_string(), Value::Bool(true));
 
         let a = Value::Struct {
@@ -21661,11 +21772,17 @@ fn register_sketch(interp: &mut Interpreter) {
     // create_epr_pair() - Create Einstein-Podolsky-Rosen pair for teleportation
     define(interp, "create_epr_pair", Some(0), |_, _| {
         let mut fields_alice = std::collections::HashMap::new();
-        fields_alice.insert("_role".to_string(), Value::String(Rc::new("alice".to_string())));
+        fields_alice.insert(
+            "_role".to_string(),
+            Value::String(Rc::new("alice".to_string())),
+        );
         fields_alice.insert("_entangled".to_string(), Value::Bool(true));
 
         let mut fields_bob = std::collections::HashMap::new();
-        fields_bob.insert("_role".to_string(), Value::String(Rc::new("bob".to_string())));
+        fields_bob.insert(
+            "_role".to_string(),
+            Value::String(Rc::new("bob".to_string())),
+        );
         fields_bob.insert("_entangled".to_string(), Value::Bool(true));
 
         let alice = Value::Struct {
@@ -21683,9 +21800,15 @@ fn register_sketch(interp: &mut Interpreter) {
     define(interp, "receive_untrusted_shards", Some(0), |_, _| {
         // Return uncertain shards (marked with ~)
         let mut fields = std::collections::HashMap::new();
-        fields.insert("shards".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-            Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4)
-        ]))));
+        fields.insert(
+            "shards".to_string(),
+            Value::Array(Rc::new(RefCell::new(vec![
+                Value::Int(1),
+                Value::Int(2),
+                Value::Int(3),
+                Value::Int(4),
+            ]))),
+        );
         fields.insert("_trusted".to_string(), Value::Bool(false));
         Ok(Value::Struct {
             name: "UntrustedShards".to_string(),
@@ -21699,36 +21822,33 @@ fn register_sketch(interp: &mut Interpreter) {
     define(interp, "interfere", Some(2), |_, args| {
         // Extract values from both states
         let values_a: Vec<Value> = match &args[0] {
-            Value::Struct { fields: f, .. } => {
-                match f.borrow().get("value") {
-                    Some(Value::Array(arr)) => arr.borrow().clone(),
-                    Some(v) => vec![v.clone()],
-                    None => vec![],
-                }
-            }
+            Value::Struct { fields: f, .. } => match f.borrow().get("value") {
+                Some(Value::Array(arr)) => arr.borrow().clone(),
+                Some(v) => vec![v.clone()],
+                None => vec![],
+            },
             _ => vec![],
         };
         let values_b: Vec<Value> = match &args[1] {
-            Value::Struct { fields: f, .. } => {
-                match f.borrow().get("value") {
-                    Some(Value::Array(arr)) => arr.borrow().clone(),
-                    Some(v) => vec![v.clone()],
-                    None => vec![],
-                }
-            }
+            Value::Struct { fields: f, .. } => match f.borrow().get("value") {
+                Some(Value::Array(arr)) => arr.borrow().clone(),
+                Some(v) => vec![v.clone()],
+                None => vec![],
+            },
             _ => vec![],
         };
 
         // Find common values (constructive interference)
-        let common: Vec<Value> = values_a.iter()
-            .filter(|a| values_b.iter().any(|b| {
-                match (a, b) {
+        let common: Vec<Value> = values_a
+            .iter()
+            .filter(|a| {
+                values_b.iter().any(|b| match (a, b) {
                     (Value::Int(x), Value::Int(y)) => x == y,
                     (Value::Float(x), Value::Float(y)) => (x - y).abs() < f64::EPSILON,
                     (Value::String(x), Value::String(y)) => x == y,
                     _ => false,
-                }
-            }))
+                })
+            })
             .cloned()
             .collect();
 
@@ -21783,20 +21903,18 @@ fn register_sketch(interp: &mut Interpreter) {
     });
 
     // error_correct(state) - quantum error correction
-    define(interp, "error_correct", Some(1), |_, args| {
-        match &args[0] {
-            Value::Struct { name, fields } => {
-                let mut new_fields = fields.borrow().clone();
-                new_fields.remove("_noisy");
-                new_fields.remove("_noise_rate");
-                new_fields.insert("_corrected".to_string(), Value::Bool(true));
-                Ok(Value::Struct {
-                    name: name.clone(),
-                    fields: Rc::new(RefCell::new(new_fields)),
-                })
-            }
-            _ => Ok(args[0].clone()),
+    define(interp, "error_correct", Some(1), |_, args| match &args[0] {
+        Value::Struct { name, fields } => {
+            let mut new_fields = fields.borrow().clone();
+            new_fields.remove("_noisy");
+            new_fields.remove("_noise_rate");
+            new_fields.insert("_corrected".to_string(), Value::Bool(true));
+            Ok(Value::Struct {
+                name: name.clone(),
+                fields: Rc::new(RefCell::new(new_fields)),
+            })
         }
+        _ => Ok(args[0].clone()),
     });
 
     // quantum_reconstruct(shards) - reconstruct from shards
@@ -21806,7 +21924,11 @@ fn register_sketch(interp: &mut Interpreter) {
                 let fields_ref = fields.borrow();
                 if let Some(Value::Array(shards)) = fields_ref.get("shards") {
                     if let Some(first) = shards.borrow().first() {
-                        if let Value::Struct { fields: shard_fields, .. } = first {
+                        if let Value::Struct {
+                            fields: shard_fields,
+                            ..
+                        } = first
+                        {
                             if let Some(data) = shard_fields.borrow().get("data") {
                                 let mut qh_fields = std::collections::HashMap::new();
                                 qh_fields.insert("value".to_string(), data.clone());
@@ -27344,10 +27466,7 @@ fn register_protocol(interp: &mut Interpreter) {
             Err(e) => {
                 let mut result = std::collections::HashMap::new();
                 result.insert("status".to_string(), Value::Int(0));
-                result.insert(
-                    "error".to_string(),
-                    Value::String(Rc::new(e.to_string())),
-                );
+                result.insert("error".to_string(), Value::String(Rc::new(e.to_string())));
                 Ok(Value::Map(Rc::new(RefCell::new(result))))
             }
         }
@@ -27393,10 +27512,7 @@ fn register_protocol(interp: &mut Interpreter) {
             Err(e) => {
                 let mut result = std::collections::HashMap::new();
                 result.insert("status".to_string(), Value::Int(0));
-                result.insert(
-                    "error".to_string(),
-                    Value::String(Rc::new(e.to_string())),
-                );
+                result.insert("error".to_string(), Value::String(Rc::new(e.to_string())));
                 Ok(Value::Map(Rc::new(RefCell::new(result))))
             }
         }
@@ -27472,10 +27588,7 @@ fn register_protocol(interp: &mut Interpreter) {
             Err(e) => {
                 let mut result = std::collections::HashMap::new();
                 result.insert("status".to_string(), Value::Int(0));
-                result.insert(
-                    "error".to_string(),
-                    Value::String(Rc::new(e.to_string())),
-                );
+                result.insert("error".to_string(), Value::String(Rc::new(e.to_string())));
                 Ok(Value::Map(Rc::new(RefCell::new(result))))
             }
         }
@@ -27545,7 +27658,12 @@ fn register_protocol(interp: &mut Interpreter) {
             "DELETE" => client.delete(&url),
             "PATCH" => client.patch(&url),
             "HEAD" => client.head(&url),
-            _ => return Err(RuntimeError::new(&format!("Unsupported HTTP method: {}", method))),
+            _ => {
+                return Err(RuntimeError::new(&format!(
+                    "Unsupported HTTP method: {}",
+                    method
+                )))
+            }
         };
 
         for (key, value) in headers {
@@ -27582,10 +27700,7 @@ fn register_protocol(interp: &mut Interpreter) {
             Err(e) => {
                 let mut result = std::collections::HashMap::new();
                 result.insert("status".to_string(), Value::Int(0));
-                result.insert(
-                    "error".to_string(),
-                    Value::String(Rc::new(e.to_string())),
-                );
+                result.insert("error".to_string(), Value::String(Rc::new(e.to_string())));
                 Ok(Value::Map(Rc::new(RefCell::new(result))))
             }
         }
@@ -27608,12 +27723,10 @@ fn register_protocol(interp: &mut Interpreter) {
             Ok(response) => {
                 if response.status().is_success() {
                     match response.bytes() {
-                        Ok(bytes) => {
-                            match std::fs::write(&path, &bytes) {
-                                Ok(_) => Ok(Value::Bool(true)),
-                                Err(_) => Ok(Value::Bool(false)),
-                            }
-                        }
+                        Ok(bytes) => match std::fs::write(&path, &bytes) {
+                            Ok(_) => Ok(Value::Bool(true)),
+                            Err(_) => Ok(Value::Bool(false)),
+                        },
                         Err(_) => Ok(Value::Bool(false)),
                     }
                 } else {
@@ -27636,10 +27749,24 @@ fn register_protocol(interp: &mut Interpreter) {
         use std::sync::{Mutex, OnceLock};
 
         // Global WebSocket connection storage
-        static WS_CONNECTIONS: OnceLock<Mutex<std::collections::HashMap<u64, tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>>>> = OnceLock::new();
+        static WS_CONNECTIONS: OnceLock<
+            Mutex<
+                std::collections::HashMap<
+                    u64,
+                    tungstenite::WebSocket<
+                        tungstenite::stream::MaybeTlsStream<std::net::TcpStream>,
+                    >,
+                >,
+            >,
+        > = OnceLock::new();
         static WS_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-        fn get_ws_connections() -> &'static Mutex<std::collections::HashMap<u64, tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>>> {
+        fn get_ws_connections() -> &'static Mutex<
+            std::collections::HashMap<
+                u64,
+                tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
+            >,
+        > {
             WS_CONNECTIONS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
         }
 
@@ -27754,10 +27881,7 @@ fn register_protocol(interp: &mut Interpreter) {
                                         "type".to_string(),
                                         Value::String(Rc::new("text".to_string())),
                                     );
-                                    result.insert(
-                                        "data".to_string(),
-                                        Value::String(Rc::new(text)),
-                                    );
+                                    result.insert("data".to_string(), Value::String(Rc::new(text)));
                                 }
                                 tungstenite::Message::Binary(data) => {
                                     result.insert(
@@ -27826,10 +27950,8 @@ fn register_protocol(interp: &mut Interpreter) {
                                 "type".to_string(),
                                 Value::String(Rc::new("error".to_string())),
                             );
-                            result.insert(
-                                "error".to_string(),
-                                Value::String(Rc::new(e.to_string())),
-                            );
+                            result
+                                .insert("error".to_string(), Value::String(Rc::new(e.to_string())));
                             Ok(Value::Map(Rc::new(RefCell::new(result))))
                         }
                     }
@@ -32166,20 +32288,23 @@ mod tests {
 
     #[test]
     fn test_matrix_transpose() {
-        let result =
-            eval("rite main() { ≔ m = [[1, 2], [3, 4]]; ⤺ len(matrix_transpose(m)); }");
+        let result = eval("rite main() { ≔ m = [[1, 2], [3, 4]]; ⤺ len(matrix_transpose(m)); }");
         assert!(matches!(result, Ok(Value::Int(2))));
     }
 
     #[test]
     fn test_matrix_add() {
-        let result = eval("rite main() { ≔ a = [[1, 2], [3, 4]]; ≔ b = [[1, 1], [1, 1]]; ⤺ matrix_add(a, b); }");
+        let result = eval(
+            "rite main() { ≔ a = [[1, 2], [3, 4]]; ≔ b = [[1, 1], [1, 1]]; ⤺ matrix_add(a, b); }",
+        );
         assert!(matches!(result, Ok(Value::Array(_))));
     }
 
     #[test]
     fn test_matrix_multiply() {
-        let result = eval("rite main() { ≔ a = [[1, 2], [3, 4]]; ≔ b = [[1, 0], [0, 1]]; ⤺ matrix_mul(a, b); }");
+        let result = eval(
+            "rite main() { ≔ a = [[1, 2], [3, 4]]; ≔ b = [[1, 0], [0, 1]]; ⤺ matrix_mul(a, b); }",
+        );
         assert!(matches!(result, Ok(Value::Array(_))));
     }
 
@@ -32838,8 +32963,7 @@ mod tests {
     #[test]
     fn test_shuffle() {
         // shuffle() modifies array in place and returns null
-        let result =
-            eval("rite main() { ≔ arr = [1, 2, 3, 4, 5]; shuffle(arr); ⤺ len(arr); }");
+        let result = eval("rite main() { ≔ arr = [1, 2, 3, 4, 5]; shuffle(arr); ⤺ len(arr); }");
         assert!(
             matches!(result, Ok(Value::Int(5))),
             "shuffle got: {:?}",
@@ -32880,9 +33004,8 @@ mod tests {
 
     #[test]
     fn test_map_keys_values() {
-        let result = eval(
-            r#"rite main() { ≔ m = map_new(); map_set(m, "a", 1); ⤺ len(map_keys(m)); }"#,
-        );
+        let result =
+            eval(r#"rite main() { ≔ m = map_new(); map_set(m, "a", 1); ⤺ len(map_keys(m)); }"#);
         assert!(
             matches!(result, Ok(Value::Int(1))),
             "map_keys got: {:?}",
@@ -32985,8 +33108,7 @@ mod tests {
     #[test]
     fn test_zip_with_add() {
         // ⋈ (bowtie) - zip_with
-        let result =
-            eval(r#"rite main() { ⤺ first(zip_with([1, 2, 3], [10, 20, 30], "add")); }"#);
+        let result = eval(r#"rite main() { ⤺ first(zip_with([1, 2, 3], [10, 20, 30], "add")); }"#);
         assert!(
             matches!(result, Ok(Value::Int(11))),
             "zip_with add got: {:?}",

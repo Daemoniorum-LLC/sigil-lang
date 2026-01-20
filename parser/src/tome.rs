@@ -286,8 +286,7 @@ pub fn conjure(name: &str, path: Option<&Path>) -> Result<PathBuf, String> {
     }
 
     // Create directory structure
-    fs::create_dir_all(&project_path)
-        .map_err(|e| format!("Failed to create directory: {}", e))?;
+    fs::create_dir_all(&project_path).map_err(|e| format!("Failed to create directory: {}", e))?;
     fs::create_dir_all(project_path.join("src"))
         .map_err(|e| format!("Failed to create src directory: {}", e))?;
 
@@ -525,7 +524,10 @@ fn forge_workspace(
     let mut result = ForgeResult::default();
     result.tome_name = "workspace".to_string();
 
-    eprintln!("Forging workspace with {} members...", workspace.members.len());
+    eprintln!(
+        "Forging workspace with {} members...",
+        workspace.members.len()
+    );
 
     for member_path in &workspace.members {
         let member_full_path = workspace_path.join(member_path);
@@ -644,7 +646,10 @@ fn resolve_binding(
 
                 Ok(ResolvedBinding {
                     name: name.to_string(),
-                    version: spec.version.clone().unwrap_or_else(|| "0.0.0-git".to_string()),
+                    version: spec
+                        .version
+                        .clone()
+                        .unwrap_or_else(|| "0.0.0-git".to_string()),
                     path: clone_dir,
                     source: BindingSource::Git {
                         url: git_url.clone(),

@@ -751,12 +751,18 @@ impl<'a> Parser<'a> {
 
     /// Check for self keyword (Token::SelfLower or Token::Xi for ξ)
     pub(crate) fn check_self(&self) -> bool {
-        matches!(self.current_token(), Some(Token::SelfLower) | Some(Token::Xi))
+        matches!(
+            self.current_token(),
+            Some(Token::SelfLower) | Some(Token::Xi)
+        )
     }
 
     /// Check for path separator (Token::ColonColon or Token::MiddleDot for ·)
     pub(crate) fn check_path_sep(&self) -> bool {
-        matches!(self.current_token(), Some(Token::ColonColon) | Some(Token::MiddleDot))
+        matches!(
+            self.current_token(),
+            Some(Token::ColonColon) | Some(Token::MiddleDot)
+        )
     }
 
     /// Consume path separator if present
@@ -1595,9 +1601,11 @@ impl<'a> Parser<'a> {
         let visibility = self.parse_visibility()?;
 
         match self.current_token() {
-            Some(Token::Fn) | Some(Token::Lambda) | Some(Token::Async) | Some(Token::Hourglass) | Some(Token::Unsafe) => {
-                Ok(TraitItem::Function(self.parse_function(visibility)?))
-            }
+            Some(Token::Fn)
+            | Some(Token::Lambda)
+            | Some(Token::Async)
+            | Some(Token::Hourglass)
+            | Some(Token::Unsafe) => Ok(TraitItem::Function(self.parse_function(visibility)?)),
             Some(Token::Type) => {
                 self.advance();
                 let name = self.parse_ident()?;
@@ -1611,10 +1619,12 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Const) => {
                 // Check if this is `const fn` or just `const NAME: TYPE;`
-                if self
-                    .peek_next()
-                    .map(|t| matches!(t, Token::Fn | Token::Lambda | Token::Async | Token::Hourglass))
-                    == Some(true)
+                if self.peek_next().map(|t| {
+                    matches!(
+                        t,
+                        Token::Fn | Token::Lambda | Token::Async | Token::Hourglass
+                    )
+                }) == Some(true)
                 {
                     Ok(TraitItem::Function(self.parse_function(visibility)?))
                 } else {
@@ -1712,16 +1722,22 @@ impl<'a> Parser<'a> {
         let visibility = self.parse_visibility()?;
 
         match self.current_token() {
-            Some(Token::Fn) | Some(Token::Lambda) | Some(Token::Async) | Some(Token::Hourglass) | Some(Token::Unsafe) => Ok(ImplItem::Function(
+            Some(Token::Fn)
+            | Some(Token::Lambda)
+            | Some(Token::Async)
+            | Some(Token::Hourglass)
+            | Some(Token::Unsafe) => Ok(ImplItem::Function(
                 self.parse_function_with_attrs(visibility, outer_attrs)?,
             )),
             Some(Token::Type) => Ok(ImplItem::Type(self.parse_type_alias(visibility)?)),
             Some(Token::Const) => {
                 // Check if this is `const fn` or just `const`
-                if self
-                    .peek_next()
-                    .map(|t| matches!(t, Token::Fn | Token::Lambda | Token::Async | Token::Hourglass))
-                    == Some(true)
+                if self.peek_next().map(|t| {
+                    matches!(
+                        t,
+                        Token::Fn | Token::Lambda | Token::Async | Token::Hourglass
+                    )
+                }) == Some(true)
                 {
                     Ok(ImplItem::Function(
                         self.parse_function_with_attrs(visibility, outer_attrs)?,
@@ -2763,7 +2779,7 @@ impl<'a> Parser<'a> {
                 };
 
                 self.expect_gt()?; // consume >
-                // must have :: or · after >
+                                   // must have :: or · after >
                 if !self.consume_if(&Token::ColonColon) && !self.consume_if(&Token::MiddleDot) {
                     return match &self.current {
                         Some((token, span)) => Err(ParseError::UnexpectedToken {
@@ -2981,7 +2997,11 @@ impl<'a> Parser<'a> {
                 Ok(TypeExpr::InlineEnum { variants })
             }
             // Handle crate::, self::, super:: path prefixes in types
-            Some(Token::Crate) | Some(Token::SelfLower) | Some(Token::Xi) | Some(Token::Super) | Some(Token::IntensityUp) => {
+            Some(Token::Crate)
+            | Some(Token::SelfLower)
+            | Some(Token::Xi)
+            | Some(Token::Super)
+            | Some(Token::IntensityUp) => {
                 let keyword = self.current_token().cloned();
                 let span = self.current_span();
                 self.advance();
@@ -2989,8 +3009,8 @@ impl<'a> Parser<'a> {
                 // Build the first segment from the keyword
                 let keyword_name = match keyword {
                     Some(Token::Crate) => "crate",
-                    Some(Token::SelfLower) | Some(Token::Xi) => "self",  // this or ξ
-                    Some(Token::Super) | Some(Token::IntensityUp) => "super",  // above or ↑
+                    Some(Token::SelfLower) | Some(Token::Xi) => "self", // this or ξ
+                    Some(Token::Super) | Some(Token::IntensityUp) => "super", // above or ↑
                     _ => unreachable!(),
                 };
                 let first_segment = PathSegment {
@@ -3185,13 +3205,13 @@ impl<'a> Parser<'a> {
                             // Check what follows the lowercase identifier
                             match self.peek_n(2) {
                                 Some(Token::As) | Some(Token::Arrow) => false, // [(n as T)] or [(n → T)] cast expression
-                                Some(Token::Plus) => false,     // [(a + b)]
-                                Some(Token::Minus) => false,    // [(a - b)]
-                                Some(Token::Star) => false,     // [(a * b)]
-                                Some(Token::Slash) => false,    // [(a / b)]
-                                Some(Token::Dot) => false,      // [(a.b)]
-                                Some(Token::LBracket) => false, // [(a[i])]
-                                Some(Token::LParen) => false,   // [(f())]
+                                Some(Token::Plus) => false,                    // [(a + b)]
+                                Some(Token::Minus) => false,                   // [(a - b)]
+                                Some(Token::Star) => false,                    // [(a * b)]
+                                Some(Token::Slash) => false,                   // [(a / b)]
+                                Some(Token::Dot) => false,                     // [(a.b)]
+                                Some(Token::LBracket) => false,                // [(a[i])]
+                                Some(Token::LParen) => false,                  // [(f())]
                                 Some(Token::RParen) => false, // [(x)] single lowercase var - expression
                                 Some(Token::Comma) => true, // [(a, b)] could be tuple type, try it
                                 _ => false,                 // Default to expression (index)
@@ -3230,20 +3250,20 @@ impl<'a> Parser<'a> {
                 // *expr - dereference (not a type)
                 // Look at what follows * to distinguish
                 match self.peek_n(1) {
-                    Some(Token::Const) => true, // *const T - pointer type
-                    Some(Token::Mut) | Some(Token::Delta) => true,   // *mut/*Δ T - pointer type
-                    _ => false,                 // *expr - dereference, not a type
+                    Some(Token::Const) => true,                    // *const T - pointer type
+                    Some(Token::Mut) | Some(Token::Delta) => true, // *mut/*Δ T - pointer type
+                    _ => false, // *expr - dereference, not a type
                 }
             }
-            Some(Token::LBracket) => true,    // [T] - slices
-            Some(Token::LParen) => true,      // () - tuple types including unit
-            Some(Token::Fn) => true,          // fn() - function types
-            Some(Token::Simd) => true,        // simd<T, N>
-            Some(Token::Atomic) => true,      // atomic<T>
-            Some(Token::Dyn) => true,         // dyn Trait - trait objects
-            Some(Token::Impl) => true,        // impl Trait - existential types
-            Some(Token::SelfUpper) => true,   // This is a type
-            Some(Token::Crate) => true,       // crate::Type - path starting with crate
+            Some(Token::LBracket) => true,  // [T] - slices
+            Some(Token::LParen) => true,    // () - tuple types including unit
+            Some(Token::Fn) => true,        // fn() - function types
+            Some(Token::Simd) => true,      // simd<T, N>
+            Some(Token::Atomic) => true,    // atomic<T>
+            Some(Token::Dyn) => true,       // dyn Trait - trait objects
+            Some(Token::Impl) => true,      // impl Trait - existential types
+            Some(Token::SelfUpper) => true, // This is a type
+            Some(Token::Crate) => true,     // crate::Type - path starting with crate
             Some(Token::Super) | Some(Token::IntensityUp) => true, // above/↑ - path starting with super
             Some(Token::Lifetime(_)) => true, // 'a, 'static - lifetime type args
             Some(Token::Underscore) => true,  // _ - inferred type
@@ -3315,7 +3335,9 @@ impl<'a> Parser<'a> {
             }
             Some(Token::FloatLit(_)) => false,
             Some(Token::StringLit(_)) => false,
-            Some(Token::True) | Some(Token::False) | Some(Token::Top) | Some(Token::Bottom) => false, // yea/nay/⊤/⊥
+            Some(Token::True) | Some(Token::False) | Some(Token::Top) | Some(Token::Bottom) => {
+                false
+            } // yea/nay/⊤/⊥
             Some(Token::Null) => false,
             _ => false, // Default to not parsing as generics if uncertain
         }
@@ -3368,21 +3390,44 @@ impl<'a> Parser<'a> {
             Some(Token::Body) => true,        // |body{...}
             Some(Token::Interrobang) => true, // |‽
             // Holographic operators
-            Some(Token::Lozenge) => true,     // |◊ or |◊method - possibility
-            Some(Token::BoxSymbol) => true,   // |□ or |□method - necessity
+            Some(Token::Lozenge) => true, // |◊ or |◊method - possibility
+            Some(Token::BoxSymbol) => true, // |□ or |□method - necessity
             // Identifier could be pipe method: |collect, |take, etc.
             // But identifiers NOT followed by `(` or `{` are likely bitwise OR operands
             Some(Token::Ident(name)) => {
                 // Some pipe methods don't require parentheses
                 let no_args_pipe_methods = [
-                    "collect", "observe", "len", "first", "last", "reverse",
-                    "iter", "into_iter", "enumerate", "sum", "product",
-                    "min", "max", "count", "flatten", "unique",
+                    "collect",
+                    "observe",
+                    "len",
+                    "first",
+                    "last",
+                    "reverse",
+                    "iter",
+                    "into_iter",
+                    "enumerate",
+                    "sum",
+                    "product",
+                    "min",
+                    "max",
+                    "count",
+                    "flatten",
+                    "unique",
                     // Quantum gates
-                    "H", "X", "Y", "Z", "S", "T", "measure",
-                    "H_all", "measure_all",
+                    "H",
+                    "X",
+                    "Y",
+                    "Z",
+                    "S",
+                    "T",
+                    "measure",
+                    "H_all",
+                    "measure_all",
                     // Neural network activations and tensor operations
-                    "relu", "softmax", "reshape", "backward",
+                    "relu",
+                    "softmax",
+                    "reshape",
+                    "backward",
                 ];
                 if no_args_pipe_methods.contains(&name.as_str()) {
                     return true;
@@ -3802,8 +3847,8 @@ impl<'a> Parser<'a> {
             let op = match self.current_token() {
                 // Bitwise OR - only reached if not a pipe operation
                 Some(Token::Pipe) => BinOp::BitOr,
-                Some(Token::OrOr) | Some(Token::LogicOr) => BinOp::Or,  // || or ∨
-                Some(Token::AndAnd) | Some(Token::LogicAnd) => BinOp::And,  // && or ∧
+                Some(Token::OrOr) | Some(Token::LogicOr) => BinOp::Or, // || or ∨
+                Some(Token::AndAnd) | Some(Token::LogicAnd) => BinOp::And, // && or ∧
                 Some(Token::EqEq) => BinOp::Eq,
                 Some(Token::NotEq) => BinOp::Ne,
                 Some(Token::Lt) => BinOp::Lt,
@@ -3982,7 +4027,9 @@ impl<'a> Parser<'a> {
                 self.parse_pipe_closure_with_move(true)
             }
             // Pipe-style closure: |params| body or || body or ∨ body
-            Some(Token::Pipe) | Some(Token::OrOr) | Some(Token::LogicOr) => self.parse_pipe_closure_with_move(false),
+            Some(Token::Pipe) | Some(Token::OrOr) | Some(Token::LogicOr) => {
+                self.parse_pipe_closure_with_move(false)
+            }
             _ => self.parse_postfix_expr(),
         }
     }
@@ -5714,8 +5761,8 @@ impl<'a> Parser<'a> {
             match &next {
                 // These indicate a pipe target (function call, closure, morpheme)
                 Token::Ident(_) => true,
-                Token::SelfLower | Token::Xi => true,  // this/ξ
-                Token::SelfUpper => true,  // This
+                Token::SelfLower | Token::Xi => true, // this/ξ
+                Token::SelfUpper => true,             // This
                 // Morpheme operators (τ, φ, σ, ρ, Π, Σ, etc.)
                 Token::Tau
                 | Token::Phi
@@ -6758,8 +6805,10 @@ impl<'a> Parser<'a> {
                 if self.check(&Token::Let) {
                     stmts.push(self.parse_let_stmt()?);
                 } else if self.check(&Token::Return)
-                    || self.check(&Token::Break) || self.check(&Token::Tensor)
-                    || self.check(&Token::Continue) || self.check(&Token::CycleArrow)
+                    || self.check(&Token::Break)
+                    || self.check(&Token::Tensor)
+                    || self.check(&Token::Continue)
+                    || self.check(&Token::CycleArrow)
                 {
                     // Control flow - treat as final expression
                     break;
@@ -7403,7 +7452,11 @@ impl<'a> Parser<'a> {
                 return Ok(Pattern::Path(path));
             }
             // Handle crate::, self::, super:: path patterns
-            Some(Token::Crate) | Some(Token::SelfLower) | Some(Token::Xi) | Some(Token::Super) | Some(Token::IntensityUp) => {
+            Some(Token::Crate)
+            | Some(Token::SelfLower)
+            | Some(Token::Xi)
+            | Some(Token::Super)
+            | Some(Token::IntensityUp) => {
                 let keyword = self.current_token().cloned();
                 let span = self.current_span();
                 self.advance();
@@ -7431,8 +7484,8 @@ impl<'a> Parser<'a> {
                 // Build the path starting with crate/self/super
                 let keyword_name = match keyword {
                     Some(Token::Crate) => "crate",
-                    Some(Token::SelfLower) | Some(Token::Xi) => "self",  // this or ξ
-                    Some(Token::Super) | Some(Token::IntensityUp) => "super",  // above or ↑
+                    Some(Token::SelfLower) | Some(Token::Xi) => "self", // this or ξ
+                    Some(Token::Super) | Some(Token::IntensityUp) => "super", // above or ↑
                     _ => unreachable!(),
                 };
                 let mut segments = vec![PathSegment {

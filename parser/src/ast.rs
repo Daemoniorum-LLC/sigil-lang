@@ -1601,10 +1601,7 @@ pub enum PipeOp {
     /// Possibility method call: `|◊method` or `|◊method(args)`
     /// Calls method with possibility semantics (returns approximate result)
     /// Example: `hll|◊count` -> approximate cardinality
-    PossibilityMethod {
-        name: Ident,
-        args: Vec<Expr>,
-    },
+    PossibilityMethod { name: Ident, args: Vec<Expr> },
 
     /// Necessity verification: `|□` - verify and promote to certain
     /// Validates data meets requirements, promotes evidence level
@@ -1615,10 +1612,7 @@ pub enum PipeOp {
     /// Necessity method call: `|□method` or `|□method(args)`
     /// Calls method with necessity semantics (verifies and promotes evidence)
     /// Example: `node~|□verify` -> verified with ! evidentiality
-    NecessityMethod {
-        name: Ident,
-        args: Vec<Expr>,
-    },
+    NecessityMethod { name: Ident, args: Vec<Expr> },
 }
 
 /// Incorporation segment.

@@ -430,10 +430,10 @@ pub enum Token {
 
     // Boolean literals
     // Note: ⊤/⊥ handled by Token::Top/Bottom - parser is context-aware
-    #[token("yea")]   // yea for true (Sigil-native)
-    #[token("true")]  // true for compatibility
+    #[token("yea")] // yea for true (Sigil-native)
+    #[token("true")] // true for compatibility
     True,
-    #[token("nay")]   // nay for false (Sigil-native)
+    #[token("nay")] // nay for false (Sigil-native)
     #[token("false")] // false for compatibility
     False,
 
