@@ -2159,6 +2159,15 @@ impl TypeChecker {
                 }
             }
 
+            // If-let pattern: `⎇ ≔ Some(x) = expr { ... }`
+            // The Let expression itself evaluates to bool (whether pattern matched)
+            Expr::Let { pattern: _, value } => {
+                // Infer the value type for binding purposes
+                let _ = self.infer_expr(value);
+                // The let-pattern expression returns bool
+                Type::Bool
+            }
+
             _ => {
                 // Handle other expression types
                 self.fresh_var()
