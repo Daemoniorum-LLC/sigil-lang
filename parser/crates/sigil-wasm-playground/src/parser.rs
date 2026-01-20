@@ -19,6 +19,22 @@ pub enum Expr {
     StructLit { name: String, fields: Vec<(String, Expr)> },
     Array(Vec<Expr>),
     Index { expr: Box<Expr>, index: Box<Expr> },
+    // Morpheme operations
+    Morpheme { op: MorphOp, expr: Box<Expr>, closure: Option<Box<Expr>> },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum MorphOp {
+    Tau,    // τ - transform/map
+    Phi,    // φ - filter
+    Sigma,  // Σ - sum
+    Pi,     // Π - product
+    Mu,     // μ - mean
+    Alpha,  // α - first
+    Omega,  // ω - last
+    Lambda, // λ - length
+    Sort,   // σ - sort
+    Rho,    // ρ - reduce
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +56,8 @@ pub enum BinOp {
     Add, Sub, Mul, Div, Mod,
     Eq, NotEq, Lt, LtEq, Gt, GtEq,
     And, Or,
+    Concat, // ++ string concatenation
+    Assign, // = variable reassignment
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -49,7 +67,7 @@ pub enum UnaryOp {
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    Let { name: String, ty: Option<String>, value: Expr },
+    Let { name: String, ty: Option<String>, value: Expr, mutable: bool },
     Expr(Expr),
     Return(Option<Expr>),
     While { cond: Expr, body: Expr },
@@ -316,7 +334,30 @@ impl<'a> Parser<'a> {
                     self.advance();
                 }
 
-                Ok(Stmt::Let { name, ty, value })
+                Ok(Stmt::Let { name, ty, value, mutable: false })
+            }
+            Token::Vary => {
+                self.advance();
+                let name = match self.advance() {
+                    Token::Ident(s) => s,
+                    t => return Err(format!("Expected variable name, got {:?}", t)),
+                };
+
+                let ty = if self.check(&Token::Colon) {
+                    self.advance();
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
+
+                self.expect(Token::Eq)?;
+                let value = self.parse_expr()?;
+
+                if self.check(&Token::Semi) {
+                    self.advance();
+                }
+
+                Ok(Stmt::Let { name, ty, value, mutable: true })
             }
             Token::Return => {
                 self.advance();
@@ -352,7 +393,28 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr(&mut self) -> Result<Expr, String> {
-        self.parse_or()
+        self.parse_assignment()
+    }
+
+    fn parse_assignment(&mut self) -> Result<Expr, String> {
+        let expr = self.parse_or()?;
+
+        // Check for assignment: ident = value
+        if self.check(&Token::Eq) {
+            if let Expr::Ident(name) = &expr {
+                self.advance();
+                let value = self.parse_assignment()?;
+                // Treat assignment as a let statement expression that returns null
+                // For now, just handle it as a binary op that updates the variable
+                return Ok(Expr::Binary {
+                    op: BinOp::Assign,
+                    left: Box::new(Expr::Ident(name.clone())),
+                    right: Box::new(value),
+                });
+            }
+        }
+
+        Ok(expr)
     }
 
     fn parse_or(&mut self) -> Result<Expr, String> {
@@ -428,6 +490,7 @@ impl<'a> Parser<'a> {
         loop {
             let op = match &self.current {
                 Token::Plus => BinOp::Add,
+                Token::PlusPlus => BinOp::Concat,
                 Token::Minus => BinOp::Sub,
                 _ => break,
             };
@@ -514,12 +577,76 @@ impl<'a> Parser<'a> {
                     expr: Box::new(expr),
                     index: Box::new(index),
                 };
+            } else if self.check(&Token::Pipe) {
+                // Morpheme pipe: expr |τ{...} or expr |Σ
+                self.advance(); // consume |
+                let (op, closure) = self.parse_morpheme_op()?;
+                expr = Expr::Morpheme {
+                    op,
+                    expr: Box::new(expr),
+                    closure,
+                };
+            } else if self.check(&Token::ColonColon) {
+                // Static method call: Type·method() or Type::method()
+                self.advance();
+                let method = match self.advance() {
+                    Token::Ident(s) => s,
+                    t => return Err(format!("Expected method name, got {:?}", t)),
+                };
+                // Check for call
+                if self.check(&Token::LParen) {
+                    self.advance();
+                    let args = self.parse_args()?;
+                    self.expect(Token::RParen)?;
+                    expr = Expr::Call {
+                        func: Box::new(Expr::FieldAccess {
+                            expr: Box::new(expr),
+                            field: method,
+                        }),
+                        args,
+                    };
+                } else {
+                    expr = Expr::FieldAccess {
+                        expr: Box::new(expr),
+                        field: method,
+                    };
+                }
             } else {
                 break;
             }
         }
 
         Ok(expr)
+    }
+
+    fn parse_morpheme_op(&mut self) -> Result<(MorphOp, Option<Box<Expr>>), String> {
+        let op = match &self.current {
+            Token::MorphTau => MorphOp::Tau,
+            Token::MorphPhi => MorphOp::Phi,
+            Token::MorphSigma => MorphOp::Sigma,
+            Token::MorphPi => MorphOp::Pi,
+            Token::MorphMu => MorphOp::Mu,
+            Token::MorphAlpha => MorphOp::Alpha,
+            Token::MorphOmega => MorphOp::Omega,
+            Token::MorphLambda => MorphOp::Lambda,
+            Token::MorphSort => MorphOp::Sort,
+            Token::MorphRho => MorphOp::Rho,
+            t => return Err(format!("Expected morpheme operator, got {:?}", t)),
+        };
+        self.advance();
+
+        // Check for closure: {_ * 2}
+        let closure = if self.check(&Token::LBrace) {
+            self.advance();
+            // Parse closure body - a simple expression using _ as placeholder
+            let body = self.parse_expr()?;
+            self.expect(Token::RBrace)?;
+            Some(Box::new(body))
+        } else {
+            None
+        };
+
+        Ok((op, closure))
     }
 
     fn parse_args(&mut self) -> Result<Vec<Expr>, String> {
@@ -542,6 +669,7 @@ impl<'a> Parser<'a> {
             Token::False => Ok(Expr::Bool(false)),
             Token::Str(s) => Ok(Expr::Str(s)),
             Token::Self_ => Ok(Expr::Ident("self".to_string())),
+            Token::Underscore => Ok(Expr::Ident("_".to_string())),
             Token::Ident(name) => {
                 // Check for struct literal
                 if self.check(&Token::LBrace) {

@@ -1,6 +1,6 @@
 //! Sigil Interpreter - Executes AST
 
-use crate::parser::*;
+use crate::parser::{*, MorphOp, BinOp};
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -175,6 +175,22 @@ impl Interpreter {
         }
     }
 
+    fn update_var(&mut self, name: String, value: Value) -> Result<(), String> {
+        // Search local scopes from innermost to outermost
+        for scope in self.locals.iter_mut().rev() {
+            if scope.contains_key(&name) {
+                scope.insert(name, value);
+                return Ok(());
+            }
+        }
+        // Check globals
+        if self.globals.contains_key(&name) {
+            self.globals.insert(name, value);
+            return Ok(());
+        }
+        Err(format!("Cannot assign to undefined variable: {}", name))
+    }
+
     fn eval_block(&mut self, stmts: &[Stmt]) -> Result<Value, String> {
         let mut result = Value::Null;
         for stmt in stmts {
@@ -188,7 +204,7 @@ impl Interpreter {
 
     fn eval_stmt(&mut self, stmt: &Stmt) -> Result<Value, String> {
         match stmt {
-            Stmt::Let { name, ty: _, value } => {
+            Stmt::Let { name, ty: _, value, mutable: _ } => {
                 let v = self.eval_expr(value)?;
                 self.set_var(name.clone(), v);
                 Ok(Value::Null)
@@ -217,6 +233,15 @@ impl Interpreter {
             }
 
             Expr::Binary { op, left, right } => {
+                // Handle assignment specially
+                if matches!(op, BinOp::Assign) {
+                    if let Expr::Ident(name) = left.as_ref() {
+                        let value = self.eval_expr(right)?;
+                        self.update_var(name.clone(), value.clone())?;
+                        return Ok(value);
+                    }
+                }
+
                 let l = self.eval_expr(left)?;
                 let r = self.eval_expr(right)?;
                 self.eval_binary(*op, l, r)
@@ -235,6 +260,30 @@ impl Interpreter {
             }
 
             Expr::Call { func, args } => {
+                // Check if this is a method call (func is FieldAccess)
+                if let Expr::FieldAccess { expr: receiver_expr, field: method_name } = func.as_ref() {
+                    let receiver = self.eval_expr(receiver_expr)?;
+                    let arg_vals: Result<Vec<Value>, String> = args.iter()
+                        .map(|a| self.eval_expr(a))
+                        .collect();
+                    let arg_vals = arg_vals?;
+
+                    // Check for impl methods first
+                    if let Value::Struct { name: struct_name, .. } = &receiver {
+                        if let Some(method_map) = self.impls.get(struct_name) {
+                            if let Some(method) = method_map.get(method_name) {
+                                // Call the method with self as first arg
+                                let mut full_args = vec![receiver.clone()];
+                                full_args.extend(arg_vals);
+                                return self.call_function(method.clone(), full_args);
+                            }
+                        }
+                    }
+
+                    // Try builtin methods
+                    return self.call_builtin_method(method_name, &receiver, arg_vals);
+                }
+
                 let callee = self.eval_expr(func)?;
                 let arg_vals: Result<Vec<Value>, String> = args.iter()
                     .map(|a| self.eval_expr(a))
@@ -277,12 +326,15 @@ impl Interpreter {
             Expr::FieldAccess { expr, field } => {
                 let val = self.eval_expr(expr)?;
                 match val {
-                    Value::Struct { name: _, fields } => {
+                    Value::Struct { name: _, ref fields } => {
                         fields.get(field)
                             .cloned()
                             .ok_or_else(|| format!("Unknown field: {}", field))
                     }
-                    _ => Err("Cannot access field on non-struct".to_string()),
+                    _ => {
+                        // Check for builtin methods (non-call form like x.sqrt without parens)
+                        self.call_builtin_method(field, &val, vec![])
+                    }
                 }
             }
 
@@ -332,6 +384,188 @@ impl Interpreter {
                     _ => Err("Cannot index non-array".to_string()),
                 }
             }
+
+            Expr::Morpheme { op, expr, closure } => {
+                let val = self.eval_expr(expr)?;
+                self.eval_morpheme(*op, val, closure.as_deref())
+            }
+        }
+    }
+
+    fn eval_morpheme(&mut self, op: MorphOp, value: Value, closure: Option<&Expr>) -> Result<Value, String> {
+        let arr = match value {
+            Value::Array(arr) => arr,
+            _ => return Err("Morpheme operations require an array".to_string()),
+        };
+
+        match op {
+            MorphOp::Tau => {
+                // τ - transform/map: apply closure to each element
+                let closure = closure.ok_or("τ (map) requires a closure")?;
+                let mut results = Vec::new();
+                for item in arr.borrow().iter() {
+                    self.push_scope();
+                    self.set_var("_".to_string(), item.clone());
+                    let result = self.eval_expr(closure)?;
+                    self.pop_scope();
+                    results.push(result);
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(results))))
+            }
+
+            MorphOp::Phi => {
+                // φ - filter: keep elements where closure returns true
+                let closure = closure.ok_or("φ (filter) requires a closure")?;
+                let mut results = Vec::new();
+                for item in arr.borrow().iter() {
+                    self.push_scope();
+                    self.set_var("_".to_string(), item.clone());
+                    let keep = self.eval_expr(closure)?;
+                    self.pop_scope();
+                    if keep.is_truthy() {
+                        results.push(item.clone());
+                    }
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(results))))
+            }
+
+            MorphOp::Sigma => {
+                // Σ - sum: add all elements
+                let borrowed = arr.borrow();
+                let mut sum = 0i64;
+                let mut is_float = false;
+                let mut float_sum = 0.0f64;
+
+                for item in borrowed.iter() {
+                    match item {
+                        Value::Int(n) => {
+                            if is_float {
+                                float_sum += *n as f64;
+                            } else {
+                                sum += n;
+                            }
+                        }
+                        Value::Float(f) => {
+                            if !is_float {
+                                is_float = true;
+                                float_sum = sum as f64;
+                            }
+                            float_sum += f;
+                        }
+                        _ => return Err("Σ (sum) requires numeric elements".to_string()),
+                    }
+                }
+
+                if is_float {
+                    Ok(Value::Float(float_sum))
+                } else {
+                    Ok(Value::Int(sum))
+                }
+            }
+
+            MorphOp::Pi => {
+                // Π - product: multiply all elements
+                let borrowed = arr.borrow();
+                let mut product = 1i64;
+                let mut is_float = false;
+                let mut float_product = 1.0f64;
+
+                for item in borrowed.iter() {
+                    match item {
+                        Value::Int(n) => {
+                            if is_float {
+                                float_product *= *n as f64;
+                            } else {
+                                product *= n;
+                            }
+                        }
+                        Value::Float(f) => {
+                            if !is_float {
+                                is_float = true;
+                                float_product = product as f64;
+                            }
+                            float_product *= f;
+                        }
+                        _ => return Err("Π (product) requires numeric elements".to_string()),
+                    }
+                }
+
+                if is_float {
+                    Ok(Value::Float(float_product))
+                } else {
+                    Ok(Value::Int(product))
+                }
+            }
+
+            MorphOp::Mu => {
+                // μ - mean: average of elements
+                let borrowed = arr.borrow();
+                if borrowed.is_empty() {
+                    return Ok(Value::Float(0.0));
+                }
+
+                let mut sum = 0.0f64;
+                for item in borrowed.iter() {
+                    match item {
+                        Value::Int(n) => sum += *n as f64,
+                        Value::Float(f) => sum += f,
+                        _ => return Err("μ (mean) requires numeric elements".to_string()),
+                    }
+                }
+
+                Ok(Value::Float(sum / borrowed.len() as f64))
+            }
+
+            MorphOp::Alpha => {
+                // α - first: first element
+                arr.borrow().first().cloned()
+                    .ok_or_else(|| "α (first) called on empty array".to_string())
+            }
+
+            MorphOp::Omega => {
+                // ω - last: last element
+                arr.borrow().last().cloned()
+                    .ok_or_else(|| "ω (last) called on empty array".to_string())
+            }
+
+            MorphOp::Lambda => {
+                // λ - length: count of elements
+                Ok(Value::Int(arr.borrow().len() as i64))
+            }
+
+            MorphOp::Sort => {
+                // σ - sort: sort elements (ascending)
+                let mut items: Vec<Value> = arr.borrow().clone();
+                items.sort_by(|a, b| {
+                    match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                        (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+                        (Value::Str(x), Value::Str(y)) => x.cmp(y),
+                        _ => std::cmp::Ordering::Equal,
+                    }
+                });
+                Ok(Value::Array(Rc::new(RefCell::new(items))))
+            }
+
+            MorphOp::Rho => {
+                // ρ - reduce: fold with initial value and closure
+                // Usage: arr |ρ (init, |acc, _| acc + _)
+                let closure = closure.ok_or("ρ (reduce) requires a closure")?;
+                let borrowed = arr.borrow();
+                if borrowed.is_empty() {
+                    return Ok(Value::Null);
+                }
+
+                let mut acc = borrowed[0].clone();
+                for item in borrowed.iter().skip(1) {
+                    self.push_scope();
+                    self.set_var("acc".to_string(), acc);
+                    self.set_var("_".to_string(), item.clone());
+                    acc = self.eval_expr(closure)?;
+                    self.pop_scope();
+                }
+                Ok(acc)
+            }
         }
     }
 
@@ -372,8 +606,14 @@ impl Interpreter {
             (BinOp::Div, Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 / b)),
             (BinOp::Div, Value::Float(a), Value::Int(b)) => Ok(Value::Float(a / *b as f64)),
 
-            // String concatenation
+            // String concatenation (with + for legacy compat)
             (BinOp::Add, Value::Str(a), Value::Str(b)) => Ok(Value::Str(format!("{}{}", a, b))),
+
+            // String concatenation with ++ operator
+            (BinOp::Concat, Value::Str(a), Value::Str(b)) => Ok(Value::Str(format!("{}{}", a, b))),
+            (BinOp::Concat, Value::Str(a), b) => Ok(Value::Str(format!("{}{}", a, b.to_string()))),
+            (BinOp::Concat, a, Value::Str(b)) => Ok(Value::Str(format!("{}{}", a.to_string(), b))),
+            (BinOp::Concat, a, b) => Ok(Value::Str(format!("{}{}", a.to_string(), b.to_string()))),
 
             // Comparisons
             (BinOp::Eq, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a == b)),
@@ -498,6 +738,41 @@ impl Interpreter {
                 }
             }
             _ => Err(format!("Unknown builtin: {}", name)),
+        }
+    }
+
+    fn call_builtin_method(&self, method: &str, receiver: &Value, _args: Vec<Value>) -> Result<Value, String> {
+        match method {
+            "to_string" => Ok(Value::Str(receiver.to_string())),
+            "sqrt" => {
+                match receiver {
+                    Value::Float(f) => Ok(Value::Float(f.sqrt())),
+                    Value::Int(n) => Ok(Value::Float((*n as f64).sqrt())),
+                    _ => Err("sqrt requires a number".to_string()),
+                }
+            }
+            "abs" => {
+                match receiver {
+                    Value::Float(f) => Ok(Value::Float(f.abs())),
+                    Value::Int(n) => Ok(Value::Int(n.abs())),
+                    _ => Err("abs requires a number".to_string()),
+                }
+            }
+            "len" => {
+                match receiver {
+                    Value::Str(s) => Ok(Value::Int(s.len() as i64)),
+                    Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
+                    _ => Err("len requires string or array".to_string()),
+                }
+            }
+            "is_empty" => {
+                match receiver {
+                    Value::Str(s) => Ok(Value::Bool(s.is_empty())),
+                    Value::Array(arr) => Ok(Value::Bool(arr.borrow().is_empty())),
+                    _ => Err("is_empty requires string or array".to_string()),
+                }
+            }
+            _ => Err(format!("Unknown method: {}", method)),
         }
     }
 

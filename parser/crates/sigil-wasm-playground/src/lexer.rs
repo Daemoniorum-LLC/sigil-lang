@@ -12,16 +12,17 @@ pub enum Token {
     Sigil,      // sigil (struct)
     Enum,       // enum or ᛈ (perthro rune)
     Impl,       // impl or ⊢ (turnstile)
-    If,
-    Else,
-    Match,
+    If,         // if or ⎇
+    Else,       // else or ⎉
+    Match,      // match or ⌥
     While,
     For,
     In,
     Return,
-    True,
-    False,
+    True,       // true or yea
+    False,      // false or nay
     Self_,
+    Vary,       // vary (mutable binding)
 
     // Identifiers and literals
     Ident(String),
@@ -31,6 +32,7 @@ pub enum Token {
 
     // Operators
     Plus,
+    PlusPlus,   // ++ string concatenation
     Minus,
     Star,
     Slash,
@@ -42,18 +44,31 @@ pub enum Token {
     LtEq,
     Gt,
     GtEq,
-    And,
-    Or,
-    Not,
+    And,        // && or ∧
+    Or,         // || or ∨
+    Not,        // ! or ¬
     Assign,     // ≔ or let binding
     Arrow,      // → or ->
     FatArrow,   // =>
     Dot,
     Colon,
-    ColonColon,
+    ColonColon, // :: or · (middledot)
     Comma,
     Semi,
     Underscore,
+    Pipe,       // | for morphemes
+
+    // Morpheme operators
+    MorphTau,   // τ - transform/map
+    MorphPhi,   // φ - filter
+    MorphSigma, // Σ - sum
+    MorphPi,    // Π - product
+    MorphMu,    // μ - mean
+    MorphAlpha, // α - first
+    MorphOmega, // ω - last
+    MorphLambda,// λ - length
+    MorphSort,  // σ - sort
+    MorphRho,   // ρ - reduce
 
     // Delimiters
     LParen,
@@ -178,14 +193,41 @@ impl<'a> Lexer<'a> {
         let token = match self.current {
             '\0' => Token::Eof,
 
-            // Unicode operators
+            // Unicode operators - Sigil native syntax
             '→' => { self.advance(); Token::Arrow }
             '≔' => { self.advance(); Token::Assign }
             '⊢' => { self.advance(); Token::Impl }
             'ᛈ' => { self.advance(); Token::Enum }
+            '⎇' => { self.advance(); Token::If }      // Sigil if
+            '⎉' => { self.advance(); Token::Else }    // Sigil else
+            '⌥' => { self.advance(); Token::Match }   // Sigil match
+            '∧' => { self.advance(); Token::And }     // Sigil and
+            '∨' => { self.advance(); Token::Or }      // Sigil or
+            '¬' => { self.advance(); Token::Not }     // Sigil not
+            '·' => { self.advance(); Token::ColonColon } // Middledot for method calls
+
+            // Morpheme operators
+            'τ' => { self.advance(); Token::MorphTau }
+            'φ' => { self.advance(); Token::MorphPhi }
+            'Σ' => { self.advance(); Token::MorphSigma }
+            'Π' => { self.advance(); Token::MorphPi }
+            'μ' => { self.advance(); Token::MorphMu }
+            'α' => { self.advance(); Token::MorphAlpha }
+            'ω' => { self.advance(); Token::MorphOmega }
+            'λ' => { self.advance(); Token::MorphLambda }
+            'σ' => { self.advance(); Token::MorphSort }
+            'ρ' => { self.advance(); Token::MorphRho }
 
             // ASCII operators
-            '+' => { self.advance(); Token::Plus }
+            '+' => {
+                self.advance();
+                if self.current == '+' {
+                    self.advance();
+                    Token::PlusPlus
+                } else {
+                    Token::Plus
+                }
+            }
             '*' => { self.advance(); Token::Star }
             '/' => { self.advance(); Token::Slash }
             '%' => { self.advance(); Token::Percent }
@@ -264,8 +306,10 @@ impl<'a> Lexer<'a> {
                 self.advance();
                 if self.current == '|' {
                     self.advance();
+                    Token::Or
+                } else {
+                    Token::Pipe
                 }
-                Token::Or
             }
 
             ':' => {
@@ -305,10 +349,11 @@ impl<'a> Lexer<'a> {
                     "for" => Token::For,
                     "in" => Token::In,
                     "return" => Token::Return,
-                    "true" => Token::True,
-                    "false" => Token::False,
+                    "true" | "yea" => Token::True,
+                    "false" | "nay" => Token::False,
                     "self" => Token::Self_,
                     "let" => Token::Assign, // let is also binding
+                    "vary" => Token::Vary,  // mutable binding
                     _ => Token::Ident(ident),
                 }
             }
