@@ -1,0 +1,259 @@
+// Test: Qliphoth Header Component
+// TDD: RED - Tests the Header layout component
+//
+// Header is a top navigation bar with branding and navigation
+
+invoke qliphoth·components·Header;
+invoke qliphoth·components·Nav;
+invoke qliphoth·core·VNode;
+
+// Test basic header rendering
+rite test_header_basic() {
+    ≔ header = Header {
+        children: [text("Site content")]
+    };
+
+    ≔ vnode = header.render();
+
+    assert_eq!(vnode.tag(), "header");
+    assert!(vnode.has_class("header"));
+}
+
+// Test header with logo
+rite test_header_with_logo() {
+    ≔ header = Header {
+        logo: "/images/logo.svg",
+        logo_alt: "Company Logo",
+        logo_href: "/",
+        children: []
+    };
+
+    ≔ vnode = header.render();
+
+    // Should have logo container
+    assert!(vnode.has_child_with_class("header-logo"));
+
+    // Logo link should go to home
+    ≔ logo_link = vnode.find_child_by_class("header-logo");
+    assert_eq!(logo_link.attr("href"), "/");
+
+    // Logo image should have alt text
+    ≔ img = logo_link.find_child_by_tag("img");
+    assert_eq!(img.attr("alt"), "Company Logo");
+}
+
+// Test header with text branding
+rite test_header_with_brand() {
+    ≔ header = Header {
+        brand: "Daemoniorum",
+        brand_href: "/",
+        children: []
+    };
+
+    ≔ vnode = header.render();
+
+    ≔ brand = vnode.find_child_by_class("header-brand");
+    assert_eq!(brand.text_content(), "Daemoniorum");
+    assert_eq!(brand.attr("href"), "/");
+}
+
+// Test header variants
+rite test_header_variants() {
+    // Default (solid)
+    ≔ solid = Header { variant: "solid", children: [] };
+    assert!(solid.render().has_class("header-solid"));
+
+    // Transparent
+    ≔ transparent = Header { variant: "transparent", children: [] };
+    assert!(transparent.render().has_class("header-transparent"));
+
+    // Blur (glass effect)
+    ≔ blur = Header { variant: "blur", children: [] };
+    assert!(blur.render().has_class("header-blur"));
+
+    // Bordered
+    ≔ bordered = Header { variant: "bordered", children: [] };
+    assert!(bordered.render().has_class("header-bordered"));
+}
+
+// Test header sizes
+rite test_header_sizes() {
+    ≔ sm = Header { size: "sm", children: [] };
+    assert!(sm.render().has_class("header-sm"));
+
+    ≔ md = Header { size: "md", children: [] };
+    assert!(md.render().has_class("header-md"));
+
+    ≔ lg = Header { size: "lg", children: [] };
+    assert!(lg.render().has_class("header-lg"));
+}
+
+// Test sticky header
+rite test_header_sticky() {
+    ≔ header = Header {
+        sticky: yay,
+        children: []
+    };
+
+    ≔ vnode = header.render();
+    assert!(vnode.has_class("header-sticky"));
+}
+
+// Test header with navigation
+rite test_header_with_nav() {
+    ≔ header = Header {
+        brand: "Company",
+        children: [
+            Nav {
+                items: [
+                    { label: "Home", href: "/" },
+                    { label: "About", href: "/about" },
+                    { label: "Contact", href: "/contact" },
+                ]
+            }
+        ]
+    };
+
+    ≔ vnode = header.render();
+    assert!(vnode.has_child_with_class("header-nav"));
+}
+
+// Test header with actions (right side buttons)
+rite test_header_actions() {
+    ≔ header = Header {
+        brand: "App",
+        actions: [
+            { label: "Sign In", href: "/login" },
+            { label: "Get Started", href: "/signup", variant: "primary" },
+        ],
+        children: []
+    };
+
+    ≔ vnode = header.render();
+    assert!(vnode.has_child_with_class("header-actions"));
+
+    ≔ actions = vnode.find_child_by_class("header-actions");
+    ≔ buttons = actions.children();
+    assert_eq!(buttons.len(), 2);
+}
+
+// Test responsive mobile menu
+rite test_header_mobile() {
+    ≔ header = Header {
+        brand: "Site",
+        mobile_menu: yay,
+        children: [
+            Nav { items: [{ label: "Home", href: "/" }] }
+        ]
+    };
+
+    ≔ vnode = header.render();
+
+    // Should have mobile menu toggle
+    assert!(vnode.has_child_with_class("header-mobile-toggle"));
+
+    // Toggle should have accessible label
+    ≔ toggle = vnode.find_child_by_class("header-mobile-toggle");
+    assert_eq!(toggle.attr("aria-label"), "Toggle navigation menu");
+    assert_eq!(toggle.attr("aria-expanded"), "false");
+}
+
+// Test header with search
+rite test_header_search() {
+    ≔ header = Header {
+        search: yay,
+        search_placeholder: "Search...",
+        onsearch: |query| { },
+        children: []
+    };
+
+    ≔ vnode = header.render();
+    assert!(vnode.has_child_with_class("header-search"));
+
+    ≔ search = vnode.find_child_by_class("header-search");
+    ≔ input = search.find_child_by_tag("input");
+    assert_eq!(input.attr("placeholder"), "Search...");
+}
+
+// Test header positioning
+rite test_header_position() {
+    // Fixed
+    ≔ fixed = Header { position: "fixed", children: [] };
+    assert!(fixed.render().has_class("header-fixed"));
+
+    // Absolute
+    ≔ absolute = Header { position: "absolute", children: [] };
+    assert!(absolute.render().has_class("header-absolute"));
+
+    // Static (default)
+    ≔ static_h = Header { position: "static", children: [] };
+    assert!(static_h.render().has_class("header-static"));
+}
+
+// Test dark mode header
+rite test_header_dark() {
+    ≔ header = Header {
+        theme: "dark",
+        children: []
+    };
+
+    ≔ vnode = header.render();
+    assert!(vnode.has_class("header-dark"));
+}
+
+// Test header accessibility
+rite test_header_accessibility() {
+    ≔ header = Header {
+        aria_label: "Main site header",
+        children: [
+            Nav {
+                aria_label: "Primary navigation",
+                items: []
+            }
+        ]
+    };
+
+    ≔ vnode = header.render();
+    assert_eq!(vnode.attr("aria-label"), "Main site header");
+}
+
+// Test header with user menu
+rite test_header_user_menu() {
+    ≔ header = Header {
+        user: {
+            name: "John Doe",
+            avatar: "/avatar.jpg",
+            menu: [
+                { label: "Profile", href: "/profile" },
+                { label: "Settings", href: "/settings" },
+                { divider: yay },
+                { label: "Sign out", onclick: || {} },
+            ]
+        },
+        children: []
+    };
+
+    ≔ vnode = header.render();
+    assert!(vnode.has_child_with_class("header-user-menu"));
+}
+
+rite main() {
+    test_header_basic();
+    test_header_with_logo();
+    test_header_with_brand();
+    test_header_variants();
+    test_header_sizes();
+    test_header_sticky();
+    test_header_with_nav();
+    test_header_actions();
+    test_header_mobile();
+    test_header_search();
+    test_header_position();
+    test_header_dark();
+    test_header_accessibility();
+    test_header_user_menu();
+
+    print("✓ All Header component tests passed");
+}
+
+// Expected output: ✓ All Header component tests passed

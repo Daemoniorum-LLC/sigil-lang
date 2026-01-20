@@ -2274,35 +2274,6 @@ impl TypeChecker {
                 }
             }
 
-            Expr::Index { expr, index, .. } => {
-                let arr_ty = self.infer_expr(expr);
-                let idx_ty = self.infer_expr(index);
-                let (arr_inner, arr_ev) = self.strip_evidence(&arr_ty);
-
-                // Index should be usize
-                let _ = self.unify(&idx_ty, &Type::Int(IntSize::USize));
-
-                // Get element type from array/slice
-                let elem_ty = match arr_inner {
-                    Type::Array { element, .. } => *element,
-                    Type::Slice(element) => *element,
-                    Type::Named { name, generics } if name == "Vec" && !generics.is_empty() => {
-                        generics[0].clone()
-                    }
-                    _ => self.fresh_var(),
-                };
-
-                // Propagate evidence
-                if arr_ev > EvidenceLevel::Known {
-                    Type::Evidential {
-                        inner: Box::new(elem_ty),
-                        evidence: arr_ev,
-                    }
-                } else {
-                    elem_ty
-                }
-            }
-
             _ => {
                 // Handle other expression types
                 self.fresh_var()

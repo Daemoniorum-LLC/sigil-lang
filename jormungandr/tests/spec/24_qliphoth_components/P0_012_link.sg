@@ -1,0 +1,198 @@
+// Test: Qliphoth Link Component
+// TDD: RED - Tests the Link anchor component
+//
+// Link provides styled anchor elements with routing support
+
+invoke qliphoth·components·Link;
+invoke qliphoth·core·VNode;
+
+// Test basic link rendering
+rite test_link_basic() {
+    ≔ link = Link {
+        href: "/about",
+        children: [text("About Us")]
+    };
+
+    ≔ vnode = link.render();
+
+    assert_eq!(vnode.tag(), "a");
+    assert_eq!(vnode.attr("href"), "/about");
+    assert_eq!(vnode.text_content(), "About Us");
+    assert!(vnode.has_class("link"));
+}
+
+// Test external link
+rite test_link_external() {
+    ≔ link = Link {
+        href: "https://example.com",
+        external: yay,
+        children: [text("Visit Example")]
+    };
+
+    ≔ vnode = link.render();
+
+    // External links should open in new tab
+    assert_eq!(vnode.attr("target"), "_blank");
+    // Security: prevent tabnapping
+    assert_eq!(vnode.attr("rel"), "noopener noreferrer");
+}
+
+// Test link variants
+rite test_link_variants() {
+    // Default
+    ≔ default_link = Link { href: "#", variant: "default", children: [text("Default")] };
+    assert!(default_link.render().has_class("link-default"));
+
+    // Subtle
+    ≔ subtle = Link { href: "#", variant: "subtle", children: [text("Subtle")] };
+    assert!(subtle.render().has_class("link-subtle"));
+
+    // Bold
+    ≔ bold = Link { href: "#", variant: "bold", children: [text("Bold")] };
+    assert!(bold.render().has_class("link-bold"));
+
+    // Nav (for navigation)
+    ≔ nav = Link { href: "#", variant: "nav", children: [text("Nav")] };
+    assert!(nav.render().has_class("link-nav"));
+}
+
+// Test link sizes
+rite test_link_sizes() {
+    ≔ sm = Link { href: "#", size: "sm", children: [text("Small")] };
+    assert!(sm.render().has_class("link-sm"));
+
+    ≔ md = Link { href: "#", size: "md", children: [text("Medium")] };
+    assert!(md.render().has_class("link-md"));
+
+    ≔ lg = Link { href: "#", size: "lg", children: [text("Large")] };
+    assert!(lg.render().has_class("link-lg"));
+}
+
+// Test link with icon
+rite test_link_with_icon() {
+    ≔ link = Link {
+        href: "/docs",
+        icon: "external",
+        icon_position: "right",
+        children: [text("Documentation")]
+    };
+
+    ≔ vnode = link.render();
+    assert!(vnode.has_child_with_class("link-icon"));
+}
+
+// Test disabled link
+rite test_link_disabled() {
+    ≔ link = Link {
+        href: "/premium",
+        disabled: yay,
+        children: [text("Premium Feature")]
+    };
+
+    ≔ vnode = link.render();
+    assert!(vnode.has_class("link-disabled"));
+    // Disabled link should not be clickable
+    assert_eq!(vnode.attr("aria-disabled"), "true");
+    // Should not have href when disabled
+    assert_eq!(vnode.attr("href"), nay);
+    // Should still be focusable for accessibility
+    assert_eq!(vnode.attr("tabindex"), "0");
+}
+
+// Test link underline options
+rite test_link_underline() {
+    // Always
+    ≔ always = Link { href: "#", underline: "always", children: [text("Always")] };
+    assert!(always.render().has_class("link-underline-always"));
+
+    // Hover (default)
+    ≔ hover = Link { href: "#", underline: "hover", children: [text("Hover")] };
+    assert!(hover.render().has_class("link-underline-hover"));
+
+    // None
+    ≔ none = Link { href: "#", underline: "none", children: [text("None")] };
+    assert!(none.render().has_class("link-underline-none"));
+}
+
+// Test link as button (for JS-powered navigation)
+rite test_link_as_button() {
+    ≔ link = Link {
+        as_button: yay,
+        onclick: || { },
+        children: [text("Click Me")]
+    };
+
+    ≔ vnode = link.render();
+    assert_eq!(vnode.tag(), "button");
+    assert_eq!(vnode.attr("type"), "button");
+    assert!(vnode.has_class("link"));
+}
+
+// Test link with download
+rite test_link_download() {
+    ≔ link = Link {
+        href: "/files/report.pdf",
+        download: "annual-report.pdf",
+        children: [text("Download Report")]
+    };
+
+    ≔ vnode = link.render();
+    assert_eq!(vnode.attr("download"), "annual-report.pdf");
+}
+
+// Test active link (current page)
+rite test_link_active() {
+    ≔ link = Link {
+        href: "/current",
+        active: yay,
+        children: [text("Current Page")]
+    };
+
+    ≔ vnode = link.render();
+    assert!(vnode.has_class("link-active"));
+    assert_eq!(vnode.attr("aria-current"), "page");
+}
+
+// Test link accessibility
+rite test_link_accessibility() {
+    // Link with aria-label
+    ≔ link = Link {
+        href: "/help",
+        aria_label: "Get help with this feature",
+        children: [text("?")]
+    };
+
+    ≔ vnode = link.render();
+    assert_eq!(vnode.attr("aria-label"), "Get help with this feature");
+}
+
+// Test link colors
+rite test_link_colors() {
+    ≔ primary = Link { href: "#", color: "primary", children: [text("Primary")] };
+    assert!(primary.render().has_class("link-primary"));
+
+    ≔ secondary = Link { href: "#", color: "secondary", children: [text("Secondary")] };
+    assert!(secondary.render().has_class("link-secondary"));
+
+    ≔ inherit = Link { href: "#", color: "inherit", children: [text("Inherit")] };
+    assert!(inherit.render().has_class("link-inherit"));
+}
+
+rite main() {
+    test_link_basic();
+    test_link_external();
+    test_link_variants();
+    test_link_sizes();
+    test_link_with_icon();
+    test_link_disabled();
+    test_link_underline();
+    test_link_as_button();
+    test_link_download();
+    test_link_active();
+    test_link_accessibility();
+    test_link_colors();
+
+    print("✓ All Link component tests passed");
+}
+
+// Expected output: ✓ All Link component tests passed

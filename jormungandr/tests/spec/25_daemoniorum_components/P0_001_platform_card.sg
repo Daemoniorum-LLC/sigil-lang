@@ -1,0 +1,230 @@
+// Test: Daemoniorum Platform Card Component
+// TDD: RED - Tests the platform showcase card
+//
+// PlatformCard displays a Daemoniorum platform/project with icon, description
+
+invoke daemoniorum·components·PlatformCard;
+invoke qliphoth·core·VNode;
+
+// Test basic platform card rendering
+rite test_platform_card_basic() {
+    ≔ card = PlatformCard {
+        name: "Styx",
+        tagline: "AI-Native Git Platform",
+        description: "Pure Sigil implementation of git with AI-powered code review",
+        icon: "styx",
+        href: "/platforms/styx",
+    };
+
+    ≔ vnode = card.render();
+
+    assert!(vnode.has_class("platform-card"));
+    assert!(vnode.has_child_with_class("platform-card-icon"));
+    assert!(vnode.has_child_with_class("platform-card-name"));
+    assert!(vnode.has_child_with_class("platform-card-tagline"));
+    assert!(vnode.has_child_with_class("platform-card-description"));
+
+    ≔ name = vnode.find_child_by_class("platform-card-name");
+    assert_eq!(name.text_content(), "Styx");
+}
+
+// Test platform card status badges
+rite test_platform_card_status() {
+    // Production
+    ≔ production = PlatformCard {
+        name: "Persona",
+        status: "production",
+        tagline: "AI Agent Framework",
+    };
+    ≔ v1 = production.render();
+    assert!(v1.has_child_with_class("platform-card-status"));
+    assert!(v1.has_child_with_class("platform-card-status-production"));
+
+    // Beta
+    ≔ beta = PlatformCard {
+        name: "Infernum",
+        status: "beta",
+        tagline: "Local LLM Engine",
+    };
+    assert!(beta.render().has_child_with_class("platform-card-status-beta"));
+
+    // Alpha
+    ≔ alpha = PlatformCard {
+        name: "Eidolon",
+        status: "alpha",
+        tagline: "IDE",
+    };
+    assert!(alpha.render().has_child_with_class("platform-card-status-alpha"));
+
+    // Coming Soon
+    ≔ coming = PlatformCard {
+        name: "Aether",
+        status: "coming-soon",
+        tagline: "3D Engine",
+    };
+    assert!(coming.render().has_child_with_class("platform-card-status-coming-soon"));
+}
+
+// Test platform card tech stack
+rite test_platform_card_tech_stack() {
+    ≔ card = PlatformCard {
+        name: "Styx",
+        tagline: "Git Platform",
+        tech_stack: ["Sigil", "Rust", "PostgreSQL"],
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_child_with_class("platform-card-tech"));
+
+    ≔ tech = vnode.find_child_by_class("platform-card-tech");
+    ≔ tags = tech.find_children_by_class("platform-card-tech-tag");
+    assert_eq!(tags.len(), 3);
+    assert_eq!(tags[0].text_content(), "Sigil");
+}
+
+// Test platform card features list
+rite test_platform_card_features() {
+    ≔ card = PlatformCard {
+        name: "Persona",
+        tagline: "AI Agents",
+        features: [
+            "Multi-turn conversations",
+            "Tool execution",
+            "Memory systems",
+            "Safety guardrails",
+        ],
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_child_with_class("platform-card-features"));
+
+    ≔ features = vnode.find_child_by_class("platform-card-features");
+    ≔ items = features.find_children_by_tag("li");
+    assert_eq!(items.len(), 4);
+}
+
+// Test platform card with GitHub link
+rite test_platform_card_github() {
+    ≔ card = PlatformCard {
+        name: "Sigil",
+        tagline: "Programming Language",
+        github_url: "https://github.com/daemoniorum/sigil",
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_child_with_class("platform-card-github"));
+
+    ≔ github = vnode.find_child_by_class("platform-card-github");
+    assert_eq!(github.attr("href"), "https://github.com/daemoniorum/sigil");
+    assert_eq!(github.attr("target"), "_blank");
+}
+
+// Test platform card with docs link
+rite test_platform_card_docs() {
+    ≔ card = PlatformCard {
+        name: "Infernum",
+        tagline: "LLM Engine",
+        docs_url: "/docs/infernum",
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_child_with_class("platform-card-docs"));
+}
+
+// Test platform card sizes
+rite test_platform_card_sizes() {
+    ≔ sm = PlatformCard { name: "P", size: "sm", tagline: "Small" };
+    assert!(sm.render().has_class("platform-card-sm"));
+
+    ≔ md = PlatformCard { name: "P", size: "md", tagline: "Medium" };
+    assert!(md.render().has_class("platform-card-md"));
+
+    ≔ lg = PlatformCard { name: "P", size: "lg", tagline: "Large" };
+    assert!(lg.render().has_class("platform-card-lg"));
+}
+
+// Test platform card variants
+rite test_platform_card_variants() {
+    // Filled (default)
+    ≔ filled = PlatformCard { name: "P", variant: "filled", tagline: "T" };
+    assert!(filled.render().has_class("platform-card-filled"));
+
+    // Outlined
+    ≔ outlined = PlatformCard { name: "P", variant: "outlined", tagline: "T" };
+    assert!(outlined.render().has_class("platform-card-outlined"));
+
+    // Ghost
+    ≔ ghost = PlatformCard { name: "P", variant: "ghost", tagline: "T" };
+    assert!(ghost.render().has_class("platform-card-ghost"));
+}
+
+// Test platform card hover effect
+rite test_platform_card_interactive() {
+    ≔ card = PlatformCard {
+        name: "Styx",
+        tagline: "Git Platform",
+        href: "/styx",
+        interactive: yay,
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_class("platform-card-interactive"));
+    assert_eq!(vnode.tag(), "a");
+    assert_eq!(vnode.attr("href"), "/styx");
+}
+
+// Test platform card with custom colors
+rite test_platform_card_colors() {
+    ≔ card = PlatformCard {
+        name: "Styx",
+        tagline: "Git",
+        accent_color: "#6366f1",
+        icon_color: "#ffffff",
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.attr("style").contains("--accent-color: #6366f1"));
+}
+
+// Test platform card disabled state
+rite test_platform_card_disabled() {
+    ≔ card = PlatformCard {
+        name: "Future Platform",
+        tagline: "Coming Soon",
+        disabled: yay,
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_class("platform-card-disabled"));
+}
+
+// Test platform card accessibility
+rite test_platform_card_accessibility() {
+    ≔ card = PlatformCard {
+        name: "Styx",
+        tagline: "AI Git",
+        aria_label: "Learn more about Styx platform",
+    };
+
+    ≔ vnode = card.render();
+    assert_eq!(vnode.attr("aria-label"), "Learn more about Styx platform");
+}
+
+rite main() {
+    test_platform_card_basic();
+    test_platform_card_status();
+    test_platform_card_tech_stack();
+    test_platform_card_features();
+    test_platform_card_github();
+    test_platform_card_docs();
+    test_platform_card_sizes();
+    test_platform_card_variants();
+    test_platform_card_interactive();
+    test_platform_card_colors();
+    test_platform_card_disabled();
+    test_platform_card_accessibility();
+
+    print("✓ All PlatformCard component tests passed");
+}
+
+// Expected output: ✓ All PlatformCard component tests passed

@@ -443,7 +443,8 @@ pub enum Token {
 
     // Boolean literals (Sigil-native only)
     // Note: ⊤/⊥ handled by Token::Top/Bottom - parser is context-aware
-    #[token("yea")] // yea for true
+    #[token("yea")]  // yea for true
+    #[token("yay")]  // yay for true (alias)
     True,
     #[token("nay")] // nay for false
     False,

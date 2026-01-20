@@ -1,0 +1,61 @@
+// Test: Landing Page Translations
+// TDD: RED → GREEN - Tests page-specific translations
+
+// Define locale enum
+locale ᛈ Lang {
+    En { code: "en", name: "English" },
+    Es { code: "es", name: "Español", fallback: En },
+}
+
+// Landing page translations
+translations Landing {
+    locale: Lang,
+
+    // Hero section
+    hero_title: String! = ⌥ lang {
+        En => "Building the Future of AI",
+        Es => "Construyendo el Futuro de la IA",
+    }
+
+    hero_subtitle: String! = ⌥ lang {
+        En => "Research-driven AI platforms",
+        Es => "Plataformas de IA impulsadas por investigación",
+    }
+
+    cta_explore: String! = ⌥ lang {
+        En => "Explore Research",
+        Es => "Explora Investigación",
+    }
+
+    // Footer
+    footer_copyright: String! = ⌥ lang {
+        En => "© 2026 Daemoniorum LLC",
+        Es => "© 2026 Daemoniorum LLC",
+    }
+
+    footer_privacy: String! = ⌥ lang {
+        En => "Privacy Policy",
+        Es => "Política de Privacidad",
+    }
+}
+
+rite main() {
+    // Test English
+    ≔ en = Landing·new(Lang·En);
+    assert_eq!(en.hero_title(), "Building the Future of AI");
+    assert_eq!(en.hero_subtitle(), "Research-driven AI platforms");
+    assert_eq!(en.cta_explore(), "Explore Research");
+    assert_eq!(en.footer_copyright(), "© 2026 Daemoniorum LLC");
+    assert_eq!(en.footer_privacy(), "Privacy Policy");
+
+    // Test Spanish
+    ≔ es = Landing·new(Lang·Es);
+    assert_eq!(es.hero_title(), "Construyendo el Futuro de la IA");
+    assert_eq!(es.hero_subtitle(), "Plataformas de IA impulsadas por investigación");
+    assert_eq!(es.cta_explore(), "Explora Investigación");
+    assert_eq!(es.footer_privacy(), "Política de Privacidad");
+
+    print("✓ All landing translation tests passed");
+}
+
+// Expected output: ✓ All landing translation tests passed

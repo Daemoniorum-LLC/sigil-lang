@@ -1,0 +1,271 @@
+// Test: Daemoniorum Pricing Table Component
+// TDD: RED - Tests the pricing comparison table
+//
+// PricingTable displays pricing plans with features comparison
+
+invoke daemoniorum·components·PricingTable;
+invoke daemoniorum·components·PricingPlan;
+invoke qliphoth·core·VNode;
+
+// Test basic pricing table rendering
+rite test_pricing_table_basic() {
+    ≔ table = PricingTable {
+        children: [
+            PricingPlan {
+                name: "Free",
+                price: 0,
+                currency: "USD",
+                period: "month",
+                features: ["5 projects", "Basic support"],
+                cta: { label: "Get Started", href: "/signup" },
+            },
+            PricingPlan {
+                name: "Pro",
+                price: 29,
+                currency: "USD",
+                period: "month",
+                features: ["Unlimited projects", "Priority support"],
+                cta: { label: "Start Trial", href: "/signup/pro" },
+            },
+        ]
+    };
+
+    ≔ vnode = table.render();
+
+    assert!(vnode.has_class("pricing-table"));
+    ≔ plans = vnode.find_children_by_class("pricing-plan");
+    assert_eq!(plans.len(), 2);
+}
+
+// Test pricing plan rendering
+rite test_pricing_plan_basic() {
+    ≔ plan = PricingPlan {
+        name: "Pro",
+        price: 29,
+        currency: "USD",
+        period: "month",
+        description: "Best for growing teams",
+        features: ["Feature 1", "Feature 2"],
+        cta: { label: "Subscribe", href: "/subscribe" },
+    };
+
+    ≔ vnode = plan.render();
+
+    assert!(vnode.has_class("pricing-plan"));
+    assert!(vnode.has_child_with_class("pricing-plan-name"));
+    assert!(vnode.has_child_with_class("pricing-plan-price"));
+    assert!(vnode.has_child_with_class("pricing-plan-features"));
+    assert!(vnode.has_child_with_class("pricing-plan-cta"));
+
+    ≔ name = vnode.find_child_by_class("pricing-plan-name");
+    assert_eq!(name.text_content(), "Pro");
+}
+
+// Test pricing with highlighted plan
+rite test_pricing_plan_highlighted() {
+    ≔ plan = PricingPlan {
+        name: "Pro",
+        price: 29,
+        highlighted: yay,
+        highlight_label: "Most Popular",
+        features: [],
+    };
+
+    ≔ vnode = plan.render();
+    assert!(vnode.has_class("pricing-plan-highlighted"));
+    assert!(vnode.has_child_with_class("pricing-plan-highlight-label"));
+
+    ≔ label = vnode.find_child_by_class("pricing-plan-highlight-label");
+    assert_eq!(label.text_content(), "Most Popular");
+}
+
+// Test pricing with annual/monthly toggle
+rite test_pricing_table_billing_toggle() {
+    ≔ billing = "monthly";
+
+    ≔ table = PricingTable {
+        show_billing_toggle: yay,
+        billing_period: billing,
+        on_billing_change: |period| { billing = period; },
+        children: []
+    };
+
+    ≔ vnode = table.render();
+    assert!(vnode.has_child_with_class("pricing-billing-toggle"));
+}
+
+// Test pricing with annual discount
+rite test_pricing_plan_annual_discount() {
+    ≔ plan = PricingPlan {
+        name: "Pro",
+        monthly_price: 29,
+        annual_price: 24, // per month, billed annually
+        show_savings: yay,
+        features: [],
+    };
+
+    ≔ vnode = plan.render();
+    assert!(vnode.has_child_with_class("pricing-plan-savings"));
+
+    ≔ savings = vnode.find_child_by_class("pricing-plan-savings");
+    assert!(savings.text_content().contains("Save"));
+}
+
+// Test custom/contact pricing
+rite test_pricing_plan_custom() {
+    ≔ plan = PricingPlan {
+        name: "Enterprise",
+        custom_pricing: yay,
+        price_label: "Custom",
+        cta: { label: "Contact Sales", href: "/contact" },
+        features: ["Everything in Pro", "Custom integrations", "Dedicated support"],
+    };
+
+    ≔ vnode = plan.render();
+    assert!(vnode.has_class("pricing-plan-custom"));
+
+    ≔ price = vnode.find_child_by_class("pricing-plan-price");
+    assert_eq!(price.text_content(), "Custom");
+}
+
+// Test pricing features with checkmarks
+rite test_pricing_plan_features_detailed() {
+    ≔ plan = PricingPlan {
+        name: "Pro",
+        price: 29,
+        features: [
+            { text: "Unlimited projects", included: yay },
+            { text: "Team collaboration", included: yay },
+            { text: "Custom domains", included: nay },
+        ],
+    };
+
+    ≔ vnode = plan.render();
+    ≔ features = vnode.find_child_by_class("pricing-plan-features");
+    ≔ items = features.find_children_by_class("pricing-feature");
+
+    // First two should have checkmarks
+    assert!(items[0].has_child_with_class("pricing-feature-included"));
+    assert!(items[1].has_child_with_class("pricing-feature-included"));
+    // Third should have X or dash
+    assert!(items[2].has_child_with_class("pricing-feature-excluded"));
+}
+
+// Test pricing table layout
+rite test_pricing_table_layout() {
+    // Horizontal (default)
+    ≔ horizontal = PricingTable { layout: "horizontal", children: [] };
+    assert!(horizontal.render().has_class("pricing-table-horizontal"));
+
+    // Cards
+    ≔ cards = PricingTable { layout: "cards", children: [] };
+    assert!(cards.render().has_class("pricing-table-cards"));
+
+    // Comparison table
+    ≔ comparison = PricingTable { layout: "comparison", children: [] };
+    assert!(comparison.render().has_class("pricing-table-comparison"));
+}
+
+// Test free trial badge
+rite test_pricing_plan_trial() {
+    ≔ plan = PricingPlan {
+        name: "Pro",
+        price: 29,
+        trial_days: 14,
+        features: [],
+    };
+
+    ≔ vnode = plan.render();
+    assert!(vnode.has_child_with_class("pricing-plan-trial"));
+
+    ≔ trial = vnode.find_child_by_class("pricing-plan-trial");
+    assert!(trial.text_content().contains("14"));
+}
+
+// Test pricing variants
+rite test_pricing_plan_variants() {
+    // Default
+    ≔ default_plan = PricingPlan { name: "P", variant: "default", price: 0 };
+    assert!(default_plan.render().has_class("pricing-plan-default"));
+
+    // Compact
+    ≔ compact = PricingPlan { name: "P", variant: "compact", price: 0 };
+    assert!(compact.render().has_class("pricing-plan-compact"));
+
+    // Detailed
+    ≔ detailed = PricingPlan { name: "P", variant: "detailed", price: 0 };
+    assert!(detailed.render().has_class("pricing-plan-detailed"));
+}
+
+// Test pricing with currency formatting
+rite test_pricing_currency() {
+    ≔ usd = PricingPlan { name: "P", price: 29, currency: "USD" };
+    ≔ v1 = usd.render();
+    assert!(v1.find_child_by_class("pricing-plan-price").text_content().contains("$"));
+
+    ≔ eur = PricingPlan { name: "P", price: 29, currency: "EUR" };
+    ≔ v2 = eur.render();
+    assert!(v2.find_child_by_class("pricing-plan-price").text_content().contains("€"));
+}
+
+// Test pricing accessibility
+rite test_pricing_accessibility() {
+    ≔ table = PricingTable {
+        aria_label: "Pricing comparison table",
+        children: [
+            PricingPlan {
+                name: "Free",
+                price: 0,
+                aria_label: "Free plan details",
+                features: [],
+            }
+        ]
+    };
+
+    ≔ vnode = table.render();
+    assert_eq!(vnode.attr("aria-label"), "Pricing comparison table");
+
+    ≔ plan = vnode.find_child_by_class("pricing-plan");
+    assert_eq!(plan.attr("aria-label"), "Free plan details");
+}
+
+// Test pricing CTA variants
+rite test_pricing_cta_variants() {
+    // Primary CTA
+    ≔ primary = PricingPlan {
+        name: "Pro",
+        price: 29,
+        cta: { label: "Start", href: "/start", variant: "primary" },
+    };
+    ≔ btn = primary.render().find_child_by_class("pricing-plan-cta");
+    assert!(btn.has_class("btn-primary"));
+
+    // Secondary CTA
+    ≔ secondary = PricingPlan {
+        name: "Free",
+        price: 0,
+        cta: { label: "Get Started", href: "/start", variant: "secondary" },
+    };
+    ≔ btn2 = secondary.render().find_child_by_class("pricing-plan-cta");
+    assert!(btn2.has_class("btn-secondary"));
+}
+
+rite main() {
+    test_pricing_table_basic();
+    test_pricing_plan_basic();
+    test_pricing_plan_highlighted();
+    test_pricing_table_billing_toggle();
+    test_pricing_plan_annual_discount();
+    test_pricing_plan_custom();
+    test_pricing_plan_features_detailed();
+    test_pricing_table_layout();
+    test_pricing_plan_trial();
+    test_pricing_plan_variants();
+    test_pricing_currency();
+    test_pricing_accessibility();
+    test_pricing_cta_variants();
+
+    print("✓ All PricingTable component tests passed");
+}
+
+// Expected output: ✓ All PricingTable component tests passed

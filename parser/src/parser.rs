@@ -5633,6 +5633,43 @@ impl<'a> Parser<'a> {
                     }],
                 }))
             }
+            // Handle crate/tome and super/above as path starts in expressions
+            Some(Token::Crate) | Some(Token::Super) | Some(Token::IntensityUp) => {
+                let keyword = self.current_token().cloned();
+                let span = self.current_span();
+                self.advance();
+
+                let keyword_name = match keyword {
+                    Some(Token::Crate) => "crate",
+                    Some(Token::Super) | Some(Token::IntensityUp) => "super",
+                    _ => unreachable!(),
+                };
+
+                let mut segments = vec![PathSegment {
+                    ident: Ident {
+                        name: keyword_name.to_string(),
+                        evidentiality: None,
+                        affect: None,
+                        span,
+                    },
+                    generics: None,
+                }];
+
+                // Continue parsing path: crate::module::item or super::item
+                while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+                    if self.check(&Token::Lt) {
+                        self.advance();
+                        let types = self.parse_type_list()?;
+                        self.expect_gt()?;
+                        if let Some(last) = segments.last_mut() {
+                            last.generics = Some(types);
+                        }
+                        continue;
+                    }
+                    segments.push(self.parse_path_segment()?);
+                }
+                Ok(Expr::Path(TypePath { segments }))
+            }
             Some(Token::SelfUpper) => {
                 // Self keyword as expression (struct constructor or path start)
                 let span = self.current_span();
@@ -7824,6 +7861,24 @@ impl<'a> Parser<'a> {
             });
         }
 
+        // Try to detect anonymous struct literal: `{ ident: expr, ... }`
+        // Pattern: starts with Ident followed by Colon (not FatArrow which is closure)
+        // Also handle empty struct `{}` and struct update `{ ..expr }`
+        let is_anonymous_struct = matches!(self.current_token(), Some(Token::Ident(_)))
+            && matches!(self.peek_next(), Some(Token::Colon))
+            || matches!(self.current_token(), Some(Token::DotDot)); // `{ ..expr }` update syntax
+
+        if is_anonymous_struct {
+            // Parse as anonymous struct literal with empty path
+            let (fields, rest) = self.parse_struct_fields()?;
+            self.expect(Token::RBrace)?;
+            return Ok(Expr::Struct {
+                path: TypePath { segments: vec![] }, // Empty path = anonymous struct
+                fields,
+                rest,
+            });
+        }
+
         // Parse as block
         let mut stmts = Vec::new();
         let mut final_expr = None;
@@ -8368,22 +8423,26 @@ impl<'a> Parser<'a> {
 
                 // These must be followed by :: for a path pattern
                 if !self.consume_if(&Token::ColonColon) && !self.consume_if(&Token::MiddleDot) {
-                    // Just `this` or `ξ` as an identifier pattern
-                    if matches!(keyword, Some(Token::SelfLower) | Some(Token::Xi)) {
-                        return Ok(Pattern::Ident {
-                            mutable: false,
-                            name: Ident {
-                                name: "self".to_string(),
-                                evidentiality: None,
-                                affect: None,
-                                span,
-                            },
-                            evidentiality: self.parse_evidentiality_opt(),
-                        });
-                    }
-                    return Err(ParseError::Custom(
-                        "expected · after crate/super in path pattern".to_string(),
-                    ));
+                    // Allow these keywords as identifier patterns when not followed by path separator
+                    // `this` or `ξ` → "self"
+                    // `above` or `↑` → "above"
+                    // `tome` → "tome"
+                    let ident_name = match &keyword {
+                        Some(Token::SelfLower) | Some(Token::Xi) => "self",
+                        Some(Token::Super) | Some(Token::IntensityUp) => "above",
+                        Some(Token::Crate) => "tome",
+                        _ => unreachable!(),
+                    };
+                    return Ok(Pattern::Ident {
+                        mutable: false,
+                        name: Ident {
+                            name: ident_name.to_string(),
+                            evidentiality: None,
+                            affect: None,
+                            span,
+                        },
+                        evidentiality: self.parse_evidentiality_opt(),
+                    });
                 }
 
                 // Build the path starting with crate/self/super
@@ -8937,6 +8996,8 @@ impl<'a> Parser<'a> {
             Token::Null => Some("null"),
             // Neural network keywords - allow as identifiers for struct fields
             Token::Linear => Some("linear"),
+            // i18n/localization keywords - allow as identifiers for struct fields
+            Token::Locale => Some("locale"),
             _ => None,
         }
     }
