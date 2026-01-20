@@ -10401,9 +10401,9 @@ mod tests {
 
             #[repr(C)]
             sigil FFIStruct {
-                field: i32,
+                value: i32,
             }
-        
+
 "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
