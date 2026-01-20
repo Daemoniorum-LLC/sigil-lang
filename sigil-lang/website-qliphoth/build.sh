@@ -37,7 +37,25 @@ SIGIL_FILES=(
     "agents"
     "pattern"
     "qliphoth"
+    "playground"
 )
+
+# Helper module (prepended to page files that use it)
+HELPERS_FILE="$SRC_DIR/helpers.sigil"
+
+# Files that need helpers prepended (all except minimal)
+FILES_WITH_HELPERS=(
+    "index"
+    "docs"
+    "learn"
+    "agents"
+    "pattern"
+    "qliphoth"
+    "playground"
+)
+
+# Temp directory for combined files
+TEMP_DIR="$SCRIPT_DIR/.build-temp"
 
 # Parse arguments
 WASM_ONLY=false
@@ -69,7 +87,11 @@ echo ""
 if $CLEAN; then
     echo -e "${YELLOW}Cleaning old WASM files...${NC}"
     rm -f "$OUT_DIR"/*.wasm
+    rm -rf "$TEMP_DIR"
 fi
+
+# Create temp directory for combined files
+mkdir -p "$TEMP_DIR"
 
 # Check for Sigil compiler
 if [[ ! -x "$SIGIL_COMPILER" ]]; then
@@ -101,32 +123,60 @@ COMPILED=0
 FAILED=0
 SKIPPED=0
 
+# Helper function to check if file needs helpers
+needs_helpers() {
+    local name=$1
+    for h in "${FILES_WITH_HELPERS[@]}"; do
+        if [[ "$h" == "$name" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 for name in "${SIGIL_FILES[@]}"; do
     src_file="$SRC_DIR/$name.sigil"
     out_file="$OUT_DIR/$name.wasm"
 
     if [[ ! -f "$src_file" ]]; then
         echo -e "${YELLOW}⊘ Skipping $name.sigil (source not found)${NC}"
-        ((SKIPPED++))
+        SKIPPED=$((SKIPPED + 1))
         continue
     fi
 
+    # Determine compile source (with or without helpers)
+    compile_src="$src_file"
+    # Only prepend helpers if file actually uses 'invoke helpers'
+    if grep -q '^invoke helpers' "$src_file" && [[ -f "$HELPERS_FILE" ]]; then
+        # Create combined file: helpers + page content (without invoke line)
+        combined_file="$TEMP_DIR/$name.combined.sigil"
+        cat "$HELPERS_FILE" > "$combined_file"
+        echo "" >> "$combined_file"
+        echo "// =============================================================================" >> "$combined_file"
+        echo "// Page: $name.sigil" >> "$combined_file"
+        echo "// =============================================================================" >> "$combined_file"
+        echo "" >> "$combined_file"
+        # Remove 'invoke helpers·*;' line from page content
+        grep -v '^invoke helpers' "$src_file" >> "$combined_file"
+        compile_src="$combined_file"
+    fi
+
     # Check if source is newer than output
-    if [[ -f "$out_file" ]] && [[ "$src_file" -ot "$out_file" ]]; then
+    if [[ -f "$out_file" ]] && [[ "$src_file" -ot "$out_file" ]] && [[ "$HELPERS_FILE" -ot "$out_file" ]]; then
         echo -e "${BLUE}↷ Skipping $name.sigil (up to date)${NC}"
-        ((SKIPPED++))
+        SKIPPED=$((SKIPPED + 1))
         continue
     fi
 
     echo -e "${BLUE}⊙ Compiling $name.sigil...${NC}"
 
-    if "$SIGIL_COMPILER" wasm "$src_file" -o "$out_file" 2>&1; then
+    if "$SIGIL_COMPILER" wasm "$compile_src" -o "$out_file" 2>&1; then
         size=$(ls -lh "$out_file" | awk '{print $5}')
         echo -e "${GREEN}  ✓ $name.wasm ($size)${NC}"
-        ((COMPILED++))
+        COMPILED=$((COMPILED + 1))
     else
         echo -e "${RED}  ✗ Failed to compile $name.sigil${NC}"
-        ((FAILED++))
+        FAILED=$((FAILED + 1))
 
         # Note: Source files may need native Sigil syntax conversion
         echo -e "${YELLOW}    Note: Source may need native Sigil syntax (⎇/⎉, yea/nay, etc.)${NC}"
@@ -150,6 +200,9 @@ if [[ $FAILED -gt 0 ]]; then
     echo -e "${YELLOW}Existing .wasm files will continue to work.${NC}"
     exit 1
 fi
+
+# Cleanup temp directory
+rm -rf "$TEMP_DIR"
 
 echo ""
 echo -e "${GREEN}Build complete!${NC}"
