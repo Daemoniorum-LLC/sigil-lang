@@ -1,0 +1,32 @@
+// Native Platform Test 02: Window Creation
+// Tests: Create a GTK window and set its title
+// Expected: 0 (window created successfully)
+
+#[cfg(target_os = "linux")]
+#[link("gtk-4")]
+#[link("glib-2.0")]
+#[link("gobject-2.0")]
+extern "C" {
+    type GtkWindow;
+
+    rite gtk_init();
+    rite gtk_window_new() → *GtkWindow;
+    rite gtk_window_set_title(window: *GtkWindow, title: *c_char);
+    rite gtk_window_set_default_size(window: *GtkWindow, width: c_int, height: c_int);
+}
+
+#[cfg(target_os = "linux")]
+rite main() → i64 {
+    gtk_init();
+
+    ≔ window = gtk_window_new();
+    gtk_window_set_title(window, "Test Window\0".as_ptr());
+    gtk_window_set_default_size(window, 400, 300);
+
+    0  // Success - operations completed
+}
+
+#[cfg(not(target_os = "linux"))]
+rite main() → i64 {
+    0
+}

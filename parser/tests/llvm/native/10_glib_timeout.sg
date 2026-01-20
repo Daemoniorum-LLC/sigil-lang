@@ -1,0 +1,48 @@
+// Native Platform Test 10: GLib Timeout
+// Tests: Set a timeout callback (for timers/animations)
+// Expected: 0 (timeout registered and removed without crash)
+
+#[cfg(target_os = "linux")]
+#[link("gtk-4")]
+#[link("glib-2.0")]
+#[link("gobject-2.0")]
+extern "C" {
+    // Callback type for timeout (returns int to continue/stop)
+    type GSourceFunc = rite(*void) → c_int;
+
+    rite gtk_init();
+
+    // GLib main loop timeout
+    rite g_timeout_add(
+        interval_ms: c_uint,
+        callback: GSourceFunc,
+        data: *void
+    ) → c_uint;
+
+    rite g_source_remove(tag: c_uint) → c_int;
+}
+
+// Timer callback - returns 0 to stop after one execution (G_SOURCE_REMOVE)
+#[no_mangle]
+extern "C" rite on_timeout(data: *void) → c_int {
+    // This would be called after the timeout
+    0  // G_SOURCE_REMOVE - don't repeat
+}
+
+#[cfg(target_os = "linux")]
+rite main() → i64 {
+    gtk_init();
+
+    // Register a 1000ms timeout
+    ≔ timeout_id = g_timeout_add(1000, on_timeout, 0 as *void);
+
+    // Immediately remove the timeout (we don't want to actually wait)
+    ≔ removed = g_source_remove(timeout_id);
+
+    0  // Success - timeout registered and removed without crash
+}
+
+#[cfg(not(target_os = "linux"))]
+rite main() → i64 {
+    0
+}

@@ -1,0 +1,12 @@
+// FFI Test 03: Multiple calls to extern function
+// Tests: Calling extern function multiple times
+
+extern "C" {
+    rite abs(x: c_int) → c_int;
+}
+
+rite main() → i64 {
+    ≔ a = abs(-10) as i64;
+    ≔ b = abs(-20) as i64;
+    a + b  // Expected: 30
+}

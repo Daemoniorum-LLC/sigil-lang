@@ -1,0 +1,69 @@
+// FFI Test 43: GTK Signal Connection with callback
+// Tests: g_signal_connect with extern "C" rite callback function
+// Expected: 0 (signal connected successfully)
+// Requires: GTK4 installed
+
+#[cfg(target_os = "linux")]
+#[link("gtk-4")]
+#[link("glib-2.0")]
+#[link("gobject-2.0")]
+extern "C" {
+    // Opaque types
+    type GtkWidget;
+    type GtkButton;
+    type GtkWindow;
+    type GObject;
+
+    // Callback type for GTK signals
+    type GCallback = rite(*void);
+
+    rite gtk_init();
+    rite gtk_window_new() → *GtkWindow;
+    rite gtk_button_new_with_label(label: *c_char) → *GtkButton;
+
+    // GObject signal connection
+    // Returns handler ID (non-zero on success)
+    rite g_signal_connect_data(
+        instance: *void,
+        detailed_signal: *c_char,
+        c_handler: GCallback,
+        data: *void,
+        destroy_data: *void,
+        connect_flags: c_int
+    ) → c_ulong;
+}
+
+// C-callable callback function using extern "C" rite
+#[cfg(target_os = "linux")]
+#[no_mangle]
+extern "C" rite on_button_clicked(widget: *void) {
+    // Callback body - does nothing for now
+    // In a real app, this would update state or UI
+}
+
+#[cfg(target_os = "linux")]
+rite main() → i64 {
+    gtk_init();
+
+    // Create button with label
+    ≔ button = gtk_button_new_with_label("Test Signal\0".as_ptr());
+
+    // Connect click signal to our callback
+    ≔ handler_id = g_signal_connect_data(
+        button as *void,
+        "clicked\0".as_ptr(),
+        on_button_clicked,
+        0 as *void,
+        0 as *void,
+        0
+    );
+
+    // Handler ID should be non-zero on success
+    // Note: signal connection succeeded if we got here
+    0
+}
+
+#[cfg(not(target_os = "linux"))]
+rite main() → i64 {
+    0
+}

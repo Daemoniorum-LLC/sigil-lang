@@ -1,0 +1,597 @@
+// Docs - Quick Reference Hub
+// Taste of Sigil syntax with links to full docs at docs.daemoniorum.com
+// Compiled from Sigil to WebAssembly via Qliphoth
+
+// === DOM Helpers ===
+
+rite create_element(tag: &str) → i64 {
+    vdom_create_vnode(tag)
+}
+
+rite create_text(content: &str) → i64 {
+    vdom_create_text_vnode(content)
+}
+
+rite set_class(element: i64, class_name: &str) {
+    vdom_set_vnode_str_prop(element, "class", class_name)
+}
+
+rite set_attr(element: i64, name: &str, value: &str) {
+    vdom_set_vnode_str_prop(element, name, value)
+}
+
+rite append_child(parent: i64, child: i64) {
+    vdom_append_vnode_child(parent, child)
+}
+
+rite mount(element: i64, selector: &str) → i64 {
+    vdom_mount_vnode(element, selector)
+}
+
+// === Component Helpers ===
+
+rite link(href: &str, text: &str, class: &str) → i64 {
+    ≔ a = create_element("a");
+    set_class(a, class);
+    set_attr(a, "href", href);
+    ≔ t = create_text(text);
+    append_child(a, t);
+    a
+}
+
+rite link_external(href: &str, text: &str, class: &str) → i64 {
+    ≔ a = create_element("a");
+    set_class(a, class);
+    set_attr(a, "href", href);
+    set_attr(a, "target", "_blank");
+    set_attr(a, "rel", "noopener noreferrer");
+    ≔ t = create_text(text);
+    append_child(a, t);
+    a
+}
+
+rite heading(level: &str, text: &str, class: &str) → i64 {
+    ≔ h = create_element(level);
+    set_class(h, class);
+    ≔ t = create_text(text);
+    append_child(h, t);
+    h
+}
+
+rite para(text: &str, class: &str) → i64 {
+    ≔ p = create_element("p");
+    set_class(p, class);
+    ≔ t = create_text(text);
+    append_child(p, t);
+    p
+}
+
+rite span(text: &str, class: &str) → i64 {
+    ≔ s = create_element("span");
+    set_class(s, class);
+    ≔ t = create_text(text);
+    append_child(s, t);
+    s
+}
+
+rite code_inline(text: &str) → i64 {
+    ≔ c = create_element("code");
+    set_class(c, "inline-code");
+    ≔ t = create_text(text);
+    append_child(c, t);
+    c
+}
+
+rite code_block(code: &str) → i64 {
+    ≔ pre = create_element("pre");
+    set_class(pre, "code-block");
+    ≔ c = create_text(code);
+    append_child(pre, c);
+    pre
+}
+
+rite image(src: &str, alt: &str, class: &str) → i64 {
+    ≔ img = create_element("img");
+    set_class(img, class);
+    set_attr(img, "src", src);
+    set_attr(img, "alt", alt);
+    img
+}
+
+// === Navigation ===
+
+rite header() → i64 {
+    ≔ nav = create_element("nav");
+    set_class(nav, "nav");
+
+    ≔ container = create_element("div");
+    set_class(container, "nav-container");
+
+    ≔ brand = create_element("a");
+    set_class(brand, "nav-logo");
+    set_attr(brand, "href", "/");
+    ≔ logo_icon = image("images/sigil-logo.svg", "", "nav-logo-icon");
+    append_child(brand, logo_icon);
+    ≔ logo_text = create_element("span");
+    set_class(logo_text, "logo-text");
+    ≔ lt = create_text("Sigil");
+    append_child(logo_text, lt);
+    append_child(brand, logo_text);
+    ≔ version = create_element("span");
+    set_class(version, "version-badge");
+    ≔ vt = create_text("0.3");
+    append_child(version, vt);
+    append_child(brand, version);
+    append_child(container, brand);
+
+    ≔ links = create_element("div");
+    set_class(links, "nav-links");
+    append_child(links, link("/learn.html", "Learn", "nav-link"));
+    append_child(links, link("/docs.html", "Docs", "nav-link nav-active"));
+    append_child(links, link("/playground/", "Playground", "nav-link"));
+    append_child(links, link("/agents.html", "Agents", "nav-link"));
+    append_child(links, link("/pattern.html", "The Pattern", "nav-link"));
+    append_child(links, link("/qliphoth.html", "Qliphoth", "nav-link"));
+    append_child(links, link_external("https://github.com/Daemoniorum-LLC/sigil-lang", "GitHub", "nav-link nav-github"));
+
+    append_child(container, links);
+    append_child(nav, container);
+    nav
+}
+
+// === Page Hero ===
+
+rite page_hero() → i64 {
+    ≔ section = create_element("header");
+    set_class(section, "page-hero docs-hero");
+
+    ≔ container = create_element("div");
+    set_class(container, "container");
+
+    ≔ eyebrow = span("Reference", "section-eyebrow");
+    append_child(container, eyebrow);
+
+    append_child(container, heading("h1", "Quick Reference", "page-title"));
+    append_child(container, para(
+        "Essential Sigil syntax at a glance. For comprehensive documentation, visit the full docs.",
+        "page-lead"
+    ));
+
+    // Full docs CTA
+    ≔ cta = link_external("https://docs.daemoniorum.com", "Full Documentation →", "btn btn-primary");
+    append_child(container, cta);
+
+    append_child(section, container);
+    section
+}
+
+// === Reference Cards ===
+
+rite ref_card(title: &str, content: i64) → i64 {
+    ≔ card = create_element("div");
+    set_class(card, "ref-card");
+    append_child(card, heading("h3", title, "ref-card-title"));
+    append_child(card, content);
+    card
+}
+
+// === Evidence Markers Section ===
+
+rite evidence_section() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "docs-section");
+
+    append_child(section, heading("h2", "Evidentiality Markers", "section-title"));
+    append_child(section, para(
+        "Track data provenance at the type level. Evidence propagates pessimistically.",
+        "section-desc"
+    ));
+
+    ≔ grid = create_element("div");
+    set_class(grid, "evidence-grid");
+
+    // Known
+    ≔ e1 = create_element("div");
+    set_class(e1, "evidence-card");
+    ≔ m1 = span("!", "evidence-marker marker-known");
+    append_child(e1, m1);
+    ≔ info1 = create_element("div");
+    set_class(info1, "evidence-info");
+    append_child(info1, heading("h4", "Known", ""));
+    append_child(info1, para("Computed locally, verified", ""));
+    append_child(info1, code_inline("≔ sum! = 1 + 1"));
+    append_child(e1, info1);
+    append_child(grid, e1);
+
+    // Uncertain
+    ≔ e2 = create_element("div");
+    set_class(e2, "evidence-card");
+    ≔ m2 = span("?", "evidence-marker marker-uncertain");
+    append_child(e2, m2);
+    ≔ info2 = create_element("div");
+    set_class(info2, "evidence-info");
+    append_child(info2, heading("h4", "Uncertain", ""));
+    append_child(info2, para("Might be absent", ""));
+    append_child(info2, code_inline("≔ val? = map.get(key)"));
+    append_child(e2, info2);
+    append_child(grid, e2);
+
+    // Reported
+    ≔ e3 = create_element("div");
+    set_class(e3, "evidence-card");
+    ≔ m3 = span("~", "evidence-marker marker-reported");
+    append_child(e3, m3);
+    ≔ info3 = create_element("div");
+    set_class(info3, "evidence-info");
+    append_child(info3, heading("h4", "Reported", ""));
+    append_child(info3, para("External, untrusted", ""));
+    append_child(info3, code_inline("≔ data~ = api.fetch()"));
+    append_child(e3, info3);
+    append_child(grid, e3);
+
+    // Paradox
+    ≔ e4 = create_element("div");
+    set_class(e4, "evidence-card");
+    ≔ m4 = span("‽", "evidence-marker marker-paradox");
+    append_child(e4, m4);
+    ≔ info4 = create_element("div");
+    set_class(info4, "evidence-info");
+    append_child(info4, heading("h4", "Paradox", ""));
+    append_child(info4, para("Trust boundary crossing", ""));
+    append_child(info4, code_inline("≔ ptr‽ = unsafe { ... }"));
+    append_child(e4, info4);
+    append_child(grid, e4);
+
+    append_child(section, grid);
+    section
+}
+
+// === Morpheme Operators Section ===
+
+rite morpheme_section() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "docs-section");
+
+    append_child(section, heading("h2", "Morpheme Operators", "section-title"));
+    append_child(section, para(
+        "Greek letter operators for expressive data transformation pipelines.",
+        "section-desc"
+    ));
+
+    ≔ grid = create_element("div");
+    set_class(grid, "morpheme-table");
+
+    // Header row
+    ≔ header = create_element("div");
+    set_class(header, "morpheme-header");
+    append_child(header, span("Symbol", ""));
+    append_child(header, span("Name", ""));
+    append_child(header, span("Operation", ""));
+    append_child(header, span("Example", ""));
+    append_child(grid, header);
+
+    // Rows
+    append_child(grid, morpheme_row("φ", "phi", "Filter", "data|φ{_ > 0}"));
+    append_child(grid, morpheme_row("τ", "tau", "Transform", "data|τ{_ * 2}"));
+    append_child(grid, morpheme_row("σ", "sigma", "Sort", "data|σ"));
+    append_child(grid, morpheme_row("ρ", "rho", "Reduce", "data|ρ{a,b => a+b}"));
+    append_child(grid, morpheme_row("Σ", "sum", "Sum all", "[1,2,3]|Σ → 6"));
+    append_child(grid, morpheme_row("Π", "product", "Product all", "[1,2,3]|Π → 6"));
+    append_child(grid, morpheme_row("α", "alpha", "First", "data|α"));
+    append_child(grid, morpheme_row("ω", "omega", "Last", "data|ω"));
+    append_child(grid, morpheme_row("μ", "mu", "Mean", "data|μ"));
+    append_child(grid, morpheme_row("λ", "lambda", "Length", "data|λ → 3"));
+
+    append_child(section, grid);
+    section
+}
+
+rite morpheme_row(symbol: &str, name: &str, op: &str, example: &str) → i64 {
+    ≔ row = create_element("div");
+    set_class(row, "morpheme-row");
+
+    ≔ sym = span(symbol, "morpheme-symbol");
+    append_child(row, sym);
+
+    ≔ n = span(name, "morpheme-name");
+    append_child(row, n);
+
+    ≔ o = span(op, "morpheme-op");
+    append_child(row, o);
+
+    ≔ ex = code_inline(example);
+    append_child(row, ex);
+
+    row
+}
+
+// === Syntax Cheat Sheet ===
+
+rite syntax_section() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "docs-section");
+
+    append_child(section, heading("h2", "Syntax Cheat Sheet", "section-title"));
+
+    ≔ grid = create_element("div");
+    set_class(grid, "syntax-grid");
+
+    // Variables
+    ≔ vars = create_element("div");
+    set_class(vars, "syntax-card");
+    append_child(vars, heading("h4", "Variables", ""));
+    append_child(vars, code_block(
+        "≔ x = 42           // immutable\n" ++
+        "≔ mut y = 0        // mutable\n" ++
+        "≔ z: i64 = 100     // typed"
+    ));
+    append_child(grid, vars);
+
+    // Functions
+    ≔ funcs = create_element("div");
+    set_class(funcs, "syntax-card");
+    append_child(funcs, heading("h4", "Functions", ""));
+    append_child(funcs, code_block(
+        "rite add(a: i64, b: i64) → i64 {\n" ++
+        "    a + b\n" ++
+        "}\n\n" ++
+        "rite greet(name: Str) {\n" ++
+        "    println(\"Hello, {name}!\")\n" ++
+        "}"
+    ));
+    append_child(grid, funcs);
+
+    // Structs
+    ≔ structs = create_element("div");
+    set_class(structs, "syntax-card");
+    append_child(structs, heading("h4", "Structs", ""));
+    append_child(structs, code_block(
+        "struct User {\n" ++
+        "    name: Str,\n" ++
+        "    age: i64,\n" ++
+        "}\n\n" ++
+        "impl User {\n" ++
+        "    rite new(name: Str) → User {\n" ++
+        "        User { name, age: 0 }\n" ++
+        "    }\n" ++
+        "}"
+    ));
+    append_child(grid, structs);
+
+    // Pattern Matching
+    ≔ match_card = create_element("div");
+    set_class(match_card, "syntax-card");
+    append_child(match_card, heading("h4", "Pattern Matching", ""));
+    append_child(match_card, code_block(
+        "match status {\n" ++
+        "    Status::Active => \"on\",\n" ++
+        "    Status::Pending(r) => r,\n" ++
+        "    _ => \"unknown\",\n" ++
+        "}"
+    ));
+    append_child(grid, match_card);
+
+    // Pipelines
+    ≔ pipes = create_element("div");
+    set_class(pipes, "syntax-card");
+    append_child(pipes, heading("h4", "Pipelines", ""));
+    append_child(pipes, code_block(
+        "≔ result = data\n" ++
+        "    |φ{_ > 0}      // filter\n" ++
+        "    |τ{_ * 2}      // transform\n" ++
+        "    |σ             // sort\n" ++
+        "    |Σ             // sum"
+    ));
+    append_child(grid, pipes);
+
+    // Validation
+    ≔ valid = create_element("div");
+    set_class(valid, "syntax-card");
+    append_child(valid, heading("h4", "Validation", ""));
+    append_child(valid, code_block(
+        "≔ raw~ = api.fetch()\n\n" ++
+        "// Promote to uncertain\n" ++
+        "≔ checked? = raw |validate?{\n" ++
+        "    is_valid()\n" ++
+        "}\n\n" ++
+        "// Promote to known\n" ++
+        "≔ safe! = checked |validate!{\n" ++
+        "    verify()\n" ++
+        "}"
+    ));
+    append_child(grid, valid);
+
+    append_child(section, grid);
+    section
+}
+
+// === Agent Infrastructure Quick Ref ===
+
+rite agents_section() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "docs-section");
+
+    append_child(section, heading("h2", "Agent Infrastructure", "section-title"));
+    append_child(section, para(
+        "9-layer stack for building autonomous AI agents.",
+        "section-desc"
+    ));
+
+    ≔ grid = create_element("div");
+    set_class(grid, "agent-quick-grid");
+
+    append_child(grid, agent_quick_card("Engram", "Memory", "instant, episodic, semantic, procedural"));
+    append_child(grid, agent_quick_card("Omen", "Planning", "goal decomposition, belief revision"));
+    append_child(grid, agent_quick_card("Gnosis", "Learning", "skill development, adaptation"));
+    append_child(grid, agent_quick_card("Oracle", "Explainability", "decision traces, confidence"));
+    append_child(grid, agent_quick_card("Anima", "Subjectivity", "inner experience, expression"));
+    append_child(grid, agent_quick_card("Covenant", "Partnership", "trust, boundaries, handoffs"));
+    append_child(grid, agent_quick_card("Commune", "Communication", "multi-agent messaging"));
+    append_child(grid, agent_quick_card("Daemon", "Runtime", "tools, state, lifecycle"));
+    append_child(grid, agent_quick_card("Aegis", "Security", "identity, sandboxing, alignment"));
+
+    append_child(section, grid);
+
+    // Link to full agents page
+    ≔ link_wrap = create_element("div");
+    set_class(link_wrap, "section-link");
+    append_child(link_wrap, link("/agents.html", "Explore Agent Infrastructure →", "btn btn-secondary"));
+    append_child(section, link_wrap);
+
+    section
+}
+
+rite agent_quick_card(name: &str, domain: &str, desc: &str) → i64 {
+    ≔ card = create_element("div");
+    set_class(card, "agent-quick-card");
+
+    ≔ header = create_element("div");
+    set_class(header, "agent-quick-header");
+    append_child(header, heading("h4", name, ""));
+    append_child(header, span(domain, "agent-domain"));
+    append_child(card, header);
+
+    append_child(card, para(desc, "agent-quick-desc"));
+    card
+}
+
+// === Full Docs CTA ===
+
+rite full_docs_cta() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "docs-cta");
+
+    ≔ container = create_element("div");
+    set_class(container, "cta-container");
+
+    append_child(container, heading("h2", "Need More?", ""));
+    append_child(container, para(
+        "The full documentation at docs.daemoniorum.com includes comprehensive guides, API references, and examples.",
+        ""
+    ));
+
+    ≔ buttons = create_element("div");
+    set_class(buttons, "cta-buttons");
+    append_child(buttons, link_external("https://docs.daemoniorum.com", "Full Documentation", "btn btn-primary"));
+    append_child(buttons, link("/playground/", "Try in Playground", "btn btn-secondary"));
+    append_child(container, buttons);
+
+    append_child(section, container);
+    section
+}
+
+// === Footer ===
+
+rite footer_column(title: &str, links: i64) → i64 {
+    ≔ col = create_element("div");
+    set_class(col, "footer-column");
+    append_child(col, heading("h5", title, ""));
+    append_child(col, links);
+    col
+}
+
+rite footer() → i64 {
+    ≔ ft = create_element("footer");
+    set_class(ft, "footer");
+
+    ≔ container = create_element("div");
+    set_class(container, "footer-container");
+
+    ≔ brand = create_element("div");
+    set_class(brand, "footer-brand");
+    ≔ logo = create_element("a");
+    set_class(logo, "footer-logo");
+    set_attr(logo, "href", "/");
+    ≔ logo_icon = image("images/sigil-logo.svg", "", "footer-logo-icon");
+    append_child(logo, logo_icon);
+    ≔ logo_span = create_element("span");
+    ≔ lt = create_text("Sigil");
+    append_child(logo_span, lt);
+    append_child(logo, logo_span);
+    append_child(brand, logo);
+    append_child(brand, para("Infrastructure for minds that don't yet know what they are.", "footer-tagline"));
+    append_child(brand, para("© 2025-2026 Daemoniorum LLC. MIT License.", "footer-copyright"));
+    append_child(container, brand);
+
+    ≔ nav = create_element("nav");
+    set_class(nav, "footer-nav");
+
+    ≔ learn_links = create_element("ul");
+    ≔ l1 = create_element("li");
+    append_child(l1, link("/learn.html", "Tutorial", ""));
+    append_child(learn_links, l1);
+    ≔ l2 = create_element("li");
+    append_child(l2, link_external("https://docs.daemoniorum.com", "Full Docs", ""));
+    append_child(learn_links, l2);
+    ≔ l3 = create_element("li");
+    append_child(l3, link("/playground/", "Playground", ""));
+    append_child(learn_links, l3);
+    append_child(nav, footer_column("Learn", learn_links));
+
+    ≔ ref_links = create_element("ul");
+    ≔ r1 = create_element("li");
+    append_child(r1, link("/agents.html", "Agent Infrastructure", ""));
+    append_child(ref_links, r1);
+    ≔ r2 = create_element("li");
+    append_child(r2, link("/pattern.html", "The Pattern", ""));
+    append_child(ref_links, r2);
+    ≔ r3 = create_element("li");
+    append_child(r3, link("#ecosystem", "Built on Sigil", ""));
+    append_child(ref_links, r3);
+    append_child(nav, footer_column("Reference", ref_links));
+
+    ≔ comm_links = create_element("ul");
+    ≔ c1 = create_element("li");
+    append_child(c1, link_external("https://github.com/Daemoniorum-LLC/sigil-lang", "GitHub", ""));
+    append_child(comm_links, c1);
+    ≔ c2 = create_element("li");
+    append_child(c2, link_external("https://github.com/Daemoniorum-LLC/sigil-lang/discussions", "Discussions", ""));
+    append_child(comm_links, c2);
+    ≔ c3 = create_element("li");
+    append_child(c3, link_external("https://github.com/Daemoniorum-LLC/sigil-lang/issues", "Issues", ""));
+    append_child(comm_links, c3);
+    append_child(nav, footer_column("Community", comm_links));
+
+    ≔ daem_links = create_element("ul");
+    ≔ d1 = create_element("li");
+    append_child(d1, link_external("https://www.daemoniorum.com", "Company", ""));
+    append_child(daem_links, d1);
+    ≔ d2 = create_element("li");
+    append_child(d2, link_external("https://docs.daemoniorum.com", "Platform Docs", ""));
+    append_child(daem_links, d2);
+    append_child(nav, footer_column("Daemoniorum", daem_links));
+
+    append_child(container, nav);
+    append_child(ft, container);
+    ft
+}
+
+// === Main App ===
+
+rite app() → i64 {
+    ≔ root = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, header());
+    append_child(root, page_hero());
+
+    // Main content
+    ≔ main = create_element("main");
+    set_class(main, "docs-content");
+
+    append_child(main, evidence_section());
+    append_child(main, morpheme_section());
+    append_child(main, syntax_section());
+    append_child(main, agents_section());
+    append_child(main, full_docs_cta());
+
+    append_child(root, main);
+    append_child(root, footer());
+
+    root
+}
+
+☉ rite main() → i64 {
+    ≔ root = app();
+    mount(root, "#app")
+}

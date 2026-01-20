@@ -1,0 +1,11 @@
+// FFI Test 02: labs() with c_long type
+// Tests: c_long type mapping
+
+extern "C" {
+    rite labs(x: c_long) → c_long;
+}
+
+rite main() → i64 {
+    ≔ result = labs(-77);
+    result  // Expected: 77 (exit codes are 0-255)
+}

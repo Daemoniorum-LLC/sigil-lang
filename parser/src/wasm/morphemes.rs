@@ -160,8 +160,18 @@ impl WasmCompiler {
             PipeOp::Universal => Err(WasmError::unsupported("universal reconstruction")),
             PipeOp::Possibility => Err(WasmError::unsupported("possibility extraction")),
             PipeOp::Necessity => Err(WasmError::unsupported("necessity verification")),
-            PipeOp::PossibilityMethod { .. } => Err(WasmError::unsupported("possibility method call")),
+            PipeOp::PossibilityMethod { .. } => {
+                Err(WasmError::unsupported("possibility method call"))
+            }
             PipeOp::NecessityMethod { .. } => Err(WasmError::unsupported("necessity method call")),
+
+            // Function call in pipe
+            PipeOp::Call(func) => {
+                // Compile the function expression and call it
+                self.compile_expr(func)?;
+                // The function result is now on the stack
+                Ok(())
+            }
         }
     }
 
@@ -793,6 +803,7 @@ impl WasmCompiler {
         match expr {
             Expr::Closure {
                 params,
+                return_type: _,
                 body,
                 is_move: _,
             } => {
@@ -1084,6 +1095,7 @@ impl WasmCompiler {
         match func_expr {
             Expr::Closure {
                 params,
+                return_type: _,
                 body,
                 is_move: _,
             } => {
@@ -1142,6 +1154,7 @@ impl WasmCompiler {
         match func_expr {
             Expr::Closure {
                 params,
+                return_type: _,
                 body,
                 is_move: _,
             } => {
@@ -1324,11 +1337,13 @@ mod tests {
                 },
                 ty: None,
             }],
+            return_type: None,
             body: Box::new(Expr::Binary {
                 left: Box::new(make_path("x")),
                 op: crate::ast::BinOp::Mul,
                 right: Box::new(make_int(2)),
             }),
+            is_move: false,
         };
 
         // Simulate array on stack
@@ -1362,11 +1377,13 @@ mod tests {
                 },
                 ty: None,
             }],
+            return_type: None,
             body: Box::new(Expr::Binary {
                 left: Box::new(make_path("x")),
                 op: crate::ast::BinOp::Gt,
                 right: Box::new(make_int(0)),
             }),
+            is_move: false,
         };
 
         // Simulate array on stack
@@ -1410,11 +1427,13 @@ mod tests {
                     ty: None,
                 },
             ],
+            return_type: None,
             body: Box::new(Expr::Binary {
                 left: Box::new(make_path("a")),
                 op: crate::ast::BinOp::Add,
                 right: Box::new(make_path("b")),
             }),
+            is_move: false,
         };
 
         // Simulate array on stack

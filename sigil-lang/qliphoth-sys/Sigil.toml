@@ -1,0 +1,84 @@
+# qliphoth-sys - Browser API Bindings for Sigil
+# Low-level WebAssembly bindings to Web APIs
+# Copyright © 2025 Daemoniorum, LLC. All rights reserved.
+
+[project]
+name = "qliphoth-sys"
+version = "0.2.0"
+edition = "2025"
+description = "Browser API bindings for Sigil - Window, Document, DOM, Events, and more"
+license = "MIT OR Apache-2.0"
+sigil-version = "0.2.0"
+authors = ["Daemoniorum, LLC"]
+
+[features]
+default = ["Window", "Document", "Element", "Event", "Console"]
+full = [
+    "Window", "Document", "Element", "Node", "Event",
+    "MouseEvent", "KeyboardEvent", "InputEvent", "FocusEvent",
+    "TouchEvent", "WheelEvent", "DragEvent", "AnimationEvent",
+    "Console", "Storage", "Location", "History", "Navigator",
+    "Fetch", "Response", "Headers", "Request", "AbortController",
+    "FormData", "Blob", "File", "FileReader", "URL",
+    "WebSocket", "MessageEvent", "CloseEvent",
+    "Canvas", "CanvasRenderingContext2d", "ImageData",
+    "Performance", "PerformanceEntry",
+    "MediaQueryList", "IntersectionObserver", "ResizeObserver", "MutationObserver",
+    "Crypto", "SubtleCrypto",
+    "Worker", "SharedWorker", "ServiceWorker",
+]
+
+# Individual feature flags for each Web API
+Window = []
+Document = []
+Element = []
+Node = []
+Event = []
+MouseEvent = ["Event"]
+KeyboardEvent = ["Event"]
+InputEvent = ["Event"]
+FocusEvent = ["Event"]
+TouchEvent = ["Event"]
+WheelEvent = ["Event"]
+DragEvent = ["Event"]
+AnimationEvent = ["Event"]
+TransitionEvent = ["Event"]
+Console = []
+Storage = []
+Location = []
+History = []
+Navigator = []
+Fetch = []
+Response = []
+Headers = []
+Request = []
+AbortController = []
+FormData = []
+Blob = []
+File = ["Blob"]
+FileReader = []
+URL = []
+WebSocket = []
+MessageEvent = ["Event"]
+CloseEvent = ["Event"]
+Canvas = ["Element"]
+CanvasRenderingContext2d = []
+ImageData = []
+Performance = []
+PerformanceEntry = []
+MediaQueryList = []
+IntersectionObserver = []
+ResizeObserver = []
+MutationObserver = []
+Crypto = []
+SubtleCrypto = []
+Worker = []
+SharedWorker = []
+ServiceWorker = []
+
+[compile]
+backend = "llvm"
+target = "wasm32-unknown-unknown"
+
+[compile.wasm]
+import_module = "env"

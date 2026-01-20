@@ -1,0 +1,94 @@
+{
+  "page": "agents",
+  "production": {
+    "title": "Agent Infrastructure - Sigil",
+    "sectionCount": 10,
+    "headingCount": 23,
+    "linkCount": 30,
+    "buttonCount": 1,
+    "imageCount": 2,
+    "textLength": 9878,
+    "navLinks": [
+      "Sigil0.3",
+      "Learn",
+      "Docs",
+      "Playground",
+      "Agents",
+      "The Pattern",
+      "Qliphoth",
+      "GitHub"
+    ],
+    "footerLinks": [
+      "Sigil",
+      "Tutorial",
+      "Documentation",
+      "Playground",
+      "Agent Infrastructure",
+      "The Pattern",
+      "Built on Sigil",
+      "GitHub",
+      "Discussions",
+      "Issues",
+      "Company",
+      "Platform Docs"
+    ],
+    "mainSections": [
+      "section section-dark",
+      "engram",
+      "omen",
+      "gnosis",
+      "oracle",
+      "anima",
+      "covenant",
+      "commune",
+      "daemon",
+      "aegis"
+    ]
+  },
+  "wasm": {
+    "title": "Agent Infrastructure - Sigil",
+    "sectionCount": 10,
+    "headingCount": 23,
+    "linkCount": 30,
+    "buttonCount": 1,
+    "imageCount": 2,
+    "textLength": 9878,
+    "navLinks": [
+      "Sigil0.3",
+      "Learn",
+      "Docs",
+      "Playground",
+      "Agents",
+      "The Pattern",
+      "Qliphoth",
+      "GitHub"
+    ],
+    "footerLinks": [
+      "Sigil",
+      "Tutorial",
+      "Documentation",
+      "Playground",
+      "Agent Infrastructure",
+      "The Pattern",
+      "Built on Sigil",
+      "GitHub",
+      "Discussions",
+      "Issues",
+      "Company",
+      "Platform Docs"
+    ],
+    "mainSections": [
+      "section section-dark",
+      "engram",
+      "omen",
+      "gnosis",
+      "oracle",
+      "anima",
+      "covenant",
+      "commune",
+      "daemon",
+      "aegis"
+    ]
+  },
+  "differences": []
+}

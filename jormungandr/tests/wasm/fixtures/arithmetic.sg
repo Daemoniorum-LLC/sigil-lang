@@ -1,0 +1,10 @@
+// EXPECTED_OUTPUT: 15
+// EXPECTED_EXIT: 0
+
+rite main() -> i64 {
+    let a = 10;
+    let b = 5;
+    let sum = a + b;
+    println(str(sum));
+    0
+}

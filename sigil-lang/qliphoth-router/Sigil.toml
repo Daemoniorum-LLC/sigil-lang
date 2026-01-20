@@ -1,0 +1,25 @@
+# qliphoth-router - Type-safe routing for Sigil web applications
+# Client-side routing with history API integration
+# Copyright © 2025 Daemoniorum, LLC. All rights reserved.
+
+[project]
+name = "qliphoth-router"
+version = "0.2.0"
+edition = "2025"
+description = "Type-safe client-side router for qliphoth applications"
+license = "MIT OR Apache-2.0"
+sigil-version = "0.2.0"
+authors = ["Daemoniorum, LLC"]
+
+[dependencies]
+qliphoth = { path = "../qliphoth", version = "0.2.0" }
+qliphoth-sys = { path = "../qliphoth-sys", version = "0.2.0" }
+
+[features]
+default = []
+hash-routing = []      # Use hash-based routing (#/path)
+scroll-restoration = [] # Restore scroll position on navigation
+
+[compile]
+backend = "llvm"
+target = "wasm32-unknown-unknown"

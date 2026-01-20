@@ -66,6 +66,10 @@ pub mod runtime;
 pub mod codegen;
 pub mod driver;
 
+// WASM support
+#[cfg(target = "wasm32")]
+pub mod wasm_bridge;
+
 // Re-exports for convenience
 pub use span::{Span, Spanned};
 pub use token::{Token, SpannedToken};

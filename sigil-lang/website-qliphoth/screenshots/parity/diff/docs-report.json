@@ -1,0 +1,84 @@
+{
+  "page": "docs",
+  "production": {
+    "title": "Quick Reference - Sigil Documentation",
+    "sectionCount": 5,
+    "headingCount": 29,
+    "linkCount": 25,
+    "buttonCount": 1,
+    "imageCount": 2,
+    "textLength": 2729,
+    "navLinks": [
+      "Sigil0.3",
+      "Learn",
+      "Docs",
+      "Playground",
+      "Agents",
+      "The Pattern",
+      "Qliphoth",
+      "GitHub"
+    ],
+    "footerLinks": [
+      "Sigil",
+      "Tutorial",
+      "Full Docs",
+      "Playground",
+      "Agent Infrastructure",
+      "The Pattern",
+      "Built on Sigil",
+      "GitHub",
+      "Discussions",
+      "Issues",
+      "Company",
+      "Platform Docs"
+    ],
+    "mainSections": [
+      "docs-section",
+      "docs-section",
+      "docs-section",
+      "docs-section",
+      "docs-cta"
+    ]
+  },
+  "wasm": {
+    "title": "Quick Reference - Sigil Documentation",
+    "sectionCount": 5,
+    "headingCount": 29,
+    "linkCount": 25,
+    "buttonCount": 1,
+    "imageCount": 2,
+    "textLength": 2729,
+    "navLinks": [
+      "Sigil0.3",
+      "Learn",
+      "Docs",
+      "Playground",
+      "Agents",
+      "The Pattern",
+      "Qliphoth",
+      "GitHub"
+    ],
+    "footerLinks": [
+      "Sigil",
+      "Tutorial",
+      "Full Docs",
+      "Playground",
+      "Agent Infrastructure",
+      "The Pattern",
+      "Built on Sigil",
+      "GitHub",
+      "Discussions",
+      "Issues",
+      "Company",
+      "Platform Docs"
+    ],
+    "mainSections": [
+      "docs-section",
+      "docs-section",
+      "docs-section",
+      "docs-section",
+      "docs-cta"
+    ]
+  },
+  "differences": []
+}

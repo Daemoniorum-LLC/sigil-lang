@@ -108,6 +108,7 @@ impl WasmCompiler {
             // Closure
             Expr::Closure {
                 params,
+                return_type: _,
                 body,
                 is_move,
             } => self.compile_closure(params, body, *is_move),
@@ -202,6 +203,15 @@ impl WasmCompiler {
             Expr::LegionBroadcast { .. } => Err(WasmError::unsupported("Legion broadcast")),
             Expr::LegionConsensus { .. } => Err(WasmError::unsupported("Legion consensus")),
             Expr::LegionDecay { .. } => Err(WasmError::unsupported("Legion decay")),
+
+            // Named arguments - handled in call compilation
+            Expr::NamedArg { .. } => Err(WasmError::unsupported(
+                "named arguments outside of function calls",
+            )),
+
+            // Template expressions (i18n)
+            Expr::Template(_) => Err(WasmError::unsupported("template expressions")),
+            Expr::TemplateFragment { .. } => Err(WasmError::unsupported("template fragments")),
         }
     }
 

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Event Handler Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #1a1a2e; color: #eee; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #14A088; color: white; border: none; border-radius: 4px; }
+        button:hover { background: #1AB89D; }
+        #status { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Event Handler Test</h1>
+    <p>Click the button to test function references</p>
+    <div id="app"></div>
+    <div id="status">Loading WASM...</div>
+
+    <script type="module">
+        import { SigilRuntime } from './sigil_runtime.js';
+
+        (async () => {
+            try {
+                const runtime = new SigilRuntime();
+                const resp = await fetch('test_event.wasm');
+                const bytes = await resp.arrayBuffer();
+                const { instance } = await WebAssembly.instantiate(bytes, runtime.getImports());
+                runtime.init(instance);
+
+                if (instance.exports.main) {
+                    instance.exports.main();
+                    document.getElementById('status').textContent = 'WASM loaded! Click the button and check console.';
+                }
+            } catch (e) {
+                document.getElementById('status').textContent = 'Error: ' + e.message;
+                console.error(e);
+            }
+        })();
+    </script>
+</body>
+</html>

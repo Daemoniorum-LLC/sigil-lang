@@ -398,8 +398,11 @@ fn lower_item(ctx: &mut LoweringContext, module: &mut IrModule, item: &ast::Item
         | ast::Item::ExternBlock(_)
         | ast::Item::Macro(_)
         | ast::Item::MacroInvocation(_)
-        | ast::Item::Plurality(_) => {
-            // TODO: Handle these items (plurality lowering handled separately)
+        | ast::Item::Plurality(_)
+        | ast::Item::Form(_)
+        | ast::Item::Translations(_)
+        | ast::Item::LocaleEnum(_) => {
+            // TODO: Handle these items (plurality lowering handled separately, forms/i18n TBD)
         }
     }
 }

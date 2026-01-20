@@ -789,9 +789,7 @@ impl From<ParseError> for Diagnostic {
                     .with_code("E0003")
                     .with_note("number literals must be valid integers or floats")
             }
-            ParseError::Custom(msg) => {
-                Diagnostic::error(msg, Span::new(0, 0)).with_code("E0004")
-            }
+            ParseError::Custom(msg) => Diagnostic::error(msg, Span::new(0, 0)).with_code("E0004"),
         }
     }
 }
@@ -810,10 +808,13 @@ impl From<&TypeError> for Diagnostic {
                 diag = diag.with_note("check spelling or add an import/definition");
             }
             TypeErrorCode::BorrowError => {
-                diag = diag.with_note("a value can only be borrowed once mutably, or multiple times immutably");
+                diag = diag.with_note(
+                    "a value can only be borrowed once mutably, or multiple times immutably",
+                );
             }
             TypeErrorCode::EvidentialityError => {
-                diag = diag.with_note("evidentiality markers track the source and certainty of values");
+                diag = diag
+                    .with_note("evidentiality markers track the source and certainty of values");
             }
             TypeErrorCode::NonBoolCondition => {
                 diag = diag.with_note("conditions must evaluate to `true` or `false`");
@@ -885,7 +886,8 @@ impl From<&RuntimeError> for Diagnostic {
                 diag = diag.with_note("check for infinite recursion in your code");
             }
             RuntimeErrorCode::ControlFlowError => {
-                diag = diag.with_note("control flow statements must be used in the correct context");
+                diag =
+                    diag.with_note("control flow statements must be used in the correct context");
             }
             RuntimeErrorCode::LinearTypeViolation => {
                 diag = diag.with_note("linear values can only be used once (no-cloning theorem)");
@@ -988,9 +990,19 @@ fn format_token(token: &Token) -> String {
 }
 
 /// Add contextual suggestions for common token mistakes.
-fn add_token_suggestions(mut diag: Diagnostic, expected: &str, found: &Token, span: Span) -> Diagnostic {
+fn add_token_suggestions(
+    mut diag: Diagnostic,
+    expected: &str,
+    found: &Token,
+    span: Span,
+) -> Diagnostic {
     // Common mistake: missing semicolon
-    if expected.contains(';') && matches!(found, Token::RBrace | Token::Fn | Token::Let | Token::Struct) {
+    if expected.contains(';')
+        && matches!(
+            found,
+            Token::RBrace | Token::Fn | Token::Let | Token::Struct
+        )
+    {
         diag = diag
             .with_note("statements must end with a semicolon")
             .with_suggestion("add a semicolon", span, ";");

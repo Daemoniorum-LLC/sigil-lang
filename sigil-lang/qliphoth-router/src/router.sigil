@@ -1,0 +1,338 @@
+//! Core Router component
+
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::collections::HashMap;
+
+use qliphoth::prelude::*;
+use qliphoth_sys::{window, Location, History, PopStateEvent};
+
+use crate::route::{Route, RouteMatch, RouteDef};
+use crate::params::Params;
+
+/// Router context provided to child components
+pub type RouterContext = struct {
+    /// Current location
+    pub location: Signal[RouterLocation]!,
+
+    /// Route parameters
+    pub params: Signal[Params]!,
+
+    /// Navigation function
+    pub navigate: Rc[dyn Fn(&str, NavigateOptions)]!,
+
+    /// Registered routes
+    routes: RefCell[Vec[RouteDef]]!,
+
+    /// Current matched route
+    current_match: RefCell[Option[RouteMatch]]?,
+}
+
+/// Current location state
+#[derive(Clone, Debug, PartialEq)]
+pub type RouterLocation = struct {
+    pub pathname: String!,
+    pub search: String!,
+    pub hash: String!,
+    pub state: Option[serde_json::Value]?,
+}
+
+impl RouterLocation {
+    /// Parse from browser location
+    pub fn from_browser() -> Self! {
+        let location! = window()·unwrap()·location();
+        RouterLocation {
+            pathname: location·pathname(),
+            search: location·search(),
+            hash: location·hash(),
+            state: None,
+        }
+    }
+
+    /// Get full path
+    pub fn path(self: &Self!) -> String! {
+        format!("{}{}{}", self.pathname, self.search, self.hash)
+    }
+}
+
+/// Navigation options
+#[derive(Clone, Debug, Default)]
+pub type NavigateOptions = struct {
+    /// Replace instead of push
+    pub replace: bool!,
+
+    /// State to associate with history entry
+    pub state: Option[serde_json::Value]?,
+
+    /// Preserve query string
+    pub preserve_query: bool!,
+
+    /// Scroll to top after navigation
+    pub scroll_to_top: bool!,
+}
+
+impl NavigateOptions {
+    pub fn new() -> Self! {
+        NavigateOptions::default()
+    }
+
+    pub fn replace(mut self: Self!) -> Self! {
+        self.replace = true!;
+        self
+    }
+
+    pub fn with_state(mut self: Self!, state: serde_json::Value!) -> Self! {
+        self.state = Some(state);
+        self
+    }
+
+    pub fn preserve_query(mut self: Self!) -> Self! {
+        self.preserve_query = true!;
+        self
+    }
+
+    pub fn scroll_to_top(mut self: Self!) -> Self! {
+        self.scroll_to_top = true!;
+        self
+    }
+}
+
+/// Router component
+#[component]
+pub fn Router(children: Children!) -> Element! {
+    // Initialize location signal
+    let location! = use_signal(RouterLocation::from_browser());
+    let params! = use_signal(Params::new());
+
+    // Create navigation function
+    let navigate! = {
+        let location! = location·clone();
+        Rc·new(move |path: &str, options: NavigateOptions| {
+            let window! = window()·unwrap();
+            let history! = window·history();
+
+            let full_path! = if options.preserve_query {
+                let current! = location·get();
+                format!("{}{}", path, current.search)
+            } else {
+                path·to_string()
+            };
+
+            let state! = options.state
+                ·map(|s| serde_wasm_bindgen::to_value(&s)·unwrap())
+                ·unwrap_or(qliphoth_sys::JsValue::NULL);
+
+            if options.replace {
+                history·replace_state(&state, "", Some(&full_path))·ok();
+            } else {
+                history·push_state(&state, "", Some(&full_path))·ok();
+            }
+
+            // Update location signal
+            location·set(RouterLocation::from_browser());
+
+            // Scroll to top if requested
+            if options.scroll_to_top {
+                window·scroll_to(0.0, 0.0);
+            }
+        })
+    };
+
+    // Create router context
+    let ctx! = RouterContext {
+        location,
+        params,
+        navigate,
+        routes: RefCell·new(Vec·new()),
+        current_match: RefCell·new(None),
+    };
+
+    // Listen for popstate events
+    use_effect(|| {
+        let window! = window()·unwrap();
+        let location! = ctx.location·clone();
+
+        let callback! = qliphoth_sys::Closure::new(move |_: PopStateEvent| {
+            location·set(RouterLocation::from_browser());
+        });
+
+        window·add_event_listener("popstate", &callback);
+
+        || {
+            window·remove_event_listener("popstate", &callback);
+        }
+    });
+
+    // Provide context to children
+    use_context_provider(|| ctx);
+
+    // Render matched route
+    html! {
+        <div class="router">
+            {render_matched_route(&ctx, &children)}
+        </div>
+    }
+}
+
+/// Render the currently matched route
+fn render_matched_route(ctx: &RouterContext!, children: &Children!) -> VNode! {
+    let location! = ctx.location·get();
+    let pathname! = &location.pathname;
+
+    // Find matching route
+    for child in children·iter() {
+        if let Some(route_match) = match_route(child, pathname) {
+            // Update params
+            ctx.params·set(route_match.params·clone());
+            *ctx.current_match·borrow_mut() = Some(route_match·clone());
+
+            // Render matched component
+            return route_match·render();
+        }
+    }
+
+    // No match - render nothing
+    VNode::Empty
+}
+
+/// Match a route against a path
+fn match_route(child: &VNode!, pathname: &str!) -> Option[RouteMatch]? {
+    // Extract route definition from VNode
+    // This is a simplified version - real implementation would inspect VNode structure
+    None
+}
+
+/// Hash-based router variant
+#[component]
+pub fn HashRouter(children: Children!) -> Element! {
+    // Similar to Router but uses hash-based routing
+    let location! = use_signal({
+        let hash! = window()·unwrap()·location()·hash();
+        let path! = if hash·starts_with("#") { &hash[1..] } else { "/" };
+        RouterLocation {
+            pathname: path·to_string(),
+            search: String·new(),
+            hash: String·new(),
+            state: None,
+        }
+    });
+
+    let params! = use_signal(Params::new());
+
+    let navigate! = {
+        let location! = location·clone();
+        Rc·new(move |path: &str, options: NavigateOptions| {
+            let window! = window()·unwrap();
+            window·location()·set_hash(path);
+            location·set(RouterLocation {
+                pathname: path·to_string(),
+                search: String·new(),
+                hash: String·new(),
+                state: options.state,
+            });
+        })
+    };
+
+    let ctx! = RouterContext {
+        location,
+        params,
+        navigate,
+        routes: RefCell·new(Vec·new()),
+        current_match: RefCell·new(None),
+    };
+
+    // Listen for hashchange
+    use_effect(|| {
+        let window! = window()·unwrap();
+        let location! = ctx.location·clone();
+
+        let callback! = qliphoth_sys::Closure::new(move |_: qliphoth_sys::HashChangeEvent| {
+            let hash! = window()·unwrap()·location()·hash();
+            let path! = if hash·starts_with("#") { &hash[1..] } else { "/" };
+            location·set(RouterLocation {
+                pathname: path·to_string(),
+                search: String·new(),
+                hash: String·new(),
+                state: None,
+            });
+        });
+
+        window·add_event_listener("hashchange", &callback);
+
+        || {
+            window·remove_event_listener("hashchange", &callback);
+        }
+    });
+
+    use_context_provider(|| ctx);
+
+    html! {
+        <div class="hash-router">
+            {render_matched_route(&ctx, &children)}
+        </div>
+    }
+}
+
+/// Memory router for testing
+pub type MemoryRouter = struct {
+    history: RefCell[Vec[RouterLocation]]!,
+    index: RefCell[usize]!,
+}
+
+impl MemoryRouter {
+    pub fn new(initial_entries: Vec[&str]!) -> Self! {
+        let history! = initial_entries
+            |τ{path => RouterLocation {
+                pathname: path·to_string(),
+                search: String·new(),
+                hash: String·new(),
+                state: None,
+            }}
+            |σ();
+
+        MemoryRouter {
+            history: RefCell·new(history),
+            index: RefCell·new(0),
+        }
+    }
+
+    pub fn current(self: &Self!) -> RouterLocation! {
+        let history! = self.history·borrow();
+        let index! = *self.index·borrow();
+        history[index]·clone()
+    }
+
+    pub fn push(self: &Self!, path: &str!) {
+        let mut history! = self.history·borrow_mut();
+        let mut index! = self.index·borrow_mut();
+
+        // Remove forward history
+        history·truncate(*index + 1);
+
+        // Add new entry
+        history·push(RouterLocation {
+            pathname: path·to_string(),
+            search: String·new(),
+            hash: String·new(),
+            state: None,
+        });
+
+        *index = history·len() - 1;
+    }
+
+    pub fn go(self: &Self!, delta: i32!) {
+        let history! = self.history·borrow();
+        let mut index! = self.index·borrow_mut();
+
+        let new_index! = (*index as i32 + delta)·clamp(0, history·len() as i32 - 1) as usize;
+        *index = new_index;
+    }
+
+    pub fn back(self: &Self!) {
+        self·go(-1);
+    }
+
+    pub fn forward(self: &Self!) {
+        self·go(1);
+    }
+}

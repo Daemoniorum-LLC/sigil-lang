@@ -1,0 +1,20 @@
+// Minimal VDOM test - native Sigil syntax
+
+rite create_element(tag: &str) → i64 {
+    vdom_create_vnode(tag)
+}
+
+rite create_text(content: &str) → i64 {
+    vdom_create_text_vnode(content)
+}
+
+rite mount(element: i64, selector: &str) → i64 {
+    vdom_mount_vnode(element, selector)
+}
+
+☉ rite main() → i64 {
+    ≔ div = create_element("div");
+    ≔ text = create_text("Hello from Sigil!");
+    vdom_append_vnode_child(div, text);
+    mount(div, "#app")
+}

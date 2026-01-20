@@ -323,6 +323,15 @@ pub enum Item {
     MacroInvocation(MacroInvocation),
     /// Plurality items (DAEMONIORUM extensions)
     Plurality(crate::plurality::PluralityItem),
+    /// Evidential form definition
+    /// `form ContactForm { field email: String~ → String! { ... } }`
+    Form(FormDef),
+    /// Type-safe translations block
+    /// `translations Rights { locale: Locale, ... }`
+    Translations(TranslationsDef),
+    /// Locale enum definition with metadata
+    /// `locale enum Locale { En { code: "en", ... }, Es { code: "es", ... } }`
+    LocaleEnum(LocaleEnumDef),
 }
 
 /// Declarative macro definition.
@@ -351,12 +360,247 @@ pub enum MacroDelimiter {
     Brace,   // {}
 }
 
+// ============================================================================
+// Evidential Forms
+// ============================================================================
+
+/// Evidential form definition.
+/// Forms have fields with evidential transitions: input `~` (reported) → validated `!` (known)
+///
+/// ```sigil
+/// form ContactForm {
+///     field email: String~ → String! {
+///         validate: |v| v.contains("@"),
+///         transform: |v| v.trim().to_lowercase(),
+///         error: "Invalid email address",
+///     }
+///
+///     field message: String~ → String! {
+///         validate: |v| v.len() >= 10,
+///         error: "Message must be at least 10 characters",
+///     }
+///
+///     aegis: {
+///         audit: true,
+///         injection_check: true,
+///     }
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct FormDef {
+    pub visibility: Visibility,
+    pub name: Ident,
+    pub generics: Option<Generics>,
+    pub fields: Vec<FormFieldDef>,
+    pub aegis: Option<FormAegisConfig>,
+}
+
+/// A field in an evidential form with validation and transformation.
+/// `field email: String~ → String! { validate: ..., transform: ..., error: ... }`
+#[derive(Debug, Clone, PartialEq)]
+pub struct FormFieldDef {
+    /// Field name
+    pub name: Ident,
+    /// Input type (typically with `~` evidentiality - reported/hearsay)
+    pub input_type: TypeExpr,
+    /// Output type (typically with `!` evidentiality - known/verified)
+    pub output_type: TypeExpr,
+    /// Validation function: `|value| -> bool`
+    pub validate: Option<Box<Expr>>,
+    /// Transformation function: `|value| -> OutputType`
+    pub transform: Option<Box<Expr>>,
+    /// Error message when validation fails
+    pub error: Option<String>,
+    /// Default value (for optional fields)
+    pub default: Option<Box<Expr>>,
+    /// Whether the field is required (default: true)
+    pub required: bool,
+}
+
+/// Aegis security configuration for a form.
+/// Integrates with Aegis security infrastructure.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FormAegisConfig {
+    /// Enable audit logging of form submissions
+    pub audit: bool,
+    /// Check field values for injection attacks (e.g., prompt injection)
+    pub injection_check: bool,
+    /// Require identity verification before submission
+    pub identity: FormIdentityRequirement,
+    /// Memory protection level for form data
+    pub memory_protection: bool,
+}
+
+/// Identity requirement for form submission
+#[derive(Debug, Clone, PartialEq)]
+pub enum FormIdentityRequirement {
+    /// No identity required
+    None,
+    /// Identity optional
+    Optional,
+    /// Identity required
+    Required,
+}
+
+impl Default for FormAegisConfig {
+    fn default() -> Self {
+        Self {
+            audit: false,
+            injection_check: false,
+            identity: FormIdentityRequirement::None,
+            memory_protection: false,
+        }
+    }
+}
+
+impl Default for FormFieldDef {
+    fn default() -> Self {
+        Self {
+            name: Ident {
+                name: String::new(),
+                evidentiality: None,
+                affect: None,
+                span: Span::default(),
+            },
+            input_type: TypeExpr::Path(TypePath { segments: vec![] }),
+            output_type: TypeExpr::Path(TypePath { segments: vec![] }),
+            validate: None,
+            transform: None,
+            error: None,
+            default: None,
+            required: true,
+        }
+    }
+}
+
+// ============================================================================
+// Type-Safe Internationalization (i18n)
+// ============================================================================
+
+/// Type-safe translations block definition.
+/// ```sigil
+/// translations Rights {
+///     locale: Locale,  // Required: which locale enum to use
+///
+///     // Simple translation (property)
+///     miranda_title: String! = match locale {
+///         En => "Your Miranda Rights",
+///         Es => "Sus Derechos Miranda",
+///     }
+///
+///     // Parameterized translation (method)
+///     greeting(name: String): String! = match locale {
+///         En => "Hello, {name}!",
+///         Es => "¡Hola, {name}!",
+///     }
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct TranslationsDef {
+    pub visibility: Visibility,
+    /// Name of the translations module (e.g., `Rights`, `Common`, `Errors`)
+    pub name: Ident,
+    /// Generic parameters (rare, but allowed for flexibility)
+    pub generics: Option<Generics>,
+    /// The locale type used for matching (must be an enum)
+    pub locale_type: TypeExpr,
+    /// Translation entries (properties or methods)
+    pub entries: Vec<TranslationEntry>,
+}
+
+/// A translation entry - either a simple property or a parameterized method.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TranslationEntry {
+    /// Simple property: `title: String! = match locale { ... }`
+    Property(TranslationProperty),
+    /// Parameterized method: `greeting(name: String): String! = match locale { ... }`
+    Method(TranslationMethod),
+}
+
+/// A simple translation property without parameters.
+/// `title: String! = match locale { En => "...", Es => "..." }`
+#[derive(Debug, Clone, PartialEq)]
+pub struct TranslationProperty {
+    /// Property name
+    pub name: Ident,
+    /// Return type (typically `String!` for known/verified)
+    pub return_type: TypeExpr,
+    /// The match expression over locale
+    pub body: Box<Expr>,
+}
+
+/// A parameterized translation method.
+/// `greeting(name: String): String! = match locale { En => "Hello, {name}!", ... }`
+#[derive(Debug, Clone, PartialEq)]
+pub struct TranslationMethod {
+    /// Method name
+    pub name: Ident,
+    /// Parameters for interpolation
+    pub params: Vec<Param>,
+    /// Return type (typically `String!` for known/verified)
+    pub return_type: TypeExpr,
+    /// The match expression over locale
+    pub body: Box<Expr>,
+}
+
+/// Locale enum definition for extensible locales.
+/// ```sigil
+/// locale enum Locale {
+///     En { code: "en", name: "English" },
+///     Es { code: "es", name: "Español" },
+///     // Add more locales without breaking existing translations
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocaleEnumDef {
+    pub visibility: Visibility,
+    /// Enum name (typically `Locale`)
+    pub name: Ident,
+    /// Locale variants with metadata
+    pub variants: Vec<LocaleVariant>,
+}
+
+/// A variant in a locale enum with metadata.
+/// `En { code: "en", name: "English", rtl: false }`
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocaleVariant {
+    /// Variant name (e.g., `En`, `Es`, `Fr`)
+    pub name: Ident,
+    /// BCP-47 language code
+    pub code: String,
+    /// Human-readable name in native language
+    pub display_name: String,
+    /// Right-to-left text direction (default: false)
+    pub rtl: bool,
+    /// Optional fallback locale name
+    pub fallback: Option<Ident>,
+}
+
+impl Default for LocaleVariant {
+    fn default() -> Self {
+        Self {
+            name: Ident {
+                name: String::new(),
+                evidentiality: None,
+                affect: None,
+                span: Span::default(),
+            },
+            code: String::new(),
+            display_name: String::new(),
+            rtl: false,
+            fallback: None,
+        }
+    }
+}
+
 /// Foreign function interface block.
 /// `extern "C" { fn foo(x: c_int) -> c_int; }`
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExternBlock {
     pub abi: String, // "C", "Rust", "system", etc.
     pub items: Vec<ExternItem>,
+    /// Outer attributes like #[link("lib")] and #[cfg(...)]
+    pub outer_attrs: Vec<Attribute>,
 }
 
 /// Items that can appear in an extern block.
@@ -364,6 +608,19 @@ pub struct ExternBlock {
 pub enum ExternItem {
     Function(ExternFunction),
     Static(ExternStatic),
+    /// Type alias for callback/function pointer types: `type Callback = rite(i32) → i32;`
+    Type(ExternType),
+}
+
+/// Foreign type: either an opaque type (`type Name;`) or a type alias (`type Name = T;`).
+/// Opaque types are used for FFI pointer types like `type GtkWidget;`
+/// Type aliases are used for callback types like `type Callback = rite(i32) → i32;`
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternType {
+    pub visibility: Visibility,
+    pub name: Ident,
+    /// None for opaque types, Some for type aliases
+    pub ty: Option<TypeExpr>,
 }
 
 /// Foreign function declaration (no body).
@@ -450,6 +707,8 @@ pub struct Function {
     pub is_const: bool,
     pub is_unsafe: bool,
     pub attrs: FunctionAttrs,
+    /// Raw outer attributes (preserved for cfg evaluation)
+    pub outer_attrs: Vec<Attribute>,
     pub name: Ident,
     pub aspect: Option<Aspect>, // Verb aspect: ·ing, ·ed, ·able, ·ive
     pub generics: Option<Generics>,
@@ -1289,6 +1548,17 @@ pub enum Expr {
     /// Apply decay to collective memory
     LegionDecay { field: Box<Expr>, rate: Box<Expr> },
 
+    // ==========================================
+    // Template Expressions (STE - Sigil Template Expressions)
+    // Used for building UI with evidentiality-aware markup
+    // ==========================================
+    /// Template element: `⟨div[class: "card"]⟩...⟨/div⟩`
+    /// Compiles to VNode construction with evidentiality tracking
+    Template(TemplateElement),
+
+    /// Template fragment: `⟨⟩...⟨/⟩` (multiple children without wrapper)
+    TemplateFragment { children: Vec<TemplateChild> },
+
     /// Named argument in function call: `name: value`
     /// Used in calls like `stack(axis: 0)` or `func(x: 1, y: 2)`
     NamedArg { name: Ident, value: Box<Expr> },
@@ -1350,6 +1620,96 @@ pub struct AsmOptions {
     pub readonly: bool,
     /// AT&T syntax (vs Intel)
     pub att_syntax: bool,
+}
+
+// ==========================================
+// Template Expression Types (STE)
+// ==========================================
+
+/// A template element representing UI markup.
+/// Uses mathematical angle brackets ⟨⟩ to avoid conflict with generics.
+///
+/// Example:
+/// ```sigil
+/// ⟨article[class: "card", id: my_id]⟩
+///     ⟨h2⟩ "{title!}" ⟨/h2⟩
+///     { items |φ{_.active} |τ{i → ⟨li⟩ "{i.name~}" ⟨/li⟩} }
+/// ⟨/article⟩
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct TemplateElement {
+    /// Tag name (e.g., "div", "article", "MyComponent")
+    pub tag: TemplateTag,
+    /// Attributes in bracket syntax: `[class: "foo", id: bar]`
+    pub attrs: Vec<TemplateAttr>,
+    /// Event handlers: `[on_click: handler]`
+    pub events: Vec<TemplateEvent>,
+    /// Child nodes (text, expressions, nested elements)
+    pub children: Vec<TemplateChild>,
+    /// Whether this is a self-closing element: `⟨input/⟩`
+    pub self_closing: bool,
+    /// Optional key for reconciliation: `[key: item.id]`
+    pub key: Option<Box<Expr>>,
+    /// Optional ref callback: `[ref: my_ref]`
+    pub ref_callback: Option<Box<Expr>>,
+}
+
+/// A template tag - either an HTML element or a component.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TemplateTag {
+    /// HTML element (lowercase): div, span, article
+    Element(String),
+    /// Component (PascalCase): MyButton, Card
+    Component(TypePath),
+}
+
+/// A template attribute.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TemplateAttr {
+    /// Attribute name
+    pub name: Ident,
+    /// Attribute value with evidentiality
+    pub value: Expr,
+    /// Optional evidentiality marker on the value
+    pub evidentiality: Option<Evidentiality>,
+}
+
+/// A template event handler.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TemplateEvent {
+    /// Event name (without "on_" prefix): click, change, submit
+    pub event: Ident,
+    /// Handler expression
+    pub handler: Expr,
+}
+
+/// A child node in a template.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TemplateChild {
+    /// Nested template element
+    Element(Box<TemplateElement>),
+    /// Text content (with evidentiality in interpolations)
+    Text(String),
+    /// Expression in braces: `{expr}`
+    Expr(Box<Expr>),
+    /// Interpolated text: `"{name!}"`
+    Interpolation {
+        parts: Vec<TemplateInterpolationPart>,
+    },
+    /// Fragment: `⟨⟩...⟨/⟩`
+    Fragment(Vec<TemplateChild>),
+}
+
+/// Part of an interpolated string in a template (with evidentiality).
+#[derive(Debug, Clone, PartialEq)]
+pub enum TemplateInterpolationPart {
+    /// Literal text
+    Text(String),
+    /// Expression with evidentiality: `{name!}`, `{value~}`
+    Expr {
+        expr: Box<Expr>,
+        evidentiality: Option<Evidentiality>,
+    },
 }
 
 /// Pipe operation in a chain.
@@ -1601,10 +1961,7 @@ pub enum PipeOp {
     /// Possibility method call: `|◊method` or `|◊method(args)`
     /// Calls method with possibility semantics (returns approximate result)
     /// Example: `hll|◊count` -> approximate cardinality
-    PossibilityMethod {
-        name: Ident,
-        args: Vec<Expr>,
-    },
+    PossibilityMethod { name: Ident, args: Vec<Expr> },
 
     /// Necessity verification: `|□` - verify and promote to certain
     /// Validates data meets requirements, promotes evidence level
@@ -1615,10 +1972,7 @@ pub enum PipeOp {
     /// Necessity method call: `|□method` or `|□method(args)`
     /// Calls method with necessity semantics (verifies and promotes evidence)
     /// Example: `node~|□verify` -> verified with ! evidentiality
-    NecessityMethod {
-        name: Ident,
-        args: Vec<Expr>,
-    },
+    NecessityMethod { name: Ident, args: Vec<Expr> },
 }
 
 /// Incorporation segment.

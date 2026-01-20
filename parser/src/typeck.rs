@@ -297,8 +297,11 @@ impl TypeError {
 
     /// Type mismatch error: expected X, found Y
     pub fn type_mismatch(expected: &str, found: &str) -> Self {
-        Self::new(format!("type mismatch: expected `{}`, found `{}`", expected, found))
-            .with_code(TypeErrorCode::TypeMismatch)
+        Self::new(format!(
+            "type mismatch: expected `{}`, found `{}`",
+            expected, found
+        ))
+        .with_code(TypeErrorCode::TypeMismatch)
     }
 
     /// Undefined name error
@@ -309,8 +312,11 @@ impl TypeError {
 
     /// Condition must be boolean error
     pub fn non_bool_condition(context: &str, found: &str) -> Self {
-        Self::new(format!("{} condition must be `bool`, found `{}`", context, found))
-            .with_code(TypeErrorCode::NonBoolCondition)
+        Self::new(format!(
+            "{} condition must be `bool`, found `{}`",
+            context, found
+        ))
+        .with_code(TypeErrorCode::NonBoolCondition)
     }
 
     /// Array elements must have same type
@@ -336,14 +342,16 @@ impl TypeError {
 
     /// Missing match arm
     pub fn missing_match_arm() -> Self {
-        Self::new("match expression has no arms")
-            .with_code(TypeErrorCode::MissingMatchArm)
+        Self::new("match expression has no arms").with_code(TypeErrorCode::MissingMatchArm)
     }
 
     /// Invalid reduction
     pub fn invalid_reduction(op: &str, found: &str) -> Self {
-        Self::new(format!("`{}` requires array or slice, found `{}`", op, found))
-            .with_code(TypeErrorCode::InvalidReduction)
+        Self::new(format!(
+            "`{}` requires array or slice, found `{}`",
+            op, found
+        ))
+        .with_code(TypeErrorCode::InvalidReduction)
     }
 }
 
@@ -466,6 +474,125 @@ impl TypeChecker {
         // Register built-in types and functions
         checker.register_builtins();
         checker
+    }
+
+    // ========================================================================
+    // Conditional compilation (#[cfg(...)] evaluation)
+    // ========================================================================
+
+    /// Evaluate a cfg condition against the current target.
+    /// Returns true if the condition matches.
+    fn evaluate_cfg(&self, attr: &Attribute) -> bool {
+        if attr.name.name != "cfg" {
+            return true; // Not a cfg attribute, always include
+        }
+
+        match &attr.args {
+            Some(AttrArgs::Paren(args)) => {
+                if args.len() == 1 {
+                    self.evaluate_cfg_arg(&args[0])
+                } else {
+                    true // Invalid cfg, include by default
+                }
+            }
+            _ => true, // Invalid cfg format
+        }
+    }
+
+    /// Evaluate a single cfg argument.
+    fn evaluate_cfg_arg(&self, arg: &AttrArg) -> bool {
+        match arg {
+            // cfg(target_os = "linux")
+            AttrArg::KeyValue { key, value } => {
+                if key.name == "target_os" {
+                    if let Expr::Literal(Literal::String(os)) = value.as_ref() {
+                        return self.matches_target_os(os);
+                    }
+                } else if key.name == "feature" {
+                    // Feature flags - currently not implemented, return false
+                    return false;
+                }
+                true // Unknown key, include
+            }
+            // cfg(not(...)) or cfg(any(...)) via nested attribute
+            AttrArg::Nested(nested) => self.evaluate_cfg_predicate(nested),
+            // Simple identifier like cfg(unix)
+            AttrArg::Ident(ident) => self.evaluate_cfg_simple(&ident.name),
+            _ => true,
+        }
+    }
+
+    /// Evaluate cfg predicates like not(...), any(...), all(...).
+    fn evaluate_cfg_predicate(&self, attr: &Attribute) -> bool {
+        match attr.name.name.as_str() {
+            "not" => {
+                if let Some(AttrArgs::Paren(args)) = &attr.args {
+                    if args.len() == 1 {
+                        return !self.evaluate_cfg_arg(&args[0]);
+                    }
+                }
+                true
+            }
+            "any" => {
+                if let Some(AttrArgs::Paren(args)) = &attr.args {
+                    return args.iter().any(|a| self.evaluate_cfg_arg(a));
+                }
+                true
+            }
+            "all" => {
+                if let Some(AttrArgs::Paren(args)) = &attr.args {
+                    return args.iter().all(|a| self.evaluate_cfg_arg(a));
+                }
+                true
+            }
+            "target_os" => {
+                // Handle nested target_os = "value" form
+                if let Some(AttrArgs::Eq(value)) = &attr.args {
+                    if let Expr::Literal(Literal::String(os)) = value.as_ref() {
+                        return self.matches_target_os(os);
+                    }
+                }
+                true
+            }
+            _ => true, // Unknown predicate
+        }
+    }
+
+    /// Evaluate simple cfg identifiers like unix, windows.
+    fn evaluate_cfg_simple(&self, name: &str) -> bool {
+        match name {
+            "unix" => cfg!(unix),
+            "windows" => cfg!(windows),
+            "linux" => cfg!(target_os = "linux"),
+            "macos" => cfg!(target_os = "macos"),
+            _ => false, // Unknown simple cfg
+        }
+    }
+
+    /// Check if the current target OS matches.
+    fn matches_target_os(&self, os: &str) -> bool {
+        match os {
+            "linux" => cfg!(target_os = "linux"),
+            "macos" => cfg!(target_os = "macos"),
+            "windows" => cfg!(target_os = "windows"),
+            "ios" => cfg!(target_os = "ios"),
+            "android" => cfg!(target_os = "android"),
+            "freebsd" => cfg!(target_os = "freebsd"),
+            "none" => false, // Bare metal, not supported
+            _ => false,
+        }
+    }
+
+    /// Check if a function should be included based on its cfg attributes.
+    fn should_include_function(&self, func: &Function) -> bool {
+        for attr in &func.outer_attrs {
+            if attr.name.name == "cfg" {
+                if !self.evaluate_cfg(attr) {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     fn register_builtins(&mut self) {
@@ -1191,6 +1318,11 @@ impl TypeChecker {
     fn collect_fn_sig(&mut self, item: &Item) {
         match item {
             Item::Function(f) => {
+                // Skip functions that don't match cfg conditions
+                if !self.should_include_function(f) {
+                    return;
+                }
+
                 let params: Vec<Type> = f.params.iter().map(|p| self.convert_type(&p.ty)).collect();
 
                 let return_type = f
@@ -1281,7 +1413,12 @@ impl TypeChecker {
     /// Check an item (third pass)
     fn check_item(&mut self, item: &Item) {
         match item {
-            Item::Function(f) => self.check_function(f),
+            Item::Function(f) => {
+                // Skip functions that don't match cfg conditions
+                if self.should_include_function(f) {
+                    self.check_function(f);
+                }
+            }
             Item::Const(c) => {
                 let declared = self.convert_type(&c.ty);
                 let inferred = self.infer_expr(&c.value);
@@ -1705,7 +1842,10 @@ impl TypeChecker {
                     for elem in &elements[1..] {
                         let t = self.infer_expr(elem);
                         if !self.unify(&elem_ty, &t) {
-                            self.error(TypeError::heterogeneous_array(&format!("{}", elem_ty), &format!("{}", t)));
+                            self.error(TypeError::heterogeneous_array(
+                                &format!("{}", elem_ty),
+                                &format!("{}", t),
+                            ));
                         }
                     }
                     Type::Array {
@@ -1770,7 +1910,10 @@ impl TypeChecker {
             } => {
                 let cond_ty = self.infer_expr(condition);
                 if !self.unify(&Type::Bool, &cond_ty) {
-                    self.error(TypeError::non_bool_condition("while", &format!("{}", cond_ty)));
+                    self.error(TypeError::non_bool_condition(
+                        "while",
+                        &format!("{}", cond_ty),
+                    ));
                 }
                 self.check_block(body);
                 Type::Unit
@@ -1877,7 +2020,10 @@ impl TypeChecker {
                     if let Some(ref guard) = arm.guard {
                         let guard_ty = self.infer_expr(guard);
                         if !self.unify(&Type::Bool, &guard_ty) {
-                            self.error(TypeError::non_bool_condition("match guard", &format!("{}", guard_ty)));
+                            self.error(TypeError::non_bool_condition(
+                                "match guard",
+                                &format!("{}", guard_ty),
+                            ));
                         }
                     }
 
@@ -2128,35 +2274,6 @@ impl TypeChecker {
                 }
             }
 
-            Expr::Index { expr, index, .. } => {
-                let arr_ty = self.infer_expr(expr);
-                let idx_ty = self.infer_expr(index);
-                let (arr_inner, arr_ev) = self.strip_evidence(&arr_ty);
-
-                // Index should be usize
-                let _ = self.unify(&idx_ty, &Type::Int(IntSize::USize));
-
-                // Get element type from array/slice
-                let elem_ty = match arr_inner {
-                    Type::Array { element, .. } => *element,
-                    Type::Slice(element) => *element,
-                    Type::Named { name, generics } if name == "Vec" && !generics.is_empty() => {
-                        generics[0].clone()
-                    }
-                    _ => self.fresh_var(),
-                };
-
-                // Propagate evidence
-                if arr_ev > EvidenceLevel::Known {
-                    Type::Evidential {
-                        inner: Box::new(elem_ty),
-                        evidence: arr_ev,
-                    }
-                } else {
-                    elem_ty
-                }
-            }
-
             _ => {
                 // Handle other expression types
                 self.fresh_var()
@@ -2228,13 +2345,13 @@ impl TypeChecker {
                 // Numeric type promotion: if either operand is float, result is float
                 match (&left_inner, &right_inner) {
                     // Both floats: use larger precision (f64 > f32)
-                    (Type::Float(l), Type::Float(r)) => {
-                        Type::Float(if matches!(l, FloatSize::F64) || matches!(r, FloatSize::F64) {
+                    (Type::Float(l), Type::Float(r)) => Type::Float(
+                        if matches!(l, FloatSize::F64) || matches!(r, FloatSize::F64) {
                             FloatSize::F64
                         } else {
                             *l
-                        })
-                    }
+                        },
+                    ),
                     // Float + Int: promote to float's size
                     (Type::Float(f), Type::Int(_)) | (Type::Int(_), Type::Float(f)) => {
                         Type::Float(*f)
@@ -2275,12 +2392,16 @@ impl TypeChecker {
             // Logical: bool -> bool
             BinOp::And | BinOp::Or => {
                 if !self.unify(&Type::Bool, &left_inner) {
-                    self.error(TypeError::invalid_operand("&&/||", &format!("{}", left_inner))
-                        .with_note("logical operators require boolean operands"));
+                    self.error(
+                        TypeError::invalid_operand("&&/||", &format!("{}", left_inner))
+                            .with_note("logical operators require boolean operands"),
+                    );
                 }
                 if !self.unify(&Type::Bool, &right_inner) {
-                    self.error(TypeError::invalid_operand("&&/||", &format!("{}", right_inner))
-                        .with_note("logical operators require boolean operands"));
+                    self.error(
+                        TypeError::invalid_operand("&&/||", &format!("{}", right_inner))
+                            .with_note("logical operators require boolean operands"),
+                    );
                 }
                 Type::Bool
             }
@@ -2291,8 +2412,10 @@ impl TypeChecker {
             // String concatenation
             BinOp::Concat => {
                 if !self.unify(&Type::Str, &left_inner) {
-                    self.error(TypeError::invalid_operand("++", &format!("{}", left_inner))
-                        .with_note("string concatenation requires string operands"));
+                    self.error(
+                        TypeError::invalid_operand("++", &format!("{}", left_inner))
+                            .with_note("string concatenation requires string operands"),
+                    );
                 }
                 Type::Str
             }
@@ -2408,7 +2531,10 @@ impl TypeChecker {
                     // For bootstrapping: return fresh type variable when input is unknown
                     self.fresh_var()
                 } else {
-                    self.error(TypeError::invalid_reduction("reduce", &format!("{}", inner)));
+                    self.error(TypeError::invalid_reduction(
+                        "reduce",
+                        &format!("{}", inner),
+                    ));
                     Type::Error
                 }
             }
@@ -2433,7 +2559,10 @@ impl TypeChecker {
                         Type::Int(_) | Type::Float(_) => *element,
                         Type::Var(_) => *element, // For bootstrapping: allow type variables
                         _ => {
-                            self.error(TypeError::invalid_operand("numeric reduction", &format!("{}", element)));
+                            self.error(TypeError::invalid_operand(
+                                "numeric reduction",
+                                &format!("{}", element),
+                            ));
                             Type::Error
                         }
                     }
@@ -2441,7 +2570,10 @@ impl TypeChecker {
                     // For bootstrapping: return fresh type variable when input is unknown
                     self.fresh_var()
                 } else {
-                    self.error(TypeError::invalid_reduction("numeric reduction", &format!("{}", inner)));
+                    self.error(TypeError::invalid_reduction(
+                        "numeric reduction",
+                        &format!("{}", inner),
+                    ));
                     Type::Error
                 }
             }
@@ -2453,8 +2585,13 @@ impl TypeChecker {
                         Type::Array { .. } => *element,
                         Type::Var(_) => self.fresh_var(), // For bootstrapping
                         _ => {
-                            self.error(TypeError::invalid_operand("concat reduction", &format!("{}", element))
-                                .with_note("concat requires strings or arrays"));
+                            self.error(
+                                TypeError::invalid_operand(
+                                    "concat reduction",
+                                    &format!("{}", element),
+                                )
+                                .with_note("concat requires strings or arrays"),
+                            );
                             Type::Error
                         }
                     }
@@ -2462,7 +2599,10 @@ impl TypeChecker {
                     // For bootstrapping: return fresh type variable
                     self.fresh_var()
                 } else {
-                    self.error(TypeError::invalid_reduction("concat reduction", &format!("{}", inner)));
+                    self.error(TypeError::invalid_reduction(
+                        "concat reduction",
+                        &format!("{}", inner),
+                    ));
                     Type::Error
                 }
             }
@@ -2473,8 +2613,13 @@ impl TypeChecker {
                         Type::Bool => Type::Bool,
                         Type::Var(_) => Type::Bool, // For bootstrapping: assume bool
                         _ => {
-                            self.error(TypeError::invalid_operand("boolean reduction", &format!("{}", element))
-                                .with_note("all/any requires array of booleans"));
+                            self.error(
+                                TypeError::invalid_operand(
+                                    "boolean reduction",
+                                    &format!("{}", element),
+                                )
+                                .with_note("all/any requires array of booleans"),
+                            );
                             Type::Error
                         }
                     }
@@ -2482,7 +2627,10 @@ impl TypeChecker {
                     // For bootstrapping: return bool
                     Type::Bool
                 } else {
-                    self.error(TypeError::invalid_reduction("boolean reduction", &format!("{}", inner)));
+                    self.error(TypeError::invalid_reduction(
+                        "boolean reduction",
+                        &format!("{}", inner),
+                    ));
                     Type::Error
                 }
             }
@@ -3165,8 +3313,18 @@ impl TypeChecker {
     fn is_reference_coercion(expected: &Type, actual: &Type) -> bool {
         match (expected, actual) {
             // &mut T can coerce to &T (but not vice versa)
-            (Type::Ref { inner: exp_inner, mutable: false, .. },
-             Type::Ref { inner: act_inner, mutable: true, .. }) => {
+            (
+                Type::Ref {
+                    inner: exp_inner,
+                    mutable: false,
+                    ..
+                },
+                Type::Ref {
+                    inner: act_inner,
+                    mutable: true,
+                    ..
+                },
+            ) => {
                 // Inner types must match (handling evidential wrappers)
                 Self::types_match(exp_inner.as_ref(), act_inner.as_ref())
             }
@@ -3186,8 +3344,18 @@ impl TypeChecker {
     fn is_deref_coercion(expected: &Type, actual: &Type) -> bool {
         match (expected, actual) {
             // Reference coercions with mutability consistency
-            (Type::Ref { inner: exp_inner, mutable: exp_mut, .. },
-             Type::Ref { inner: act_inner, mutable: act_mut, .. }) => {
+            (
+                Type::Ref {
+                    inner: exp_inner,
+                    mutable: exp_mut,
+                    ..
+                },
+                Type::Ref {
+                    inner: act_inner,
+                    mutable: act_mut,
+                    ..
+                },
+            ) => {
                 // For deref coercion, mutability must be consistent:
                 // &T → &T (ok), &mut T → &mut T (ok), &mut T → &T (ok, handled by is_reference_coercion)
                 // But &T → &mut T is NOT allowed
@@ -3635,14 +3803,14 @@ mod tests {
 
     #[test]
     fn test_basic_types() {
-        assert!(check("fn main() { let x: i64 = 42; }").is_ok());
-        assert!(check("fn main() { let x: bool = true; }").is_ok());
-        assert!(check("fn main() { let x: f64 = 3.14; }").is_ok());
+        assert!(check("rite main() { ≔ x: i64 = 42; }").is_ok());
+        assert!(check("rite main() { ≔ x: bool = yea; }").is_ok());
+        assert!(check("rite main() { ≔ x: f64 = 3.14; }").is_ok());
     }
 
     #[test]
     fn test_type_mismatch() {
-        assert!(check("fn main() { let x: bool = 42; }").is_err());
+        assert!(check("rite main() { ≔ x: bool = 42; }").is_err());
     }
 
     #[test]
@@ -3650,12 +3818,14 @@ mod tests {
         // Evidence should propagate through operations
         assert!(check(
             r#"
-            fn main() {
-                let known: i64! = 42;
-                let uncertain: i64? = 10;
-                let result = known + uncertain;
+
+            rite main() {
+                ≔ known: i64! = 42;
+                ≔ uncertain: i64? = 10;
+                ≔ result = known + uncertain;
             }
-        "#
+        
+"#
         )
         .is_ok());
     }
@@ -3664,13 +3834,15 @@ mod tests {
     fn test_function_return() {
         let result = check(
             r#"
-            fn add(a: i64, b: i64) -> i64 {
-                return a + b;
+
+            rite add(a: i64, b: i64) → i64 {
+                ⤺ a + b;
             }
-            fn main() {
-                let x = add(1, 2);
+            rite main() {
+                ≔ x = add(1, 2);
             }
-        "#,
+        
+"#,
         );
         if let Err(errors) = &result {
             for e in errors {
@@ -3684,11 +3856,13 @@ mod tests {
     fn test_array_types() {
         assert!(check(
             r#"
-            fn main() {
-                let arr = [1, 2, 3];
-                let x = arr[0];
+
+            rite main() {
+                ≔ arr = [1, 2, 3];
+                ≔ x = arr[0];
             }
-        "#
+        
+"#
         )
         .is_ok());
     }
@@ -3702,12 +3876,14 @@ mod tests {
         // Evidence should be inferred from initializer when not explicitly annotated
         assert!(check(
             r#"
-            fn main() {
-                let reported_val: i64~ = 42;
+
+            rite main() {
+                ≔ reported_val: i64~ = 42;
                 // x should inherit ~ evidence from reported_val
-                let x = reported_val + 1;
+                ≔ x = reported_val + 1;
             }
-        "#
+        
+"#
         )
         .is_ok());
     }
@@ -3717,13 +3893,15 @@ mod tests {
         // Explicit annotation should override inference
         assert!(check(
             r#"
-            fn main() {
-                let reported_val: i64~ = 42;
-                // Explicit ! annotation - this would fail if we checked evidence properly
+
+            rite main() {
+                ≔ reported_val: i64~ = 42;
+                // Explicit ! annotation - this would fail ⎇ we checked evidence properly
                 // but the type system allows it as an override
-                let x! = 42;
+                ≔ x! = 42;
             }
-        "#
+        
+"#
         )
         .is_ok());
     }
@@ -3733,14 +3911,16 @@ mod tests {
         // Evidence from both branches should be joined
         assert!(check(
             r#"
-            fn main() {
-                let known_val: i64! = 1;
-                let reported_val: i64~ = 2;
-                let cond: bool = true;
+
+            rite main() {
+                ≔ known_val: i64! = 1;
+                ≔ reported_val: i64~ = 2;
+                ≔ cond: bool = yea;
                 // Result should have ~ evidence (join of ! and ~)
-                let result = if cond { known_val } else { reported_val };
+                ≔ result = ⎇ cond { known_val } ⎉ { reported_val };
             }
-        "#
+        
+"#
         )
         .is_ok());
     }
@@ -3750,13 +3930,15 @@ mod tests {
         // Binary operations should join evidence levels
         assert!(check(
             r#"
-            fn main() {
-                let known: i64! = 1;
-                let reported: i64~ = 2;
+
+            rite main() {
+                ≔ known: i64! = 1;
+                ≔ reported: i64~ = 2;
                 // Result should have ~ evidence (max of ! and ~)
-                let result = known + reported;
+                ≔ result = known + reported;
             }
-        "#
+        
+"#
         )
         .is_ok());
     }
@@ -3767,10 +3949,12 @@ mod tests {
         // Note: This test is structural - the type checker should handle it
         assert!(check(
             r#"
-            fn main() {
-                let x: i64 = 1;
+
+            rite main() {
+                ≔ x: i64 = 1;
             }
-        "#
+        
+"#
         )
         .is_ok());
     }

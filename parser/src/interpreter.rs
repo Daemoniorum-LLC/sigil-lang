@@ -227,6 +227,7 @@ pub struct Function {
     pub params: Vec<String>,
     pub body: Expr,
     pub closure: Rc<RefCell<Environment>>,
+    pub defining_module: Option<String>,
 }
 
 /// Built-in function type
@@ -438,7 +439,8 @@ impl fmt::Display for Value {
                 let is_close_to_int = (n - rounded).abs() < 1e-10;
                 let display_val = if is_close_to_int { rounded } else { *n };
                 // Always show .0 for integer floats to distinguish from integers
-                if display_val.fract() == 0.0 && !display_val.is_nan() && !display_val.is_infinite() {
+                if display_val.fract() == 0.0 && !display_val.is_nan() && !display_val.is_infinite()
+                {
                     write!(f, "{}.0", display_val as i64)
                 } else {
                     write!(f, "{}", display_val)
@@ -580,11 +582,16 @@ fn tensor_scalar_from_fields(fields: &HashMap<String, Value>) -> Option<f64> {
 /// Extract data as Vec<f64> from tensor fields.
 fn tensor_data_from_fields(fields: &HashMap<String, Value>) -> Option<Vec<f64>> {
     if let Some(Value::Array(arr)) = fields.get("data") {
-        Some(arr.borrow().iter().map(|v| match v {
-            Value::Float(f) => *f,
-            Value::Int(n) => *n as f64,
-            _ => 0.0,
-        }).collect())
+        Some(
+            arr.borrow()
+                .iter()
+                .map(|v| match v {
+                    Value::Float(f) => *f,
+                    Value::Int(n) => *n as f64,
+                    _ => 0.0,
+                })
+                .collect(),
+        )
     } else {
         None
     }
@@ -593,10 +600,15 @@ fn tensor_data_from_fields(fields: &HashMap<String, Value>) -> Option<Vec<f64>> 
 /// Extract shape as Vec<usize> from tensor fields.
 fn tensor_shape_from_fields(fields: &HashMap<String, Value>) -> Option<Vec<usize>> {
     if let Some(Value::Array(arr)) = fields.get("shape") {
-        Some(arr.borrow().iter().map(|v| match v {
-            Value::Int(n) => *n as usize,
-            _ => 0,
-        }).collect())
+        Some(
+            arr.borrow()
+                .iter()
+                .map(|v| match v {
+                    Value::Int(n) => *n as usize,
+                    _ => 0,
+                })
+                .collect(),
+        )
     } else {
         None
     }
@@ -606,7 +618,7 @@ fn tensor_shape_from_fields(fields: &HashMap<String, Value>) -> Option<Vec<usize
 // AST to Value conversion for sigil_parse (Option D - self-parsing)
 // ============================================================================
 
-use crate::ast::{SourceFile, Item, StructFields, Visibility as AstVisibility};
+use crate::ast::{Item, SourceFile, StructFields, Visibility as AstVisibility};
 use crate::span::Spanned;
 
 /// Convert a SourceFile AST to an inspectable Value
@@ -614,8 +626,15 @@ fn ast_to_value_source_file(sf: &SourceFile) -> Value {
     let mut fields = HashMap::new();
 
     // Convert items
-    let items: Vec<Value> = sf.items.iter().map(|item| ast_to_value_item(item)).collect();
-    fields.insert("items".to_string(), Value::Array(Rc::new(RefCell::new(items))));
+    let items: Vec<Value> = sf
+        .items
+        .iter()
+        .map(|item| ast_to_value_item(item))
+        .collect();
+    fields.insert(
+        "items".to_string(),
+        Value::Array(Rc::new(RefCell::new(items))),
+    );
     fields.insert("item_count".to_string(), Value::Int(sf.items.len() as i64));
 
     // Wrap in Result::Ok
@@ -640,102 +659,278 @@ fn ast_to_value_item(item: &Spanned<Item>) -> Value {
     // Add item-specific info
     match &item.node {
         Item::Function(f) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Function".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(f.name.name.clone())));
-            fields.insert("visibility".to_string(), Value::String(Rc::new(visibility_to_string(&f.visibility))));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Function".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(f.name.name.clone())),
+            );
+            fields.insert(
+                "visibility".to_string(),
+                Value::String(Rc::new(visibility_to_string(&f.visibility))),
+            );
             fields.insert("is_async".to_string(), Value::Bool(f.is_async));
             fields.insert("param_count".to_string(), Value::Int(f.params.len() as i64));
-            fields.insert("has_return_type".to_string(), Value::Bool(f.return_type.is_some()));
+            fields.insert(
+                "has_return_type".to_string(),
+                Value::Bool(f.return_type.is_some()),
+            );
 
             // Parameter info (simplified - just count)
-            let params: Vec<Value> = f.params.iter().map(|p| {
-                let mut pf = HashMap::new();
-                pf.insert("type".to_string(), Value::String(Rc::new(format!("{:?}", p.ty))));
-                Value::Struct { name: "Param".to_string(), fields: Rc::new(RefCell::new(pf)) }
-            }).collect();
-            fields.insert("params".to_string(), Value::Array(Rc::new(RefCell::new(params))));
+            let params: Vec<Value> = f
+                .params
+                .iter()
+                .map(|p| {
+                    let mut pf = HashMap::new();
+                    pf.insert(
+                        "type".to_string(),
+                        Value::String(Rc::new(format!("{:?}", p.ty))),
+                    );
+                    Value::Struct {
+                        name: "Param".to_string(),
+                        fields: Rc::new(RefCell::new(pf)),
+                    }
+                })
+                .collect();
+            fields.insert(
+                "params".to_string(),
+                Value::Array(Rc::new(RefCell::new(params))),
+            );
         }
         Item::Struct(s) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Struct".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(s.name.name.clone())));
-            fields.insert("visibility".to_string(), Value::String(Rc::new(visibility_to_string(&s.visibility))));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Struct".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(s.name.name.clone())),
+            );
+            fields.insert(
+                "visibility".to_string(),
+                Value::String(Rc::new(visibility_to_string(&s.visibility))),
+            );
 
             // Handle StructFields enum
             let (field_count, field_names) = match &s.fields {
                 StructFields::Named(fields_vec) => {
-                    let names: Vec<Value> = fields_vec.iter().map(|f| {
-                        Value::String(Rc::new(f.name.name.clone()))
-                    }).collect();
+                    let names: Vec<Value> = fields_vec
+                        .iter()
+                        .map(|f| Value::String(Rc::new(f.name.name.clone())))
+                        .collect();
                     (fields_vec.len() as i64, names)
                 }
                 StructFields::Tuple(types) => (types.len() as i64, vec![]),
                 StructFields::Unit => (0, vec![]),
             };
             fields.insert("field_count".to_string(), Value::Int(field_count));
-            fields.insert("fields".to_string(), Value::Array(Rc::new(RefCell::new(field_names))));
+            fields.insert(
+                "fields".to_string(),
+                Value::Array(Rc::new(RefCell::new(field_names))),
+            );
         }
         Item::Enum(e) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Enum".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(e.name.name.clone())));
-            fields.insert("visibility".to_string(), Value::String(Rc::new(visibility_to_string(&e.visibility))));
-            fields.insert("variant_count".to_string(), Value::Int(e.variants.len() as i64));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Enum".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(e.name.name.clone())),
+            );
+            fields.insert(
+                "visibility".to_string(),
+                Value::String(Rc::new(visibility_to_string(&e.visibility))),
+            );
+            fields.insert(
+                "variant_count".to_string(),
+                Value::Int(e.variants.len() as i64),
+            );
 
             // Variant names
-            let variants: Vec<Value> = e.variants.iter().map(|v| {
-                Value::String(Rc::new(v.name.name.clone()))
-            }).collect();
-            fields.insert("variants".to_string(), Value::Array(Rc::new(RefCell::new(variants))));
+            let variants: Vec<Value> = e
+                .variants
+                .iter()
+                .map(|v| Value::String(Rc::new(v.name.name.clone())))
+                .collect();
+            fields.insert(
+                "variants".to_string(),
+                Value::Array(Rc::new(RefCell::new(variants))),
+            );
         }
         Item::Trait(t) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Trait".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(t.name.name.clone())));
-            fields.insert("visibility".to_string(), Value::String(Rc::new(visibility_to_string(&t.visibility))));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Trait".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(t.name.name.clone())),
+            );
+            fields.insert(
+                "visibility".to_string(),
+                Value::String(Rc::new(visibility_to_string(&t.visibility))),
+            );
             fields.insert("method_count".to_string(), Value::Int(t.items.len() as i64));
         }
         Item::Impl(i) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Impl".to_string())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Impl".to_string())),
+            );
             if let Some(trait_path) = &i.trait_ {
-                fields.insert("trait_name".to_string(), Value::String(Rc::new(format!("{:?}", trait_path))));
+                fields.insert(
+                    "trait_name".to_string(),
+                    Value::String(Rc::new(format!("{:?}", trait_path))),
+                );
             }
             fields.insert("method_count".to_string(), Value::Int(i.items.len() as i64));
         }
         Item::TypeAlias(t) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("TypeAlias".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(t.name.name.clone())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("TypeAlias".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(t.name.name.clone())),
+            );
         }
         Item::Module(m) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Module".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(m.name.name.clone())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Module".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(m.name.name.clone())),
+            );
         }
         Item::Use(u) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Use".to_string())));
-            fields.insert("path".to_string(), Value::String(Rc::new(format!("{:?}", u.tree))));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Use".to_string())),
+            );
+            fields.insert(
+                "path".to_string(),
+                Value::String(Rc::new(format!("{:?}", u.tree))),
+            );
         }
         Item::Const(c) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Const".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(c.name.name.clone())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Const".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(c.name.name.clone())),
+            );
         }
         Item::Static(s) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Static".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(s.name.name.clone())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Static".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(s.name.name.clone())),
+            );
         }
         Item::Actor(a) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Actor".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(a.name.name.clone())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Actor".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(a.name.name.clone())),
+            );
         }
         Item::ExternBlock(_) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("ExternBlock".to_string())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("ExternBlock".to_string())),
+            );
         }
         Item::Macro(m) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Macro".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(m.name.name.clone())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Macro".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(m.name.name.clone())),
+            );
         }
         Item::MacroInvocation(m) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("MacroInvocation".to_string())));
-            fields.insert("path".to_string(), Value::String(Rc::new(format!("{:?}", m.path))));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("MacroInvocation".to_string())),
+            );
+            fields.insert(
+                "path".to_string(),
+                Value::String(Rc::new(format!("{:?}", m.path))),
+            );
         }
         Item::Plurality(_) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Plurality".to_string())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Plurality".to_string())),
+            );
+        }
+        Item::Form(f) => {
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Form".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(f.name.name.clone())),
+            );
+            fields.insert(
+                "visibility".to_string(),
+                Value::String(Rc::new(visibility_to_string(&f.visibility))),
+            );
+            fields.insert("field_count".to_string(), Value::Int(f.fields.len() as i64));
+            fields.insert("has_aegis".to_string(), Value::Bool(f.aegis.is_some()));
+        }
+        Item::Translations(t) => {
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Translations".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(t.name.name.clone())),
+            );
+            fields.insert(
+                "visibility".to_string(),
+                Value::String(Rc::new(visibility_to_string(&t.visibility))),
+            );
+            fields.insert(
+                "entry_count".to_string(),
+                Value::Int(t.entries.len() as i64),
+            );
+        }
+        Item::LocaleEnum(l) => {
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("LocaleEnum".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(l.name.name.clone())),
+            );
+            fields.insert(
+                "visibility".to_string(),
+                Value::String(Rc::new(visibility_to_string(&l.visibility))),
+            );
+            fields.insert(
+                "variant_count".to_string(),
+                Value::Int(l.variants.len() as i64),
+            );
         }
     }
 
@@ -834,8 +1029,7 @@ impl RuntimeError {
 
     /// Division by zero error
     pub fn division_by_zero() -> Self {
-        Self::new("division by zero")
-            .with_code(RuntimeErrorCode::DivisionByZero)
+        Self::new("division by zero").with_code(RuntimeErrorCode::DivisionByZero)
     }
 
     /// Linear type violation (no-cloning theorem)
@@ -843,7 +1037,8 @@ impl RuntimeError {
         Self::new(format!(
             "linear value '{}' used twice (no-cloning theorem violation)",
             var_name
-        )).with_code(RuntimeErrorCode::LinearTypeViolation)
+        ))
+        .with_code(RuntimeErrorCode::LinearTypeViolation)
     }
 
     /// Index out of bounds error
@@ -1063,6 +1258,8 @@ pub struct Interpreter {
 pub enum TypeDef {
     Struct(StructDef),
     Enum(EnumDef),
+    LocaleEnum(crate::ast::LocaleEnumDef),
+    Translations(crate::ast::TranslationsDef),
 }
 
 impl Interpreter {
@@ -1329,6 +1526,127 @@ impl Interpreter {
         Ok(true)
     }
 
+    // ============================================================
+    // Conditional Compilation (#[cfg]) Support
+    // ============================================================
+
+    /// Check if an item should be included based on its cfg attributes.
+    /// Used for functions, structs, modules, etc.
+    fn should_include_item(&self, attrs: &[crate::ast::Attribute]) -> bool {
+        for attr in attrs {
+            if attr.name.name == "cfg" {
+                if !self.evaluate_cfg(attr) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Evaluate a cfg condition against the current target.
+    fn evaluate_cfg(&self, attr: &crate::ast::Attribute) -> bool {
+        if attr.name.name != "cfg" {
+            return true;
+        }
+
+        match &attr.args {
+            Some(crate::ast::AttrArgs::Paren(args)) => {
+                if args.len() == 1 {
+                    self.evaluate_cfg_arg(&args[0])
+                } else {
+                    true // Invalid cfg, include by default
+                }
+            }
+            _ => true,
+        }
+    }
+
+    /// Evaluate a single cfg argument.
+    fn evaluate_cfg_arg(&self, arg: &crate::ast::AttrArg) -> bool {
+        match arg {
+            // cfg(target_os = "linux")
+            crate::ast::AttrArg::KeyValue { key, value } => {
+                if key.name == "target_os" {
+                    if let crate::ast::Expr::Literal(crate::ast::Literal::String(os)) =
+                        value.as_ref()
+                    {
+                        return self.matches_target_os(os);
+                    }
+                } else if key.name == "feature" {
+                    return false; // Feature flags not implemented
+                }
+                true
+            }
+            // cfg(not(...)) or cfg(any(...)) via nested attribute
+            crate::ast::AttrArg::Nested(nested) => self.evaluate_cfg_predicate(nested),
+            // Simple identifier like cfg(unix)
+            crate::ast::AttrArg::Ident(ident) => self.evaluate_cfg_simple(&ident.name),
+            _ => true,
+        }
+    }
+
+    /// Evaluate cfg predicates like not(...), any(...), all(...).
+    fn evaluate_cfg_predicate(&self, attr: &crate::ast::Attribute) -> bool {
+        match attr.name.name.as_str() {
+            "not" => {
+                if let Some(crate::ast::AttrArgs::Paren(args)) = &attr.args {
+                    if args.len() == 1 {
+                        return !self.evaluate_cfg_arg(&args[0]);
+                    }
+                }
+                true
+            }
+            "any" => {
+                if let Some(crate::ast::AttrArgs::Paren(args)) = &attr.args {
+                    return args.iter().any(|a| self.evaluate_cfg_arg(a));
+                }
+                true
+            }
+            "all" => {
+                if let Some(crate::ast::AttrArgs::Paren(args)) = &attr.args {
+                    return args.iter().all(|a| self.evaluate_cfg_arg(a));
+                }
+                true
+            }
+            "target_os" => {
+                if let Some(crate::ast::AttrArgs::Eq(value)) = &attr.args {
+                    if let crate::ast::Expr::Literal(crate::ast::Literal::String(os)) =
+                        value.as_ref()
+                    {
+                        return self.matches_target_os(os);
+                    }
+                }
+                true
+            }
+            _ => true,
+        }
+    }
+
+    /// Evaluate simple cfg identifiers like unix, windows.
+    fn evaluate_cfg_simple(&self, name: &str) -> bool {
+        match name {
+            "unix" => cfg!(unix),
+            "windows" => cfg!(windows),
+            "linux" => cfg!(target_os = "linux"),
+            "macos" => cfg!(target_os = "macos"),
+            _ => false,
+        }
+    }
+
+    /// Check if the current target OS matches.
+    fn matches_target_os(&self, os: &str) -> bool {
+        match os {
+            "linux" => cfg!(target_os = "linux"),
+            "macos" => cfg!(target_os = "macos"),
+            "windows" => cfg!(target_os = "windows"),
+            "ios" => cfg!(target_os = "ios"),
+            "android" => cfg!(target_os = "android"),
+            "freebsd" => cfg!(target_os = "freebsd"),
+            "none" => false,
+            _ => false,
+        }
+    }
+
     fn register_builtins(&mut self) {
         // PhantomData - zero-sized type marker
         self.globals
@@ -1480,6 +1798,28 @@ impl Interpreter {
             };
             let values: Vec<Value> = (start..end).map(Value::Int).collect();
             Ok(Value::Array(Rc::new(RefCell::new(values))))
+        });
+
+        // text() - create a text VNode for UI components
+        self.define_builtin("text", Some(1), |_, args| {
+            let content = match &args[0] {
+                Value::String(s) => s.as_str().to_string(),
+                other => format!("{}", other),
+            };
+            let mut fields = HashMap::new();
+            fields.insert(
+                "tag".to_string(),
+                Value::String(Rc::new("#text".to_string())),
+            );
+            fields.insert("content".to_string(), Value::String(Rc::new(content)));
+            fields.insert(
+                "children".to_string(),
+                Value::Array(Rc::new(RefCell::new(vec![]))),
+            );
+            Ok(Value::Struct {
+                name: "VNode".to_string(),
+                fields: Rc::new(RefCell::new(fields)),
+            })
         });
 
         // ExitCode enum for process exit codes (like Rust's std::process::ExitCode)
@@ -2226,7 +2566,10 @@ impl Interpreter {
                 Err(e) => {
                     // Return error as Result::Err variant
                     let mut fields = HashMap::new();
-                    fields.insert("message".to_string(), Value::String(Rc::new(format!("{}", e))));
+                    fields.insert(
+                        "message".to_string(),
+                        Value::String(Rc::new(format!("{}", e))),
+                    );
                     Ok(Value::Variant {
                         enum_name: "Result".to_string(),
                         variant_name: "Err".to_string(),
@@ -2258,7 +2601,10 @@ impl Interpreter {
                 Ok(s) => s,
                 Err(e) => {
                     let mut fields = HashMap::new();
-                    fields.insert("message".to_string(), Value::String(Rc::new(format!("IO error: {}", e))));
+                    fields.insert(
+                        "message".to_string(),
+                        Value::String(Rc::new(format!("IO error: {}", e))),
+                    );
                     return Ok(Value::Variant {
                         enum_name: "Result".to_string(),
                         variant_name: "Err".to_string(),
@@ -2273,12 +2619,13 @@ impl Interpreter {
             // Parse using Sigil's own parser
             let mut parser = crate::Parser::new(&source);
             match parser.parse_file() {
-                Ok(source_file) => {
-                    Ok(ast_to_value_source_file(&source_file))
-                }
+                Ok(source_file) => Ok(ast_to_value_source_file(&source_file)),
                 Err(e) => {
                     let mut fields = HashMap::new();
-                    fields.insert("message".to_string(), Value::String(Rc::new(format!("{}", e))));
+                    fields.insert(
+                        "message".to_string(),
+                        Value::String(Rc::new(format!("{}", e))),
+                    );
                     Ok(Value::Variant {
                         enum_name: "Result".to_string(),
                         variant_name: "Err".to_string(),
@@ -2324,6 +2671,10172 @@ impl Interpreter {
         self.globals
             .borrow_mut()
             .define("Cell·new".to_string(), cell_new);
+
+        // Register Qliphoth UI components
+        self.register_qliphoth_components();
+    }
+
+    /// Register Qliphoth UI component library
+    fn register_qliphoth_components(&mut self) {
+        // VNode·tag - get the HTML tag name
+        self.globals.borrow_mut().define(
+            "VNode·tag".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "VNode·tag".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        if let Some(tag) = fields.borrow().get("tag") {
+                            return Ok(tag.clone());
+                        }
+                    }
+                    Ok(Value::String(Rc::new("".to_string())))
+                },
+            })),
+        );
+
+        // VNode·text_content - get text content
+        self.globals.borrow_mut().define(
+            "VNode·text_content".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "VNode·text_content".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        // Check for direct content field
+                        if let Some(content) = fields_ref.get("content") {
+                            if let Value::String(s) = content {
+                                return Ok(Value::String(s.clone()));
+                            }
+                        }
+                        // Check for text in children
+                        if let Some(Value::Array(children)) = fields_ref.get("children") {
+                            for child in children.borrow().iter() {
+                                if let Value::Struct { fields: cf, .. } = child {
+                                    if let Some(Value::String(s)) = cf.borrow().get("content") {
+                                        return Ok(Value::String(s.clone()));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Ok(Value::String(Rc::new("".to_string())))
+                },
+            })),
+        );
+
+        // VNode·has_class - check if element has a CSS class
+        self.globals.borrow_mut().define(
+            "VNode·has_class".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "VNode·has_class".to_string(),
+                arity: Some(2),
+                func: |_, args| {
+                    let class_name = match &args[1] {
+                        Value::String(s) => s.as_str(),
+                        _ => return Ok(Value::Bool(false)),
+                    };
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        if let Some(Value::String(classes)) = fields.borrow().get("class") {
+                            return Ok(Value::Bool(
+                                classes.split_whitespace().any(|c| c == class_name),
+                            ));
+                        }
+                        if let Some(Value::Array(classes)) = fields.borrow().get("classes") {
+                            for c in classes.borrow().iter() {
+                                if let Value::String(s) = c {
+                                    if s.as_str() == class_name {
+                                        return Ok(Value::Bool(true));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Ok(Value::Bool(false))
+                },
+            })),
+        );
+
+        // VNode·attr - get attribute value
+        self.globals.borrow_mut().define(
+            "VNode·attr".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "VNode·attr".to_string(),
+                arity: Some(2),
+                func: |_, args| {
+                    let attr_name = match &args[1] {
+                        Value::String(s) => s.to_string(),
+                        _ => return Ok(Value::Null),
+                    };
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        // Check attrs map first
+                        if let Some(Value::Struct { fields: attrs, .. }) = fields_ref.get("attrs") {
+                            if let Some(val) = attrs.borrow().get(&attr_name) {
+                                return Ok(val.clone());
+                            }
+                        }
+                        // Check direct field
+                        if let Some(val) = fields_ref.get(&attr_name) {
+                            return Ok(val.clone());
+                        }
+                    }
+                    Ok(Value::Bool(false))
+                },
+            })),
+        );
+
+        // VNode·children - get children array
+        self.globals.borrow_mut().define(
+            "VNode·children".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "VNode·children".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        if let Some(children) = fields.borrow().get("children") {
+                            return Ok(children.clone());
+                        }
+                    }
+                    Ok(Value::Array(Rc::new(RefCell::new(vec![]))))
+                },
+            })),
+        );
+
+        // VNode·has_child_with_class - check if any child has class
+        self.globals.borrow_mut().define(
+            "VNode·has_child_with_class".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "VNode·has_child_with_class".to_string(),
+                arity: Some(2),
+                func: |_, args| {
+                    let class_name = match &args[1] {
+                        Value::String(s) => s.to_string(),
+                        _ => return Ok(Value::Bool(false)),
+                    };
+                    fn check_children(node: &Value, class_name: &str) -> bool {
+                        if let Value::Struct { fields, .. } = node {
+                            let fields_ref = fields.borrow();
+                            // Check this node's class
+                            if let Some(Value::String(classes)) = fields_ref.get("class") {
+                                if classes.split_whitespace().any(|c| c == class_name) {
+                                    return true;
+                                }
+                            }
+                            // Check children recursively
+                            if let Some(Value::Array(children)) = fields_ref.get("children") {
+                                for child in children.borrow().iter() {
+                                    if check_children(child, class_name) {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        false
+                    }
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        if let Some(Value::Array(children)) = fields.borrow().get("children") {
+                            for child in children.borrow().iter() {
+                                if check_children(child, &class_name) {
+                                    return Ok(Value::Bool(true));
+                                }
+                            }
+                        }
+                    }
+                    Ok(Value::Bool(false))
+                },
+            })),
+        );
+
+        // VNode·find_child_by_class - find first child with given class
+        self.globals.borrow_mut().define(
+            "VNode·find_child_by_class".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "VNode·find_child_by_class".to_string(),
+                arity: Some(2),
+                func: |_, args| {
+                    let class_name = match &args[1] {
+                        Value::String(s) => s.to_string(),
+                        _ => return Ok(Value::Null),
+                    };
+                    fn find_child(node: &Value, class_name: &str) -> Option<Value> {
+                        if let Value::Struct { fields, .. } = node {
+                            let fields_ref = fields.borrow();
+                            // Check this node's class
+                            if let Some(Value::String(classes)) = fields_ref.get("class") {
+                                if classes.split_whitespace().any(|c| c == class_name) {
+                                    return Some(node.clone());
+                                }
+                            }
+                            // Check children
+                            if let Some(Value::Array(children)) = fields_ref.get("children") {
+                                for child in children.borrow().iter() {
+                                    if let Some(found) = find_child(child, class_name) {
+                                        return Some(found);
+                                    }
+                                }
+                            }
+                        }
+                        None
+                    }
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        if let Some(Value::Array(children)) = fields.borrow().get("children") {
+                            for child in children.borrow().iter() {
+                                if let Some(found) = find_child(child, &class_name) {
+                                    return Ok(found);
+                                }
+                            }
+                        }
+                    }
+                    Ok(Value::Null)
+                },
+            })),
+        );
+
+        // VNode·find_children_by_class - find all children with given class
+        self.globals.borrow_mut().define(
+            "VNode·find_children_by_class".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "VNode·find_children_by_class".to_string(),
+                arity: Some(2),
+                func: |_, args| {
+                    let class_name = match &args[1] {
+                        Value::String(s) => s.to_string(),
+                        _ => return Ok(Value::Array(Rc::new(RefCell::new(vec![])))),
+                    };
+                    fn collect_children(node: &Value, class_name: &str, results: &mut Vec<Value>) {
+                        if let Value::Struct { fields, .. } = node {
+                            let fields_ref = fields.borrow();
+                            // Check this node's class
+                            if let Some(Value::String(classes)) = fields_ref.get("class") {
+                                if classes.split_whitespace().any(|c| c == class_name) {
+                                    results.push(node.clone());
+                                }
+                            }
+                            // Check children
+                            if let Some(Value::Array(children)) = fields_ref.get("children") {
+                                for child in children.borrow().iter() {
+                                    collect_children(child, class_name, results);
+                                }
+                            }
+                        }
+                    }
+                    let mut results = Vec::new();
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        if let Some(Value::Array(children)) = fields.borrow().get("children") {
+                            for child in children.borrow().iter() {
+                                collect_children(child, &class_name, &mut results);
+                            }
+                        }
+                    }
+                    Ok(Value::Array(Rc::new(RefCell::new(results))))
+                },
+            })),
+        );
+
+        // VNode·find_children_by_tag - find all children with given tag
+        self.globals.borrow_mut().define(
+            "VNode·find_children_by_tag".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "VNode·find_children_by_tag".to_string(),
+                arity: Some(2),
+                func: |_, args| {
+                    let tag_name = match &args[1] {
+                        Value::String(s) => s.to_string(),
+                        _ => return Ok(Value::Array(Rc::new(RefCell::new(vec![])))),
+                    };
+                    fn collect_by_tag(node: &Value, tag_name: &str, results: &mut Vec<Value>) {
+                        if let Value::Struct { fields, .. } = node {
+                            let fields_ref = fields.borrow();
+                            if let Some(Value::String(tag)) = fields_ref.get("tag") {
+                                if tag.as_str() == tag_name {
+                                    results.push(node.clone());
+                                }
+                            }
+                            if let Some(Value::Array(children)) = fields_ref.get("children") {
+                                for child in children.borrow().iter() {
+                                    collect_by_tag(child, tag_name, results);
+                                }
+                            }
+                        }
+                    }
+                    let mut results = Vec::new();
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        if let Some(Value::Array(children)) = fields.borrow().get("children") {
+                            for child in children.borrow().iter() {
+                                collect_by_tag(child, &tag_name, &mut results);
+                            }
+                        }
+                    }
+                    Ok(Value::Array(Rc::new(RefCell::new(results))))
+                },
+            })),
+        );
+
+        // Button·render - render Button component to VNode
+        self.globals.borrow_mut().define(
+            "Button·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Button·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+
+                        // Get button properties with defaults
+                        let label = match fields_ref.get("label") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let variant = match fields_ref.get("variant") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "primary".to_string(),
+                        };
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "md".to_string(),
+                        };
+                        let disabled =
+                            matches!(fields_ref.get("disabled"), Some(Value::Bool(true)));
+                        let loading = matches!(fields_ref.get("loading"), Some(Value::Bool(true)));
+                        let button_type = match fields_ref.get("button_type") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "button".to_string(),
+                        };
+                        let aria_label = fields_ref.get("aria_label").cloned();
+                        let icon = fields_ref.get("icon").cloned();
+                        let icon_position = match fields_ref.get("icon_position") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "left".to_string(),
+                        };
+
+                        // Build CSS classes
+                        let mut classes = vec![format!("btn-{}", variant), format!("btn-{}", size)];
+                        if disabled || loading {
+                            classes.push("btn-disabled".to_string());
+                        }
+
+                        // Build children
+                        let mut children: Vec<Value> = vec![];
+
+                        // Add spinner if loading
+                        if loading {
+                            let mut spinner_fields = HashMap::new();
+                            spinner_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("span".to_string())),
+                            );
+                            spinner_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("btn-spinner".to_string())),
+                            );
+                            spinner_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(spinner_fields)),
+                            });
+                        }
+
+                        // Add icon if present
+                        if let Some(Value::String(_)) = &icon {
+                            let mut icon_fields = HashMap::new();
+                            icon_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("span".to_string())),
+                            );
+                            icon_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("btn-icon".to_string())),
+                            );
+                            icon_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let icon_node = Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(icon_fields)),
+                            };
+                            if icon_position == "left" {
+                                children.insert(0, icon_node);
+                            } else {
+                                children.push(icon_node);
+                            }
+                        }
+
+                        // Add label as text node
+                        if !label.is_empty() {
+                            let mut text_fields = HashMap::new();
+                            text_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_fields
+                                .insert("content".to_string(), Value::String(Rc::new(label)));
+                            text_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(text_fields)),
+                            });
+                        }
+
+                        // Build attributes
+                        let mut attrs = HashMap::new();
+                        attrs.insert("type".to_string(), Value::String(Rc::new(button_type)));
+                        if disabled || loading {
+                            attrs.insert("disabled".to_string(), Value::Bool(true));
+                            attrs.insert(
+                                "aria-disabled".to_string(),
+                                Value::String(Rc::new("true".to_string())),
+                            );
+                        }
+                        if loading {
+                            attrs.insert(
+                                "aria-busy".to_string(),
+                                Value::String(Rc::new("true".to_string())),
+                            );
+                        }
+                        if let Some(Value::String(al)) = aria_label {
+                            attrs.insert("aria-label".to_string(), Value::String(al));
+                        }
+
+                        // Build VNode
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("button".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(children))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Button·render requires a Button struct"))
+                },
+            })),
+        );
+
+        // Card·render - render Card component with recursive child rendering
+        self.globals.borrow_mut().define(
+            "Card·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Card·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+
+                        // Parse Card properties
+                        let variant = match fields_ref.get("variant") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "elevated".to_string(),
+                        };
+                        let clickable = match fields_ref.get("clickable") {
+                            Some(Value::Bool(b)) => *b,
+                            _ => false,
+                        };
+                        let padding = match fields_ref.get("padding") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let as_element = match fields_ref.get("as_element") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "div".to_string(),
+                        };
+                        let aria_label = fields_ref.get("aria_label").cloned();
+
+                        // Build CSS classes
+                        let mut classes = vec!["card".to_string(), format!("card-{}", variant)];
+                        if clickable {
+                            classes.push("card-clickable".to_string());
+                            classes.push("cursor-pointer".to_string());
+                        }
+                        if let Some(ref p) = padding {
+                            classes.push(format!("card-p-{}", p));
+                        }
+
+                        // Build attributes
+                        let mut attrs = HashMap::new();
+                        if clickable {
+                            attrs.insert(
+                                "role".to_string(),
+                                Value::String(Rc::new("button".to_string())),
+                            );
+                            attrs.insert(
+                                "tabindex".to_string(),
+                                Value::String(Rc::new("0".to_string())),
+                            );
+                        }
+                        if let Some(Value::String(al)) = aria_label {
+                            attrs.insert("aria-label".to_string(), Value::String(al));
+                        }
+
+                        // Render children - convert CardHeader/CardBody/CardFooter to VNodes
+                        let mut rendered_children = Vec::new();
+                        if let Some(Value::Array(children_arr)) = fields_ref.get("children") {
+                            for child in children_arr.borrow().iter() {
+                                if let Value::Struct {
+                                    name,
+                                    fields: child_fields,
+                                    ..
+                                } = child
+                                {
+                                    let rendered = match name.as_str() {
+                                        "CardHeader" => {
+                                            // Render CardHeader
+                                            let cf = child_fields.borrow();
+                                            let mut header_children = Vec::new();
+
+                                            // Add image if present
+                                            if let Some(Value::String(img_src)) = cf.get("image") {
+                                                let img_alt = match cf.get("image_alt") {
+                                                    Some(Value::String(s)) => s.to_string(),
+                                                    _ => "".to_string(),
+                                                };
+                                                let mut img_attrs = HashMap::new();
+                                                img_attrs.insert(
+                                                    "src".to_string(),
+                                                    Value::String(img_src.clone()),
+                                                );
+                                                img_attrs.insert(
+                                                    "alt".to_string(),
+                                                    Value::String(Rc::new(img_alt)),
+                                                );
+                                                let mut img_fields = HashMap::new();
+                                                img_fields.insert(
+                                                    "tag".to_string(),
+                                                    Value::String(Rc::new("img".to_string())),
+                                                );
+                                                img_fields.insert(
+                                                    "class".to_string(),
+                                                    Value::String(Rc::new(
+                                                        "card-image".to_string(),
+                                                    )),
+                                                );
+                                                img_fields.insert(
+                                                    "children".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                                );
+                                                img_fields.insert(
+                                                    "attrs".to_string(),
+                                                    Value::Struct {
+                                                        name: "Attrs".to_string(),
+                                                        fields: Rc::new(RefCell::new(img_attrs)),
+                                                    },
+                                                );
+                                                header_children.push(Value::Struct {
+                                                    name: "VNode".to_string(),
+                                                    fields: Rc::new(RefCell::new(img_fields)),
+                                                });
+                                            }
+
+                                            // Add title if present
+                                            if let Some(Value::String(title)) = cf.get("title") {
+                                                let mut title_text = HashMap::new();
+                                                title_text.insert(
+                                                    "tag".to_string(),
+                                                    Value::String(Rc::new("#text".to_string())),
+                                                );
+                                                title_text.insert(
+                                                    "content".to_string(),
+                                                    Value::String(title.clone()),
+                                                );
+                                                title_text.insert(
+                                                    "children".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                                );
+                                                let mut title_fields = HashMap::new();
+                                                title_fields.insert(
+                                                    "tag".to_string(),
+                                                    Value::String(Rc::new("h3".to_string())),
+                                                );
+                                                title_fields.insert(
+                                                    "class".to_string(),
+                                                    Value::String(Rc::new(
+                                                        "card-title".to_string(),
+                                                    )),
+                                                );
+                                                title_fields.insert(
+                                                    "children".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(vec![
+                                                        Value::Struct {
+                                                            name: "VNode".to_string(),
+                                                            fields: Rc::new(RefCell::new(
+                                                                title_text,
+                                                            )),
+                                                        },
+                                                    ]))),
+                                                );
+                                                header_children.push(Value::Struct {
+                                                    name: "VNode".to_string(),
+                                                    fields: Rc::new(RefCell::new(title_fields)),
+                                                });
+                                            }
+
+                                            // Add subtitle if present
+                                            if let Some(Value::String(subtitle)) =
+                                                cf.get("subtitle")
+                                            {
+                                                let mut sub_text = HashMap::new();
+                                                sub_text.insert(
+                                                    "tag".to_string(),
+                                                    Value::String(Rc::new("#text".to_string())),
+                                                );
+                                                sub_text.insert(
+                                                    "content".to_string(),
+                                                    Value::String(subtitle.clone()),
+                                                );
+                                                sub_text.insert(
+                                                    "children".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                                );
+                                                let mut sub_fields = HashMap::new();
+                                                sub_fields.insert(
+                                                    "tag".to_string(),
+                                                    Value::String(Rc::new("p".to_string())),
+                                                );
+                                                sub_fields.insert(
+                                                    "class".to_string(),
+                                                    Value::String(Rc::new(
+                                                        "card-subtitle".to_string(),
+                                                    )),
+                                                );
+                                                sub_fields.insert(
+                                                    "children".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(vec![
+                                                        Value::Struct {
+                                                            name: "VNode".to_string(),
+                                                            fields: Rc::new(RefCell::new(sub_text)),
+                                                        },
+                                                    ]))),
+                                                );
+                                                header_children.push(Value::Struct {
+                                                    name: "VNode".to_string(),
+                                                    fields: Rc::new(RefCell::new(sub_fields)),
+                                                });
+                                            }
+
+                                            let mut header_fields = HashMap::new();
+                                            header_fields.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("div".to_string())),
+                                            );
+                                            header_fields.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new("card-header".to_string())),
+                                            );
+                                            header_fields.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(
+                                                    header_children,
+                                                ))),
+                                            );
+                                            Some(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(header_fields)),
+                                            })
+                                        }
+                                        "CardBody" => {
+                                            // Render CardBody
+                                            let cf = child_fields.borrow();
+                                            let body_children =
+                                                cf.get("children").cloned().unwrap_or_else(|| {
+                                                    Value::Array(Rc::new(RefCell::new(vec![])))
+                                                });
+                                            let mut body_fields = HashMap::new();
+                                            body_fields.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("div".to_string())),
+                                            );
+                                            body_fields.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new("card-body".to_string())),
+                                            );
+                                            body_fields
+                                                .insert("children".to_string(), body_children);
+                                            Some(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(body_fields)),
+                                            })
+                                        }
+                                        "CardFooter" => {
+                                            // Render CardFooter
+                                            let cf = child_fields.borrow();
+                                            let footer_children =
+                                                cf.get("children").cloned().unwrap_or_else(|| {
+                                                    Value::Array(Rc::new(RefCell::new(vec![])))
+                                                });
+                                            let mut footer_fields = HashMap::new();
+                                            footer_fields.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("div".to_string())),
+                                            );
+                                            footer_fields.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new("card-footer".to_string())),
+                                            );
+                                            footer_fields
+                                                .insert("children".to_string(), footer_children);
+                                            Some(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(footer_fields)),
+                                            })
+                                        }
+                                        _ => Some(child.clone()), // Pass through other children
+                                    };
+                                    if let Some(r) = rendered {
+                                        rendered_children.push(r);
+                                    }
+                                } else {
+                                    rendered_children.push(child.clone());
+                                }
+                            }
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new(as_element)));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(rendered_children))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Card·render requires a Card struct"))
+                },
+            })),
+        );
+
+        // Badge·render
+        self.globals.borrow_mut().define(
+            "Badge·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Badge·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let label = match fields_ref.get("label") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let variant = match fields_ref.get("variant") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "neutral".to_string(),
+                        };
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "md".to_string(),
+                        };
+
+                        let mut text_fields = HashMap::new();
+                        text_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("#text".to_string())),
+                        );
+                        text_fields.insert("content".to_string(), Value::String(Rc::new(label)));
+                        text_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![]))),
+                        );
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("span".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(format!(
+                                "badge badge-{} badge-{}",
+                                variant, size
+                            ))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(text_fields)),
+                            }]))),
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Badge·render requires a Badge struct"))
+                },
+            })),
+        );
+
+        // Spinner·render
+        self.globals.borrow_mut().define(
+            "Spinner·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Spinner·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "md".to_string(),
+                        };
+                        let label = match fields_ref.get("label") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "Loading...".to_string(),
+                        };
+
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "role".to_string(),
+                            Value::String(Rc::new("status".to_string())),
+                        );
+                        attrs.insert(
+                            "aria-live".to_string(),
+                            Value::String(Rc::new("polite".to_string())),
+                        );
+                        attrs.insert("aria-label".to_string(), Value::String(Rc::new(label)));
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(format!("spinner spinner-{}", size))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![]))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "Spinner·render requires a Spinner struct",
+                    ))
+                },
+            })),
+        );
+
+        // Input·render
+        self.globals.borrow_mut().define(
+            "Input·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Input·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let name = match fields_ref.get("name") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let input_type = match fields_ref.get("input_type") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "text".to_string(),
+                        };
+                        let placeholder = match fields_ref.get("placeholder") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let disabled =
+                            matches!(fields_ref.get("disabled"), Some(Value::Bool(true)));
+                        let required =
+                            matches!(fields_ref.get("required"), Some(Value::Bool(true)));
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "md".to_string(),
+                        };
+
+                        let mut attrs = HashMap::new();
+                        attrs.insert("type".to_string(), Value::String(Rc::new(input_type)));
+                        attrs.insert("name".to_string(), Value::String(Rc::new(name)));
+                        attrs.insert(
+                            "placeholder".to_string(),
+                            Value::String(Rc::new(placeholder)),
+                        );
+                        if disabled {
+                            attrs.insert("disabled".to_string(), Value::Bool(true));
+                        }
+                        if required {
+                            attrs.insert("required".to_string(), Value::Bool(true));
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("input".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(format!("input input-{}", size))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![]))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Input·render requires an Input struct"))
+                },
+            })),
+        );
+
+        // Icon·render
+        self.globals.borrow_mut().define(
+            "Icon·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Icon·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let name = match fields_ref.get("name") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "md".to_string(),
+                        };
+
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "aria-hidden".to_string(),
+                            Value::String(Rc::new("true".to_string())),
+                        );
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("i".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(format!("icon icon-{} icon-{}", name, size))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![]))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Icon·render requires an Icon struct"))
+                },
+            })),
+        );
+
+        // Checkbox·render - renders checkbox with label and error as siblings
+        self.globals.borrow_mut().define(
+            "Checkbox·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Checkbox·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let name = match fields_ref.get("name") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let checked = matches!(fields_ref.get("checked"), Some(Value::Bool(true)));
+                        let disabled =
+                            matches!(fields_ref.get("disabled"), Some(Value::Bool(true)));
+                        let indeterminate =
+                            matches!(fields_ref.get("indeterminate"), Some(Value::Bool(true)));
+                        let required =
+                            matches!(fields_ref.get("required"), Some(Value::Bool(true)));
+                        let label_text = match fields_ref.get("label") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let id = match fields_ref.get("id") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let error = match fields_ref.get("error") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let description = match fields_ref.get("description") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "md".to_string(),
+                        };
+                        let label_position = match fields_ref.get("label_position") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "right".to_string(),
+                        };
+                        let value = match fields_ref.get("value") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let aria_label = match fields_ref.get("aria_label") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+
+                        // Build classes
+                        let mut classes =
+                            vec!["checkbox".to_string(), format!("checkbox-{}", size)];
+                        if checked {
+                            classes.push("checkbox-checked".to_string());
+                        }
+                        if disabled {
+                            classes.push("checkbox-disabled".to_string());
+                        }
+                        if indeterminate {
+                            classes.push("checkbox-indeterminate".to_string());
+                        }
+                        if error.is_some() {
+                            classes.push("checkbox-error".to_string());
+                        }
+                        classes.push(format!("checkbox-label-{}", label_position));
+
+                        // Build attributes
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "type".to_string(),
+                            Value::String(Rc::new("checkbox".to_string())),
+                        );
+                        attrs.insert("name".to_string(), Value::String(Rc::new(name)));
+                        if let Some(ref v) = value {
+                            attrs.insert("value".to_string(), Value::String(Rc::new(v.clone())));
+                        }
+                        if checked {
+                            attrs.insert("checked".to_string(), Value::Bool(true));
+                        }
+                        if disabled {
+                            attrs.insert("disabled".to_string(), Value::Bool(true));
+                            attrs.insert(
+                                "aria-disabled".to_string(),
+                                Value::String(Rc::new("true".to_string())),
+                            );
+                        }
+                        if let Some(ref i) = id {
+                            attrs.insert("id".to_string(), Value::String(Rc::new(i.clone())));
+                        }
+                        if indeterminate {
+                            attrs.insert(
+                                "data-indeterminate".to_string(),
+                                Value::String(Rc::new("true".to_string())),
+                            );
+                        }
+                        if error.is_some() {
+                            attrs.insert(
+                                "aria-invalid".to_string(),
+                                Value::String(Rc::new("true".to_string())),
+                            );
+                        }
+                        if description.is_some() {
+                            let desc_id = id.clone().unwrap_or_else(|| "checkbox".to_string())
+                                + "-description";
+                            attrs.insert(
+                                "aria-describedby".to_string(),
+                                Value::String(Rc::new(desc_id)),
+                            );
+                        }
+                        if let Some(ref al) = aria_label {
+                            attrs.insert(
+                                "aria-label".to_string(),
+                                Value::String(Rc::new(al.clone())),
+                            );
+                        }
+
+                        // Build siblings array
+                        let mut siblings: Vec<Value> = vec![];
+
+                        // Add label sibling if present
+                        if let Some(ref lt) = label_text {
+                            let mut label_attrs = HashMap::new();
+                            if let Some(ref i) = id {
+                                label_attrs
+                                    .insert("for".to_string(), Value::String(Rc::new(i.clone())));
+                            }
+                            let mut label_text_fields = HashMap::new();
+                            label_text_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            label_text_fields
+                                .insert("content".to_string(), Value::String(Rc::new(lt.clone())));
+                            label_text_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+
+                            let mut label_fields = HashMap::new();
+                            label_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("label".to_string())),
+                            );
+                            label_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("checkbox-label".to_string())),
+                            );
+                            label_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(label_text_fields)),
+                                }]))),
+                            );
+                            label_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(label_attrs)),
+                                },
+                            );
+                            siblings.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(label_fields)),
+                            });
+                        }
+
+                        // Add error message sibling if present
+                        if let Some(ref err) = error {
+                            let mut error_text_fields = HashMap::new();
+                            error_text_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            error_text_fields
+                                .insert("content".to_string(), Value::String(Rc::new(err.clone())));
+                            error_text_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+
+                            let mut error_fields = HashMap::new();
+                            error_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("span".to_string())),
+                            );
+                            error_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("checkbox-error-message".to_string())),
+                            );
+                            error_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(error_text_fields)),
+                                }]))),
+                            );
+                            siblings.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(error_fields)),
+                            });
+                        }
+
+                        // Add description sibling if present
+                        if let Some(ref desc) = description {
+                            let mut desc_text_fields = HashMap::new();
+                            desc_text_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            desc_text_fields.insert(
+                                "content".to_string(),
+                                Value::String(Rc::new(desc.clone())),
+                            );
+                            desc_text_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+
+                            let mut desc_fields = HashMap::new();
+                            desc_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("span".to_string())),
+                            );
+                            desc_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("checkbox-description".to_string())),
+                            );
+                            desc_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(desc_text_fields)),
+                                }]))),
+                            );
+                            siblings.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(desc_fields)),
+                            });
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("input".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![]))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        vnode_fields.insert(
+                            "siblings".to_string(),
+                            Value::Array(Rc::new(RefCell::new(siblings))),
+                        );
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "Checkbox·render requires a Checkbox struct",
+                    ))
+                },
+            })),
+        );
+
+        // Radio·render - renders radio with label as sibling
+        self.globals.borrow_mut().define(
+            "Radio·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Radio·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let checked = matches!(fields_ref.get("checked"), Some(Value::Bool(true)));
+                        let disabled =
+                            matches!(fields_ref.get("disabled"), Some(Value::Bool(true)));
+                        let name = match fields_ref.get("name") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let label_text = match fields_ref.get("label") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let id = match fields_ref.get("id") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "type".to_string(),
+                            Value::String(Rc::new("radio".to_string())),
+                        );
+                        attrs.insert("name".to_string(), Value::String(Rc::new(name)));
+                        if checked {
+                            attrs.insert("checked".to_string(), Value::Bool(true));
+                        }
+                        if disabled {
+                            attrs.insert("disabled".to_string(), Value::Bool(true));
+                            attrs.insert(
+                                "aria-disabled".to_string(),
+                                Value::String(Rc::new("true".to_string())),
+                            );
+                        }
+                        if let Some(ref i) = id {
+                            attrs.insert("id".to_string(), Value::String(Rc::new(i.clone())));
+                        }
+
+                        // Build siblings (label)
+                        let mut siblings: Vec<Value> = vec![];
+                        if let Some(ref lt) = label_text {
+                            let mut label_attrs = HashMap::new();
+                            if let Some(ref i) = id {
+                                label_attrs
+                                    .insert("for".to_string(), Value::String(Rc::new(i.clone())));
+                            }
+                            let mut label_text_fields = HashMap::new();
+                            label_text_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            label_text_fields
+                                .insert("content".to_string(), Value::String(Rc::new(lt.clone())));
+                            label_text_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+
+                            let mut label_fields = HashMap::new();
+                            label_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("label".to_string())),
+                            );
+                            label_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("radio-label".to_string())),
+                            );
+                            label_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(label_text_fields)),
+                                }]))),
+                            );
+                            label_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(label_attrs)),
+                                },
+                            );
+                            siblings.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(label_fields)),
+                            });
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("input".to_string())),
+                        );
+                        let mut classes = vec!["radio".to_string()];
+                        if checked {
+                            classes.push("radio-checked".to_string());
+                        }
+                        if disabled {
+                            classes.push("radio-disabled".to_string());
+                        }
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![]))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        vnode_fields.insert(
+                            "siblings".to_string(),
+                            Value::Array(Rc::new(RefCell::new(siblings))),
+                        );
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Radio·render requires a Radio struct"))
+                },
+            })),
+        );
+
+        // RadioGroup·render
+        self.globals.borrow_mut().define(
+            "RadioGroup·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "RadioGroup·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let name = match fields_ref.get("name") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let selected_value = match fields_ref.get("value") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let options = match fields_ref.get("options") {
+                            Some(Value::Array(arr)) => arr.borrow().clone(),
+                            _ => vec![],
+                        };
+
+                        // Build radio children
+                        let mut children: Vec<Value> = vec![];
+                        for opt in &options {
+                            let (opt_value, opt_label) = if let Value::Struct {
+                                fields: opt_fields,
+                                ..
+                            } = opt
+                            {
+                                let of = opt_fields.borrow();
+                                let v = match of.get("value") {
+                                    Some(Value::String(s)) => s.to_string(),
+                                    _ => "".to_string(),
+                                };
+                                let l = match of.get("label") {
+                                    Some(Value::String(s)) => s.to_string(),
+                                    _ => v.clone(),
+                                };
+                                (v, l)
+                            } else {
+                                continue;
+                            };
+
+                            let is_checked = selected_value.as_ref() == Some(&opt_value);
+
+                            let mut radio_attrs = HashMap::new();
+                            radio_attrs.insert(
+                                "type".to_string(),
+                                Value::String(Rc::new("radio".to_string())),
+                            );
+                            radio_attrs
+                                .insert("name".to_string(), Value::String(Rc::new(name.clone())));
+                            radio_attrs
+                                .insert("value".to_string(), Value::String(Rc::new(opt_value)));
+                            radio_attrs.insert("checked".to_string(), Value::Bool(is_checked));
+
+                            let mut radio_fields = HashMap::new();
+                            radio_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("input".to_string())),
+                            );
+                            radio_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("radio".to_string())),
+                            );
+                            radio_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            radio_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(radio_attrs)),
+                                },
+                            );
+
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(radio_fields)),
+                            });
+                        }
+
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "role".to_string(),
+                            Value::String(Rc::new("radiogroup".to_string())),
+                        );
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("radio-group".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(children))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "RadioGroup·render requires a RadioGroup struct",
+                    ))
+                },
+            })),
+        );
+
+        // Switch·render - renders switch with label as sibling
+        self.globals.borrow_mut().define(
+            "Switch·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Switch·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let checked = matches!(fields_ref.get("checked"), Some(Value::Bool(true)));
+                        let disabled =
+                            matches!(fields_ref.get("disabled"), Some(Value::Bool(true)));
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "md".to_string(),
+                        };
+                        let label_text = match fields_ref.get("label") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let id = match fields_ref.get("id") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "role".to_string(),
+                            Value::String(Rc::new("switch".to_string())),
+                        );
+                        attrs.insert(
+                            "aria-checked".to_string(),
+                            Value::String(Rc::new(
+                                if checked { "true" } else { "false" }.to_string(),
+                            )),
+                        );
+                        if disabled {
+                            attrs.insert(
+                                "aria-disabled".to_string(),
+                                Value::String(Rc::new("true".to_string())),
+                            );
+                        }
+                        if let Some(ref i) = id {
+                            attrs.insert("id".to_string(), Value::String(Rc::new(i.clone())));
+                        }
+
+                        // Build siblings (label)
+                        let mut siblings: Vec<Value> = vec![];
+                        if let Some(ref lt) = label_text {
+                            let mut label_attrs = HashMap::new();
+                            if let Some(ref i) = id {
+                                label_attrs
+                                    .insert("for".to_string(), Value::String(Rc::new(i.clone())));
+                            }
+                            let mut label_text_fields = HashMap::new();
+                            label_text_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            label_text_fields
+                                .insert("content".to_string(), Value::String(Rc::new(lt.clone())));
+                            label_text_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+
+                            let mut label_fields = HashMap::new();
+                            label_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("label".to_string())),
+                            );
+                            label_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("switch-label".to_string())),
+                            );
+                            label_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(label_text_fields)),
+                                }]))),
+                            );
+                            label_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(label_attrs)),
+                                },
+                            );
+                            siblings.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(label_fields)),
+                            });
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("button".to_string())),
+                        );
+                        let mut classes = vec!["switch".to_string(), format!("switch-{}", size)];
+                        if checked {
+                            classes.push("switch-checked".to_string());
+                        }
+                        if disabled {
+                            classes.push("switch-disabled".to_string());
+                        }
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![]))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        vnode_fields.insert(
+                            "siblings".to_string(),
+                            Value::Array(Rc::new(RefCell::new(siblings))),
+                        );
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Switch·render requires a Switch struct"))
+                },
+            })),
+        );
+
+        // Select·render
+        self.globals.borrow_mut().define(
+            "Select·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Select·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let disabled =
+                            matches!(fields_ref.get("disabled"), Some(Value::Bool(true)));
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "md".to_string(),
+                        };
+                        let children = fields_ref
+                            .get("children")
+                            .cloned()
+                            .unwrap_or_else(|| Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                        let mut attrs = HashMap::new();
+                        if disabled {
+                            attrs.insert("disabled".to_string(), Value::Bool(true));
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("select".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(format!("select select-{}", size))),
+                        );
+                        vnode_fields.insert("children".to_string(), children);
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Select·render requires a Select struct"))
+                },
+            })),
+        );
+
+        // Textarea·render - renders textarea with label as sibling
+        self.globals.borrow_mut().define(
+            "Textarea·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Textarea·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let disabled =
+                            matches!(fields_ref.get("disabled"), Some(Value::Bool(true)));
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "md".to_string(),
+                        };
+                        let placeholder = match fields_ref.get("placeholder") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let label_text = match fields_ref.get("label") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let id = match fields_ref.get("id") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "placeholder".to_string(),
+                            Value::String(Rc::new(placeholder)),
+                        );
+                        if disabled {
+                            attrs.insert("disabled".to_string(), Value::Bool(true));
+                        }
+                        if let Some(ref i) = id {
+                            attrs.insert("id".to_string(), Value::String(Rc::new(i.clone())));
+                        }
+
+                        // Build siblings (label)
+                        let mut siblings: Vec<Value> = vec![];
+                        if let Some(ref lt) = label_text {
+                            let mut label_attrs = HashMap::new();
+                            if let Some(ref i) = id {
+                                label_attrs
+                                    .insert("for".to_string(), Value::String(Rc::new(i.clone())));
+                            }
+                            let mut label_text_fields = HashMap::new();
+                            label_text_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            label_text_fields
+                                .insert("content".to_string(), Value::String(Rc::new(lt.clone())));
+                            label_text_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+
+                            let mut label_fields = HashMap::new();
+                            label_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("label".to_string())),
+                            );
+                            label_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("textarea-label".to_string())),
+                            );
+                            label_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(label_text_fields)),
+                                }]))),
+                            );
+                            label_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(label_attrs)),
+                                },
+                            );
+                            siblings.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(label_fields)),
+                            });
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("textarea".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(format!("textarea textarea-{}", size))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![]))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        vnode_fields.insert(
+                            "siblings".to_string(),
+                            Value::Array(Rc::new(RefCell::new(siblings))),
+                        );
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "Textarea·render requires a Textarea struct",
+                    ))
+                },
+            })),
+        );
+
+        // Dialog·render - comprehensive with child rendering
+        self.globals.borrow_mut().define(
+            "Dialog·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Dialog·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+
+                        // Parse Dialog properties
+                        let _open = matches!(fields_ref.get("open"), Some(Value::Bool(true)));
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "md".to_string(),
+                        };
+                        let position = match fields_ref.get("position") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "center".to_string(),
+                        };
+                        let hide_close =
+                            matches!(fields_ref.get("hide_close"), Some(Value::Bool(true)));
+                        let alert = matches!(fields_ref.get("alert"), Some(Value::Bool(true)));
+                        let scrollable =
+                            matches!(fields_ref.get("scrollable"), Some(Value::Bool(true)));
+                        let static_backdrop =
+                            matches!(fields_ref.get("static_backdrop"), Some(Value::Bool(true)));
+                        let close_on_escape = match fields_ref.get("close_on_escape") {
+                            Some(Value::Bool(b)) => *b,
+                            _ => true, // default true
+                        };
+                        let initial_focus = fields_ref.get("initial_focus").cloned();
+                        let aria_describedby = fields_ref.get("aria_describedby").cloned();
+
+                        // Build CSS classes
+                        let mut classes = vec![
+                            "dialog".to_string(),
+                            format!("dialog-{}", size),
+                            format!("dialog-{}", position),
+                        ];
+
+                        // Build attributes
+                        let mut attrs = HashMap::new();
+                        if alert {
+                            attrs.insert(
+                                "role".to_string(),
+                                Value::String(Rc::new("alertdialog".to_string())),
+                            );
+                        } else {
+                            attrs.insert(
+                                "role".to_string(),
+                                Value::String(Rc::new("dialog".to_string())),
+                            );
+                        }
+                        attrs.insert(
+                            "aria-modal".to_string(),
+                            Value::String(Rc::new("true".to_string())),
+                        );
+                        attrs.insert(
+                            "data-close-on-escape".to_string(),
+                            Value::String(Rc::new(
+                                if close_on_escape { "true" } else { "false" }.to_string(),
+                            )),
+                        );
+                        if let Some(Value::String(focus)) = initial_focus {
+                            attrs.insert("data-initial-focus".to_string(), Value::String(focus));
+                        }
+                        if let Some(Value::String(desc)) = aria_describedby {
+                            attrs.insert("aria-describedby".to_string(), Value::String(desc));
+                        }
+
+                        // Track title ID for aria-labelledby
+                        let mut title_id: Option<String> = None;
+
+                        // Render children - convert DialogHeader/DialogBody/DialogFooter to VNodes
+                        let mut rendered_children = Vec::new();
+
+                        // Add backdrop first
+                        let backdrop_class = if static_backdrop {
+                            "dialog-backdrop dialog-backdrop-static"
+                        } else {
+                            "dialog-backdrop"
+                        };
+                        let mut backdrop_fields = HashMap::new();
+                        backdrop_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        backdrop_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(backdrop_class.to_string())),
+                        );
+                        backdrop_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![]))),
+                        );
+                        rendered_children.push(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(backdrop_fields)),
+                        });
+
+                        // Add close button if not hidden
+                        if !hide_close {
+                            let mut close_attrs = HashMap::new();
+                            close_attrs.insert(
+                                "aria-label".to_string(),
+                                Value::String(Rc::new("Close".to_string())),
+                            );
+                            let mut close_fields = HashMap::new();
+                            close_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("button".to_string())),
+                            );
+                            close_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("dialog-close".to_string())),
+                            );
+                            close_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            close_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(close_attrs)),
+                                },
+                            );
+                            rendered_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(close_fields)),
+                            });
+                        }
+
+                        if let Some(Value::Array(children_arr)) = fields_ref.get("children") {
+                            for child in children_arr.borrow().iter() {
+                                if let Value::Struct {
+                                    name,
+                                    fields: child_fields,
+                                    ..
+                                } = child
+                                {
+                                    let rendered = match name.as_str() {
+                                        "DialogHeader" => {
+                                            let cf = child_fields.borrow();
+                                            let mut header_children = Vec::new();
+
+                                            // Add title if present
+                                            if let Some(Value::String(title)) = cf.get("title") {
+                                                let gen_title_id = format!(
+                                                    "dialog-title-{}",
+                                                    rendered_children.len()
+                                                );
+                                                title_id = Some(gen_title_id.clone());
+
+                                                let mut title_text = HashMap::new();
+                                                title_text.insert(
+                                                    "tag".to_string(),
+                                                    Value::String(Rc::new("#text".to_string())),
+                                                );
+                                                title_text.insert(
+                                                    "content".to_string(),
+                                                    Value::String(title.clone()),
+                                                );
+                                                title_text.insert(
+                                                    "children".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                                );
+
+                                                let mut title_attrs = HashMap::new();
+                                                title_attrs.insert(
+                                                    "id".to_string(),
+                                                    Value::String(Rc::new(gen_title_id)),
+                                                );
+
+                                                let mut title_fields = HashMap::new();
+                                                title_fields.insert(
+                                                    "tag".to_string(),
+                                                    Value::String(Rc::new("h2".to_string())),
+                                                );
+                                                title_fields.insert(
+                                                    "class".to_string(),
+                                                    Value::String(Rc::new(
+                                                        "dialog-title".to_string(),
+                                                    )),
+                                                );
+                                                title_fields.insert(
+                                                    "children".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(vec![
+                                                        Value::Struct {
+                                                            name: "VNode".to_string(),
+                                                            fields: Rc::new(RefCell::new(
+                                                                title_text,
+                                                            )),
+                                                        },
+                                                    ]))),
+                                                );
+                                                title_fields.insert(
+                                                    "attrs".to_string(),
+                                                    Value::Struct {
+                                                        name: "Attrs".to_string(),
+                                                        fields: Rc::new(RefCell::new(title_attrs)),
+                                                    },
+                                                );
+                                                header_children.push(Value::Struct {
+                                                    name: "VNode".to_string(),
+                                                    fields: Rc::new(RefCell::new(title_fields)),
+                                                });
+                                            }
+
+                                            // Add subtitle if present
+                                            if let Some(Value::String(subtitle)) =
+                                                cf.get("subtitle")
+                                            {
+                                                let mut sub_text = HashMap::new();
+                                                sub_text.insert(
+                                                    "tag".to_string(),
+                                                    Value::String(Rc::new("#text".to_string())),
+                                                );
+                                                sub_text.insert(
+                                                    "content".to_string(),
+                                                    Value::String(subtitle.clone()),
+                                                );
+                                                sub_text.insert(
+                                                    "children".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                                );
+                                                let mut sub_fields = HashMap::new();
+                                                sub_fields.insert(
+                                                    "tag".to_string(),
+                                                    Value::String(Rc::new("p".to_string())),
+                                                );
+                                                sub_fields.insert(
+                                                    "class".to_string(),
+                                                    Value::String(Rc::new(
+                                                        "dialog-subtitle".to_string(),
+                                                    )),
+                                                );
+                                                sub_fields.insert(
+                                                    "children".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(vec![
+                                                        Value::Struct {
+                                                            name: "VNode".to_string(),
+                                                            fields: Rc::new(RefCell::new(sub_text)),
+                                                        },
+                                                    ]))),
+                                                );
+                                                header_children.push(Value::Struct {
+                                                    name: "VNode".to_string(),
+                                                    fields: Rc::new(RefCell::new(sub_fields)),
+                                                });
+                                            }
+
+                                            let mut header_fields = HashMap::new();
+                                            header_fields.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("div".to_string())),
+                                            );
+                                            header_fields.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new("dialog-header".to_string())),
+                                            );
+                                            header_fields.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(
+                                                    header_children,
+                                                ))),
+                                            );
+                                            Some(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(header_fields)),
+                                            })
+                                        }
+                                        "DialogBody" => {
+                                            let cf = child_fields.borrow();
+                                            let body_children =
+                                                cf.get("children").cloned().unwrap_or_else(|| {
+                                                    Value::Array(Rc::new(RefCell::new(vec![])))
+                                                });
+                                            let body_id = cf.get("id").cloned();
+
+                                            let mut body_classes = vec!["dialog-body".to_string()];
+                                            if scrollable {
+                                                body_classes
+                                                    .push("dialog-body-scrollable".to_string());
+                                            }
+
+                                            let mut body_attrs = HashMap::new();
+                                            if let Some(Value::String(id)) = body_id {
+                                                body_attrs
+                                                    .insert("id".to_string(), Value::String(id));
+                                            }
+
+                                            let mut body_fields = HashMap::new();
+                                            body_fields.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("div".to_string())),
+                                            );
+                                            body_fields.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new(body_classes.join(" "))),
+                                            );
+                                            body_fields
+                                                .insert("children".to_string(), body_children);
+                                            body_fields.insert(
+                                                "attrs".to_string(),
+                                                Value::Struct {
+                                                    name: "Attrs".to_string(),
+                                                    fields: Rc::new(RefCell::new(body_attrs)),
+                                                },
+                                            );
+                                            Some(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(body_fields)),
+                                            })
+                                        }
+                                        "DialogFooter" => {
+                                            let cf = child_fields.borrow();
+                                            let footer_children =
+                                                cf.get("children").cloned().unwrap_or_else(|| {
+                                                    Value::Array(Rc::new(RefCell::new(vec![])))
+                                                });
+                                            let mut footer_fields = HashMap::new();
+                                            footer_fields.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("div".to_string())),
+                                            );
+                                            footer_fields.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new("dialog-footer".to_string())),
+                                            );
+                                            footer_fields
+                                                .insert("children".to_string(), footer_children);
+                                            Some(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(footer_fields)),
+                                            })
+                                        }
+                                        _ => Some(child.clone()),
+                                    };
+                                    if let Some(r) = rendered {
+                                        rendered_children.push(r);
+                                    }
+                                } else {
+                                    rendered_children.push(child.clone());
+                                }
+                            }
+                        }
+
+                        // Add aria-labelledby if we found a title
+                        if let Some(tid) = title_id {
+                            attrs
+                                .insert("aria-labelledby".to_string(), Value::String(Rc::new(tid)));
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(rendered_children))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Dialog·render requires a Dialog struct"))
+                },
+            })),
+        );
+
+        // Link·render
+        self.globals.borrow_mut().define(
+            "Link·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Link·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let href = match fields_ref.get("href") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "#".to_string(),
+                        };
+                        let children = fields_ref
+                            .get("children")
+                            .cloned()
+                            .unwrap_or_else(|| Value::Array(Rc::new(RefCell::new(vec![]))));
+                        let external =
+                            matches!(fields_ref.get("external"), Some(Value::Bool(true)));
+
+                        let mut attrs = HashMap::new();
+                        attrs.insert("href".to_string(), Value::String(Rc::new(href)));
+                        if external {
+                            attrs.insert(
+                                "target".to_string(),
+                                Value::String(Rc::new("_blank".to_string())),
+                            );
+                            attrs.insert(
+                                "rel".to_string(),
+                                Value::String(Rc::new("noopener noreferrer".to_string())),
+                            );
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("link".to_string())),
+                        );
+                        vnode_fields.insert("children".to_string(), children);
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Link·render requires a Link struct"))
+                },
+            })),
+        );
+
+        // Avatar·render
+        self.globals.borrow_mut().define(
+            "Avatar·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Avatar·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            Some(Value::Int(n)) => n.to_string(),
+                            _ => "md".to_string(),
+                        };
+                        let shape = match fields_ref.get("shape") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "circle".to_string(),
+                        };
+                        let src = match fields_ref.get("src") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let alt = match fields_ref.get("alt") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let name = match fields_ref.get("name") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let status = match fields_ref.get("status") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let status_position = match fields_ref.get("status_position") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "bottom-right".to_string(),
+                        };
+                        let badge = match fields_ref.get("badge") {
+                            Some(Value::Int(n)) => Some(*n),
+                            _ => None,
+                        };
+                        let color = match fields_ref.get("color") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let loading = matches!(fields_ref.get("loading"), Some(Value::Bool(true)));
+                        let icon = match fields_ref.get("icon") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let fallback = match fields_ref.get("onerror") {
+                            Some(_) => Some("initials".to_string()),
+                            _ => None,
+                        };
+
+                        // Build classes
+                        let mut classes = vec!["avatar".to_string()];
+                        // Handle numeric or string size
+                        if size.parse::<i64>().is_ok() {
+                            // Custom size - no class
+                        } else {
+                            classes.push(format!("avatar-{}", size));
+                        }
+                        classes.push(format!("avatar-{}", shape));
+                        if let Some(ref c) = color {
+                            if c == "auto" {
+                                classes.push("avatar-color-auto".to_string());
+                            } else {
+                                classes.push(format!("avatar-{}", c));
+                            }
+                        }
+                        if loading {
+                            classes.push("avatar-loading".to_string());
+                        }
+
+                        // Build children
+                        let mut children: Vec<Value> = vec![];
+
+                        // If loading, add skeleton
+                        if loading {
+                            let mut skeleton_fields = HashMap::new();
+                            skeleton_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            skeleton_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("avatar-skeleton".to_string())),
+                            );
+                            skeleton_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(skeleton_fields)),
+                            });
+                        } else if let Some(ref s) = src {
+                            // Add image
+                            if !s.is_empty() {
+                                let mut img_attrs = HashMap::new();
+                                img_attrs
+                                    .insert("src".to_string(), Value::String(Rc::new(s.clone())));
+                                img_attrs
+                                    .insert("alt".to_string(), Value::String(Rc::new(alt.clone())));
+                                let mut img_fields = HashMap::new();
+                                img_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("img".to_string())),
+                                );
+                                img_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("avatar-img".to_string())),
+                                );
+                                img_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                );
+                                img_fields.insert(
+                                    "attrs".to_string(),
+                                    Value::Struct {
+                                        name: "Attrs".to_string(),
+                                        fields: Rc::new(RefCell::new(img_attrs)),
+                                    },
+                                );
+                                children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(img_fields)),
+                                });
+                            }
+                        } else if let Some(ref n) = name {
+                            // Show initials
+                            let initials: String = n
+                                .split_whitespace()
+                                .filter_map(|word| word.chars().next())
+                                .take(2)
+                                .collect::<String>()
+                                .to_uppercase();
+
+                            classes.push("avatar-initials".to_string());
+                            let mut text_fields = HashMap::new();
+                            text_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_fields
+                                .insert("content".to_string(), Value::String(Rc::new(initials)));
+                            text_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(text_fields)),
+                            });
+                        } else if icon.is_some() {
+                            // Show icon
+                            let mut icon_fields = HashMap::new();
+                            icon_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("span".to_string())),
+                            );
+                            icon_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("avatar-icon".to_string())),
+                            );
+                            icon_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(icon_fields)),
+                            });
+                        }
+
+                        // Add status indicator if present
+                        if let Some(ref st) = status {
+                            let mut status_fields = HashMap::new();
+                            status_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("span".to_string())),
+                            );
+                            status_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new(format!(
+                                    "avatar-status avatar-status-{} avatar-status-{}",
+                                    st, status_position
+                                ))),
+                            );
+                            status_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(status_fields)),
+                            });
+                        }
+
+                        // Add badge if present
+                        if let Some(b) = badge {
+                            let mut badge_text_fields = HashMap::new();
+                            badge_text_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            badge_text_fields.insert(
+                                "content".to_string(),
+                                Value::String(Rc::new(b.to_string())),
+                            );
+                            badge_text_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+
+                            let mut badge_fields = HashMap::new();
+                            badge_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("span".to_string())),
+                            );
+                            badge_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("avatar-badge".to_string())),
+                            );
+                            badge_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(badge_text_fields)),
+                                }]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(badge_fields)),
+                            });
+                        }
+
+                        // Build attrs
+                        let mut attrs = HashMap::new();
+                        if size.parse::<i64>().is_ok() {
+                            attrs.insert(
+                                "style".to_string(),
+                                Value::String(Rc::new(format!(
+                                    "width: {}px; height: {}px;",
+                                    size, size
+                                ))),
+                            );
+                        }
+                        if let Some(ref fb) = fallback {
+                            attrs.insert(
+                                "data-fallback".to_string(),
+                                Value::String(Rc::new(fb.clone())),
+                            );
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(children))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Avatar·render requires an Avatar struct"))
+                },
+            })),
+        );
+
+        // AvatarGroup·render
+        self.globals.borrow_mut().define(
+            "AvatarGroup·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "AvatarGroup·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let max = match fields_ref.get("max") {
+                            Some(Value::Int(n)) => *n as usize,
+                            _ => 5,
+                        };
+                        let spacing = match fields_ref.get("spacing") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "normal".to_string(),
+                        };
+                        let children = match fields_ref.get("children") {
+                            Some(Value::Array(arr)) => arr.borrow().clone(),
+                            _ => vec![],
+                        };
+
+                        let total = children.len();
+                        let overflow = if total > max { total - max } else { 0 };
+
+                        // Render avatar children (up to max)
+                        let mut rendered_children: Vec<Value> = vec![];
+                        for (i, child) in children.iter().take(max).enumerate() {
+                            // Each child should be an Avatar struct - render it
+                            let mut avatar_fields = HashMap::new();
+                            avatar_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            avatar_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("avatar".to_string())),
+                            );
+                            avatar_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            rendered_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(avatar_fields)),
+                            });
+                        }
+
+                        // Add overflow indicator if needed
+                        if overflow > 0 {
+                            let mut overflow_text = HashMap::new();
+                            overflow_text.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            overflow_text.insert(
+                                "content".to_string(),
+                                Value::String(Rc::new(format!("+{}", overflow))),
+                            );
+                            overflow_text.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+
+                            let mut overflow_fields = HashMap::new();
+                            overflow_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            overflow_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("avatar avatar-overflow".to_string())),
+                            );
+                            overflow_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(overflow_text)),
+                                }]))),
+                            );
+                            rendered_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(overflow_fields)),
+                            });
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(format!(
+                                "avatar-group avatar-group-{}",
+                                spacing
+                            ))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(rendered_children))),
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "AvatarGroup·render requires an AvatarGroup struct",
+                    ))
+                },
+            })),
+        );
+
+        // CheckboxGroup·render
+        self.globals.borrow_mut().define(
+            "CheckboxGroup·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "CheckboxGroup·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let name = match fields_ref.get("name") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let selected_values: Vec<String> = match fields_ref.get("value") {
+                            Some(Value::Array(arr)) => arr
+                                .borrow()
+                                .iter()
+                                .filter_map(|v| {
+                                    if let Value::String(s) = v {
+                                        Some(s.to_string())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect(),
+                            _ => vec![],
+                        };
+                        let options = match fields_ref.get("options") {
+                            Some(Value::Array(arr)) => arr.borrow().clone(),
+                            _ => vec![],
+                        };
+
+                        // Build checkbox children
+                        let mut children: Vec<Value> = vec![];
+                        for opt in &options {
+                            let (opt_value, opt_label) = if let Value::Struct {
+                                fields: opt_fields,
+                                ..
+                            } = opt
+                            {
+                                let of = opt_fields.borrow();
+                                let v = match of.get("value") {
+                                    Some(Value::String(s)) => s.to_string(),
+                                    _ => "".to_string(),
+                                };
+                                let l = match of.get("label") {
+                                    Some(Value::String(s)) => s.to_string(),
+                                    _ => v.clone(),
+                                };
+                                (v, l)
+                            } else {
+                                continue;
+                            };
+
+                            let is_checked = selected_values.contains(&opt_value);
+
+                            let mut checkbox_attrs = HashMap::new();
+                            checkbox_attrs.insert(
+                                "type".to_string(),
+                                Value::String(Rc::new("checkbox".to_string())),
+                            );
+                            checkbox_attrs
+                                .insert("name".to_string(), Value::String(Rc::new(name.clone())));
+                            checkbox_attrs
+                                .insert("value".to_string(), Value::String(Rc::new(opt_value)));
+                            checkbox_attrs.insert("checked".to_string(), Value::Bool(is_checked));
+
+                            let mut checkbox_fields = HashMap::new();
+                            checkbox_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("input".to_string())),
+                            );
+                            checkbox_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("checkbox".to_string())),
+                            );
+                            checkbox_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            checkbox_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(checkbox_attrs)),
+                                },
+                            );
+
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(checkbox_fields)),
+                            });
+                        }
+
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "role".to_string(),
+                            Value::String(Rc::new("group".to_string())),
+                        );
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("checkbox-group".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(children))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "CheckboxGroup·render requires a CheckboxGroup struct",
+                    ))
+                },
+            })),
+        );
+
+        // Tooltip·render
+        self.globals.borrow_mut().define(
+            "Tooltip·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Tooltip·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let content = match fields_ref.get("content") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let placement = match fields_ref.get("placement") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "top".to_string(),
+                        };
+                        let children = fields_ref
+                            .get("children")
+                            .cloned()
+                            .unwrap_or_else(|| Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "role".to_string(),
+                            Value::String(Rc::new("tooltip".to_string())),
+                        );
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(format!("tooltip tooltip-{}", placement))),
+                        );
+                        vnode_fields.insert("children".to_string(), children);
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "Tooltip·render requires a Tooltip struct",
+                    ))
+                },
+            })),
+        );
+
+        // Tabs·render - comprehensive with child rendering
+        self.globals.borrow_mut().define(
+            "Tabs·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Tabs·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+
+                        // Parse Tabs properties
+                        let variant = match fields_ref.get("variant") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "line".to_string(),
+                        };
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "md".to_string(),
+                        };
+                        let orientation = match fields_ref.get("orientation") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "horizontal".to_string(),
+                        };
+                        let alignment = match fields_ref.get("alignment") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "start".to_string(),
+                        };
+                        let index = match fields_ref.get("index") {
+                            Some(Value::Int(i)) => *i as usize,
+                            _ => 0,
+                        };
+                        let lazy = matches!(fields_ref.get("lazy"), Some(Value::Bool(true)));
+                        let keyboard_activation = match fields_ref.get("keyboard_activation") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let tabs_id = match fields_ref.get("id") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+
+                        let mut classes = vec![
+                            "tabs".to_string(),
+                            format!("tabs-{}", variant),
+                            format!("tabs-{}", size),
+                            format!("tabs-{}", orientation),
+                            format!("tabs-align-{}", alignment),
+                        ];
+
+                        let mut attrs = HashMap::new();
+                        if let Some(ka) = keyboard_activation {
+                            attrs.insert(
+                                "data-keyboard-activation".to_string(),
+                                Value::String(Rc::new(ka)),
+                            );
+                        }
+                        if let Some(ref tid) = tabs_id {
+                            attrs.insert("id".to_string(), Value::String(Rc::new(tid.clone())));
+                        }
+
+                        // Collect tab IDs and panel IDs for accessibility
+                        let mut tab_ids: Vec<String> = Vec::new();
+                        let mut panel_ids: Vec<String> = Vec::new();
+
+                        // First pass: collect IDs
+                        if let Some(Value::Array(children_arr)) = fields_ref.get("children") {
+                            for child in children_arr.borrow().iter() {
+                                if let Value::Struct {
+                                    name,
+                                    fields: child_fields,
+                                    ..
+                                } = child
+                                {
+                                    match name.as_str() {
+                                        "TabList" => {
+                                            let cf = child_fields.borrow();
+                                            if let Some(Value::Array(tabs)) = cf.get("children") {
+                                                for (i, tab) in tabs.borrow().iter().enumerate() {
+                                                    if let Value::Struct {
+                                                        fields: tab_fields,
+                                                        ..
+                                                    } = tab
+                                                    {
+                                                        let tf = tab_fields.borrow();
+                                                        let tab_id = match tf.get("id") {
+                                                            Some(Value::String(s)) => s.to_string(),
+                                                            _ => format!("tab-{}", i),
+                                                        };
+                                                        tab_ids.push(tab_id);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        "TabPanels" => {
+                                            let cf = child_fields.borrow();
+                                            if let Some(Value::Array(panels)) = cf.get("children") {
+                                                for (i, panel) in panels.borrow().iter().enumerate()
+                                                {
+                                                    if let Value::Struct {
+                                                        fields: panel_fields,
+                                                        ..
+                                                    } = panel
+                                                    {
+                                                        let pf = panel_fields.borrow();
+                                                        let panel_id = match pf.get("id") {
+                                                            Some(Value::String(s)) => s.to_string(),
+                                                            _ => format!("panel-{}", i),
+                                                        };
+                                                        panel_ids.push(panel_id);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+
+                        // Second pass: render children
+                        let mut rendered_children = Vec::new();
+                        if let Some(Value::Array(children_arr)) = fields_ref.get("children") {
+                            for child in children_arr.borrow().iter() {
+                                if let Value::Struct {
+                                    name,
+                                    fields: child_fields,
+                                    ..
+                                } = child
+                                {
+                                    let rendered = match name.as_str() {
+                                        "TabList" => {
+                                            let cf = child_fields.borrow();
+                                            let aria_label = cf.get("aria_label").cloned();
+
+                                            // Render individual tabs
+                                            let mut tab_buttons = Vec::new();
+                                            if let Some(Value::Array(tabs)) = cf.get("children") {
+                                                for (i, tab) in tabs.borrow().iter().enumerate() {
+                                                    if let Value::Struct {
+                                                        fields: tab_fields,
+                                                        ..
+                                                    } = tab
+                                                    {
+                                                        let tf = tab_fields.borrow();
+                                                        let label = match tf.get("label") {
+                                                            Some(Value::String(s)) => s.to_string(),
+                                                            _ => "".to_string(),
+                                                        };
+                                                        let disabled = matches!(
+                                                            tf.get("disabled"),
+                                                            Some(Value::Bool(true))
+                                                        );
+                                                        let icon = tf.get("icon").cloned();
+                                                        let badge = tf.get("badge").cloned();
+                                                        let tab_id =
+                                                            tab_ids.get(i).cloned().unwrap_or_else(
+                                                                || format!("tab-{}", i),
+                                                            );
+                                                        let panel_id = panel_ids
+                                                            .get(i)
+                                                            .cloned()
+                                                            .unwrap_or_else(|| {
+                                                                format!("panel-{}", i)
+                                                            });
+
+                                                        let is_selected = i == index;
+                                                        let mut tab_classes =
+                                                            vec!["tab".to_string()];
+                                                        if is_selected {
+                                                            tab_classes
+                                                                .push("tab-selected".to_string());
+                                                        }
+
+                                                        let mut tab_attrs = HashMap::new();
+                                                        tab_attrs.insert(
+                                                            "role".to_string(),
+                                                            Value::String(Rc::new(
+                                                                "tab".to_string(),
+                                                            )),
+                                                        );
+                                                        tab_attrs.insert(
+                                                            "aria-selected".to_string(),
+                                                            Value::String(Rc::new(
+                                                                if is_selected {
+                                                                    "true"
+                                                                } else {
+                                                                    "false"
+                                                                }
+                                                                .to_string(),
+                                                            )),
+                                                        );
+                                                        tab_attrs.insert(
+                                                            "aria-controls".to_string(),
+                                                            Value::String(Rc::new(panel_id)),
+                                                        );
+                                                        tab_attrs.insert(
+                                                            "id".to_string(),
+                                                            Value::String(Rc::new(tab_id)),
+                                                        );
+                                                        if disabled {
+                                                            tab_attrs.insert(
+                                                                "disabled".to_string(),
+                                                                Value::Bool(true),
+                                                            );
+                                                            tab_attrs.insert(
+                                                                "aria-disabled".to_string(),
+                                                                Value::String(Rc::new(
+                                                                    "true".to_string(),
+                                                                )),
+                                                            );
+                                                        }
+
+                                                        let mut tab_children = Vec::new();
+
+                                                        // Add icon if present
+                                                        if let Some(Value::String(icon_name)) = icon
+                                                        {
+                                                            let mut icon_fields = HashMap::new();
+                                                            icon_fields.insert(
+                                                                "tag".to_string(),
+                                                                Value::String(Rc::new(
+                                                                    "span".to_string(),
+                                                                )),
+                                                            );
+                                                            icon_fields.insert(
+                                                                "class".to_string(),
+                                                                Value::String(Rc::new(
+                                                                    "tab-icon".to_string(),
+                                                                )),
+                                                            );
+                                                            icon_fields.insert(
+                                                                "children".to_string(),
+                                                                Value::Array(Rc::new(
+                                                                    RefCell::new(vec![]),
+                                                                )),
+                                                            );
+                                                            tab_children.push(Value::Struct {
+                                                                name: "VNode".to_string(),
+                                                                fields: Rc::new(RefCell::new(
+                                                                    icon_fields,
+                                                                )),
+                                                            });
+                                                        }
+
+                                                        // Add label text
+                                                        let mut label_text = HashMap::new();
+                                                        label_text.insert(
+                                                            "tag".to_string(),
+                                                            Value::String(Rc::new(
+                                                                "#text".to_string(),
+                                                            )),
+                                                        );
+                                                        label_text.insert(
+                                                            "content".to_string(),
+                                                            Value::String(Rc::new(label)),
+                                                        );
+                                                        label_text.insert(
+                                                            "children".to_string(),
+                                                            Value::Array(Rc::new(RefCell::new(
+                                                                vec![],
+                                                            ))),
+                                                        );
+                                                        tab_children.push(Value::Struct {
+                                                            name: "VNode".to_string(),
+                                                            fields: Rc::new(RefCell::new(
+                                                                label_text,
+                                                            )),
+                                                        });
+
+                                                        // Add badge if present
+                                                        if let Some(badge_val) = badge {
+                                                            let badge_text = match badge_val {
+                                                                Value::Int(n) => n.to_string(),
+                                                                Value::String(s) => s.to_string(),
+                                                                _ => "".to_string(),
+                                                            };
+                                                            let mut badge_content = HashMap::new();
+                                                            badge_content.insert(
+                                                                "tag".to_string(),
+                                                                Value::String(Rc::new(
+                                                                    "#text".to_string(),
+                                                                )),
+                                                            );
+                                                            badge_content.insert(
+                                                                "content".to_string(),
+                                                                Value::String(Rc::new(badge_text)),
+                                                            );
+                                                            badge_content.insert(
+                                                                "children".to_string(),
+                                                                Value::Array(Rc::new(
+                                                                    RefCell::new(vec![]),
+                                                                )),
+                                                            );
+                                                            let mut badge_fields = HashMap::new();
+                                                            badge_fields.insert(
+                                                                "tag".to_string(),
+                                                                Value::String(Rc::new(
+                                                                    "span".to_string(),
+                                                                )),
+                                                            );
+                                                            badge_fields.insert(
+                                                                "class".to_string(),
+                                                                Value::String(Rc::new(
+                                                                    "tab-badge".to_string(),
+                                                                )),
+                                                            );
+                                                            badge_fields.insert(
+                                                                "children".to_string(),
+                                                                Value::Array(Rc::new(
+                                                                    RefCell::new(vec![
+                                                                        Value::Struct {
+                                                                            name: "VNode"
+                                                                                .to_string(),
+                                                                            fields: Rc::new(
+                                                                                RefCell::new(
+                                                                                    badge_content,
+                                                                                ),
+                                                                            ),
+                                                                        },
+                                                                    ]),
+                                                                )),
+                                                            );
+                                                            tab_children.push(Value::Struct {
+                                                                name: "VNode".to_string(),
+                                                                fields: Rc::new(RefCell::new(
+                                                                    badge_fields,
+                                                                )),
+                                                            });
+                                                        }
+
+                                                        let mut tab_node = HashMap::new();
+                                                        tab_node.insert(
+                                                            "tag".to_string(),
+                                                            Value::String(Rc::new(
+                                                                "button".to_string(),
+                                                            )),
+                                                        );
+                                                        tab_node.insert(
+                                                            "class".to_string(),
+                                                            Value::String(Rc::new(
+                                                                tab_classes.join(" "),
+                                                            )),
+                                                        );
+                                                        tab_node.insert(
+                                                            "children".to_string(),
+                                                            Value::Array(Rc::new(RefCell::new(
+                                                                tab_children,
+                                                            ))),
+                                                        );
+                                                        tab_node.insert(
+                                                            "attrs".to_string(),
+                                                            Value::Struct {
+                                                                name: "Attrs".to_string(),
+                                                                fields: Rc::new(RefCell::new(
+                                                                    tab_attrs,
+                                                                )),
+                                                            },
+                                                        );
+                                                        tab_buttons.push(Value::Struct {
+                                                            name: "VNode".to_string(),
+                                                            fields: Rc::new(RefCell::new(tab_node)),
+                                                        });
+                                                    }
+                                                }
+                                            }
+
+                                            let mut list_attrs = HashMap::new();
+                                            list_attrs.insert(
+                                                "role".to_string(),
+                                                Value::String(Rc::new("tablist".to_string())),
+                                            );
+                                            if let Some(Value::String(al)) = aria_label {
+                                                list_attrs.insert(
+                                                    "aria-label".to_string(),
+                                                    Value::String(al),
+                                                );
+                                            }
+
+                                            let mut list_fields = HashMap::new();
+                                            list_fields.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("div".to_string())),
+                                            );
+                                            list_fields.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new("tab-list".to_string())),
+                                            );
+                                            list_fields.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(tab_buttons))),
+                                            );
+                                            list_fields.insert(
+                                                "attrs".to_string(),
+                                                Value::Struct {
+                                                    name: "Attrs".to_string(),
+                                                    fields: Rc::new(RefCell::new(list_attrs)),
+                                                },
+                                            );
+                                            Some(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(list_fields)),
+                                            })
+                                        }
+                                        "TabPanels" => {
+                                            let cf = child_fields.borrow();
+
+                                            // Render individual panels
+                                            let mut panel_nodes = Vec::new();
+                                            if let Some(Value::Array(panels)) = cf.get("children") {
+                                                for (i, panel) in panels.borrow().iter().enumerate()
+                                                {
+                                                    // For lazy loading, only render active panel
+                                                    if lazy && i != index {
+                                                        continue;
+                                                    }
+
+                                                    if let Value::Struct {
+                                                        fields: panel_fields,
+                                                        ..
+                                                    } = panel
+                                                    {
+                                                        let pf = panel_fields.borrow();
+                                                        let panel_children = pf
+                                                            .get("children")
+                                                            .cloned()
+                                                            .unwrap_or_else(|| {
+                                                                Value::Array(Rc::new(RefCell::new(
+                                                                    vec![],
+                                                                )))
+                                                            });
+                                                        let panel_id = panel_ids
+                                                            .get(i)
+                                                            .cloned()
+                                                            .unwrap_or_else(|| {
+                                                                format!("panel-{}", i)
+                                                            });
+                                                        let tab_id =
+                                                            tab_ids.get(i).cloned().unwrap_or_else(
+                                                                || format!("tab-{}", i),
+                                                            );
+
+                                                        let mut panel_attrs = HashMap::new();
+                                                        panel_attrs.insert(
+                                                            "role".to_string(),
+                                                            Value::String(Rc::new(
+                                                                "tabpanel".to_string(),
+                                                            )),
+                                                        );
+                                                        panel_attrs.insert(
+                                                            "id".to_string(),
+                                                            Value::String(Rc::new(panel_id)),
+                                                        );
+                                                        panel_attrs.insert(
+                                                            "aria-labelledby".to_string(),
+                                                            Value::String(Rc::new(tab_id)),
+                                                        );
+
+                                                        let mut panel_node = HashMap::new();
+                                                        panel_node.insert(
+                                                            "tag".to_string(),
+                                                            Value::String(Rc::new(
+                                                                "div".to_string(),
+                                                            )),
+                                                        );
+                                                        panel_node.insert(
+                                                            "class".to_string(),
+                                                            Value::String(Rc::new(
+                                                                "tab-panel".to_string(),
+                                                            )),
+                                                        );
+                                                        panel_node.insert(
+                                                            "children".to_string(),
+                                                            panel_children,
+                                                        );
+                                                        panel_node.insert(
+                                                            "attrs".to_string(),
+                                                            Value::Struct {
+                                                                name: "Attrs".to_string(),
+                                                                fields: Rc::new(RefCell::new(
+                                                                    panel_attrs,
+                                                                )),
+                                                            },
+                                                        );
+                                                        panel_nodes.push(Value::Struct {
+                                                            name: "VNode".to_string(),
+                                                            fields: Rc::new(RefCell::new(
+                                                                panel_node,
+                                                            )),
+                                                        });
+                                                    }
+                                                }
+                                            }
+
+                                            let mut panels_fields = HashMap::new();
+                                            panels_fields.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("div".to_string())),
+                                            );
+                                            panels_fields.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new("tab-panels".to_string())),
+                                            );
+                                            panels_fields.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(panel_nodes))),
+                                            );
+                                            Some(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(panels_fields)),
+                                            })
+                                        }
+                                        _ => Some(child.clone()),
+                                    };
+                                    if let Some(r) = rendered {
+                                        rendered_children.push(r);
+                                    }
+                                } else {
+                                    rendered_children.push(child.clone());
+                                }
+                            }
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(rendered_children))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Tabs·render requires a Tabs struct"))
+                },
+            })),
+        );
+
+        // Header·render - comprehensive with all features
+        self.globals.borrow_mut().define(
+            "Header·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Header·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+
+                        // Parse Header properties
+                        let variant = match fields_ref.get("variant") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "solid".to_string(),
+                        };
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "md".to_string(),
+                        };
+                        let sticky = matches!(fields_ref.get("sticky"), Some(Value::Bool(true)));
+                        let position = match fields_ref.get("position") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let theme = match fields_ref.get("theme") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let logo = fields_ref.get("logo").cloned();
+                        let logo_alt = match fields_ref.get("logo_alt") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let logo_href = match fields_ref.get("logo_href") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "/".to_string(),
+                        };
+                        let brand = fields_ref.get("brand").cloned();
+                        let brand_href = match fields_ref.get("brand_href") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "/".to_string(),
+                        };
+                        let actions = fields_ref.get("actions").cloned();
+                        let mobile_menu =
+                            matches!(fields_ref.get("mobile_menu"), Some(Value::Bool(true)));
+                        let search = matches!(fields_ref.get("search"), Some(Value::Bool(true)));
+                        let search_placeholder = match fields_ref.get("search_placeholder") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "Search...".to_string(),
+                        };
+                        let user = fields_ref.get("user").cloned();
+                        let aria_label = fields_ref.get("aria_label").cloned();
+
+                        // Build CSS classes
+                        let mut classes = vec![
+                            "header".to_string(),
+                            format!("header-{}", variant),
+                            format!("header-{}", size),
+                        ];
+                        if sticky {
+                            classes.push("header-sticky".to_string());
+                        }
+                        if let Some(ref pos) = position {
+                            classes.push(format!("header-{}", pos));
+                        }
+                        if let Some(ref th) = theme {
+                            classes.push(format!("header-{}", th));
+                        }
+
+                        // Build attributes
+                        let mut attrs = HashMap::new();
+                        if let Some(Value::String(al)) = aria_label {
+                            attrs.insert("aria-label".to_string(), Value::String(al));
+                        }
+
+                        // Build children
+                        let mut header_children = Vec::new();
+
+                        // Check if logo is present (before consuming it)
+                        let has_logo = matches!(&logo, Some(Value::String(_)));
+
+                        // Add logo if present
+                        if let Some(Value::String(logo_src)) = logo {
+                            let mut img_attrs = HashMap::new();
+                            img_attrs.insert("src".to_string(), Value::String(logo_src.clone()));
+                            img_attrs.insert("alt".to_string(), Value::String(Rc::new(logo_alt)));
+                            let mut img_fields = HashMap::new();
+                            img_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("img".to_string())),
+                            );
+                            img_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("header-logo-img".to_string())),
+                            );
+                            img_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            img_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(img_attrs)),
+                                },
+                            );
+
+                            let mut link_attrs = HashMap::new();
+                            link_attrs
+                                .insert("href".to_string(), Value::String(Rc::new(logo_href)));
+                            let mut link_fields = HashMap::new();
+                            link_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                            link_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("header-logo".to_string())),
+                            );
+                            link_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(img_fields)),
+                                }]))),
+                            );
+                            link_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(link_attrs)),
+                                },
+                            );
+                            header_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(link_fields)),
+                            });
+                        }
+
+                        // Add brand text if present (and no logo)
+                        if !has_logo {
+                            if let Some(Value::String(brand_text)) = brand {
+                                let mut text_fields = HashMap::new();
+                                text_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("#text".to_string())),
+                                );
+                                text_fields.insert(
+                                    "content".to_string(),
+                                    Value::String(brand_text.clone()),
+                                );
+                                text_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                );
+
+                                let mut brand_attrs = HashMap::new();
+                                brand_attrs
+                                    .insert("href".to_string(), Value::String(Rc::new(brand_href)));
+                                let mut brand_fields = HashMap::new();
+                                brand_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("a".to_string())),
+                                );
+                                brand_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("header-brand".to_string())),
+                                );
+                                brand_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(text_fields)),
+                                    }]))),
+                                );
+                                brand_fields.insert(
+                                    "attrs".to_string(),
+                                    Value::Struct {
+                                        name: "Attrs".to_string(),
+                                        fields: Rc::new(RefCell::new(brand_attrs)),
+                                    },
+                                );
+                                header_children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(brand_fields)),
+                                });
+                            }
+                        }
+
+                        // Add Nav children wrapped in header-nav
+                        if let Some(Value::Array(children_arr)) = fields_ref.get("children") {
+                            let children_vec: Vec<Value> =
+                                children_arr.borrow().iter().cloned().collect();
+                            if !children_vec.is_empty() {
+                                let mut nav_fields = HashMap::new();
+                                nav_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("div".to_string())),
+                                );
+                                nav_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("header-nav".to_string())),
+                                );
+                                nav_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(children_vec))),
+                                );
+                                header_children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(nav_fields)),
+                                });
+                            }
+                        }
+
+                        // Add search if enabled
+                        if search {
+                            let mut input_attrs = HashMap::new();
+                            input_attrs.insert(
+                                "type".to_string(),
+                                Value::String(Rc::new("search".to_string())),
+                            );
+                            input_attrs.insert(
+                                "placeholder".to_string(),
+                                Value::String(Rc::new(search_placeholder)),
+                            );
+                            let mut input_fields = HashMap::new();
+                            input_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("input".to_string())),
+                            );
+                            input_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("header-search-input".to_string())),
+                            );
+                            input_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            input_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(input_attrs)),
+                                },
+                            );
+
+                            let mut search_fields = HashMap::new();
+                            search_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            search_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("header-search".to_string())),
+                            );
+                            search_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(input_fields)),
+                                }]))),
+                            );
+                            header_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(search_fields)),
+                            });
+                        }
+
+                        // Add actions if present
+                        if let Some(Value::Array(actions_arr)) = actions {
+                            let mut action_buttons = Vec::new();
+                            for action in actions_arr.borrow().iter() {
+                                if let Value::Struct { fields: af, .. } = action {
+                                    let afr = af.borrow();
+                                    let label = match afr.get("label") {
+                                        Some(Value::String(s)) => s.to_string(),
+                                        _ => "".to_string(),
+                                    };
+                                    let href = match afr.get("href") {
+                                        Some(Value::String(s)) => s.to_string(),
+                                        _ => "#".to_string(),
+                                    };
+                                    let btn_variant = match afr.get("variant") {
+                                        Some(Value::String(s)) => s.to_string(),
+                                        _ => "default".to_string(),
+                                    };
+
+                                    let mut text_fields = HashMap::new();
+                                    text_fields.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("#text".to_string())),
+                                    );
+                                    text_fields.insert(
+                                        "content".to_string(),
+                                        Value::String(Rc::new(label)),
+                                    );
+                                    text_fields.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                                    );
+
+                                    let mut btn_attrs = HashMap::new();
+                                    btn_attrs
+                                        .insert("href".to_string(), Value::String(Rc::new(href)));
+                                    let mut btn_fields = HashMap::new();
+                                    btn_fields.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("a".to_string())),
+                                    );
+                                    btn_fields.insert(
+                                        "class".to_string(),
+                                        Value::String(Rc::new(format!(
+                                            "header-action btn btn-{}",
+                                            btn_variant
+                                        ))),
+                                    );
+                                    btn_fields.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(text_fields)),
+                                        }]))),
+                                    );
+                                    btn_fields.insert(
+                                        "attrs".to_string(),
+                                        Value::Struct {
+                                            name: "Attrs".to_string(),
+                                            fields: Rc::new(RefCell::new(btn_attrs)),
+                                        },
+                                    );
+                                    action_buttons.push(Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(btn_fields)),
+                                    });
+                                }
+                            }
+                            if !action_buttons.is_empty() {
+                                let mut actions_fields = HashMap::new();
+                                actions_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("div".to_string())),
+                                );
+                                actions_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("header-actions".to_string())),
+                                );
+                                actions_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(action_buttons))),
+                                );
+                                header_children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(actions_fields)),
+                                });
+                            }
+                        }
+
+                        // Add user menu if present
+                        if let Some(Value::Struct { .. }) = user {
+                            let mut user_fields = HashMap::new();
+                            user_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            user_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("header-user-menu".to_string())),
+                            );
+                            user_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            header_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(user_fields)),
+                            });
+                        }
+
+                        // Add mobile menu toggle if enabled
+                        if mobile_menu {
+                            let mut toggle_attrs = HashMap::new();
+                            toggle_attrs.insert(
+                                "aria-label".to_string(),
+                                Value::String(Rc::new("Toggle navigation menu".to_string())),
+                            );
+                            toggle_attrs.insert(
+                                "aria-expanded".to_string(),
+                                Value::String(Rc::new("false".to_string())),
+                            );
+                            let mut toggle_fields = HashMap::new();
+                            toggle_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("button".to_string())),
+                            );
+                            toggle_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("header-mobile-toggle".to_string())),
+                            );
+                            toggle_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            toggle_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(toggle_attrs)),
+                                },
+                            );
+                            header_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(toggle_fields)),
+                            });
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("header".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(header_children))),
+                        );
+                        if !attrs.is_empty() {
+                            vnode_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(attrs)),
+                                },
+                            );
+                        }
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Header·render requires a Header struct"))
+                },
+            })),
+        );
+
+        // Footer·render - comprehensive with logo, tagline, newsletter, legal, theme
+        self.globals.borrow_mut().define(
+            "Footer·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Footer·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+
+                        // Parse Footer properties
+                        let variant = match fields_ref.get("variant") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "default".to_string(),
+                        };
+                        let theme = fields_ref.get("theme").cloned();
+                        let copyright = fields_ref.get("copyright").cloned();
+                        let social = fields_ref.get("social").cloned();
+                        let logo = fields_ref.get("logo").cloned();
+                        let logo_alt = fields_ref.get("logo_alt").cloned();
+                        let tagline = fields_ref.get("tagline").cloned();
+                        let newsletter =
+                            matches!(fields_ref.get("newsletter"), Some(Value::Bool(true)));
+                        let newsletter_title = fields_ref.get("newsletter_title").cloned();
+                        let newsletter_description =
+                            fields_ref.get("newsletter_description").cloned();
+                        let legal = fields_ref.get("legal").cloned();
+                        let app_badges = fields_ref.get("app_badges").cloned();
+                        let language_selector =
+                            matches!(fields_ref.get("language_selector"), Some(Value::Bool(true)));
+                        let aria_label = fields_ref.get("aria_label").cloned();
+
+                        let mut classes = vec!["footer".to_string(), format!("footer-{}", variant)];
+
+                        // Add theme class
+                        if let Some(Value::String(t)) = theme {
+                            classes.push(format!("footer-{}", t));
+                        }
+
+                        let mut footer_children = Vec::new();
+
+                        // Add logo if present
+                        if let Some(Value::String(logo_src)) = logo {
+                            let alt_text = match logo_alt {
+                                Some(Value::String(s)) => s.to_string(),
+                                _ => "".to_string(),
+                            };
+                            let mut img_attrs = HashMap::new();
+                            img_attrs.insert("src".to_string(), Value::String(logo_src.clone()));
+                            img_attrs.insert("alt".to_string(), Value::String(Rc::new(alt_text)));
+                            let mut img_fields = HashMap::new();
+                            img_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("img".to_string())),
+                            );
+                            img_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("".to_string())),
+                            );
+                            img_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            img_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(img_attrs)),
+                                },
+                            );
+                            let mut logo_fields = HashMap::new();
+                            logo_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            logo_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("footer-logo".to_string())),
+                            );
+                            logo_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(img_fields)),
+                                }]))),
+                            );
+                            footer_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(logo_fields)),
+                            });
+                        }
+
+                        // Add tagline if present
+                        if let Some(Value::String(tag_text)) = tagline {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node
+                                .insert("content".to_string(), Value::String(tag_text.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut tagline_fields = HashMap::new();
+                            tagline_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("p".to_string())));
+                            tagline_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("footer-tagline".to_string())),
+                            );
+                            tagline_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            footer_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(tagline_fields)),
+                            });
+                        }
+
+                        // Add newsletter if enabled
+                        if newsletter {
+                            let mut nl_children = Vec::new();
+
+                            // Add title
+                            if let Some(Value::String(title)) = newsletter_title {
+                                let mut title_text = HashMap::new();
+                                title_text.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("#text".to_string())),
+                                );
+                                title_text
+                                    .insert("content".to_string(), Value::String(title.clone()));
+                                title_text.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                );
+                                let mut title_fields = HashMap::new();
+                                title_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("h4".to_string())),
+                                );
+                                title_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("footer-newsletter-title".to_string())),
+                                );
+                                title_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(title_text)),
+                                    }]))),
+                                );
+                                nl_children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(title_fields)),
+                                });
+                            }
+
+                            // Add description
+                            if let Some(Value::String(desc)) = newsletter_description {
+                                let mut desc_text = HashMap::new();
+                                desc_text.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("#text".to_string())),
+                                );
+                                desc_text
+                                    .insert("content".to_string(), Value::String(desc.clone()));
+                                desc_text.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                );
+                                let mut desc_fields = HashMap::new();
+                                desc_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("p".to_string())),
+                                );
+                                desc_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new(
+                                        "footer-newsletter-description".to_string(),
+                                    )),
+                                );
+                                desc_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(desc_text)),
+                                    }]))),
+                                );
+                                nl_children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(desc_fields)),
+                                });
+                            }
+
+                            // Add form
+                            let mut form_fields = HashMap::new();
+                            form_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("form".to_string())),
+                            );
+                            form_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("footer-newsletter-form".to_string())),
+                            );
+                            form_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            nl_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(form_fields)),
+                            });
+
+                            let mut newsletter_fields = HashMap::new();
+                            newsletter_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            newsletter_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("footer-newsletter".to_string())),
+                            );
+                            newsletter_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(nl_children))),
+                            );
+                            footer_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(newsletter_fields)),
+                            });
+                        }
+
+                        // Render children (FooterSection, etc.)
+                        if let Some(Value::Array(children_arr)) = fields_ref.get("children") {
+                            for child in children_arr.borrow().iter() {
+                                if let Value::Struct {
+                                    name,
+                                    fields: child_fields,
+                                    ..
+                                } = child
+                                {
+                                    match name.as_str() {
+                                        "FooterSection" => {
+                                            let cf = child_fields.borrow();
+                                            let title = cf.get("title").cloned();
+                                            let mut section_children = Vec::new();
+
+                                            // Add title if present
+                                            if let Some(Value::String(t)) = title {
+                                                let mut title_text = HashMap::new();
+                                                title_text.insert(
+                                                    "tag".to_string(),
+                                                    Value::String(Rc::new("#text".to_string())),
+                                                );
+                                                title_text.insert(
+                                                    "content".to_string(),
+                                                    Value::String(t.clone()),
+                                                );
+                                                title_text.insert(
+                                                    "children".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                                );
+                                                let mut title_fields = HashMap::new();
+                                                title_fields.insert(
+                                                    "tag".to_string(),
+                                                    Value::String(Rc::new("h4".to_string())),
+                                                );
+                                                title_fields.insert(
+                                                    "class".to_string(),
+                                                    Value::String(Rc::new(
+                                                        "footer-section-title".to_string(),
+                                                    )),
+                                                );
+                                                title_fields.insert(
+                                                    "children".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(vec![
+                                                        Value::Struct {
+                                                            name: "VNode".to_string(),
+                                                            fields: Rc::new(RefCell::new(
+                                                                title_text,
+                                                            )),
+                                                        },
+                                                    ]))),
+                                                );
+                                                section_children.push(Value::Struct {
+                                                    name: "VNode".to_string(),
+                                                    fields: Rc::new(RefCell::new(title_fields)),
+                                                });
+                                            }
+
+                                            // Add section children
+                                            if let Some(Value::Array(sc)) = cf.get("children") {
+                                                for item in sc.borrow().iter() {
+                                                    section_children.push(item.clone());
+                                                }
+                                            }
+
+                                            let mut section_fields = HashMap::new();
+                                            section_fields.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("div".to_string())),
+                                            );
+                                            section_fields.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new(
+                                                    "footer-section".to_string(),
+                                                )),
+                                            );
+                                            section_fields.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(
+                                                    section_children,
+                                                ))),
+                                            );
+                                            footer_children.push(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(section_fields)),
+                                            });
+                                        }
+                                        _ => footer_children.push(child.clone()),
+                                    }
+                                } else {
+                                    footer_children.push(child.clone());
+                                }
+                            }
+                        }
+
+                        // Add social links if present
+                        if let Some(Value::Array(social_arr)) = social {
+                            let mut social_links = Vec::new();
+                            for item in social_arr.borrow().iter() {
+                                if let Value::Struct { fields: sf, .. } = item {
+                                    let sfr = sf.borrow();
+                                    let href = match sfr.get("href") {
+                                        Some(Value::String(s)) => s.to_string(),
+                                        _ => "#".to_string(),
+                                    };
+                                    let label = match sfr.get("label") {
+                                        Some(Value::String(s)) => s.to_string(),
+                                        _ => "".to_string(),
+                                    };
+
+                                    let mut link_attrs = HashMap::new();
+                                    link_attrs
+                                        .insert("href".to_string(), Value::String(Rc::new(href)));
+                                    link_attrs.insert(
+                                        "aria-label".to_string(),
+                                        Value::String(Rc::new(label)),
+                                    );
+
+                                    let mut link_fields = HashMap::new();
+                                    link_fields.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("a".to_string())),
+                                    );
+                                    link_fields.insert(
+                                        "class".to_string(),
+                                        Value::String(Rc::new("footer-social-link".to_string())),
+                                    );
+                                    link_fields.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                                    );
+                                    link_fields.insert(
+                                        "attrs".to_string(),
+                                        Value::Struct {
+                                            name: "Attrs".to_string(),
+                                            fields: Rc::new(RefCell::new(link_attrs)),
+                                        },
+                                    );
+                                    social_links.push(Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(link_fields)),
+                                    });
+                                }
+                            }
+                            if !social_links.is_empty() {
+                                let mut social_fields = HashMap::new();
+                                social_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("div".to_string())),
+                                );
+                                social_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("footer-social".to_string())),
+                                );
+                                social_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(social_links))),
+                                );
+                                footer_children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(social_fields)),
+                                });
+                            }
+                        }
+
+                        // Add legal links if present
+                        if let Some(Value::Array(legal_arr)) = legal {
+                            let mut legal_links = Vec::new();
+                            for item in legal_arr.borrow().iter() {
+                                if let Value::Struct { fields: lf, .. } = item {
+                                    let lfr = lf.borrow();
+                                    let label = match lfr.get("label") {
+                                        Some(Value::String(s)) => s.to_string(),
+                                        _ => "".to_string(),
+                                    };
+                                    let href = match lfr.get("href") {
+                                        Some(Value::String(s)) => s.to_string(),
+                                        _ => "#".to_string(),
+                                    };
+
+                                    let mut text_node = HashMap::new();
+                                    text_node.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("#text".to_string())),
+                                    );
+                                    text_node.insert(
+                                        "content".to_string(),
+                                        Value::String(Rc::new(label)),
+                                    );
+                                    text_node.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                                    );
+
+                                    let mut link_attrs = HashMap::new();
+                                    link_attrs
+                                        .insert("href".to_string(), Value::String(Rc::new(href)));
+
+                                    let mut link_fields = HashMap::new();
+                                    link_fields.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("a".to_string())),
+                                    );
+                                    link_fields.insert(
+                                        "class".to_string(),
+                                        Value::String(Rc::new("footer-legal-link".to_string())),
+                                    );
+                                    link_fields.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(text_node)),
+                                        }]))),
+                                    );
+                                    link_fields.insert(
+                                        "attrs".to_string(),
+                                        Value::Struct {
+                                            name: "Attrs".to_string(),
+                                            fields: Rc::new(RefCell::new(link_attrs)),
+                                        },
+                                    );
+                                    legal_links.push(Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(link_fields)),
+                                    });
+                                }
+                            }
+                            if !legal_links.is_empty() {
+                                let mut legal_fields = HashMap::new();
+                                legal_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("div".to_string())),
+                                );
+                                legal_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("footer-legal".to_string())),
+                                );
+                                legal_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(legal_links))),
+                                );
+                                footer_children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(legal_fields)),
+                                });
+                            }
+                        }
+
+                        // Add app badges if present
+                        if let Some(Value::Array(badges_arr)) = app_badges {
+                            let mut badge_children = Vec::new();
+                            for badge in badges_arr.borrow().iter() {
+                                if let Value::Struct { fields: bf, .. } = badge {
+                                    let bfr = bf.borrow();
+                                    let store = match bfr.get("store") {
+                                        Some(Value::String(s)) => s.to_string(),
+                                        _ => "".to_string(),
+                                    };
+                                    let href = match bfr.get("href") {
+                                        Some(Value::String(s)) => s.to_string(),
+                                        _ => "#".to_string(),
+                                    };
+
+                                    let mut badge_attrs = HashMap::new();
+                                    badge_attrs
+                                        .insert("href".to_string(), Value::String(Rc::new(href)));
+                                    badge_attrs.insert(
+                                        "data-store".to_string(),
+                                        Value::String(Rc::new(store)),
+                                    );
+
+                                    let mut badge_fields = HashMap::new();
+                                    badge_fields.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("a".to_string())),
+                                    );
+                                    badge_fields.insert(
+                                        "class".to_string(),
+                                        Value::String(Rc::new("footer-app-badge".to_string())),
+                                    );
+                                    badge_fields.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                                    );
+                                    badge_fields.insert(
+                                        "attrs".to_string(),
+                                        Value::Struct {
+                                            name: "Attrs".to_string(),
+                                            fields: Rc::new(RefCell::new(badge_attrs)),
+                                        },
+                                    );
+                                    badge_children.push(Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(badge_fields)),
+                                    });
+                                }
+                            }
+                            if !badge_children.is_empty() {
+                                let mut badges_fields = HashMap::new();
+                                badges_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("div".to_string())),
+                                );
+                                badges_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("footer-app-badges".to_string())),
+                                );
+                                badges_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(badge_children))),
+                                );
+                                footer_children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(badges_fields)),
+                                });
+                            }
+                        }
+
+                        // Add language selector if enabled
+                        if language_selector {
+                            let mut lang_fields = HashMap::new();
+                            lang_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            lang_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("footer-language".to_string())),
+                            );
+                            lang_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            footer_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(lang_fields)),
+                            });
+                        }
+
+                        // Add copyright if present
+                        if let Some(Value::String(copy_text)) = copyright {
+                            let mut copy_content = HashMap::new();
+                            copy_content.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            copy_content
+                                .insert("content".to_string(), Value::String(copy_text.clone()));
+                            copy_content.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut copy_fields = HashMap::new();
+                            copy_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("p".to_string())));
+                            copy_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("footer-copyright".to_string())),
+                            );
+                            copy_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(copy_content)),
+                                }]))),
+                            );
+                            footer_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(copy_fields)),
+                            });
+                        }
+
+                        // Build main VNode attrs
+                        let mut vnode_attrs = HashMap::new();
+                        if let Some(Value::String(aria)) = aria_label {
+                            vnode_attrs
+                                .insert("aria-label".to_string(), Value::String(aria.clone()));
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("footer".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(footer_children))),
+                        );
+                        if !vnode_attrs.is_empty() {
+                            vnode_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(vnode_attrs)),
+                                },
+                            );
+                        }
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Footer·render requires a Footer struct"))
+                },
+            })),
+        );
+
+        // Hero·render - comprehensive with video, image, announcement, social proof, theme
+        self.globals.borrow_mut().define(
+            "Hero·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Hero·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+
+                        // Parse Hero properties
+                        let title = fields_ref.get("title").cloned();
+                        let subtitle = fields_ref.get("subtitle").cloned();
+                        let variant = match fields_ref.get("variant") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "centered".to_string(),
+                        };
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "md".to_string(),
+                        };
+                        let alignment = fields_ref.get("alignment").cloned();
+                        let theme = fields_ref.get("theme").cloned();
+                        let title_level = match fields_ref.get("title_level") {
+                            Some(Value::Int(n)) => *n as i32,
+                            _ => 1,
+                        };
+                        let background_image = fields_ref.get("background_image").cloned();
+                        let _background_overlay = fields_ref.get("background_overlay").cloned();
+                        let background_video = fields_ref.get("background_video").cloned();
+                        let video_poster = fields_ref.get("video_poster").cloned();
+                        let gradient = fields_ref.get("gradient").cloned();
+                        let image = fields_ref.get("image").cloned();
+                        let image_alt = fields_ref.get("image_alt").cloned();
+                        let _image_position = fields_ref.get("image_position").cloned();
+                        let announcement = fields_ref.get("announcement").cloned();
+                        let social_proof = fields_ref.get("social_proof").cloned();
+                        let scroll_indicator =
+                            matches!(fields_ref.get("scroll_indicator"), Some(Value::Bool(true)));
+                        let cta_primary = fields_ref.get("cta_primary").cloned();
+                        let cta_secondary = fields_ref.get("cta_secondary").cloned();
+
+                        // Build classes
+                        let mut classes = vec![
+                            "hero".to_string(),
+                            format!("hero-{}", variant),
+                            format!("hero-{}", size),
+                        ];
+                        if background_image.is_some() {
+                            classes.push("hero-with-background".to_string());
+                        }
+                        if let Some(Value::String(align)) = alignment {
+                            classes.push(format!("hero-align-{}", align));
+                        }
+                        if let Some(Value::String(t)) = theme {
+                            classes.push(format!("hero-{}", t));
+                        }
+
+                        // Build style attribute for background image or gradient
+                        let has_background_image =
+                            matches!(&background_image, Some(Value::String(_)));
+                        let mut attrs = HashMap::new();
+                        let mut style_parts = Vec::new();
+                        if let Some(Value::String(bg_img)) = background_image {
+                            style_parts.push(format!("background-image: url('{}')", bg_img));
+                        }
+                        if let Some(Value::String(grad)) = gradient {
+                            style_parts.push(format!("background: {}", grad));
+                        }
+                        if !style_parts.is_empty() {
+                            attrs.insert(
+                                "style".to_string(),
+                                Value::String(Rc::new(style_parts.join("; "))),
+                            );
+                        }
+
+                        let mut hero_children = Vec::new();
+
+                        // Add video background if present
+                        if let Some(Value::String(video_src)) = background_video {
+                            let poster_str = match video_poster {
+                                Some(Value::String(s)) => s.to_string(),
+                                _ => "".to_string(),
+                            };
+                            let mut video_attrs = HashMap::new();
+                            video_attrs.insert("src".to_string(), Value::String(video_src.clone()));
+                            video_attrs
+                                .insert("poster".to_string(), Value::String(Rc::new(poster_str)));
+                            video_attrs.insert("autoplay".to_string(), Value::Bool(true));
+                            video_attrs.insert("muted".to_string(), Value::Bool(true));
+                            video_attrs.insert("loop".to_string(), Value::Bool(true));
+                            video_attrs.insert("playsinline".to_string(), Value::Bool(true));
+
+                            let mut video_el_fields = HashMap::new();
+                            video_el_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("video".to_string())),
+                            );
+                            video_el_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("".to_string())),
+                            );
+                            video_el_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            video_el_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(video_attrs)),
+                                },
+                            );
+
+                            let mut video_container = HashMap::new();
+                            video_container.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            video_container.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("hero-video".to_string())),
+                            );
+                            video_container.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(video_el_fields)),
+                                }]))),
+                            );
+                            hero_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(video_container)),
+                            });
+                        }
+
+                        // Add overlay if background image
+                        if attrs.contains_key("style") && has_background_image {
+                            let mut overlay_fields = HashMap::new();
+                            overlay_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            overlay_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("hero-overlay".to_string())),
+                            );
+                            overlay_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            hero_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(overlay_fields)),
+                            });
+                        }
+
+                        // Add announcement if present
+                        if let Some(Value::Struct { fields: af, .. }) = announcement {
+                            let afr = af.borrow();
+                            let text = match afr.get("text") {
+                                Some(Value::String(s)) => s.to_string(),
+                                _ => "".to_string(),
+                            };
+                            let href = match afr.get("href") {
+                                Some(Value::String(s)) => s.to_string(),
+                                _ => "#".to_string(),
+                            };
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(Rc::new(text)));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+
+                            let mut ann_attrs = HashMap::new();
+                            ann_attrs.insert("href".to_string(), Value::String(Rc::new(href)));
+
+                            let mut ann_fields = HashMap::new();
+                            ann_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                            ann_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("hero-announcement".to_string())),
+                            );
+                            ann_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            ann_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(ann_attrs)),
+                                },
+                            );
+                            hero_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(ann_fields)),
+                            });
+                        }
+
+                        // Add title
+                        if let Some(Value::String(t)) = title {
+                            let title_tag = match title_level {
+                                1 => "h1",
+                                2 => "h2",
+                                3 => "h3",
+                                4 => "h4",
+                                5 => "h5",
+                                6 => "h6",
+                                _ => "h1",
+                            };
+                            let mut title_text = HashMap::new();
+                            title_text.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            title_text.insert("content".to_string(), Value::String(t.clone()));
+                            title_text.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut title_fields = HashMap::new();
+                            title_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new(title_tag.to_string())),
+                            );
+                            title_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("hero-title".to_string())),
+                            );
+                            title_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(title_text)),
+                                }]))),
+                            );
+                            hero_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(title_fields)),
+                            });
+                        }
+
+                        // Add subtitle
+                        if let Some(Value::String(s)) = subtitle {
+                            let mut sub_text = HashMap::new();
+                            sub_text.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            sub_text.insert("content".to_string(), Value::String(s.clone()));
+                            sub_text.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut sub_fields = HashMap::new();
+                            sub_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("p".to_string())));
+                            sub_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("hero-subtitle".to_string())),
+                            );
+                            sub_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(sub_text)),
+                                }]))),
+                            );
+                            hero_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(sub_fields)),
+                            });
+                        }
+
+                        // Add CTA buttons
+                        if cta_primary.is_some() || cta_secondary.is_some() {
+                            let mut cta_buttons = Vec::new();
+
+                            if let Some(Value::Struct { fields: pf, .. }) = cta_primary {
+                                let pfr = pf.borrow();
+                                let label = match pfr.get("label") {
+                                    Some(Value::String(s)) => s.to_string(),
+                                    _ => "".to_string(),
+                                };
+                                let href = match pfr.get("href") {
+                                    Some(Value::String(s)) => s.to_string(),
+                                    _ => "#".to_string(),
+                                };
+                                let mut btn_text = HashMap::new();
+                                btn_text.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("#text".to_string())),
+                                );
+                                btn_text
+                                    .insert("content".to_string(), Value::String(Rc::new(label)));
+                                btn_text.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                );
+                                let mut btn_attrs = HashMap::new();
+                                btn_attrs.insert("href".to_string(), Value::String(Rc::new(href)));
+                                let mut btn_fields = HashMap::new();
+                                btn_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("a".to_string())),
+                                );
+                                btn_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("btn btn-primary".to_string())),
+                                );
+                                btn_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(btn_text)),
+                                    }]))),
+                                );
+                                btn_fields.insert(
+                                    "attrs".to_string(),
+                                    Value::Struct {
+                                        name: "Attrs".to_string(),
+                                        fields: Rc::new(RefCell::new(btn_attrs)),
+                                    },
+                                );
+                                cta_buttons.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(btn_fields)),
+                                });
+                            }
+
+                            if let Some(Value::Struct { fields: sf, .. }) = cta_secondary {
+                                let sfr = sf.borrow();
+                                let label = match sfr.get("label") {
+                                    Some(Value::String(s)) => s.to_string(),
+                                    _ => "".to_string(),
+                                };
+                                let href = match sfr.get("href") {
+                                    Some(Value::String(s)) => s.to_string(),
+                                    _ => "#".to_string(),
+                                };
+                                let mut btn_text = HashMap::new();
+                                btn_text.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("#text".to_string())),
+                                );
+                                btn_text
+                                    .insert("content".to_string(), Value::String(Rc::new(label)));
+                                btn_text.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                );
+                                let mut btn_attrs = HashMap::new();
+                                btn_attrs.insert("href".to_string(), Value::String(Rc::new(href)));
+                                let mut btn_fields = HashMap::new();
+                                btn_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("a".to_string())),
+                                );
+                                btn_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("btn btn-secondary".to_string())),
+                                );
+                                btn_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(btn_text)),
+                                    }]))),
+                                );
+                                btn_fields.insert(
+                                    "attrs".to_string(),
+                                    Value::Struct {
+                                        name: "Attrs".to_string(),
+                                        fields: Rc::new(RefCell::new(btn_attrs)),
+                                    },
+                                );
+                                cta_buttons.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(btn_fields)),
+                                });
+                            }
+
+                            let mut cta_fields = HashMap::new();
+                            cta_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            cta_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("hero-cta".to_string())),
+                            );
+                            cta_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(cta_buttons))),
+                            );
+                            hero_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(cta_fields)),
+                            });
+                        }
+
+                        // Add image if present
+                        if let Some(Value::String(img_src)) = image {
+                            let alt_text = match image_alt {
+                                Some(Value::String(s)) => s.to_string(),
+                                _ => "".to_string(),
+                            };
+                            let mut img_attrs = HashMap::new();
+                            img_attrs.insert("src".to_string(), Value::String(img_src.clone()));
+                            img_attrs.insert("alt".to_string(), Value::String(Rc::new(alt_text)));
+
+                            let mut img_fields = HashMap::new();
+                            img_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("img".to_string())),
+                            );
+                            img_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("".to_string())),
+                            );
+                            img_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            img_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(img_attrs)),
+                                },
+                            );
+
+                            let mut img_container = HashMap::new();
+                            img_container.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            img_container.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("hero-image".to_string())),
+                            );
+                            img_container.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(img_fields)),
+                                }]))),
+                            );
+                            hero_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(img_container)),
+                            });
+                        }
+
+                        // Add social proof if present
+                        if let Some(Value::Struct { fields: spf, .. }) = social_proof {
+                            let _spfr = spf.borrow();
+                            let mut sp_fields = HashMap::new();
+                            sp_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            sp_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("hero-social-proof".to_string())),
+                            );
+                            sp_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            hero_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(sp_fields)),
+                            });
+                        }
+
+                        // Add scroll indicator if enabled
+                        if scroll_indicator {
+                            let mut scroll_fields = HashMap::new();
+                            scroll_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            scroll_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("hero-scroll-indicator".to_string())),
+                            );
+                            scroll_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            hero_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(scroll_fields)),
+                            });
+                        }
+
+                        // Add any additional children
+                        if let Some(Value::Array(children_arr)) = fields_ref.get("children") {
+                            for child in children_arr.borrow().iter() {
+                                hero_children.push(child.clone());
+                            }
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("section".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(hero_children))),
+                        );
+                        if !attrs.is_empty() {
+                            vnode_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(attrs)),
+                                },
+                            );
+                        }
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Hero·render requires a Hero struct"))
+                },
+            })),
+        );
+
+        // Nav·render - comprehensive with items and dropdowns
+        self.globals.borrow_mut().define(
+            "Nav·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Nav·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+
+                        // Parse Nav properties
+                        let variant = match fields_ref.get("variant") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "horizontal".to_string(),
+                        };
+                        let items = fields_ref.get("items").cloned();
+
+                        let mut classes = vec!["nav".to_string(), format!("nav-{}", variant)];
+
+                        let mut nav_children = Vec::new();
+
+                        // Render nav items
+                        if let Some(Value::Array(items_arr)) = items {
+                            for item in items_arr.borrow().iter() {
+                                if let Value::Struct {
+                                    name,
+                                    fields: item_fields,
+                                    ..
+                                } = item
+                                {
+                                    match name.as_str() {
+                                        "NavItem" => {
+                                            let ifr = item_fields.borrow();
+                                            let label = match ifr.get("label") {
+                                                Some(Value::String(s)) => s.to_string(),
+                                                _ => "".to_string(),
+                                            };
+                                            let href = match ifr.get("href") {
+                                                Some(Value::String(s)) => s.to_string(),
+                                                _ => "#".to_string(),
+                                            };
+                                            let active = matches!(
+                                                ifr.get("active"),
+                                                Some(Value::Bool(true))
+                                            );
+
+                                            let mut item_classes = vec!["nav-item".to_string()];
+                                            if active {
+                                                item_classes.push("nav-item-active".to_string());
+                                            }
+
+                                            let mut item_attrs = HashMap::new();
+                                            item_attrs.insert(
+                                                "href".to_string(),
+                                                Value::String(Rc::new(href)),
+                                            );
+                                            if active {
+                                                item_attrs.insert(
+                                                    "aria-current".to_string(),
+                                                    Value::String(Rc::new("page".to_string())),
+                                                );
+                                            }
+
+                                            let mut label_text = HashMap::new();
+                                            label_text.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("#text".to_string())),
+                                            );
+                                            label_text.insert(
+                                                "content".to_string(),
+                                                Value::String(Rc::new(label)),
+                                            );
+                                            label_text.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                                            );
+
+                                            let mut item_node = HashMap::new();
+                                            item_node.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("a".to_string())),
+                                            );
+                                            item_node.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new(item_classes.join(" "))),
+                                            );
+                                            item_node.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(vec![
+                                                    Value::Struct {
+                                                        name: "VNode".to_string(),
+                                                        fields: Rc::new(RefCell::new(label_text)),
+                                                    },
+                                                ]))),
+                                            );
+                                            item_node.insert(
+                                                "attrs".to_string(),
+                                                Value::Struct {
+                                                    name: "Attrs".to_string(),
+                                                    fields: Rc::new(RefCell::new(item_attrs)),
+                                                },
+                                            );
+                                            nav_children.push(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(item_node)),
+                                            });
+                                        }
+                                        "NavDropdown" => {
+                                            let ifr = item_fields.borrow();
+                                            let label = match ifr.get("label") {
+                                                Some(Value::String(s)) => s.to_string(),
+                                                _ => "".to_string(),
+                                            };
+                                            let dropdown_items = ifr.get("items").cloned();
+
+                                            // Trigger button
+                                            let mut trigger_attrs = HashMap::new();
+                                            trigger_attrs.insert(
+                                                "aria-haspopup".to_string(),
+                                                Value::String(Rc::new("true".to_string())),
+                                            );
+                                            trigger_attrs.insert(
+                                                "aria-expanded".to_string(),
+                                                Value::String(Rc::new("false".to_string())),
+                                            );
+                                            let mut trigger_text = HashMap::new();
+                                            trigger_text.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("#text".to_string())),
+                                            );
+                                            trigger_text.insert(
+                                                "content".to_string(),
+                                                Value::String(Rc::new(label)),
+                                            );
+                                            trigger_text.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                                            );
+                                            let mut trigger_node = HashMap::new();
+                                            trigger_node.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("button".to_string())),
+                                            );
+                                            trigger_node.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new(
+                                                    "nav-dropdown-trigger".to_string(),
+                                                )),
+                                            );
+                                            trigger_node.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(vec![
+                                                    Value::Struct {
+                                                        name: "VNode".to_string(),
+                                                        fields: Rc::new(RefCell::new(trigger_text)),
+                                                    },
+                                                ]))),
+                                            );
+                                            trigger_node.insert(
+                                                "attrs".to_string(),
+                                                Value::Struct {
+                                                    name: "Attrs".to_string(),
+                                                    fields: Rc::new(RefCell::new(trigger_attrs)),
+                                                },
+                                            );
+
+                                            // Menu items
+                                            let mut menu_items = Vec::new();
+                                            if let Some(Value::Array(di_arr)) = dropdown_items {
+                                                for di in di_arr.borrow().iter() {
+                                                    if let Value::Struct {
+                                                        fields: di_fields, ..
+                                                    } = di
+                                                    {
+                                                        let dif = di_fields.borrow();
+                                                        let di_label = match dif.get("label") {
+                                                            Some(Value::String(s)) => s.to_string(),
+                                                            _ => "".to_string(),
+                                                        };
+                                                        let di_href = match dif.get("href") {
+                                                            Some(Value::String(s)) => s.to_string(),
+                                                            _ => "#".to_string(),
+                                                        };
+                                                        let mut di_text = HashMap::new();
+                                                        di_text.insert(
+                                                            "tag".to_string(),
+                                                            Value::String(Rc::new(
+                                                                "#text".to_string(),
+                                                            )),
+                                                        );
+                                                        di_text.insert(
+                                                            "content".to_string(),
+                                                            Value::String(Rc::new(di_label)),
+                                                        );
+                                                        di_text.insert(
+                                                            "children".to_string(),
+                                                            Value::Array(Rc::new(RefCell::new(
+                                                                vec![],
+                                                            ))),
+                                                        );
+                                                        let mut di_attrs = HashMap::new();
+                                                        di_attrs.insert(
+                                                            "href".to_string(),
+                                                            Value::String(Rc::new(di_href)),
+                                                        );
+                                                        let mut di_node = HashMap::new();
+                                                        di_node.insert(
+                                                            "tag".to_string(),
+                                                            Value::String(Rc::new("a".to_string())),
+                                                        );
+                                                        di_node.insert(
+                                                            "class".to_string(),
+                                                            Value::String(Rc::new(
+                                                                "nav-dropdown-item".to_string(),
+                                                            )),
+                                                        );
+                                                        di_node.insert(
+                                                            "children".to_string(),
+                                                            Value::Array(Rc::new(RefCell::new(
+                                                                vec![Value::Struct {
+                                                                    name: "VNode".to_string(),
+                                                                    fields: Rc::new(RefCell::new(
+                                                                        di_text,
+                                                                    )),
+                                                                }],
+                                                            ))),
+                                                        );
+                                                        di_node.insert(
+                                                            "attrs".to_string(),
+                                                            Value::Struct {
+                                                                name: "Attrs".to_string(),
+                                                                fields: Rc::new(RefCell::new(
+                                                                    di_attrs,
+                                                                )),
+                                                            },
+                                                        );
+                                                        menu_items.push(Value::Struct {
+                                                            name: "VNode".to_string(),
+                                                            fields: Rc::new(RefCell::new(di_node)),
+                                                        });
+                                                    }
+                                                }
+                                            }
+
+                                            let mut menu_node = HashMap::new();
+                                            menu_node.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("div".to_string())),
+                                            );
+                                            menu_node.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new(
+                                                    "nav-dropdown-menu".to_string(),
+                                                )),
+                                            );
+                                            menu_node.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(menu_items))),
+                                            );
+
+                                            // Dropdown container
+                                            let mut dropdown_node = HashMap::new();
+                                            dropdown_node.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("div".to_string())),
+                                            );
+                                            dropdown_node.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new("nav-dropdown".to_string())),
+                                            );
+                                            dropdown_node.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(vec![
+                                                    Value::Struct {
+                                                        name: "VNode".to_string(),
+                                                        fields: Rc::new(RefCell::new(trigger_node)),
+                                                    },
+                                                    Value::Struct {
+                                                        name: "VNode".to_string(),
+                                                        fields: Rc::new(RefCell::new(menu_node)),
+                                                    },
+                                                ]))),
+                                            );
+                                            nav_children.push(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(dropdown_node)),
+                                            });
+                                        }
+                                        _ => nav_children.push(item.clone()),
+                                    }
+                                }
+                            }
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("nav".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(nav_children))),
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Nav·render requires a Nav struct"))
+                },
+            })),
+        );
+
+        // VNode·find_child_by_tag - find first child with given tag
+        self.globals.borrow_mut().define(
+            "VNode·find_child_by_tag".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "VNode·find_child_by_tag".to_string(),
+                arity: Some(2),
+                func: |_, args| {
+                    let tag_name = match &args[1] {
+                        Value::String(s) => s.to_string(),
+                        _ => return Ok(Value::Null),
+                    };
+                    fn find_by_tag(node: &Value, tag_name: &str) -> Option<Value> {
+                        if let Value::Struct { fields, .. } = node {
+                            let fields_ref = fields.borrow();
+                            if let Some(Value::String(tag)) = fields_ref.get("tag") {
+                                if tag.as_str() == tag_name {
+                                    return Some(node.clone());
+                                }
+                            }
+                            if let Some(Value::Array(children)) = fields_ref.get("children") {
+                                for child in children.borrow().iter() {
+                                    if let Some(found) = find_by_tag(child, tag_name) {
+                                        return Some(found);
+                                    }
+                                }
+                            }
+                        }
+                        None
+                    }
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        if let Some(Value::Array(children)) = fields.borrow().get("children") {
+                            for child in children.borrow().iter() {
+                                if let Some(found) = find_by_tag(child, &tag_name) {
+                                    return Ok(found);
+                                }
+                            }
+                        }
+                    }
+                    Ok(Value::Null)
+                },
+            })),
+        );
+
+        // VNode·find_sibling_by_tag - find sibling element with given tag
+        // Note: siblings are stored in a special "siblings" field on the VNode
+        self.globals.borrow_mut().define(
+            "VNode·find_sibling_by_tag".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "VNode·find_sibling_by_tag".to_string(),
+                arity: Some(2),
+                func: |_, args| {
+                    let tag_name = match &args[1] {
+                        Value::String(s) => s.to_string(),
+                        _ => return Ok(Value::Null),
+                    };
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        // Check siblings array
+                        if let Some(Value::Array(siblings)) = fields_ref.get("siblings") {
+                            for sibling in siblings.borrow().iter() {
+                                if let Value::Struct { fields: sf, .. } = sibling {
+                                    if let Some(Value::String(tag)) = sf.borrow().get("tag") {
+                                        if tag.as_str() == tag_name {
+                                            return Ok(sibling.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Ok(Value::Null)
+                },
+            })),
+        );
+
+        // VNode·find_sibling_by_class - find sibling element with given class
+        self.globals.borrow_mut().define(
+            "VNode·find_sibling_by_class".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "VNode·find_sibling_by_class".to_string(),
+                arity: Some(2),
+                func: |_, args| {
+                    let class_name = match &args[1] {
+                        Value::String(s) => s.to_string(),
+                        _ => return Ok(Value::Null),
+                    };
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        if let Some(Value::Array(siblings)) = fields_ref.get("siblings") {
+                            for sibling in siblings.borrow().iter() {
+                                if let Value::Struct { fields: sf, .. } = sibling {
+                                    if let Some(Value::String(classes)) = sf.borrow().get("class") {
+                                        if classes.split_whitespace().any(|c| c == class_name) {
+                                            return Ok(sibling.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Ok(Value::Null)
+                },
+            })),
+        );
+
+        // CardHeader·render - renders with title and subtitle children
+        self.globals.borrow_mut().define(
+            "CardHeader·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "CardHeader·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let title = match fields_ref.get("title") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let subtitle = match fields_ref.get("subtitle") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let image = match fields_ref.get("image") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let image_alt = match fields_ref.get("image_alt") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+
+                        let mut children: Vec<Value> = vec![];
+
+                        // Add image if present
+                        if let Some(ref img) = image {
+                            let mut img_attrs = HashMap::new();
+                            img_attrs
+                                .insert("src".to_string(), Value::String(Rc::new(img.clone())));
+                            img_attrs.insert(
+                                "alt".to_string(),
+                                Value::String(Rc::new(image_alt.clone())),
+                            );
+                            let mut img_fields = HashMap::new();
+                            img_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("img".to_string())),
+                            );
+                            img_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("card-image".to_string())),
+                            );
+                            img_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            img_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(img_attrs)),
+                                },
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(img_fields)),
+                            });
+                        }
+
+                        // Add title if present
+                        if let Some(ref t) = title {
+                            let mut title_text = HashMap::new();
+                            title_text.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            title_text
+                                .insert("content".to_string(), Value::String(Rc::new(t.clone())));
+                            title_text.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut title_fields = HashMap::new();
+                            title_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("h3".to_string())),
+                            );
+                            title_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("card-title".to_string())),
+                            );
+                            title_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(title_text)),
+                                }]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(title_fields)),
+                            });
+                        }
+
+                        // Add subtitle if present
+                        if let Some(ref st) = subtitle {
+                            let mut sub_text = HashMap::new();
+                            sub_text.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            sub_text
+                                .insert("content".to_string(), Value::String(Rc::new(st.clone())));
+                            sub_text.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut sub_fields = HashMap::new();
+                            sub_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("p".to_string())));
+                            sub_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("card-subtitle".to_string())),
+                            );
+                            sub_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(sub_text)),
+                                }]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(sub_fields)),
+                            });
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("card-header".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(children))),
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "CardHeader·render requires a CardHeader struct",
+                    ))
+                },
+            })),
+        );
+
+        // CardBody·render
+        self.globals.borrow_mut().define(
+            "CardBody·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "CardBody·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let children = fields
+                            .borrow()
+                            .get("children")
+                            .cloned()
+                            .unwrap_or_else(|| Value::Array(Rc::new(RefCell::new(vec![]))));
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("card-body".to_string())),
+                        );
+                        vnode_fields.insert("children".to_string(), children);
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "CardBody·render requires a CardBody struct",
+                    ))
+                },
+            })),
+        );
+
+        // CardFooter·render
+        self.globals.borrow_mut().define(
+            "CardFooter·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "CardFooter·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let children = fields
+                            .borrow()
+                            .get("children")
+                            .cloned()
+                            .unwrap_or_else(|| Value::Array(Rc::new(RefCell::new(vec![]))));
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("card-footer".to_string())),
+                        );
+                        vnode_fields.insert("children".to_string(), children);
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "CardFooter·render requires a CardFooter struct",
+                    ))
+                },
+            })),
+        );
+
+        // DialogHeader·render
+        self.globals.borrow_mut().define(
+            "DialogHeader·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "DialogHeader·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let title = match fields_ref.get("title") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let subtitle = match fields_ref.get("subtitle") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+
+                        let mut children: Vec<Value> = vec![];
+
+                        if let Some(ref t) = title {
+                            let mut title_attrs = HashMap::new();
+                            title_attrs.insert(
+                                "id".to_string(),
+                                Value::String(Rc::new("dialog-title".to_string())),
+                            );
+                            let mut title_text = HashMap::new();
+                            title_text.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            title_text
+                                .insert("content".to_string(), Value::String(Rc::new(t.clone())));
+                            title_text.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut title_fields = HashMap::new();
+                            title_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("h2".to_string())),
+                            );
+                            title_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("dialog-title".to_string())),
+                            );
+                            title_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(title_text)),
+                                }]))),
+                            );
+                            title_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(title_attrs)),
+                                },
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(title_fields)),
+                            });
+                        }
+
+                        if let Some(ref st) = subtitle {
+                            let mut sub_text = HashMap::new();
+                            sub_text.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            sub_text
+                                .insert("content".to_string(), Value::String(Rc::new(st.clone())));
+                            sub_text.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut sub_fields = HashMap::new();
+                            sub_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("p".to_string())));
+                            sub_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("dialog-subtitle".to_string())),
+                            );
+                            sub_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(sub_text)),
+                                }]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(sub_fields)),
+                            });
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("dialog-header".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(children))),
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "DialogHeader·render requires a DialogHeader struct",
+                    ))
+                },
+            })),
+        );
+
+        // DialogBody·render
+        self.globals.borrow_mut().define(
+            "DialogBody·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "DialogBody·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let children = fields_ref
+                            .get("children")
+                            .cloned()
+                            .unwrap_or_else(|| Value::Array(Rc::new(RefCell::new(vec![]))));
+                        let id = match fields_ref.get("id") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let scrollable =
+                            matches!(fields_ref.get("scrollable"), Some(Value::Bool(true)));
+
+                        let mut classes = vec!["dialog-body".to_string()];
+                        if scrollable {
+                            classes.push("dialog-body-scrollable".to_string());
+                        }
+
+                        let mut attrs = HashMap::new();
+                        if let Some(ref i) = id {
+                            attrs.insert("id".to_string(), Value::String(Rc::new(i.clone())));
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert("children".to_string(), children);
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "DialogBody·render requires a DialogBody struct",
+                    ))
+                },
+            })),
+        );
+
+        // DialogFooter·render
+        self.globals.borrow_mut().define(
+            "DialogFooter·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "DialogFooter·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let children = fields
+                            .borrow()
+                            .get("children")
+                            .cloned()
+                            .unwrap_or_else(|| Value::Array(Rc::new(RefCell::new(vec![]))));
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("dialog-footer".to_string())),
+                        );
+                        vnode_fields.insert("children".to_string(), children);
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "DialogFooter·render requires a DialogFooter struct",
+                    ))
+                },
+            })),
+        );
+
+        // TabList·render
+        self.globals.borrow_mut().define(
+            "TabList·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "TabList·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let children = fields
+                            .borrow()
+                            .get("children")
+                            .cloned()
+                            .unwrap_or_else(|| Value::Array(Rc::new(RefCell::new(vec![]))));
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "role".to_string(),
+                            Value::String(Rc::new("tablist".to_string())),
+                        );
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("tab-list".to_string())),
+                        );
+                        vnode_fields.insert("children".to_string(), children);
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "TabList·render requires a TabList struct",
+                    ))
+                },
+            })),
+        );
+
+        // Tab·render
+        self.globals.borrow_mut().define(
+            "Tab·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Tab·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let label = match fields_ref.get("label") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let selected =
+                            matches!(fields_ref.get("selected"), Some(Value::Bool(true)));
+                        let disabled =
+                            matches!(fields_ref.get("disabled"), Some(Value::Bool(true)));
+
+                        let mut classes = vec!["tab".to_string()];
+                        if selected {
+                            classes.push("tab-selected".to_string());
+                        }
+                        if disabled {
+                            classes.push("tab-disabled".to_string());
+                        }
+
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "role".to_string(),
+                            Value::String(Rc::new("tab".to_string())),
+                        );
+                        attrs.insert(
+                            "aria-selected".to_string(),
+                            Value::String(Rc::new(
+                                if selected { "true" } else { "false" }.to_string(),
+                            )),
+                        );
+                        if disabled {
+                            attrs.insert(
+                                "aria-disabled".to_string(),
+                                Value::String(Rc::new("true".to_string())),
+                            );
+                        }
+
+                        let mut text_fields = HashMap::new();
+                        text_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("#text".to_string())),
+                        );
+                        text_fields.insert("content".to_string(), Value::String(Rc::new(label)));
+                        text_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![]))),
+                        );
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("button".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(text_fields)),
+                            }]))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Tab·render requires a Tab struct"))
+                },
+            })),
+        );
+
+        // TabPanels·render
+        self.globals.borrow_mut().define(
+            "TabPanels·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "TabPanels·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let children = fields
+                            .borrow()
+                            .get("children")
+                            .cloned()
+                            .unwrap_or_else(|| Value::Array(Rc::new(RefCell::new(vec![]))));
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("tab-panels".to_string())),
+                        );
+                        vnode_fields.insert("children".to_string(), children);
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "TabPanels·render requires a TabPanels struct",
+                    ))
+                },
+            })),
+        );
+
+        // TabPanel·render
+        self.globals.borrow_mut().define(
+            "TabPanel·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "TabPanel·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let children = fields
+                            .borrow()
+                            .get("children")
+                            .cloned()
+                            .unwrap_or_else(|| Value::Array(Rc::new(RefCell::new(vec![]))));
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "role".to_string(),
+                            Value::String(Rc::new("tabpanel".to_string())),
+                        );
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("tab-panel".to_string())),
+                        );
+                        vnode_fields.insert("children".to_string(), children);
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "TabPanel·render requires a TabPanel struct",
+                    ))
+                },
+            })),
+        );
+
+        // Option·render
+        self.globals.borrow_mut().define(
+            "Option·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Option·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let value = match fields_ref.get("value") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let label = match fields_ref.get("label") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => value.clone(),
+                        };
+                        let mut attrs = HashMap::new();
+                        attrs.insert("value".to_string(), Value::String(Rc::new(value)));
+                        let mut text_fields = HashMap::new();
+                        text_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("#text".to_string())),
+                        );
+                        text_fields.insert("content".to_string(), Value::String(Rc::new(label)));
+                        text_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![]))),
+                        );
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("option".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("select-option".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(text_fields)),
+                            }]))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Option·render requires an Option struct"))
+                },
+            })),
+        );
+
+        // Label·render
+        self.globals.borrow_mut().define(
+            "Label·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Label·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let text = match fields_ref.get("text") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "".to_string(),
+                        };
+                        let for_id = match fields_ref.get("for") {
+                            Some(Value::String(s)) => Some(s.to_string()),
+                            _ => None,
+                        };
+                        let mut attrs = HashMap::new();
+                        if let Some(ref f) = for_id {
+                            attrs.insert("for".to_string(), Value::String(Rc::new(f.clone())));
+                        }
+                        let mut text_fields = HashMap::new();
+                        text_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("#text".to_string())),
+                        );
+                        text_fields.insert("content".to_string(), Value::String(Rc::new(text)));
+                        text_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![]))),
+                        );
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("label".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("label".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(text_fields)),
+                            }]))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Label·render requires a Label struct"))
+                },
+            })),
+        );
+
+        // Daemoniorum-specific components with proper CSS classes
+        // PlatformCard·render - comprehensive Daemoniorum platform card
+        self.globals.borrow_mut().define(
+            "PlatformCard·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "PlatformCard·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+
+                        // Parse properties
+                        let name = fields_ref.get("name").cloned();
+                        let tagline = fields_ref.get("tagline").cloned();
+                        let description = fields_ref.get("description").cloned();
+                        let icon = fields_ref.get("icon").cloned();
+                        let status = fields_ref.get("status").cloned();
+                        let tech_stack = fields_ref.get("tech_stack").cloned();
+                        let features = fields_ref.get("features").cloned();
+                        let github_url = fields_ref.get("github_url").cloned();
+                        let docs_url = fields_ref.get("docs_url").cloned();
+                        let size = match fields_ref.get("size") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "md".to_string(),
+                        };
+                        let variant = match fields_ref.get("variant") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "filled".to_string(),
+                        };
+                        let interactive =
+                            matches!(fields_ref.get("interactive"), Some(Value::Bool(true)));
+                        let href = fields_ref.get("href").cloned();
+                        let accent_color = fields_ref.get("accent_color").cloned();
+                        let disabled =
+                            matches!(fields_ref.get("disabled"), Some(Value::Bool(true)));
+                        let aria_label = fields_ref.get("aria_label").cloned();
+
+                        // Build classes
+                        let mut classes = vec![
+                            "platform-card".to_string(),
+                            format!("platform-card-{}", size),
+                            format!("platform-card-{}", variant),
+                        ];
+                        if interactive {
+                            classes.push("platform-card-interactive".to_string());
+                        }
+                        if disabled {
+                            classes.push("platform-card-disabled".to_string());
+                        }
+
+                        let mut card_children = Vec::new();
+
+                        // Add icon if present
+                        if let Some(Value::String(_icon_name)) = icon {
+                            let mut icon_fields = HashMap::new();
+                            icon_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            icon_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("platform-card-icon".to_string())),
+                            );
+                            icon_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(icon_fields)),
+                            });
+                        }
+
+                        // Add status badge if present
+                        if let Some(Value::String(status_str)) = status {
+                            let mut status_fields = HashMap::new();
+                            status_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("span".to_string())),
+                            );
+                            status_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new(format!(
+                                    "platform-card-status platform-card-status-{}",
+                                    status_str
+                                ))),
+                            );
+                            status_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(status_fields)),
+                            });
+                        }
+
+                        // Add name
+                        if let Some(Value::String(n)) = name {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(n.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut name_fields = HashMap::new();
+                            name_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("h3".to_string())),
+                            );
+                            name_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("platform-card-name".to_string())),
+                            );
+                            name_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(name_fields)),
+                            });
+                        }
+
+                        // Add tagline
+                        if let Some(Value::String(t)) = tagline {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(t.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut tagline_fields = HashMap::new();
+                            tagline_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("p".to_string())));
+                            tagline_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("platform-card-tagline".to_string())),
+                            );
+                            tagline_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(tagline_fields)),
+                            });
+                        }
+
+                        // Add description
+                        if let Some(Value::String(d)) = description {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(d.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut desc_fields = HashMap::new();
+                            desc_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("p".to_string())));
+                            desc_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("platform-card-description".to_string())),
+                            );
+                            desc_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(desc_fields)),
+                            });
+                        }
+
+                        // Add tech stack
+                        if let Some(Value::Array(techs)) = tech_stack {
+                            let mut tech_tags = Vec::new();
+                            for tech in techs.borrow().iter() {
+                                if let Value::String(t) = tech {
+                                    let mut text_node = HashMap::new();
+                                    text_node.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("#text".to_string())),
+                                    );
+                                    text_node
+                                        .insert("content".to_string(), Value::String(t.clone()));
+                                    text_node.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                                    );
+                                    let mut tag_fields = HashMap::new();
+                                    tag_fields.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("span".to_string())),
+                                    );
+                                    tag_fields.insert(
+                                        "class".to_string(),
+                                        Value::String(Rc::new(
+                                            "platform-card-tech-tag".to_string(),
+                                        )),
+                                    );
+                                    tag_fields.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(text_node)),
+                                        }]))),
+                                    );
+                                    tech_tags.push(Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(tag_fields)),
+                                    });
+                                }
+                            }
+                            if !tech_tags.is_empty() {
+                                let mut tech_fields = HashMap::new();
+                                tech_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("div".to_string())),
+                                );
+                                tech_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("platform-card-tech".to_string())),
+                                );
+                                tech_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(tech_tags))),
+                                );
+                                card_children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(tech_fields)),
+                                });
+                            }
+                        }
+
+                        // Add features list
+                        if let Some(Value::Array(feats)) = features {
+                            let mut feature_items = Vec::new();
+                            for feat in feats.borrow().iter() {
+                                if let Value::String(f) = feat {
+                                    let mut text_node = HashMap::new();
+                                    text_node.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("#text".to_string())),
+                                    );
+                                    text_node
+                                        .insert("content".to_string(), Value::String(f.clone()));
+                                    text_node.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                                    );
+                                    let mut li_fields = HashMap::new();
+                                    li_fields.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("li".to_string())),
+                                    );
+                                    li_fields.insert(
+                                        "class".to_string(),
+                                        Value::String(Rc::new("".to_string())),
+                                    );
+                                    li_fields.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(text_node)),
+                                        }]))),
+                                    );
+                                    feature_items.push(Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(li_fields)),
+                                    });
+                                }
+                            }
+                            if !feature_items.is_empty() {
+                                let mut ul_fields = HashMap::new();
+                                ul_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("ul".to_string())),
+                                );
+                                ul_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("platform-card-features".to_string())),
+                                );
+                                ul_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(feature_items))),
+                                );
+                                card_children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(ul_fields)),
+                                });
+                            }
+                        }
+
+                        // Add GitHub link
+                        if let Some(Value::String(gh_url)) = github_url {
+                            let mut gh_attrs = HashMap::new();
+                            gh_attrs.insert("href".to_string(), Value::String(gh_url.clone()));
+                            gh_attrs.insert(
+                                "target".to_string(),
+                                Value::String(Rc::new("_blank".to_string())),
+                            );
+                            let mut gh_fields = HashMap::new();
+                            gh_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                            gh_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("platform-card-github".to_string())),
+                            );
+                            gh_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            gh_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(gh_attrs)),
+                                },
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(gh_fields)),
+                            });
+                        }
+
+                        // Add docs link
+                        if let Some(Value::String(docs)) = docs_url {
+                            let mut docs_attrs = HashMap::new();
+                            docs_attrs.insert("href".to_string(), Value::String(docs.clone()));
+                            let mut docs_fields = HashMap::new();
+                            docs_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                            docs_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("platform-card-docs".to_string())),
+                            );
+                            docs_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            docs_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(docs_attrs)),
+                                },
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(docs_fields)),
+                            });
+                        }
+
+                        // Build attrs
+                        let mut vnode_attrs = HashMap::new();
+                        if let Some(Value::String(aria)) = aria_label {
+                            vnode_attrs
+                                .insert("aria-label".to_string(), Value::String(aria.clone()));
+                        }
+                        if interactive {
+                            if let Some(Value::String(h)) = href {
+                                vnode_attrs.insert("href".to_string(), Value::String(h.clone()));
+                            }
+                        }
+                        if let Some(Value::String(color)) = accent_color {
+                            vnode_attrs.insert(
+                                "style".to_string(),
+                                Value::String(Rc::new(format!("--accent-color: {}", color))),
+                            );
+                        }
+
+                        let tag = if interactive { "a" } else { "div" };
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new(tag.to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(card_children))),
+                        );
+                        if !vnode_attrs.is_empty() {
+                            vnode_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(vnode_attrs)),
+                                },
+                            );
+                        }
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("PlatformCard·render requires a struct"))
+                },
+            })),
+        );
+
+        // ResearchCard·render - comprehensive research paper card
+        self.globals.borrow_mut().define(
+            "ResearchCard·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "ResearchCard·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+
+                        // Parse properties
+                        let title = fields_ref.get("title").cloned();
+                        let abstract_text = fields_ref.get("abstract").cloned();
+                        let date = fields_ref.get("date").cloned();
+                        let authors = fields_ref.get("authors").cloned();
+                        let tags = fields_ref.get("tags").cloned();
+                        let pdf_url = fields_ref.get("pdf_url").cloned();
+                        let arxiv_id = fields_ref.get("arxiv_id").cloned();
+                        let citations = fields_ref.get("citations").cloned();
+                        let status = fields_ref.get("status").cloned();
+                        let venue = fields_ref.get("venue").cloned();
+                        let code_url = fields_ref.get("code_url").cloned();
+                        let variant = match fields_ref.get("variant") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "full".to_string(),
+                        };
+                        let thumbnail = fields_ref.get("thumbnail").cloned();
+                        let thumbnail_alt = fields_ref.get("thumbnail_alt").cloned();
+                        let read_time_minutes = fields_ref.get("read_time_minutes").cloned();
+                        let aria_label = fields_ref.get("aria_label").cloned();
+
+                        // Build classes
+                        let mut classes = vec![
+                            "research-card".to_string(),
+                            format!("research-card-{}", variant),
+                        ];
+
+                        let mut card_children = Vec::new();
+
+                        // Add thumbnail if present
+                        if let Some(Value::String(thumb_src)) = thumbnail {
+                            let alt_text = match thumbnail_alt {
+                                Some(Value::String(s)) => s.to_string(),
+                                _ => "".to_string(),
+                            };
+                            let mut img_attrs = HashMap::new();
+                            img_attrs.insert("src".to_string(), Value::String(thumb_src.clone()));
+                            img_attrs.insert("alt".to_string(), Value::String(Rc::new(alt_text)));
+                            let mut img_fields = HashMap::new();
+                            img_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("img".to_string())),
+                            );
+                            img_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("".to_string())),
+                            );
+                            img_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            img_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(img_attrs)),
+                                },
+                            );
+                            let mut thumb_fields = HashMap::new();
+                            thumb_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            thumb_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("research-card-thumbnail".to_string())),
+                            );
+                            thumb_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(img_fields)),
+                                }]))),
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(thumb_fields)),
+                            });
+                        }
+
+                        // Add status badge if present
+                        if let Some(Value::String(status_str)) = status {
+                            let mut status_fields = HashMap::new();
+                            status_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("span".to_string())),
+                            );
+                            status_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new(format!(
+                                    "research-card-status research-card-status-{}",
+                                    status_str
+                                ))),
+                            );
+                            status_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(status_fields)),
+                            });
+                        }
+
+                        // Add title
+                        if let Some(Value::String(t)) = title {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(t.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut title_fields = HashMap::new();
+                            title_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("h3".to_string())),
+                            );
+                            title_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("research-card-title".to_string())),
+                            );
+                            title_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(title_fields)),
+                            });
+                        }
+
+                        // Add authors
+                        if let Some(Value::Array(authors_arr)) = authors {
+                            let mut author_items = Vec::new();
+                            for author in authors_arr.borrow().iter() {
+                                if let Value::Struct { fields: af, .. } = author {
+                                    let afr = af.borrow();
+                                    let name = match afr.get("name") {
+                                        Some(Value::String(s)) => s.to_string(),
+                                        _ => "".to_string(),
+                                    };
+                                    let mut text_node = HashMap::new();
+                                    text_node.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("#text".to_string())),
+                                    );
+                                    text_node.insert(
+                                        "content".to_string(),
+                                        Value::String(Rc::new(name)),
+                                    );
+                                    text_node.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                                    );
+                                    let mut author_fields = HashMap::new();
+                                    author_fields.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("span".to_string())),
+                                    );
+                                    author_fields.insert(
+                                        "class".to_string(),
+                                        Value::String(Rc::new("research-card-author".to_string())),
+                                    );
+                                    author_fields.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(text_node)),
+                                        }]))),
+                                    );
+                                    author_items.push(Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(author_fields)),
+                                    });
+                                }
+                            }
+                            if !author_items.is_empty() {
+                                let mut authors_div = HashMap::new();
+                                authors_div.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("div".to_string())),
+                                );
+                                authors_div.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("research-card-authors".to_string())),
+                                );
+                                authors_div.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(author_items))),
+                                );
+                                card_children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(authors_div)),
+                                });
+                            }
+                        }
+
+                        // Add abstract
+                        if let Some(Value::String(abs)) = abstract_text {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(abs.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut abs_fields = HashMap::new();
+                            abs_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("p".to_string())));
+                            abs_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("research-card-abstract".to_string())),
+                            );
+                            abs_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(abs_fields)),
+                            });
+                        }
+
+                        // Add date
+                        if let Some(Value::String(d)) = date {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(d.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut date_fields = HashMap::new();
+                            date_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("time".to_string())),
+                            );
+                            date_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("research-card-date".to_string())),
+                            );
+                            date_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(date_fields)),
+                            });
+                        }
+
+                        // Add venue
+                        if let Some(Value::String(v)) = venue {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(v.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut venue_fields = HashMap::new();
+                            venue_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("span".to_string())),
+                            );
+                            venue_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("research-card-venue".to_string())),
+                            );
+                            venue_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(venue_fields)),
+                            });
+                        }
+
+                        // Add tags
+                        if let Some(Value::Array(tags_arr)) = tags {
+                            let mut tag_items = Vec::new();
+                            for tag in tags_arr.borrow().iter() {
+                                if let Value::String(t) = tag {
+                                    let mut text_node = HashMap::new();
+                                    text_node.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("#text".to_string())),
+                                    );
+                                    text_node
+                                        .insert("content".to_string(), Value::String(t.clone()));
+                                    text_node.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                                    );
+                                    let mut tag_fields = HashMap::new();
+                                    tag_fields.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("span".to_string())),
+                                    );
+                                    tag_fields.insert(
+                                        "class".to_string(),
+                                        Value::String(Rc::new("research-card-tag".to_string())),
+                                    );
+                                    tag_fields.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(text_node)),
+                                        }]))),
+                                    );
+                                    tag_items.push(Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(tag_fields)),
+                                    });
+                                }
+                            }
+                            if !tag_items.is_empty() {
+                                let mut tags_div = HashMap::new();
+                                tags_div.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("div".to_string())),
+                                );
+                                tags_div.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("research-card-tags".to_string())),
+                                );
+                                tags_div.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(tag_items))),
+                                );
+                                card_children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(tags_div)),
+                                });
+                            }
+                        }
+
+                        // Add citations
+                        if let Some(Value::Int(c)) = citations {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert(
+                                "content".to_string(),
+                                Value::String(Rc::new(format!("{} citations", c))),
+                            );
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut cites_fields = HashMap::new();
+                            cites_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("span".to_string())),
+                            );
+                            cites_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("research-card-citations".to_string())),
+                            );
+                            cites_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(cites_fields)),
+                            });
+                        }
+
+                        // Add read time
+                        if let Some(Value::Int(mins)) = read_time_minutes {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert(
+                                "content".to_string(),
+                                Value::String(Rc::new(format!("{} min read", mins))),
+                            );
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut time_fields = HashMap::new();
+                            time_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("span".to_string())),
+                            );
+                            time_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("research-card-read-time".to_string())),
+                            );
+                            time_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(time_fields)),
+                            });
+                        }
+
+                        // Add PDF link
+                        if let Some(Value::String(pdf)) = pdf_url {
+                            let mut pdf_attrs = HashMap::new();
+                            pdf_attrs.insert("href".to_string(), Value::String(pdf.clone()));
+                            pdf_attrs.insert("download".to_string(), Value::Bool(true));
+                            let mut pdf_fields = HashMap::new();
+                            pdf_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                            pdf_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("research-card-pdf".to_string())),
+                            );
+                            pdf_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            pdf_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(pdf_attrs)),
+                                },
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(pdf_fields)),
+                            });
+                        }
+
+                        // Add arXiv link
+                        if let Some(Value::String(arxiv)) = arxiv_id {
+                            let mut arxiv_attrs = HashMap::new();
+                            arxiv_attrs.insert(
+                                "href".to_string(),
+                                Value::String(Rc::new(format!("https://arxiv.org/abs/{}", arxiv))),
+                            );
+                            let mut arxiv_fields = HashMap::new();
+                            arxiv_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                            arxiv_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("research-card-arxiv".to_string())),
+                            );
+                            arxiv_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            arxiv_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(arxiv_attrs)),
+                                },
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(arxiv_fields)),
+                            });
+                        }
+
+                        // Add code link
+                        if let Some(Value::String(code)) = code_url {
+                            let mut code_attrs = HashMap::new();
+                            code_attrs.insert("href".to_string(), Value::String(code.clone()));
+                            let mut code_fields = HashMap::new();
+                            code_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                            code_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("research-card-code".to_string())),
+                            );
+                            code_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            code_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(code_attrs)),
+                                },
+                            );
+                            card_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(code_fields)),
+                            });
+                        }
+
+                        // Build attrs
+                        let mut vnode_attrs = HashMap::new();
+                        if let Some(Value::String(aria)) = aria_label {
+                            vnode_attrs
+                                .insert("aria-label".to_string(), Value::String(aria.clone()));
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("article".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(card_children))),
+                        );
+                        if !vnode_attrs.is_empty() {
+                            vnode_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(vnode_attrs)),
+                                },
+                            );
+                        }
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("ResearchCard·render requires a struct"))
+                },
+            })),
+        );
+
+        // FeatureSection·render - comprehensive with title, grid, layouts
+        self.globals.borrow_mut().define(
+            "FeatureSection·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "FeatureSection·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let title = fields_ref.get("title").cloned();
+                        let subtitle = fields_ref.get("subtitle").cloned();
+                        let layout = match fields_ref.get("layout") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "grid".to_string(),
+                        };
+                        let columns = fields_ref.get("columns").cloned();
+                        let children_val = fields_ref.get("children").cloned();
+                        drop(fields_ref);
+
+                        let mut classes = vec![
+                            "feature-section".to_string(),
+                            format!("feature-section-{}-layout", layout),
+                        ];
+                        if let Some(Value::Int(n)) = columns {
+                            classes.push(format!("feature-section-cols-{}", n));
+                        }
+
+                        let mut section_children = Vec::new();
+
+                        // Add title
+                        if let Some(Value::String(t)) = title {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(t.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut title_fields = HashMap::new();
+                            title_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("h2".to_string())),
+                            );
+                            title_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("feature-section-title".to_string())),
+                            );
+                            title_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            section_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(title_fields)),
+                            });
+                        }
+
+                        // Add subtitle
+                        if let Some(Value::String(s)) = subtitle {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(s.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut sub_fields = HashMap::new();
+                            sub_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("p".to_string())));
+                            sub_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("feature-section-subtitle".to_string())),
+                            );
+                            sub_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            section_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(sub_fields)),
+                            });
+                        }
+
+                        // Children go into feature-section-grid (passed through as-is)
+                        let grid_children = if let Some(Value::Array(children_arr)) = children_val {
+                            children_arr.borrow().clone()
+                        } else {
+                            Vec::new()
+                        };
+
+                        let mut grid_fields = HashMap::new();
+                        grid_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        grid_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("feature-section-grid".to_string())),
+                        );
+                        grid_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(grid_children))),
+                        );
+                        section_children.push(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(grid_fields)),
+                        });
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("section".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(section_children))),
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("FeatureSection·render requires a struct"))
+                },
+            })),
+        );
+
+        // PricingTable·render - renders PricingPlan children
+        self.globals.borrow_mut().define(
+            "PricingTable·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "PricingTable·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let children_val = fields_ref.get("children").cloned();
+                        drop(fields_ref);
+
+                        // Children passed through as-is
+                        let plan_children = if let Some(Value::Array(children_arr)) = children_val {
+                            children_arr.borrow().clone()
+                        } else {
+                            Vec::new()
+                        };
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("pricing-table".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(plan_children))),
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("PricingTable·render requires a struct"))
+                },
+            })),
+        );
+
+        // Testimonial·render - comprehensive with quote, author, avatar, rating
+        self.globals.borrow_mut().define(
+            "Testimonial·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "Testimonial·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let quote = fields_ref.get("quote").cloned();
+                        let author = fields_ref.get("author").cloned();
+                        let title = fields_ref.get("title").cloned();
+                        let company = fields_ref.get("company").cloned();
+                        let avatar = fields_ref.get("avatar").cloned();
+                        let company_logo = fields_ref.get("company_logo").cloned();
+                        let rating = fields_ref.get("rating").cloned();
+                        let variant = match fields_ref.get("variant") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "default".to_string(),
+                        };
+
+                        let classes = vec![
+                            "testimonial".to_string(),
+                            format!("testimonial-{}", variant),
+                        ];
+                        let mut children = Vec::new();
+
+                        // Add avatar
+                        if let Some(Value::String(av)) = avatar {
+                            let author_name = match &author {
+                                Some(Value::String(s)) => s.to_string(),
+                                _ => "".to_string(),
+                            };
+                            let mut img_attrs = HashMap::new();
+                            img_attrs.insert("src".to_string(), Value::String(av.clone()));
+                            img_attrs
+                                .insert("alt".to_string(), Value::String(Rc::new(author_name)));
+                            let mut img_fields = HashMap::new();
+                            img_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("img".to_string())),
+                            );
+                            img_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("".to_string())),
+                            );
+                            img_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            img_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(img_attrs)),
+                                },
+                            );
+                            let mut avatar_fields = HashMap::new();
+                            avatar_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            avatar_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("testimonial-avatar".to_string())),
+                            );
+                            avatar_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(img_fields)),
+                                }]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(avatar_fields)),
+                            });
+                        }
+
+                        // Add rating
+                        if let Some(Value::Int(r)) = rating {
+                            let mut stars = Vec::new();
+                            for _ in 0..(r as usize) {
+                                let mut star_fields = HashMap::new();
+                                star_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("span".to_string())),
+                                );
+                                star_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("testimonial-star-filled".to_string())),
+                                );
+                                star_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                );
+                                stars.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(star_fields)),
+                                });
+                            }
+                            let mut rating_fields = HashMap::new();
+                            rating_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            rating_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("testimonial-rating".to_string())),
+                            );
+                            rating_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(stars))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(rating_fields)),
+                            });
+                        }
+
+                        // Add quote
+                        if let Some(Value::String(q)) = quote {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(q.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut quote_fields = HashMap::new();
+                            quote_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("p".to_string())));
+                            quote_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("testimonial-quote".to_string())),
+                            );
+                            quote_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(quote_fields)),
+                            });
+                        }
+
+                        // Add author
+                        if let Some(Value::String(a)) = author {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(a.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut author_fields = HashMap::new();
+                            author_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("cite".to_string())),
+                            );
+                            author_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("testimonial-author".to_string())),
+                            );
+                            author_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(author_fields)),
+                            });
+                        }
+
+                        // Add company logo
+                        if let Some(Value::String(_logo)) = company_logo {
+                            let mut logo_fields = HashMap::new();
+                            logo_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            logo_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("testimonial-logo".to_string())),
+                            );
+                            logo_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(logo_fields)),
+                            });
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("blockquote".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(children))),
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("Testimonial·render requires a struct"))
+                },
+            })),
+        );
+
+        // TestimonialSlider·render - container for multiple testimonials with track and dots
+        self.globals.borrow_mut().define(
+            "TestimonialSlider·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "TestimonialSlider·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let autoplay = fields_ref.get("autoplay").cloned();
+                        let interval = fields_ref.get("interval").cloned();
+                        let children_val = fields_ref.get("children").cloned();
+                        let show_arrows = fields_ref.get("show_arrows").cloned();
+                        drop(fields_ref);
+
+                        let mut classes = vec!["testimonial-slider".to_string()];
+                        if let Some(Value::Bool(true)) = autoplay {
+                            classes.push("testimonial-slider-autoplay".to_string());
+                        }
+
+                        // Count children for dots
+                        let children_count = if let Some(Value::Array(arr)) = &children_val {
+                            arr.borrow().len()
+                        } else {
+                            0
+                        };
+
+                        // Children passed through to track
+                        let track_children = if let Some(Value::Array(children_arr)) = children_val
+                        {
+                            children_arr.borrow().clone()
+                        } else {
+                            Vec::new()
+                        };
+
+                        let mut slider_parts = Vec::new();
+
+                        // Prev button if show_arrows
+                        if let Some(Value::Bool(true)) = &show_arrows {
+                            let mut prev_fields = HashMap::new();
+                            prev_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("button".to_string())),
+                            );
+                            prev_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("testimonial-slider-prev".to_string())),
+                            );
+                            prev_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            slider_parts.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(prev_fields)),
+                            });
+                        }
+
+                        // Track div containing testimonials
+                        let mut track_fields = HashMap::new();
+                        track_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        track_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("testimonial-slider-track".to_string())),
+                        );
+                        track_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(track_children))),
+                        );
+                        slider_parts.push(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(track_fields)),
+                        });
+
+                        // Next button if show_arrows
+                        if let Some(Value::Bool(true)) = &show_arrows {
+                            let mut next_fields = HashMap::new();
+                            next_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("button".to_string())),
+                            );
+                            next_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("testimonial-slider-next".to_string())),
+                            );
+                            next_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            slider_parts.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(next_fields)),
+                            });
+                        }
+
+                        // Dots div for navigation
+                        let mut dot_buttons = Vec::new();
+                        for _ in 0..children_count {
+                            let mut dot_fields = HashMap::new();
+                            dot_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("button".to_string())),
+                            );
+                            dot_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("testimonial-slider-dot".to_string())),
+                            );
+                            dot_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            dot_buttons.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(dot_fields)),
+                            });
+                        }
+                        let mut dots_fields = HashMap::new();
+                        dots_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        dots_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("testimonial-slider-dots".to_string())),
+                        );
+                        dots_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(dot_buttons))),
+                        );
+                        slider_parts.push(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(dots_fields)),
+                        });
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(slider_parts))),
+                        );
+
+                        if let Some(Value::Int(i)) = interval {
+                            let mut attrs = HashMap::new();
+                            attrs.insert(
+                                "data-interval".to_string(),
+                                Value::String(Rc::new(i.to_string())),
+                            );
+                            vnode_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(attrs)),
+                                },
+                            );
+                        }
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "TestimonialSlider·render requires a struct",
+                    ))
+                },
+            })),
+        );
+
+        // TestimonialGrid·render - grid layout for multiple testimonials
+        self.globals.borrow_mut().define(
+            "TestimonialGrid·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "TestimonialGrid·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let columns = fields_ref.get("columns").cloned();
+                        let children_val = fields_ref.get("children").cloned();
+                        drop(fields_ref);
+
+                        let mut classes = vec!["testimonial-grid".to_string()];
+                        if let Some(Value::Int(n)) = columns {
+                            classes.push(format!("testimonial-grid-cols-{}", n));
+                        }
+
+                        // Render each Testimonial child inline
+                        let mut testimonial_children = Vec::new();
+                        if let Some(Value::Array(children_arr)) = children_val {
+                            for child in children_arr.borrow().iter() {
+                                if let Value::Struct {
+                                    name,
+                                    fields: child_fields,
+                                    ..
+                                } = child
+                                {
+                                    if name == "Testimonial" {
+                                        // Inline Testimonial rendering
+                                        let child_ref = child_fields.borrow();
+                                        let quote_val = child_ref.get("quote").cloned();
+                                        let author_val = child_ref.get("author").cloned();
+                                        drop(child_ref);
+
+                                        let mut parts = Vec::new();
+
+                                        // Quote
+                                        if let Some(Value::String(q)) = &quote_val {
+                                            let mut text_node = HashMap::new();
+                                            text_node.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("#text".to_string())),
+                                            );
+                                            text_node.insert(
+                                                "content".to_string(),
+                                                Value::String(Rc::new(q.to_string())),
+                                            );
+                                            let mut quote_fields = HashMap::new();
+                                            quote_fields.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("blockquote".to_string())),
+                                            );
+                                            quote_fields.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new(
+                                                    "testimonial-quote".to_string(),
+                                                )),
+                                            );
+                                            quote_fields.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(vec![
+                                                    Value::Struct {
+                                                        name: "VNode".to_string(),
+                                                        fields: Rc::new(RefCell::new(text_node)),
+                                                    },
+                                                ]))),
+                                            );
+                                            parts.push(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(quote_fields)),
+                                            });
+                                        }
+
+                                        // Author
+                                        if let Some(Value::String(a)) = &author_val {
+                                            let mut text_node = HashMap::new();
+                                            text_node.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("#text".to_string())),
+                                            );
+                                            text_node.insert(
+                                                "content".to_string(),
+                                                Value::String(Rc::new(a.to_string())),
+                                            );
+                                            let mut author_fields = HashMap::new();
+                                            author_fields.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("div".to_string())),
+                                            );
+                                            author_fields.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new(
+                                                    "testimonial-author".to_string(),
+                                                )),
+                                            );
+                                            author_fields.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(vec![
+                                                    Value::Struct {
+                                                        name: "VNode".to_string(),
+                                                        fields: Rc::new(RefCell::new(text_node)),
+                                                    },
+                                                ]))),
+                                            );
+                                            parts.push(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(author_fields)),
+                                            });
+                                        }
+
+                                        let mut testimonial_vnode = HashMap::new();
+                                        testimonial_vnode.insert(
+                                            "tag".to_string(),
+                                            Value::String(Rc::new("div".to_string())),
+                                        );
+                                        testimonial_vnode.insert(
+                                            "class".to_string(),
+                                            Value::String(Rc::new("testimonial".to_string())),
+                                        );
+                                        testimonial_vnode.insert(
+                                            "children".to_string(),
+                                            Value::Array(Rc::new(RefCell::new(parts))),
+                                        );
+                                        testimonial_children.push(Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(testimonial_vnode)),
+                                        });
+                                    } else {
+                                        testimonial_children.push(child.clone());
+                                    }
+                                }
+                            }
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(testimonial_children))),
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(
+                        "TestimonialGrid·render requires a struct",
+                    ))
+                },
+            })),
+        );
+
+        // CodeBlock·render - comprehensive with all features
+        self.globals.borrow_mut().define(
+            "CodeBlock·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "CodeBlock·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let code = fields_ref.get("code").cloned();
+                        let language = match fields_ref.get("language") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "text".to_string(),
+                        };
+                        let show_line_numbers =
+                            matches!(fields_ref.get("show_line_numbers"), Some(Value::Bool(true)));
+                        let show_copy =
+                            matches!(fields_ref.get("show_copy"), Some(Value::Bool(true)));
+                        let title = fields_ref.get("title").cloned();
+                        let theme = fields_ref.get("theme").cloned();
+                        let inline = matches!(fields_ref.get("inline"), Some(Value::Bool(true)));
+                        let show_diff =
+                            matches!(fields_ref.get("show_diff"), Some(Value::Bool(true)));
+                        let word_wrap =
+                            matches!(fields_ref.get("word_wrap"), Some(Value::Bool(true)));
+                        let max_height = fields_ref.get("max_height").cloned();
+                        let terminal =
+                            matches!(fields_ref.get("terminal"), Some(Value::Bool(true)));
+                        let aria_label = fields_ref.get("aria_label").cloned();
+                        let highlight_lines = fields_ref.get("highlight_lines").cloned();
+                        drop(fields_ref);
+
+                        // Handle inline code specially
+                        if inline {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            if let Some(Value::String(c)) = &code {
+                                text_node.insert("content".to_string(), Value::String(c.clone()));
+                            }
+                            let mut code_el = HashMap::new();
+                            code_el.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("code".to_string())),
+                            );
+                            code_el.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("code-inline".to_string())),
+                            );
+                            code_el.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            return Ok(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(code_el)),
+                            });
+                        }
+
+                        let mut classes =
+                            vec!["code-block".to_string(), format!("language-{}", language)];
+                        if show_line_numbers {
+                            classes.push("code-block-with-line-numbers".to_string());
+                        }
+                        if let Some(Value::String(t)) = &theme {
+                            classes.push(format!("code-block-{}", t));
+                        }
+                        if show_diff {
+                            classes.push("code-block-diff".to_string());
+                        }
+                        if word_wrap {
+                            classes.push("code-block-wrap".to_string());
+                        }
+                        if max_height.is_some() {
+                            classes.push("code-block-scrollable".to_string());
+                        }
+                        if terminal {
+                            classes.push("code-block-terminal".to_string());
+                        }
+
+                        let mut children = Vec::new();
+
+                        // Terminal header
+                        if terminal {
+                            let mut terminal_header = HashMap::new();
+                            terminal_header.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            terminal_header.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("code-block-terminal-header".to_string())),
+                            );
+                            terminal_header.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(terminal_header)),
+                            });
+                        }
+
+                        // Header with title if provided
+                        if let Some(Value::String(t)) = &title {
+                            let mut title_text = HashMap::new();
+                            title_text.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            title_text.insert(
+                                "content".to_string(),
+                                Value::String(Rc::new(t.to_string())),
+                            );
+                            let mut title_div = HashMap::new();
+                            title_div.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("span".to_string())),
+                            );
+                            title_div.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("code-block-title".to_string())),
+                            );
+                            title_div.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(title_text)),
+                                }]))),
+                            );
+                            let mut header = HashMap::new();
+                            header.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            header.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("code-block-header".to_string())),
+                            );
+                            header.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(title_div)),
+                                }]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(header)),
+                            });
+                        }
+
+                        // Add line numbers if enabled
+                        if show_line_numbers {
+                            let mut ln_fields = HashMap::new();
+                            ln_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            ln_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("code-block-line-numbers".to_string())),
+                            );
+                            ln_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(ln_fields)),
+                            });
+                        }
+
+                        // Parse highlight_lines
+                        let mut highlighted: Vec<i64> = Vec::new();
+                        if let Some(Value::Array(arr)) = &highlight_lines {
+                            for v in arr.borrow().iter() {
+                                if let Value::Int(n) = v {
+                                    highlighted.push(*n);
+                                }
+                            }
+                        }
+
+                        // Build code content with optional line highlighting
+                        if let Some(Value::String(c)) = code {
+                            // If we have highlight_lines, create per-line spans
+                            if !highlighted.is_empty() {
+                                let lines: Vec<&str> = c.split('\n').collect();
+                                let mut line_nodes = Vec::new();
+                                for (i, line) in lines.iter().enumerate() {
+                                    let line_num = (i + 1) as i64;
+                                    let mut line_class = "code-block-line".to_string();
+                                    if highlighted.contains(&line_num) {
+                                        line_class.push_str(" code-block-line-highlighted");
+                                    }
+                                    let mut text_node = HashMap::new();
+                                    text_node.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("#text".to_string())),
+                                    );
+                                    text_node.insert(
+                                        "content".to_string(),
+                                        Value::String(Rc::new(line.to_string())),
+                                    );
+                                    let mut line_span = HashMap::new();
+                                    line_span.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("span".to_string())),
+                                    );
+                                    line_span.insert(
+                                        "class".to_string(),
+                                        Value::String(Rc::new(line_class)),
+                                    );
+                                    line_span.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(text_node)),
+                                        }]))),
+                                    );
+                                    line_nodes.push(Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(line_span)),
+                                    });
+                                }
+                                let mut code_el = HashMap::new();
+                                code_el.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("code".to_string())),
+                                );
+                                code_el.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("".to_string())),
+                                );
+                                code_el.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(line_nodes))),
+                                );
+                                let mut pre_fields = HashMap::new();
+                                pre_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("pre".to_string())),
+                                );
+                                pre_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("code-block-content".to_string())),
+                                );
+                                pre_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(code_el)),
+                                    }]))),
+                                );
+                                children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(pre_fields)),
+                                });
+                            } else {
+                                let mut text_node = HashMap::new();
+                                text_node.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("#text".to_string())),
+                                );
+                                text_node.insert("content".to_string(), Value::String(c.clone()));
+                                text_node.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                );
+                                let mut code_el = HashMap::new();
+                                code_el.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("code".to_string())),
+                                );
+                                code_el.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("".to_string())),
+                                );
+                                code_el.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(text_node)),
+                                    }]))),
+                                );
+                                let mut pre_fields = HashMap::new();
+                                pre_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("pre".to_string())),
+                                );
+                                pre_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("code-block-content".to_string())),
+                                );
+                                pre_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(code_el)),
+                                    }]))),
+                                );
+                                children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(pre_fields)),
+                                });
+                            }
+                        }
+
+                        // Copy button
+                        if show_copy {
+                            let mut copy_attrs = HashMap::new();
+                            copy_attrs.insert(
+                                "aria-label".to_string(),
+                                Value::String(Rc::new("Copy code".to_string())),
+                            );
+                            let mut copy_btn = HashMap::new();
+                            copy_btn.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("button".to_string())),
+                            );
+                            copy_btn.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("code-block-copy".to_string())),
+                            );
+                            copy_btn.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            copy_btn.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(copy_attrs)),
+                                },
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(copy_btn)),
+                            });
+                        }
+
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "data-language".to_string(),
+                            Value::String(Rc::new(language)),
+                        );
+                        if let Some(Value::String(al)) = aria_label {
+                            attrs.insert("aria-label".to_string(), Value::String(al));
+                        }
+                        if let Some(Value::Int(h)) = max_height {
+                            attrs.insert(
+                                "style".to_string(),
+                                Value::String(Rc::new(format!("max-height: {}px", h))),
+                            );
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(children))),
+                        );
+                        vnode_fields.insert(
+                            "attrs".to_string(),
+                            Value::Struct {
+                                name: "Attrs".to_string(),
+                                fields: Rc::new(RefCell::new(attrs)),
+                            },
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("CodeBlock·render requires a struct"))
+                },
+            })),
+        );
+
+        // CodeBlockTabs·render - tabbed code blocks for multiple files/languages
+        self.globals.borrow_mut().define(
+            "CodeBlockTabs·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "CodeBlockTabs·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let tabs = fields_ref.get("tabs").cloned();
+                        drop(fields_ref);
+
+                        let mut tab_buttons = Vec::new();
+
+                        if let Some(Value::Array(tabs_arr)) = tabs {
+                            for tab in tabs_arr.borrow().iter() {
+                                if let Value::Struct {
+                                    fields: tab_fields, ..
+                                } = tab
+                                {
+                                    let tab_ref = tab_fields.borrow();
+                                    let title = tab_ref.get("title").cloned();
+                                    drop(tab_ref);
+
+                                    // Tab button
+                                    if let Some(Value::String(t)) = title {
+                                        let mut text_node = HashMap::new();
+                                        text_node.insert(
+                                            "tag".to_string(),
+                                            Value::String(Rc::new("#text".to_string())),
+                                        );
+                                        text_node.insert(
+                                            "content".to_string(),
+                                            Value::String(t.clone()),
+                                        );
+                                        let mut btn = HashMap::new();
+                                        btn.insert(
+                                            "tag".to_string(),
+                                            Value::String(Rc::new("button".to_string())),
+                                        );
+                                        btn.insert(
+                                            "class".to_string(),
+                                            Value::String(Rc::new("code-block-tab".to_string())),
+                                        );
+                                        btn.insert(
+                                            "children".to_string(),
+                                            Value::Array(Rc::new(RefCell::new(vec![
+                                                Value::Struct {
+                                                    name: "VNode".to_string(),
+                                                    fields: Rc::new(RefCell::new(text_node)),
+                                                },
+                                            ]))),
+                                        );
+                                        tab_buttons.push(Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(btn)),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+
+                        // Tab list
+                        let mut tab_list = HashMap::new();
+                        tab_list
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        tab_list.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("code-block-tab-list".to_string())),
+                        );
+                        tab_list.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(tab_buttons))),
+                        );
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("code-block-tabs".to_string())),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(tab_list)),
+                            }]))),
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("CodeBlockTabs·render requires a struct"))
+                },
+            })),
+        );
+
+        // TeamGrid·render - renders TeamMember children inline, supports sections
+        self.globals.borrow_mut().define(
+            "TeamGrid·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "TeamGrid·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    // Helper to render a single TeamMember
+                    fn render_team_member(
+                        child_fields: &Rc<RefCell<HashMap<String, Value>>>,
+                    ) -> Value {
+                        let child_ref = child_fields.borrow();
+                        let name_val = child_ref.get("name").cloned();
+                        let role_val = child_ref.get("role").cloned();
+                        let avatar_val = child_ref.get("avatar").cloned();
+                        drop(child_ref);
+
+                        let mut member_parts = Vec::new();
+
+                        // Avatar
+                        if let Some(Value::String(av)) = &avatar_val {
+                            let name_str = if let Some(Value::String(n)) = &name_val {
+                                n.to_string()
+                            } else {
+                                "".to_string()
+                            };
+                            let mut img_attrs = HashMap::new();
+                            img_attrs
+                                .insert("src".to_string(), Value::String(Rc::new(av.to_string())));
+                            img_attrs.insert("alt".to_string(), Value::String(Rc::new(name_str)));
+                            let mut img_fields = HashMap::new();
+                            img_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("img".to_string())),
+                            );
+                            img_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("".to_string())),
+                            );
+                            img_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            img_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(img_attrs)),
+                                },
+                            );
+                            let mut avatar_fields = HashMap::new();
+                            avatar_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            avatar_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("team-member-avatar".to_string())),
+                            );
+                            avatar_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(img_fields)),
+                                }]))),
+                            );
+                            member_parts.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(avatar_fields)),
+                            });
+                        }
+
+                        // Name
+                        if let Some(Value::String(n)) = &name_val {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert(
+                                "content".to_string(),
+                                Value::String(Rc::new(n.to_string())),
+                            );
+                            let mut name_fields = HashMap::new();
+                            name_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            name_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("team-member-name".to_string())),
+                            );
+                            name_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            member_parts.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(name_fields)),
+                            });
+                        }
+
+                        // Role
+                        if let Some(Value::String(r)) = &role_val {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert(
+                                "content".to_string(),
+                                Value::String(Rc::new(r.to_string())),
+                            );
+                            let mut role_fields = HashMap::new();
+                            role_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            role_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("team-member-role".to_string())),
+                            );
+                            role_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            member_parts.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(role_fields)),
+                            });
+                        }
+
+                        let mut member_vnode = HashMap::new();
+                        member_vnode
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        member_vnode.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("team-member".to_string())),
+                        );
+                        member_vnode.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(member_parts))),
+                        );
+                        Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(member_vnode)),
+                        }
+                    }
+
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let columns = fields_ref.get("columns").cloned();
+                        let alignment = fields_ref.get("alignment").cloned();
+                        let children_val = fields_ref.get("children").cloned();
+                        let sections_val = fields_ref.get("sections").cloned();
+                        drop(fields_ref);
+
+                        let mut classes = vec!["team-grid".to_string()];
+                        if let Some(Value::Int(n)) = columns {
+                            classes.push(format!("team-grid-cols-{}", n));
+                        }
+                        if let Some(Value::String(a)) = alignment {
+                            classes.push(format!("team-grid-align-{}", a));
+                        }
+
+                        let mut grid_children = Vec::new();
+
+                        // Handle sections if present
+                        if let Some(Value::Array(sections_arr)) = sections_val {
+                            for section in sections_arr.borrow().iter() {
+                                if let Value::Struct {
+                                    fields: section_fields,
+                                    ..
+                                } = section
+                                {
+                                    let section_ref = section_fields.borrow();
+                                    let title = section_ref.get("title").cloned();
+                                    let members = section_ref.get("members").cloned();
+                                    drop(section_ref);
+
+                                    let mut section_children = Vec::new();
+
+                                    // Section title
+                                    if let Some(Value::String(t)) = title {
+                                        let mut text_node = HashMap::new();
+                                        text_node.insert(
+                                            "tag".to_string(),
+                                            Value::String(Rc::new("#text".to_string())),
+                                        );
+                                        text_node.insert(
+                                            "content".to_string(),
+                                            Value::String(t.clone()),
+                                        );
+                                        let mut title_div = HashMap::new();
+                                        title_div.insert(
+                                            "tag".to_string(),
+                                            Value::String(Rc::new("h3".to_string())),
+                                        );
+                                        title_div.insert(
+                                            "class".to_string(),
+                                            Value::String(Rc::new(
+                                                "team-section-title".to_string(),
+                                            )),
+                                        );
+                                        title_div.insert(
+                                            "children".to_string(),
+                                            Value::Array(Rc::new(RefCell::new(vec![
+                                                Value::Struct {
+                                                    name: "VNode".to_string(),
+                                                    fields: Rc::new(RefCell::new(text_node)),
+                                                },
+                                            ]))),
+                                        );
+                                        section_children.push(Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(title_div)),
+                                        });
+                                    }
+
+                                    // Render members in section
+                                    if let Some(Value::Array(members_arr)) = members {
+                                        for member in members_arr.borrow().iter() {
+                                            if let Value::Struct {
+                                                name,
+                                                fields: member_fields,
+                                                ..
+                                            } = member
+                                            {
+                                                if name == "TeamMember" {
+                                                    section_children
+                                                        .push(render_team_member(member_fields));
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    let mut section_div = HashMap::new();
+                                    section_div.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("div".to_string())),
+                                    );
+                                    section_div.insert(
+                                        "class".to_string(),
+                                        Value::String(Rc::new("team-section".to_string())),
+                                    );
+                                    section_div.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(section_children))),
+                                    );
+                                    grid_children.push(Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(section_div)),
+                                    });
+                                }
+                            }
+                        }
+
+                        // Handle direct children (non-section mode)
+                        if let Some(Value::Array(children_arr)) = children_val {
+                            for child in children_arr.borrow().iter() {
+                                if let Value::Struct {
+                                    name,
+                                    fields: child_fields,
+                                    ..
+                                } = child
+                                {
+                                    if name == "TeamMember" {
+                                        grid_children.push(render_team_member(child_fields));
+                                    } else {
+                                        grid_children.push(child.clone());
+                                    }
+                                }
+                            }
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(grid_children))),
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("TeamGrid·render requires a struct"))
+                },
+            })),
+        );
+
+        // LandingPage·render - comprehensive landing page structure
+        self.globals.borrow_mut().define(
+            "LandingPage·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "LandingPage·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let locale = match fields_ref.get("locale") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "en".to_string(),
+                        };
+                        let hero = fields_ref.get("hero").cloned();
+                        let platforms = fields_ref.get("platforms").cloned();
+                        let research_papers = fields_ref.get("research_papers").cloned();
+                        let nav_items = fields_ref.get("nav_items").cloned();
+                        let footer_data = fields_ref.get("footer").cloned();
+                        let theme = fields_ref.get("theme").cloned();
+                        drop(fields_ref);
+
+                        let mut page_children = Vec::new();
+                        let mut page_classes = vec!["landing-page".to_string()];
+
+                        // Theme classes
+                        if let Some(Value::String(t)) = &theme {
+                            if t.as_str() == "auto" {
+                                page_classes.push("landing-theme-auto".to_string());
+                            } else {
+                                page_classes.push(format!("landing-{}", t));
+                            }
+                        }
+
+                        // Build header with nav if nav_items provided
+                        let mut header_children = Vec::new();
+                        if let Some(Value::Array(items)) = &nav_items {
+                            let mut nav_item_vnodes = Vec::new();
+                            for item in items.borrow().iter() {
+                                if let Value::Struct {
+                                    fields: item_fields,
+                                    ..
+                                } = item
+                                {
+                                    let item_ref = item_fields.borrow();
+                                    let label = item_ref.get("label").cloned();
+                                    let href = item_ref.get("href").cloned();
+                                    drop(item_ref);
+
+                                    if let (Some(Value::String(l)), Some(Value::String(h))) =
+                                        (&label, &href)
+                                    {
+                                        let mut text_node = HashMap::new();
+                                        text_node.insert(
+                                            "tag".to_string(),
+                                            Value::String(Rc::new("#text".to_string())),
+                                        );
+                                        text_node.insert(
+                                            "content".to_string(),
+                                            Value::String(Rc::new(l.to_string())),
+                                        );
+                                        let mut link_attrs = HashMap::new();
+                                        link_attrs.insert(
+                                            "href".to_string(),
+                                            Value::String(Rc::new(h.to_string())),
+                                        );
+                                        let mut link_fields = HashMap::new();
+                                        link_fields.insert(
+                                            "tag".to_string(),
+                                            Value::String(Rc::new("a".to_string())),
+                                        );
+                                        link_fields.insert(
+                                            "class".to_string(),
+                                            Value::String(Rc::new("nav-item".to_string())),
+                                        );
+                                        link_fields.insert(
+                                            "attrs".to_string(),
+                                            Value::Struct {
+                                                name: "Attrs".to_string(),
+                                                fields: Rc::new(RefCell::new(link_attrs)),
+                                            },
+                                        );
+                                        link_fields.insert(
+                                            "children".to_string(),
+                                            Value::Array(Rc::new(RefCell::new(vec![
+                                                Value::Struct {
+                                                    name: "VNode".to_string(),
+                                                    fields: Rc::new(RefCell::new(text_node)),
+                                                },
+                                            ]))),
+                                        );
+                                        nav_item_vnodes.push(Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(link_fields)),
+                                        });
+                                    }
+                                }
+                            }
+                            let mut nav_fields = HashMap::new();
+                            nav_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("nav".to_string())),
+                            );
+                            nav_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("nav".to_string())),
+                            );
+                            nav_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(nav_item_vnodes))),
+                            );
+                            header_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(nav_fields)),
+                            });
+                        }
+
+                        let mut header_fields = HashMap::new();
+                        header_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("header".to_string())),
+                        );
+                        header_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("landing-header".to_string())),
+                        );
+                        header_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(header_children))),
+                        );
+                        page_children.push(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(header_fields)),
+                        });
+
+                        // Add main content
+                        let mut main_children = Vec::new();
+
+                        // Build hero section
+                        let hero_title = if locale == "es" {
+                            "Construyendo el Futuro de la IA"
+                        } else {
+                            "Building the Future of AI"
+                        };
+                        let actual_title = if let Some(Value::Struct { fields: hf, .. }) = &hero {
+                            let hfr = hf.borrow();
+                            if let Some(Value::String(t)) = hfr.get("title") {
+                                t.to_string()
+                            } else {
+                                hero_title.to_string()
+                            }
+                        } else {
+                            hero_title.to_string()
+                        };
+
+                        let mut title_text = HashMap::new();
+                        title_text.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("#text".to_string())),
+                        );
+                        title_text
+                            .insert("content".to_string(), Value::String(Rc::new(actual_title)));
+                        let mut hero_title_fields = HashMap::new();
+                        hero_title_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("h1".to_string())));
+                        hero_title_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("hero-title".to_string())),
+                        );
+                        hero_title_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(title_text)),
+                            }]))),
+                        );
+                        let hero_title_vnode = Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(hero_title_fields)),
+                        };
+
+                        let mut landing_hero = HashMap::new();
+                        landing_hero
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        landing_hero.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("landing-hero".to_string())),
+                        );
+                        landing_hero.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![hero_title_vnode]))),
+                        );
+                        main_children.push(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(landing_hero)),
+                        });
+
+                        // Platforms section
+                        if let Some(Value::Array(plats)) = &platforms {
+                            let mut platform_vnodes = Vec::new();
+                            for plat in plats.borrow().iter() {
+                                if let Value::Struct {
+                                    name: pn,
+                                    fields: pf,
+                                    ..
+                                } = plat
+                                {
+                                    if pn == "PlatformCard" {
+                                        // Inline render PlatformCard
+                                        let pf_ref = pf.borrow();
+                                        let p_name = pf_ref.get("name").cloned();
+                                        let p_tagline = pf_ref.get("tagline").cloned();
+                                        let p_status = pf_ref.get("status").cloned();
+                                        drop(pf_ref);
+
+                                        let mut card_children = Vec::new();
+                                        if let Some(Value::String(n)) = &p_name {
+                                            let mut txt = HashMap::new();
+                                            txt.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("#text".to_string())),
+                                            );
+                                            txt.insert(
+                                                "content".to_string(),
+                                                Value::String(Rc::new(n.to_string())),
+                                            );
+                                            let mut name_f = HashMap::new();
+                                            name_f.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("div".to_string())),
+                                            );
+                                            name_f.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new(
+                                                    "platform-card-name".to_string(),
+                                                )),
+                                            );
+                                            name_f.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(vec![
+                                                    Value::Struct {
+                                                        name: "VNode".to_string(),
+                                                        fields: Rc::new(RefCell::new(txt)),
+                                                    },
+                                                ]))),
+                                            );
+                                            card_children.push(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(name_f)),
+                                            });
+                                        }
+                                        let mut card_classes = vec!["platform-card".to_string()];
+                                        if let Some(Value::String(s)) = &p_status {
+                                            card_classes
+                                                .push(format!("platform-card-status-{}", s));
+                                        }
+                                        let mut card_f = HashMap::new();
+                                        card_f.insert(
+                                            "tag".to_string(),
+                                            Value::String(Rc::new("div".to_string())),
+                                        );
+                                        card_f.insert(
+                                            "class".to_string(),
+                                            Value::String(Rc::new(card_classes.join(" "))),
+                                        );
+                                        card_f.insert(
+                                            "children".to_string(),
+                                            Value::Array(Rc::new(RefCell::new(card_children))),
+                                        );
+                                        platform_vnodes.push(Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(card_f)),
+                                        });
+                                    }
+                                }
+                            }
+                            let mut platforms_section = HashMap::new();
+                            platforms_section.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("section".to_string())),
+                            );
+                            platforms_section.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("landing-platforms".to_string())),
+                            );
+                            platforms_section.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(platform_vnodes))),
+                            );
+                            main_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(platforms_section)),
+                            });
+                        }
+
+                        // Research section
+                        if let Some(Value::Array(_)) = &research_papers {
+                            let mut research_section = HashMap::new();
+                            research_section.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("section".to_string())),
+                            );
+                            research_section.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("landing-research".to_string())),
+                            );
+                            research_section.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            main_children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(research_section)),
+                            });
+                        }
+
+                        let mut main_fields = HashMap::new();
+                        main_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("main".to_string())),
+                        );
+                        main_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("landing-main".to_string())),
+                        );
+                        main_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(main_children))),
+                        );
+                        page_children.push(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(main_fields)),
+                        });
+
+                        // Build footer with copyright and social if footer data provided
+                        let mut footer_children = Vec::new();
+                        if let Some(Value::Struct { fields: fdata, .. }) = &footer_data {
+                            let fd_ref = fdata.borrow();
+                            let copyright = fd_ref.get("copyright").cloned();
+                            let social = fd_ref.get("social").cloned();
+                            drop(fd_ref);
+
+                            if let Some(Value::String(c)) = &copyright {
+                                let mut txt = HashMap::new();
+                                txt.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("#text".to_string())),
+                                );
+                                txt.insert(
+                                    "content".to_string(),
+                                    Value::String(Rc::new(c.to_string())),
+                                );
+                                let mut copy_f = HashMap::new();
+                                copy_f.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("div".to_string())),
+                                );
+                                copy_f.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("footer-copyright".to_string())),
+                                );
+                                copy_f.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(txt)),
+                                    }]))),
+                                );
+                                footer_children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(copy_f)),
+                                });
+                            }
+
+                            if let Some(Value::Array(_)) = &social {
+                                let mut social_f = HashMap::new();
+                                social_f.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("div".to_string())),
+                                );
+                                social_f.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("footer-social".to_string())),
+                                );
+                                social_f.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                );
+                                footer_children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(social_f)),
+                                });
+                            }
+                        }
+
+                        let mut footer_fields = HashMap::new();
+                        footer_fields.insert(
+                            "tag".to_string(),
+                            Value::String(Rc::new("footer".to_string())),
+                        );
+                        footer_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new("landing-footer".to_string())),
+                        );
+                        footer_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(footer_children))),
+                        );
+                        page_children.push(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(footer_fields)),
+                        });
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(page_classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(page_children))),
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("LandingPage·render requires a struct"))
+                },
+            })),
+        );
+
+        // FeatureItem·render - comprehensive with icon, title, description, image
+        self.globals.borrow_mut().define(
+            "FeatureItem·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "FeatureItem·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let icon = fields_ref.get("icon").cloned();
+                        let title = fields_ref.get("title").cloned();
+                        let description = fields_ref.get("description").cloned();
+                        let image = fields_ref.get("image").cloned();
+                        let image_alt = fields_ref.get("image_alt").cloned();
+                        let variant = match fields_ref.get("variant") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => "default".to_string(),
+                        };
+
+                        let classes = vec![
+                            "feature-item".to_string(),
+                            format!("feature-item-{}", variant),
+                        ];
+                        let mut children = Vec::new();
+
+                        // Add icon
+                        if let Some(Value::String(_icon_name)) = icon {
+                            let mut icon_fields = HashMap::new();
+                            icon_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            icon_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("feature-item-icon".to_string())),
+                            );
+                            icon_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(icon_fields)),
+                            });
+                        }
+
+                        // Add title
+                        if let Some(Value::String(t)) = title {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(t.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut title_fields = HashMap::new();
+                            title_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("h3".to_string())),
+                            );
+                            title_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("feature-item-title".to_string())),
+                            );
+                            title_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(title_fields)),
+                            });
+                        }
+
+                        // Add description
+                        if let Some(Value::String(d)) = description {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(d.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut desc_fields = HashMap::new();
+                            desc_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("p".to_string())));
+                            desc_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("feature-item-description".to_string())),
+                            );
+                            desc_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(desc_fields)),
+                            });
+                        }
+
+                        // Add image
+                        if let Some(Value::String(img_src)) = image {
+                            let alt = match image_alt {
+                                Some(Value::String(s)) => s.to_string(),
+                                _ => "".to_string(),
+                            };
+                            let mut img_attrs = HashMap::new();
+                            img_attrs.insert("src".to_string(), Value::String(img_src.clone()));
+                            img_attrs.insert("alt".to_string(), Value::String(Rc::new(alt)));
+                            let mut img_fields = HashMap::new();
+                            img_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("img".to_string())),
+                            );
+                            img_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("".to_string())),
+                            );
+                            img_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            img_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(img_attrs)),
+                                },
+                            );
+                            let mut image_container = HashMap::new();
+                            image_container.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            image_container.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("feature-item-image".to_string())),
+                            );
+                            image_container.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(img_fields)),
+                                }]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(image_container)),
+                            });
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(children))),
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("FeatureItem·render requires a struct"))
+                },
+            })),
+        );
+
+        // PricingPlan·render - comprehensive with name, price, features, CTA
+        self.globals.borrow_mut().define(
+            "PricingPlan·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "PricingPlan·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+                        let name = fields_ref.get("name").cloned();
+                        let price = fields_ref.get("price").cloned();
+                        let description = fields_ref.get("description").cloned();
+                        let features = fields_ref.get("features").cloned();
+                        let cta = fields_ref.get("cta").cloned();
+                        let highlighted =
+                            matches!(fields_ref.get("highlighted"), Some(Value::Bool(true)));
+                        let highlight_label = fields_ref.get("highlight_label").cloned();
+
+                        let mut classes = vec!["pricing-plan".to_string()];
+                        if highlighted {
+                            classes.push("pricing-plan-highlighted".to_string());
+                        }
+
+                        let mut children = Vec::new();
+
+                        // Add highlight label
+                        if highlighted {
+                            if let Some(Value::String(label)) = highlight_label {
+                                let mut text_node = HashMap::new();
+                                text_node.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("#text".to_string())),
+                                );
+                                text_node
+                                    .insert("content".to_string(), Value::String(label.clone()));
+                                text_node.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![]))),
+                                );
+                                let mut label_fields = HashMap::new();
+                                label_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("span".to_string())),
+                                );
+                                label_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new(
+                                        "pricing-plan-highlight-label".to_string(),
+                                    )),
+                                );
+                                label_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(text_node)),
+                                    }]))),
+                                );
+                                children.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(label_fields)),
+                                });
+                            }
+                        }
+
+                        // Add name
+                        if let Some(Value::String(n)) = name {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(n.clone()));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut name_fields = HashMap::new();
+                            name_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("h3".to_string())),
+                            );
+                            name_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("pricing-plan-name".to_string())),
+                            );
+                            name_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(name_fields)),
+                            });
+                        }
+
+                        // Add price
+                        if let Some(Value::Int(p)) = price {
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert(
+                                "content".to_string(),
+                                Value::String(Rc::new(format!("${}", p))),
+                            );
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut price_fields = HashMap::new();
+                            price_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            price_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("pricing-plan-price".to_string())),
+                            );
+                            price_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(price_fields)),
+                            });
+                        }
+
+                        // Add features
+                        if let Some(Value::Array(feats)) = features {
+                            let mut feature_items = Vec::new();
+                            for feat in feats.borrow().iter() {
+                                if let Value::String(f) = feat {
+                                    let mut text_node = HashMap::new();
+                                    text_node.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("#text".to_string())),
+                                    );
+                                    text_node
+                                        .insert("content".to_string(), Value::String(f.clone()));
+                                    text_node.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                                    );
+                                    let mut li_fields = HashMap::new();
+                                    li_fields.insert(
+                                        "tag".to_string(),
+                                        Value::String(Rc::new("li".to_string())),
+                                    );
+                                    li_fields.insert(
+                                        "class".to_string(),
+                                        Value::String(Rc::new("".to_string())),
+                                    );
+                                    li_fields.insert(
+                                        "children".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(text_node)),
+                                        }]))),
+                                    );
+                                    feature_items.push(Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(li_fields)),
+                                    });
+                                }
+                            }
+                            let mut features_fields = HashMap::new();
+                            features_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("ul".to_string())),
+                            );
+                            features_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("pricing-plan-features".to_string())),
+                            );
+                            features_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(feature_items))),
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(features_fields)),
+                            });
+                        }
+
+                        // Add CTA
+                        if let Some(Value::Struct { fields: ctaf, .. }) = cta {
+                            let ctafr = ctaf.borrow();
+                            let label = match ctafr.get("label") {
+                                Some(Value::String(s)) => s.to_string(),
+                                _ => "".to_string(),
+                            };
+                            let href = match ctafr.get("href") {
+                                Some(Value::String(s)) => s.to_string(),
+                                _ => "#".to_string(),
+                            };
+                            let mut text_node = HashMap::new();
+                            text_node.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_node.insert("content".to_string(), Value::String(Rc::new(label)));
+                            text_node.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let mut cta_attrs = HashMap::new();
+                            cta_attrs.insert("href".to_string(), Value::String(Rc::new(href)));
+                            let mut cta_fields = HashMap::new();
+                            cta_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                            cta_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("pricing-plan-cta".to_string())),
+                            );
+                            cta_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(text_node)),
+                                }]))),
+                            );
+                            cta_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(cta_attrs)),
+                                },
+                            );
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(cta_fields)),
+                            });
+                        }
+
+                        let mut vnode_fields = HashMap::new();
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(children))),
+                        );
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("PricingPlan·render requires a struct"))
+                },
+            })),
+        );
+
+        // TeamMember·render - comprehensive with avatar, name, role, bio, social
+        self.globals.borrow_mut().define(
+            "TeamMember·render".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "TeamMember·render".to_string(),
+                arity: Some(1),
+                func: |_, args| {
+                    if let Value::Struct { fields, .. } = &args[0] {
+                        let fields_ref = fields.borrow();
+
+                        // Extract props
+                        let avatar = fields_ref.get("avatar").cloned();
+                        let name = fields_ref.get("name").cloned();
+                        let role = fields_ref.get("role").cloned();
+                        let bio = fields_ref.get("bio").cloned();
+                        let social = fields_ref.get("social").cloned();
+                        let variant = fields_ref.get("variant").cloned();
+                        let email = fields_ref.get("email").cloned();
+                        let interactive = fields_ref.get("interactive").cloned();
+                        let href = fields_ref.get("href").cloned();
+                        let skills = fields_ref.get("skills").cloned();
+                        let location = fields_ref.get("location").cloned();
+                        drop(fields_ref);
+
+                        let mut children_vec: Vec<Value> = Vec::new();
+
+                        // Build CSS class
+                        let mut css_classes = vec!["team-member".to_string()];
+
+                        // variant → team-member-{variant} class
+                        if let Some(Value::String(v)) = &variant {
+                            css_classes.push(format!("team-member-{}", v));
+                        }
+
+                        // interactive → team-member-interactive class
+                        if let Some(Value::Bool(true)) = &interactive {
+                            css_classes.push("team-member-interactive".to_string());
+                        }
+
+                        // Get name string for avatar alt text
+                        let name_str = if let Some(Value::String(n)) = &name {
+                            n.to_string()
+                        } else {
+                            "".to_string()
+                        };
+
+                        // avatar → team-member-avatar with img child
+                        if let Some(Value::String(av)) = &avatar {
+                            // Create img element
+                            let mut img_fields = HashMap::new();
+                            img_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("img".to_string())),
+                            );
+                            img_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("".to_string())),
+                            );
+                            let mut img_attrs = HashMap::new();
+                            img_attrs
+                                .insert("src".to_string(), Value::String(Rc::new(av.to_string())));
+                            img_attrs.insert(
+                                "alt".to_string(),
+                                Value::String(Rc::new(name_str.clone())),
+                            );
+                            img_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(img_attrs)),
+                                },
+                            );
+                            img_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![]))),
+                            );
+                            let img_vnode = Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(img_fields)),
+                            };
+
+                            // Create avatar wrapper div
+                            let mut avatar_fields = HashMap::new();
+                            avatar_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            avatar_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("team-member-avatar".to_string())),
+                            );
+                            avatar_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![img_vnode]))),
+                            );
+                            children_vec.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(avatar_fields)),
+                            });
+                        }
+
+                        // name → team-member-name
+                        if let Some(Value::String(n)) = &name {
+                            let mut text_fields = HashMap::new();
+                            text_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_fields.insert(
+                                "content".to_string(),
+                                Value::String(Rc::new(n.to_string())),
+                            );
+                            let text_node = Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(text_fields)),
+                            };
+
+                            let mut name_fields = HashMap::new();
+                            name_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            name_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("team-member-name".to_string())),
+                            );
+                            name_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![text_node]))),
+                            );
+                            children_vec.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(name_fields)),
+                            });
+                        }
+
+                        // role → team-member-role
+                        if let Some(Value::String(r)) = &role {
+                            let mut text_fields = HashMap::new();
+                            text_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_fields.insert(
+                                "content".to_string(),
+                                Value::String(Rc::new(r.to_string())),
+                            );
+                            let text_node = Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(text_fields)),
+                            };
+
+                            let mut role_fields = HashMap::new();
+                            role_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            role_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("team-member-role".to_string())),
+                            );
+                            role_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![text_node]))),
+                            );
+                            children_vec.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(role_fields)),
+                            });
+                        }
+
+                        // bio → team-member-bio
+                        if let Some(Value::String(b)) = &bio {
+                            let mut text_fields = HashMap::new();
+                            text_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_fields.insert(
+                                "content".to_string(),
+                                Value::String(Rc::new(b.to_string())),
+                            );
+                            let text_node = Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(text_fields)),
+                            };
+
+                            let mut bio_fields = HashMap::new();
+                            bio_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            bio_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("team-member-bio".to_string())),
+                            );
+                            bio_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![text_node]))),
+                            );
+                            children_vec.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(bio_fields)),
+                            });
+                        }
+
+                        // email → team-member-email (mailto: link)
+                        if let Some(Value::String(e)) = &email {
+                            let mut text_fields = HashMap::new();
+                            text_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_fields.insert(
+                                "content".to_string(),
+                                Value::String(Rc::new(e.to_string())),
+                            );
+                            let text_node = Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(text_fields)),
+                            };
+
+                            let mut email_fields = HashMap::new();
+                            email_fields
+                                .insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                            email_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("team-member-email".to_string())),
+                            );
+                            let mut email_attrs = HashMap::new();
+                            email_attrs.insert(
+                                "href".to_string(),
+                                Value::String(Rc::new(format!("mailto:{}", e))),
+                            );
+                            email_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(email_attrs)),
+                                },
+                            );
+                            email_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![text_node]))),
+                            );
+                            children_vec.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(email_fields)),
+                            });
+                        }
+
+                        // skills → team-member-skills with team-member-skill-tag children
+                        if let Some(Value::Array(skills_arr)) = &skills {
+                            let skills_borrowed = skills_arr.borrow();
+                            if !skills_borrowed.is_empty() {
+                                let mut skill_tags: Vec<Value> = Vec::new();
+                                for skill in skills_borrowed.iter() {
+                                    if let Value::String(s) = skill {
+                                        let mut text_fields = HashMap::new();
+                                        text_fields.insert(
+                                            "tag".to_string(),
+                                            Value::String(Rc::new("#text".to_string())),
+                                        );
+                                        text_fields.insert(
+                                            "content".to_string(),
+                                            Value::String(Rc::new(s.to_string())),
+                                        );
+                                        let text_node = Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(text_fields)),
+                                        };
+
+                                        let mut tag_fields = HashMap::new();
+                                        tag_fields.insert(
+                                            "tag".to_string(),
+                                            Value::String(Rc::new("span".to_string())),
+                                        );
+                                        tag_fields.insert(
+                                            "class".to_string(),
+                                            Value::String(Rc::new(
+                                                "team-member-skill-tag".to_string(),
+                                            )),
+                                        );
+                                        tag_fields.insert(
+                                            "children".to_string(),
+                                            Value::Array(Rc::new(RefCell::new(vec![text_node]))),
+                                        );
+                                        skill_tags.push(Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(tag_fields)),
+                                        });
+                                    }
+                                }
+
+                                let mut skills_fields = HashMap::new();
+                                skills_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("div".to_string())),
+                                );
+                                skills_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("team-member-skills".to_string())),
+                                );
+                                skills_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(skill_tags))),
+                                );
+                                children_vec.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(skills_fields)),
+                                });
+                            }
+                        }
+
+                        // location → team-member-location
+                        if let Some(Value::String(loc)) = &location {
+                            let mut text_fields = HashMap::new();
+                            text_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("#text".to_string())),
+                            );
+                            text_fields.insert(
+                                "content".to_string(),
+                                Value::String(Rc::new(loc.to_string())),
+                            );
+                            let text_node = Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(text_fields)),
+                            };
+
+                            let mut loc_fields = HashMap::new();
+                            loc_fields.insert(
+                                "tag".to_string(),
+                                Value::String(Rc::new("div".to_string())),
+                            );
+                            loc_fields.insert(
+                                "class".to_string(),
+                                Value::String(Rc::new("team-member-location".to_string())),
+                            );
+                            loc_fields.insert(
+                                "children".to_string(),
+                                Value::Array(Rc::new(RefCell::new(vec![text_node]))),
+                            );
+                            children_vec.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(loc_fields)),
+                            });
+                        }
+
+                        // social → team-member-social with team-member-social-link children
+                        if let Some(Value::Array(social_arr)) = &social {
+                            let social_borrowed = social_arr.borrow();
+                            if !social_borrowed.is_empty() {
+                                let mut social_links: Vec<Value> = Vec::new();
+                                for social_item in social_borrowed.iter() {
+                                    if let Value::Struct {
+                                        fields: item_fields,
+                                        ..
+                                    } = social_item
+                                    {
+                                        let item_ref = item_fields.borrow();
+                                        let platform = item_ref.get("platform").cloned();
+                                        let url = item_ref.get("url").cloned();
+                                        drop(item_ref);
+
+                                        if let (Some(Value::String(p)), Some(Value::String(u))) =
+                                            (&platform, &url)
+                                        {
+                                            let mut text_fields = HashMap::new();
+                                            text_fields.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("#text".to_string())),
+                                            );
+                                            text_fields.insert(
+                                                "content".to_string(),
+                                                Value::String(Rc::new(p.to_string())),
+                                            );
+                                            let text_node = Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(text_fields)),
+                                            };
+
+                                            let mut link_fields = HashMap::new();
+                                            link_fields.insert(
+                                                "tag".to_string(),
+                                                Value::String(Rc::new("a".to_string())),
+                                            );
+                                            link_fields.insert(
+                                                "class".to_string(),
+                                                Value::String(Rc::new(
+                                                    "team-member-social-link".to_string(),
+                                                )),
+                                            );
+                                            let mut link_attrs = HashMap::new();
+                                            link_attrs.insert(
+                                                "href".to_string(),
+                                                Value::String(Rc::new(u.to_string())),
+                                            );
+                                            link_attrs.insert(
+                                                "target".to_string(),
+                                                Value::String(Rc::new("_blank".to_string())),
+                                            );
+                                            link_fields.insert(
+                                                "attrs".to_string(),
+                                                Value::Struct {
+                                                    name: "Attrs".to_string(),
+                                                    fields: Rc::new(RefCell::new(link_attrs)),
+                                                },
+                                            );
+                                            link_fields.insert(
+                                                "children".to_string(),
+                                                Value::Array(Rc::new(RefCell::new(vec![
+                                                    text_node,
+                                                ]))),
+                                            );
+                                            social_links.push(Value::Struct {
+                                                name: "VNode".to_string(),
+                                                fields: Rc::new(RefCell::new(link_fields)),
+                                            });
+                                        }
+                                    }
+                                }
+
+                                let mut social_fields = HashMap::new();
+                                social_fields.insert(
+                                    "tag".to_string(),
+                                    Value::String(Rc::new("div".to_string())),
+                                );
+                                social_fields.insert(
+                                    "class".to_string(),
+                                    Value::String(Rc::new("team-member-social".to_string())),
+                                );
+                                social_fields.insert(
+                                    "children".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(social_links))),
+                                );
+                                children_vec.push(Value::Struct {
+                                    name: "VNode".to_string(),
+                                    fields: Rc::new(RefCell::new(social_fields)),
+                                });
+                            }
+                        }
+
+                        // Build root vnode
+                        let mut vnode_fields = HashMap::new();
+
+                        // Tag is 'a' if interactive with href, otherwise 'div'
+                        let tag = if let (Some(Value::Bool(true)), Some(Value::String(h))) =
+                            (&interactive, &href)
+                        {
+                            let mut attrs = HashMap::new();
+                            attrs.insert("href".to_string(), Value::String(Rc::new(h.to_string())));
+                            vnode_fields.insert(
+                                "attrs".to_string(),
+                                Value::Struct {
+                                    name: "Attrs".to_string(),
+                                    fields: Rc::new(RefCell::new(attrs)),
+                                },
+                            );
+                            "a"
+                        } else {
+                            "div"
+                        };
+
+                        vnode_fields
+                            .insert("tag".to_string(), Value::String(Rc::new(tag.to_string())));
+                        vnode_fields.insert(
+                            "class".to_string(),
+                            Value::String(Rc::new(css_classes.join(" "))),
+                        );
+                        vnode_fields.insert(
+                            "children".to_string(),
+                            Value::Array(Rc::new(RefCell::new(children_vec))),
+                        );
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                    Err(RuntimeError::new("TeamMember·render requires a struct"))
+                },
+            })),
+        );
     }
 
     fn define_builtin(
@@ -2382,6 +12895,11 @@ impl Interpreter {
     fn execute_item(&mut self, item: &Item) -> Result<Value, RuntimeError> {
         match item {
             Item::Function(func) => {
+                // Skip functions that don't match cfg conditions
+                if !self.should_include_item(&func.outer_attrs) {
+                    return Ok(Value::Null);
+                }
+
                 let fn_value = self.create_function(func)?;
                 let fn_name = func.name.name.clone();
 
@@ -2696,7 +13214,8 @@ impl Interpreter {
 
                                         // Also register without module prefix for local access
                                         // (Type·method for when type is accessed without module prefix)
-                                        let local_name = format!("{}·{}", type_name, func.name.name);
+                                        let local_name =
+                                            format!("{}·{}", type_name, func.name.name);
                                         if local_name != qualified_name {
                                             self.globals
                                                 .borrow_mut()
@@ -2707,7 +13226,8 @@ impl Interpreter {
                             }
                             Item::Module(nested_mod) => {
                                 // Handle nested modules recursively
-                                let nested_name = format!("{}·{}", module_name, nested_mod.name.name);
+                                let nested_name =
+                                    format!("{}·{}", module_name, nested_mod.name.name);
                                 if let Some(nested_items) = &nested_mod.items {
                                     // Create a temporary module item with qualified name
                                     // and process it recursively
@@ -2802,6 +13322,70 @@ impl Interpreter {
             Item::Use(use_decl) => {
                 // Process use declarations to create type/function aliases
                 self.process_use_tree(&use_decl.tree, &[])?;
+                Ok(Value::Null)
+            }
+            Item::LocaleEnum(locale_enum) => {
+                // Register locale enum as a type
+                self.types.insert(
+                    locale_enum.name.name.clone(),
+                    TypeDef::LocaleEnum(locale_enum.clone()),
+                );
+
+                // Also register with module-qualified name
+                if let Some(ref module) = self.current_module {
+                    let qualified_name = format!("{}·{}", module, locale_enum.name.name);
+                    self.types
+                        .insert(qualified_name, TypeDef::LocaleEnum(locale_enum.clone()));
+                }
+
+                // Register variant constructors for locale enum
+                let enum_name = locale_enum.name.name.clone();
+                for variant in &locale_enum.variants {
+                    let variant_name = variant.name.name.clone();
+                    let qualified_name = format!("{}·{}", enum_name, variant_name);
+                    // Locale enum variants have no fields, they're unit variants with metadata
+                    self.variant_constructors
+                        .insert(qualified_name, (enum_name.clone(), variant_name.clone(), 0));
+                }
+                Ok(Value::Null)
+            }
+            Item::Translations(translations) => {
+                // Register translations as a type
+                self.types.insert(
+                    translations.name.name.clone(),
+                    TypeDef::Translations(translations.clone()),
+                );
+
+                // Also register with module-qualified name
+                if let Some(ref module) = self.current_module {
+                    let qualified_name = format!("{}·{}", module, translations.name.name);
+                    self.types
+                        .insert(qualified_name, TypeDef::Translations(translations.clone()));
+                }
+                Ok(Value::Null)
+            }
+            Item::Form(form) => {
+                // Register form as a struct-like type for validation
+                // Forms can be instantiated and validated
+                let form_struct = StructDef {
+                    visibility: form.visibility.clone(),
+                    attrs: crate::ast::StructAttrs::default(),
+                    name: form.name.clone(),
+                    generics: form.generics.clone(),
+                    fields: crate::ast::StructFields::Named(
+                        form.fields
+                            .iter()
+                            .map(|f| crate::ast::FieldDef {
+                                visibility: crate::ast::Visibility::Public,
+                                name: f.name.clone(),
+                                ty: f.output_type.clone(),
+                                default: f.default.as_ref().map(|d| *d.clone()),
+                            })
+                            .collect(),
+                    ),
+                };
+                self.types
+                    .insert(form.name.name.clone(), TypeDef::Struct(form_struct));
                 Ok(Value::Null)
             }
             _ => Ok(Value::Null), // Skip other items for now
@@ -2926,7 +13510,9 @@ impl Interpreter {
                 // For functions: if foo·bar·Baz exists in globals, also register as Baz
                 let func = self.globals.borrow().get(&lookup_name).map(|v| v.clone());
                 if let Some(val) = func {
-                    self.globals.borrow_mut().define(simple_name.clone(), val.clone());
+                    self.globals
+                        .borrow_mut()
+                        .define(simple_name.clone(), val.clone());
                     if lookup_name != qualified {
                         self.globals.borrow_mut().define(qualified.clone(), val);
                     }
@@ -3041,6 +13627,7 @@ impl Interpreter {
             params,
             body,
             closure: self.environment.clone(),
+            defining_module: self.current_module.clone(),
         })))
     }
 
@@ -3362,6 +13949,10 @@ impl Interpreter {
                     (v, _) => Ok(v),
                 }
             }
+            // Template expression: ⟨div⟩...⟨/div⟩
+            // Evaluates to a VNode struct for UI rendering
+            Expr::Template(el) => self.eval_template(el),
+            Expr::TemplateFragment { children } => self.eval_template_fragment(children),
             _ => Err(RuntimeError::new(format!(
                 "Unsupported expression: {:?}",
                 expr
@@ -3658,6 +14249,52 @@ impl Interpreter {
                 .collect::<Vec<_>>()
                 .join("·");
 
+            // Handle tome·/crate·/above· prefixes by stripping them
+            // tome· and crate· refer to the current crate root
+            // above· refers to the parent module
+            let normalized_name =
+                if full_name.starts_with("tome·") || full_name.starts_with("crate·") {
+                    // Strip the prefix: tome·inner·greet -> inner·greet
+                    full_name
+                        .splitn(2, '·')
+                        .nth(1)
+                        .unwrap_or(&full_name)
+                        .to_string()
+                } else if full_name.starts_with("super·") || full_name.starts_with("above·") {
+                    // For above·/super·, resolve relative to parent module
+                    // Strip the prefix first: above·outer_func -> outer_func
+                    let suffix = full_name.splitn(2, '·').nth(1).unwrap_or(&full_name);
+
+                    // If we're in a nested module, prepend parent module path
+                    if let Some(ref current_mod) = self.current_module {
+                        // e.g., current_module = "outer·inner", we want parent = "outer"
+                        let parts: Vec<&str> = current_mod.split('·').collect();
+                        if parts.len() > 1 {
+                            // Take all but last segment: outer·inner -> outer
+                            let parent = parts[..parts.len() - 1].join("·");
+                            format!("{}·{}", parent, suffix)
+                        } else {
+                            // At top level or single module, just use the suffix
+                            suffix.to_string()
+                        }
+                    } else {
+                        // No module context, just strip the prefix
+                        suffix.to_string()
+                    }
+                } else {
+                    full_name.clone()
+                };
+
+            // Try normalized name first (for tome·module·func -> module·func)
+            if normalized_name != full_name {
+                if let Some(val) = self.environment.borrow().get(&normalized_name) {
+                    return Ok(val);
+                }
+                if let Some(val) = self.globals.borrow().get(&normalized_name) {
+                    return Ok(val);
+                }
+            }
+
             if let Some(val) = self.environment.borrow().get(&full_name) {
                 return Ok(val);
             }
@@ -3732,13 +14369,13 @@ impl Interpreter {
                             .map(|td| (td, type_name_qualified.clone()))
                     });
 
-                if let Some((TypeDef::Enum(enum_def), actual_enum_name)) = enum_def_and_name {
+                if let Some((TypeDef::Enum(enum_def), ref actual_enum_name)) = enum_def_and_name {
                     for variant in &enum_def.variants {
                         if &variant.name.name == variant_name {
                             // Return a variant constructor or unit variant
                             if matches!(variant.fields, crate::ast::StructFields::Unit) {
                                 return Ok(Value::Variant {
-                                    enum_name: actual_enum_name,
+                                    enum_name: actual_enum_name.clone(),
                                     variant_name: variant_name.clone(),
                                     fields: None,
                                 });
@@ -3768,6 +14405,129 @@ impl Interpreter {
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+
+                // Check for locale enum variants (LocaleEnumName::Variant)
+                if let Some((TypeDef::LocaleEnum(locale_def), actual_enum_name)) =
+                    enum_def_and_name.clone()
+                {
+                    for variant in &locale_def.variants {
+                        if &variant.name.name == variant_name {
+                            // Return a struct-like value with locale metadata
+                            let mut fields = std::collections::HashMap::new();
+                            fields.insert(
+                                "__locale_enum_name".to_string(),
+                                Value::String(Rc::new(actual_enum_name.clone())),
+                            );
+                            fields.insert(
+                                "__locale_variant_name".to_string(),
+                                Value::String(Rc::new(variant_name.clone())),
+                            );
+                            fields.insert(
+                                "__locale_code".to_string(),
+                                Value::String(Rc::new(variant.code.clone())),
+                            );
+                            fields.insert(
+                                "__locale_display_name".to_string(),
+                                Value::String(Rc::new(variant.display_name.clone())),
+                            );
+                            fields.insert("__locale_rtl".to_string(), Value::Bool(variant.rtl));
+                            fields.insert(
+                                "__locale_fallback".to_string(),
+                                match &variant.fallback {
+                                    Some(fb) => Value::String(Rc::new(fb.name.clone())),
+                                    None => Value::Null,
+                                },
+                            );
+                            return Ok(Value::Struct {
+                                name: format!("{}::{}", actual_enum_name, variant_name),
+                                fields: Rc::new(RefCell::new(fields)),
+                            });
+                        }
+                    }
+                }
+
+                // Fallback: search all locale enums for matching type name suffix and variant
+                for (actual_type_name, type_def) in &self.types {
+                    if let TypeDef::LocaleEnum(locale_def) = type_def {
+                        let matches = actual_type_name == &type_name_direct
+                            || actual_type_name == &type_name_qualified
+                            || actual_type_name.ends_with(&format!("·{}", type_name_direct));
+
+                        if matches {
+                            for variant in &locale_def.variants {
+                                if &variant.name.name == variant_name {
+                                    let mut fields = std::collections::HashMap::new();
+                                    fields.insert(
+                                        "__locale_enum_name".to_string(),
+                                        Value::String(Rc::new(actual_type_name.clone())),
+                                    );
+                                    fields.insert(
+                                        "__locale_variant_name".to_string(),
+                                        Value::String(Rc::new(variant_name.clone())),
+                                    );
+                                    fields.insert(
+                                        "__locale_code".to_string(),
+                                        Value::String(Rc::new(variant.code.clone())),
+                                    );
+                                    fields.insert(
+                                        "__locale_display_name".to_string(),
+                                        Value::String(Rc::new(variant.display_name.clone())),
+                                    );
+                                    fields.insert(
+                                        "__locale_rtl".to_string(),
+                                        Value::Bool(variant.rtl),
+                                    );
+                                    fields.insert(
+                                        "__locale_fallback".to_string(),
+                                        match &variant.fallback {
+                                            Some(fb) => Value::String(Rc::new(fb.name.clone())),
+                                            None => Value::Null,
+                                        },
+                                    );
+                                    return Ok(Value::Struct {
+                                        name: format!("{}::{}", actual_type_name, variant_name),
+                                        fields: Rc::new(RefCell::new(fields)),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Handle instance method calls: var·method where var holds a struct
+            // This enables middledot method calls like c·get_value()
+            // Must come BEFORE the fallback lookup to prevent stdlib functions shadowing methods
+            if path.segments.len() == 2 {
+                let first_name = &path.segments[0].ident.name;
+                let method_name_early = &path.segments[1].ident.name;
+
+                // Check if first segment is a variable holding a struct
+                if let Some(var_value) = self.environment.borrow().get(first_name) {
+                    if let Value::Struct {
+                        name: struct_name, ..
+                    } = &var_value
+                    {
+                        // Look up the method on this struct's type
+                        let qualified_name = format!("{}·{}", struct_name, method_name_early);
+                        if let Some(func) = self.globals.borrow().get(&qualified_name) {
+                            // Return a special marker that stores both the receiver and method
+                            // eval_call will handle invoking this properly
+                            return Ok(Value::Struct {
+                                name: format!(
+                                    "__method_call__{}__{}__",
+                                    struct_name, method_name_early
+                                ),
+                                fields: Rc::new(RefCell::new({
+                                    let mut m = HashMap::new();
+                                    m.insert("__receiver__".to_string(), var_value.clone());
+                                    m.insert("__method__".to_string(), func.clone());
+                                    m
+                                })),
+                            });
                         }
                     }
                 }
@@ -3862,12 +14622,14 @@ impl Interpreter {
                     // Looks like an enum variant (PascalCase) - check if it exists
                     if let Some(TypeDef::Enum(enum_def)) = self.types.get(type_name) {
                         // Check if variant exists
-                        let variant_exists = enum_def.variants.iter().any(|v| v.name.name == *method_name);
+                        let variant_exists = enum_def
+                            .variants
+                            .iter()
+                            .any(|v| v.name.name == *method_name);
                         if !variant_exists {
                             return Err(RuntimeError::new(format!(
                                 "no variant '{}' on enum '{}'",
-                                method_name,
-                                type_name
+                                method_name, type_name
                             )));
                         }
                     }
@@ -4071,8 +14833,14 @@ impl Interpreter {
                     // Result is a new Tensor with the product
                     let result = val1 * val2;
                     let mut fields = std::collections::HashMap::new();
-                    fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
-                    fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::Float(result)]))));
+                    fields.insert(
+                        "shape".to_string(),
+                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                    );
+                    fields.insert(
+                        "data".to_string(),
+                        Value::Array(Rc::new(RefCell::new(vec![Value::Float(result)]))),
+                    );
                     fields.insert("requires_grad".to_string(), Value::Bool(false));
                     fields.insert("_value".to_string(), Value::Float(result));
                     // Track computation for autodiff
@@ -4102,7 +14870,13 @@ impl Interpreter {
 
                     // Matrix multiply: [m,n] @ [n,p] = [m,p]
                     let m = if shape1.len() >= 2 { shape1[0] } else { 1 };
-                    let n1_dim = if shape1.len() >= 2 { shape1[1] } else if !shape1.is_empty() { shape1[0] } else { 1 };
+                    let n1_dim = if shape1.len() >= 2 {
+                        shape1[1]
+                    } else if !shape1.is_empty() {
+                        shape1[0]
+                    } else {
+                        1
+                    };
                     let p = if shape2.len() >= 2 { shape2[1] } else { 1 };
 
                     // Perform matrix multiplication
@@ -4122,35 +14896,55 @@ impl Interpreter {
                     }
 
                     // Check if either operand requires grad
-                    let left_requires_grad = matches!(f1.borrow().get("requires_grad"), Some(Value::Bool(true)));
-                    let right_requires_grad = matches!(f2.borrow().get("requires_grad"), Some(Value::Bool(true)));
+                    let left_requires_grad =
+                        matches!(f1.borrow().get("requires_grad"), Some(Value::Bool(true)));
+                    let right_requires_grad =
+                        matches!(f2.borrow().get("requires_grad"), Some(Value::Bool(true)));
 
                     // Build result tensor
                     let mut fields = std::collections::HashMap::new();
-                    fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-                        Value::Int(m as i64),
-                        Value::Int(p as i64),
-                    ]))));
-                    fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(
-                        result_data.into_iter().map(Value::Float).collect()
-                    ))));
-                    fields.insert("requires_grad".to_string(), Value::Bool(left_requires_grad || right_requires_grad));
+                    fields.insert(
+                        "shape".to_string(),
+                        Value::Array(Rc::new(RefCell::new(vec![
+                            Value::Int(m as i64),
+                            Value::Int(p as i64),
+                        ]))),
+                    );
+                    fields.insert(
+                        "data".to_string(),
+                        Value::Array(Rc::new(RefCell::new(
+                            result_data.into_iter().map(Value::Float).collect(),
+                        ))),
+                    );
+                    fields.insert(
+                        "requires_grad".to_string(),
+                        Value::Bool(left_requires_grad || right_requires_grad),
+                    );
 
                     // Store references to operands for backward pass (autograd)
                     if left_requires_grad {
                         // Store the left operand's fields Rc for gradient computation
-                        fields.insert("_grad_left".to_string(), Value::Struct {
-                            name: "Tensor".to_string(),
-                            fields: f1.clone(),
-                        });
+                        fields.insert(
+                            "_grad_left".to_string(),
+                            Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: f1.clone(),
+                            },
+                        );
                     }
                     if right_requires_grad {
-                        fields.insert("_grad_right".to_string(), Value::Struct {
-                            name: "Tensor".to_string(),
-                            fields: f2.clone(),
-                        });
+                        fields.insert(
+                            "_grad_right".to_string(),
+                            Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: f2.clone(),
+                            },
+                        );
                     }
-                    fields.insert("_op".to_string(), Value::String(Rc::new("matmul".to_string())));
+                    fields.insert(
+                        "_op".to_string(),
+                        Value::String(Rc::new("matmul".to_string())),
+                    );
 
                     Ok(Value::Struct {
                         name: "Tensor".to_string(),
@@ -4175,13 +14969,21 @@ impl Interpreter {
                     drop(f2_ref);
 
                     // Element-wise multiplication
-                    let result_data: Vec<Value> = data1.iter().zip(data2.iter())
+                    let result_data: Vec<Value> = data1
+                        .iter()
+                        .zip(data2.iter())
                         .map(|(a, b)| Value::Float(a * b))
                         .collect();
 
                     let mut fields = std::collections::HashMap::new();
-                    fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape1))));
-                    fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(result_data))));
+                    fields.insert(
+                        "shape".to_string(),
+                        Value::Array(Rc::new(RefCell::new(shape1))),
+                    );
+                    fields.insert(
+                        "data".to_string(),
+                        Value::Array(Rc::new(RefCell::new(result_data))),
+                    );
                     fields.insert("requires_grad".to_string(), Value::Bool(false));
                     Ok(Value::Struct {
                         name: "Tensor".to_string(),
@@ -4196,10 +14998,14 @@ impl Interpreter {
                     // Shape as i64 for size calculations
                     let shape1: Vec<i64> = tensor_shape_from_fields(&f1_ref)
                         .ok_or_else(|| RuntimeError::new("left tensor has no shape"))?
-                        .iter().map(|&x| x as i64).collect();
+                        .iter()
+                        .map(|&x| x as i64)
+                        .collect();
                     let shape2: Vec<i64> = tensor_shape_from_fields(&f2_ref)
                         .ok_or_else(|| RuntimeError::new("right tensor has no shape"))?
-                        .iter().map(|&x| x as i64).collect();
+                        .iter()
+                        .map(|&x| x as i64)
+                        .collect();
                     let data1 = tensor_data_from_fields(&f1_ref)
                         .ok_or_else(|| RuntimeError::new("left tensor has no data"))?;
                     let data2 = tensor_data_from_fields(&f2_ref)
@@ -4217,35 +15023,41 @@ impl Interpreter {
 
                     if size1 == size2 {
                         // Same size - element-wise addition
-                        result_data = data1.iter().zip(data2.iter())
-                            .map(|(a, b)| a + b)
-                            .collect();
+                        result_data = data1.iter().zip(data2.iter()).map(|(a, b)| a + b).collect();
                         result_shape = shape1.into_iter().map(Value::Int).collect();
                     } else if size1 > size2 && size1 % size2 == 0 {
                         // Broadcast data2 to match data1
-                        result_data = data1.iter().enumerate()
+                        result_data = data1
+                            .iter()
+                            .enumerate()
                             .map(|(i, a)| a + data2[i % data2.len()])
                             .collect();
                         result_shape = shape1.into_iter().map(Value::Int).collect();
                     } else if size2 > size1 && size2 % size1 == 0 {
                         // Broadcast data1 to match data2
-                        result_data = data2.iter().enumerate()
+                        result_data = data2
+                            .iter()
+                            .enumerate()
                             .map(|(i, b)| data1[i % data1.len()] + b)
                             .collect();
                         result_shape = shape2.into_iter().map(Value::Int).collect();
                     } else {
                         // Fallback: zip what we can
-                        result_data = data1.iter().zip(data2.iter())
-                            .map(|(a, b)| a + b)
-                            .collect();
+                        result_data = data1.iter().zip(data2.iter()).map(|(a, b)| a + b).collect();
                         result_shape = shape1.into_iter().map(Value::Int).collect();
                     }
 
                     let mut fields = std::collections::HashMap::new();
-                    fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(result_shape))));
-                    fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(
-                        result_data.into_iter().map(Value::Float).collect()
-                    ))));
+                    fields.insert(
+                        "shape".to_string(),
+                        Value::Array(Rc::new(RefCell::new(result_shape))),
+                    );
+                    fields.insert(
+                        "data".to_string(),
+                        Value::Array(Rc::new(RefCell::new(
+                            result_data.into_iter().map(Value::Float).collect(),
+                        ))),
+                    );
                     fields.insert("requires_grad".to_string(), Value::Bool(false));
                     Ok(Value::Struct {
                         name: "Tensor".to_string(),
@@ -4282,12 +15094,15 @@ impl Interpreter {
 
                     let mut reg_fields = HashMap::new();
                     reg_fields.insert("_size".to_string(), Value::Int(2));
-                    reg_fields.insert("_state".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-                        Value::Float(amp00),
-                        Value::Float(amp01),
-                        Value::Float(amp10),
-                        Value::Float(amp11),
-                    ]))));
+                    reg_fields.insert(
+                        "_state".to_string(),
+                        Value::Array(Rc::new(RefCell::new(vec![
+                            Value::Float(amp00),
+                            Value::Float(amp01),
+                            Value::Float(amp10),
+                            Value::Float(amp11),
+                        ]))),
+                    );
 
                     Ok(Value::Struct {
                         name: "QRegister".to_string(),
@@ -4614,7 +15429,10 @@ impl Interpreter {
             // Debug: trace variant lookup for Command
             if qualified_name.contains("Command") || qualified_name.contains("Analyze") {
                 eprintln!("DEBUG variant lookup: qualified_name='{}'", qualified_name);
-                eprintln!("  found in variant_constructors: {}", self.variant_constructors.contains_key(&qualified_name));
+                eprintln!(
+                    "  found in variant_constructors: {}",
+                    self.variant_constructors.contains_key(&qualified_name)
+                );
                 // Show registered variants with Command in name
                 for (k, v) in &self.variant_constructors {
                     if k.contains("Command") {
@@ -4803,48 +15621,58 @@ impl Interpreter {
                 ["Linear", "new"] => {
                     if args.is_empty() {
                         // First try to extract generics from turbofish syntax: Linear::<784, 256>::new()
-                        let turbofish_generics: Option<(i64, i64)> = if let Some(seg) = path.segments.first() {
-                            if let Some(generics) = &seg.generics {
-                                let mut const_values: Vec<i64> = Vec::new();
-                                for generic in generics {
-                                    if let crate::ast::TypeExpr::ConstExpr(expr) = generic {
-                                        if let crate::ast::Expr::Literal(crate::ast::Literal::Int { value, .. }) = expr.as_ref() {
-                                            if let Ok(n) = value.parse::<i64>() {
-                                                const_values.push(n);
+                        let turbofish_generics: Option<(i64, i64)> =
+                            if let Some(seg) = path.segments.first() {
+                                if let Some(generics) = &seg.generics {
+                                    let mut const_values: Vec<i64> = Vec::new();
+                                    for generic in generics {
+                                        if let crate::ast::TypeExpr::ConstExpr(expr) = generic {
+                                            if let crate::ast::Expr::Literal(
+                                                crate::ast::Literal::Int { value, .. },
+                                            ) = expr.as_ref()
+                                            {
+                                                if let Ok(n) = value.parse::<i64>() {
+                                                    const_values.push(n);
+                                                }
+                                            }
+                                        }
+                                        if let crate::ast::TypeExpr::Path(inner_path) = generic {
+                                            if let Some(inner_seg) = inner_path.segments.first() {
+                                                if let Ok(n) = inner_seg.ident.name.parse::<i64>() {
+                                                    const_values.push(n);
+                                                }
                                             }
                                         }
                                     }
-                                    if let crate::ast::TypeExpr::Path(inner_path) = generic {
-                                        if let Some(inner_seg) = inner_path.segments.first() {
-                                            if let Ok(n) = inner_seg.ident.name.parse::<i64>() {
-                                                const_values.push(n);
-                                            }
-                                        }
+                                    if const_values.len() >= 2 {
+                                        Some((const_values[0], const_values[1]))
+                                    } else {
+                                        None
                                     }
-                                }
-                                if const_values.len() >= 2 {
-                                    Some((const_values[0], const_values[1]))
                                 } else {
                                     None
                                 }
                             } else {
                                 None
-                            }
-                        } else {
-                            None
-                        };
+                            };
 
                         // Use turbofish generics, or fall back to type annotation generics
                         let (in_features, out_features) = if let Some((i, o)) = turbofish_generics {
                             (i, o)
-                        } else if let Some((name, generics)) = self.type_context.struct_generics.borrow().clone() {
+                        } else if let Some((name, generics)) =
+                            self.type_context.struct_generics.borrow().clone()
+                        {
                             if name == "Linear" && generics.len() >= 2 {
                                 (generics[0], generics[1])
                             } else {
-                                return Err(RuntimeError::new("Linear::new requires type annotation like Linear<IN, OUT>"));
+                                return Err(RuntimeError::new(
+                                    "Linear::new requires type annotation like Linear<IN, OUT>",
+                                ));
                             }
                         } else {
-                            return Err(RuntimeError::new("Linear::new requires type annotation like Linear<IN, OUT>"));
+                            return Err(RuntimeError::new(
+                                "Linear::new requires type annotation like Linear<IN, OUT>",
+                            ));
                         };
 
                         // Create weight tensor [OUT, IN] with random values
@@ -4853,14 +15681,23 @@ impl Interpreter {
                             .collect();
                         let weight_shape = vec![Value::Int(out_features), Value::Int(in_features)];
                         let mut weight_fields = HashMap::new();
-                        weight_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(weight_data))));
-                        weight_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(weight_shape))));
+                        weight_fields.insert(
+                            "data".to_string(),
+                            Value::Array(Rc::new(RefCell::new(weight_data))),
+                        );
+                        weight_fields.insert(
+                            "shape".to_string(),
+                            Value::Array(Rc::new(RefCell::new(weight_shape))),
+                        );
                         weight_fields.insert("requires_grad".to_string(), Value::Bool(true));
-                        weight_fields.insert("grad".to_string(), Value::Variant {
-                            enum_name: "Option".to_string(),
-                            variant_name: "None".to_string(),
-                            fields: None,
-                        });
+                        weight_fields.insert(
+                            "grad".to_string(),
+                            Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "None".to_string(),
+                                fields: None,
+                            },
+                        );
 
                         // Create bias tensor [OUT] with random values
                         let bias_data: Vec<Value> = (0..out_features)
@@ -4868,25 +15705,40 @@ impl Interpreter {
                             .collect();
                         let bias_shape = vec![Value::Int(out_features)];
                         let mut bias_fields = HashMap::new();
-                        bias_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(bias_data))));
-                        bias_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(bias_shape))));
+                        bias_fields.insert(
+                            "data".to_string(),
+                            Value::Array(Rc::new(RefCell::new(bias_data))),
+                        );
+                        bias_fields.insert(
+                            "shape".to_string(),
+                            Value::Array(Rc::new(RefCell::new(bias_shape))),
+                        );
                         bias_fields.insert("requires_grad".to_string(), Value::Bool(true));
-                        bias_fields.insert("grad".to_string(), Value::Variant {
-                            enum_name: "Option".to_string(),
-                            variant_name: "None".to_string(),
-                            fields: None,
-                        });
+                        bias_fields.insert(
+                            "grad".to_string(),
+                            Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "None".to_string(),
+                                fields: None,
+                            },
+                        );
 
                         // Create Linear struct with weight and bias
                         let mut linear_fields = HashMap::new();
-                        linear_fields.insert("weight".to_string(), Value::Struct {
-                            name: "Tensor".to_string(),
-                            fields: Rc::new(RefCell::new(weight_fields)),
-                        });
-                        linear_fields.insert("bias".to_string(), Value::Struct {
-                            name: "Tensor".to_string(),
-                            fields: Rc::new(RefCell::new(bias_fields)),
-                        });
+                        linear_fields.insert(
+                            "weight".to_string(),
+                            Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: Rc::new(RefCell::new(weight_fields)),
+                            },
+                        );
+                        linear_fields.insert(
+                            "bias".to_string(),
+                            Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: Rc::new(RefCell::new(bias_fields)),
+                            },
+                        );
 
                         return Ok(Value::Struct {
                             name: "Linear".to_string(),
@@ -4916,7 +15768,9 @@ impl Interpreter {
                             fields: Rc::new(RefCell::new(fields)),
                         });
                     }
-                    return Err(RuntimeError::new("Sequential::new expects an array of layers"));
+                    return Err(RuntimeError::new(
+                        "Sequential::new expects an array of layers",
+                    ));
                 }
                 _ => {}
             }
@@ -4942,17 +15796,34 @@ impl Interpreter {
 
         // Debug: trace function lookup for Result
         if let Expr::Path(path) = func_expr {
-            let path_str = path.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("·");
+            let path_str = path
+                .segments
+                .iter()
+                .map(|s| s.ident.name.as_str())
+                .collect::<Vec<_>>()
+                .join("·");
             if path_str.contains("Result") {
-                eprintln!("DEBUG func lookup: path='{}', looking up in globals...", path_str);
+                eprintln!(
+                    "DEBUG func lookup: path='{}', looking up in globals...",
+                    path_str
+                );
             }
         }
         let func = self.evaluate(func_expr)?;
         // Debug: trace what we got
         if let Expr::Path(path) = func_expr {
-            let path_str = path.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("·");
+            let path_str = path
+                .segments
+                .iter()
+                .map(|s| s.ident.name.as_str())
+                .collect::<Vec<_>>()
+                .join("·");
             if path_str.contains("Result") {
-                eprintln!("DEBUG func lookup result: path='{}', value={}", path_str, self.format_value(&func));
+                eprintln!(
+                    "DEBUG func lookup result: path='{}', value={}",
+                    path_str,
+                    self.format_value(&func)
+                );
             }
         }
 
@@ -4993,6 +15864,43 @@ impl Interpreter {
         let result = match func {
             Value::Function(f) => self.call_function(&f, arg_values),
             Value::BuiltIn(b) => self.call_builtin(&b, arg_values),
+            // Handle method call markers for instance method calls (c·get_value())
+            Value::Struct {
+                ref name,
+                ref fields,
+            } if name.starts_with("__method_call__") => {
+                let fields_ref = fields.borrow();
+                if let (Some(receiver), Some(method)) =
+                    (fields_ref.get("__receiver__"), fields_ref.get("__method__"))
+                {
+                    if let Value::Function(f) = method {
+                        // Set current Self type for Self { ... } resolution
+                        let struct_name = if let Value::Struct { name: sn, .. } = receiver {
+                            Some(sn.clone())
+                        } else {
+                            None
+                        };
+                        let old_self_type = self.current_self_type.take();
+                        if let Some(ref sn) = struct_name {
+                            self.current_self_type = Some(sn.clone());
+                        }
+
+                        // Call with receiver as first argument
+                        let mut all_args = vec![receiver.clone()];
+                        all_args.extend(arg_values);
+                        let result = self.call_function(f, all_args);
+
+                        // Restore old Self type
+                        self.current_self_type = old_self_type;
+                        return result;
+                    } else if let Value::BuiltIn(b) = method {
+                        let mut all_args = vec![receiver.clone()];
+                        all_args.extend(arg_values);
+                        return (b.func)(self, all_args);
+                    }
+                }
+                Err(RuntimeError::new("Invalid method call marker"))
+            }
             // Handle constructor markers for unknown external types
             Value::Struct { ref name, .. } if name.starts_with("__constructor__") => {
                 let actual_type = name.strip_prefix("__constructor__").unwrap();
@@ -5086,7 +15994,10 @@ impl Interpreter {
 
         // Execute function body
         let prev_env = self.environment.clone();
+        let prev_module = self.current_module.clone();
         self.environment = env;
+        // Restore module context from when function was defined (for above· resolution)
+        self.current_module = func.defining_module.clone();
 
         let result = match self.evaluate(&func.body) {
             Ok(val) => Ok(val),
@@ -5098,6 +16009,7 @@ impl Interpreter {
         };
 
         self.environment = prev_env;
+        self.current_module = prev_module;
         result
     }
 
@@ -5330,7 +16242,8 @@ impl Interpreter {
                         }
                         // Extract struct generics for type-directed construction like Linear<3, 2>::new()
                         if let Some((name, generics)) = self.extract_struct_generics(type_expr) {
-                            *self.type_context.struct_generics.borrow_mut() = Some((name, generics));
+                            *self.type_context.struct_generics.borrow_mut() =
+                                Some((name, generics));
                         }
                     }
                     let value = match init {
@@ -5345,20 +16258,24 @@ impl Interpreter {
                         if matches!(type_expr, crate::ast::TypeExpr::Linear(_)) {
                             // Track the variable name as linear
                             if let Pattern::Ident { name, .. } = pattern {
-                                self.linear_state.vars.borrow_mut().insert(name.name.clone());
+                                self.linear_state
+                                    .vars
+                                    .borrow_mut()
+                                    .insert(name.name.clone());
                             }
                         }
                     }
                     // Check generic type parameter match for Option<T>/Result<T,E>
                     if let Some(type_expr) = ty {
-                        if let Some((type_name, type_params)) = self.extract_type_params(type_expr) {
+                        if let Some((type_name, type_params)) = self.extract_type_params(type_expr)
+                        {
                             self.check_generic_type_match(&type_name, &type_params, &value)?;
                             // Store Vec<T> type info for push type checking
                             if type_name == "Vec" && !type_params.is_empty() {
                                 if let Pattern::Ident { name, .. } = pattern {
                                     self.var_types.borrow_mut().insert(
                                         name.name.clone(),
-                                        (type_name.clone(), type_params.clone())
+                                        (type_name.clone(), type_params.clone()),
                                     );
                                 }
                             }
@@ -5464,7 +16381,7 @@ impl Interpreter {
 
     /// Extract shape dimensions from array type like [2, 3] or [2, 3, 4]
     fn extract_shape_from_type(&self, type_expr: &crate::ast::TypeExpr) -> Option<Vec<i64>> {
-        use crate::ast::{TypeExpr, Expr, Literal};
+        use crate::ast::{Expr, Literal, TypeExpr};
 
         match type_expr {
             // Handle ConstExpr(Array([...])) - the most common case for Tensor<[2, 3]>
@@ -5481,7 +16398,11 @@ impl Interpreter {
                             _ => {}
                         }
                     }
-                    if dims.is_empty() { None } else { Some(dims) }
+                    if dims.is_empty() {
+                        None
+                    } else {
+                        Some(dims)
+                    }
                 } else {
                     None
                 }
@@ -5523,7 +16444,11 @@ impl Interpreter {
                         }
                     }
                 }
-                if shape.is_empty() { None } else { Some(shape) }
+                if shape.is_empty() {
+                    None
+                } else {
+                    Some(shape)
+                }
             }
             // Handle Tensor<[2, 3]> where [2, 3] is parsed as a path segment
             TypeExpr::Path(path) => {
@@ -5534,8 +16459,9 @@ impl Interpreter {
                     let name = &seg.ident.name;
                     // Check if it looks like "[2, 3]" or similar
                     if name.starts_with('[') && name.ends_with(']') {
-                        let inner = &name[1..name.len()-1];
-                        let dims: Vec<i64> = inner.split(',')
+                        let inner = &name[1..name.len() - 1];
+                        let dims: Vec<i64> = inner
+                            .split(',')
                             .filter_map(|s| s.trim().parse().ok())
                             .collect();
                         if !dims.is_empty() {
@@ -5550,8 +16476,11 @@ impl Interpreter {
     }
 
     /// Extract struct name and const generics from type annotation like Linear<3, 2>
-    fn extract_struct_generics(&self, type_expr: &crate::ast::TypeExpr) -> Option<(String, Vec<i64>)> {
-        use crate::ast::{TypeExpr, Expr, Literal};
+    fn extract_struct_generics(
+        &self,
+        type_expr: &crate::ast::TypeExpr,
+    ) -> Option<(String, Vec<i64>)> {
+        use crate::ast::{Expr, Literal, TypeExpr};
 
         // Handle linear type wrapper: linear QRegister<3> -> QRegister<3>
         let inner_type = if let TypeExpr::Linear(inner) = type_expr {
@@ -5964,10 +16893,21 @@ impl Interpreter {
         // Show more details if it's a Struct or Variant
         match &value {
             Value::Struct { name, fields } => {
-                eprintln!("  Struct: name='{}', fields={:?}", name, fields.borrow().keys().collect::<Vec<_>>());
+                eprintln!(
+                    "  Struct: name='{}', fields={:?}",
+                    name,
+                    fields.borrow().keys().collect::<Vec<_>>()
+                );
             }
-            Value::Variant { enum_name, variant_name, fields } => {
-                eprintln!("  Variant: {}::{}, fields={:?}", enum_name, variant_name, fields);
+            Value::Variant {
+                enum_name,
+                variant_name,
+                fields,
+            } => {
+                eprintln!(
+                    "  Variant: {}::{}, fields={:?}",
+                    enum_name, variant_name, fields
+                );
             }
             _ => {}
         }
@@ -6483,7 +17423,9 @@ impl Interpreter {
                 // Check if this is a typed Vec<T> - if so, error on negative indices
                 // Otherwise, support Python-style negative indexing
                 let is_typed_vec = if let Some(var_name) = Self::extract_root_var(expr) {
-                    self.var_types.borrow().get(&var_name)
+                    self.var_types
+                        .borrow()
+                        .get(&var_name)
                         .map(|(type_name, _)| type_name == "Vec")
                         .unwrap_or(false)
                 } else {
@@ -6587,22 +17529,26 @@ impl Interpreter {
 
                 // Get shape and data
                 let shape: Vec<i64> = match fields_ref.get("shape") {
-                    Some(Value::Array(arr)) => {
-                        arr.borrow().iter().filter_map(|v| match v {
+                    Some(Value::Array(arr)) => arr
+                        .borrow()
+                        .iter()
+                        .filter_map(|v| match v {
                             Value::Int(n) => Some(*n),
                             _ => None,
-                        }).collect()
-                    }
+                        })
+                        .collect(),
                     _ => vec![],
                 };
                 let data: Vec<f64> = match fields_ref.get("data") {
-                    Some(Value::Array(arr)) => {
-                        arr.borrow().iter().filter_map(|v| match v {
+                    Some(Value::Array(arr)) => arr
+                        .borrow()
+                        .iter()
+                        .filter_map(|v| match v {
                             Value::Float(f) => Some(*f),
                             Value::Int(n) => Some(*n as f64),
                             _ => None,
-                        }).collect()
-                    }
+                        })
+                        .collect(),
                     _ => vec![],
                 };
                 drop(fields_ref);
@@ -6623,16 +17569,20 @@ impl Interpreter {
                     let end = start + row_size;
 
                     if end <= data.len() {
-                        let row_data: Vec<Value> = data[start..end].iter()
-                            .map(|&f| Value::Float(f))
-                            .collect();
-                        let row_shape: Vec<Value> = shape[1..].iter()
-                            .map(|&d| Value::Int(d))
-                            .collect();
+                        let row_data: Vec<Value> =
+                            data[start..end].iter().map(|&f| Value::Float(f)).collect();
+                        let row_shape: Vec<Value> =
+                            shape[1..].iter().map(|&d| Value::Int(d)).collect();
 
                         let mut new_fields = std::collections::HashMap::new();
-                        new_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(row_shape))));
-                        new_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(row_data))));
+                        new_fields.insert(
+                            "shape".to_string(),
+                            Value::Array(Rc::new(RefCell::new(row_shape))),
+                        );
+                        new_fields.insert(
+                            "data".to_string(),
+                            Value::Array(Rc::new(RefCell::new(row_data))),
+                        );
                         new_fields.insert("requires_grad".to_string(), Value::Bool(false));
 
                         Ok(Value::Struct {
@@ -6706,13 +17656,10 @@ impl Interpreter {
                     // Error on unknown fields - type checking
                     match field_val {
                         Some(v) => Ok(v),
-                        None => {
-                            Err(RuntimeError::new(format!(
-                                "no field '{}' on struct '{}'",
-                                field_name,
-                                name
-                            )))
-                        }
+                        None => Err(RuntimeError::new(format!(
+                            "no field '{}' on struct '{}'",
+                            field_name, name
+                        ))),
                     }
                 }
                 Value::Tuple(t) => {
@@ -6985,7 +17932,9 @@ impl Interpreter {
                 v.reverse();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
-            (Value::Array(arr), "↓") | (Value::Array(arr), "skip") | (Value::Array(arr), "drop") => {
+            (Value::Array(arr), "↓")
+            | (Value::Array(arr), "skip")
+            | (Value::Array(arr), "drop") => {
                 // ↓(n) -> drop/skip first n elements
                 // Symbolic: downward selection arrow
                 let n = match arg_values.first() {
@@ -7073,7 +18022,10 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("map expects closure argument")),
                 }
             }
-            (Value::Array(arr), "⊛") | (Value::Array(arr), "filter") | (Value::Array(arr), "select") | (Value::Array(arr), "where") => {
+            (Value::Array(arr), "⊛")
+            | (Value::Array(arr), "filter")
+            | (Value::Array(arr), "select")
+            | (Value::Array(arr), "where") => {
                 // ⊛(predicate) -> selection/sieve by predicate
                 // Symbolic: circled asterisk (selection operator)
                 if arg_values.len() != 1 {
@@ -7093,7 +18045,10 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("filter expects closure argument")),
                 }
             }
-            (Value::Array(arr), "∃") | (Value::Array(arr), "any") | (Value::Array(arr), "some") | (Value::Array(arr), "exists") => {
+            (Value::Array(arr), "∃")
+            | (Value::Array(arr), "any")
+            | (Value::Array(arr), "some")
+            | (Value::Array(arr), "exists") => {
                 // ∃(predicate) -> existential quantification
                 // Symbolic: there exists
                 if arg_values.len() != 1 {
@@ -7112,7 +18067,10 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("any expects closure argument")),
                 }
             }
-            (Value::Array(arr), "∀∶") | (Value::Array(arr), "all") | (Value::Array(arr), "every") | (Value::Array(arr), "forall") => {
+            (Value::Array(arr), "∀∶")
+            | (Value::Array(arr), "all")
+            | (Value::Array(arr), "every")
+            | (Value::Array(arr), "forall") => {
                 // ∀∶(predicate) -> universal quantification test (returns bool)
                 // Symbolic: for all (with colon to distinguish from forEach)
                 if arg_values.len() != 1 {
@@ -7158,7 +18116,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("find expects closure argument")),
                 }
             }
-            (Value::Array(arr), "ι") | (Value::Array(arr), "enumerate") | (Value::Array(arr), "indexed") => {
+            (Value::Array(arr), "ι")
+            | (Value::Array(arr), "enumerate")
+            | (Value::Array(arr), "indexed") => {
                 // ι() -> index-value pairs
                 // Symbolic: iota (indexing function from APL)
                 let enumerated: Vec<Value> = arr
@@ -7200,11 +18160,15 @@ impl Interpreter {
             // Combinators:  ⊗ (zip)  ⫰ (interleave)  ⋈ (join)
             // Collectors:   →[] (toVec)  →{} (toSet)  →⟨⟩ (toMap)
             //
-            (Value::Array(arr), "⊕") | (Value::Array(arr), "fold") | (Value::Array(arr), "reduce") => {
+            (Value::Array(arr), "⊕")
+            | (Value::Array(arr), "fold")
+            | (Value::Array(arr), "reduce") => {
                 // ⊕(initial, accumulator) -> reduces array to single value
                 // Symbolic: binary fold operator
                 if arg_values.len() != 2 {
-                    return Err(RuntimeError::new("fold expects 2 arguments (initial, accumulator)"));
+                    return Err(RuntimeError::new(
+                        "fold expects 2 arguments (initial, accumulator)",
+                    ));
                 }
                 let mut acc = arg_values[0].clone();
                 match &arg_values[1] {
@@ -7214,10 +18178,14 @@ impl Interpreter {
                         }
                         Ok(acc)
                     }
-                    _ => Err(RuntimeError::new("fold expects function as second argument")),
+                    _ => Err(RuntimeError::new(
+                        "fold expects function as second argument",
+                    )),
                 }
             }
-            (Value::Array(arr), "⤳") | (Value::Array(arr), "flat_map") | (Value::Array(arr), "flatMap") => {
+            (Value::Array(arr), "⤳")
+            | (Value::Array(arr), "flat_map")
+            | (Value::Array(arr), "flatMap") => {
                 // ⤳(fn) -> monadic bind: maps then flattens one level
                 // Symbolic: Kleisli arrow / monadic bind
                 if arg_values.len() != 1 {
@@ -7255,7 +18223,9 @@ impl Interpreter {
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(results))))
             }
-            (Value::Array(arr), "∀") | (Value::Array(arr), "for_each") | (Value::Array(arr), "forEach") => {
+            (Value::Array(arr), "∀")
+            | (Value::Array(arr), "for_each")
+            | (Value::Array(arr), "forEach") => {
                 // ∀(fn) -> universal quantification with side effects
                 // Symbolic: for all elements, apply
                 if arg_values.len() != 1 {
@@ -7287,7 +18257,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("peek expects function argument")),
                 }
             }
-            (Value::Array(arr), "⊴") | (Value::Array(arr), "sorted") | (Value::Array(arr), "sort") => {
+            (Value::Array(arr), "⊴")
+            | (Value::Array(arr), "sorted")
+            | (Value::Array(arr), "sort") => {
                 // ⊴() or ⊴(comparator) -> returns ordered array
                 // Symbolic: ordering/precedes relation
                 let mut v = arr.borrow().clone();
@@ -7296,16 +18268,20 @@ impl Interpreter {
                     v.sort_by(|a, b| self.compare_values(a, b, &None));
                 } else if let Some(Value::Function(f)) = arg_values.first() {
                     // Custom comparator
-                    v.sort_by(|a, b| {
-                        match self.call_function(f, vec![a.clone(), b.clone()]) {
+                    v.sort_by(
+                        |a, b| match self.call_function(f, vec![a.clone(), b.clone()]) {
                             Ok(Value::Int(n)) => {
-                                if n < 0 { std::cmp::Ordering::Less }
-                                else if n > 0 { std::cmp::Ordering::Greater }
-                                else { std::cmp::Ordering::Equal }
+                                if n < 0 {
+                                    std::cmp::Ordering::Less
+                                } else if n > 0 {
+                                    std::cmp::Ordering::Greater
+                                } else {
+                                    std::cmp::Ordering::Equal
+                                }
                             }
                             _ => std::cmp::Ordering::Equal,
-                        }
-                    });
+                        },
+                    );
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
@@ -7323,7 +18299,9 @@ impl Interpreter {
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(results))))
             }
-            (Value::Array(arr), "↑") | (Value::Array(arr), "limit") | (Value::Array(arr), "take") => {
+            (Value::Array(arr), "↑")
+            | (Value::Array(arr), "limit")
+            | (Value::Array(arr), "take") => {
                 // ↑(n) -> takes first n elements
                 // Symbolic: upward selection arrow
                 let n = match arg_values.first() {
@@ -7333,11 +18311,15 @@ impl Interpreter {
                 let v: Vec<Value> = arr.borrow().iter().take(n).cloned().collect();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
-            (Value::Array(arr), "↑⦂") | (Value::Array(arr), "take_while") | (Value::Array(arr), "takeWhile") => {
+            (Value::Array(arr), "↑⦂")
+            | (Value::Array(arr), "take_while")
+            | (Value::Array(arr), "takeWhile") => {
                 // ↑⦂(predicate) -> takes while predicate holds
                 // Symbolic: conditional upward selection
                 if arg_values.len() != 1 {
-                    return Err(RuntimeError::new("take_while expects 1 argument (predicate)"));
+                    return Err(RuntimeError::new(
+                        "take_while expects 1 argument (predicate)",
+                    ));
                 }
                 match &arg_values[0] {
                     Value::Function(f) => {
@@ -7355,11 +18337,17 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("take_while expects function argument")),
                 }
             }
-            (Value::Array(arr), "↓⦂") | (Value::Array(arr), "drop_while") | (Value::Array(arr), "dropWhile") | (Value::Array(arr), "skip_while") | (Value::Array(arr), "skipWhile") => {
+            (Value::Array(arr), "↓⦂")
+            | (Value::Array(arr), "drop_while")
+            | (Value::Array(arr), "dropWhile")
+            | (Value::Array(arr), "skip_while")
+            | (Value::Array(arr), "skipWhile") => {
                 // ↓⦂(predicate) -> drops while predicate holds
                 // Symbolic: conditional downward skip
                 if arg_values.len() != 1 {
-                    return Err(RuntimeError::new("drop_while expects 1 argument (predicate)"));
+                    return Err(RuntimeError::new(
+                        "drop_while expects 1 argument (predicate)",
+                    ));
                 }
                 match &arg_values[0] {
                     Value::Function(f) => {
@@ -7443,12 +18431,16 @@ impl Interpreter {
                     Ok(Value::Int(total))
                 }
             }
-            (Value::Array(arr), "#") | (Value::Array(arr), "count") | (Value::Array(arr), "len") => {
+            (Value::Array(arr), "#")
+            | (Value::Array(arr), "count")
+            | (Value::Array(arr), "len") => {
                 // #() -> cardinality of collection
                 // Symbolic: standard cardinality notation
                 Ok(Value::Int(arr.borrow().len() as i64))
             }
-            (Value::Array(arr), "⊥") | (Value::Array(arr), "min") | (Value::Array(arr), "infimum") => {
+            (Value::Array(arr), "⊥")
+            | (Value::Array(arr), "min")
+            | (Value::Array(arr), "infimum") => {
                 // ⊥() -> lattice infimum (minimum element)
                 // Symbolic: bottom element of partial order
                 let borrowed = arr.borrow();
@@ -7471,7 +18463,9 @@ impl Interpreter {
                     fields: Some(Rc::new(vec![min_val])),
                 })
             }
-            (Value::Array(arr), "⊤") | (Value::Array(arr), "max") | (Value::Array(arr), "supremum") => {
+            (Value::Array(arr), "⊤")
+            | (Value::Array(arr), "max")
+            | (Value::Array(arr), "supremum") => {
                 // ⊤() -> lattice supremum (maximum element)
                 // Symbolic: top element of partial order
                 let borrowed = arr.borrow();
@@ -7494,7 +18488,10 @@ impl Interpreter {
                     fields: Some(Rc::new(vec![max_val])),
                 })
             }
-            (Value::Array(arr), "μ") | (Value::Array(arr), "average") | (Value::Array(arr), "avg") | (Value::Array(arr), "mean") => {
+            (Value::Array(arr), "μ")
+            | (Value::Array(arr), "average")
+            | (Value::Array(arr), "avg")
+            | (Value::Array(arr), "mean") => {
                 // μ() -> statistical mean of numeric elements
                 // Symbolic: mu for mean (statistics)
                 let borrowed = arr.borrow();
@@ -7509,8 +18506,14 @@ impl Interpreter {
                 let mut count = 0usize;
                 for val in borrowed.iter() {
                     match val {
-                        Value::Int(n) => { sum += *n as f64; count += 1; }
-                        Value::Float(n) => { sum += n; count += 1; }
+                        Value::Int(n) => {
+                            sum += *n as f64;
+                            count += 1;
+                        }
+                        Value::Float(n) => {
+                            sum += n;
+                            count += 1;
+                        }
                         _ => {}
                     }
                 }
@@ -7527,11 +18530,17 @@ impl Interpreter {
                     fields: Some(Rc::new(vec![Value::Float(sum / count as f64)])),
                 })
             }
-            (Value::Array(arr), "⫴") | (Value::Array(arr), "group_by") | (Value::Array(arr), "groupBy") | (Value::Array(arr), "grouping_by") | (Value::Array(arr), "groupingBy") => {
+            (Value::Array(arr), "⫴")
+            | (Value::Array(arr), "group_by")
+            | (Value::Array(arr), "groupBy")
+            | (Value::Array(arr), "grouping_by")
+            | (Value::Array(arr), "groupingBy") => {
                 // ⫴(key_fn) -> partition by key into Map
                 // Symbolic: vertical partition lines
                 if arg_values.len() != 1 {
-                    return Err(RuntimeError::new("group_by expects 1 argument (key function)"));
+                    return Err(RuntimeError::new(
+                        "group_by expects 1 argument (key function)",
+                    ));
                 }
                 match &arg_values[0] {
                     Value::Function(f) => {
@@ -7550,11 +18559,16 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("group_by expects function argument")),
                 }
             }
-            (Value::Array(arr), "⊘") | (Value::Array(arr), "partition_by") | (Value::Array(arr), "partitionBy") | (Value::Array(arr), "partition") => {
+            (Value::Array(arr), "⊘")
+            | (Value::Array(arr), "partition_by")
+            | (Value::Array(arr), "partitionBy")
+            | (Value::Array(arr), "partition") => {
                 // ⊘(predicate) -> bisect by predicate into (true, false) tuple
                 // Symbolic: division/bisection operator
                 if arg_values.len() != 1 {
-                    return Err(RuntimeError::new("partition expects 1 argument (predicate)"));
+                    return Err(RuntimeError::new(
+                        "partition expects 1 argument (predicate)",
+                    ));
                 }
                 match &arg_values[0] {
                     Value::Function(f) => {
@@ -7576,7 +18590,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("partition expects function argument")),
                 }
             }
-            (Value::Array(arr), "⋈") | (Value::Array(arr), "joining") | (Value::Array(arr), "join") => {
+            (Value::Array(arr), "⋈")
+            | (Value::Array(arr), "joining")
+            | (Value::Array(arr), "join") => {
                 // ⋈(separator) -> concatenate elements with separator
                 // Symbolic: bowtie (relational join)
                 let sep = match arg_values.first() {
@@ -7587,7 +18603,10 @@ impl Interpreter {
                 let parts: Vec<String> = arr.borrow().iter().map(|v| format!("{}", v)).collect();
                 Ok(Value::String(Rc::new(parts.join(&sep))))
             }
-            (Value::Array(arr), "∃!") | (Value::Array(arr), "find_first") | (Value::Array(arr), "findFirst") | (Value::Array(arr), "first") => {
+            (Value::Array(arr), "∃!")
+            | (Value::Array(arr), "find_first")
+            | (Value::Array(arr), "findFirst")
+            | (Value::Array(arr), "first") => {
                 // ∃!() -> unique existence: first element as Option
                 // Symbolic: exists unique
                 match arr.borrow().first() {
@@ -7603,7 +18622,10 @@ impl Interpreter {
                     }),
                 }
             }
-            (Value::Array(arr), "∃⁻¹") | (Value::Array(arr), "find_last") | (Value::Array(arr), "findLast") | (Value::Array(arr), "last") => {
+            (Value::Array(arr), "∃⁻¹")
+            | (Value::Array(arr), "find_last")
+            | (Value::Array(arr), "findLast")
+            | (Value::Array(arr), "last") => {
                 // ∃⁻¹() -> inverse existence: last element as Option
                 // Symbolic: exists inverse (from end)
                 match arr.borrow().last() {
@@ -7619,7 +18641,10 @@ impl Interpreter {
                     }),
                 }
             }
-            (Value::Array(arr), "∄") | (Value::Array(arr), "none_match") | (Value::Array(arr), "noneMatch") | (Value::Array(arr), "none") => {
+            (Value::Array(arr), "∄")
+            | (Value::Array(arr), "none_match")
+            | (Value::Array(arr), "noneMatch")
+            | (Value::Array(arr), "none") => {
                 // ∄(predicate) -> negated existence: true if none match
                 // Symbolic: there does not exist
                 if arg_values.is_empty() {
@@ -7649,12 +18674,17 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("none_match expects function argument")),
                 }
             }
-            (Value::Array(arr), "→[]") | (Value::Array(arr), "collect") | (Value::Array(arr), "to_vec") | (Value::Array(arr), "toList") => {
+            (Value::Array(arr), "→[]")
+            | (Value::Array(arr), "collect")
+            | (Value::Array(arr), "to_vec")
+            | (Value::Array(arr), "toList") => {
                 // →[]() -> materialize to array
                 // Symbolic: arrow to array brackets
                 Ok(Value::Array(Rc::new(RefCell::new(arr.borrow().clone()))))
             }
-            (Value::Array(arr), "→{}") | (Value::Array(arr), "to_set") | (Value::Array(arr), "toSet") => {
+            (Value::Array(arr), "→{}")
+            | (Value::Array(arr), "to_set")
+            | (Value::Array(arr), "toSet") => {
                 // →{}() -> materialize to set
                 // Symbolic: arrow to set braces
                 let mut set = HashSet::new();
@@ -7663,11 +18693,15 @@ impl Interpreter {
                 }
                 Ok(Value::Set(Rc::new(RefCell::new(set))))
             }
-            (Value::Array(arr), "→⟨⟩") | (Value::Array(arr), "to_map") | (Value::Array(arr), "toMap") => {
+            (Value::Array(arr), "→⟨⟩")
+            | (Value::Array(arr), "to_map")
+            | (Value::Array(arr), "toMap") => {
                 // →⟨⟩(key_fn, value_fn) -> materialize to map
                 // Symbolic: arrow to angle brackets (key-value)
                 if arg_values.len() < 2 {
-                    return Err(RuntimeError::new("to_map expects 2 arguments (key_fn, value_fn)"));
+                    return Err(RuntimeError::new(
+                        "to_map expects 2 arguments (key_fn, value_fn)",
+                    ));
                 }
                 match (&arg_values[0], &arg_values[1]) {
                     (Value::Function(key_fn), Value::Function(val_fn)) => {
@@ -7682,7 +18716,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("to_map expects function arguments")),
                 }
             }
-            (Value::Array(arr), "⊞") | (Value::Array(arr), "chunk") | (Value::Array(arr), "chunked") => {
+            (Value::Array(arr), "⊞")
+            | (Value::Array(arr), "chunk")
+            | (Value::Array(arr), "chunked") => {
                 // ⊞(size) -> partition into fixed-size blocks
                 // Symbolic: squared plus (blocked grouping)
                 let size = match arg_values.first() {
@@ -7696,7 +18732,10 @@ impl Interpreter {
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(chunks))))
             }
-            (Value::Array(arr), "⌸") | (Value::Array(arr), "windowed") | (Value::Array(arr), "windows") | (Value::Array(arr), "sliding") => {
+            (Value::Array(arr), "⌸")
+            | (Value::Array(arr), "windowed")
+            | (Value::Array(arr), "windows")
+            | (Value::Array(arr), "sliding") => {
                 // ⌸(size) -> sliding window view
                 // Symbolic: quad/window frame
                 let size = match arg_values.first() {
@@ -7726,22 +18765,30 @@ impl Interpreter {
                         let mut result = Vec::new();
                         let max_len = a.len().max(b.len());
                         for i in 0..max_len {
-                            if i < a.len() { result.push(a[i].clone()); }
-                            if i < b.len() { result.push(b[i].clone()); }
+                            if i < a.len() {
+                                result.push(a[i].clone());
+                            }
+                            if i < b.len() {
+                                result.push(b[i].clone());
+                            }
                         }
                         Ok(Value::Array(Rc::new(RefCell::new(result))))
                     }
                     _ => Err(RuntimeError::new("interleave expects array argument")),
                 }
             }
-            (Value::Array(arr), "⟲") | (Value::Array(arr), "reversed") | (Value::Array(arr), "reverse") => {
+            (Value::Array(arr), "⟲")
+            | (Value::Array(arr), "reversed")
+            | (Value::Array(arr), "reverse") => {
                 // ⟲() -> reversed sequence
                 // Symbolic: rotation/reversal arrow
                 let mut v = arr.borrow().clone();
                 v.reverse();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
-            (Value::Array(arr), "⧢") | (Value::Array(arr), "shuffled") | (Value::Array(arr), "shuffle") => {
+            (Value::Array(arr), "⧢")
+            | (Value::Array(arr), "shuffled")
+            | (Value::Array(arr), "shuffle") => {
                 // ⧢() -> randomly permuted sequence
                 // Symbolic: shuffle/randomize
                 use std::collections::hash_map::DefaultHasher;
@@ -7765,7 +18812,9 @@ impl Interpreter {
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
-            (Value::Array(arr), "∅?") | (Value::Array(arr), "is_empty") | (Value::Array(arr), "isEmpty") => {
+            (Value::Array(arr), "∅?")
+            | (Value::Array(arr), "is_empty")
+            | (Value::Array(arr), "isEmpty") => {
                 // ∅?() -> test for emptiness
                 // Symbolic: empty set query
                 Ok(Value::Bool(arr.borrow().is_empty()))
@@ -8364,8 +19413,7 @@ impl Interpreter {
                     // Error on unknown methods - type checking
                     return Err(RuntimeError::new(format!(
                         "no method '{}' on type '&{}'",
-                        method.name,
-                        name
+                        method.name, name
                     )));
                 }
                 // For non-struct refs (like &str), auto-deref and call method on inner value
@@ -8461,7 +19509,9 @@ impl Interpreter {
                             }
                             // Check Vec<T> element type constraint
                             if let Some(var_name) = Self::extract_root_var(receiver) {
-                                if let Some((type_name, type_params)) = self.var_types.borrow().get(&var_name) {
+                                if let Some((type_name, type_params)) =
+                                    self.var_types.borrow().get(&var_name)
+                                {
                                     if type_name == "Vec" && !type_params.is_empty() {
                                         let expected_type = &type_params[0];
                                         let actual_type = self.value_type_name(&arg_values[0]);
@@ -8781,6 +19831,111 @@ impl Interpreter {
                     // Clone the struct value
                     return Ok(recv.clone());
                 }
+
+                // Locale variant methods (for locale ᛈ enum variants)
+                if name.contains("::") && fields.borrow().contains_key("__locale_code") {
+                    let borrowed = fields.borrow();
+                    match method.name.as_str() {
+                        "code" => {
+                            if let Some(v) = borrowed.get("__locale_code") {
+                                return Ok(v.clone());
+                            }
+                        }
+                        "display_name" => {
+                            if let Some(v) = borrowed.get("__locale_display_name") {
+                                return Ok(v.clone());
+                            }
+                        }
+                        "is_rtl" => {
+                            if let Some(v) = borrowed.get("__locale_rtl") {
+                                return Ok(v.clone());
+                            }
+                        }
+                        "fallback" => {
+                            // Returns Option<LocaleVariant>
+                            if let Some(Value::Null) = borrowed.get("__locale_fallback") {
+                                // Return None variant
+                                return Ok(Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "None".to_string(),
+                                    fields: None,
+                                });
+                            }
+                            if let Some(Value::String(fb_name)) = borrowed.get("__locale_fallback")
+                            {
+                                // Need to look up the fallback variant in the locale enum
+                                if let Some(Value::String(enum_name)) =
+                                    borrowed.get("__locale_enum_name")
+                                {
+                                    // Try to resolve the fallback variant
+                                    if let Some(TypeDef::LocaleEnum(locale_def)) =
+                                        self.types.get(&**enum_name)
+                                    {
+                                        for variant in &locale_def.variants {
+                                            if &variant.name.name == &**fb_name {
+                                                let mut fb_fields =
+                                                    std::collections::HashMap::new();
+                                                fb_fields.insert(
+                                                    "__locale_enum_name".to_string(),
+                                                    Value::String(enum_name.clone()),
+                                                );
+                                                fb_fields.insert(
+                                                    "__locale_variant_name".to_string(),
+                                                    Value::String(Rc::new(
+                                                        variant.name.name.clone(),
+                                                    )),
+                                                );
+                                                fb_fields.insert(
+                                                    "__locale_code".to_string(),
+                                                    Value::String(Rc::new(variant.code.clone())),
+                                                );
+                                                fb_fields.insert(
+                                                    "__locale_display_name".to_string(),
+                                                    Value::String(Rc::new(
+                                                        variant.display_name.clone(),
+                                                    )),
+                                                );
+                                                fb_fields.insert(
+                                                    "__locale_rtl".to_string(),
+                                                    Value::Bool(variant.rtl),
+                                                );
+                                                fb_fields.insert(
+                                                    "__locale_fallback".to_string(),
+                                                    match &variant.fallback {
+                                                        Some(fb) => {
+                                                            Value::String(Rc::new(fb.name.clone()))
+                                                        }
+                                                        None => Value::Null,
+                                                    },
+                                                );
+                                                // Wrap in Some
+                                                let fb_struct = Value::Struct {
+                                                    name: format!("{}::{}", enum_name, fb_name),
+                                                    fields: Rc::new(RefCell::new(fb_fields)),
+                                                };
+                                                let mut some_fields =
+                                                    std::collections::HashMap::new();
+                                                some_fields.insert("0".to_string(), fb_struct);
+                                                return Ok(Value::Struct {
+                                                    name: "Some".to_string(),
+                                                    fields: Rc::new(RefCell::new(some_fields)),
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            // Fallback to None if not found
+                            return Ok(Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "None".to_string(),
+                                fields: None,
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+
                 // PathBuf struct methods
                 if name == "PathBuf" || name == "Path" {
                     let borrowed = fields.borrow();
@@ -9668,7 +20823,9 @@ impl Interpreter {
                             // Increment count for tracking
                             let count_val = fields.borrow().get("_count").cloned();
                             if let Some(Value::Int(c)) = count_val {
-                                fields.borrow_mut().insert("_count".to_string(), Value::Int(c + 1));
+                                fields
+                                    .borrow_mut()
+                                    .insert("_count".to_string(), Value::Int(c + 1));
                             }
                             return Ok(Value::Null);
                         }
@@ -9746,7 +20903,8 @@ impl Interpreter {
                             if let Some(Value::Array(bits)) = fields.borrow().get("_bits") {
                                 let mut bits_borrow = bits.borrow_mut();
                                 for i in 0..num_hashes {
-                                    let h = (base_hash.wrapping_add(i as u64 * base_hash.rotate_left(17)))
+                                    let h = (base_hash
+                                        .wrapping_add(i as u64 * base_hash.rotate_left(17)))
                                         % size as u64;
                                     bits_borrow[h as usize] = Value::Bool(true);
                                 }
@@ -9788,7 +20946,8 @@ impl Interpreter {
                             if let Some(Value::Array(bits)) = fields.borrow().get("_bits") {
                                 let bits_borrow = bits.borrow();
                                 for i in 0..num_hashes {
-                                    let h = (base_hash.wrapping_add(i as u64 * base_hash.rotate_left(17)))
+                                    let h = (base_hash
+                                        .wrapping_add(i as u64 * base_hash.rotate_left(17)))
                                         % size as u64;
                                     match &bits_borrow[h as usize] {
                                         Value::Bool(true) => {}
@@ -9901,7 +21060,11 @@ impl Interpreter {
                                     }
                                 }
                             }
-                            return Ok(Value::Int(if min_count == i64::MAX { 0 } else { min_count }));
+                            return Ok(Value::Int(if min_count == i64::MAX {
+                                0
+                            } else {
+                                min_count
+                            }));
                         }
                         _ => {}
                     }
@@ -10049,7 +21212,8 @@ impl Interpreter {
                 if name == "QHCompressed" {
                     match method.name.as_str() {
                         "size" => {
-                            if let Some(Value::Int(size)) = fields.borrow().get("_compressed_size") {
+                            if let Some(Value::Int(size)) = fields.borrow().get("_compressed_size")
+                            {
                                 return Ok(Value::Int(*size));
                             }
                             return Ok(Value::Int(1)); // Default size
@@ -10089,24 +21253,31 @@ impl Interpreter {
                 if name == "ReLU" && method.name == "forward" {
                     if let Some(input) = arg_values.first() {
                         // Apply ReLU: max(0, x) for each element
-                        if let Value::Struct { name: tensor_name, fields: tensor_fields } = input {
+                        if let Value::Struct {
+                            name: tensor_name,
+                            fields: tensor_fields,
+                        } = input
+                        {
                             if tensor_name == "Tensor" {
                                 let tensor_ref = tensor_fields.borrow();
                                 let shape = tensor_ref.get("shape").cloned();
                                 let data: Vec<f64> = match tensor_ref.get("data") {
-                                    Some(Value::Array(arr)) => {
-                                        arr.borrow().iter().map(|v| match v {
+                                    Some(Value::Array(arr)) => arr
+                                        .borrow()
+                                        .iter()
+                                        .map(|v| match v {
                                             Value::Float(f) => *f,
                                             Value::Int(n) => *n as f64,
                                             _ => 0.0,
-                                        }).collect()
-                                    }
+                                        })
+                                        .collect(),
                                     _ => vec![],
                                 };
                                 drop(tensor_ref);
 
                                 // Apply ReLU
-                                let relu_data: Vec<Value> = data.iter()
+                                let relu_data: Vec<Value> = data
+                                    .iter()
                                     .map(|x| Value::Float(if *x > 0.0 { *x } else { 0.0 }))
                                     .collect();
 
@@ -10114,8 +21285,12 @@ impl Interpreter {
                                 if let Some(s) = shape {
                                     result_fields.insert("shape".to_string(), s);
                                 }
-                                result_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(relu_data))));
-                                result_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                result_fields.insert(
+                                    "data".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(relu_data))),
+                                );
+                                result_fields
+                                    .insert("requires_grad".to_string(), Value::Bool(false));
                                 return Ok(Value::Struct {
                                     name: "Tensor".to_string(),
                                     fields: Rc::new(RefCell::new(result_fields)),
@@ -10133,36 +21308,59 @@ impl Interpreter {
                         if let Some(Value::Array(layers_arr)) = layers {
                             let mut current = input;
                             for layer in layers_arr.borrow().iter() {
-                                if let Value::Struct { name: layer_name, fields: layer_fields } = layer {
+                                if let Value::Struct {
+                                    name: layer_name,
+                                    fields: layer_fields,
+                                } = layer
+                                {
                                     // Try built-in forward for known layer types
                                     if layer_name == "ReLU" {
                                         // Apply ReLU
-                                        if let Value::Struct { name: tn, fields: tf } = &current {
+                                        if let Value::Struct {
+                                            name: tn,
+                                            fields: tf,
+                                        } = &current
+                                        {
                                             if tn == "Tensor" {
                                                 let tf_ref = tf.borrow();
                                                 let shape = tf_ref.get("shape").cloned();
                                                 let data: Vec<f64> = match tf_ref.get("data") {
-                                                    Some(Value::Array(arr)) => {
-                                                        arr.borrow().iter().map(|v| match v {
+                                                    Some(Value::Array(arr)) => arr
+                                                        .borrow()
+                                                        .iter()
+                                                        .map(|v| match v {
                                                             Value::Float(f) => *f,
                                                             Value::Int(n) => *n as f64,
                                                             _ => 0.0,
-                                                        }).collect()
-                                                    }
+                                                        })
+                                                        .collect(),
                                                     _ => vec![],
                                                 };
                                                 drop(tf_ref);
 
-                                                let relu_data: Vec<Value> = data.iter()
-                                                    .map(|x| Value::Float(if *x > 0.0 { *x } else { 0.0 }))
+                                                let relu_data: Vec<Value> = data
+                                                    .iter()
+                                                    .map(|x| {
+                                                        Value::Float(if *x > 0.0 {
+                                                            *x
+                                                        } else {
+                                                            0.0
+                                                        })
+                                                    })
                                                     .collect();
 
                                                 let mut result_fields = HashMap::new();
                                                 if let Some(s) = shape {
                                                     result_fields.insert("shape".to_string(), s);
                                                 }
-                                                result_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(relu_data))));
-                                                result_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                                result_fields.insert(
+                                                    "data".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(relu_data))),
+                                                );
+                                                result_fields.insert(
+                                                    "requires_grad".to_string(),
+                                                    Value::Bool(false),
+                                                );
                                                 current = Value::Struct {
                                                     name: "Tensor".to_string(),
                                                     fields: Rc::new(RefCell::new(result_fields)),
@@ -10180,57 +21378,94 @@ impl Interpreter {
                                             // We need to do matmul and add for Linear
                                             // For now, just extract data and do the computation inline
                                             if let (
-                                                Value::Struct { fields: w_fields, .. },
-                                                Value::Struct { fields: x_fields, .. },
-                                                Value::Struct { fields: b_fields, .. },
-                                            ) = (&w, &current, &b) {
+                                                Value::Struct {
+                                                    fields: w_fields, ..
+                                                },
+                                                Value::Struct {
+                                                    fields: x_fields, ..
+                                                },
+                                                Value::Struct {
+                                                    fields: b_fields, ..
+                                                },
+                                            ) = (&w, &current, &b)
+                                            {
                                                 // Get weight matrix [out, in]
-                                                let w_shape: Vec<usize> = match w_fields.borrow().get("shape") {
-                                                    Some(Value::Array(arr)) => arr.borrow().iter().filter_map(|v| match v {
-                                                        Value::Int(n) => Some(*n as usize),
-                                                        _ => None,
-                                                    }).collect(),
-                                                    _ => vec![],
-                                                };
-                                                let w_data: Vec<f64> = match w_fields.borrow().get("data") {
-                                                    Some(Value::Array(arr)) => arr.borrow().iter().filter_map(|v| match v {
-                                                        Value::Float(f) => Some(*f),
-                                                        Value::Int(n) => Some(*n as f64),
-                                                        _ => None,
-                                                    }).collect(),
-                                                    _ => vec![],
-                                                };
+                                                let w_shape: Vec<usize> =
+                                                    match w_fields.borrow().get("shape") {
+                                                        Some(Value::Array(arr)) => arr
+                                                            .borrow()
+                                                            .iter()
+                                                            .filter_map(|v| match v {
+                                                                Value::Int(n) => Some(*n as usize),
+                                                                _ => None,
+                                                            })
+                                                            .collect(),
+                                                        _ => vec![],
+                                                    };
+                                                let w_data: Vec<f64> =
+                                                    match w_fields.borrow().get("data") {
+                                                        Some(Value::Array(arr)) => arr
+                                                            .borrow()
+                                                            .iter()
+                                                            .filter_map(|v| match v {
+                                                                Value::Float(f) => Some(*f),
+                                                                Value::Int(n) => Some(*n as f64),
+                                                                _ => None,
+                                                            })
+                                                            .collect(),
+                                                        _ => vec![],
+                                                    };
 
                                                 // Get input [in] or [in, 1]
-                                                let x_data: Vec<f64> = match x_fields.borrow().get("data") {
-                                                    Some(Value::Array(arr)) => arr.borrow().iter().filter_map(|v| match v {
-                                                        Value::Float(f) => Some(*f),
-                                                        Value::Int(n) => Some(*n as f64),
-                                                        _ => None,
-                                                    }).collect(),
-                                                    _ => vec![],
-                                                };
+                                                let x_data: Vec<f64> =
+                                                    match x_fields.borrow().get("data") {
+                                                        Some(Value::Array(arr)) => arr
+                                                            .borrow()
+                                                            .iter()
+                                                            .filter_map(|v| match v {
+                                                                Value::Float(f) => Some(*f),
+                                                                Value::Int(n) => Some(*n as f64),
+                                                                _ => None,
+                                                            })
+                                                            .collect(),
+                                                        _ => vec![],
+                                                    };
 
                                                 // Get bias [out]
-                                                let b_data: Vec<f64> = match b_fields.borrow().get("data") {
-                                                    Some(Value::Array(arr)) => arr.borrow().iter().filter_map(|v| match v {
-                                                        Value::Float(f) => Some(*f),
-                                                        Value::Int(n) => Some(*n as f64),
-                                                        _ => None,
-                                                    }).collect(),
-                                                    _ => vec![],
-                                                };
+                                                let b_data: Vec<f64> =
+                                                    match b_fields.borrow().get("data") {
+                                                        Some(Value::Array(arr)) => arr
+                                                            .borrow()
+                                                            .iter()
+                                                            .filter_map(|v| match v {
+                                                                Value::Float(f) => Some(*f),
+                                                                Value::Int(n) => Some(*n as f64),
+                                                                _ => None,
+                                                            })
+                                                            .collect(),
+                                                        _ => vec![],
+                                                    };
 
                                                 // Matmul: w @ x + b
-                                                let out_size = if w_shape.len() >= 2 { w_shape[0] } else { 1 };
-                                                let in_size = if w_shape.len() >= 2 { w_shape[1] } else if !w_shape.is_empty() { w_shape[0] } else { 1 };
+                                                let out_size =
+                                                    if w_shape.len() >= 2 { w_shape[0] } else { 1 };
+                                                let in_size = if w_shape.len() >= 2 {
+                                                    w_shape[1]
+                                                } else if !w_shape.is_empty() {
+                                                    w_shape[0]
+                                                } else {
+                                                    1
+                                                };
 
                                                 let mut result = vec![0.0; out_size];
                                                 for i in 0..out_size {
                                                     let mut sum = 0.0;
                                                     for j in 0..in_size {
-                                                        if i * in_size + j < w_data.len() && j < x_data.len() {
-                                                            sum += w_data[i * in_size + j] * x_data[j];
+                                                        if i * in_size + j < w_data.len()
+                                                            && j < x_data.len()
+                                                        {
+                                                            sum +=
+                                                                w_data[i * in_size + j] * x_data[j];
                                                         }
                                                     }
                                                     // Add bias
@@ -10242,13 +21477,25 @@ impl Interpreter {
 
                                                 // Create output tensor
                                                 let mut result_fields = HashMap::new();
-                                                result_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(
-                                                    vec![Value::Int(out_size as i64)]
-                                                ))));
-                                                result_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(
-                                                    result.into_iter().map(Value::Float).collect()
-                                                ))));
-                                                result_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                                result_fields.insert(
+                                                    "shape".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(vec![
+                                                        Value::Int(out_size as i64),
+                                                    ]))),
+                                                );
+                                                result_fields.insert(
+                                                    "data".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(
+                                                        result
+                                                            .into_iter()
+                                                            .map(Value::Float)
+                                                            .collect(),
+                                                    ))),
+                                                );
+                                                result_fields.insert(
+                                                    "requires_grad".to_string(),
+                                                    Value::Bool(false),
+                                                );
                                                 current = Value::Struct {
                                                     name: "Tensor".to_string(),
                                                     fields: Rc::new(RefCell::new(result_fields)),
@@ -10384,8 +21631,7 @@ impl Interpreter {
                 // Error on unknown methods - type checking
                 Err(RuntimeError::new(format!(
                     "no method '{}' on struct '{}'",
-                    method.name,
-                    name
+                    method.name, name
                 )))
             }
             // Try variant method lookup: EnumName·method
@@ -10785,8 +22031,7 @@ impl Interpreter {
                 // Error on unknown methods - type checking
                 Err(RuntimeError::new(format!(
                     "no method '{}' on enum '{}'",
-                    method.name,
-                    enum_name
+                    method.name, enum_name
                 )))
             }
             // Null-safe method handlers - methods called on null return sensible defaults
@@ -10887,8 +22132,7 @@ impl Interpreter {
                 // Error on unknown methods - type checking
                 Err(RuntimeError::new(format!(
                     "no method '{}' on type '{}'",
-                    method.name,
-                    recv_type
+                    method.name, recv_type
                 )))
             }
         }
@@ -11103,17 +22347,49 @@ impl Interpreter {
             (Value::Int(n), "to_float") | (Value::Int(n), "float") => Ok(Value::Float(*n as f64)),
             (Value::Float(n), "to_int") | (Value::Float(n), "int") => Ok(Value::Int(*n as i64)),
 
-            // Map/Struct field access
+            // Map field access
             (Value::Map(map), field) => map
                 .borrow()
                 .get(field)
                 .cloned()
                 .ok_or_else(|| RuntimeError::new(format!("no field '{}' in map", field))),
-            (Value::Struct { fields, .. }, field) => fields
-                .borrow()
-                .get(field)
-                .cloned()
-                .ok_or_else(|| RuntimeError::new(format!("no field '{}' in struct", field))),
+            // Struct method lookup then field access
+            (Value::Struct { name, fields }, _) => {
+                // First try looking up user-defined method: StructName·method
+                let qualified_name = format!("{}·{}", name, method_name);
+                let func = self
+                    .globals
+                    .borrow()
+                    .get(&qualified_name)
+                    .map(|v| v.clone());
+                if let Some(func) = func {
+                    if let Value::Function(f) = func {
+                        // Set current Self type for Self { ... } resolution
+                        let old_self_type = self.current_self_type.take();
+                        self.current_self_type = Some(name.clone());
+
+                        // Call with self as first argument
+                        let mut all_args = vec![receiver.clone()];
+                        all_args.extend(args);
+                        let result = self.call_function(&f, all_args);
+
+                        // Restore old Self type
+                        self.current_self_type = old_self_type;
+                        return result;
+                    } else if let Value::BuiltIn(b) = func {
+                        let mut all_args = vec![receiver.clone()];
+                        all_args.extend(args);
+                        return (b.func)(self, all_args);
+                    }
+                }
+                // Fall back to field access
+                fields.borrow().get(method_name).cloned().ok_or_else(|| {
+                    RuntimeError::new(format!(
+                        "no method or field '{}' on struct '{}'",
+                        method_name, name
+                    ))
+                })
+            }
 
             // Try stdlib function with receiver as first arg
             _ => {
@@ -11273,9 +22549,7 @@ impl Interpreter {
                         Ok(Value::Array(Rc::new(RefCell::new(v))))
                     }
                     // For Tensors, Σ acts as sum operation
-                    Value::Struct { ref name, .. } if name == "Tensor" => {
-                        self.sum_values(value)
-                    }
+                    Value::Struct { ref name, .. } if name == "Tensor" => self.sum_values(value),
                     _ => Err(RuntimeError::new("Sort requires array")),
                 }
             }
@@ -11664,7 +22938,9 @@ impl Interpreter {
                             // Check for sketch type methods
                             match (struct_name.as_str(), name.name.as_str()) {
                                 ("HyperLogLog", "count") => {
-                                    if let Some(Value::Array(regs)) = fields.borrow().get("_registers") {
+                                    if let Some(Value::Array(regs)) =
+                                        fields.borrow().get("_registers")
+                                    {
                                         let regs_borrow = regs.borrow();
                                         let m = regs_borrow.len() as f64;
                                         let mut sum = 0.0;
@@ -11724,8 +23000,9 @@ impl Interpreter {
                                     if let Some(Value::Array(bits)) = fields.borrow().get("_bits") {
                                         let bits_borrow = bits.borrow();
                                         for i in 0..num_hashes {
-                                            let h = (base_hash.wrapping_add(i as u64 * base_hash.rotate_left(17)))
-                                                % size as u64;
+                                            let h = (base_hash.wrapping_add(
+                                                i as u64 * base_hash.rotate_left(17),
+                                            )) % size as u64;
                                             match &bits_borrow[h as usize] {
                                                 Value::Bool(true) => {}
                                                 _ => return Ok(Value::Bool(false)),
@@ -11767,10 +23044,13 @@ impl Interpreter {
                                         }
                                     };
                                     let mut min_count = i64::MAX;
-                                    if let Some(Value::Array(counters)) = fields.borrow().get("_counters") {
+                                    if let Some(Value::Array(counters)) =
+                                        fields.borrow().get("_counters")
+                                    {
                                         let counters_borrow = counters.borrow();
                                         for i in 0..depth {
-                                            let h = (base_hash.wrapping_add(i as u64 * 0x517cc1b727220a95))
+                                            let h = (base_hash
+                                                .wrapping_add(i as u64 * 0x517cc1b727220a95))
                                                 % width as u64;
                                             if let Value::Array(row) = &counters_borrow[i] {
                                                 let row_borrow = row.borrow();
@@ -11782,7 +23062,11 @@ impl Interpreter {
                                             }
                                         }
                                     }
-                                    return Ok(Value::Int(if min_count == i64::MAX { 0 } else { min_count }));
+                                    return Ok(Value::Int(if min_count == i64::MAX {
+                                        0
+                                    } else {
+                                        min_count
+                                    }));
                                 }
                                 ("MerkleTree", "verify") => {
                                     use std::collections::hash_map::DefaultHasher;
@@ -11808,7 +23092,8 @@ impl Interpreter {
                                 }
                                 ("MerkleProof", "verify") => {
                                     // Verify the proof
-                                    if let Some(Value::Bool(valid)) = fields.borrow().get("_valid") {
+                                    if let Some(Value::Bool(valid)) = fields.borrow().get("_valid")
+                                    {
                                         return Ok(Value::Bool(*valid));
                                     }
                                     return Ok(Value::Bool(false));
@@ -11823,14 +23108,18 @@ impl Interpreter {
                                 ("Superposition", "observe") => {
                                     // Collapse to first value (deterministic for tests)
                                     // Check _values field first
-                                    if let Some(Value::Array(values)) = fields.borrow().get("_values") {
+                                    if let Some(Value::Array(values)) =
+                                        fields.borrow().get("_values")
+                                    {
                                         let values_borrow = values.borrow();
                                         if !values_borrow.is_empty() {
                                             return Ok(values_borrow[0].clone());
                                         }
                                     }
                                     // Also check states field (used by QH uniform)
-                                    if let Some(Value::Array(states)) = fields.borrow().get("states") {
+                                    if let Some(Value::Array(states)) =
+                                        fields.borrow().get("states")
+                                    {
                                         let states_borrow = states.borrow();
                                         if !states_borrow.is_empty() {
                                             return Ok(states_borrow[0].clone());
@@ -11855,9 +23144,11 @@ impl Interpreter {
                                     let new_beta = (alpha_real - beta_real) * sqrt2_inv;
 
                                     let mut new_fields = std::collections::HashMap::new();
-                                    new_fields.insert("_alpha_real".to_string(), Value::Float(new_alpha));
+                                    new_fields
+                                        .insert("_alpha_real".to_string(), Value::Float(new_alpha));
                                     new_fields.insert("_alpha_imag".to_string(), Value::Float(0.0));
-                                    new_fields.insert("_beta_real".to_string(), Value::Float(new_beta));
+                                    new_fields
+                                        .insert("_beta_real".to_string(), Value::Float(new_beta));
                                     new_fields.insert("_beta_imag".to_string(), Value::Float(0.0));
                                     return Ok(Value::Struct {
                                         name: "Qubit".to_string(),
@@ -11884,10 +23175,14 @@ impl Interpreter {
                                     };
                                     // X swaps α and β
                                     let mut new_fields = std::collections::HashMap::new();
-                                    new_fields.insert("_alpha_real".to_string(), Value::Float(beta_real));
-                                    new_fields.insert("_alpha_imag".to_string(), Value::Float(beta_imag));
-                                    new_fields.insert("_beta_real".to_string(), Value::Float(alpha_real));
-                                    new_fields.insert("_beta_imag".to_string(), Value::Float(alpha_imag));
+                                    new_fields
+                                        .insert("_alpha_real".to_string(), Value::Float(beta_real));
+                                    new_fields
+                                        .insert("_alpha_imag".to_string(), Value::Float(beta_imag));
+                                    new_fields
+                                        .insert("_beta_real".to_string(), Value::Float(alpha_real));
+                                    new_fields
+                                        .insert("_beta_imag".to_string(), Value::Float(alpha_imag));
                                     return Ok(Value::Struct {
                                         name: "Qubit".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -11912,7 +23207,8 @@ impl Interpreter {
                                         Some(Value::Float(f)) => *f,
                                         _ => 0.0,
                                     };
-                                    let alpha_sq = alpha_real * alpha_real + alpha_imag * alpha_imag;
+                                    let alpha_sq =
+                                        alpha_real * alpha_real + alpha_imag * alpha_imag;
                                     let beta_sq = beta_real * beta_real + beta_imag * beta_imag;
                                     // For determinism: if |α|² > |β|², return 0, else return 1
                                     // When equal (like after Hadamard), default to 0 for consistency
@@ -11927,12 +23223,14 @@ impl Interpreter {
                                         _ => 1,
                                     };
                                     let state: Vec<f64> = match fields.borrow().get("_state") {
-                                        Some(Value::Array(arr)) => {
-                                            arr.borrow().iter().filter_map(|v| match v {
+                                        Some(Value::Array(arr)) => arr
+                                            .borrow()
+                                            .iter()
+                                            .filter_map(|v| match v {
                                                 Value::Float(f) => Some(*f),
                                                 _ => None,
-                                            }).collect()
-                                        }
+                                            })
+                                            .collect(),
                                         _ => vec![1.0],
                                     };
 
@@ -11940,13 +23238,15 @@ impl Interpreter {
                                     // For simplicity, create uniform superposition
                                     let dim = 1 << size; // 2^n
                                     let amp = 1.0 / (dim as f64).sqrt();
-                                    let new_state: Vec<Value> = (0..dim)
-                                        .map(|_| Value::Float(amp))
-                                        .collect();
+                                    let new_state: Vec<Value> =
+                                        (0..dim).map(|_| Value::Float(amp)).collect();
 
                                     let mut new_fields = HashMap::new();
                                     new_fields.insert("_size".to_string(), Value::Int(size as i64));
-                                    new_fields.insert("_state".to_string(), Value::Array(Rc::new(RefCell::new(new_state))));
+                                    new_fields.insert(
+                                        "_state".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(new_state))),
+                                    );
 
                                     return Ok(Value::Struct {
                                         name: "QRegister".to_string(),
@@ -11960,12 +23260,14 @@ impl Interpreter {
                                         _ => 1,
                                     };
                                     let state: Vec<f64> = match fields.borrow().get("_state") {
-                                        Some(Value::Array(arr)) => {
-                                            arr.borrow().iter().filter_map(|v| match v {
+                                        Some(Value::Array(arr)) => arr
+                                            .borrow()
+                                            .iter()
+                                            .filter_map(|v| match v {
                                                 Value::Float(f) => Some(*f),
                                                 _ => None,
-                                            }).collect()
-                                        }
+                                            })
+                                            .collect(),
                                         _ => vec![1.0],
                                     };
 
@@ -11995,7 +23297,11 @@ impl Interpreter {
                         }
                         // Handle rotation gates with arguments
                         if (name.name == "Rx" || name.name == "Ry" || name.name == "Rz") {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Qubit" {
                                     // Get the rotation angle from arguments
                                     let angle = if !arg_values.is_empty() {
@@ -12025,7 +23331,12 @@ impl Interpreter {
                                         _ => 0.0,
                                     };
 
-                                    let (new_alpha_real, new_alpha_imag, new_beta_real, new_beta_imag) = match name.name.as_str() {
+                                    let (
+                                        new_alpha_real,
+                                        new_alpha_imag,
+                                        new_beta_real,
+                                        new_beta_imag,
+                                    ) = match name.name.as_str() {
                                         "Rx" => {
                                             // Rx(θ) = [[cos(θ/2), -i*sin(θ/2)], [-i*sin(θ/2), cos(θ/2)]]
                                             let cos_half = (angle / 2.0).cos();
@@ -12054,7 +23365,8 @@ impl Interpreter {
                                             let sin_half = (angle / 2.0).sin();
                                             // new_α = e^(-iθ/2) * α = (cos - i*sin) * α
                                             let nar = cos_half * alpha_real + sin_half * alpha_imag;
-                                            let nai = -sin_half * alpha_real + cos_half * alpha_imag;
+                                            let nai =
+                                                -sin_half * alpha_real + cos_half * alpha_imag;
                                             // new_β = e^(iθ/2) * β = (cos + i*sin) * β
                                             let nbr = cos_half * beta_real - sin_half * beta_imag;
                                             let nbi = sin_half * beta_real + cos_half * beta_imag;
@@ -12064,10 +23376,22 @@ impl Interpreter {
                                     };
 
                                     let mut new_fields = std::collections::HashMap::new();
-                                    new_fields.insert("_alpha_real".to_string(), Value::Float(new_alpha_real));
-                                    new_fields.insert("_alpha_imag".to_string(), Value::Float(new_alpha_imag));
-                                    new_fields.insert("_beta_real".to_string(), Value::Float(new_beta_real));
-                                    new_fields.insert("_beta_imag".to_string(), Value::Float(new_beta_imag));
+                                    new_fields.insert(
+                                        "_alpha_real".to_string(),
+                                        Value::Float(new_alpha_real),
+                                    );
+                                    new_fields.insert(
+                                        "_alpha_imag".to_string(),
+                                        Value::Float(new_alpha_imag),
+                                    );
+                                    new_fields.insert(
+                                        "_beta_real".to_string(),
+                                        Value::Float(new_beta_real),
+                                    );
+                                    new_fields.insert(
+                                        "_beta_imag".to_string(),
+                                        Value::Float(new_beta_imag),
+                                    );
                                     return Ok(Value::Struct {
                                         name: "Qubit".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -12077,17 +23401,25 @@ impl Interpreter {
                         }
                         // Handle |observe pipe method for Superposition
                         if name.name == "observe" {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Superposition" {
                                     // Check _values field first
-                                    if let Some(Value::Array(values)) = fields.borrow().get("_values") {
+                                    if let Some(Value::Array(values)) =
+                                        fields.borrow().get("_values")
+                                    {
                                         let values_borrow = values.borrow();
                                         if !values_borrow.is_empty() {
                                             return Ok(values_borrow[0].clone());
                                         }
                                     }
                                     // Also check states field (used by QH uniform)
-                                    if let Some(Value::Array(states)) = fields.borrow().get("states") {
+                                    if let Some(Value::Array(states)) =
+                                        fields.borrow().get("states")
+                                    {
                                         let states_borrow = states.borrow();
                                         if !states_borrow.is_empty() {
                                             return Ok(states_borrow[0].clone());
@@ -12109,7 +23441,10 @@ impl Interpreter {
                                 .map(|i| {
                                     let mut shard_fields = std::collections::HashMap::new();
                                     shard_fields.insert("index".to_string(), Value::Int(i));
-                                    shard_fields.insert("data".to_string(), Value::String(Rc::new(format!("shard_{}", i))));
+                                    shard_fields.insert(
+                                        "data".to_string(),
+                                        Value::String(Rc::new(format!("shard_{}", i))),
+                                    );
                                     Value::Struct {
                                         name: "Shard".to_string(),
                                         fields: Rc::new(RefCell::new(shard_fields)),
@@ -12118,9 +23453,13 @@ impl Interpreter {
                                 .collect();
 
                             let mut holo_fields = std::collections::HashMap::new();
-                            holo_fields.insert("shards".to_string(), Value::Array(Rc::new(RefCell::new(shards))));
+                            holo_fields.insert(
+                                "shards".to_string(),
+                                Value::Array(Rc::new(RefCell::new(shards))),
+                            );
                             holo_fields.insert("_data_shards".to_string(), Value::Int(data_shards));
-                            holo_fields.insert("_parity_shards".to_string(), Value::Int(parity_shards));
+                            holo_fields
+                                .insert("_parity_shards".to_string(), Value::Int(parity_shards));
                             holo_fields.insert("_original".to_string(), value.clone());
 
                             return Ok(Value::Struct {
@@ -12130,7 +23469,11 @@ impl Interpreter {
                         }
                         // Handle |requires_grad(true/false) for Tensor
                         if name.name == "requires_grad" {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Tensor" {
                                     // Get the argument (true/false)
                                     let requires_grad = if !arg_values.is_empty() {
@@ -12143,7 +23486,10 @@ impl Interpreter {
                                     };
                                     // Clone the tensor and set requires_grad
                                     let mut new_fields = fields.borrow().clone();
-                                    new_fields.insert("requires_grad".to_string(), Value::Bool(requires_grad));
+                                    new_fields.insert(
+                                        "requires_grad".to_string(),
+                                        Value::Bool(requires_grad),
+                                    );
                                     return Ok(Value::Struct {
                                         name: "Tensor".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -12153,29 +23499,41 @@ impl Interpreter {
                         }
                         // Handle |relu for Tensor (ReLU activation: max(0, x))
                         if name.name == "relu" {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Tensor" {
                                     let fields_ref = fields.borrow();
-                                    let shape = fields_ref.get("shape").cloned().unwrap_or(Value::Null);
+                                    let shape =
+                                        fields_ref.get("shape").cloned().unwrap_or(Value::Null);
                                     let data: Vec<f64> = match fields_ref.get("data") {
-                                        Some(Value::Array(arr)) => {
-                                            arr.borrow().iter().filter_map(|v| match v {
+                                        Some(Value::Array(arr)) => arr
+                                            .borrow()
+                                            .iter()
+                                            .filter_map(|v| match v {
                                                 Value::Float(f) => Some(*f),
                                                 Value::Int(n) => Some(*n as f64),
                                                 _ => None,
-                                            }).collect()
-                                        }
+                                            })
+                                            .collect(),
                                         _ => vec![],
                                     };
                                     drop(fields_ref);
                                     // Apply ReLU: max(0, x)
-                                    let relu_data: Vec<Value> = data.iter()
+                                    let relu_data: Vec<Value> = data
+                                        .iter()
                                         .map(|&x| Value::Float(if x > 0.0 { x } else { 0.0 }))
                                         .collect();
                                     let mut new_fields = std::collections::HashMap::new();
                                     new_fields.insert("shape".to_string(), shape);
-                                    new_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(relu_data))));
-                                    new_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                    new_fields.insert(
+                                        "data".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(relu_data))),
+                                    );
+                                    new_fields
+                                        .insert("requires_grad".to_string(), Value::Bool(false));
                                     return Ok(Value::Struct {
                                         name: "Tensor".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -12185,34 +23543,48 @@ impl Interpreter {
                         }
                         // Handle |softmax for Tensor (softmax activation)
                         if name.name == "softmax" {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Tensor" {
                                     let fields_ref = fields.borrow();
-                                    let shape = fields_ref.get("shape").cloned().unwrap_or(Value::Null);
+                                    let shape =
+                                        fields_ref.get("shape").cloned().unwrap_or(Value::Null);
                                     let data: Vec<f64> = match fields_ref.get("data") {
-                                        Some(Value::Array(arr)) => {
-                                            arr.borrow().iter().filter_map(|v| match v {
+                                        Some(Value::Array(arr)) => arr
+                                            .borrow()
+                                            .iter()
+                                            .filter_map(|v| match v {
                                                 Value::Float(f) => Some(*f),
                                                 Value::Int(n) => Some(*n as f64),
                                                 _ => None,
-                                            }).collect()
-                                        }
+                                            })
+                                            .collect(),
                                         _ => vec![],
                                     };
                                     drop(fields_ref);
                                     // Compute softmax: exp(x) / sum(exp(x))
-                                    let max_val = data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                                    let exp_vals: Vec<f64> = data.iter()
+                                    let max_val =
+                                        data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                                    let exp_vals: Vec<f64> = data
+                                        .iter()
                                         .map(|&x| (x - max_val).exp()) // subtract max for numerical stability
                                         .collect();
                                     let sum_exp: f64 = exp_vals.iter().sum();
-                                    let softmax_data: Vec<Value> = exp_vals.iter()
+                                    let softmax_data: Vec<Value> = exp_vals
+                                        .iter()
                                         .map(|&e| Value::Float(e / sum_exp))
                                         .collect();
                                     let mut new_fields = std::collections::HashMap::new();
                                     new_fields.insert("shape".to_string(), shape);
-                                    new_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(softmax_data))));
-                                    new_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                    new_fields.insert(
+                                        "data".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(softmax_data))),
+                                    );
+                                    new_fields
+                                        .insert("requires_grad".to_string(), Value::Bool(false));
                                     return Ok(Value::Struct {
                                         name: "Tensor".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -12222,10 +23594,15 @@ impl Interpreter {
                         }
                         // Handle |reshape(new_shape) for Tensor
                         if name.name == "reshape" {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Tensor" {
                                     let fields_ref = fields.borrow();
-                                    let data = fields_ref.get("data").cloned().unwrap_or(Value::Null);
+                                    let data =
+                                        fields_ref.get("data").cloned().unwrap_or(Value::Null);
                                     drop(fields_ref);
                                     // Get new shape from arguments
                                     let new_shape = if !arg_values.is_empty() {
@@ -12239,7 +23616,8 @@ impl Interpreter {
                                     let mut new_fields = std::collections::HashMap::new();
                                     new_fields.insert("shape".to_string(), new_shape);
                                     new_fields.insert("data".to_string(), data);
-                                    new_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                    new_fields
+                                        .insert("requires_grad".to_string(), Value::Bool(false));
                                     return Ok(Value::Struct {
                                         name: "Tensor".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -12249,19 +23627,30 @@ impl Interpreter {
                         }
                         // Handle |flatten for Tensor - flatten to 1D
                         if name.name == "flatten" {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Tensor" {
                                     let fields_ref = fields.borrow();
-                                    let data = fields_ref.get("data").cloned().unwrap_or(Value::Null);
+                                    let data =
+                                        fields_ref.get("data").cloned().unwrap_or(Value::Null);
                                     let total_size: i64 = match &data {
                                         Value::Array(arr) => arr.borrow().len() as i64,
                                         _ => 0,
                                     };
                                     drop(fields_ref);
                                     let mut new_fields = std::collections::HashMap::new();
-                                    new_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::Int(total_size)]))));
+                                    new_fields.insert(
+                                        "shape".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![Value::Int(
+                                            total_size,
+                                        )]))),
+                                    );
                                     new_fields.insert("data".to_string(), data);
-                                    new_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                    new_fields
+                                        .insert("requires_grad".to_string(), Value::Bool(false));
                                     return Ok(Value::Struct {
                                         name: "Tensor".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -12271,7 +23660,11 @@ impl Interpreter {
                         }
                         // Handle |backward for Tensor - backpropagation
                         if name.name == "backward" {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Tensor" {
                                     // Traverse the computation graph and set gradients
                                     self.backward_propagate(fields.clone())?;
@@ -12299,9 +23692,11 @@ impl Interpreter {
                                 };
                                 // Create n shards
                                 let inner_value = match &value {
-                                    Value::Struct { fields, .. } => {
-                                        fields.borrow().get("value").cloned().unwrap_or(value.clone())
-                                    }
+                                    Value::Struct { fields, .. } => fields
+                                        .borrow()
+                                        .get("value")
+                                        .cloned()
+                                        .unwrap_or(value.clone()),
                                     _ => value.clone(),
                                 };
                                 let mut shards = Vec::new();
@@ -12309,7 +23704,8 @@ impl Interpreter {
                                     let mut shard_fields = std::collections::HashMap::new();
                                     shard_fields.insert("index".to_string(), Value::Int(i as i64));
                                     shard_fields.insert("data".to_string(), inner_value.clone());
-                                    shard_fields.insert("_k_threshold".to_string(), Value::Int(k as i64));
+                                    shard_fields
+                                        .insert("_k_threshold".to_string(), Value::Int(k as i64));
                                     shards.push(Value::Struct {
                                         name: "Shard".to_string(),
                                         fields: Rc::new(RefCell::new(shard_fields)),
@@ -12322,13 +23718,21 @@ impl Interpreter {
                         // |measure - collapse superposition and return measured value
                         if name.name == "measure" {
                             match &value {
-                                Value::Struct { name: sname, fields } if sname == "QHState" => {
+                                Value::Struct {
+                                    name: sname,
+                                    fields,
+                                } if sname == "QHState" => {
                                     let fields_ref = fields.borrow();
-                                    let inner = fields_ref.get("value").cloned().unwrap_or(Value::Null);
+                                    let inner =
+                                        fields_ref.get("value").cloned().unwrap_or(Value::Null);
                                     // If superposition, pick first value (simulated collapse)
                                     match inner {
                                         Value::Array(arr) => {
-                                            return Ok(arr.borrow().first().cloned().unwrap_or(Value::Null));
+                                            return Ok(arr
+                                                .borrow()
+                                                .first()
+                                                .cloned()
+                                                .unwrap_or(Value::Null));
                                         }
                                         _ => return Ok(inner),
                                     }
@@ -12340,12 +23744,20 @@ impl Interpreter {
                         // |observe - observe value (similar to measure but for holograms)
                         if name.name == "observe" {
                             match &value {
-                                Value::Struct { name: sname, fields } => {
+                                Value::Struct {
+                                    name: sname,
+                                    fields,
+                                } => {
                                     let fields_ref = fields.borrow();
                                     if sname == "Superposition" {
                                         // Return first state from superposition
-                                        if let Some(Value::Array(states)) = fields_ref.get("states") {
-                                            return Ok(states.borrow().first().cloned().unwrap_or(Value::Null));
+                                        if let Some(Value::Array(states)) = fields_ref.get("states")
+                                        {
+                                            return Ok(states
+                                                .borrow()
+                                                .first()
+                                                .cloned()
+                                                .unwrap_or(Value::Null));
                                         }
                                     }
                                     // For holograms/entangled, return the value
@@ -12369,10 +23781,13 @@ impl Interpreter {
                                 fields.insert("_is_superposition".to_string(), Value::Bool(true));
                                 // For interference, pick the common value (constructive) or null (destructive)
                                 let inner_a = match &value {
-                                    Value::Struct { fields: f, .. } => f.borrow().get("value").cloned(),
+                                    Value::Struct { fields: f, .. } => {
+                                        f.borrow().get("value").cloned()
+                                    }
                                     _ => None,
                                 };
-                                fields.insert("value".to_string(), inner_a.unwrap_or(Value::Int(2)));
+                                fields
+                                    .insert("value".to_string(), inner_a.unwrap_or(Value::Int(2)));
                                 return Ok(Value::Struct {
                                     name: "QHState".to_string(),
                                     fields: Rc::new(RefCell::new(fields)),
@@ -12387,12 +23802,18 @@ impl Interpreter {
                                     Value::Float(f) => *f,
                                     _ => 0.1,
                                 }
-                            } else { 0.1 };
+                            } else {
+                                0.1
+                            };
                             // Return noisy state (just pass through with noise marker)
                             match &value {
-                                Value::Struct { name: sname, fields } => {
+                                Value::Struct {
+                                    name: sname,
+                                    fields,
+                                } => {
                                     let mut new_fields = fields.borrow().clone();
-                                    new_fields.insert("_noise_rate".to_string(), Value::Float(rate));
+                                    new_fields
+                                        .insert("_noise_rate".to_string(), Value::Float(rate));
                                     new_fields.insert("_noisy".to_string(), Value::Bool(true));
                                     return Ok(Value::Struct {
                                         name: sname.clone(),
@@ -12406,7 +23827,10 @@ impl Interpreter {
                         // |error_correct - correct errors in quantum state
                         if name.name == "error_correct" {
                             match &value {
-                                Value::Struct { name: sname, fields } => {
+                                Value::Struct {
+                                    name: sname,
+                                    fields,
+                                } => {
                                     let mut new_fields = fields.borrow().clone();
                                     new_fields.remove("_noisy");
                                     new_fields.remove("_noise_rate");
@@ -12425,9 +23849,11 @@ impl Interpreter {
                             if arg_values.len() >= 2 {
                                 // Simulate teleportation - return the original value wrapped
                                 let inner = match &value {
-                                    Value::Struct { fields, .. } => {
-                                        fields.borrow().get("value").cloned().unwrap_or(value.clone())
-                                    }
+                                    Value::Struct { fields, .. } => fields
+                                        .borrow()
+                                        .get("value")
+                                        .cloned()
+                                        .unwrap_or(value.clone()),
                                     _ => value.clone(),
                                 };
                                 let mut fields = std::collections::HashMap::new();
@@ -12462,11 +23888,22 @@ impl Interpreter {
                                     let fields_ref = fields.borrow();
                                     if let Some(Value::Array(shards)) = fields_ref.get("shards") {
                                         if let Some(first) = shards.borrow().first() {
-                                            if let Value::Struct { fields: shard_fields, .. } = first {
-                                                if let Some(data) = shard_fields.borrow().get("data") {
-                                                    let mut qh_fields = std::collections::HashMap::new();
-                                                    qh_fields.insert("value".to_string(), data.clone());
-                                                    qh_fields.insert("_reconstructed".to_string(), Value::Bool(true));
+                                            if let Value::Struct {
+                                                fields: shard_fields,
+                                                ..
+                                            } = first
+                                            {
+                                                if let Some(data) =
+                                                    shard_fields.borrow().get("data")
+                                                {
+                                                    let mut qh_fields =
+                                                        std::collections::HashMap::new();
+                                                    qh_fields
+                                                        .insert("value".to_string(), data.clone());
+                                                    qh_fields.insert(
+                                                        "_reconstructed".to_string(),
+                                                        Value::Bool(true),
+                                                    );
                                                     return Ok(Value::Struct {
                                                         name: "QHState".to_string(),
                                                         fields: Rc::new(RefCell::new(qh_fields)),
@@ -12478,7 +23915,8 @@ impl Interpreter {
                                     // Fallback - just wrap the value
                                     let mut qh_fields = std::collections::HashMap::new();
                                     qh_fields.insert("value".to_string(), Value::Int(42));
-                                    qh_fields.insert("_reconstructed".to_string(), Value::Bool(true));
+                                    qh_fields
+                                        .insert("_reconstructed".to_string(), Value::Bool(true));
                                     return Ok(Value::Struct {
                                         name: "QHState".to_string(),
                                         fields: Rc::new(RefCell::new(qh_fields)),
@@ -12498,7 +23936,10 @@ impl Interpreter {
                         // |partial_trace - partial trace operation (decoherence)
                         if name.name == "partial_trace" {
                             match &value {
-                                Value::Struct { name: sname, fields } if sname == "Entangled" => {
+                                Value::Struct {
+                                    name: sname,
+                                    fields,
+                                } if sname == "Entangled" => {
                                     let fields_ref = fields.borrow();
                                     let a = fields_ref.get("0").cloned().unwrap_or(Value::Null);
                                     let b = fields_ref.get("1").cloned().unwrap_or(Value::Null);
@@ -12506,7 +23947,8 @@ impl Interpreter {
                                     let system = match a {
                                         Value::Struct { name, fields } => {
                                             let mut new_fields = fields.borrow().clone();
-                                            new_fields.insert("_is_pure".to_string(), Value::Bool(false));
+                                            new_fields
+                                                .insert("_is_pure".to_string(), Value::Bool(false));
                                             Value::Struct {
                                                 name,
                                                 fields: Rc::new(RefCell::new(new_fields)),
@@ -12516,7 +23958,12 @@ impl Interpreter {
                                     };
                                     return Ok(Value::Tuple(Rc::new(vec![system, b])));
                                 }
-                                _ => return Ok(Value::Tuple(Rc::new(vec![value.clone(), Value::Null]))),
+                                _ => {
+                                    return Ok(Value::Tuple(Rc::new(vec![
+                                        value.clone(),
+                                        Value::Null,
+                                    ])))
+                                }
                             }
                         }
 
@@ -12540,7 +23987,9 @@ impl Interpreter {
                         if name.name == "is_pure" {
                             match &value {
                                 Value::Struct { fields, .. } => {
-                                    if let Some(Value::Bool(is_pure)) = fields.borrow().get("_is_pure") {
+                                    if let Some(Value::Bool(is_pure)) =
+                                        fields.borrow().get("_is_pure")
+                                    {
                                         return Ok(Value::Bool(*is_pure));
                                     }
                                     return Ok(Value::Bool(true)); // Default to pure
@@ -12552,8 +24001,13 @@ impl Interpreter {
                         // |size - get size of compressed data
                         if name.name == "size" {
                             match &value {
-                                Value::Struct { name: sname, fields } if sname == "QHCompressed" => {
-                                    if let Some(Value::Int(size)) = fields.borrow().get("_compressed_size") {
+                                Value::Struct {
+                                    name: sname,
+                                    fields,
+                                } if sname == "QHCompressed" => {
+                                    if let Some(Value::Int(size)) =
+                                        fields.borrow().get("_compressed_size")
+                                    {
                                         return Ok(Value::Int(*size));
                                     }
                                 }
@@ -13584,7 +25038,11 @@ impl Interpreter {
                             if let Some(Value::Array(states)) = fields_ref.get("states") {
                                 if let Some(first) = states.borrow().first() {
                                     // If first is a Hologram, extract its value
-                                    if let Value::Struct { fields: inner_fields, .. } = first {
+                                    if let Value::Struct {
+                                        fields: inner_fields,
+                                        ..
+                                    } = first
+                                    {
                                         if let Some(v) = inner_fields.borrow().get("value") {
                                             return Ok(v.clone());
                                         }
@@ -13639,7 +25097,9 @@ impl Interpreter {
                                     if let Some(Value::Int(i)) = fields.borrow().get("value") {
                                         sum += i;
                                         float_sum += *i as f64;
-                                    } else if let Some(Value::Float(f)) = fields.borrow().get("value") {
+                                    } else if let Some(Value::Float(f)) =
+                                        fields.borrow().get("value")
+                                    {
                                         has_float = true;
                                         float_sum += *f;
                                     } else if let Some(data) = fields.borrow().get("data") {
@@ -13704,7 +25164,9 @@ impl Interpreter {
                 match &value {
                     Value::Array(arr) => {
                         if arr.borrow().is_empty() {
-                            Err(RuntimeError::new("Necessity verification failed: empty array"))
+                            Err(RuntimeError::new(
+                                "Necessity verification failed: empty array",
+                            ))
                         } else {
                             // Return with Known evidentiality
                             Ok(Value::Evidential {
@@ -14157,11 +25619,18 @@ impl Interpreter {
     }
 
     /// Backward propagation for autograd - traverse computation graph and set gradients
-    fn backward_propagate(&self, tensor_fields: Rc<RefCell<std::collections::HashMap<String, Value>>>) -> Result<(), RuntimeError> {
+    fn backward_propagate(
+        &self,
+        tensor_fields: Rc<RefCell<std::collections::HashMap<String, Value>>>,
+    ) -> Result<(), RuntimeError> {
         let fields_ref = tensor_fields.borrow();
 
         // Get the gradient input references and propagate
-        if let Some(Value::Struct { fields: grad_fields, .. }) = fields_ref.get("_grad_left") {
+        if let Some(Value::Struct {
+            fields: grad_fields,
+            ..
+        }) = fields_ref.get("_grad_left")
+        {
             // This tensor was an operand in a computation - set its gradient
             let shape = grad_fields.borrow().get("shape").cloned();
             let data_len = match grad_fields.borrow().get("data") {
@@ -14175,24 +25644,34 @@ impl Interpreter {
             if let Some(s) = shape {
                 grad_tensor_fields.insert("shape".to_string(), s);
             }
-            grad_tensor_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(grad_data))));
+            grad_tensor_fields.insert(
+                "data".to_string(),
+                Value::Array(Rc::new(RefCell::new(grad_data))),
+            );
             grad_tensor_fields.insert("requires_grad".to_string(), Value::Bool(false));
 
             // Set the grad field on the original tensor as a proper Variant
-            grad_fields.borrow_mut().insert("grad".to_string(), Value::Variant {
-                enum_name: "Option".to_string(),
-                variant_name: "Some".to_string(),
-                fields: Some(Rc::new(vec![Value::Struct {
-                    name: "Tensor".to_string(),
-                    fields: Rc::new(RefCell::new(grad_tensor_fields)),
-                }])),
-            });
+            grad_fields.borrow_mut().insert(
+                "grad".to_string(),
+                Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                    fields: Some(Rc::new(vec![Value::Struct {
+                        name: "Tensor".to_string(),
+                        fields: Rc::new(RefCell::new(grad_tensor_fields)),
+                    }])),
+                },
+            );
 
             // Recursively propagate to any further inputs
             self.backward_propagate(grad_fields.clone())?;
         }
 
-        if let Some(Value::Struct { fields: grad_fields, .. }) = fields_ref.get("_grad_input") {
+        if let Some(Value::Struct {
+            fields: grad_fields,
+            ..
+        }) = fields_ref.get("_grad_input")
+        {
             // This is from sum operation - propagate to the input tensor
             let shape = grad_fields.borrow().get("shape").cloned();
             let data_len = match grad_fields.borrow().get("data") {
@@ -14205,18 +25684,24 @@ impl Interpreter {
             if let Some(s) = shape {
                 grad_tensor_fields.insert("shape".to_string(), s);
             }
-            grad_tensor_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(grad_data))));
+            grad_tensor_fields.insert(
+                "data".to_string(),
+                Value::Array(Rc::new(RefCell::new(grad_data))),
+            );
             grad_tensor_fields.insert("requires_grad".to_string(), Value::Bool(false));
 
             // Set the grad field as a proper Variant
-            grad_fields.borrow_mut().insert("grad".to_string(), Value::Variant {
-                enum_name: "Option".to_string(),
-                variant_name: "Some".to_string(),
-                fields: Some(Rc::new(vec![Value::Struct {
-                    name: "Tensor".to_string(),
-                    fields: Rc::new(RefCell::new(grad_tensor_fields)),
-                }])),
-            });
+            grad_fields.borrow_mut().insert(
+                "grad".to_string(),
+                Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                    fields: Some(Rc::new(vec![Value::Struct {
+                        name: "Tensor".to_string(),
+                        fields: Rc::new(RefCell::new(grad_tensor_fields)),
+                    }])),
+                },
+            );
 
             self.backward_propagate(grad_fields.clone())?;
         }
@@ -14250,16 +25735,19 @@ impl Interpreter {
             // Handle Tensor sum
             Value::Struct { name, fields } if name == "Tensor" => {
                 let fields_ref = fields.borrow();
-                let requires_grad = matches!(fields_ref.get("requires_grad"), Some(Value::Bool(true)));
+                let requires_grad =
+                    matches!(fields_ref.get("requires_grad"), Some(Value::Bool(true)));
                 let grad_left = fields_ref.get("_grad_left").cloned();
                 let data: Vec<f64> = match fields_ref.get("data") {
-                    Some(Value::Array(arr)) => {
-                        arr.borrow().iter().filter_map(|v| match v {
+                    Some(Value::Array(arr)) => arr
+                        .borrow()
+                        .iter()
+                        .filter_map(|v| match v {
                             Value::Float(f) => Some(*f),
                             Value::Int(n) => Some(*n as f64),
                             _ => None,
-                        }).collect()
-                    }
+                        })
+                        .collect(),
                     _ => vec![],
                 };
                 drop(fields_ref);
@@ -14268,20 +25756,30 @@ impl Interpreter {
                 // If this tensor requires grad, return a scalar tensor with computation graph
                 if requires_grad {
                     let mut result_fields = std::collections::HashMap::new();
-                    result_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
-                    result_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::Float(sum)]))));
+                    result_fields.insert(
+                        "shape".to_string(),
+                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                    );
+                    result_fields.insert(
+                        "data".to_string(),
+                        Value::Array(Rc::new(RefCell::new(vec![Value::Float(sum)]))),
+                    );
                     result_fields.insert("_value".to_string(), Value::Float(sum));
                     result_fields.insert("requires_grad".to_string(), Value::Bool(true));
-                    result_fields.insert("_op".to_string(), Value::String(Rc::new("sum".to_string())));
+                    result_fields
+                        .insert("_op".to_string(), Value::String(Rc::new("sum".to_string())));
                     // Propagate the gradient input reference
                     if let Some(grad_input) = grad_left {
                         result_fields.insert("_grad_left".to_string(), grad_input);
                     } else {
                         // Store reference to the input tensor
-                        result_fields.insert("_grad_input".to_string(), Value::Struct {
-                            name: "Tensor".to_string(),
-                            fields: fields.clone(),
-                        });
+                        result_fields.insert(
+                            "_grad_input".to_string(),
+                            Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: fields.clone(),
+                            },
+                        );
                     }
                     Ok(Value::Struct {
                         name: "Tensor".to_string(),
@@ -14550,6 +26048,7 @@ impl Interpreter {
             params: param_names,
             body: body.clone(),
             closure: self.environment.clone(),
+            defining_module: self.current_module.clone(),
         })))
     }
 
@@ -14567,7 +26066,12 @@ impl Interpreter {
             .join("·"); // Use middle dot to match method registration format
 
         // Resolve "Self" to the actual type name if we're in an impl block
-        let name = if raw_name == "Self" || raw_name == "This" {
+        // Also handle anonymous struct literals (empty path)
+        let name = if raw_name.is_empty() {
+            // Anonymous struct literal: { field: value, ... }
+            // Use a special marker name that includes the fields for uniqueness
+            "__anon__".to_string()
+        } else if raw_name == "Self" || raw_name == "This" {
             if let Some(ref self_type) = self.current_self_type {
                 self_type.clone()
             } else {
@@ -14657,18 +26161,33 @@ impl Interpreter {
             }
         }
 
-        // Check for missing required fields (type checking)
-        if let Some(TypeDef::Struct(struct_def)) = self.types.get(&name) {
-            if let crate::ast::StructFields::Named(def_fields) = &struct_def.fields {
-                for def_field in def_fields {
-                    if !field_values.contains_key(&def_field.name.name) {
-                        return Err(RuntimeError::new(format!(
-                            "missing field '{}' in struct '{}'",
-                            def_field.name.name,
-                            name
-                        )));
-                    }
+        // Collect missing fields with their defaults (need to clone to avoid borrow issues)
+        let missing_with_defaults: Vec<(String, Option<Expr>)> =
+            if let Some(TypeDef::Struct(struct_def)) = self.types.get(&name) {
+                if let crate::ast::StructFields::Named(def_fields) = &struct_def.fields {
+                    def_fields
+                        .iter()
+                        .filter(|f| !field_values.contains_key(&f.name.name))
+                        .map(|f| (f.name.name.clone(), f.default.clone()))
+                        .collect()
+                } else {
+                    vec![]
                 }
+            } else {
+                vec![]
+            };
+
+        // Apply default field values and check for missing required fields
+        for (field_name, default_opt) in missing_with_defaults {
+            if let Some(default_expr) = default_opt {
+                // Evaluate the default expression
+                let default_value = self.evaluate(&default_expr)?;
+                field_values.insert(field_name, default_value);
+            } else {
+                return Err(RuntimeError::new(format!(
+                    "missing field '{}' in struct '{}'",
+                    field_name, name
+                )));
             }
         }
 
@@ -14676,6 +26195,207 @@ impl Interpreter {
             name,
             fields: Rc::new(RefCell::new(field_values)),
         })
+    }
+
+    // ==========================================
+    // Template Expression Evaluation (STE)
+    // ==========================================
+
+    /// Convert AST Evidentiality to runtime Evidence
+    fn evidentiality_to_evidence(ev: &Evidentiality) -> Evidence {
+        match ev {
+            Evidentiality::Known => Evidence::Known,
+            Evidentiality::Uncertain | Evidentiality::Predicted => Evidence::Uncertain,
+            Evidentiality::Reported => Evidence::Reported,
+            Evidentiality::Paradox => Evidence::Paradox,
+        }
+    }
+
+    /// Evaluate a template element to a VNode struct
+    /// `⟨div[class: "card"]⟩...⟨/div⟩` → VElement { tag, attrs, children }
+    fn eval_template(&mut self, el: &TemplateElement) -> Result<Value, RuntimeError> {
+        // Get tag name
+        let tag = match &el.tag {
+            TemplateTag::Element(name) => Value::String(Rc::new(name.clone())),
+            TemplateTag::Component(path) => {
+                let name = path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("·");
+                Value::String(Rc::new(name))
+            }
+        };
+
+        // Evaluate attributes into a HashMap
+        let mut attr_map = HashMap::new();
+        for attr in &el.attrs {
+            let value = self.evaluate(&attr.value)?;
+            // Apply evidentiality if present
+            let final_value = match &attr.evidentiality {
+                Some(ev) => Value::Evidential {
+                    value: Box::new(value),
+                    evidence: Self::evidentiality_to_evidence(ev),
+                },
+                None => value,
+            };
+            attr_map.insert(attr.name.name.clone(), final_value);
+        }
+
+        // Evaluate event handlers
+        let mut event_map = HashMap::new();
+        for event in &el.events {
+            let handler = self.evaluate(&event.handler)?;
+            event_map.insert(event.event.name.clone(), handler);
+        }
+
+        // Evaluate children
+        let children = self.eval_template_children(&el.children)?;
+
+        // Evaluate key and ref if present
+        let key = if let Some(ref k) = el.key {
+            Some(self.evaluate(k)?)
+        } else {
+            None
+        };
+
+        let ref_cb = if let Some(ref r) = el.ref_callback {
+            Some(self.evaluate(r)?)
+        } else {
+            None
+        };
+
+        // Build VElement-like struct
+        let mut fields = HashMap::new();
+        fields.insert("tag".to_string(), tag);
+        fields.insert(
+            "attrs".to_string(),
+            Value::Struct {
+                name: "HashMap".to_string(),
+                fields: Rc::new(RefCell::new(attr_map)),
+            },
+        );
+        fields.insert(
+            "events".to_string(),
+            Value::Struct {
+                name: "HashMap".to_string(),
+                fields: Rc::new(RefCell::new(event_map)),
+            },
+        );
+        fields.insert(
+            "children".to_string(),
+            Value::Array(Rc::new(RefCell::new(children))),
+        );
+        fields.insert("self_closing".to_string(), Value::Bool(el.self_closing));
+
+        if let Some(k) = key {
+            fields.insert("key".to_string(), k);
+        }
+        if let Some(r) = ref_cb {
+            fields.insert("ref_callback".to_string(), r);
+        }
+
+        Ok(Value::Struct {
+            name: "VElement".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    }
+
+    /// Evaluate a template fragment to a VFragment struct
+    fn eval_template_fragment(
+        &mut self,
+        children: &[TemplateChild],
+    ) -> Result<Value, RuntimeError> {
+        let child_values = self.eval_template_children(children)?;
+
+        let mut fields = HashMap::new();
+        fields.insert(
+            "children".to_string(),
+            Value::Array(Rc::new(RefCell::new(child_values))),
+        );
+
+        Ok(Value::Struct {
+            name: "VFragment".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    }
+
+    /// Evaluate template children to a list of values
+    fn eval_template_children(
+        &mut self,
+        children: &[TemplateChild],
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut values = Vec::new();
+
+        for child in children {
+            match child {
+                TemplateChild::Element(el) => {
+                    let v = self.eval_template(el)?;
+                    values.push(v);
+                }
+                TemplateChild::Text(text) => {
+                    // Wrap text in VText-like struct
+                    let mut fields = HashMap::new();
+                    fields.insert("content".to_string(), Value::String(Rc::new(text.clone())));
+                    values.push(Value::Struct {
+                        name: "VText".to_string(),
+                        fields: Rc::new(RefCell::new(fields)),
+                    });
+                }
+                TemplateChild::Expr(expr) => {
+                    let v = self.evaluate(expr)?;
+                    values.push(v);
+                }
+                TemplateChild::Interpolation { parts } => {
+                    // Concatenate interpolation parts into a string
+                    let mut result = String::new();
+                    for part in parts {
+                        match part {
+                            TemplateInterpolationPart::Text(t) => {
+                                result.push_str(t);
+                            }
+                            TemplateInterpolationPart::Expr {
+                                expr,
+                                evidentiality,
+                            } => {
+                                let v = self.evaluate(expr)?;
+                                // Apply evidentiality if present
+                                let final_v = match evidentiality {
+                                    Some(ev) => Value::Evidential {
+                                        value: Box::new(v),
+                                        evidence: Self::evidentiality_to_evidence(ev),
+                                    },
+                                    None => v,
+                                };
+                                result.push_str(&self.format_value(&final_v));
+                            }
+                        }
+                    }
+                    // Wrap in VText
+                    let mut fields = HashMap::new();
+                    fields.insert("content".to_string(), Value::String(Rc::new(result)));
+                    values.push(Value::Struct {
+                        name: "VText".to_string(),
+                        fields: Rc::new(RefCell::new(fields)),
+                    });
+                }
+                TemplateChild::Fragment(frag_children) => {
+                    let child_values = self.eval_template_children(frag_children)?;
+                    let mut fields = HashMap::new();
+                    fields.insert(
+                        "children".to_string(),
+                        Value::Array(Rc::new(RefCell::new(child_values))),
+                    );
+                    values.push(Value::Struct {
+                        name: "VFragment".to_string(),
+                        fields: Rc::new(RefCell::new(fields)),
+                    });
+                }
+            }
+        }
+
+        Ok(values)
     }
 
     /// Extract evidentiality from a value (recursively unwraps Evidential wrapper)
@@ -14958,21 +26678,26 @@ impl Interpreter {
                     }
                 }
                 Some("[_]".to_string())
-            },
+            }
             Expr::Tuple(elements) => {
-                let types: Vec<String> = elements.iter()
+                let types: Vec<String> = elements
+                    .iter()
                     .filter_map(|e| self.infer_expr_type(e))
                     .collect();
                 Some(format!("({})", types.join(", ")))
-            },
+            }
             Expr::Block(block) => {
                 // Type of block is type of last expression or return
                 if let Some(ref e) = block.expr {
                     return self.infer_expr_type(e);
                 }
                 Some("()".to_string())
-            },
-            Expr::If { then_branch, else_branch, .. } => {
+            }
+            Expr::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
                 // Prefer then branch type - check last expr in block
                 if let Some(ref e) = then_branch.expr {
                     if let Some(t) = self.infer_expr_type(e) {
@@ -14983,7 +26708,7 @@ impl Interpreter {
                     return self.infer_expr_type(e);
                 }
                 None
-            },
+            }
             _ => None, // Cannot determine type statically for complex expressions
         }
     }
@@ -15010,7 +26735,10 @@ impl Interpreter {
 
     /// Extract type name and generic type parameters from a TypeExpr
     /// e.g., Option<i32> -> ("Option", ["i32"]), Result<i32, String> -> ("Result", ["i32", "String"])
-    fn extract_type_params(&self, type_expr: &crate::ast::TypeExpr) -> Option<(String, Vec<String>)> {
+    fn extract_type_params(
+        &self,
+        type_expr: &crate::ast::TypeExpr,
+    ) -> Option<(String, Vec<String>)> {
         use crate::ast::TypeExpr;
 
         if let TypeExpr::Path(path) = type_expr {
@@ -15042,8 +26770,14 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         match (type_name, value) {
             // Option<T>: Some(x) must have x: T
-            ("Option", Value::Variant { enum_name, variant_name, fields })
-                if enum_name == "Option" && variant_name == "Some" => {
+            (
+                "Option",
+                Value::Variant {
+                    enum_name,
+                    variant_name,
+                    fields,
+                },
+            ) if enum_name == "Option" && variant_name == "Some" => {
                 if let (Some(expected_type), Some(fields)) = (type_params.first(), fields) {
                     if let Some(inner_value) = fields.first() {
                         let actual_type = self.value_type_name(inner_value);
@@ -15057,8 +26791,14 @@ impl Interpreter {
                 }
             }
             // Result<T, E>: Ok(x) must have x: T
-            ("Result", Value::Variant { enum_name, variant_name, fields })
-                if enum_name == "Result" && variant_name == "Ok" => {
+            (
+                "Result",
+                Value::Variant {
+                    enum_name,
+                    variant_name,
+                    fields,
+                },
+            ) if enum_name == "Result" && variant_name == "Ok" => {
                 if let (Some(expected_type), Some(fields)) = (type_params.first(), fields) {
                     if let Some(inner_value) = fields.first() {
                         let actual_type = self.value_type_name(inner_value);
@@ -15072,8 +26812,14 @@ impl Interpreter {
                 }
             }
             // Result<T, E>: Err(e) must have e: E
-            ("Result", Value::Variant { enum_name, variant_name, fields })
-                if enum_name == "Result" && variant_name == "Err" => {
+            (
+                "Result",
+                Value::Variant {
+                    enum_name,
+                    variant_name,
+                    fields,
+                },
+            ) if enum_name == "Result" && variant_name == "Err" => {
                 if let (Some(expected_type), Some(fields)) = (type_params.get(1), fields) {
                     if let Some(inner_value) = fields.first() {
                         let actual_type = self.value_type_name(inner_value);
@@ -15257,24 +27003,21 @@ mod tests {
 
     #[test]
     fn test_arithmetic() {
+        assert!(matches!(run("rite main() { ⤺ 2 + 3; }"), Ok(Value::Int(5))));
         assert!(matches!(
-            run("fn main() { return 2 + 3; }"),
-            Ok(Value::Int(5))
-        ));
-        assert!(matches!(
-            run("fn main() { return 10 - 4; }"),
+            run("rite main() { ⤺ 10 - 4; }"),
             Ok(Value::Int(6))
         ));
         assert!(matches!(
-            run("fn main() { return 3 * 4; }"),
+            run("rite main() { ⤺ 3 * 4; }"),
             Ok(Value::Int(12))
         ));
         assert!(matches!(
-            run("fn main() { return 15 / 3; }"),
+            run("rite main() { ⤺ 15 / 3; }"),
             Ok(Value::Int(5))
         ));
         assert!(matches!(
-            run("fn main() { return 2 ** 10; }"),
+            run("rite main() { ⤺ 2 ** 10; }"),
             Ok(Value::Int(1024))
         ));
     }
@@ -15282,7 +27025,7 @@ mod tests {
     #[test]
     fn test_variables() {
         assert!(matches!(
-            run("fn main() { let x = 42; return x; }"),
+            run("rite main() { ≔ x = 42; ⤺ x; }"),
             Ok(Value::Int(42))
         ));
     }
@@ -15290,11 +27033,11 @@ mod tests {
     #[test]
     fn test_conditionals() {
         assert!(matches!(
-            run("fn main() { if true { return 1; } else { return 2; } }"),
+            run("rite main() { ⎇ yea { ⤺ 1; } ⎉ { ⤺ 2; } }"),
             Ok(Value::Int(1))
         ));
         assert!(matches!(
-            run("fn main() { if false { return 1; } else { return 2; } }"),
+            run("rite main() { ⎇ nay { ⤺ 1; } ⎉ { ⤺ 2; } }"),
             Ok(Value::Int(2))
         ));
     }
@@ -15302,7 +27045,7 @@ mod tests {
     #[test]
     fn test_arrays() {
         assert!(matches!(
-            run("fn main() { return [1, 2, 3][1]; }"),
+            run("rite main() { ⤺ [1, 2, 3][1]; }"),
             Ok(Value::Int(2))
         ));
     }
@@ -15310,21 +27053,21 @@ mod tests {
     #[test]
     fn test_functions() {
         let result = run("
-            fn double(x: i64) -> i64 { return x * 2; }
-            fn main() { return double(21); }
+            rite double(x: i64) → i64 { ⤺ x * 2; }
+            rite main() { ⤺ double(21); }
         ");
         assert!(matches!(result, Ok(Value::Int(42))));
     }
 
     #[test]
     fn test_pipe_transform() {
-        let result = run("fn main() { return [1, 2, 3]|τ{_ * 2}|sum; }");
+        let result = run("rite main() { ⤺ [1, 2, 3]|τ{_ * 2}|sum; }");
         assert!(matches!(result, Ok(Value::Int(12))));
     }
 
     #[test]
     fn test_pipe_filter() {
-        let result = run("fn main() { return [1, 2, 3, 4, 5]|φ{_ > 2}|sum; }");
+        let result = run("rite main() { ⤺ [1, 2, 3, 4, 5]|φ{_ > 2}|sum; }");
         assert!(matches!(result, Ok(Value::Int(12)))); // 3 + 4 + 5
     }
 
@@ -15333,14 +27076,16 @@ mod tests {
         // Test that evidentiality propagates through string interpolation
         // When an evidential value is interpolated, the result string should carry that evidentiality
         let result = run(r#"
-            fn main() {
-                let rep = reported(42);
+
+            rite main() {
+                ≔ rep = reported(42);
 
                 // Interpolating a reported value should make the string reported
-                let s = f"Value: {rep}";
-                return s;
+                ≔ s = f"Value: {rep}";
+                ⤺ s;
             }
-        "#);
+        
+"#);
 
         match result {
             Ok(Value::Evidential {
@@ -15359,15 +27104,17 @@ mod tests {
     fn test_interpolation_worst_evidence_wins() {
         // When multiple evidential values are interpolated, the worst evidence level wins
         let result = run(r#"
-            fn main() {
-                let k = known(1);         // Known is best
-                let u = uncertain(2);     // Uncertain is worse
+
+            rite main() {
+                ≔ k = known(1);         // Known is best
+                ≔ u = uncertain(2);     // Uncertain is worse
 
                 // Combining known and uncertain should yield uncertain
-                let s = f"{k} and {u}";
-                return s;
+                ≔ s = f"{k} and {u}";
+                ⤺ s;
             }
-        "#);
+        
+"#);
 
         match result {
             Ok(Value::Evidential {
@@ -15383,12 +27130,14 @@ mod tests {
     fn test_interpolation_no_evidential_plain_string() {
         // When no evidential values are interpolated, the result is a plain string
         let result = run(r#"
-            fn main() {
-                let x = 42;
-                let s = f"Value: {x}";
-                return s;
+
+            rite main() {
+                ≔ x = 42;
+                ≔ s = f"Value: {x}";
+                ⤺ s;
             }
-        "#);
+        
+"#);
 
         match result {
             Ok(Value::String(s)) => {

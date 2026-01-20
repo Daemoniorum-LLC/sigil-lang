@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Learn Sigil - Getting Started Guide</title>
+    <meta name="description" content="Learn the Sigil programming language from scratch with our comprehensive tutorial covering evidentiality, morphemes, and agent infrastructure.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #050507;
+            --bg-secondary: #0a0a0d;
+            --bg-tertiary: #111115;
+            --text-primary: #e8e8ec;
+            --text-secondary: #a0a0aa;
+            --text-muted: #707078;
+            --accent: #14A088;
+            --accent-light: #1AB89D;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body {
+            height: 100%;
+            font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        #status {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 0.5rem 1rem;
+            background: var(--bg-secondary);
+            border-top: 1px solid rgba(20, 160, 136, 0.3);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            z-index: 1000;
+            text-align: center;
+        }
+
+        #app {
+            min-height: 100vh;
+            padding-bottom: 2.5rem;
+        }
+
+        .app { width: 100%; }
+
+        /* === Navigation === */
+        .nav {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+        }
+        .nav-logo-icon {
+            width: 36px;
+            height: 36px;
+        }
+        .logo-text {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .version-badge {
+            background: rgba(20, 160, 136, 0.2);
+            color: var(--accent);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+        }
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+        .nav-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .nav-link:hover { color: var(--accent); }
+        .nav-github { color: var(--accent); }
+        .nav-active { color: var(--accent) !important; }
+
+        /* === Page Hero === */
+        .page-hero {
+            padding: 5rem 2rem 3rem;
+            text-align: center;
+            background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+        }
+        .learn-hero {
+            padding: 4rem 2rem 2rem;
+        }
+        .page-title {
+            font-size: 2.75rem;
+            margin-bottom: 0.75rem;
+            color: var(--text-primary);
+        }
+        .page-lead {
+            font-size: 1.15rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* === Learn Content === */
+        .learn-content {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* === Progress Bar === */
+        .progress-bar {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 3rem;
+        }
+        .progress-step {
+            flex: 1;
+            height: 4px;
+            background: var(--bg-tertiary);
+            border-radius: 2px;
+            transition: background 0.3s;
+        }
+        .progress-step.completed {
+            background: var(--accent);
+        }
+        .progress-step.current {
+            background: linear-gradient(90deg, var(--accent) 50%, var(--bg-tertiary) 50%);
+        }
+
+        /* === Chapters === */
+        .chapter {
+            margin-bottom: 4rem;
+            padding-bottom: 3rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .chapter:last-of-type {
+            border-bottom: none;
+        }
+        .chapter-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .chapter-number {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 48px;
+            height: 48px;
+            background: var(--accent);
+            color: var(--bg-primary);
+            font-weight: 700;
+            font-size: 1.25rem;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .chapter-title {
+            font-size: 1.75rem;
+            color: var(--text-primary);
+        }
+
+        .chapter p {
+            font-size: 1.05rem;
+            line-height: 1.8;
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .chapter h3 {
+            font-size: 1.25rem;
+            margin: 2rem 0 1rem;
+            color: var(--text-primary);
+        }
+
+        /* === Code Block === */
+        .code-block {
+            background: var(--bg-secondary);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 1.25rem 1.5rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.7;
+            overflow-x: auto;
+            white-space: pre;
+            color: var(--text-secondary);
+            margin: 1rem 0;
+        }
+
+        /* === Try It Box === */
+        .try-it {
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin: 1.5rem 0;
+        }
+        .try-it-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        .try-it-header h4 {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+        .try-it-link {
+            font-size: 0.8125rem;
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .try-it-link:hover {
+            text-decoration: underline;
+        }
+        .try-it-desc {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin: 0 !important;
+        }
+
+        /* === Callout === */
+        .callout {
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin: 1.5rem 0;
+            font-size: 0.95rem;
+        }
+        .callout strong {
+            display: inline;
+        }
+        .callout-info {
+            background: rgba(33, 150, 243, 0.1);
+            border: 1px solid rgba(33, 150, 243, 0.3);
+            color: var(--text-secondary);
+        }
+        .callout-info strong {
+            color: #64B5F6;
+        }
+        .callout-success {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            color: var(--text-secondary);
+        }
+        .callout-success strong {
+            color: #81C784;
+        }
+        .callout a {
+            color: var(--accent);
+        }
+
+        /* === Evidence Markers Grid === */
+        .evidence-markers-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        .evidence-marker-card {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 1rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .marker-symbol {
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.5rem;
+            font-weight: 600;
+            border-radius: 8px;
+            flex-shrink: 0;
+        }
+        .marker-known {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+        .marker-uncertain {
+            background: rgba(255, 193, 7, 0.2);
+            color: #FFC107;
+        }
+        .marker-reported {
+            background: rgba(33, 150, 243, 0.2);
+            color: #2196F3;
+        }
+        .marker-paradox {
+            background: rgba(156, 39, 176, 0.2);
+            color: #CE93D8;
+        }
+        .marker-info h4 {
+            font-size: 0.9rem;
+            margin-bottom: 0.25rem;
+            color: var(--text-primary);
+        }
+        .marker-info p {
+            font-size: 0.8rem !important;
+            color: var(--text-secondary);
+            margin: 0 !important;
+        }
+
+        /* === Morpheme Reference Grid === */
+        .morpheme-reference-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+            margin: 1.5rem 0;
+        }
+        .morpheme-group {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 1.25rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .group-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--accent);
+            margin-bottom: 1rem;
+        }
+        .morpheme-row {
+            display: grid;
+            grid-template-columns: 50px 80px 1fr;
+            gap: 0.75rem;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .morpheme-row:last-child {
+            border-bottom: none;
+        }
+        .morpheme-sym {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.25rem;
+            color: var(--accent);
+        }
+        .morpheme-name {
+            font-size: 0.85rem;
+            color: var(--text-primary);
+        }
+        .morpheme-example {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            background: var(--bg-primary);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+
+        /* === Next Navigation === */
+        .next-nav {
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .nav-button {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            padding: 1.25rem 1.5rem;
+            background: var(--bg-secondary);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .nav-button:hover {
+            border-color: var(--accent);
+            background: rgba(20, 160, 136, 0.05);
+        }
+        .nav-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+        }
+        .nav-title {
+            font-size: 1.1rem;
+            color: var(--accent);
+            margin-top: 0.25rem;
+        }
+
+        /* === Footer === */
+        .footer {
+            background: var(--bg-secondary);
+            padding: 4rem 2rem 3rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .footer-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1.5fr 3fr;
+            gap: 4rem;
+        }
+        .footer-brand {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .footer-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: var(--accent);
+            font-size: 1.5rem;
+            font-weight: 700;
+            text-decoration: none;
+        }
+        .footer-logo-icon {
+            width: 40px;
+            height: 40px;
+        }
+        .footer-tagline {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        .footer-copyright {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            opacity: 0.7;
+        }
+        .footer-nav {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 2rem;
+        }
+        .footer-nav ul {
+            list-style: none;
+        }
+        .footer-column h5 {
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+        }
+        .footer-column a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.85rem;
+            padding: 0.25rem 0;
+        }
+        .footer-column a:hover {
+            color: var(--accent);
+        }
+
+        /* === Skip Link === */
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            background: var(--accent);
+            color: white;
+            padding: 8px 16px;
+            z-index: 10000;
+            text-decoration: none;
+            font-weight: 600;
+            border-radius: 0 0 4px 0;
+            transition: top 0.2s;
+        }
+        .skip-link:focus { top: 0; }
+
+        /* === Mobile Navigation === */
+        .mobile-menu-btn {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            z-index: 1001;
+        }
+        .mobile-menu-btn:hover { color: var(--accent-light); }
+        .mobile-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+            z-index: 999;
+        }
+        .mobile-overlay.open { opacity: 1; visibility: visible; }
+
+        /* === Responsive === */
+        @media (max-width: 768px) {
+            .page-title {
+                font-size: 2rem;
+            }
+            .chapter-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .evidence-markers-grid {
+                grid-template-columns: 1fr;
+            }
+            .morpheme-reference-grid {
+                grid-template-columns: 1fr;
+            }
+            .footer-container {
+                grid-template-columns: 1fr;
+                gap: 2rem;
+            }
+            .footer-nav {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .mobile-menu-btn { display: block; }
+            .nav-links {
+                position: fixed;
+                top: 0;
+                right: -100%;
+                width: 80%;
+                max-width: 300px;
+                height: 100vh;
+                background: var(--bg-secondary);
+                flex-direction: column;
+                padding: 5rem 2rem 2rem;
+                gap: 1.5rem;
+                transition: right 0.3s ease;
+                z-index: 1000;
+                box-shadow: -2px 0 10px rgba(0, 0, 0, 0.3);
+            }
+            .nav-links.open { right: 0; }
+            .nav-links .nav-link {
+                font-size: 1.1rem;
+                padding: 0.5rem 0;
+                border-bottom: 1px solid var(--border);
+            }
+        }
+        @media (max-width: 480px) {
+            .morpheme-row {
+                grid-template-columns: 40px 70px 1fr;
+                gap: 0.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <div id="status">Loading WASM...</div>
+    <div id="app" role="application" aria-label="Learn Sigil Tutorial"></div>
+
+    <script type="module">
+        import { SigilRuntime } from './sigil_runtime.js';
+
+        const status = document.getElementById('status');
+
+        async function run() {
+            try {
+                status.textContent = 'Initializing runtime...';
+
+                const runtime = new SigilRuntime();
+                const response = await fetch('./public/wasm/learn.wasm');
+                const bytes = await response.arrayBuffer();
+
+                status.textContent = 'Instantiating WASM...';
+                const { instance } = await WebAssembly.instantiate(bytes, runtime.getImports());
+                runtime.init(instance);
+
+                status.textContent = 'Calling main()...';
+                if (instance.exports.main) {
+                    instance.exports.main();
+                    status.textContent = 'Learn Sigil rendered via WASM!';
+                    status.style.borderTopColor = '#14A088';
+                    setupMobileNav();
+                } else {
+                    status.textContent = 'No main() export found';
+                }
+            } catch (error) {
+                status.textContent = `Error: ${error.message}`;
+                status.style.color = '#D47171';
+                console.error(error);
+            }
+        }
+
+        function setupMobileNav() {
+            const navContainer = document.querySelector('.nav-container');
+            const navLinks = document.querySelector('.nav-links');
+            if (!navContainer || !navLinks) return;
+            // Add accessibility attributes
+            const nav = document.querySelector('.nav');
+            if (nav) nav.setAttribute('role', 'banner');
+            navLinks.setAttribute('role', 'navigation');
+            navLinks.setAttribute('aria-label', 'Main navigation');
+            const main = document.querySelector('.app');
+            if (main) { main.setAttribute('role', 'main'); main.id = 'main-content'; }
+            const overlay = document.createElement('div');
+            overlay.className = 'mobile-overlay';
+            overlay.id = 'mobileOverlay';
+            document.body.insertBefore(overlay, document.body.firstChild);
+            const btn = document.createElement('button');
+            btn.className = 'mobile-menu-btn';
+            btn.id = 'mobileMenuBtn';
+            btn.setAttribute('aria-label', 'Toggle navigation menu');
+            btn.setAttribute('aria-expanded', 'false');
+            btn.innerHTML = '<span id="menuIcon">&#9776;</span>';
+            navContainer.insertBefore(btn, navLinks);
+            function toggleMenu() {
+                const isOpen = navLinks.classList.toggle('open');
+                overlay.classList.toggle('open');
+                btn.setAttribute('aria-expanded', isOpen);
+                document.getElementById('menuIcon').innerHTML = isOpen ? '&#10005;' : '&#9776;';
+            }
+            btn.addEventListener('click', toggleMenu);
+            overlay.addEventListener('click', toggleMenu);
+        }
+
+        run();
+    </script>
+</body>
+</html>

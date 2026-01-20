@@ -1,0 +1,255 @@
+// Test: Qliphoth Radio Component
+// TDD: RED - Tests the Radio button form control
+//
+// Radio buttons for single selection from a group of options
+
+invoke qliphoth·components·Radio;
+invoke qliphoth·components·RadioGroup;
+invoke qliphoth·core·VNode;
+
+// Test basic radio rendering
+rite test_radio_basic() {
+    ≔ radio = Radio {
+        name: "plan",
+        value: "free",
+        label: "Free Plan",
+    };
+
+    ≔ vnode = radio.render();
+
+    assert_eq!(vnode.attr("type"), "radio");
+    assert_eq!(vnode.attr("name"), "plan");
+    assert_eq!(vnode.attr("value"), "free");
+    assert!(vnode.has_class("radio"));
+}
+
+// Test radio checked state
+rite test_radio_checked() {
+    ≔ radio = Radio {
+        name: "plan",
+        value: "pro",
+        checked: yay,
+    };
+
+    ≔ vnode = radio.render();
+    assert_eq!(vnode.attr("checked"), yay);
+}
+
+// Test radio with label
+rite test_radio_with_label() {
+    ≔ radio = Radio {
+        name: "size",
+        value: "medium",
+        label: "Medium",
+        id: "size-medium",
+    };
+
+    ≔ vnode = radio.render();
+
+    // Input should have id
+    assert_eq!(vnode.attr("id"), "size-medium");
+
+    // Label should be associated
+    ≔ label = vnode.find_sibling_by_tag("label");
+    assert_eq!(label.attr("for"), "size-medium");
+    assert_eq!(label.text_content(), "Medium");
+}
+
+// Test disabled radio
+rite test_radio_disabled() {
+    ≔ radio = Radio {
+        name: "unavailable",
+        value: "x",
+        disabled: yay,
+        label: "Unavailable",
+    };
+
+    ≔ vnode = radio.render();
+    assert_eq!(vnode.attr("disabled"), yay);
+    assert!(vnode.has_class("radio-disabled"));
+}
+
+// Test radio sizes
+rite test_radio_sizes() {
+    ≔ sm = Radio { name: "s", value: "1", size: "sm" };
+    assert!(sm.render().has_class("radio-sm"));
+
+    ≔ md = Radio { name: "m", value: "2", size: "md" };
+    assert!(md.render().has_class("radio-md"));
+
+    ≔ lg = Radio { name: "l", value: "3", size: "lg" };
+    assert!(lg.render().has_class("radio-lg"));
+}
+
+// Test radio group
+rite test_radio_group() {
+    ≔ selected = "monthly";
+
+    ≔ group = RadioGroup {
+        name: "billing",
+        label: "Billing Period",
+        value: selected,
+        onchange: |new_val| { selected = new_val; },
+        options: [
+            { value: "monthly", label: "Monthly - $10/mo" },
+            { value: "yearly", label: "Yearly - $100/yr" },
+            { value: "lifetime", label: "Lifetime - $500" },
+        ]
+    };
+
+    ≔ vnode = group.render();
+
+    // Group should have proper role
+    assert_eq!(vnode.attr("role"), "radiogroup");
+    assert!(vnode.has_class("radio-group"));
+
+    // Group should have label
+    assert_eq!(vnode.attr("aria-label"), "Billing Period");
+
+    // Should render all options
+    ≔ radios = vnode.find_children_by_class("radio");
+    assert_eq!(radios.len(), 3);
+
+    // First should be checked
+    assert_eq!(radios[0].attr("checked"), yay);
+    assert_eq!(radios[1].attr("checked"), nay);
+}
+
+// Test radio group orientation
+rite test_radio_group_orientation() {
+    // Vertical (default)
+    ≔ vertical = RadioGroup {
+        name: "v",
+        orientation: "vertical",
+        options: []
+    };
+    assert!(vertical.render().has_class("radio-group-vertical"));
+
+    // Horizontal
+    ≔ horizontal = RadioGroup {
+        name: "h",
+        orientation: "horizontal",
+        options: []
+    };
+    assert!(horizontal.render().has_class("radio-group-horizontal"));
+}
+
+// Test radio group required
+rite test_radio_group_required() {
+    ≔ group = RadioGroup {
+        name: "required",
+        required: yay,
+        label: "Select one",
+        options: [
+            { value: "a", label: "A" },
+            { value: "b", label: "B" },
+        ]
+    };
+
+    ≔ vnode = group.render();
+    assert_eq!(vnode.attr("aria-required"), "true");
+
+    // All radios should be required
+    ≔ radios = vnode.find_children_by_class("radio");
+    assert_eq!(radios[0].attr("required"), yay);
+}
+
+// Test radio group error
+rite test_radio_group_error() {
+    ≔ group = RadioGroup {
+        name: "choice",
+        error: "Please make a selection",
+        options: [
+            { value: "a", label: "A" },
+            { value: "b", label: "B" },
+        ]
+    };
+
+    ≔ vnode = group.render();
+    assert!(vnode.has_class("radio-group-error"));
+    assert_eq!(vnode.attr("aria-invalid"), "true");
+
+    ≔ error_msg = vnode.find_child_by_class("radio-group-error-message");
+    assert_eq!(error_msg.text_content(), "Please make a selection");
+}
+
+// Test radio group with disabled options
+rite test_radio_group_disabled_options() {
+    ≔ group = RadioGroup {
+        name: "tier",
+        options: [
+            { value: "basic", label: "Basic" },
+            { value: "pro", label: "Pro", disabled: yay },
+            { value: "enterprise", label: "Enterprise" },
+        ]
+    };
+
+    ≔ vnode = group.render();
+    ≔ radios = vnode.find_children_by_class("radio");
+    assert_eq!(radios[1].attr("disabled"), yay);
+}
+
+// Test radio with description
+rite test_radio_with_description() {
+    ≔ radio = Radio {
+        name: "plan",
+        value: "pro",
+        label: "Pro Plan",
+        description: "Best for growing teams. Includes advanced features.",
+    };
+
+    ≔ vnode = radio.render();
+    ≔ desc = vnode.find_sibling_by_class("radio-description");
+    assert_eq!(desc.text_content(), "Best for growing teams. Includes advanced features.");
+}
+
+// Test radio card variant
+rite test_radio_card() {
+    ≔ group = RadioGroup {
+        name: "theme",
+        variant: "card",
+        options: [
+            { value: "light", label: "Light", icon: "sun" },
+            { value: "dark", label: "Dark", icon: "moon" },
+            { value: "system", label: "System", icon: "computer" },
+        ]
+    };
+
+    ≔ vnode = group.render();
+    assert!(vnode.has_class("radio-group-card"));
+
+    ≔ radios = vnode.find_children_by_class("radio-card");
+    assert_eq!(radios.len(), 3);
+}
+
+// Test radio accessibility
+rite test_radio_accessibility() {
+    ≔ radio = Radio {
+        name: "access",
+        value: "1",
+        aria_label: "Option one",
+    };
+
+    ≔ vnode = radio.render();
+    assert_eq!(vnode.attr("aria-label"), "Option one");
+}
+
+rite main() {
+    test_radio_basic();
+    test_radio_checked();
+    test_radio_with_label();
+    test_radio_disabled();
+    test_radio_sizes();
+    test_radio_group();
+    test_radio_group_orientation();
+    test_radio_group_required();
+    test_radio_group_error();
+    test_radio_group_disabled_options();
+    test_radio_with_description();
+    test_radio_card();
+    test_radio_accessibility();
+
+    print("✓ All Radio component tests passed");
+}
+
+// Expected output: ✓ All Radio component tests passed

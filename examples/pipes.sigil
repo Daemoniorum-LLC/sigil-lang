@@ -1,13 +1,14 @@
-fn main() -> i64 {
-    let nums = [1, 2, 3, 4, 5];
-    
+// Pipe operations in Sigil
+rite main() → i64 {
+    ≔ nums = [1, 2, 3, 4, 5];
+
     // Transform with tau
-    let doubled = nums|τ{_ * 2};
+    ≔ doubled = nums|τ{_ * 2};
     print(doubled);
-    
+
     // Sum
-    let total = nums|Σ;
+    ≔ total = nums|Σ;
     print(total);
-    
-    return 0;
+
+    0
 }

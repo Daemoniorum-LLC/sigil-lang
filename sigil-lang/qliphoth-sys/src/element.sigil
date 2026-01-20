@@ -1,0 +1,370 @@
+//! Element API bindings
+
+use crate::node::Node;
+use crate::document::{HtmlCollection, NodeList, DOMRect};
+
+/// The Element interface
+#[wasm_bindgen]
+extern "js" {
+    #[wasm_bindgen(extends = Node)]
+    pub type Element;
+
+    #[wasm_bindgen(method, getter, js_name = "tagName")]
+    pub fn tag_name(this: &Element!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn id(this: &Element!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_id(this: &Element!, id: &str!);
+
+    #[wasm_bindgen(method, getter, js_name = "className")]
+    pub fn class_name(this: &Element!) -> String!;
+
+    #[wasm_bindgen(method, setter, js_name = "className")]
+    pub fn set_class_name(this: &Element!, class_name: &str!);
+
+    #[wasm_bindgen(method, getter, js_name = "classList")]
+    pub fn class_list(this: &Element!) -> DOMTokenList!;
+
+    #[wasm_bindgen(method, getter, js_name = "innerHTML")]
+    pub fn inner_html(this: &Element!) -> String!;
+
+    #[wasm_bindgen(method, setter, js_name = "innerHTML")]
+    pub fn set_inner_html(this: &Element!, html: &str!);
+
+    #[wasm_bindgen(method, getter, js_name = "outerHTML")]
+    pub fn outer_html(this: &Element!) -> String!;
+
+    #[wasm_bindgen(method, setter, js_name = "outerHTML")]
+    pub fn set_outer_html(this: &Element!, html: &str!);
+
+    #[wasm_bindgen(method, getter, js_name = "textContent")]
+    pub fn text_content(this: &Element!) -> Option[String]?;
+
+    #[wasm_bindgen(method, setter, js_name = "textContent")]
+    pub fn set_text_content(this: &Element!, text: Option[&str]?);
+
+    #[wasm_bindgen(method, getter, js_name = "scrollTop")]
+    pub fn scroll_top(this: &Element!) -> f64!;
+
+    #[wasm_bindgen(method, setter, js_name = "scrollTop")]
+    pub fn set_scroll_top(this: &Element!, value: f64!);
+
+    #[wasm_bindgen(method, getter, js_name = "scrollLeft")]
+    pub fn scroll_left(this: &Element!) -> f64!;
+
+    #[wasm_bindgen(method, setter, js_name = "scrollLeft")]
+    pub fn set_scroll_left(this: &Element!, value: f64!);
+
+    #[wasm_bindgen(method, getter, js_name = "scrollWidth")]
+    pub fn scroll_width(this: &Element!) -> i32!;
+
+    #[wasm_bindgen(method, getter, js_name = "scrollHeight")]
+    pub fn scroll_height(this: &Element!) -> i32!;
+
+    #[wasm_bindgen(method, getter, js_name = "clientWidth")]
+    pub fn client_width(this: &Element!) -> i32!;
+
+    #[wasm_bindgen(method, getter, js_name = "clientHeight")]
+    pub fn client_height(this: &Element!) -> i32!;
+
+    #[wasm_bindgen(method, getter, js_name = "clientTop")]
+    pub fn client_top(this: &Element!) -> i32!;
+
+    #[wasm_bindgen(method, getter, js_name = "clientLeft")]
+    pub fn client_left(this: &Element!) -> i32!;
+
+    #[wasm_bindgen(method, js_name = "getAttribute")]
+    pub fn get_attribute(this: &Element!, name: &str!) -> Option[String]?;
+
+    #[wasm_bindgen(method, js_name = "setAttribute")]
+    pub fn set_attribute(this: &Element!, name: &str!, value: &str!) -> Result[(), JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "removeAttribute")]
+    pub fn remove_attribute(this: &Element!, name: &str!) -> Result[(), JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "hasAttribute")]
+    pub fn has_attribute(this: &Element!, name: &str!) -> bool!;
+
+    #[wasm_bindgen(method, js_name = "toggleAttribute")]
+    pub fn toggle_attribute(this: &Element!, name: &str!) -> bool!;
+
+    #[wasm_bindgen(method, js_name = "getAttributeNames")]
+    pub fn get_attribute_names(this: &Element!) -> Vec[String]!;
+
+    #[wasm_bindgen(method, js_name = "querySelector")]
+    pub fn query_selector(this: &Element!, selector: &str!) -> Result[Option[Element], JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "querySelectorAll")]
+    pub fn query_selector_all(this: &Element!, selector: &str!) -> Result[NodeList, JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "getElementsByClassName")]
+    pub fn get_elements_by_class_name(this: &Element!, class_name: &str!) -> HtmlCollection!;
+
+    #[wasm_bindgen(method, js_name = "getElementsByTagName")]
+    pub fn get_elements_by_tag_name(this: &Element!, tag_name: &str!) -> HtmlCollection!;
+
+    #[wasm_bindgen(method, js_name = "matches")]
+    pub fn matches(this: &Element!, selector: &str!) -> bool!;
+
+    #[wasm_bindgen(method)]
+    pub fn closest(this: &Element!, selector: &str!) -> Option[Element]?;
+
+    #[wasm_bindgen(method, js_name = "getBoundingClientRect")]
+    pub fn get_bounding_client_rect(this: &Element!) -> DOMRect!;
+
+    #[wasm_bindgen(method, js_name = "getClientRects")]
+    pub fn get_client_rects(this: &Element!) -> DOMRectList!;
+
+    #[wasm_bindgen(method)]
+    pub fn scroll(this: &Element!, x: f64!, y: f64!);
+
+    #[wasm_bindgen(method, js_name = "scrollTo")]
+    pub fn scroll_to(this: &Element!, x: f64!, y: f64!);
+
+    #[wasm_bindgen(method, js_name = "scrollBy")]
+    pub fn scroll_by(this: &Element!, x: f64!, y: f64!);
+
+    #[wasm_bindgen(method, js_name = "scrollIntoView")]
+    pub fn scroll_into_view(this: &Element!);
+
+    #[wasm_bindgen(method)]
+    pub fn focus(this: &Element!);
+
+    #[wasm_bindgen(method)]
+    pub fn blur(this: &Element!);
+
+    #[wasm_bindgen(method)]
+    pub fn click(this: &Element!);
+
+    #[wasm_bindgen(method, js_name = "addEventListener")]
+    pub fn add_event_listener(this: &Element!, event_type: &str!, callback: &Closure!);
+
+    #[wasm_bindgen(method, js_name = "addEventListener")]
+    pub fn add_event_listener_with_callback(
+        this: &Element!,
+        event_type: &str!,
+        callback: &Function!
+    ) -> Result[(), JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "removeEventListener")]
+    pub fn remove_event_listener(this: &Element!, event_type: &str!, callback: &Closure!);
+
+    #[wasm_bindgen(method, js_name = "dispatchEvent")]
+    pub fn dispatch_event(this: &Element!, event: &Event!) -> bool!;
+
+    #[wasm_bindgen(method)]
+    pub fn remove(this: &Element!);
+
+    #[wasm_bindgen(method)]
+    pub fn before(this: &Element!, nodes: &[Node]!);
+
+    #[wasm_bindgen(method)]
+    pub fn after(this: &Element!, nodes: &[Node]!);
+
+    #[wasm_bindgen(method, js_name = "replaceWith")]
+    pub fn replace_with(this: &Element!, nodes: &[Node]!);
+
+    #[wasm_bindgen(method)]
+    pub fn append(this: &Element!, nodes: &[Node]!);
+
+    #[wasm_bindgen(method)]
+    pub fn prepend(this: &Element!, nodes: &[Node]!);
+
+    #[wasm_bindgen(method, js_name = "insertAdjacentHTML")]
+    pub fn insert_adjacent_html(this: &Element!, position: &str!, html: &str!) -> Result[(), JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "insertAdjacentElement")]
+    pub fn insert_adjacent_element(this: &Element!, position: &str!, element: &Element!) -> Option[Element]?;
+
+    #[wasm_bindgen(method, js_name = "insertAdjacentText")]
+    pub fn insert_adjacent_text(this: &Element!, position: &str!, text: &str!);
+}
+
+/// DOMTokenList for class management
+#[wasm_bindgen]
+extern "js" {
+    pub type DOMTokenList;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn length(this: &DOMTokenList!) -> u32!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn value(this: &DOMTokenList!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_value(this: &DOMTokenList!, value: &str!);
+
+    #[wasm_bindgen(method)]
+    pub fn item(this: &DOMTokenList!, index: u32!) -> Option[String]?;
+
+    #[wasm_bindgen(method)]
+    pub fn contains(this: &DOMTokenList!, token: &str!) -> bool!;
+
+    #[wasm_bindgen(method)]
+    pub fn add(this: &DOMTokenList!, tokens: &[&str]!);
+
+    #[wasm_bindgen(method)]
+    pub fn remove(this: &DOMTokenList!, tokens: &[&str]!);
+
+    #[wasm_bindgen(method)]
+    pub fn replace(this: &DOMTokenList!, old_token: &str!, new_token: &str!) -> bool!;
+
+    #[wasm_bindgen(method)]
+    pub fn toggle(this: &DOMTokenList!, token: &str!) -> bool!;
+
+    #[wasm_bindgen(method, js_name = "toggle")]
+    pub fn toggle_with_force(this: &DOMTokenList!, token: &str!, force: bool!) -> bool!;
+
+    #[wasm_bindgen(method)]
+    pub fn supports(this: &DOMTokenList!, token: &str!) -> bool!;
+}
+
+/// DOMRectList
+#[wasm_bindgen]
+extern "js" {
+    pub type DOMRectList;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn length(this: &DOMRectList!) -> u32!;
+
+    #[wasm_bindgen(method)]
+    pub fn item(this: &DOMRectList!, index: u32!) -> Option[DOMRect]?;
+}
+
+/// HTML Input Element
+#[wasm_bindgen]
+extern "js" {
+    #[wasm_bindgen(extends = Element)]
+    pub type HtmlInputElement;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn value(this: &HtmlInputElement!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_value(this: &HtmlInputElement!, value: &str!);
+
+    #[wasm_bindgen(method, getter)]
+    pub fn checked(this: &HtmlInputElement!) -> bool!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_checked(this: &HtmlInputElement!, checked: bool!);
+
+    #[wasm_bindgen(method, getter)]
+    pub fn disabled(this: &HtmlInputElement!) -> bool!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_disabled(this: &HtmlInputElement!, disabled: bool!);
+
+    #[wasm_bindgen(method, getter)]
+    pub fn placeholder(this: &HtmlInputElement!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_placeholder(this: &HtmlInputElement!, placeholder: &str!);
+
+    #[wasm_bindgen(method, getter, js_name = "type")]
+    pub fn type_(this: &HtmlInputElement!) -> String!;
+
+    #[wasm_bindgen(method, setter, js_name = "type")]
+    pub fn set_type(this: &HtmlInputElement!, type_: &str!);
+
+    #[wasm_bindgen(method)]
+    pub fn select(this: &HtmlInputElement!);
+
+    #[wasm_bindgen(method, js_name = "setSelectionRange")]
+    pub fn set_selection_range(this: &HtmlInputElement!, start: u32!, end: u32!);
+}
+
+/// HTML Form Element
+#[wasm_bindgen]
+extern "js" {
+    #[wasm_bindgen(extends = Element)]
+    pub type HtmlFormElement;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn action(this: &HtmlFormElement!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_action(this: &HtmlFormElement!, action: &str!);
+
+    #[wasm_bindgen(method, getter)]
+    pub fn method(this: &HtmlFormElement!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_method(this: &HtmlFormElement!, method: &str!);
+
+    #[wasm_bindgen(method)]
+    pub fn submit(this: &HtmlFormElement!);
+
+    #[wasm_bindgen(method)]
+    pub fn reset(this: &HtmlFormElement!);
+
+    #[wasm_bindgen(method, js_name = "checkValidity")]
+    pub fn check_validity(this: &HtmlFormElement!) -> bool!;
+
+    #[wasm_bindgen(method, js_name = "reportValidity")]
+    pub fn report_validity(this: &HtmlFormElement!) -> bool!;
+}
+
+/// HTML Anchor Element
+#[wasm_bindgen]
+extern "js" {
+    #[wasm_bindgen(extends = Element)]
+    pub type HtmlAnchorElement;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn href(this: &HtmlAnchorElement!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_href(this: &HtmlAnchorElement!, href: &str!);
+
+    #[wasm_bindgen(method, getter)]
+    pub fn target(this: &HtmlAnchorElement!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_target(this: &HtmlAnchorElement!, target: &str!);
+
+    #[wasm_bindgen(method, getter)]
+    pub fn host(this: &HtmlAnchorElement!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn hostname(this: &HtmlAnchorElement!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn pathname(this: &HtmlAnchorElement!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn search(this: &HtmlAnchorElement!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn hash(this: &HtmlAnchorElement!) -> String!;
+}
+
+/// HTML Canvas Element
+#[wasm_bindgen]
+extern "js" {
+    #[wasm_bindgen(extends = Element)]
+    pub type HtmlCanvasElement;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn width(this: &HtmlCanvasElement!) -> u32!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_width(this: &HtmlCanvasElement!, width: u32!);
+
+    #[wasm_bindgen(method, getter)]
+    pub fn height(this: &HtmlCanvasElement!) -> u32!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_height(this: &HtmlCanvasElement!, height: u32!);
+
+    #[wasm_bindgen(method, js_name = "getContext")]
+    pub fn get_context(this: &HtmlCanvasElement!, context_id: &str!) -> Option[JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "toDataURL")]
+    pub fn to_data_url(this: &HtmlCanvasElement!) -> Result[String, JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "toBlob")]
+    pub fn to_blob(this: &HtmlCanvasElement!, callback: &Closure!);
+}

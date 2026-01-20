@@ -1,0 +1,11 @@
+// FFI Test 15: Mutable extern static
+// Tests: extern static with vary (mutable) modifier
+
+extern "C" {
+    static vary optind: c_int;
+    rite abs(x: c_int) → c_int;
+}
+
+rite main() → i64 {
+    abs(-55) as i64
+}

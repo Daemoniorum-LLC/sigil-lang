@@ -1,0 +1,21 @@
+// Test: Multiple link attributes on extern blocks
+// Spec: 08-FFI.md § 4.2 Library Linking
+// Priority: P2 - Extended Feature
+// TDD: Tests multiple library linking
+
+#[link("c")]
+extern "C" {
+    rite malloc(size: usize) → *vary u8;
+    rite free(ptr: *vary u8);
+}
+
+#[link("m")]
+extern "C" {
+    rite floor(x: f64) → f64;
+    rite ceil(x: f64) → f64;
+}
+
+rite main() → i64 {
+    println("multi link ok");
+    0
+}

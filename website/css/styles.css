@@ -229,7 +229,9 @@ img {
 }
 
 .logo-icon {
-  font-size: 1.5rem;
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;
 }
 
 .logo-text {
@@ -2381,6 +2383,81 @@ pre:hover .copy-btn,
 
 .ecosystem-note strong {
   color: var(--text-primary);
+}
+
+/* Compute Backends */
+.compute-note {
+  text-align: center;
+  padding: var(--space-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  margin-top: var(--space-xl);
+}
+
+.compute-note code {
+  background: var(--code-bg);
+  padding: 0.1em 0.3em;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+/* Syntax Keywords Table */
+.ai-syntax-table {
+  margin-top: var(--space-xl);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--code-border);
+}
+
+.ai-syntax-table h4 {
+  margin-bottom: var(--space-md);
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.syntax-keywords {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+.syntax-keywords th,
+.syntax-keywords td {
+  padding: var(--space-sm) var(--space-md);
+  text-align: left;
+  border-bottom: 1px solid var(--code-border);
+}
+
+.syntax-keywords th {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.syntax-keywords td {
+  color: var(--text-primary);
+}
+
+.syntax-keywords td:first-child {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.syntax-keywords td:last-child {
+  color: var(--text-muted);
+}
+
+.syntax-keywords code {
+  background: var(--code-bg);
+  padding: 0.1em 0.3em;
+  border-radius: var(--radius-sm);
 }
 
 /* Responsive: Code Density */

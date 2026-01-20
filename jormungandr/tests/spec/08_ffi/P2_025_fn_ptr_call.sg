@@ -1,0 +1,19 @@
+// Test: Call through function pointer
+// Spec: 08-FFI.md § 3.6 Indirect Calls
+// Priority: P2 - Extended Feature
+// TDD: Write test FIRST, then implement
+
+rite add_one(x: i64) → i64 {
+    x + 1
+}
+
+rite main() → i64 {
+    // Assign function to pointer variable
+    ≔ f: rite(i64) → i64 = add_one;
+
+    // Call through the function pointer
+    ≔ result = f(41);
+
+    println(result);
+    ⎇ result == 42 { 0 } ⎉ { 1 }
+}
