@@ -23,7 +23,10 @@ pub mod llvm {
     use std::collections::{HashMap, HashSet};
     use std::path::Path;
 
-    use crate::ast::{self, BinOp, Expr, ExternBlock, ExternFunction, ExternItem, Item, Literal, TypeExpr, UnaryOp};
+    use crate::ast::{
+        self, BinOp, Expr, ExternBlock, ExternFunction, ExternItem, Item, Literal, TypeExpr,
+        UnaryOp,
+    };
     use crate::ffi::ctypes::CType;
     use crate::optimize::{OptLevel, Optimizer};
     use crate::parser::Parser;
@@ -638,9 +641,7 @@ pub mod llvm {
                 .add_function("sigil_print_int", print_int_type, None);
 
             // sigil_print_str(const char*) -> void - for raw C string literals
-            let ptr_type_generic = self
-                .context
-                .ptr_type(AddressSpace::default());
+            let ptr_type_generic = self.context.ptr_type(AddressSpace::default());
             let print_str_type = void_type.fn_type(&[ptr_type_generic.into()], false);
             self.module
                 .add_function("sigil_print_str", print_str_type, None);
@@ -790,7 +791,8 @@ pub mod llvm {
 
             // sigil_realloc(ptr: ptr, new_size: i64) -> ptr
             let realloc_type = ptr_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
-            self.module.add_function("sigil_realloc", realloc_type, None);
+            self.module
+                .add_function("sigil_realloc", realloc_type, None);
 
             // sigil_free(ptr: ptr) -> void
             let free_type = void_type.fn_type(&[ptr_type.into()], false);
@@ -801,110 +803,162 @@ pub mod llvm {
 
             // sigil_simd_alloc(num_floats: i64) -> ptr
             let simd_alloc_type = ptr_type.fn_type(&[i64_type.into()], false);
-            self.module.add_function("sigil_simd_alloc", simd_alloc_type, None);
+            self.module
+                .add_function("sigil_simd_alloc", simd_alloc_type, None);
 
             // sigil_simd_free(ptr: ptr) -> void
             let simd_free_type = void_type.fn_type(&[ptr_type.into()], false);
-            self.module.add_function("sigil_simd_free", simd_free_type, None);
+            self.module
+                .add_function("sigil_simd_free", simd_free_type, None);
 
             // sigil_simd_splat_f32x16(dest: ptr, value: f32) -> void
             let simd_splat_type = void_type.fn_type(&[ptr_type.into(), f32_type.into()], false);
-            self.module.add_function("sigil_simd_splat_f32x16", simd_splat_type, None);
+            self.module
+                .add_function("sigil_simd_splat_f32x16", simd_splat_type, None);
 
             // sigil_simd_load_f32x16(dest: ptr, src: ptr) -> void
             let simd_load_type = void_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
-            self.module.add_function("sigil_simd_load_f32x16", simd_load_type, None);
+            self.module
+                .add_function("sigil_simd_load_f32x16", simd_load_type, None);
 
             // sigil_simd_store_f32x16(dest: ptr, src: ptr) -> void
             let simd_store_type = void_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
-            self.module.add_function("sigil_simd_store_f32x16", simd_store_type, None);
+            self.module
+                .add_function("sigil_simd_store_f32x16", simd_store_type, None);
 
             // sigil_simd_add_f32x16(dest: ptr, a: ptr, b: ptr) -> void
-            let simd_binop_type = void_type.fn_type(&[ptr_type.into(), ptr_type.into(), ptr_type.into()], false);
-            self.module.add_function("sigil_simd_add_f32x16", simd_binop_type, None);
+            let simd_binop_type =
+                void_type.fn_type(&[ptr_type.into(), ptr_type.into(), ptr_type.into()], false);
+            self.module
+                .add_function("sigil_simd_add_f32x16", simd_binop_type, None);
 
             // sigil_simd_sub_f32x16(dest: ptr, a: ptr, b: ptr) -> void
-            self.module.add_function("sigil_simd_sub_f32x16", simd_binop_type, None);
+            self.module
+                .add_function("sigil_simd_sub_f32x16", simd_binop_type, None);
 
             // sigil_simd_mul_f32x16(dest: ptr, a: ptr, b: ptr) -> void
-            self.module.add_function("sigil_simd_mul_f32x16", simd_binop_type, None);
+            self.module
+                .add_function("sigil_simd_mul_f32x16", simd_binop_type, None);
 
             // sigil_simd_div_f32x16(dest: ptr, a: ptr, b: ptr) -> void
-            self.module.add_function("sigil_simd_div_f32x16", simd_binop_type, None);
+            self.module
+                .add_function("sigil_simd_div_f32x16", simd_binop_type, None);
 
             // sigil_simd_fmadd_f32x16(dest: ptr, a: ptr, b: ptr, c: ptr) -> void
-            let simd_fmadd_type = void_type.fn_type(&[ptr_type.into(), ptr_type.into(), ptr_type.into(), ptr_type.into()], false);
-            self.module.add_function("sigil_simd_fmadd_f32x16", simd_fmadd_type, None);
+            let simd_fmadd_type = void_type.fn_type(
+                &[
+                    ptr_type.into(),
+                    ptr_type.into(),
+                    ptr_type.into(),
+                    ptr_type.into(),
+                ],
+                false,
+            );
+            self.module
+                .add_function("sigil_simd_fmadd_f32x16", simd_fmadd_type, None);
 
             // sigil_simd_reduce_add_f32x16(src: ptr) -> f32
             let simd_reduce_type = f32_type.fn_type(&[ptr_type.into()], false);
-            self.module.add_function("sigil_simd_reduce_add_f32x16", simd_reduce_type, None);
+            self.module
+                .add_function("sigil_simd_reduce_add_f32x16", simd_reduce_type, None);
 
             // sigil_simd_extract_f32x16(src: ptr, index: i64) -> f32
             let simd_extract_type = f32_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
-            self.module.add_function("sigil_simd_extract_f32x16", simd_extract_type, None);
+            self.module
+                .add_function("sigil_simd_extract_f32x16", simd_extract_type, None);
 
             // sigil_simd_dot_f32x16(a: ptr, b: ptr) -> f32
             let simd_dot_type = f32_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
-            self.module.add_function("sigil_simd_dot_f32x16", simd_dot_type, None);
+            self.module
+                .add_function("sigil_simd_dot_f32x16", simd_dot_type, None);
 
             // CUDA Functions
             // sigil_cuda_init() -> i64
             let cuda_init_type = i64_type.fn_type(&[], false);
-            self.module.add_function("sigil_cuda_init", cuda_init_type, None);
+            self.module
+                .add_function("sigil_cuda_init", cuda_init_type, None);
 
             // sigil_cuda_cleanup() -> void
             let cuda_cleanup_type = void_type.fn_type(&[], false);
-            self.module.add_function("sigil_cuda_cleanup", cuda_cleanup_type, None);
+            self.module
+                .add_function("sigil_cuda_cleanup", cuda_cleanup_type, None);
 
             // sigil_cuda_get_device_count() -> i64
             let cuda_device_count_type = i64_type.fn_type(&[], false);
-            self.module.add_function("sigil_cuda_get_device_count", cuda_device_count_type, None);
+            self.module
+                .add_function("sigil_cuda_get_device_count", cuda_device_count_type, None);
 
             // sigil_cuda_malloc(size: i64) -> i64 (device ptr)
             let cuda_malloc_type = i64_type.fn_type(&[i64_type.into()], false);
-            self.module.add_function("sigil_cuda_malloc", cuda_malloc_type, None);
+            self.module
+                .add_function("sigil_cuda_malloc", cuda_malloc_type, None);
 
             // sigil_cuda_free(device_ptr: i64) -> void
             let cuda_free_type = void_type.fn_type(&[i64_type.into()], false);
-            self.module.add_function("sigil_cuda_free", cuda_free_type, None);
+            self.module
+                .add_function("sigil_cuda_free", cuda_free_type, None);
 
             // sigil_cuda_memcpy_h2d(dst: i64, src: ptr, size: i64) -> i64
-            let cuda_h2d_type = i64_type.fn_type(&[i64_type.into(), ptr_type.into(), i64_type.into()], false);
-            self.module.add_function("sigil_cuda_memcpy_h2d", cuda_h2d_type, None);
+            let cuda_h2d_type =
+                i64_type.fn_type(&[i64_type.into(), ptr_type.into(), i64_type.into()], false);
+            self.module
+                .add_function("sigil_cuda_memcpy_h2d", cuda_h2d_type, None);
 
             // sigil_cuda_memcpy_d2h(dst: ptr, src: i64, size: i64) -> i64
-            let cuda_d2h_type = i64_type.fn_type(&[ptr_type.into(), i64_type.into(), i64_type.into()], false);
-            self.module.add_function("sigil_cuda_memcpy_d2h", cuda_d2h_type, None);
+            let cuda_d2h_type =
+                i64_type.fn_type(&[ptr_type.into(), i64_type.into(), i64_type.into()], false);
+            self.module
+                .add_function("sigil_cuda_memcpy_d2h", cuda_d2h_type, None);
 
             // sigil_cuda_memcpy_d2d(dst: i64, src: i64, size: i64) -> i64
-            let cuda_d2d_type = i64_type.fn_type(&[i64_type.into(), i64_type.into(), i64_type.into()], false);
-            self.module.add_function("sigil_cuda_memcpy_d2d", cuda_d2d_type, None);
+            let cuda_d2d_type =
+                i64_type.fn_type(&[i64_type.into(), i64_type.into(), i64_type.into()], false);
+            self.module
+                .add_function("sigil_cuda_memcpy_d2d", cuda_d2d_type, None);
 
             // sigil_cuda_sync() -> void
             let cuda_sync_type = void_type.fn_type(&[], false);
-            self.module.add_function("sigil_cuda_sync", cuda_sync_type, None);
+            self.module
+                .add_function("sigil_cuda_sync", cuda_sync_type, None);
 
             // sigil_cuda_compile_kernel(cuda_src: ptr, kernel_name: ptr) -> i64 (handle)
             let cuda_compile_type = i64_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
-            self.module.add_function("sigil_cuda_compile_kernel", cuda_compile_type, None);
+            self.module
+                .add_function("sigil_cuda_compile_kernel", cuda_compile_type, None);
 
             // sigil_cuda_load_ptx(ptx: ptr, kernel_name: ptr) -> i64 (handle)
-            self.module.add_function("sigil_cuda_load_ptx", cuda_compile_type, None);
+            self.module
+                .add_function("sigil_cuda_load_ptx", cuda_compile_type, None);
 
             // sigil_cuda_launch_kernel_1d(handle: i64, grid_x: i64, block_x: i64, args: ptr, num_args: i64) -> i64
-            let cuda_launch_1d_type = i64_type.fn_type(&[
-                i64_type.into(), i64_type.into(), i64_type.into(),
-                ptr_type.into(), i64_type.into()
-            ], false);
-            self.module.add_function("sigil_cuda_launch_kernel_1d", cuda_launch_1d_type, None);
+            let cuda_launch_1d_type = i64_type.fn_type(
+                &[
+                    i64_type.into(),
+                    i64_type.into(),
+                    i64_type.into(),
+                    ptr_type.into(),
+                    i64_type.into(),
+                ],
+                false,
+            );
+            self.module
+                .add_function("sigil_cuda_launch_kernel_1d", cuda_launch_1d_type, None);
 
             // sigil_cuda_launch_kernel_2d(handle: i64, gx: i64, gy: i64, bx: i64, by: i64, args: ptr, num_args: i64) -> i64
-            let cuda_launch_2d_type = i64_type.fn_type(&[
-                i64_type.into(), i64_type.into(), i64_type.into(),
-                i64_type.into(), i64_type.into(), ptr_type.into(), i64_type.into()
-            ], false);
-            self.module.add_function("sigil_cuda_launch_kernel_2d", cuda_launch_2d_type, None);
+            let cuda_launch_2d_type = i64_type.fn_type(
+                &[
+                    i64_type.into(),
+                    i64_type.into(),
+                    i64_type.into(),
+                    i64_type.into(),
+                    i64_type.into(),
+                    ptr_type.into(),
+                    i64_type.into(),
+                ],
+                false,
+            );
+            self.module
+                .add_function("sigil_cuda_launch_kernel_2d", cuda_launch_2d_type, None);
         }
 
         /// Declare an extern block (FFI declarations)
@@ -978,11 +1032,9 @@ pub mod llvm {
             };
 
             // Declare the function with external linkage
-            let fn_value = self.module.add_function(
-                name,
-                fn_type,
-                Some(inkwell::module::Linkage::External),
-            );
+            let fn_value =
+                self.module
+                    .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
 
             // Store in extern_functions registry
             self.extern_functions.insert(
@@ -1067,19 +1119,26 @@ pub mod llvm {
                     if let Some(ctype) = CType::from_name(name) {
                         return Ok(match ctype {
                             CType::Void => self.context.i64_type().into(), // void as i64 placeholder
-                            CType::Char | CType::SChar | CType::UChar | CType::Int8 | CType::UInt8 => {
-                                self.context.i8_type().into()
-                            }
+                            CType::Char
+                            | CType::SChar
+                            | CType::UChar
+                            | CType::Int8
+                            | CType::UInt8 => self.context.i8_type().into(),
                             CType::Short | CType::UShort | CType::Int16 | CType::UInt16 => {
                                 self.context.i16_type().into()
                             }
                             CType::Int | CType::UInt | CType::Int32 | CType::UInt32 => {
                                 self.context.i32_type().into()
                             }
-                            CType::Long | CType::ULong | CType::LongLong | CType::ULongLong
-                            | CType::Size | CType::SSize | CType::PtrDiff | CType::Int64 | CType::UInt64 => {
-                                self.context.i64_type().into()
-                            }
+                            CType::Long
+                            | CType::ULong
+                            | CType::LongLong
+                            | CType::ULongLong
+                            | CType::Size
+                            | CType::SSize
+                            | CType::PtrDiff
+                            | CType::Int64
+                            | CType::UInt64 => self.context.i64_type().into(),
                             CType::Float => self.context.f32_type().into(),
                             CType::Double => self.context.f64_type().into(),
                         });
@@ -1259,9 +1318,9 @@ pub mod llvm {
         fn eval_const_expr(&self, expr: &Expr) -> Result<i64, String> {
             match expr {
                 Expr::Literal(lit) => match lit {
-                    Literal::Int { value, .. } => {
-                        value.parse().map_err(|_| "Invalid integer constant".to_string())
-                    }
+                    Literal::Int { value, .. } => value
+                        .parse()
+                        .map_err(|_| "Invalid integer constant".to_string()),
                     Literal::Bool(b) => Ok(if *b { 1 } else { 0 }),
                     _ => Err("Only integer and boolean constants are supported".to_string()),
                 },
@@ -1273,7 +1332,9 @@ pub mod llvm {
                         _ => Err("Unsupported unary operator in constant".to_string()),
                     }
                 }
-                Expr::Binary { left, op, right, .. } => {
+                Expr::Binary {
+                    left, op, right, ..
+                } => {
                     let l = self.eval_const_expr(left)?;
                     let r = self.eval_const_expr(right)?;
                     match op {
@@ -1294,7 +1355,9 @@ pub mod llvm {
                     // Look up other constants
                     if let Some(segment) = path.segments.last() {
                         let name = &segment.ident.name;
-                        self.constants.get(name).copied()
+                        self.constants
+                            .get(name)
+                            .copied()
                             .ok_or_else(|| format!("Unknown constant: {}", name))
                     } else {
                         Err("Empty path in constant expression".to_string())
@@ -1368,7 +1431,8 @@ pub mod llvm {
                             "i8" | "u8" => i8_type.into(),
                             "i16" | "u16" => self.context.i16_type().into(),
                             "i32" | "u32" | "c_int" | "c_uint" => i32_type.into(),
-                            "i64" | "u64" | "isize" | "usize" | "c_long" | "c_ulong" | "size_t" | "c_longlong" | "c_ulonglong" => i64_type.into(),
+                            "i64" | "u64" | "isize" | "usize" | "c_long" | "c_ulong" | "size_t"
+                            | "c_longlong" | "c_ulonglong" => i64_type.into(),
                             "c_short" | "c_ushort" => self.context.i16_type().into(),
                             "c_char" | "c_schar" | "c_uchar" => i8_type.into(),
                             "c_float" => self.context.f32_type().into(),
@@ -1394,12 +1458,8 @@ pub mod llvm {
                                 self.context.i64_type().vec_type(8).into()
                             }
                             // AVX-256 SIMD types
-                            "F32x8" | "__m256" => {
-                                self.context.f32_type().vec_type(8).into()
-                            }
-                            "F64x4" | "__m256d" => {
-                                self.context.f64_type().vec_type(4).into()
-                            }
+                            "F32x8" | "__m256" => self.context.f32_type().vec_type(8).into(),
+                            "F64x4" | "__m256d" => self.context.f64_type().vec_type(4).into(),
                             _ => i64_type.into(), // Default to i64 for unknown types
                         }
                     } else {
@@ -1432,7 +1492,8 @@ pub mod llvm {
                 "i8" | "u8" | "c_char" | "c_schar" | "c_uchar" => self.context.i8_type().into(),
                 "i16" | "u16" | "c_short" | "c_ushort" => self.context.i16_type().into(),
                 "i32" | "u32" | "c_int" | "c_uint" => self.context.i32_type().into(),
-                "i64" | "u64" | "isize" | "usize" | "c_long" | "c_ulong" | "size_t" | "c_longlong" | "c_ulonglong" => self.context.i64_type().into(),
+                "i64" | "u64" | "isize" | "usize" | "c_long" | "c_ulong" | "size_t"
+                | "c_longlong" | "c_ulonglong" => self.context.i64_type().into(),
                 "f32" | "c_float" => self.context.f32_type().into(),
                 "f64" | "c_double" => self.context.f64_type().into(),
                 "bool" => self.context.bool_type().into(),
@@ -2158,20 +2219,23 @@ pub mod llvm {
                                     Ok(iv)
                                 } else {
                                     // Sign-extend or zero-extend to i64
-                                    Ok(self.builder
+                                    Ok(self
+                                        .builder
                                         .build_int_s_extend(iv, self.context.i64_type(), "ext")
                                         .map_err(|e| e.to_string())?)
                                 }
                             }
                             inkwell::values::BasicValueEnum::FloatValue(fv) => {
                                 // Convert float to i64 (truncate to integer)
-                                Ok(self.builder
+                                Ok(self
+                                    .builder
                                     .build_float_to_signed_int(fv, self.context.i64_type(), "ftoi")
                                     .map_err(|e: inkwell::builder::BuilderError| e.to_string())?)
                             }
                             inkwell::values::BasicValueEnum::PointerValue(pv) => {
                                 // Convert pointer to i64
-                                Ok(self.builder
+                                Ok(self
+                                    .builder
                                     .build_ptr_to_int(pv, self.context.i64_type(), "ptoi")
                                     .map_err(|e| e.to_string())?)
                             }
@@ -2180,14 +2244,16 @@ pub mod llvm {
                     } else if let Some(func_val) = self.functions.get(name).copied() {
                         // Function reference - convert function pointer to i64
                         let fn_ptr = func_val.as_global_value().as_pointer_value();
-                        let ptr_int = self.builder
+                        let ptr_int = self
+                            .builder
                             .build_ptr_to_int(fn_ptr, self.context.i64_type(), "fn_ptr")
                             .map_err(|e| e.to_string())?;
                         Ok(ptr_int)
                     } else if let Some(extern_fn) = self.extern_functions.get(name).cloned() {
                         // Extern function reference - convert function pointer to i64
                         let fn_ptr = extern_fn.fn_value.as_global_value().as_pointer_value();
-                        let ptr_int = self.builder
+                        let ptr_int = self
+                            .builder
                             .build_ptr_to_int(fn_ptr, self.context.i64_type(), "extern_fn_ptr")
                             .map_err(|e| e.to_string())?;
                         Ok(ptr_int)
@@ -2215,16 +2281,27 @@ pub mod llvm {
                                 // Check if it's a function
                                 if let Some(fn_val) = self.module.get_function(name) {
                                     let fn_ptr = fn_val.as_global_value().as_pointer_value();
-                                    let ptr_int = self.builder
-                                        .build_ptr_to_int(fn_ptr, self.context.i64_type(), "fn_addr")
+                                    let ptr_int = self
+                                        .builder
+                                        .build_ptr_to_int(
+                                            fn_ptr,
+                                            self.context.i64_type(),
+                                            "fn_addr",
+                                        )
                                         .map_err(|e| e.to_string())?;
                                     return Ok(ptr_int);
                                 }
                                 // Check if it's an extern function
                                 if let Some(extern_fn) = self.extern_functions.get(name) {
-                                    let fn_ptr = extern_fn.fn_value.as_global_value().as_pointer_value();
-                                    let ptr_int = self.builder
-                                        .build_ptr_to_int(fn_ptr, self.context.i64_type(), "extern_fn_addr")
+                                    let fn_ptr =
+                                        extern_fn.fn_value.as_global_value().as_pointer_value();
+                                    let ptr_int = self
+                                        .builder
+                                        .build_ptr_to_int(
+                                            fn_ptr,
+                                            self.context.i64_type(),
+                                            "extern_fn_addr",
+                                        )
                                         .map_err(|e| e.to_string())?;
                                     return Ok(ptr_int);
                                 }
@@ -2277,7 +2354,8 @@ pub mod llvm {
                                     .build_store(ptr, val)
                                     .map_err(|e| e.to_string())?;
                                 Ok(val)
-                            } else if let Some(static_info) = self.extern_statics.get(name).cloned() {
+                            } else if let Some(static_info) = self.extern_statics.get(name).cloned()
+                            {
                                 // Assign to extern static (must be mutable)
                                 if !static_info.mutable {
                                     return Err(format!(
@@ -2286,19 +2364,20 @@ pub mod llvm {
                                     ));
                                 }
                                 // Convert val to the appropriate type if needed
-                                let store_val: inkwell::values::BasicValueEnum = match static_info.ty {
-                                    inkwell::types::BasicTypeEnum::IntType(int_ty) => {
-                                        if int_ty.get_bit_width() == 64 {
-                                            val.into()
-                                        } else {
-                                            self.builder
-                                                .build_int_truncate(val, int_ty, "trunc")
-                                                .map_err(|e| e.to_string())?
-                                                .into()
+                                let store_val: inkwell::values::BasicValueEnum =
+                                    match static_info.ty {
+                                        inkwell::types::BasicTypeEnum::IntType(int_ty) => {
+                                            if int_ty.get_bit_width() == 64 {
+                                                val.into()
+                                            } else {
+                                                self.builder
+                                                    .build_int_truncate(val, int_ty, "trunc")
+                                                    .map_err(|e| e.to_string())?
+                                                    .into()
+                                            }
                                         }
-                                    }
-                                    _ => val.into(),
-                                };
+                                        _ => val.into(),
+                                    };
                                 self.builder
                                     .build_store(static_info.global.as_pointer_value(), store_val)
                                     .map_err(|e| e.to_string())?;
@@ -2769,13 +2848,33 @@ pub mod llvm {
                             let source_is_float = self.expr_returns_float(expr);
 
                             // If casting to integer type from float, convert properly
-                            if source_is_float && matches!(ty_name.as_str(), "i64" | "i32" | "i16" | "i8" | "u64" | "u32" | "u16" | "u8" | "isize" | "usize") {
+                            if source_is_float
+                                && matches!(
+                                    ty_name.as_str(),
+                                    "i64"
+                                        | "i32"
+                                        | "i16"
+                                        | "i8"
+                                        | "u64"
+                                        | "u32"
+                                        | "u16"
+                                        | "u8"
+                                        | "isize"
+                                        | "usize"
+                                )
+                            {
                                 // val is f64 bits stored as i64 - convert to f64 then truncate
-                                let f64_val = self.builder
+                                let f64_val = self
+                                    .builder
                                     .build_bit_cast(val, self.context.f64_type(), "bits2f")
                                     .map_err(|e| e.to_string())?;
-                                let int_val = self.builder
-                                    .build_float_to_signed_int(f64_val.into_float_value(), self.context.i64_type(), "f2i_trunc")
+                                let int_val = self
+                                    .builder
+                                    .build_float_to_signed_int(
+                                        f64_val.into_float_value(),
+                                        self.context.i64_type(),
+                                        "f2i_trunc",
+                                    )
                                     .map_err(|e| e.to_string())?;
                                 return Ok(int_val);
                             }
@@ -2794,11 +2893,14 @@ pub mod llvm {
                 Expr::Deref(inner) => {
                     // Dereference: load value from pointer
                     let ptr_val = self.compile_expr(fn_value, scope, inner)?;
-                    let ptr = self.builder.build_int_to_ptr(
-                        ptr_val,
-                        self.context.ptr_type(AddressSpace::default()),
-                        "deref_ptr",
-                    ).map_err(|e| e.to_string())?;
+                    let ptr = self
+                        .builder
+                        .build_int_to_ptr(
+                            ptr_val,
+                            self.context.ptr_type(AddressSpace::default()),
+                            "deref_ptr",
+                        )
+                        .map_err(|e| e.to_string())?;
                     let loaded = self
                         .builder
                         .build_load(self.context.i64_type(), ptr, "deref_val")
@@ -2816,7 +2918,12 @@ pub mod llvm {
 
                     match macro_name {
                         "println" | "print" => {
-                            self.compile_print_macro(fn_value, scope, tokens, macro_name == "println")?;
+                            self.compile_print_macro(
+                                fn_value,
+                                scope,
+                                tokens,
+                                macro_name == "println",
+                            )?;
                             Ok(self.context.i64_type().const_int(0, false))
                         }
                         "format" => {
@@ -3016,7 +3123,9 @@ pub mod llvm {
 
             let fmt_bytes = format_string.as_bytes();
             let fmt_const = self.context.const_string(fmt_bytes, false);
-            let fmt_global = self.module.add_global(fmt_const.get_type(), None, &fmt_name);
+            let fmt_global = self
+                .module
+                .add_global(fmt_const.get_type(), None, &fmt_name);
             fmt_global.set_initializer(&fmt_const);
             fmt_global.set_constant(true);
             fmt_global.set_linkage(inkwell::module::Linkage::Private);
@@ -3025,7 +3134,8 @@ pub mod llvm {
             // Allocate buffer for result string (1024 bytes should be enough for most cases)
             let buffer_size = 1024u64;
             let i8_array_type = self.context.i8_type().array_type(buffer_size as u32);
-            let buffer = self.builder
+            let buffer = self
+                .builder
                 .build_alloca(i8_array_type, "fstr_buf")
                 .map_err(|e| e.to_string())?;
 
@@ -3047,7 +3157,8 @@ pub mod llvm {
                 .map_err(|e| e.to_string())?;
 
             // Return buffer pointer as i64
-            let ptr_as_int = self.builder
+            let ptr_as_int = self
+                .builder
                 .build_ptr_to_int(buffer, i64_type, "fstr_ptr")
                 .map_err(|e| e.to_string())?;
 
@@ -4639,11 +4750,14 @@ pub mod llvm {
                 }
                 UnaryOp::Deref => {
                     // Dereference: treat val as pointer (i64 containing address) and load
-                    let ptr = self.builder.build_int_to_ptr(
-                        val,
-                        self.context.ptr_type(AddressSpace::default()),
-                        "deref_ptr",
-                    ).map_err(|e| e.to_string())?;
+                    let ptr = self
+                        .builder
+                        .build_int_to_ptr(
+                            val,
+                            self.context.ptr_type(AddressSpace::default()),
+                            "deref_ptr",
+                        )
+                        .map_err(|e| e.to_string())?;
                     let loaded = self
                         .builder
                         .build_load(self.context.i64_type(), ptr, "deref_val")
@@ -4829,11 +4943,12 @@ pub mod llvm {
                             .into_int_value();
 
                         // Convert i64 to pointer
-                        let fn_ptr = self.builder
+                        let fn_ptr = self
+                            .builder
                             .build_int_to_ptr(
                                 fn_ptr_int,
                                 self.context.ptr_type(AddressSpace::default()),
-                                "fn_ptr"
+                                "fn_ptr",
                             )
                             .map_err(|e| e.to_string())?;
 
@@ -4851,7 +4966,8 @@ pub mod llvm {
                         let fn_type = i64_type.fn_type(&param_types, false);
 
                         // Build indirect call
-                        let call = self.builder
+                        let call = self
+                            .builder
                             .build_indirect_call(fn_type, fn_ptr, &arg_vals, "indirect_call")
                             .map_err(|e| e.to_string())?;
 
@@ -4929,12 +5045,17 @@ pub mod llvm {
 
                     // Compile the value and store it
                     let value = self.compile_expr(fn_value, scope, &args[0])?;
-                    let ptr_as_ptr = self.builder.build_int_to_ptr(
-                        ptr,
-                        self.context.ptr_type(AddressSpace::default()),
-                        "box_ptr",
-                    ).map_err(|e| e.to_string())?;
-                    self.builder.build_store(ptr_as_ptr, value).map_err(|e| e.to_string())?;
+                    let ptr_as_ptr = self
+                        .builder
+                        .build_int_to_ptr(
+                            ptr,
+                            self.context.ptr_type(AddressSpace::default()),
+                            "box_ptr",
+                        )
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(ptr_as_ptr, value)
+                        .map_err(|e| e.to_string())?;
 
                     return Ok(ptr);
                 }
@@ -4973,7 +5094,11 @@ pub mod llvm {
                         .ok_or("sigil_file_write_all not declared")?;
                     let call = self
                         .builder
-                        .build_call(write_fn, &[path_val.into(), content_val.into()], "file_write")
+                        .build_call(
+                            write_fn,
+                            &[path_val.into(), content_val.into()],
+                            "file_write",
+                        )
                         .map_err(|e| e.to_string())?;
                     return Ok(call
                         .try_as_basic_value()
@@ -5012,44 +5137,55 @@ pub mod llvm {
                     let scalar = self.compile_expr(fn_value, scope, &args[0])?;
 
                     // Allocate aligned result buffer via sigil_simd_alloc (64-byte aligned for AVX-512)
-                    let alloc_fn = self.module.get_function("sigil_simd_alloc")
+                    let alloc_fn = self
+                        .module
+                        .get_function("sigil_simd_alloc")
                         .ok_or("sigil_simd_alloc not declared")?;
                     // 16 floats
-                    let result_call = self.builder.build_call(
-                        alloc_fn,
-                        &[self.context.i64_type().const_int(16, false).into()],
-                        "result_buf"
-                    ).map_err(|e| e.to_string())?;
-                    let result_val = result_call.try_as_basic_value().left()
+                    let result_call = self
+                        .builder
+                        .build_call(
+                            alloc_fn,
+                            &[self.context.i64_type().const_int(16, false).into()],
+                            "result_buf",
+                        )
+                        .map_err(|e| e.to_string())?;
+                    let result_val = result_call
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("alloc returned void")?;
                     // Handle both pointer and integer return types
                     let result_int = if result_val.is_pointer_value() {
-                        self.builder.build_ptr_to_int(
-                            result_val.into_pointer_value(),
-                            self.context.i64_type(),
-                            "result_int"
-                        ).map_err(|e| e.to_string())?
+                        self.builder
+                            .build_ptr_to_int(
+                                result_val.into_pointer_value(),
+                                self.context.i64_type(),
+                                "result_int",
+                            )
+                            .map_err(|e| e.to_string())?
                     } else {
                         result_val.into_int_value()
                     };
 
                     // Convert i64 bits to f32 for splat
-                    let f32_val = self.builder.build_bit_cast(
-                        scalar,
-                        self.context.f32_type(),
-                        "f32_val"
-                    ).map_err(|e| e.to_string())?;
+                    let f32_val = self
+                        .builder
+                        .build_bit_cast(scalar, self.context.f32_type(), "f32_val")
+                        .map_err(|e| e.to_string())?;
 
                     // Call runtime splat
-                    let splat_fn = self.module.get_function("sigil_simd_splat_f32x16")
+                    let splat_fn = self
+                        .module
+                        .get_function("sigil_simd_splat_f32x16")
                         .ok_or("sigil_simd_splat_f32x16 not declared")?;
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let dest_ptr = self.builder.build_int_to_ptr(result_int, ptr_type, "dest").map_err(|e| e.to_string())?;
-                    self.builder.build_call(
-                        splat_fn,
-                        &[dest_ptr.into(), f32_val.into()],
-                        ""
-                    ).map_err(|e| e.to_string())?;
+                    let dest_ptr = self
+                        .builder
+                        .build_int_to_ptr(result_int, ptr_type, "dest")
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_call(splat_fn, &[dest_ptr.into(), f32_val.into()], "")
+                        .map_err(|e| e.to_string())?;
 
                     return Ok(result_int);
                 }
@@ -5061,58 +5197,81 @@ pub mod llvm {
                     let src_ptr_val = self.compile_expr(fn_value, scope, &args[0])?;
 
                     // Allocate aligned result buffer (64-byte aligned for AVX-512)
-                    let alloc_fn = self.module.get_function("sigil_simd_alloc")
+                    let alloc_fn = self
+                        .module
+                        .get_function("sigil_simd_alloc")
                         .ok_or("sigil_simd_alloc not declared")?;
-                    let result_call = self.builder.build_call(
-                        alloc_fn,
-                        &[self.context.i64_type().const_int(16, false).into()],
-                        "result_buf"
-                    ).map_err(|e| e.to_string())?;
-                    let result_val = result_call.try_as_basic_value().left()
+                    let result_call = self
+                        .builder
+                        .build_call(
+                            alloc_fn,
+                            &[self.context.i64_type().const_int(16, false).into()],
+                            "result_buf",
+                        )
+                        .map_err(|e| e.to_string())?;
+                    let result_val = result_call
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("alloc returned void")?;
                     let result_int = if result_val.is_pointer_value() {
-                        self.builder.build_ptr_to_int(
-                            result_val.into_pointer_value(),
-                            self.context.i64_type(),
-                            "result_int"
-                        ).map_err(|e| e.to_string())?
+                        self.builder
+                            .build_ptr_to_int(
+                                result_val.into_pointer_value(),
+                                self.context.i64_type(),
+                                "result_int",
+                            )
+                            .map_err(|e| e.to_string())?
                     } else {
                         result_val.into_int_value()
                     };
 
                     // Call runtime load
-                    let load_fn = self.module.get_function("sigil_simd_load_f32x16")
+                    let load_fn = self
+                        .module
+                        .get_function("sigil_simd_load_f32x16")
                         .ok_or("sigil_simd_load_f32x16 not declared")?;
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let dest_ptr = self.builder.build_int_to_ptr(result_int, ptr_type, "dest").map_err(|e| e.to_string())?;
-                    let src_ptr = self.builder.build_int_to_ptr(src_ptr_val, ptr_type, "src").map_err(|e| e.to_string())?;
-                    self.builder.build_call(
-                        load_fn,
-                        &[dest_ptr.into(), src_ptr.into()],
-                        ""
-                    ).map_err(|e| e.to_string())?;
+                    let dest_ptr = self
+                        .builder
+                        .build_int_to_ptr(result_int, ptr_type, "dest")
+                        .map_err(|e| e.to_string())?;
+                    let src_ptr = self
+                        .builder
+                        .build_int_to_ptr(src_ptr_val, ptr_type, "src")
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_call(load_fn, &[dest_ptr.into(), src_ptr.into()], "")
+                        .map_err(|e| e.to_string())?;
 
                     return Ok(result_int);
                 }
                 "F32x16::store_aligned" | "_mm512_store_ps" => {
                     // Store 16 f32s to aligned memory via runtime
                     if args.len() < 2 {
-                        return Err("F32x16::store_aligned requires destination and value".to_string());
+                        return Err(
+                            "F32x16::store_aligned requires destination and value".to_string()
+                        );
                     }
                     let dest_val = self.compile_expr(fn_value, scope, &args[0])?;
                     let src_val = self.compile_expr(fn_value, scope, &args[1])?;
 
                     // Call runtime store
-                    let store_fn = self.module.get_function("sigil_simd_store_f32x16")
+                    let store_fn = self
+                        .module
+                        .get_function("sigil_simd_store_f32x16")
                         .ok_or("sigil_simd_store_f32x16 not declared")?;
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let dest_ptr = self.builder.build_int_to_ptr(dest_val, ptr_type, "dest").map_err(|e| e.to_string())?;
-                    let src_ptr = self.builder.build_int_to_ptr(src_val, ptr_type, "src").map_err(|e| e.to_string())?;
-                    self.builder.build_call(
-                        store_fn,
-                        &[dest_ptr.into(), src_ptr.into()],
-                        ""
-                    ).map_err(|e| e.to_string())?;
+                    let dest_ptr = self
+                        .builder
+                        .build_int_to_ptr(dest_val, ptr_type, "dest")
+                        .map_err(|e| e.to_string())?;
+                    let src_ptr = self
+                        .builder
+                        .build_int_to_ptr(src_val, ptr_type, "src")
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_call(store_fn, &[dest_ptr.into(), src_ptr.into()], "")
+                        .map_err(|e| e.to_string())?;
 
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
@@ -5125,37 +5284,59 @@ pub mod llvm {
                     let b_ptr = self.compile_expr(fn_value, scope, &args[1])?;
 
                     // Allocate aligned result buffer (64-byte aligned for AVX-512)
-                    let alloc_fn = self.module.get_function("sigil_simd_alloc")
+                    let alloc_fn = self
+                        .module
+                        .get_function("sigil_simd_alloc")
                         .ok_or("sigil_simd_alloc not declared")?;
-                    let result_call = self.builder.build_call(
-                        alloc_fn,
-                        &[self.context.i64_type().const_int(16, false).into()],
-                        "result_buf"
-                    ).map_err(|e| e.to_string())?;
-                    let result_val = result_call.try_as_basic_value().left()
+                    let result_call = self
+                        .builder
+                        .build_call(
+                            alloc_fn,
+                            &[self.context.i64_type().const_int(16, false).into()],
+                            "result_buf",
+                        )
+                        .map_err(|e| e.to_string())?;
+                    let result_val = result_call
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("alloc returned void")?;
                     let result_int = if result_val.is_pointer_value() {
-                        self.builder.build_ptr_to_int(
-                            result_val.into_pointer_value(),
-                            self.context.i64_type(),
-                            "result_int"
-                        ).map_err(|e| e.to_string())?
+                        self.builder
+                            .build_ptr_to_int(
+                                result_val.into_pointer_value(),
+                                self.context.i64_type(),
+                                "result_int",
+                            )
+                            .map_err(|e| e.to_string())?
                     } else {
                         result_val.into_int_value()
                     };
 
                     // Call runtime SIMD add
-                    let add_fn = self.module.get_function("sigil_simd_add_f32x16")
+                    let add_fn = self
+                        .module
+                        .get_function("sigil_simd_add_f32x16")
                         .ok_or("sigil_simd_add_f32x16 not declared")?;
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let dest_ptr = self.builder.build_int_to_ptr(result_int, ptr_type, "dest").map_err(|e| e.to_string())?;
-                    let a_ptr_cast = self.builder.build_int_to_ptr(a_ptr, ptr_type, "a").map_err(|e| e.to_string())?;
-                    let b_ptr_cast = self.builder.build_int_to_ptr(b_ptr, ptr_type, "b").map_err(|e| e.to_string())?;
-                    self.builder.build_call(
-                        add_fn,
-                        &[dest_ptr.into(), a_ptr_cast.into(), b_ptr_cast.into()],
-                        ""
-                    ).map_err(|e| e.to_string())?;
+                    let dest_ptr = self
+                        .builder
+                        .build_int_to_ptr(result_int, ptr_type, "dest")
+                        .map_err(|e| e.to_string())?;
+                    let a_ptr_cast = self
+                        .builder
+                        .build_int_to_ptr(a_ptr, ptr_type, "a")
+                        .map_err(|e| e.to_string())?;
+                    let b_ptr_cast = self
+                        .builder
+                        .build_int_to_ptr(b_ptr, ptr_type, "b")
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_call(
+                            add_fn,
+                            &[dest_ptr.into(), a_ptr_cast.into(), b_ptr_cast.into()],
+                            "",
+                        )
+                        .map_err(|e| e.to_string())?;
 
                     return Ok(result_int);
                 }
@@ -5168,37 +5349,59 @@ pub mod llvm {
                     let b_ptr = self.compile_expr(fn_value, scope, &args[1])?;
 
                     // Allocate aligned result buffer (64-byte aligned for AVX-512)
-                    let alloc_fn = self.module.get_function("sigil_simd_alloc")
+                    let alloc_fn = self
+                        .module
+                        .get_function("sigil_simd_alloc")
                         .ok_or("sigil_simd_alloc not declared")?;
-                    let result_call = self.builder.build_call(
-                        alloc_fn,
-                        &[self.context.i64_type().const_int(16, false).into()],
-                        "result_buf"
-                    ).map_err(|e| e.to_string())?;
-                    let result_val = result_call.try_as_basic_value().left()
+                    let result_call = self
+                        .builder
+                        .build_call(
+                            alloc_fn,
+                            &[self.context.i64_type().const_int(16, false).into()],
+                            "result_buf",
+                        )
+                        .map_err(|e| e.to_string())?;
+                    let result_val = result_call
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("alloc returned void")?;
                     let result_int = if result_val.is_pointer_value() {
-                        self.builder.build_ptr_to_int(
-                            result_val.into_pointer_value(),
-                            self.context.i64_type(),
-                            "result_int"
-                        ).map_err(|e| e.to_string())?
+                        self.builder
+                            .build_ptr_to_int(
+                                result_val.into_pointer_value(),
+                                self.context.i64_type(),
+                                "result_int",
+                            )
+                            .map_err(|e| e.to_string())?
                     } else {
                         result_val.into_int_value()
                     };
 
                     // Call runtime SIMD mul
-                    let mul_fn = self.module.get_function("sigil_simd_mul_f32x16")
+                    let mul_fn = self
+                        .module
+                        .get_function("sigil_simd_mul_f32x16")
                         .ok_or("sigil_simd_mul_f32x16 not declared")?;
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let dest_ptr = self.builder.build_int_to_ptr(result_int, ptr_type, "dest").map_err(|e| e.to_string())?;
-                    let a_ptr_cast = self.builder.build_int_to_ptr(a_ptr, ptr_type, "a").map_err(|e| e.to_string())?;
-                    let b_ptr_cast = self.builder.build_int_to_ptr(b_ptr, ptr_type, "b").map_err(|e| e.to_string())?;
-                    self.builder.build_call(
-                        mul_fn,
-                        &[dest_ptr.into(), a_ptr_cast.into(), b_ptr_cast.into()],
-                        ""
-                    ).map_err(|e| e.to_string())?;
+                    let dest_ptr = self
+                        .builder
+                        .build_int_to_ptr(result_int, ptr_type, "dest")
+                        .map_err(|e| e.to_string())?;
+                    let a_ptr_cast = self
+                        .builder
+                        .build_int_to_ptr(a_ptr, ptr_type, "a")
+                        .map_err(|e| e.to_string())?;
+                    let b_ptr_cast = self
+                        .builder
+                        .build_int_to_ptr(b_ptr, ptr_type, "b")
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_call(
+                            mul_fn,
+                            &[dest_ptr.into(), a_ptr_cast.into(), b_ptr_cast.into()],
+                            "",
+                        )
+                        .map_err(|e| e.to_string())?;
 
                     return Ok(result_int);
                 }
@@ -5212,38 +5415,68 @@ pub mod llvm {
                     let c_ptr = self.compile_expr(fn_value, scope, &args[2])?;
 
                     // Allocate aligned result buffer (64-byte aligned for AVX-512)
-                    let alloc_fn = self.module.get_function("sigil_simd_alloc")
+                    let alloc_fn = self
+                        .module
+                        .get_function("sigil_simd_alloc")
                         .ok_or("sigil_simd_alloc not declared")?;
-                    let result_call = self.builder.build_call(
-                        alloc_fn,
-                        &[self.context.i64_type().const_int(16, false).into()],
-                        "result_buf"
-                    ).map_err(|e| e.to_string())?;
-                    let result_val = result_call.try_as_basic_value().left()
+                    let result_call = self
+                        .builder
+                        .build_call(
+                            alloc_fn,
+                            &[self.context.i64_type().const_int(16, false).into()],
+                            "result_buf",
+                        )
+                        .map_err(|e| e.to_string())?;
+                    let result_val = result_call
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("alloc returned void")?;
                     let result_int = if result_val.is_pointer_value() {
-                        self.builder.build_ptr_to_int(
-                            result_val.into_pointer_value(),
-                            self.context.i64_type(),
-                            "result_int"
-                        ).map_err(|e| e.to_string())?
+                        self.builder
+                            .build_ptr_to_int(
+                                result_val.into_pointer_value(),
+                                self.context.i64_type(),
+                                "result_int",
+                            )
+                            .map_err(|e| e.to_string())?
                     } else {
                         result_val.into_int_value()
                     };
 
                     // Call runtime SIMD fmadd
-                    let fmadd_fn = self.module.get_function("sigil_simd_fmadd_f32x16")
+                    let fmadd_fn = self
+                        .module
+                        .get_function("sigil_simd_fmadd_f32x16")
                         .ok_or("sigil_simd_fmadd_f32x16 not declared")?;
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let dest_ptr = self.builder.build_int_to_ptr(result_int, ptr_type, "dest").map_err(|e| e.to_string())?;
-                    let a_ptr_cast = self.builder.build_int_to_ptr(a_ptr, ptr_type, "a").map_err(|e| e.to_string())?;
-                    let b_ptr_cast = self.builder.build_int_to_ptr(b_ptr, ptr_type, "b").map_err(|e| e.to_string())?;
-                    let c_ptr_cast = self.builder.build_int_to_ptr(c_ptr, ptr_type, "c").map_err(|e| e.to_string())?;
-                    self.builder.build_call(
-                        fmadd_fn,
-                        &[dest_ptr.into(), a_ptr_cast.into(), b_ptr_cast.into(), c_ptr_cast.into()],
-                        ""
-                    ).map_err(|e| e.to_string())?;
+                    let dest_ptr = self
+                        .builder
+                        .build_int_to_ptr(result_int, ptr_type, "dest")
+                        .map_err(|e| e.to_string())?;
+                    let a_ptr_cast = self
+                        .builder
+                        .build_int_to_ptr(a_ptr, ptr_type, "a")
+                        .map_err(|e| e.to_string())?;
+                    let b_ptr_cast = self
+                        .builder
+                        .build_int_to_ptr(b_ptr, ptr_type, "b")
+                        .map_err(|e| e.to_string())?;
+                    let c_ptr_cast = self
+                        .builder
+                        .build_int_to_ptr(c_ptr, ptr_type, "c")
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_call(
+                            fmadd_fn,
+                            &[
+                                dest_ptr.into(),
+                                a_ptr_cast.into(),
+                                b_ptr_cast.into(),
+                                c_ptr_cast.into(),
+                            ],
+                            "",
+                        )
+                        .map_err(|e| e.to_string())?;
 
                     return Ok(result_int);
                 }
@@ -5256,20 +5489,32 @@ pub mod llvm {
                     let idx = self.compile_expr(fn_value, scope, &args[1])?;
 
                     // Call runtime extract
-                    let extract_fn = self.module.get_function("sigil_simd_extract_f32x16")
+                    let extract_fn = self
+                        .module
+                        .get_function("sigil_simd_extract_f32x16")
                         .ok_or("sigil_simd_extract_f32x16 not declared")?;
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let src_ptr = self.builder.build_int_to_ptr(vec_ptr, ptr_type, "src").map_err(|e| e.to_string())?;
-                    let f32_result = self.builder.build_call(
-                        extract_fn,
-                        &[src_ptr.into(), idx.into()],
-                        "extract"
-                    ).map_err(|e| e.to_string())?.try_as_basic_value().left()
+                    let src_ptr = self
+                        .builder
+                        .build_int_to_ptr(vec_ptr, ptr_type, "src")
+                        .map_err(|e| e.to_string())?;
+                    let f32_result = self
+                        .builder
+                        .build_call(extract_fn, &[src_ptr.into(), idx.into()], "extract")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("extract returned void")?;
 
                     // Convert f32 back to i64 bits
-                    let bits = self.builder.build_bit_cast(f32_result, self.context.i32_type(), "bits").map_err(|e| e.to_string())?;
-                    let extended = self.builder.build_int_z_extend(bits.into_int_value(), self.context.i64_type(), "ext").map_err(|e| e.to_string())?;
+                    let bits = self
+                        .builder
+                        .build_bit_cast(f32_result, self.context.i32_type(), "bits")
+                        .map_err(|e| e.to_string())?;
+                    let extended = self
+                        .builder
+                        .build_int_z_extend(bits.into_int_value(), self.context.i64_type(), "ext")
+                        .map_err(|e| e.to_string())?;
                     return Ok(extended);
                 }
                 "F32x16::reduce_add" => {
@@ -5280,20 +5525,32 @@ pub mod llvm {
                     let vec_ptr = self.compile_expr(fn_value, scope, &args[0])?;
 
                     // Call runtime reduce_add
-                    let reduce_fn = self.module.get_function("sigil_simd_reduce_add_f32x16")
+                    let reduce_fn = self
+                        .module
+                        .get_function("sigil_simd_reduce_add_f32x16")
                         .ok_or("sigil_simd_reduce_add_f32x16 not declared")?;
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let src_ptr = self.builder.build_int_to_ptr(vec_ptr, ptr_type, "src").map_err(|e| e.to_string())?;
-                    let f32_result = self.builder.build_call(
-                        reduce_fn,
-                        &[src_ptr.into()],
-                        "reduce"
-                    ).map_err(|e| e.to_string())?.try_as_basic_value().left()
+                    let src_ptr = self
+                        .builder
+                        .build_int_to_ptr(vec_ptr, ptr_type, "src")
+                        .map_err(|e| e.to_string())?;
+                    let f32_result = self
+                        .builder
+                        .build_call(reduce_fn, &[src_ptr.into()], "reduce")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("reduce returned void")?;
 
                     // Convert f32 back to i64 bits
-                    let bits = self.builder.build_bit_cast(f32_result, self.context.i32_type(), "bits").map_err(|e| e.to_string())?;
-                    let extended = self.builder.build_int_z_extend(bits.into_int_value(), self.context.i64_type(), "ext").map_err(|e| e.to_string())?;
+                    let bits = self
+                        .builder
+                        .build_bit_cast(f32_result, self.context.i32_type(), "bits")
+                        .map_err(|e| e.to_string())?;
+                    let extended = self
+                        .builder
+                        .build_int_z_extend(bits.into_int_value(), self.context.i64_type(), "ext")
+                        .map_err(|e| e.to_string())?;
                     return Ok(extended);
                 }
                 "F32x16::dot" => {
@@ -5305,46 +5562,76 @@ pub mod llvm {
                     let b_ptr = self.compile_expr(fn_value, scope, &args[1])?;
 
                     // Call runtime dot
-                    let dot_fn = self.module.get_function("sigil_simd_dot_f32x16")
+                    let dot_fn = self
+                        .module
+                        .get_function("sigil_simd_dot_f32x16")
                         .ok_or("sigil_simd_dot_f32x16 not declared")?;
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let a_ptr_cast = self.builder.build_int_to_ptr(a_ptr, ptr_type, "a").map_err(|e| e.to_string())?;
-                    let b_ptr_cast = self.builder.build_int_to_ptr(b_ptr, ptr_type, "b").map_err(|e| e.to_string())?;
-                    let f32_result = self.builder.build_call(
-                        dot_fn,
-                        &[a_ptr_cast.into(), b_ptr_cast.into()],
-                        "dot"
-                    ).map_err(|e| e.to_string())?.try_as_basic_value().left()
+                    let a_ptr_cast = self
+                        .builder
+                        .build_int_to_ptr(a_ptr, ptr_type, "a")
+                        .map_err(|e| e.to_string())?;
+                    let b_ptr_cast = self
+                        .builder
+                        .build_int_to_ptr(b_ptr, ptr_type, "b")
+                        .map_err(|e| e.to_string())?;
+                    let f32_result = self
+                        .builder
+                        .build_call(dot_fn, &[a_ptr_cast.into(), b_ptr_cast.into()], "dot")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("dot returned void")?;
 
                     // Convert f32 back to i64 bits
-                    let bits = self.builder.build_bit_cast(f32_result, self.context.i32_type(), "bits").map_err(|e| e.to_string())?;
-                    let extended = self.builder.build_int_z_extend(bits.into_int_value(), self.context.i64_type(), "ext").map_err(|e| e.to_string())?;
+                    let bits = self
+                        .builder
+                        .build_bit_cast(f32_result, self.context.i32_type(), "bits")
+                        .map_err(|e| e.to_string())?;
+                    let extended = self
+                        .builder
+                        .build_int_z_extend(bits.into_int_value(), self.context.i64_type(), "ext")
+                        .map_err(|e| e.to_string())?;
                     return Ok(extended);
                 }
                 // ========================================
                 // CUDA Functions
                 // ========================================
                 "Cuda::init" | "cuda_init" => {
-                    let init_fn = self.module.get_function("sigil_cuda_init")
+                    let init_fn = self
+                        .module
+                        .get_function("sigil_cuda_init")
                         .ok_or("sigil_cuda_init not declared")?;
-                    let result = self.builder.build_call(init_fn, &[], "cuda_init")
-                        .map_err(|e| e.to_string())?.try_as_basic_value().left()
+                    let result = self
+                        .builder
+                        .build_call(init_fn, &[], "cuda_init")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("cuda_init returned void")?;
                     return Ok(result.into_int_value());
                 }
                 "Cuda::cleanup" | "cuda_cleanup" => {
-                    let cleanup_fn = self.module.get_function("sigil_cuda_cleanup")
+                    let cleanup_fn = self
+                        .module
+                        .get_function("sigil_cuda_cleanup")
                         .ok_or("sigil_cuda_cleanup not declared")?;
-                    self.builder.build_call(cleanup_fn, &[], "")
+                    self.builder
+                        .build_call(cleanup_fn, &[], "")
                         .map_err(|e| e.to_string())?;
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
                 "Cuda::device_count" | "cuda_device_count" => {
-                    let count_fn = self.module.get_function("sigil_cuda_get_device_count")
+                    let count_fn = self
+                        .module
+                        .get_function("sigil_cuda_get_device_count")
                         .ok_or("sigil_cuda_get_device_count not declared")?;
-                    let result = self.builder.build_call(count_fn, &[], "device_count")
-                        .map_err(|e| e.to_string())?.try_as_basic_value().left()
+                    let result = self
+                        .builder
+                        .build_call(count_fn, &[], "device_count")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("device_count returned void")?;
                     return Ok(result.into_int_value());
                 }
@@ -5353,10 +5640,16 @@ pub mod llvm {
                         return Err("Cuda::malloc requires size argument".to_string());
                     }
                     let size = self.compile_expr(fn_value, scope, &args[0])?;
-                    let malloc_fn = self.module.get_function("sigil_cuda_malloc")
+                    let malloc_fn = self
+                        .module
+                        .get_function("sigil_cuda_malloc")
                         .ok_or("sigil_cuda_malloc not declared")?;
-                    let result = self.builder.build_call(malloc_fn, &[size.into()], "cuda_ptr")
-                        .map_err(|e| e.to_string())?.try_as_basic_value().left()
+                    let result = self
+                        .builder
+                        .build_call(malloc_fn, &[size.into()], "cuda_ptr")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("cuda_malloc returned void")?;
                     return Ok(result.into_int_value());
                 }
@@ -5365,68 +5658,110 @@ pub mod llvm {
                         return Err("Cuda::free requires device pointer argument".to_string());
                     }
                     let ptr = self.compile_expr(fn_value, scope, &args[0])?;
-                    let free_fn = self.module.get_function("sigil_cuda_free")
+                    let free_fn = self
+                        .module
+                        .get_function("sigil_cuda_free")
                         .ok_or("sigil_cuda_free not declared")?;
-                    self.builder.build_call(free_fn, &[ptr.into()], "")
+                    self.builder
+                        .build_call(free_fn, &[ptr.into()], "")
                         .map_err(|e| e.to_string())?;
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
                 "Cuda::memcpy_h2d" | "cuda_memcpy_h2d" => {
                     if args.len() < 3 {
-                        return Err("Cuda::memcpy_h2d requires (dst_device, src_host, size)".to_string());
+                        return Err(
+                            "Cuda::memcpy_h2d requires (dst_device, src_host, size)".to_string()
+                        );
                     }
                     let dst = self.compile_expr(fn_value, scope, &args[0])?;
                     let src = self.compile_expr(fn_value, scope, &args[1])?;
                     let size = self.compile_expr(fn_value, scope, &args[2])?;
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let src_ptr = self.builder.build_int_to_ptr(src, ptr_type, "src_ptr")
+                    let src_ptr = self
+                        .builder
+                        .build_int_to_ptr(src, ptr_type, "src_ptr")
                         .map_err(|e| e.to_string())?;
-                    let h2d_fn = self.module.get_function("sigil_cuda_memcpy_h2d")
+                    let h2d_fn = self
+                        .module
+                        .get_function("sigil_cuda_memcpy_h2d")
                         .ok_or("sigil_cuda_memcpy_h2d not declared")?;
-                    let result = self.builder.build_call(h2d_fn, &[dst.into(), src_ptr.into(), size.into()], "h2d")
-                        .map_err(|e| e.to_string())?.try_as_basic_value().left()
+                    let result = self
+                        .builder
+                        .build_call(h2d_fn, &[dst.into(), src_ptr.into(), size.into()], "h2d")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("h2d returned void")?;
                     return Ok(result.into_int_value());
                 }
                 "Cuda::memcpy_d2h" | "cuda_memcpy_d2h" => {
                     if args.len() < 3 {
-                        return Err("Cuda::memcpy_d2h requires (dst_host, src_device, size)".to_string());
+                        return Err(
+                            "Cuda::memcpy_d2h requires (dst_host, src_device, size)".to_string()
+                        );
                     }
                     let dst = self.compile_expr(fn_value, scope, &args[0])?;
                     let src = self.compile_expr(fn_value, scope, &args[1])?;
                     let size = self.compile_expr(fn_value, scope, &args[2])?;
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let dst_ptr = self.builder.build_int_to_ptr(dst, ptr_type, "dst_ptr")
+                    let dst_ptr = self
+                        .builder
+                        .build_int_to_ptr(dst, ptr_type, "dst_ptr")
                         .map_err(|e| e.to_string())?;
-                    let d2h_fn = self.module.get_function("sigil_cuda_memcpy_d2h")
+                    let d2h_fn = self
+                        .module
+                        .get_function("sigil_cuda_memcpy_d2h")
                         .ok_or("sigil_cuda_memcpy_d2h not declared")?;
-                    let result = self.builder.build_call(d2h_fn, &[dst_ptr.into(), src.into(), size.into()], "d2h")
-                        .map_err(|e| e.to_string())?.try_as_basic_value().left()
+                    let result = self
+                        .builder
+                        .build_call(d2h_fn, &[dst_ptr.into(), src.into(), size.into()], "d2h")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("d2h returned void")?;
                     return Ok(result.into_int_value());
                 }
                 "Cuda::sync" | "cuda_sync" => {
-                    let sync_fn = self.module.get_function("sigil_cuda_sync")
+                    let sync_fn = self
+                        .module
+                        .get_function("sigil_cuda_sync")
                         .ok_or("sigil_cuda_sync not declared")?;
-                    self.builder.build_call(sync_fn, &[], "")
+                    self.builder
+                        .build_call(sync_fn, &[], "")
                         .map_err(|e| e.to_string())?;
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
                 "Cuda::compile_kernel" | "cuda_compile_kernel" => {
                     if args.len() < 2 {
-                        return Err("Cuda::compile_kernel requires (cuda_source, kernel_name)".to_string());
+                        return Err(
+                            "Cuda::compile_kernel requires (cuda_source, kernel_name)".to_string()
+                        );
                     }
                     let src = self.compile_expr(fn_value, scope, &args[0])?;
                     let name = self.compile_expr(fn_value, scope, &args[1])?;
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let src_ptr = self.builder.build_int_to_ptr(src, ptr_type, "src_ptr")
+                    let src_ptr = self
+                        .builder
+                        .build_int_to_ptr(src, ptr_type, "src_ptr")
                         .map_err(|e| e.to_string())?;
-                    let name_ptr = self.builder.build_int_to_ptr(name, ptr_type, "name_ptr")
+                    let name_ptr = self
+                        .builder
+                        .build_int_to_ptr(name, ptr_type, "name_ptr")
                         .map_err(|e| e.to_string())?;
-                    let compile_fn = self.module.get_function("sigil_cuda_compile_kernel")
+                    let compile_fn = self
+                        .module
+                        .get_function("sigil_cuda_compile_kernel")
                         .ok_or("sigil_cuda_compile_kernel not declared")?;
-                    let result = self.builder.build_call(compile_fn, &[src_ptr.into(), name_ptr.into()], "kernel_handle")
-                        .map_err(|e| e.to_string())?.try_as_basic_value().left()
+                    let result = self
+                        .builder
+                        .build_call(
+                            compile_fn,
+                            &[src_ptr.into(), name_ptr.into()],
+                            "kernel_handle",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("compile_kernel returned void")?;
                     return Ok(result.into_int_value());
                 }
@@ -5441,14 +5776,30 @@ pub mod llvm {
                     let args_ptr = self.compile_expr(fn_value, scope, &args[3])?;
                     let num_args = self.compile_expr(fn_value, scope, &args[4])?;
                     let ptr_type = self.context.ptr_type(AddressSpace::default());
-                    let args_cast = self.builder.build_int_to_ptr(args_ptr, ptr_type, "args")
+                    let args_cast = self
+                        .builder
+                        .build_int_to_ptr(args_ptr, ptr_type, "args")
                         .map_err(|e| e.to_string())?;
-                    let launch_fn = self.module.get_function("sigil_cuda_launch_kernel_1d")
+                    let launch_fn = self
+                        .module
+                        .get_function("sigil_cuda_launch_kernel_1d")
                         .ok_or("sigil_cuda_launch_kernel_1d not declared")?;
-                    let result = self.builder.build_call(launch_fn,
-                        &[handle.into(), grid_x.into(), block_x.into(), args_cast.into(), num_args.into()],
-                        "launch")
-                        .map_err(|e| e.to_string())?.try_as_basic_value().left()
+                    let result = self
+                        .builder
+                        .build_call(
+                            launch_fn,
+                            &[
+                                handle.into(),
+                                grid_x.into(),
+                                block_x.into(),
+                                args_cast.into(),
+                                num_args.into(),
+                            ],
+                            "launch",
+                        )
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
                         .ok_or("launch returned void")?;
                     return Ok(result.into_int_value());
                 }
@@ -5879,7 +6230,8 @@ pub mod llvm {
                         match expected_type {
                             BasicTypeEnum::FloatType(ft) => {
                                 // Convert i64 bits to float
-                                let converted = self.builder
+                                let converted = self
+                                    .builder
                                     .build_bit_cast(arg_val, ft, "i2f")
                                     .map_err(|e| e.to_string())?;
                                 converted_args.push(converted.into());
@@ -5887,7 +6239,8 @@ pub mod llvm {
                             BasicTypeEnum::IntType(it) => {
                                 // Truncate i64 to smaller int types (e.g., c_int = i32)
                                 if it.get_bit_width() < 64 {
-                                    let truncated = self.builder
+                                    let truncated = self
+                                        .builder
                                         .build_int_truncate(arg_val, it, "trunc")
                                         .map_err(|e| e.to_string())?;
                                     converted_args.push(truncated.into());
@@ -5905,7 +6258,8 @@ pub mod llvm {
                 }
 
                 // Build call
-                let call = self.builder
+                let call = self
+                    .builder
                     .build_call(extern_fn.fn_value, &converted_args, "extern_call")
                     .map_err(|e| e.to_string())?;
 
@@ -5916,7 +6270,8 @@ pub mod llvm {
                         // Sign-extend smaller integers to i64
                         let i64_type = self.context.i64_type();
                         if iv.get_type().get_bit_width() < 64 {
-                            let extended = self.builder
+                            let extended = self
+                                .builder
                                 .build_int_s_extend(iv, i64_type, "sext")
                                 .map_err(|e| e.to_string())?;
                             Ok(extended)
@@ -5927,13 +6282,15 @@ pub mod llvm {
                     Some(BasicValueEnum::FloatValue(fv)) => {
                         // Store float bits in i64 for Sigil's type system
                         // This preserves the full precision for later use
-                        let bitcast = self.builder
+                        let bitcast = self
+                            .builder
                             .build_bit_cast(fv, self.context.i64_type(), "f_bits")
                             .map_err(|e| e.to_string())?;
                         Ok(bitcast.into_int_value())
                     }
                     Some(BasicValueEnum::PointerValue(pv)) => {
-                        let ptr_int = self.builder
+                        let ptr_int = self
+                            .builder
                             .build_ptr_to_int(pv, self.context.i64_type(), "p2i")
                             .map_err(|e| e.to_string())?;
                         Ok(ptr_int)
@@ -5982,14 +6339,16 @@ pub mod llvm {
                 Some(BasicValueEnum::IntValue(iv)) => Ok(iv),
                 Some(BasicValueEnum::FloatValue(fv)) => {
                     // Bitcast float to i64 to preserve bits
-                    let bitcast = self.builder
+                    let bitcast = self
+                        .builder
                         .build_bit_cast(fv, self.context.i64_type(), "f2i")
                         .map_err(|e| e.to_string())?;
                     Ok(bitcast.into_int_value())
                 }
                 Some(BasicValueEnum::PointerValue(pv)) => {
                     // Convert pointer to i64
-                    let ptr_int = self.builder
+                    let ptr_int = self
+                        .builder
                         .build_ptr_to_int(pv, self.context.i64_type(), "p2i")
                         .map_err(|e| e.to_string())?;
                     Ok(ptr_int)
@@ -6083,7 +6442,11 @@ pub mod llvm {
                 // Format string with placeholders - parse and substitute
                 // Split format string by {} and interleave with arguments
                 let parts: Vec<&str> = format_str.split("{}").collect();
-                let args: Vec<&str> = args_str.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+                let args: Vec<&str> = args_str
+                    .split(',')
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .collect();
 
                 // Get write functions (no newline versions for inline output)
                 let write_str_fn = self
@@ -6179,7 +6542,9 @@ pub mod llvm {
 
             // Create a null-terminated string constant
             let string_val = self.context.const_string(s.as_bytes(), true);
-            let global = self.module.add_global(string_val.get_type(), None, &unique_name);
+            let global = self
+                .module
+                .add_global(string_val.get_type(), None, &unique_name);
             global.set_initializer(&string_val);
             global.set_constant(true);
             global.set_linkage(inkwell::module::Linkage::Private);
@@ -6273,7 +6638,11 @@ pub mod llvm {
                 // Format string with placeholders - parse and substitute
                 // Split format string by {} and interleave with arguments
                 let parts: Vec<&str> = format_str.split("{}").collect();
-                let args: Vec<&str> = args_str.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+                let args: Vec<&str> = args_str
+                    .split(',')
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .collect();
 
                 // Get write functions (no newline versions for inline output)
                 let write_str_fn = self
@@ -6369,7 +6738,9 @@ pub mod llvm {
 
             // Create a null-terminated string constant
             let string_val = self.context.const_string(s.as_bytes(), true);
-            let global = self.module.add_global(string_val.get_type(), None, &unique_name);
+            let global = self
+                .module
+                .add_global(string_val.get_type(), None, &unique_name);
             global.set_initializer(&string_val);
             global.set_constant(true);
             global.set_linkage(inkwell::module::Linkage::Private);

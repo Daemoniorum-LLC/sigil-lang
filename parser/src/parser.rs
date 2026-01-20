@@ -714,6 +714,11 @@ impl<'a> Parser<'a> {
         matches!(&self.current, Some((token, _)) if std::mem::discriminant(token) == std::mem::discriminant(expected))
     }
 
+    /// Check if current token is an identifier with a specific name
+    fn check_ident_name(&self, name: &str) -> bool {
+        matches!(&self.current, Some((Token::Ident(n), _)) if n == name)
+    }
+
     /// Peek at the next token (after current) without consuming anything.
     pub(crate) fn peek_next(&mut self) -> Option<&Token> {
         self.lexer.peek().map(|(t, _)| t)
@@ -750,12 +755,18 @@ impl<'a> Parser<'a> {
 
     /// Check for self keyword (Token::SelfLower or Token::Xi for ξ)
     pub(crate) fn check_self(&self) -> bool {
-        matches!(self.current_token(), Some(Token::SelfLower) | Some(Token::Xi))
+        matches!(
+            self.current_token(),
+            Some(Token::SelfLower) | Some(Token::Xi)
+        )
     }
 
     /// Check for path separator (Token::ColonColon or Token::MiddleDot for ·)
     pub(crate) fn check_path_sep(&self) -> bool {
-        matches!(self.current_token(), Some(Token::ColonColon) | Some(Token::MiddleDot))
+        matches!(
+            self.current_token(),
+            Some(Token::ColonColon) | Some(Token::MiddleDot)
+        )
     }
 
     /// Consume path separator if present
@@ -1007,6 +1018,9 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Static) => Item::Static(self.parse_static(visibility)?),
             Some(Token::Actor) => Item::Actor(self.parse_actor(visibility)?),
+            Some(Token::Form) => Item::Form(self.parse_form(visibility)?),
+            Some(Token::Translations) => Item::Translations(self.parse_translations(visibility)?),
+            Some(Token::Locale) => Item::LocaleEnum(self.parse_locale_enum(visibility)?),
             Some(Token::Extern) => {
                 // Peek ahead to determine if this is an extern block or extern function
                 // extern "C" { ... } -> extern block
@@ -1027,7 +1041,9 @@ impl<'a> Parser<'a> {
                     let mut items = Vec::new();
                     while !self.check(&Token::RBrace) && !self.is_eof() {
                         self.skip_comments();
-                        if self.check(&Token::RBrace) { break; }
+                        if self.check(&Token::RBrace) {
+                            break;
+                        }
                         let vis = self.parse_visibility()?;
                         self.skip_comments();
                         match self.current_token() {
@@ -1051,7 +1067,11 @@ impl<'a> Parser<'a> {
                         }
                     }
                     self.expect(Token::RBrace)?;
-                    Item::ExternBlock(ExternBlock { abi, items, outer_attrs })
+                    Item::ExternBlock(ExternBlock {
+                        abi,
+                        items,
+                        outer_attrs,
+                    })
                 } else if self.check(&Token::Fn) || self.check(&Token::Lambda) {
                     // It's an extern function: extern "C" fn/rite name(...) { ... }
                     let mut func = self.parse_function_with_attrs(visibility, outer_attrs)?;
@@ -1605,9 +1625,11 @@ impl<'a> Parser<'a> {
         let visibility = self.parse_visibility()?;
 
         match self.current_token() {
-            Some(Token::Fn) | Some(Token::Lambda) | Some(Token::Async) | Some(Token::Hourglass) | Some(Token::Unsafe) => {
-                Ok(TraitItem::Function(self.parse_function(visibility)?))
-            }
+            Some(Token::Fn)
+            | Some(Token::Lambda)
+            | Some(Token::Async)
+            | Some(Token::Hourglass)
+            | Some(Token::Unsafe) => Ok(TraitItem::Function(self.parse_function(visibility)?)),
             Some(Token::Type) => {
                 self.advance();
                 let name = self.parse_ident()?;
@@ -1621,10 +1643,12 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Const) => {
                 // Check if this is `const fn` or just `const NAME: TYPE;`
-                if self
-                    .peek_next()
-                    .map(|t| matches!(t, Token::Fn | Token::Lambda | Token::Async | Token::Hourglass))
-                    == Some(true)
+                if self.peek_next().map(|t| {
+                    matches!(
+                        t,
+                        Token::Fn | Token::Lambda | Token::Async | Token::Hourglass
+                    )
+                }) == Some(true)
                 {
                     Ok(TraitItem::Function(self.parse_function(visibility)?))
                 } else {
@@ -1722,16 +1746,22 @@ impl<'a> Parser<'a> {
         let visibility = self.parse_visibility()?;
 
         match self.current_token() {
-            Some(Token::Fn) | Some(Token::Lambda) | Some(Token::Async) | Some(Token::Hourglass) | Some(Token::Unsafe) => Ok(ImplItem::Function(
+            Some(Token::Fn)
+            | Some(Token::Lambda)
+            | Some(Token::Async)
+            | Some(Token::Hourglass)
+            | Some(Token::Unsafe) => Ok(ImplItem::Function(
                 self.parse_function_with_attrs(visibility, outer_attrs)?,
             )),
             Some(Token::Type) => Ok(ImplItem::Type(self.parse_type_alias(visibility)?)),
             Some(Token::Const) => {
                 // Check if this is `const fn` or just `const`
-                if self
-                    .peek_next()
-                    .map(|t| matches!(t, Token::Fn | Token::Lambda | Token::Async | Token::Hourglass))
-                    == Some(true)
+                if self.peek_next().map(|t| {
+                    matches!(
+                        t,
+                        Token::Fn | Token::Lambda | Token::Async | Token::Hourglass
+                    )
+                }) == Some(true)
                 {
                     Ok(ImplItem::Function(
                         self.parse_function_with_attrs(visibility, outer_attrs)?,
@@ -2238,6 +2268,511 @@ impl<'a> Parser<'a> {
         })
     }
 
+    // ========================================================================
+    // Evidential Forms
+    // ========================================================================
+
+    /// Parse an evidential form definition.
+    ///
+    /// ```sigil
+    /// form ContactForm {
+    ///     field email: String~ → String! {
+    ///         validate: |v| v.contains("@"),
+    ///         error: "Invalid email",
+    ///     }
+    ///     aegis: { audit: true }
+    /// }
+    /// ```
+    fn parse_form(&mut self, visibility: Visibility) -> ParseResult<FormDef> {
+        self.expect(Token::Form)?;
+        let name = self.parse_ident()?;
+        let generics = self.parse_generics_opt()?;
+
+        self.expect(Token::LBrace)?;
+
+        let mut fields = Vec::new();
+        let mut aegis = None;
+
+        while !self.check(&Token::RBrace) && !self.is_eof() {
+            self.skip_comments();
+
+            if self.check(&Token::Field) {
+                fields.push(self.parse_form_field()?);
+            } else if self.check_ident_name("aegis") {
+                aegis = Some(self.parse_form_aegis_config()?);
+            } else if self.check(&Token::RBrace) {
+                break;
+            } else {
+                match self.current_token() {
+                    Some(t) => {
+                        return Err(ParseError::UnexpectedToken {
+                            expected: "field or aegis".to_string(),
+                            found: t.clone(),
+                            span: self.current_span(),
+                        });
+                    }
+                    None => return Err(ParseError::UnexpectedEof),
+                }
+            }
+        }
+
+        self.expect(Token::RBrace)?;
+
+        Ok(FormDef {
+            visibility,
+            name,
+            generics,
+            fields,
+            aegis,
+        })
+    }
+
+    /// Parse a form field definition.
+    ///
+    /// `field email: String~ → String! { validate: ..., error: ... }`
+    fn parse_form_field(&mut self) -> ParseResult<FormFieldDef> {
+        self.expect(Token::Field)?;
+        let name = self.parse_ident()?;
+        self.expect(Token::Colon)?;
+
+        // Parse input type
+        let input_type = self.parse_type()?;
+
+        // Parse arrow and output type
+        self.expect(Token::Arrow)?;
+        let output_type = self.parse_type()?;
+
+        // Parse optional field body with validation/transform/error
+        let (validate, transform, error, default, required) = if self.check(&Token::LBrace) {
+            self.parse_form_field_body()?
+        } else {
+            (None, None, None, None, true)
+        };
+
+        // Optional trailing comma
+        self.consume_if(&Token::Comma);
+
+        Ok(FormFieldDef {
+            name,
+            input_type,
+            output_type,
+            validate,
+            transform,
+            error,
+            default,
+            required,
+        })
+    }
+
+    /// Parse the body of a form field with validation rules.
+    ///
+    /// `{ validate: |v| ..., transform: |v| ..., error: "...", default: ..., required: false }`
+    fn parse_form_field_body(
+        &mut self,
+    ) -> ParseResult<(
+        Option<Box<Expr>>,
+        Option<Box<Expr>>,
+        Option<String>,
+        Option<Box<Expr>>,
+        bool,
+    )> {
+        self.expect(Token::LBrace)?;
+
+        let mut validate = None;
+        let mut transform = None;
+        let mut error = None;
+        let mut default = None;
+        let mut required = true;
+
+        while !self.check(&Token::RBrace) && !self.is_eof() {
+            self.skip_comments();
+
+            if self.check_ident_name("validate") {
+                self.advance(); // consume "validate"
+                self.expect(Token::Colon)?;
+                validate = Some(Box::new(self.parse_expr()?));
+                self.consume_if(&Token::Comma);
+            } else if self.check_ident_name("transform") {
+                self.advance(); // consume "transform"
+                self.expect(Token::Colon)?;
+                transform = Some(Box::new(self.parse_expr()?));
+                self.consume_if(&Token::Comma);
+            } else if self.check_ident_name("error") {
+                self.advance(); // consume "error"
+                self.expect(Token::Colon)?;
+                if let Some(Token::StringLit(s)) = self.current_token().cloned() {
+                    self.advance();
+                    error = Some(s);
+                } else {
+                    match self.current_token() {
+                        Some(t) => {
+                            return Err(ParseError::UnexpectedToken {
+                                expected: "string literal for error message".to_string(),
+                                found: t.clone(),
+                                span: self.current_span(),
+                            });
+                        }
+                        None => return Err(ParseError::UnexpectedEof),
+                    }
+                }
+                self.consume_if(&Token::Comma);
+            } else if self.check_ident_name("default") {
+                self.advance(); // consume "default"
+                self.expect(Token::Colon)?;
+                default = Some(Box::new(self.parse_expr()?));
+                self.consume_if(&Token::Comma);
+            } else if self.check_ident_name("required") {
+                self.advance(); // consume "required"
+                self.expect(Token::Colon)?;
+                if let Some(Token::True) = self.current_token() {
+                    self.advance();
+                    required = true;
+                } else if let Some(Token::False) = self.current_token() {
+                    self.advance();
+                    required = false;
+                } else if self.check_ident_name("yea") {
+                    self.advance();
+                    required = true;
+                } else if self.check_ident_name("nay") {
+                    self.advance();
+                    required = false;
+                } else {
+                    match self.current_token() {
+                        Some(t) => {
+                            return Err(ParseError::UnexpectedToken {
+                                expected: "true/false or yea/nay".to_string(),
+                                found: t.clone(),
+                                span: self.current_span(),
+                            });
+                        }
+                        None => return Err(ParseError::UnexpectedEof),
+                    }
+                }
+                self.consume_if(&Token::Comma);
+            } else if self.check(&Token::RBrace) {
+                break;
+            } else {
+                match self.current_token() {
+                    Some(t) => {
+                        return Err(ParseError::UnexpectedToken {
+                            expected: "validate, transform, error, default, or required"
+                                .to_string(),
+                            found: t.clone(),
+                            span: self.current_span(),
+                        });
+                    }
+                    None => return Err(ParseError::UnexpectedEof),
+                }
+            }
+        }
+
+        self.expect(Token::RBrace)?;
+
+        Ok((validate, transform, error, default, required))
+    }
+
+    /// Parse Aegis security configuration for a form.
+    ///
+    /// `aegis: { audit: true, injection_check: true, identity: required }`
+    fn parse_form_aegis_config(&mut self) -> ParseResult<FormAegisConfig> {
+        self.parse_ident()?; // consume "aegis"
+        self.expect(Token::Colon)?;
+        self.expect(Token::LBrace)?;
+
+        let mut config = FormAegisConfig::default();
+
+        while !self.check(&Token::RBrace) && !self.is_eof() {
+            self.skip_comments();
+
+            if self.check_ident_name("audit") {
+                self.advance();
+                self.expect(Token::Colon)?;
+                config.audit = self.parse_bool_value()?;
+                self.consume_if(&Token::Comma);
+            } else if self.check_ident_name("injection_check") {
+                self.advance();
+                self.expect(Token::Colon)?;
+                config.injection_check = self.parse_bool_value()?;
+                self.consume_if(&Token::Comma);
+            } else if self.check_ident_name("identity") {
+                self.advance();
+                self.expect(Token::Colon)?;
+                config.identity = self.parse_identity_requirement()?;
+                self.consume_if(&Token::Comma);
+            } else if self.check_ident_name("memory_protection") {
+                self.advance();
+                self.expect(Token::Colon)?;
+                config.memory_protection = self.parse_bool_value()?;
+                self.consume_if(&Token::Comma);
+            } else if self.check(&Token::RBrace) {
+                break;
+            } else {
+                match self.current_token() {
+                    Some(t) => {
+                        return Err(ParseError::UnexpectedToken {
+                            expected: "audit, injection_check, identity, or memory_protection"
+                                .to_string(),
+                            found: t.clone(),
+                            span: self.current_span(),
+                        });
+                    }
+                    None => return Err(ParseError::UnexpectedEof),
+                }
+            }
+        }
+
+        self.expect(Token::RBrace)?;
+
+        Ok(config)
+    }
+
+    /// Parse a boolean value (true/false or yea/nay)
+    fn parse_bool_value(&mut self) -> ParseResult<bool> {
+        if let Some(Token::True) = self.current_token() {
+            self.advance();
+            Ok(true)
+        } else if let Some(Token::False) = self.current_token() {
+            self.advance();
+            Ok(false)
+        } else if self.check_ident_name("yea") {
+            self.advance();
+            Ok(true)
+        } else if self.check_ident_name("nay") {
+            self.advance();
+            Ok(false)
+        } else {
+            match self.current_token() {
+                Some(t) => Err(ParseError::UnexpectedToken {
+                    expected: "true/false or yea/nay".to_string(),
+                    found: t.clone(),
+                    span: self.current_span(),
+                }),
+                None => Err(ParseError::UnexpectedEof),
+            }
+        }
+    }
+
+    /// Parse identity requirement (none, optional, required)
+    fn parse_identity_requirement(&mut self) -> ParseResult<FormIdentityRequirement> {
+        if self.check_ident_name("none") {
+            self.advance();
+            Ok(FormIdentityRequirement::None)
+        } else if self.check_ident_name("optional") {
+            self.advance();
+            Ok(FormIdentityRequirement::Optional)
+        } else if self.check_ident_name("required") {
+            self.advance();
+            Ok(FormIdentityRequirement::Required)
+        } else {
+            match self.current_token() {
+                Some(t) => Err(ParseError::UnexpectedToken {
+                    expected: "none, optional, or required".to_string(),
+                    found: t.clone(),
+                    span: self.current_span(),
+                }),
+                None => Err(ParseError::UnexpectedEof),
+            }
+        }
+    }
+
+    // ========================================================================
+    // Type-Safe Internationalization (i18n) Parsing
+    // ========================================================================
+
+    /// Parse a translations block:
+    /// ```sigil
+    /// translations Rights {
+    ///     locale: Locale,
+    ///     miranda_title: String! = match locale { ... }
+    ///     greeting(name: String): String! = match locale { ... }
+    /// }
+    /// ```
+    fn parse_translations(&mut self, visibility: Visibility) -> ParseResult<TranslationsDef> {
+        self.expect(Token::Translations)?;
+        let name = self.parse_ident()?;
+        let generics = self.parse_generics_opt()?;
+
+        self.expect(Token::LBrace)?;
+
+        // Parse locale declaration: `locale: Locale,`
+        self.skip_comments();
+        if !self.check(&Token::Locale) {
+            return Err(ParseError::Custom(
+                "translations block must start with 'locale: <type>,'".to_string(),
+            ));
+        }
+        self.advance(); // consume "locale" keyword
+        self.expect(Token::Colon)?;
+        let locale_type = self.parse_type()?;
+        self.consume_if(&Token::Comma);
+
+        // Parse translation entries
+        let mut entries = Vec::new();
+        while !self.check(&Token::RBrace) && !self.is_eof() {
+            self.skip_comments();
+            if self.check(&Token::RBrace) {
+                break;
+            }
+
+            let entry = self.parse_translation_entry()?;
+            entries.push(entry);
+            self.consume_if(&Token::Comma);
+        }
+
+        self.expect(Token::RBrace)?;
+
+        Ok(TranslationsDef {
+            visibility,
+            name,
+            generics,
+            locale_type,
+            entries,
+        })
+    }
+
+    /// Parse a translation entry (property or method)
+    fn parse_translation_entry(&mut self) -> ParseResult<TranslationEntry> {
+        let name = self.parse_ident()?;
+
+        // Check if it's a method (has parentheses) or property
+        if self.check(&Token::LParen) {
+            // Method: greeting(name: String): String! = match locale { ... }
+            self.expect(Token::LParen)?;
+            let params = self.parse_params()?;
+            self.expect(Token::RParen)?;
+            self.expect(Token::Colon)?;
+            let return_type = self.parse_type()?;
+            self.expect(Token::Eq)?;
+            let body = self.parse_expr()?;
+
+            Ok(TranslationEntry::Method(TranslationMethod {
+                name,
+                params,
+                return_type,
+                body: Box::new(body),
+            }))
+        } else {
+            // Property: title: String! = match locale { ... }
+            self.expect(Token::Colon)?;
+            let return_type = self.parse_type()?;
+            self.expect(Token::Eq)?;
+            let body = self.parse_expr()?;
+
+            Ok(TranslationEntry::Property(TranslationProperty {
+                name,
+                return_type,
+                body: Box::new(body),
+            }))
+        }
+    }
+
+    /// Parse a locale enum:
+    /// ```sigil
+    /// locale enum Locale {
+    ///     En { code: "en", name: "English" },
+    ///     Es { code: "es", name: "Español", fallback: En },
+    /// }
+    /// ```
+    fn parse_locale_enum(&mut self, visibility: Visibility) -> ParseResult<LocaleEnumDef> {
+        self.expect(Token::Locale)?;
+        self.expect(Token::Enum)?;
+        let name = self.parse_ident()?;
+
+        self.expect(Token::LBrace)?;
+
+        let mut variants = Vec::new();
+        while !self.check(&Token::RBrace) && !self.is_eof() {
+            self.skip_comments();
+            if self.check(&Token::RBrace) {
+                break;
+            }
+
+            let variant = self.parse_locale_variant()?;
+            variants.push(variant);
+            self.consume_if(&Token::Comma);
+        }
+
+        self.expect(Token::RBrace)?;
+
+        Ok(LocaleEnumDef {
+            visibility,
+            name,
+            variants,
+        })
+    }
+
+    /// Parse a locale variant with metadata:
+    /// `En { code: "en", name: "English", rtl: false, fallback: Es }`
+    fn parse_locale_variant(&mut self) -> ParseResult<LocaleVariant> {
+        let name = self.parse_ident()?;
+        self.expect(Token::LBrace)?;
+
+        let mut variant = LocaleVariant {
+            name,
+            ..Default::default()
+        };
+
+        while !self.check(&Token::RBrace) && !self.is_eof() {
+            self.skip_comments();
+            if self.check(&Token::RBrace) {
+                break;
+            }
+
+            if self.check_ident_name("code") {
+                self.advance();
+                self.expect(Token::Colon)?;
+                if let Some(Token::StringLit(s)) = self.current_token().cloned() {
+                    self.advance();
+                    variant.code = s;
+                } else {
+                    return Err(ParseError::Custom(
+                        "expected string literal for locale code".to_string(),
+                    ));
+                }
+                self.consume_if(&Token::Comma);
+            } else if self.check_ident_name("name") {
+                self.advance();
+                self.expect(Token::Colon)?;
+                if let Some(Token::StringLit(s)) = self.current_token().cloned() {
+                    self.advance();
+                    variant.display_name = s;
+                } else {
+                    return Err(ParseError::Custom(
+                        "expected string literal for locale display name".to_string(),
+                    ));
+                }
+                self.consume_if(&Token::Comma);
+            } else if self.check_ident_name("rtl") {
+                self.advance();
+                self.expect(Token::Colon)?;
+                variant.rtl = self.parse_bool_value()?;
+                self.consume_if(&Token::Comma);
+            } else if self.check_ident_name("fallback") {
+                self.advance();
+                self.expect(Token::Colon)?;
+                variant.fallback = Some(self.parse_ident()?);
+                self.consume_if(&Token::Comma);
+            } else if self.check(&Token::RBrace) {
+                break;
+            } else {
+                match self.current_token() {
+                    Some(t) => {
+                        return Err(ParseError::UnexpectedToken {
+                            expected: "code, name, rtl, or fallback".to_string(),
+                            found: t.clone(),
+                            span: self.current_span(),
+                        });
+                    }
+                    None => return Err(ParseError::UnexpectedEof),
+                }
+            }
+        }
+
+        self.expect(Token::RBrace)?;
+
+        Ok(variant)
+    }
+
     /// Parse an extern block: `extern "C" { ... }`
     fn parse_extern_block(&mut self, outer_attrs: Vec<Attribute>) -> ParseResult<ExternBlock> {
         self.expect(Token::Extern)?;
@@ -2291,7 +2826,11 @@ impl<'a> Parser<'a> {
 
         self.expect(Token::RBrace)?;
 
-        Ok(ExternBlock { abi, items, outer_attrs })
+        Ok(ExternBlock {
+            abi,
+            items,
+            outer_attrs,
+        })
     }
 
     /// Parse an extern function declaration (no body).
@@ -2809,7 +3348,7 @@ impl<'a> Parser<'a> {
                 };
 
                 self.expect_gt()?; // consume >
-                // must have :: or · after >
+                                   // must have :: or · after >
                 if !self.consume_if(&Token::ColonColon) && !self.consume_if(&Token::MiddleDot) {
                     return match &self.current {
                         Some((token, span)) => Err(ParseError::UnexpectedToken {
@@ -3027,7 +3566,11 @@ impl<'a> Parser<'a> {
                 Ok(TypeExpr::InlineEnum { variants })
             }
             // Handle crate::, self::, super:: path prefixes in types
-            Some(Token::Crate) | Some(Token::SelfLower) | Some(Token::Xi) | Some(Token::Super) | Some(Token::IntensityUp) => {
+            Some(Token::Crate)
+            | Some(Token::SelfLower)
+            | Some(Token::Xi)
+            | Some(Token::Super)
+            | Some(Token::IntensityUp) => {
                 let keyword = self.current_token().cloned();
                 let span = self.current_span();
                 self.advance();
@@ -3035,8 +3578,8 @@ impl<'a> Parser<'a> {
                 // Build the first segment from the keyword
                 let keyword_name = match keyword {
                     Some(Token::Crate) => "crate",
-                    Some(Token::SelfLower) | Some(Token::Xi) => "self",  // this or ξ
-                    Some(Token::Super) | Some(Token::IntensityUp) => "super",  // above or ↑
+                    Some(Token::SelfLower) | Some(Token::Xi) => "self", // this or ξ
+                    Some(Token::Super) | Some(Token::IntensityUp) => "super", // above or ↑
                     _ => unreachable!(),
                 };
                 let first_segment = PathSegment {
@@ -3231,13 +3774,13 @@ impl<'a> Parser<'a> {
                             // Check what follows the lowercase identifier
                             match self.peek_n(2) {
                                 Some(Token::As) | Some(Token::Arrow) => false, // [(n as T)] or [(n → T)] cast expression
-                                Some(Token::Plus) => false,     // [(a + b)]
-                                Some(Token::Minus) => false,    // [(a - b)]
-                                Some(Token::Star) => false,     // [(a * b)]
-                                Some(Token::Slash) => false,    // [(a / b)]
-                                Some(Token::Dot) => false,      // [(a.b)]
-                                Some(Token::LBracket) => false, // [(a[i])]
-                                Some(Token::LParen) => false,   // [(f())]
+                                Some(Token::Plus) => false,                    // [(a + b)]
+                                Some(Token::Minus) => false,                   // [(a - b)]
+                                Some(Token::Star) => false,                    // [(a * b)]
+                                Some(Token::Slash) => false,                   // [(a / b)]
+                                Some(Token::Dot) => false,                     // [(a.b)]
+                                Some(Token::LBracket) => false,                // [(a[i])]
+                                Some(Token::LParen) => false,                  // [(f())]
                                 Some(Token::RParen) => false, // [(x)] single lowercase var - expression
                                 Some(Token::Comma) => true, // [(a, b)] could be tuple type, try it
                                 _ => false,                 // Default to expression (index)
@@ -3276,20 +3819,20 @@ impl<'a> Parser<'a> {
                 // *expr - dereference (not a type)
                 // Look at what follows * to distinguish
                 match self.peek_n(1) {
-                    Some(Token::Const) => true, // *const T - pointer type
-                    Some(Token::Mut) | Some(Token::Delta) => true,   // *mut/*Δ T - pointer type
-                    _ => false,                 // *expr - dereference, not a type
+                    Some(Token::Const) => true,                    // *const T - pointer type
+                    Some(Token::Mut) | Some(Token::Delta) => true, // *mut/*Δ T - pointer type
+                    _ => false, // *expr - dereference, not a type
                 }
             }
-            Some(Token::LBracket) => true,    // [T] - slices
-            Some(Token::LParen) => true,      // () - tuple types including unit
-            Some(Token::Fn) => true,          // fn() - function types
-            Some(Token::Simd) => true,        // simd<T, N>
-            Some(Token::Atomic) => true,      // atomic<T>
-            Some(Token::Dyn) => true,         // dyn Trait - trait objects
-            Some(Token::Impl) => true,        // impl Trait - existential types
-            Some(Token::SelfUpper) => true,   // This is a type
-            Some(Token::Crate) => true,       // crate::Type - path starting with crate
+            Some(Token::LBracket) => true,  // [T] - slices
+            Some(Token::LParen) => true,    // () - tuple types including unit
+            Some(Token::Fn) => true,        // fn() - function types
+            Some(Token::Simd) => true,      // simd<T, N>
+            Some(Token::Atomic) => true,    // atomic<T>
+            Some(Token::Dyn) => true,       // dyn Trait - trait objects
+            Some(Token::Impl) => true,      // impl Trait - existential types
+            Some(Token::SelfUpper) => true, // This is a type
+            Some(Token::Crate) => true,     // crate::Type - path starting with crate
             Some(Token::Super) | Some(Token::IntensityUp) => true, // above/↑ - path starting with super
             Some(Token::Lifetime(_)) => true, // 'a, 'static - lifetime type args
             Some(Token::Underscore) => true,  // _ - inferred type
@@ -3361,7 +3904,9 @@ impl<'a> Parser<'a> {
             }
             Some(Token::FloatLit(_)) => false,
             Some(Token::StringLit(_)) => false,
-            Some(Token::True) | Some(Token::False) | Some(Token::Top) | Some(Token::Bottom) => false, // yea/nay/⊤/⊥
+            Some(Token::True) | Some(Token::False) | Some(Token::Top) | Some(Token::Bottom) => {
+                false
+            } // yea/nay/⊤/⊥
             Some(Token::Null) => false,
             _ => false, // Default to not parsing as generics if uncertain
         }
@@ -3414,21 +3959,44 @@ impl<'a> Parser<'a> {
             Some(Token::Body) => true,        // |body{...}
             Some(Token::Interrobang) => true, // |‽
             // Holographic operators
-            Some(Token::Lozenge) => true,     // |◊ or |◊method - possibility
-            Some(Token::BoxSymbol) => true,   // |□ or |□method - necessity
+            Some(Token::Lozenge) => true, // |◊ or |◊method - possibility
+            Some(Token::BoxSymbol) => true, // |□ or |□method - necessity
             // Identifier could be pipe method: |collect, |take, etc.
             // But identifiers NOT followed by `(` or `{` are likely bitwise OR operands
             Some(Token::Ident(name)) => {
                 // Some pipe methods don't require parentheses
                 let no_args_pipe_methods = [
-                    "collect", "observe", "len", "first", "last", "reverse",
-                    "iter", "into_iter", "enumerate", "sum", "product",
-                    "min", "max", "count", "flatten", "unique",
+                    "collect",
+                    "observe",
+                    "len",
+                    "first",
+                    "last",
+                    "reverse",
+                    "iter",
+                    "into_iter",
+                    "enumerate",
+                    "sum",
+                    "product",
+                    "min",
+                    "max",
+                    "count",
+                    "flatten",
+                    "unique",
                     // Quantum gates
-                    "H", "X", "Y", "Z", "S", "T", "measure",
-                    "H_all", "measure_all",
+                    "H",
+                    "X",
+                    "Y",
+                    "Z",
+                    "S",
+                    "T",
+                    "measure",
+                    "H_all",
+                    "measure_all",
                     // Neural network activations and tensor operations
-                    "relu", "softmax", "reshape", "backward",
+                    "relu",
+                    "softmax",
+                    "reshape",
+                    "backward",
                 ];
                 if no_args_pipe_methods.contains(&name.as_str()) {
                     return true;
@@ -3848,8 +4416,8 @@ impl<'a> Parser<'a> {
             let op = match self.current_token() {
                 // Bitwise OR - only reached if not a pipe operation
                 Some(Token::Pipe) => BinOp::BitOr,
-                Some(Token::OrOr) | Some(Token::LogicOr) => BinOp::Or,  // || or ∨
-                Some(Token::AndAnd) | Some(Token::LogicAnd) => BinOp::And,  // && or ∧
+                Some(Token::OrOr) | Some(Token::LogicOr) => BinOp::Or, // || or ∨
+                Some(Token::AndAnd) | Some(Token::LogicAnd) => BinOp::And, // && or ∧
                 Some(Token::EqEq) => BinOp::Eq,
                 Some(Token::NotEq) => BinOp::Ne,
                 Some(Token::Lt) => BinOp::Lt,
@@ -4028,7 +4596,9 @@ impl<'a> Parser<'a> {
                 self.parse_pipe_closure_with_move(true)
             }
             // Pipe-style closure: |params| body or || body or ∨ body
-            Some(Token::Pipe) | Some(Token::OrOr) | Some(Token::LogicOr) => self.parse_pipe_closure_with_move(false),
+            Some(Token::Pipe) | Some(Token::OrOr) | Some(Token::LogicOr) => {
+                self.parse_pipe_closure_with_move(false)
+            }
             _ => self.parse_postfix_expr(),
         }
     }
@@ -5124,6 +5694,8 @@ impl<'a> Parser<'a> {
             Some(Token::Volatile) => self.parse_volatile_expr(),
             Some(Token::Simd) => self.parse_simd_expr(),
             Some(Token::Atomic) => self.parse_atomic_expr(),
+            // Template expression: ⟨div⟩...⟨/div⟩
+            Some(Token::TemplateOpen) => self.parse_template_expr(),
             // Implicit self field access: `.field` desugars to `self.field`
             // This allows more concise method bodies:
             //   fn increment(mut self) { .count += 1; }
@@ -5752,6 +6324,340 @@ impl<'a> Parser<'a> {
         }
     }
 
+    // ==========================================
+    // Template Expression Parsing (STE)
+    // ==========================================
+
+    /// Parse a template expression: `⟨div[class: "card"]⟩...⟨/div⟩`
+    ///
+    /// Syntax:
+    /// ```sigil
+    /// ⟨article[class: "card", id: my_id]⟩
+    ///     ⟨h2⟩ "Title" ⟨/h2⟩
+    ///     { items |φ{_.active} |τ{i → ⟨li⟩ "{i.name}" ⟨/li⟩} }
+    /// ⟨/article⟩
+    /// ```
+    fn parse_template_expr(&mut self) -> ParseResult<Expr> {
+        self.expect(Token::TemplateOpen)?;
+
+        // Check for fragment: ⟨⟩...⟨/⟩
+        if self.check(&Token::TemplateClose) {
+            self.advance();
+            let children = self.parse_template_children()?;
+            self.expect(Token::TemplateCloseStart)?;
+            self.expect(Token::TemplateClose)?;
+            return Ok(Expr::TemplateFragment { children });
+        }
+
+        // Parse tag name
+        let tag = self.parse_template_tag()?;
+
+        // Parse optional attributes: [attr: value, ...]
+        let (attrs, events, key, ref_callback) = if self.check(&Token::LBracket) {
+            self.parse_template_attrs()?
+        } else {
+            (Vec::new(), Vec::new(), None, None)
+        };
+
+        // Check for self-closing: /⟩
+        if self.check(&Token::TemplateSelfClose) {
+            self.advance();
+            return Ok(Expr::Template(TemplateElement {
+                tag,
+                attrs,
+                events,
+                children: Vec::new(),
+                self_closing: true,
+                key,
+                ref_callback,
+            }));
+        }
+
+        // Expect closing angle bracket
+        self.expect(Token::TemplateClose)?;
+
+        // Parse children
+        let children = self.parse_template_children()?;
+
+        // Expect closing tag: ⟨/tagname⟩
+        self.expect(Token::TemplateCloseStart)?;
+        let closing_tag = self.parse_template_tag()?;
+
+        // Verify tag names match
+        if !self.template_tags_match(&tag, &closing_tag) {
+            return Err(ParseError::Custom(format!(
+                "mismatched template tags: opening {:?} but closing {:?}",
+                tag, closing_tag
+            )));
+        }
+
+        self.expect(Token::TemplateClose)?;
+
+        Ok(Expr::Template(TemplateElement {
+            tag,
+            attrs,
+            events,
+            children,
+            self_closing: false,
+            key,
+            ref_callback,
+        }))
+    }
+
+    /// Parse a template tag name (element or component)
+    fn parse_template_tag(&mut self) -> ParseResult<TemplateTag> {
+        let ident = self.parse_ident()?;
+
+        // Check if it's a component (PascalCase) or element (lowercase)
+        if ident
+            .name
+            .chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false)
+        {
+            // Component path - might be qualified like MyModule·Button
+            let mut segments = vec![PathSegment {
+                ident,
+                generics: None,
+            }];
+
+            while self.consume_if(&Token::MiddleDot) {
+                let next_ident = self.parse_ident()?;
+                segments.push(PathSegment {
+                    ident: next_ident,
+                    generics: None,
+                });
+            }
+
+            Ok(TemplateTag::Component(TypePath { segments }))
+        } else {
+            Ok(TemplateTag::Element(ident.name))
+        }
+    }
+
+    /// Parse template attributes: [class: "foo", id: bar, on_click: handler]
+    fn parse_template_attrs(
+        &mut self,
+    ) -> ParseResult<(
+        Vec<TemplateAttr>,
+        Vec<TemplateEvent>,
+        Option<Box<Expr>>,
+        Option<Box<Expr>>,
+    )> {
+        self.expect(Token::LBracket)?;
+
+        let mut attrs = Vec::new();
+        let mut events = Vec::new();
+        let mut key = None;
+        let mut ref_callback = None;
+
+        while !self.check(&Token::RBracket) {
+            let name = self.parse_ident()?;
+            self.expect(Token::Colon)?;
+            let value = self.parse_expr()?;
+
+            // Check for evidentiality marker
+            let evidentiality = self.parse_optional_evidentiality();
+
+            // Handle special attributes
+            if name.name == "key" {
+                key = Some(Box::new(value));
+            } else if name.name == "ref" {
+                ref_callback = Some(Box::new(value));
+            } else if name.name.starts_with("on_") {
+                // Event handler
+                let event_name = name.name.strip_prefix("on_").unwrap().to_string();
+                events.push(TemplateEvent {
+                    event: Ident {
+                        name: event_name,
+                        evidentiality: None,
+                        affect: None,
+                        span: name.span,
+                    },
+                    handler: value,
+                });
+            } else {
+                attrs.push(TemplateAttr {
+                    name,
+                    value,
+                    evidentiality,
+                });
+            }
+
+            if !self.consume_if(&Token::Comma) {
+                break;
+            }
+        }
+
+        self.expect(Token::RBracket)?;
+        Ok((attrs, events, key, ref_callback))
+    }
+
+    /// Parse optional evidentiality marker after a value
+    fn parse_optional_evidentiality(&mut self) -> Option<Evidentiality> {
+        match self.current_token() {
+            Some(Token::Bang) => {
+                self.advance();
+                Some(Evidentiality::Known)
+            }
+            Some(Token::Question) => {
+                self.advance();
+                Some(Evidentiality::Uncertain)
+            }
+            Some(Token::Tilde) => {
+                self.advance();
+                Some(Evidentiality::Reported)
+            }
+            Some(Token::Interrobang) => {
+                self.advance();
+                Some(Evidentiality::Paradox)
+            }
+            _ => None,
+        }
+    }
+
+    /// Parse template children (elements, text, expressions)
+    fn parse_template_children(&mut self) -> ParseResult<Vec<TemplateChild>> {
+        let mut children = Vec::new();
+
+        loop {
+            match self.current_token() {
+                // End of children
+                Some(Token::TemplateCloseStart) => break,
+                // Nested element
+                Some(Token::TemplateOpen) => {
+                    let child_expr = self.parse_template_expr()?;
+                    match child_expr {
+                        Expr::Template(el) => {
+                            children.push(TemplateChild::Element(Box::new(el)));
+                        }
+                        Expr::TemplateFragment {
+                            children: frag_children,
+                        } => {
+                            children.push(TemplateChild::Fragment(frag_children));
+                        }
+                        _ => {
+                            return Err(ParseError::Custom(
+                                "unexpected expression in template".to_string(),
+                            ));
+                        }
+                    }
+                }
+                // Expression in braces
+                Some(Token::LBrace) => {
+                    self.advance();
+                    let expr = self.parse_expr()?;
+                    self.expect(Token::RBrace)?;
+                    children.push(TemplateChild::Expr(Box::new(expr)));
+                }
+                // Text content (string literal)
+                Some(Token::StringLit(s)) => {
+                    let text = s.clone();
+                    self.advance();
+                    children.push(TemplateChild::Text(text));
+                }
+                // Interpolated string
+                Some(Token::InterpolatedStringLit(s)) => {
+                    let text = s.clone();
+                    self.advance();
+                    // Parse interpolations
+                    let parts = self.parse_template_interpolation(&text)?;
+                    children.push(TemplateChild::Interpolation { parts });
+                }
+                // End of template or unexpected token
+                _ => break,
+            }
+        }
+
+        Ok(children)
+    }
+
+    /// Parse interpolated string into parts
+    fn parse_template_interpolation(
+        &mut self,
+        text: &str,
+    ) -> ParseResult<Vec<TemplateInterpolationPart>> {
+        // Simple parsing: split on { and }
+        let mut parts = Vec::new();
+        let mut current = String::new();
+        let mut chars = text.chars().peekable();
+        let mut in_expr = false;
+        let mut expr_str = String::new();
+
+        while let Some(c) = chars.next() {
+            if c == '{' && !in_expr {
+                if !current.is_empty() {
+                    parts.push(TemplateInterpolationPart::Text(current.clone()));
+                    current.clear();
+                }
+                in_expr = true;
+            } else if c == '}' && in_expr {
+                // Parse the expression string
+                // For now, just store as text - full parsing would require a sub-parser
+                let (expr_text, evidentiality) = self.extract_expr_with_evidentiality(&expr_str);
+                parts.push(TemplateInterpolationPart::Expr {
+                    expr: Box::new(Expr::Path(TypePath {
+                        segments: vec![PathSegment {
+                            ident: Ident {
+                                name: expr_text,
+                                evidentiality: None,
+                                affect: None,
+                                span: self.current_span(),
+                            },
+                            generics: None,
+                        }],
+                    })),
+                    evidentiality,
+                });
+                expr_str.clear();
+                in_expr = false;
+            } else if in_expr {
+                expr_str.push(c);
+            } else {
+                current.push(c);
+            }
+        }
+
+        if !current.is_empty() {
+            parts.push(TemplateInterpolationPart::Text(current));
+        }
+
+        Ok(parts)
+    }
+
+    /// Extract expression text and optional evidentiality marker from interpolation
+    fn extract_expr_with_evidentiality(&self, s: &str) -> (String, Option<Evidentiality>) {
+        let s = s.trim();
+        if s.ends_with('!') {
+            (s[..s.len() - 1].to_string(), Some(Evidentiality::Known))
+        } else if s.ends_with('?') {
+            (s[..s.len() - 1].to_string(), Some(Evidentiality::Uncertain))
+        } else if s.ends_with('~') {
+            (s[..s.len() - 1].to_string(), Some(Evidentiality::Reported))
+        } else if s.ends_with('‽') {
+            (s[..s.len() - 3].to_string(), Some(Evidentiality::Paradox)) // ‽ is 3 bytes
+        } else {
+            (s.to_string(), None)
+        }
+    }
+
+    /// Check if two template tags match
+    fn template_tags_match(&self, opening: &TemplateTag, closing: &TemplateTag) -> bool {
+        match (opening, closing) {
+            (TemplateTag::Element(a), TemplateTag::Element(b)) => a == b,
+            (TemplateTag::Component(a), TemplateTag::Component(b)) => {
+                // Compare paths
+                a.segments.len() == b.segments.len()
+                    && a.segments
+                        .iter()
+                        .zip(b.segments.iter())
+                        .all(|(sa, sb)| sa.ident.name == sb.ident.name)
+            }
+            _ => false,
+        }
+    }
+
     /// Check if the token after `|` looks like a pipe target (function, closure, morpheme)
     /// rather than a bitwise OR operand (literal, parenthesized expression)
     fn is_pipe_target_ahead(&mut self) -> bool {
@@ -5760,8 +6666,8 @@ impl<'a> Parser<'a> {
             match &next {
                 // These indicate a pipe target (function call, closure, morpheme)
                 Token::Ident(_) => true,
-                Token::SelfLower | Token::Xi => true,  // this/ξ
-                Token::SelfUpper => true,  // This
+                Token::SelfLower | Token::Xi => true, // this/ξ
+                Token::SelfUpper => true,             // This
                 // Morpheme operators (τ, φ, σ, ρ, Π, Σ, etc.)
                 Token::Tau
                 | Token::Phi
@@ -6804,8 +7710,10 @@ impl<'a> Parser<'a> {
                 if self.check(&Token::Let) {
                     stmts.push(self.parse_let_stmt()?);
                 } else if self.check(&Token::Return)
-                    || self.check(&Token::Break) || self.check(&Token::Tensor)
-                    || self.check(&Token::Continue) || self.check(&Token::CycleArrow)
+                    || self.check(&Token::Break)
+                    || self.check(&Token::Tensor)
+                    || self.check(&Token::Continue)
+                    || self.check(&Token::CycleArrow)
                 {
                     // Control flow - treat as final expression
                     break;
@@ -7449,7 +8357,11 @@ impl<'a> Parser<'a> {
                 return Ok(Pattern::Path(path));
             }
             // Handle crate::, self::, super:: path patterns
-            Some(Token::Crate) | Some(Token::SelfLower) | Some(Token::Xi) | Some(Token::Super) | Some(Token::IntensityUp) => {
+            Some(Token::Crate)
+            | Some(Token::SelfLower)
+            | Some(Token::Xi)
+            | Some(Token::Super)
+            | Some(Token::IntensityUp) => {
                 let keyword = self.current_token().cloned();
                 let span = self.current_span();
                 self.advance();
@@ -7477,8 +8389,8 @@ impl<'a> Parser<'a> {
                 // Build the path starting with crate/self/super
                 let keyword_name = match keyword {
                     Some(Token::Crate) => "crate",
-                    Some(Token::SelfLower) | Some(Token::Xi) => "self",  // this or ξ
-                    Some(Token::Super) | Some(Token::IntensityUp) => "super",  // above or ↑
+                    Some(Token::SelfLower) | Some(Token::Xi) => "self", // this or ξ
+                    Some(Token::Super) | Some(Token::IntensityUp) => "super", // above or ↑
                     _ => unreachable!(),
                 };
                 let mut segments = vec![PathSegment {
@@ -8799,6 +9711,83 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_form_simple() {
+        let source = r#"
+            form ContactForm {
+                field email: String~ → String! {
+                    validate: |v| v·contains("@"),
+                    error: "Invalid email",
+                }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Form(form) = &file.items[0].node {
+            assert_eq!(form.name.name, "ContactForm");
+            assert_eq!(form.fields.len(), 1);
+            assert_eq!(form.fields[0].name.name, "email");
+            assert!(form.fields[0].validate.is_some());
+            assert_eq!(form.fields[0].error, Some("Invalid email".to_string()));
+        } else {
+            panic!("Expected Form item");
+        }
+    }
+
+    #[test]
+    fn test_parse_form_with_aegis() {
+        let source = r#"
+            form SecureForm {
+                field password: String~ → String! {
+                    validate: |v| v·len() >= 8,
+                    error: "Password too short",
+                }
+                aegis: {
+                    audit: yea,
+                    injection_check: yea,
+                    identity: required,
+                }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Form(form) = &file.items[0].node {
+            assert!(form.aegis.is_some());
+            let aegis = form.aegis.as_ref().unwrap();
+            assert!(aegis.audit);
+            assert!(aegis.injection_check);
+            assert_eq!(aegis.identity, FormIdentityRequirement::Required);
+        } else {
+            panic!("Expected Form item");
+        }
+    }
+
+    #[test]
+    fn test_parse_form_with_transform() {
+        let source = r#"
+            form NormalizedInput {
+                field email: String~ → String! {
+                    validate: |v| v·contains("@"),
+                    transform: |v| v·trim()·to_lowercase(),
+                    error: "Invalid email",
+                }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Form(form) = &file.items[0].node {
+            assert!(form.fields[0].transform.is_some());
+        } else {
+            panic!("Expected Form item");
+        }
+    }
+
+    #[test]
     fn test_parse_number_bases() {
         let source = "rite bases() { ≔ a = 42; ≔ b = 0b101010; ≔ c = 0x2A; ≔ d = 0v22; }";
         let mut parser = Parser::new(source);
@@ -9401,7 +10390,7 @@ mod tests {
             {
                 ⤺ allocator.allocate(count, 8);
             }
-        
+
 "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
@@ -9414,5 +10403,260 @@ mod tests {
         } else {
             panic!("Expected function");
         }
+    }
+
+    #[test]
+    fn test_parse_simple_template() {
+        // Simple template element
+        let source = r#"⟨div⟩ "Hello" ⟨/div⟩"#;
+        let mut parser = Parser::new(source);
+        let expr = parser.parse_expr().unwrap();
+
+        if let Expr::Template(el) = expr {
+            assert!(matches!(el.tag, TemplateTag::Element(ref s) if s == "div"));
+            assert_eq!(el.children.len(), 1);
+            assert!(matches!(el.children[0], TemplateChild::Text(ref s) if s == "Hello"));
+        } else {
+            panic!("Expected Template, got {:?}", expr);
+        }
+    }
+
+    #[test]
+    fn test_parse_template_with_attrs() {
+        // Template with attributes
+        let source = r#"⟨div[class: "card", id: my_id]⟩ ⟨/div⟩"#;
+        let mut parser = Parser::new(source);
+        let expr = parser.parse_expr().unwrap();
+
+        if let Expr::Template(el) = expr {
+            assert!(matches!(el.tag, TemplateTag::Element(ref s) if s == "div"));
+            assert_eq!(el.attrs.len(), 2);
+            assert_eq!(el.attrs[0].name.name, "class");
+            assert_eq!(el.attrs[1].name.name, "id");
+        } else {
+            panic!("Expected Template, got {:?}", expr);
+        }
+    }
+
+    #[test]
+    fn test_parse_self_closing_template() {
+        // Self-closing template
+        let source = r#"⟨input[type: "text"]/⟩"#;
+        let mut parser = Parser::new(source);
+        let expr = parser.parse_expr().unwrap();
+
+        if let Expr::Template(el) = expr {
+            assert!(matches!(el.tag, TemplateTag::Element(ref s) if s == "input"));
+            assert!(el.self_closing);
+            assert_eq!(el.attrs.len(), 1);
+        } else {
+            panic!("Expected Template, got {:?}", expr);
+        }
+    }
+
+    #[test]
+    fn test_parse_nested_template() {
+        // Nested templates
+        let source = r#"⟨div⟩ ⟨span⟩ "Hello" ⟨/span⟩ ⟨/div⟩"#;
+        let mut parser = Parser::new(source);
+        let expr = parser.parse_expr().unwrap();
+
+        if let Expr::Template(el) = expr {
+            assert!(matches!(el.tag, TemplateTag::Element(ref s) if s == "div"));
+            assert_eq!(el.children.len(), 1);
+            if let TemplateChild::Element(inner) = &el.children[0] {
+                assert!(matches!(inner.tag, TemplateTag::Element(ref s) if s == "span"));
+            } else {
+                panic!("Expected nested element");
+            }
+        } else {
+            panic!("Expected Template, got {:?}", expr);
+        }
+    }
+
+    #[test]
+    fn test_parse_template_with_expression() {
+        // Template with embedded expression
+        let source = r#"⟨div⟩ { count + 1 } ⟨/div⟩"#;
+        let mut parser = Parser::new(source);
+        let expr = parser.parse_expr().unwrap();
+
+        if let Expr::Template(el) = expr {
+            assert_eq!(el.children.len(), 1);
+            assert!(matches!(el.children[0], TemplateChild::Expr(_)));
+        } else {
+            panic!("Expected Template, got {:?}", expr);
+        }
+    }
+
+    #[test]
+    fn test_parse_component_template() {
+        // Component (PascalCase)
+        let source = r#"⟨MyButton[on_click: handle_click]⟩ "Click me" ⟨/MyButton⟩"#;
+        let mut parser = Parser::new(source);
+        let expr = parser.parse_expr().unwrap();
+
+        if let Expr::Template(el) = expr {
+            if let TemplateTag::Component(path) = &el.tag {
+                assert_eq!(path.segments[0].ident.name, "MyButton");
+            } else {
+                panic!("Expected Component tag");
+            }
+            assert_eq!(el.events.len(), 1);
+            assert_eq!(el.events[0].event.name, "click");
+        } else {
+            panic!("Expected Template, got {:?}", expr);
+        }
+    }
+
+    // ========================================================================
+    // Type-Safe i18n Tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_translations_simple() {
+        let source = r#"
+            translations Common {
+                locale: Lang,
+
+                app_name: String! = ⌥ lang {
+                    En => "My App",
+                    Es => "Mi App",
+                }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Translations(t) = &file.items[0].node {
+            assert_eq!(t.name.name, "Common");
+            assert_eq!(t.entries.len(), 1);
+            if let TranslationEntry::Property(p) = &t.entries[0] {
+                assert_eq!(p.name.name, "app_name");
+            } else {
+                panic!("Expected TranslationProperty");
+            }
+        } else {
+            panic!("Expected Translations item, got {:?}", file.items[0].node);
+        }
+    }
+
+    #[test]
+    fn test_parse_translations_with_method() {
+        let source = r#"
+            translations Greetings {
+                locale: Lang,
+
+                hello: String! = ⌥ lang {
+                    En => "Hello",
+                    Es => "Hola",
+                }
+
+                greeting(name: String): String! = ⌥ lang {
+                    En => format!("Hello, {}!", name),
+                    Es => format!("¡Hola, {}!", name),
+                }
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::Translations(t) = &file.items[0].node {
+            assert_eq!(t.name.name, "Greetings");
+            assert_eq!(t.entries.len(), 2);
+
+            // First entry is a property
+            if let TranslationEntry::Property(p) = &t.entries[0] {
+                assert_eq!(p.name.name, "hello");
+            } else {
+                panic!("Expected TranslationProperty for first entry");
+            }
+
+            // Second entry is a method
+            if let TranslationEntry::Method(m) = &t.entries[1] {
+                assert_eq!(m.name.name, "greeting");
+                assert_eq!(m.params.len(), 1);
+                // Check param name via Pattern::Ident
+                if let Pattern::Ident { name, .. } = &m.params[0].pattern {
+                    assert_eq!(name.name, "name");
+                } else {
+                    panic!("Expected Ident pattern for param");
+                }
+            } else {
+                panic!("Expected TranslationMethod for second entry");
+            }
+        } else {
+            panic!("Expected Translations item");
+        }
+    }
+
+    #[test]
+    fn test_parse_locale_enum_simple() {
+        let source = r#"
+            locale ᛈ Locale {
+                En { code: "en", name: "English" },
+                Es { code: "es", name: "Español" },
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::LocaleEnum(l) = &file.items[0].node {
+            assert_eq!(l.name.name, "Locale");
+            assert_eq!(l.variants.len(), 2);
+
+            assert_eq!(l.variants[0].name.name, "En");
+            assert_eq!(l.variants[0].code, "en");
+            assert_eq!(l.variants[0].display_name, "English");
+            assert!(!l.variants[0].rtl);
+
+            assert_eq!(l.variants[1].name.name, "Es");
+            assert_eq!(l.variants[1].code, "es");
+            assert_eq!(l.variants[1].display_name, "Español");
+        } else {
+            panic!("Expected LocaleEnum item, got {:?}", file.items[0].node);
+        }
+    }
+
+    #[test]
+    fn test_parse_locale_enum_with_rtl_and_fallback() {
+        let source = r#"
+            locale ᛈ Locale {
+                En { code: "en", name: "English" },
+                Ar { code: "ar", name: "العربية", rtl: yea, fallback: En },
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().unwrap();
+        assert_eq!(file.items.len(), 1);
+
+        if let Item::LocaleEnum(l) = &file.items[0].node {
+            assert_eq!(l.variants.len(), 2);
+
+            // Arabic variant with RTL and fallback
+            assert_eq!(l.variants[1].name.name, "Ar");
+            assert_eq!(l.variants[1].code, "ar");
+            assert!(l.variants[1].rtl);
+            assert!(l.variants[1].fallback.is_some());
+            assert_eq!(l.variants[1].fallback.as_ref().unwrap().name, "En");
+        } else {
+            panic!("Expected LocaleEnum item");
+        }
+    }
+
+    #[test]
+    fn test_parse_translations_error_no_locale() {
+        // Should fail if locale declaration is missing
+        let source = r#"
+            translations Bad {
+                title: String! = "Hello"
+            }
+        "#;
+        let mut parser = Parser::new(source);
+        let result = parser.parse_file();
+        assert!(result.is_err());
     }
 }

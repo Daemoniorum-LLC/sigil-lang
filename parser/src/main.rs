@@ -3,12 +3,12 @@
 use sigil_parser::lower::lower_source_file;
 use sigil_parser::span::Span;
 use sigil_parser::typeck::TypeChecker;
+#[cfg(feature = "wasm")]
+use sigil_parser::wasm::WasmTarget;
 #[cfg(feature = "jit")]
 use sigil_parser::JitCompiler;
 #[cfg(feature = "wasm")]
 use sigil_parser::WasmCompiler;
-#[cfg(feature = "wasm")]
-use sigil_parser::wasm::WasmTarget;
 use sigil_parser::{
     register_stdlib, set_verbose, Diagnostic, Diagnostics, Interpreter, Lexer, Parser, Token,
 };
@@ -60,7 +60,9 @@ fn main() -> ExitCode {
         eprintln!("  run-ws [bin]    Run a workspace (reads Sigil.toml, optional bin crate name)");
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
-        eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO, --cuda for CUDA)");
+        eprintln!(
+            "  compile <file>  Compile to native executable (AOT, --lto for LTO, --cuda for CUDA)"
+        );
         eprintln!();
         eprintln!("Analysis:");
         eprintln!("  check <file>    Type-check and validate (for AI agents: --format=json)");
@@ -202,7 +204,9 @@ fn main() -> ExitCode {
         "wasm" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil wasm <file.sigil> [-o output.wasm] [--target browser|wasi]");
+                eprintln!(
+                    "Usage: sigil wasm <file.sigil> [-o output.wasm] [--target browser|wasi]"
+                );
                 return ExitCode::from(1);
             }
             let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
@@ -228,7 +232,10 @@ fn main() -> ExitCode {
                     match WasmTarget::from_str(&args[pos + 1]) {
                         Some(t) => t,
                         None => {
-                            eprintln!("Error: invalid target '{}'. Use 'browser' or 'wasi'", args[pos + 1]);
+                            eprintln!(
+                                "Error: invalid target '{}'. Use 'browser' or 'wasi'",
+                                args[pos + 1]
+                            );
                             return ExitCode::from(1);
                         }
                     }
@@ -327,7 +334,9 @@ fn main() -> ExitCode {
                 eprintln!("Git Integration:");
                 eprintln!("  --changed               Lint only uncommitted changes");
                 eprintln!("  --since=<commit>        Lint files changed since commit");
-                eprintln!("  --baseline              Use .sigillint-baseline.json to filter known issues");
+                eprintln!(
+                    "  --baseline              Use .sigillint-baseline.json to filter known issues"
+                );
                 eprintln!("  --setup-hooks           Generate pre-commit hook");
                 eprintln!();
                 eprintln!("Reports:");
@@ -436,10 +445,7 @@ fn main() -> ExitCode {
             let stdin_mode = args.iter().any(|a| a == "--stdin");
 
             // Find the path argument (skip flags)
-            let path_arg = args
-                .iter()
-                .skip(2)
-                .find(|a| !a.starts_with('-'));
+            let path_arg = args.iter().skip(2).find(|a| !a.starts_with('-'));
 
             let config = sigil_parser::fmt::FormatConfig::load();
 
@@ -636,7 +642,7 @@ fn main() -> ExitCode {
                     "--version" | "-v" => args[4].clone(),
                     "--path" | "-p" => format!("path:{}", args[4]),
                     "--git" | "-g" => format!("git:{}", args[4]),
-                    _ => args.get(3).cloned().unwrap_or_else(|| "*".to_string())
+                    _ => args.get(3).cloned().unwrap_or_else(|| "*".to_string()),
                 }
             } else {
                 args.get(3).cloned().unwrap_or_else(|| "*".to_string())
@@ -1425,7 +1431,7 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_cuda: bool) -> Exit
     if use_cuda {
         // Find CUDA library paths (add all that exist)
         let cuda_lib_paths = [
-            "/usr/lib/wsl/lib",           // WSL2 CUDA driver
+            "/usr/lib/wsl/lib", // WSL2 CUDA driver
             "/usr/local/cuda/lib64",
             "/usr/lib/x86_64-linux-gnu",
             "/opt/cuda/lib64",
@@ -1442,7 +1448,8 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_cuda: bool) -> Exit
     }
 
     // Add libraries from #[link("name")] attributes on extern blocks
-    let link_libs: Vec<String> = compiler.get_link_libraries()
+    let link_libs: Vec<String> = compiler
+        .get_link_libraries()
         .iter()
         .map(|lib| format!("-l{}", lib))
         .collect();
@@ -1589,7 +1596,10 @@ fn wasm_compile_file(path: &str, output: &str, target: WasmTarget) -> ExitCode {
     };
 
     let target_name = if target.is_wasi() { "WASI" } else { "Browser" };
-    println!("Compiling {} -> {} (WebAssembly, target: {})", path, output, target_name);
+    println!(
+        "Compiling {} -> {} (WebAssembly, target: {})",
+        path, output, target_name
+    );
 
     // Create WASM compiler with specified target
     let mut compiler = WasmCompiler::with_target(target);
@@ -1884,9 +1894,8 @@ fn lint_path(
     ci_format: Option<&str>,
 ) -> ExitCode {
     use sigil_parser::lint::{
-        apply_fixes, find_baseline, generate_ci_annotations, generate_sarif,
-        lint_directory, lint_directory_parallel, lint_source_with_config,
-        save_html_report, CiFormat, LintConfig,
+        apply_fixes, find_baseline, generate_ci_annotations, generate_sarif, lint_directory,
+        lint_directory_parallel, lint_source_with_config, save_html_report, CiFormat, LintConfig,
     };
     use std::path::Path;
 
@@ -2218,7 +2227,8 @@ fn lint_changed_only(args: Vec<String>) -> ExitCode {
                                     if diagnostics.is_empty() {
                                         println!("✓ {} - no issues", file_path);
                                     } else {
-                                        let source = fs::read_to_string(file_path).unwrap_or_default();
+                                        let source =
+                                            fs::read_to_string(file_path).unwrap_or_default();
                                         diagnostics.eprint_all(file_path, &source);
                                     }
                                 }
@@ -2317,7 +2327,8 @@ fn lint_since(commit: &str, args: Vec<String>) -> ExitCode {
                                     if diagnostics.is_empty() {
                                         println!("✓ {} - no issues", file_path);
                                     } else {
-                                        let source = fs::read_to_string(file_path).unwrap_or_default();
+                                        let source =
+                                            fs::read_to_string(file_path).unwrap_or_default();
                                         diagnostics.eprint_all(file_path, &source);
                                     }
                                 }
@@ -2665,6 +2676,32 @@ fn print_item_summary(item: &sigil_parser::Item) {
                     println!("  trigger handler");
                 }
             }
+        }
+        Item::Form(f) => {
+            println!(
+                "  form {} ({} fields{})",
+                f.name.name,
+                f.fields.len(),
+                if f.aegis.is_some() {
+                    ", with aegis"
+                } else {
+                    ""
+                }
+            );
+        }
+        Item::Translations(t) => {
+            println!(
+                "  translations {} ({} entries)",
+                t.name.name,
+                t.entries.len()
+            );
+        }
+        Item::LocaleEnum(l) => {
+            println!(
+                "  locale enum {} ({} locales)",
+                l.name.name,
+                l.variants.len()
+            );
         }
     }
 }
@@ -3483,7 +3520,10 @@ fn init_project() -> ExitCode {
 
 /// Run tests in the current project
 /// Collect all test functions from AST, including those in modules
-fn collect_test_functions(items: &[sigil_parser::span::Spanned<sigil_parser::ast::Item>], prefix: &str) -> Vec<String> {
+fn collect_test_functions(
+    items: &[sigil_parser::span::Spanned<sigil_parser::ast::Item>],
+    prefix: &str,
+) -> Vec<String> {
     let mut tests = Vec::new();
 
     for item in items {
@@ -3819,7 +3859,11 @@ fn repl() -> ExitCode {
     println!("A polysynthetic language with evidentiality types.");
     println!();
     println!("{}Commands:{}", colors::DIM, colors::RESET);
-    println!("  {}:help{}     Show all commands", colors::KEYWORD, colors::RESET);
+    println!(
+        "  {}:help{}     Show all commands",
+        colors::KEYWORD,
+        colors::RESET
+    );
     println!("  {}:exit{}     Exit REPL", colors::KEYWORD, colors::RESET);
     println!();
     println!(
@@ -3877,7 +3921,12 @@ fn repl() -> ExitCode {
                         let full_input = std::mem::take(&mut multiline_buffer);
                         brace_depth = 0;
                         let _ = rl.add_history_entry(&full_input);
-                        evaluate_input_with_timing(&mut interpreter, &full_input, show_ast, show_timing);
+                        evaluate_input_with_timing(
+                            &mut interpreter,
+                            &full_input,
+                            show_ast,
+                            show_timing,
+                        );
                     }
                     continue;
                 }
@@ -3942,9 +3991,15 @@ fn repl() -> ExitCode {
                         _ => {
                             println!(
                                 "{}Unknown command: {}{}",
-                                colors::SPECIAL, input, colors::RESET
+                                colors::SPECIAL,
+                                input,
+                                colors::RESET
                             );
-                            println!("{}Type :help for available commands{}", colors::DIM, colors::RESET);
+                            println!(
+                                "{}Type :help for available commands{}",
+                                colors::DIM,
+                                colors::RESET
+                            );
                             continue;
                         }
                     }
@@ -3969,7 +4024,12 @@ fn repl() -> ExitCode {
                 if brace_depth == 0 {
                     let full_input = std::mem::take(&mut multiline_buffer);
                     let _ = rl.add_history_entry(&full_input);
-                    evaluate_input_with_timing(&mut interpreter, &full_input, show_ast, show_timing);
+                    evaluate_input_with_timing(
+                        &mut interpreter,
+                        &full_input,
+                        show_ast,
+                        show_timing,
+                    );
                 }
             }
             Err(ReadlineError::Interrupted) => {
@@ -4002,7 +4062,12 @@ fn repl() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn evaluate_input_with_timing(interpreter: &mut Interpreter, input: &str, show_ast: bool, show_timing: bool) {
+fn evaluate_input_with_timing(
+    interpreter: &mut Interpreter,
+    input: &str,
+    show_ast: bool,
+    show_timing: bool,
+) {
     let start = std::time::Instant::now();
     evaluate_input(interpreter, input, show_ast);
     if show_timing {
@@ -4031,7 +4096,12 @@ fn print_variables(_interpreter: &Interpreter) {
     );
 }
 
-fn load_file_into_repl(interpreter: &mut Interpreter, path: &str, show_ast: bool, show_timing: bool) {
+fn load_file_into_repl(
+    interpreter: &mut Interpreter,
+    path: &str,
+    show_ast: bool,
+    show_timing: bool,
+) {
     match fs::read_to_string(path) {
         Ok(source) => {
             println!("{}Loading {}...{}", colors::DIM, path, colors::RESET);
@@ -4043,7 +4113,13 @@ fn load_file_into_repl(interpreter: &mut Interpreter, path: &str, show_ast: bool
             }
         }
         Err(e) => {
-            eprintln!("{}Error loading '{}': {}{}", colors::SPECIAL, path, e, colors::RESET);
+            eprintln!(
+                "{}Error loading '{}': {}{}",
+                colors::SPECIAL,
+                path,
+                e,
+                colors::RESET
+            );
         }
     }
 }
@@ -4872,8 +4948,14 @@ fn tome_forge() -> ExitCode {
             println!();
             println!("  Forge complete!");
             println!();
-            println!("  Run with: sigil run {}",
-                result.main_file.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "src/main.sg".to_string()));
+            println!(
+                "  Run with: sigil run {}",
+                result
+                    .main_file
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "src/main.sg".to_string())
+            );
             ExitCode::SUCCESS
         }
         Err(e) => {
@@ -4963,8 +5045,10 @@ fn tome_consecrate() -> ExitCode {
             println!("  For now, share your tome via git:");
             println!();
             println!("    # Others can summon via git:");
-            println!("    sigil summon {} git:https://github.com/you/{}",
-                grimoire.tome.name, grimoire.tome.name);
+            println!(
+                "    sigil summon {} git:https://github.com/you/{}",
+                grimoire.tome.name, grimoire.tome.name
+            );
             println!();
             println!("  The Grimoire registry will be unveiled soon...");
             ExitCode::SUCCESS

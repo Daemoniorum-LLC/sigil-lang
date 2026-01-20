@@ -96,8 +96,10 @@ impl WasmCompiler {
                                 // Actually looking at WASM call convention: first arg is popped first
                                 // So Call(concat) pops [top=str2, next=str1]
                                 // We have [acc, new] on stack, str1=acc, str2=new. That's right!
-                                let concat_idx = self.imports.get_func("string_concat")
-                                    .ok_or_else(|| WasmError::internal("string_concat not registered"))?;
+                                let concat_idx =
+                                    self.imports.get_func("string_concat").ok_or_else(|| {
+                                        WasmError::internal("string_concat not registered")
+                                    })?;
                                 let func = self.current_function_mut().unwrap();
                                 func.push(Instruction::Call(concat_idx));
                             }
@@ -108,16 +110,20 @@ impl WasmCompiler {
                             self.compile_expr(expr)?;
 
                             // Convert to string using string_from_int
-                            let from_int_idx = self.imports.get_func("string_from_int")
-                                .ok_or_else(|| WasmError::internal("string_from_int not registered"))?;
+                            let from_int_idx =
+                                self.imports.get_func("string_from_int").ok_or_else(|| {
+                                    WasmError::internal("string_from_int not registered")
+                                })?;
                             let func = self.current_function_mut().unwrap();
                             func.push(Instruction::Call(from_int_idx));
                             // Result is i32 string pointer
 
                             if !first {
                                 // Concat with accumulator
-                                let concat_idx = self.imports.get_func("string_concat")
-                                    .ok_or_else(|| WasmError::internal("string_concat not registered"))?;
+                                let concat_idx =
+                                    self.imports.get_func("string_concat").ok_or_else(|| {
+                                        WasmError::internal("string_concat not registered")
+                                    })?;
                                 let func = self.current_function_mut().unwrap();
                                 func.push(Instruction::Call(concat_idx));
                             }

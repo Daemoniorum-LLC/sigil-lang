@@ -155,7 +155,13 @@ impl ImportRegistry {
         // Register 'println' variants for WASM output
         self.add_import_with_alias("console", "println_i64", "println", vec![I64], vec![]);
         self.add_import_with_alias("console", "println_f64", "println_f64", vec![F64], vec![]);
-        self.add_import_with_alias("console", "println_str", "println_str", vec![I32, I32], vec![]);
+        self.add_import_with_alias(
+            "console",
+            "println_str",
+            "println_str",
+            vec![I32, I32],
+            vec![],
+        );
     }
 
     fn register_string_imports(&mut self) {
@@ -585,7 +591,8 @@ mod tests {
         let js_idx = registry.add_import("console", "log", vec![ValType::I64], vec![]);
 
         // Add a WASM module import
-        let wasm_idx = registry.add_wasm_module_import("my_lib", "calc", vec![], vec![ValType::I64]);
+        let wasm_idx =
+            registry.add_wasm_module_import("my_lib", "calc", vec![], vec![ValType::I64]);
 
         // Both should coexist
         assert_eq!(registry.get_func("console_log"), Some(js_idx));

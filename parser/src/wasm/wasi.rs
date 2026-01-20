@@ -76,11 +76,21 @@ pub fn register_wasi_imports(registry: &mut ImportRegistry) {
 
     // fd_write(fd: i32, iovs: i32, iovs_len: i32, nwritten: i32) -> errno
     // Write to a file descriptor
-    registry.add_import("wasi_snapshot_preview1", "fd_write", vec![I32, I32, I32, I32], vec![I32]);
+    registry.add_import(
+        "wasi_snapshot_preview1",
+        "fd_write",
+        vec![I32, I32, I32, I32],
+        vec![I32],
+    );
 
     // fd_read(fd: i32, iovs: i32, iovs_len: i32, nread: i32) -> errno
     // Read from a file descriptor
-    registry.add_import("wasi_snapshot_preview1", "fd_read", vec![I32, I32, I32, I32], vec![I32]);
+    registry.add_import(
+        "wasi_snapshot_preview1",
+        "fd_read",
+        vec![I32, I32, I32, I32],
+        vec![I32],
+    );
 
     // fd_close(fd: i32) -> errno
     // Close a file descriptor
@@ -88,19 +98,39 @@ pub fn register_wasi_imports(registry: &mut ImportRegistry) {
 
     // fd_seek(fd: i32, offset: i64, whence: i32, newoffset: i32) -> errno
     // Seek within a file
-    registry.add_import("wasi_snapshot_preview1", "fd_seek", vec![I32, I64, I32, I32], vec![I32]);
+    registry.add_import(
+        "wasi_snapshot_preview1",
+        "fd_seek",
+        vec![I32, I64, I32, I32],
+        vec![I32],
+    );
 
     // fd_fdstat_get(fd: i32, buf: i32) -> errno
     // Get file descriptor status
-    registry.add_import("wasi_snapshot_preview1", "fd_fdstat_get", vec![I32, I32], vec![I32]);
+    registry.add_import(
+        "wasi_snapshot_preview1",
+        "fd_fdstat_get",
+        vec![I32, I32],
+        vec![I32],
+    );
 
     // fd_prestat_get(fd: i32, buf: i32) -> errno
     // Get prestat (for pre-opened directories)
-    registry.add_import("wasi_snapshot_preview1", "fd_prestat_get", vec![I32, I32], vec![I32]);
+    registry.add_import(
+        "wasi_snapshot_preview1",
+        "fd_prestat_get",
+        vec![I32, I32],
+        vec![I32],
+    );
 
     // fd_prestat_dir_name(fd: i32, path: i32, path_len: i32) -> errno
     // Get pre-opened directory name
-    registry.add_import("wasi_snapshot_preview1", "fd_prestat_dir_name", vec![I32, I32, I32], vec![I32]);
+    registry.add_import(
+        "wasi_snapshot_preview1",
+        "fd_prestat_dir_name",
+        vec![I32, I32, I32],
+        vec![I32],
+    );
 
     // ============================================
     // Path Operations
@@ -121,19 +151,39 @@ pub fn register_wasi_imports(registry: &mut ImportRegistry) {
 
     // args_sizes_get(argc: i32, argv_buf_size: i32) -> errno
     // Get command line argument sizes
-    registry.add_import("wasi_snapshot_preview1", "args_sizes_get", vec![I32, I32], vec![I32]);
+    registry.add_import(
+        "wasi_snapshot_preview1",
+        "args_sizes_get",
+        vec![I32, I32],
+        vec![I32],
+    );
 
     // args_get(argv: i32, argv_buf: i32) -> errno
     // Get command line arguments
-    registry.add_import("wasi_snapshot_preview1", "args_get", vec![I32, I32], vec![I32]);
+    registry.add_import(
+        "wasi_snapshot_preview1",
+        "args_get",
+        vec![I32, I32],
+        vec![I32],
+    );
 
     // environ_sizes_get(environc: i32, environ_buf_size: i32) -> errno
     // Get environment variable sizes
-    registry.add_import("wasi_snapshot_preview1", "environ_sizes_get", vec![I32, I32], vec![I32]);
+    registry.add_import(
+        "wasi_snapshot_preview1",
+        "environ_sizes_get",
+        vec![I32, I32],
+        vec![I32],
+    );
 
     // environ_get(environ: i32, environ_buf: i32) -> errno
     // Get environment variables
-    registry.add_import("wasi_snapshot_preview1", "environ_get", vec![I32, I32], vec![I32]);
+    registry.add_import(
+        "wasi_snapshot_preview1",
+        "environ_get",
+        vec![I32, I32],
+        vec![I32],
+    );
 
     // ============================================
     // Clock Operations
@@ -141,11 +191,21 @@ pub fn register_wasi_imports(registry: &mut ImportRegistry) {
 
     // clock_time_get(clock_id: i32, precision: i64, time: i32) -> errno
     // Get current time
-    registry.add_import("wasi_snapshot_preview1", "clock_time_get", vec![I32, I64, I32], vec![I32]);
+    registry.add_import(
+        "wasi_snapshot_preview1",
+        "clock_time_get",
+        vec![I32, I64, I32],
+        vec![I32],
+    );
 
     // clock_res_get(clock_id: i32, resolution: i32) -> errno
     // Get clock resolution
-    registry.add_import("wasi_snapshot_preview1", "clock_res_get", vec![I32, I32], vec![I32]);
+    registry.add_import(
+        "wasi_snapshot_preview1",
+        "clock_res_get",
+        vec![I32, I32],
+        vec![I32],
+    );
 
     // ============================================
     // Random
@@ -153,7 +213,12 @@ pub fn register_wasi_imports(registry: &mut ImportRegistry) {
 
     // random_get(buf: i32, buf_len: i32) -> errno
     // Get random bytes
-    registry.add_import("wasi_snapshot_preview1", "random_get", vec![I32, I32], vec![I32]);
+    registry.add_import(
+        "wasi_snapshot_preview1",
+        "random_get",
+        vec![I32, I32],
+        vec![I32],
+    );
 
     // ============================================
     // Process Control
@@ -223,11 +288,21 @@ mod tests {
         register_wasi_imports(&mut registry);
 
         // Check that core WASI functions are registered
-        assert!(registry.get_func("wasi_snapshot_preview1.fd_write").is_some());
-        assert!(registry.get_func("wasi_snapshot_preview1.fd_read").is_some());
-        assert!(registry.get_func("wasi_snapshot_preview1.proc_exit").is_some());
-        assert!(registry.get_func("wasi_snapshot_preview1.args_get").is_some());
-        assert!(registry.get_func("wasi_snapshot_preview1.clock_time_get").is_some());
+        assert!(registry
+            .get_func("wasi_snapshot_preview1.fd_write")
+            .is_some());
+        assert!(registry
+            .get_func("wasi_snapshot_preview1.fd_read")
+            .is_some());
+        assert!(registry
+            .get_func("wasi_snapshot_preview1.proc_exit")
+            .is_some());
+        assert!(registry
+            .get_func("wasi_snapshot_preview1.args_get")
+            .is_some());
+        assert!(registry
+            .get_func("wasi_snapshot_preview1.clock_time_get")
+            .is_some());
     }
 
     #[test]

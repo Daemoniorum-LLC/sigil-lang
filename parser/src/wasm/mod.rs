@@ -410,7 +410,8 @@ impl WasmCompiler {
 
         print_fn.push(Instruction::End);
         self.functions.push(print_fn);
-        self.func_map.insert("__wasi_print_i64".to_string(), print_fn_idx);
+        self.func_map
+            .insert("__wasi_print_i64".to_string(), print_fn_idx);
         self.func_map.insert("print".to_string(), print_fn_idx);
         self.func_map.insert("println".to_string(), print_fn_idx);
     }

@@ -205,7 +205,13 @@ impl WasmCompiler {
             Expr::LegionDecay { .. } => Err(WasmError::unsupported("Legion decay")),
 
             // Named arguments - handled in call compilation
-            Expr::NamedArg { .. } => Err(WasmError::unsupported("named arguments outside of function calls")),
+            Expr::NamedArg { .. } => Err(WasmError::unsupported(
+                "named arguments outside of function calls",
+            )),
+
+            // Template expressions (i18n)
+            Expr::Template(_) => Err(WasmError::unsupported("template expressions")),
+            Expr::TemplateFragment { .. } => Err(WasmError::unsupported("template fragments")),
         }
     }
 

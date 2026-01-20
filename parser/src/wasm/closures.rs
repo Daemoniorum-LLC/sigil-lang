@@ -412,9 +412,12 @@ impl WasmCompiler {
 
                 // Handle Vec::new() -> array_new
                 if name == "Vec_new" && args.is_empty() {
-                    let array_new_idx = self.imports.get_func("array_new")
+                    let array_new_idx = self
+                        .imports
+                        .get_func("array_new")
                         .ok_or_else(|| WasmError::internal("array_new not registered"))?;
-                    let func = self.current_function_mut()
+                    let func = self
+                        .current_function_mut()
                         .ok_or_else(|| WasmError::internal("not in function context"))?;
                     func.push(Instruction::Call(array_new_idx));
                     // array_new returns I32, extend to I64
@@ -669,7 +672,9 @@ impl WasmCompiler {
         if method == "to_string" && args.is_empty() {
             // Receiver is on stack as i64
             // Call string_from_int to convert
-            let from_int_idx = self.imports.get_func("string_from_int")
+            let from_int_idx = self
+                .imports
+                .get_func("string_from_int")
                 .ok_or_else(|| WasmError::internal("string_from_int not registered"))?;
 
             let func = self
@@ -695,7 +700,9 @@ impl WasmCompiler {
             self.compile_expr(&args[0])?;
 
             // Call array_push(arr: I32, value: I64) -> ()
-            let push_idx = self.imports.get_func("array_push")
+            let push_idx = self
+                .imports
+                .get_func("array_push")
                 .ok_or_else(|| WasmError::internal("array_push not registered"))?;
             let func = self
                 .current_function_mut()
@@ -709,7 +716,9 @@ impl WasmCompiler {
         // Handle vec.len() and string.len()
         if method == "len" && args.is_empty() {
             // Get import index first to avoid borrow issues
-            let len_idx = self.imports.get_func("array_len")
+            let len_idx = self
+                .imports
+                .get_func("array_len")
                 .ok_or_else(|| WasmError::internal("array_len not registered"))?;
 
             // Receiver (array/string ptr) is on stack as I64

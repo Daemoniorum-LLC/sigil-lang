@@ -159,6 +159,9 @@ impl WasmCompiler {
             Item::Macro(_) => Ok(()),       // Macro definitions are compile-time only
             Item::MacroInvocation(_) => Err(WasmError::unsupported("macro invocations")),
             Item::Plurality(_) => Err(WasmError::unsupported("plurality items")),
+            Item::Form(_) => Err(WasmError::unsupported("form definitions")),
+            Item::Translations(_) => Err(WasmError::unsupported("translation definitions")),
+            Item::LocaleEnum(_) => Err(WasmError::unsupported("locale enum definitions")),
         }
     }
 
