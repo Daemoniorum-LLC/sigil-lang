@@ -3742,14 +3742,14 @@ mod tests {
 
     #[test]
     fn test_basic_types() {
-        assert!(check("fn main() { let x: i64 = 42; }").is_ok());
-        assert!(check("fn main() { let x: bool = true; }").is_ok());
-        assert!(check("fn main() { let x: f64 = 3.14; }").is_ok());
+        assert!(check("rite main() { ≔ x: i64 = 42; }").is_ok());
+        assert!(check("rite main() { ≔ x: bool = true; }").is_ok());
+        assert!(check("rite main() { ≔ x: f64 = 3.14; }").is_ok());
     }
 
     #[test]
     fn test_type_mismatch() {
-        assert!(check("fn main() { let x: bool = 42; }").is_err());
+        assert!(check("rite main() { ≔ x: bool = 42; }").is_err());
     }
 
     #[test]
@@ -3757,10 +3757,10 @@ mod tests {
         // Evidence should propagate through operations
         assert!(check(
             r#"
-            fn main() {
-                let known: i64! = 42;
-                let uncertain: i64? = 10;
-                let result = known + uncertain;
+            rite main() {
+                ≔ known: i64! = 42;
+                ≔ uncertain: i64? = 10;
+                ≔ result = known + uncertain;
             }
         "#
         )
@@ -3771,11 +3771,11 @@ mod tests {
     fn test_function_return() {
         let result = check(
             r#"
-            fn add(a: i64, b: i64) -> i64 {
-                return a + b;
+            rite add(a: i64, b: i64) → i64 {
+                ⤺ a + b;
             }
-            fn main() {
-                let x = add(1, 2);
+            rite main() {
+                ≔ x = add(1, 2);
             }
         "#,
         );
@@ -3791,9 +3791,9 @@ mod tests {
     fn test_array_types() {
         assert!(check(
             r#"
-            fn main() {
-                let arr = [1, 2, 3];
-                let x = arr[0];
+            rite main() {
+                ≔ arr = [1, 2, 3];
+                ≔ x = arr[0];
             }
         "#
         )
@@ -3809,10 +3809,10 @@ mod tests {
         // Evidence should be inferred from initializer when not explicitly annotated
         assert!(check(
             r#"
-            fn main() {
-                let reported_val: i64~ = 42;
+            rite main() {
+                ≔ reported_val: i64~ = 42;
                 // x should inherit ~ evidence from reported_val
-                let x = reported_val + 1;
+                ≔ x = reported_val + 1;
             }
         "#
         )
@@ -3824,11 +3824,11 @@ mod tests {
         // Explicit annotation should override inference
         assert!(check(
             r#"
-            fn main() {
-                let reported_val: i64~ = 42;
+            rite main() {
+                ≔ reported_val: i64~ = 42;
                 // Explicit ! annotation - this would fail if we checked evidence properly
                 // but the type system allows it as an override
-                let x! = 42;
+                ≔ x! = 42;
             }
         "#
         )
@@ -3840,12 +3840,12 @@ mod tests {
         // Evidence from both branches should be joined
         assert!(check(
             r#"
-            fn main() {
-                let known_val: i64! = 1;
-                let reported_val: i64~ = 2;
-                let cond: bool = true;
+            rite main() {
+                ≔ known_val: i64! = 1;
+                ≔ reported_val: i64~ = 2;
+                ≔ cond: bool = true;
                 // Result should have ~ evidence (join of ! and ~)
-                let result = if cond { known_val } else { reported_val };
+                ≔ result = ⎇ cond { known_val } ⎉ { reported_val };
             }
         "#
         )
@@ -3857,11 +3857,11 @@ mod tests {
         // Binary operations should join evidence levels
         assert!(check(
             r#"
-            fn main() {
-                let known: i64! = 1;
-                let reported: i64~ = 2;
+            rite main() {
+                ≔ known: i64! = 1;
+                ≔ reported: i64~ = 2;
                 // Result should have ~ evidence (max of ! and ~)
-                let result = known + reported;
+                ≔ result = known + reported;
             }
         "#
         )
@@ -3874,8 +3874,8 @@ mod tests {
         // Note: This test is structural - the type checker should handle it
         assert!(check(
             r#"
-            fn main() {
-                let x: i64 = 1;
+            rite main() {
+                ≔ x: i64 = 1;
             }
         "#
         )

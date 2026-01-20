@@ -271,15 +271,13 @@ pub enum Token {
     #[token("/*", block_comment_callback)]
     BlockComment(String),
 
-    // === Keywords ===
+    // === Keywords (Sigil-native only - Rust purged) ===
     // Note: λ/Λ handled by Token::Lambda - parser is context-aware
-    #[token("rite")] // rite (ritual/spell) for function (Sigil-native)
-    #[token("fn")]   // fn for compatibility
+    #[token("rite")] // rite (ritual/spell) for function
     Fn,
     #[token("async")]
     Async,
-    #[token("≔")]  // definition operator (Sigil-native)
-    #[token("let")] // let for compatibility
+    #[token("≔")] // definition operator
     Let,
     // Note: ∆ handled by Token::Delta - parser is context-aware
     #[token("vary")] // vary for mutable
@@ -320,11 +318,9 @@ pub enum Token {
     MacroRules,
 
     // Control flow (Sigil-native only)
-    #[token("⎇")] // ISO branch symbol for if (Sigil-native)
-    #[token("if")] // if for compatibility
+    #[token("⎇")] // ISO branch symbol for if
     If,
-    #[token("⎉")]   // ISO alternative symbol for else (Sigil-native)
-    #[token("else")] // else for compatibility
+    #[token("⎉")] // ISO alternative symbol for else
     Else,
     #[token("⌥")] // option key symbol for match
     Match,
@@ -343,8 +339,7 @@ pub enum Token {
     Break,
     #[token("⊳")] // right triangle for continue
     Continue,
-    #[token("⤺")]     // return arrow (Sigil-native)
-    #[token("return")] // return for compatibility
+    #[token("⤺")] // return arrow
     Return,
     #[token("yield")]
     Yield,
@@ -785,8 +780,7 @@ pub enum Token {
     Pipe,
     #[token("·")] // middle dot - Sigil path separator (Rust :: purged)
     MiddleDot,
-    #[token("→")]  // rightwards arrow (Sigil-native)
-    #[token("->")] // -> for compatibility
+    #[token("→")] // rightwards arrow (Rust -> purged)
     Arrow,
     #[token("=>")]
     FatArrow,
