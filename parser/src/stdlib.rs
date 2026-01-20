@@ -34224,7 +34224,7 @@ mod tests {
                     ≔ diff_y = get(ab, 1) + get(ba, 1);
                     ≔ diff_z = get(ab, 2) + get(ba, 2);
                     ≔ eps = 0.001;
-                    ⤺ eps > abs(diff_x) && eps > abs(diff_y) && eps > abs(diff_z);
+                    ⤺ eps > abs(diff_x) ∧ eps > abs(diff_y) ∧ eps > abs(diff_z);
                 }}
             "#, fmt_float(x1), fmt_float(y1), fmt_float(z1), fmt_float(x2), fmt_float(y2), fmt_float(z2));
             let result = eval(&code);
@@ -34261,7 +34261,7 @@ mod tests {
                     ≔ diff_y = abs(get(v, 1) - get(rotated, 1));
                     ≔ diff_z = abs(get(v, 2) - get(rotated, 2));
                     ≔ eps = 0.001;
-                    ⤺ eps > diff_x && eps > diff_y && eps > diff_z;
+                    ⤺ eps > diff_x ∧ eps > diff_y ∧ eps > diff_z;
                 }}
             "#, fmt_float(x), fmt_float(y), fmt_float(z));
             let result = eval(&code);
@@ -34280,15 +34280,15 @@ mod tests {
                     ≔ q2 = quat_from_axis_angle(axis, {} * 2.0);
                     ≔ q1q1 = quat_mul(q1, q1);
                     ≔ eps = 0.01;
-                    ≔ same = eps > abs(get(q2, 0) - get(q1q1, 0)) &&
-                               eps > abs(get(q2, 1) - get(q1q1, 1)) &&
-                               eps > abs(get(q2, 2) - get(q1q1, 2)) &&
+                    ≔ same = eps > abs(get(q2, 0) - get(q1q1, 0)) ∧
+                               eps > abs(get(q2, 1) - get(q1q1, 1)) ∧
+                               eps > abs(get(q2, 2) - get(q1q1, 2)) ∧
                                eps > abs(get(q2, 3) - get(q1q1, 3));
-                    ≔ neg_same = eps > abs(get(q2, 0) + get(q1q1, 0)) &&
-                                   eps > abs(get(q2, 1) + get(q1q1, 1)) &&
-                                   eps > abs(get(q2, 2) + get(q1q1, 2)) &&
+                    ≔ neg_same = eps > abs(get(q2, 0) + get(q1q1, 0)) ∧
+                                   eps > abs(get(q2, 1) + get(q1q1, 1)) ∧
+                                   eps > abs(get(q2, 2) + get(q1q1, 2)) ∧
                                    eps > abs(get(q2, 3) + get(q1q1, 3));
-                    ⤺ same || neg_same;
+                    ⤺ same ∨ neg_same;
                 }}
             "#, fmt_float(x), fmt_float(y), fmt_float(z), fmt_float(angle), fmt_float(angle));
             let result = eval(&code);
@@ -34311,7 +34311,7 @@ mod tests {
                     ≔ diff_y = abs(get(ab_c, 1) - get(a_bc, 1));
                     ≔ diff_z = abs(get(ab_c, 2) - get(a_bc, 2));
                     ≔ eps = 0.001;
-                    ⤺ eps > diff_x && eps > diff_y && eps > diff_z;
+                    ⤺ eps > diff_x ∧ eps > diff_y ∧ eps > diff_z;
                 }}
             "#, fmt_float(x1), fmt_float(y1), fmt_float(z1), fmt_float(x2), fmt_float(y2), fmt_float(z2), fmt_float(x3), fmt_float(y3), fmt_float(z3));
             let result = eval(&code);
@@ -34333,7 +34333,7 @@ mod tests {
                     ≔ diff_y = abs(get(combined, 1) - get(separate, 1));
                     ≔ diff_z = abs(get(combined, 2) - get(separate, 2));
                     ≔ eps = 0.01;
-                    ⤺ eps > diff_x && eps > diff_y && eps > diff_z;
+                    ⤺ eps > diff_x ∧ eps > diff_y ∧ eps > diff_z;
                 }}
             "#, fmt_float(x), fmt_float(y), fmt_float(z), fmt_float(s1), fmt_float(s2));
             let result = eval(&code);
@@ -34479,7 +34479,7 @@ mod tests {
                     ≔ vary same = true;
                     ≔ vary i = 0;
                     ⟳ i < len(arr) {{
-                        ⎇ get(arr, i) ≠ get(rev2, i) {{
+                        ⎇ get(arr, i) != get(rev2, i) {{
                             same = false;
                         }}
                         i = i + 1;
