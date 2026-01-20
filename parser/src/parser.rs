@@ -954,10 +954,59 @@ impl<'a> Parser<'a> {
     fn parse_item(&mut self) -> ParseResult<Spanned<Item>> {
         let start_span = self.current_span();
 
-        // Collect outer attributes (#[...] or @[...])
+        // Collect outer attributes (#[...] or @[...] or //@ rune: ...)
         let mut outer_attrs = Vec::new();
         while self.check(&Token::Hash) || self.check(&Token::At) {
             outer_attrs.push(self.parse_outer_attribute()?);
+        }
+
+        // Handle //@ rune: annotations as attributes
+        while let Some(Token::RuneAnnotation(content)) = self.current_token().cloned() {
+            let span = self.current_span();
+            self.advance();
+
+            // Parse the rune annotation content (e.g., "test", "derive(Clone, Debug)")
+            let content = content.trim_start_matches("//@ rune:").trim();
+            if content.starts_with("derive(") {
+                // Parse as derive attribute
+                let derive_content = content
+                    .strip_prefix("derive(")
+                    .and_then(|s| s.strip_suffix(')'))
+                    .unwrap_or("");
+                let args: Vec<AttrArg> = derive_content
+                    .split(',')
+                    .map(|s| {
+                        AttrArg::Ident(Ident {
+                            name: s.trim().to_string(),
+                            evidentiality: None,
+                            affect: None,
+                            span: span.clone(),
+                        })
+                    })
+                    .collect();
+                outer_attrs.push(Attribute {
+                    name: Ident {
+                        name: "derive".to_string(),
+                        evidentiality: None,
+                        affect: None,
+                        span: span.clone(),
+                    },
+                    args: Some(AttrArgs::Paren(args)),
+                    is_inner: false,
+                });
+            } else {
+                // Parse as simple attribute (e.g., "test" -> #[test])
+                outer_attrs.push(Attribute {
+                    name: Ident {
+                        name: content.to_string(),
+                        evidentiality: None,
+                        affect: None,
+                        span: span.clone(),
+                    },
+                    args: None,
+                    is_inner: false,
+                });
+            }
         }
 
         let visibility = self.parse_visibility()?;
