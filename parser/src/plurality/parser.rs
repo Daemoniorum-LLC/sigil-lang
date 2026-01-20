@@ -1141,7 +1141,7 @@ mod tests {
             }
         "#;
         let result = parse_plurality(source);
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Parse failed: {:?}", result);
         if let Ok(PluralityItem::Alter(def)) = result {
             assert_eq!(def.name.name, "Abaddon");
             assert_eq!(def.category, AlterCategory::Council);

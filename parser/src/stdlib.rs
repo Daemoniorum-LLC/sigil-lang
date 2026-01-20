@@ -31848,10 +31848,10 @@ mod tests {
         // Sarcastic values should make the interpolated string uncertain
         let result = eval(
             r#"
-            fn main() {
-                let s = sarcastic("totally fine");
-                let msg = f"Status: {s}";
-                return msg;
+            rite main() {
+                ≔ s = sarcastic("totally fine");
+                ≔ msg = f"Status: {s}";
+                ⤺ msg;
             }
         "#,
         );
@@ -31871,9 +31871,9 @@ mod tests {
         // Test the affect_to_evidence builtin function
         let result = eval(
             r#"
-            fn main() {
-                let s = sarcastic("sure");
-                return affect_to_evidence(s);
+            rite main() {
+                ≔ s = sarcastic("sure");
+                ⤺ affect_to_evidence(s);
             }
         "#,
         );
@@ -31890,10 +31890,10 @@ mod tests {
         // Test converting affective to evidential
         let result = eval(
             r#"
-            fn main() {
-                let s = sarcastic(42);
-                let ev = affect_as_evidence(s);
-                return ev;
+            rite main() {
+                ≔ s = sarcastic(42);
+                ≔ ev = affect_as_evidence(s);
+                ⤺ ev;
             }
         "#,
         );
@@ -31913,9 +31913,9 @@ mod tests {
         // Test checking if affect implies uncertainty
         let result = eval(
             r#"
-            fn main() {
-                let s = sarcastic("yes");
-                return is_affect_uncertain(s);
+            rite main() {
+                ≔ s = sarcastic("yes");
+                ⤺ is_affect_uncertain(s);
             }
         "#,
         );
@@ -31928,9 +31928,9 @@ mod tests {
         // High confidence should imply known evidence
         let result = eval(
             r#"
-            fn main() {
-                let v = high_confidence(42);
-                return affect_to_evidence(v);
+            rite main() {
+                ≔ v = high_confidence(42);
+                ⤺ affect_to_evidence(v);
             }
         "#,
         );
@@ -31947,9 +31947,9 @@ mod tests {
         // Low confidence should imply uncertain evidence
         let result = eval(
             r#"
-            fn main() {
-                let v = low_confidence(42);
-                return affect_to_evidence(v);
+            rite main() {
+                ≔ v = low_confidence(42);
+                ⤺ affect_to_evidence(v);
             }
         "#,
         );
@@ -32173,13 +32173,13 @@ mod tests {
 
     #[test]
     fn test_matrix_add() {
-        let result = eval("rite main() { ≔ a = [[1, 2], [3, 4]]; let b = [[1, 1], [1, 1]]; ⤺ matrix_add(a, b); }");
+        let result = eval("rite main() { ≔ a = [[1, 2], [3, 4]]; ≔ b = [[1, 1], [1, 1]]; ⤺ matrix_add(a, b); }");
         assert!(matches!(result, Ok(Value::Array(_))));
     }
 
     #[test]
     fn test_matrix_multiply() {
-        let result = eval("rite main() { ≔ a = [[1, 2], [3, 4]]; let b = [[1, 0], [0, 1]]; ⤺ matrix_mul(a, b); }");
+        let result = eval("rite main() { ≔ a = [[1, 2], [3, 4]]; ≔ b = [[1, 0], [0, 1]]; ⤺ matrix_mul(a, b); }");
         assert!(matches!(result, Ok(Value::Array(_))));
     }
 
@@ -33453,10 +33453,10 @@ mod tests {
         // Rotate [1, 0, 0] by 90 degrees around Z axis should give [0, 1, 0]
         let result = eval(
             r#"
-            fn main() {
-                let q = quat_from_axis_angle(vec3(0, 0, 1), 1.5707963);
-                let v = vec3(1, 0, 0);
-                return quat_rotate(q, v);
+            rite main() {
+                ≔ q = quat_from_axis_angle(vec3(0, 0, 1), 1.5707963);
+                ≔ v = vec3(1, 0, 0);
+                ⤺ quat_rotate(q, v);
             }
         "#,
         );
@@ -33479,10 +33479,10 @@ mod tests {
         // Interpolate between identity and 90° rotation
         let result = eval(
             r#"
-            fn main() {
-                let q1 = quat_identity();
-                let q2 = quat_from_axis_angle(vec3(0, 1, 0), 1.5707963);
-                return quat_slerp(q1, q2, 0.5);
+            rite main() {
+                ≔ q1 = quat_identity();
+                ≔ q2 = quat_from_axis_angle(vec3(0, 1, 0), 1.5707963);
+                ⤺ quat_slerp(q1, q2, 0.5);
             }
         "#,
         );
@@ -33580,10 +33580,10 @@ mod tests {
     fn test_mat4_translate() {
         let result = eval(
             r#"
-            fn main() {
-                let t = mat4_translate(5.0, 10.0, 15.0);
-                let v = vec4(0, 0, 0, 1);
-                return mat4_transform(t, v);
+            rite main() {
+                ≔ t = mat4_translate(5.0, 10.0, 15.0);
+                ≔ v = vec4(0, 0, 0, 1);
+                ⤺ mat4_transform(t, v);
             }
         "#,
         );
@@ -33616,11 +33616,11 @@ mod tests {
     fn test_mat4_look_at() {
         let result = eval(
             r#"
-            fn main() {
-                let eye = vec3(0, 0, 5);
-                let center = vec3(0, 0, 0);
-                let up = vec3(0, 1, 0);
-                return mat4_look_at(eye, center, up);
+            rite main() {
+                ≔ eye = vec3(0, 0, 5);
+                ≔ center = vec3(0, 0, 0);
+                ≔ up = vec3(0, 1, 0);
+                ⤺ mat4_look_at(eye, center, up);
             }
         "#,
         );
@@ -33637,9 +33637,9 @@ mod tests {
         // Inverse of identity should be identity
         let result = eval(
             r#"
-            fn main() {
-                let m = mat4_identity();
-                return mat4_inverse(m);
+            rite main() {
+                ≔ m = mat4_identity();
+                ⤺ mat4_inverse(m);
             }
         "#,
         );
@@ -33664,10 +33664,10 @@ mod tests {
         // mat3_transform
         let result = eval(
             r#"
-            fn main() {
-                let m = mat3_identity();
-                let v = vec3(1, 2, 3);
-                return mat3_transform(m, v);
+            rite main() {
+                ≔ m = mat3_identity();
+                ≔ v = vec3(1, 2, 3);
+                ⤺ mat3_transform(m, v);
             }
         "#,
         );
@@ -33687,9 +33687,9 @@ mod tests {
         // Convert identity quaternion to matrix - should be identity
         let result = eval(
             r#"
-            fn main() {
-                let q = quat_identity();
-                return quat_to_mat4(q);
+            rite main() {
+                ≔ q = quat_identity();
+                ⤺ quat_to_mat4(q);
             }
         "#,
         );
@@ -33712,10 +33712,10 @@ mod tests {
         // Basic channel send/receive
         let result = eval(
             r#"
-            fn main() {
-                let ch = channel_new();
+            rite main() {
+                ≔ ch = channel_new();
                 channel_send(ch, 42);
-                return channel_recv(ch);
+                ⤺ channel_recv(ch);
             }
         "#,
         );
@@ -33727,15 +33727,15 @@ mod tests {
         // Send multiple values and receive in order (FIFO)
         let result = eval(
             r#"
-            fn main() {
-                let ch = channel_new();
+            rite main() {
+                ≔ ch = channel_new();
                 channel_send(ch, 1);
                 channel_send(ch, 2);
                 channel_send(ch, 3);
-                let a = channel_recv(ch);
-                let b = channel_recv(ch);
-                let c = channel_recv(ch);
-                return a * 100 + b * 10 + c;
+                ≔ a = channel_recv(ch);
+                ≔ b = channel_recv(ch);
+                ≔ c = channel_recv(ch);
+                ⤺ a * 100 + b * 10 + c;
             }
         "#,
         );
@@ -33747,26 +33747,26 @@ mod tests {
         // Test sending 1000 messages through a channel
         let result = eval(
             r#"
-            fn main() {
-                let ch = channel_new();
-                let count = 1000;
-                let mut i = 0;
-                while i < count {
+            rite main() {
+                ≔ ch = channel_new();
+                ≔ count = 1000;
+                ≔ vary i = 0;
+                ⟳ i < count {
                     channel_send(ch, i);
                     i = i + 1;
                 }
 
                 // Receive all and compute sum to verify no data loss
-                let mut sum = 0;
-                let mut j = 0;
-                while j < count {
-                    let val = channel_recv(ch);
+                ≔ vary sum = 0;
+                ≔ vary j = 0;
+                ⟳ j < count {
+                    ≔ val = channel_recv(ch);
                     sum = sum + val;
                     j = j + 1;
                 }
 
                 // Sum of 0..999 = 499500
-                return sum;
+                ⤺ sum;
             }
         "#,
         );
@@ -33778,8 +33778,8 @@ mod tests {
         // Test that complex values survive channel transport
         let result = eval(
             r#"
-            fn main() {
-                let ch = channel_new();
+            rite main() {
+                ≔ ch = channel_new();
 
                 // Send various types
                 channel_send(ch, 42);
@@ -33788,13 +33788,13 @@ mod tests {
                 channel_send(ch, [1, 2, 3]);
 
                 // Receive and verify types
-                let int_val = channel_recv(ch);
-                let float_val = channel_recv(ch);
-                let str_val = channel_recv(ch);
-                let arr_val = channel_recv(ch);
+                ≔ int_val = channel_recv(ch);
+                ≔ float_val = channel_recv(ch);
+                ≔ str_val = channel_recv(ch);
+                ≔ arr_val = channel_recv(ch);
 
                 // Verify by combining results
-                return int_val + floor(float_val) + len(str_val) + len(arr_val);
+                ⤺ int_val + floor(float_val) + len(str_val) + len(arr_val);
             }
         "#,
         );
@@ -33808,11 +33808,11 @@ mod tests {
         // Check that it returns a Variant type (not panicking/erroring)
         let result = eval(
             r#"
-            fn main() {
-                let ch = channel_new();
-                let result = channel_try_recv(ch);
+            rite main() {
+                ≔ ch = channel_new();
+                ≔ result = channel_try_recv(ch);
                 // Can't pattern match variants in interpreter, so just verify it returns
-                return type_of(result);
+                ⤺ type_of(result);
             }
         "#,
         );
@@ -33825,13 +33825,13 @@ mod tests {
         // try_recv with value - verify channel works (blocking recv confirms)
         let result = eval(
             r#"
-            fn main() {
-                let ch = channel_new();
+            rite main() {
+                ≔ ch = channel_new();
                 channel_send(ch, 99);
                 // Use blocking recv since try_recv returns Option variant
                 // which can't be pattern matched in interpreter
-                let val = channel_recv(ch);
-                return val;
+                ≔ val = channel_recv(ch);
+                ⤺ val;
             }
         "#,
         );
@@ -33843,11 +33843,11 @@ mod tests {
         // recv_timeout on empty channel should timeout without error
         let result = eval(
             r#"
-            fn main() {
-                let ch = channel_new();
-                let result = channel_recv_timeout(ch, 10);  // 10ms timeout
+            rite main() {
+                ≔ ch = channel_new();
+                ≔ result = channel_recv_timeout(ch, 10);  // 10ms timeout
                 // Just verify it completes without blocking forever
-                return 42;
+                ⤺ 42;
             }
         "#,
         );
@@ -33859,10 +33859,10 @@ mod tests {
         // Basic actor creation and messaging
         let result = eval(
             r#"
-            fn main() {
-                let act = spawn_actor("test_actor");
+            rite main() {
+                ≔ act = spawn_actor("test_actor");
                 send_to_actor(act, "ping", 42);
-                return get_actor_msg_count(act);
+                ⤺ get_actor_msg_count(act);
             }
         "#,
         );
@@ -33874,15 +33874,15 @@ mod tests {
         // Send 10000 messages to an actor rapidly
         let result = eval(
             r#"
-            fn main() {
-                let act = spawn_actor("stress_actor");
-                let count = 10000;
-                let mut i = 0;
-                while i < count {
+            rite main() {
+                ≔ act = spawn_actor("stress_actor");
+                ≔ count = 10000;
+                ≔ vary i = 0;
+                ⟳ i < count {
                     send_to_actor(act, "msg", i);
                     i = i + 1;
                 }
-                return get_actor_msg_count(act);
+                ⤺ get_actor_msg_count(act);
             }
         "#,
         );
@@ -33894,8 +33894,8 @@ mod tests {
         // Verify pending count accuracy
         let result = eval(
             r#"
-            fn main() {
-                let act = spawn_actor("pending_test");
+            rite main() {
+                ≔ act = spawn_actor("pending_test");
 
                 // Send 5 messages
                 send_to_actor(act, "m1", 1);
@@ -33904,16 +33904,16 @@ mod tests {
                 send_to_actor(act, "m4", 4);
                 send_to_actor(act, "m5", 5);
 
-                let pending_before = get_actor_pending(act);
+                ≔ pending_before = get_actor_pending(act);
 
                 // Receive 2 messages
                 recv_from_actor(act);
                 recv_from_actor(act);
 
-                let pending_after = get_actor_pending(act);
+                ≔ pending_after = get_actor_pending(act);
 
                 // Should have 5 pending initially, 3 after receiving 2
-                return pending_before * 10 + pending_after;
+                ⤺ pending_before * 10 + pending_after;
             }
         "#,
         );
@@ -33926,20 +33926,20 @@ mod tests {
         // Note: Our actor uses pop() which is LIFO, so last sent = first received
         let result = eval(
             r#"
-            fn main() {
-                let act = spawn_actor("order_test");
+            rite main() {
+                ≔ act = spawn_actor("order_test");
                 send_to_actor(act, "a", 1);
                 send_to_actor(act, "b", 2);
                 send_to_actor(act, "c", 3);
 
                 // pop() gives LIFO order, so we get c, b, a
-                let r1 = recv_from_actor(act);
-                let r2 = recv_from_actor(act);
-                let r3 = recv_from_actor(act);
+                ≔ r1 = recv_from_actor(act);
+                ≔ r2 = recv_from_actor(act);
+                ≔ r3 = recv_from_actor(act);
 
                 // Return the message types concatenated via their first char values
                 // c=3, b=2, a=1 in our test
-                return get_actor_pending(act);  // Should be 0 after draining
+                ⤺ get_actor_pending(act);  // Should be 0 after draining
             }
         "#,
         );
@@ -33952,10 +33952,10 @@ mod tests {
         // Verify via pending count that no messages were added
         let result = eval(
             r#"
-            fn main() {
-                let act = spawn_actor("empty_actor");
+            rite main() {
+                ≔ act = spawn_actor("empty_actor");
                 // No messages sent, so pending should be 0
-                return get_actor_pending(act);
+                ⤺ get_actor_pending(act);
             }
         "#,
         );
@@ -33967,11 +33967,11 @@ mod tests {
         // tell_actor should work the same as send_to_actor
         let result = eval(
             r#"
-            fn main() {
-                let act = spawn_actor("tell_test");
+            rite main() {
+                ≔ act = spawn_actor("tell_test");
                 tell_actor(act, "hello", 123);
                 tell_actor(act, "world", 456);
-                return get_actor_msg_count(act);
+                ⤺ get_actor_msg_count(act);
             }
         "#,
         );
@@ -33983,9 +33983,9 @@ mod tests {
         // Verify actor name is stored correctly
         let result = eval(
             r#"
-            fn main() {
-                let act = spawn_actor("my_special_actor");
-                return get_actor_name(act);
+            rite main() {
+                ≔ act = spawn_actor("my_special_actor");
+                ⤺ get_actor_name(act);
             }
         "#,
         );
@@ -33997,10 +33997,10 @@ mod tests {
         // Multiple actors should be independent
         let result = eval(
             r#"
-            fn main() {
-                let a1 = spawn_actor("actor1");
-                let a2 = spawn_actor("actor2");
-                let a3 = spawn_actor("actor3");
+            rite main() {
+                ≔ a1 = spawn_actor("actor1");
+                ≔ a2 = spawn_actor("actor2");
+                ≔ a3 = spawn_actor("actor3");
 
                 send_to_actor(a1, "m", 1);
                 send_to_actor(a2, "m", 1);
@@ -34009,11 +34009,11 @@ mod tests {
                 send_to_actor(a3, "m", 2);
                 send_to_actor(a3, "m", 3);
 
-                let c1 = get_actor_msg_count(a1);
-                let c2 = get_actor_msg_count(a2);
-                let c3 = get_actor_msg_count(a3);
+                ≔ c1 = get_actor_msg_count(a1);
+                ≔ c2 = get_actor_msg_count(a2);
+                ≔ c3 = get_actor_msg_count(a3);
 
-                return c1 * 100 + c2 * 10 + c3;
+                ⤺ c1 * 100 + c2 * 10 + c3;
             }
         "#,
         );
@@ -34025,20 +34025,20 @@ mod tests {
         // Multiple channels should be independent
         let result = eval(
             r#"
-            fn main() {
-                let ch1 = channel_new();
-                let ch2 = channel_new();
-                let ch3 = channel_new();
+            rite main() {
+                ≔ ch1 = channel_new();
+                ≔ ch2 = channel_new();
+                ≔ ch3 = channel_new();
 
                 channel_send(ch1, 100);
                 channel_send(ch2, 200);
                 channel_send(ch3, 300);
 
-                let v1 = channel_recv(ch1);
-                let v2 = channel_recv(ch2);
-                let v3 = channel_recv(ch3);
+                ≔ v1 = channel_recv(ch1);
+                ≔ v2 = channel_recv(ch2);
+                ≔ v3 = channel_recv(ch3);
 
-                return v1 + v2 + v3;
+                ⤺ v1 + v2 + v3;
             }
         "#,
         );
@@ -34050,9 +34050,9 @@ mod tests {
         // thread_sleep should work without error
         let result = eval(
             r#"
-            fn main() {
+            rite main() {
                 thread_sleep(1);  // Sleep 1ms
-                return 42;
+                ⤺ 42;
             }
         "#,
         );
@@ -34064,9 +34064,9 @@ mod tests {
         // thread_yield should work without error
         let result = eval(
             r#"
-            fn main() {
+            rite main() {
                 thread_yield();
-                return 42;
+                ⤺ 42;
             }
         "#,
         );
@@ -34078,9 +34078,9 @@ mod tests {
         // thread_id should return a string
         let result = eval(
             r#"
-            fn main() {
-                let id = thread_id();
-                return len(id) > 0;
+            rite main() {
+                ≔ id = thread_id();
+                ⤺ len(id) > 0;
             }
         "#,
         );
@@ -34092,21 +34092,21 @@ mod tests {
         // Interleaved sends and receives
         let result = eval(
             r#"
-            fn main() {
-                let ch = channel_new();
-                let mut sum = 0;
-                let mut i = 0;
-                while i < 100 {
+            rite main() {
+                ≔ ch = channel_new();
+                ≔ vary sum = 0;
+                ≔ vary i = 0;
+                ⟳ i < 100 {
                     channel_send(ch, i);
                     channel_send(ch, i * 2);
-                    let a = channel_recv(ch);
-                    let b = channel_recv(ch);
+                    ≔ a = channel_recv(ch);
+                    ≔ b = channel_recv(ch);
                     sum = sum + a + b;
                     i = i + 1;
                 }
                 // Sum: sum of i + i*2 for i in 0..99
                 // = sum of 3*i for i in 0..99 = 3 * (99*100/2) = 3 * 4950 = 14850
-                return sum;
+                ⤺ sum;
             }
         "#,
         );
@@ -34118,23 +34118,23 @@ mod tests {
         // Send and receive many messages
         let result = eval(
             r#"
-            fn main() {
-                let act = spawn_actor("recv_stress");
-                let count = 1000;
-                let mut i = 0;
-                while i < count {
+            rite main() {
+                ≔ act = spawn_actor("recv_stress");
+                ≔ count = 1000;
+                ≔ vary i = 0;
+                ⟳ i < count {
                     send_to_actor(act, "data", i);
                     i = i + 1;
                 }
 
                 // Drain all messages
-                let mut drained = 0;
-                while get_actor_pending(act) > 0 {
+                ≔ vary drained = 0;
+                ⟳ get_actor_pending(act) > 0 {
                     recv_from_actor(act);
                     drained = drained + 1;
                 }
 
-                return drained;
+                ⤺ drained;
             }
         "#,
         );
@@ -34196,6 +34196,16 @@ mod tests {
 
     // --- GEOMETRIC ALGEBRA PROPERTY TESTS ---
 
+    // Helper to format floats ensuring decimal point (Sigil requires 0.0, not 0)
+    fn fmt_float(f: f64) -> String {
+        let s = format!("{}", f);
+        if s.contains('.') || s.contains('e') || s.contains('E') {
+            s
+        } else {
+            format!("{}.0", s)
+        }
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -34205,18 +34215,18 @@ mod tests {
             // e_i ^ e_j = -e_j ^ e_i (bivector anticommutativity)
             // Test via wedge product: a ^ b = -(b ^ a)
             let code = format!(r#"
-                fn main() {{
-                    let a = vec3({}, {}, {});
-                    let b = vec3({}, {}, {});
-                    let ab = vec3_cross(a, b);
-                    let ba = vec3_cross(b, a);
-                    let diff_x = get(ab, 0) + get(ba, 0);
-                    let diff_y = get(ab, 1) + get(ba, 1);
-                    let diff_z = get(ab, 2) + get(ba, 2);
-                    let eps = 0.001;
-                    return eps > abs(diff_x) && eps > abs(diff_y) && eps > abs(diff_z);
+                rite main() {{
+                    ≔ a = vec3({}, {}, {});
+                    ≔ b = vec3({}, {}, {});
+                    ≔ ab = vec3_cross(a, b);
+                    ≔ ba = vec3_cross(b, a);
+                    ≔ diff_x = get(ab, 0) + get(ba, 0);
+                    ≔ diff_y = get(ab, 1) + get(ba, 1);
+                    ≔ diff_z = get(ab, 2) + get(ba, 2);
+                    ≔ eps = 0.001;
+                    ⤺ eps > abs(diff_x) && eps > abs(diff_y) && eps > abs(diff_z);
                 }}
-            "#, x1, y1, z1, x2, y2, z2);
+            "#, fmt_float(x1), fmt_float(y1), fmt_float(z1), fmt_float(x2), fmt_float(y2), fmt_float(z2));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34226,15 +34236,15 @@ mod tests {
                                      x2 in -100.0f64..100.0, y2 in -100.0f64..100.0, z2 in -100.0f64..100.0) {
             // a · b = b · a (dot product commutativity)
             let code = format!(r#"
-                fn main() {{
-                    let a = vec3({}, {}, {});
-                    let b = vec3({}, {}, {});
-                    let ab = vec3_dot(a, b);
-                    let ba = vec3_dot(b, a);
-                    let eps = 0.001;
-                    return eps > abs(ab - ba);
+                rite main() {{
+                    ≔ a = vec3({}, {}, {});
+                    ≔ b = vec3({}, {}, {});
+                    ≔ ab = vec3_dot(a, b);
+                    ≔ ba = vec3_dot(b, a);
+                    ≔ eps = 0.001;
+                    ⤺ eps > abs(ab - ba);
                 }}
-            "#, x1, y1, z1, x2, y2, z2);
+            "#, fmt_float(x1), fmt_float(y1), fmt_float(z1), fmt_float(x2), fmt_float(y2), fmt_float(z2));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34243,17 +34253,17 @@ mod tests {
         fn test_quat_identity_preserves_vector(x in -100.0f64..100.0, y in -100.0f64..100.0, z in -100.0f64..100.0) {
             // Rotating by identity quaternion should preserve the vector
             let code = format!(r#"
-                fn main() {{
-                    let v = vec3({}, {}, {});
-                    let q = quat_identity();
-                    let rotated = quat_rotate(q, v);
-                    let diff_x = abs(get(v, 0) - get(rotated, 0));
-                    let diff_y = abs(get(v, 1) - get(rotated, 1));
-                    let diff_z = abs(get(v, 2) - get(rotated, 2));
-                    let eps = 0.001;
-                    return eps > diff_x && eps > diff_y && eps > diff_z;
+                rite main() {{
+                    ≔ v = vec3({}, {}, {});
+                    ≔ q = quat_identity();
+                    ≔ rotated = quat_rotate(q, v);
+                    ≔ diff_x = abs(get(v, 0) - get(rotated, 0));
+                    ≔ diff_y = abs(get(v, 1) - get(rotated, 1));
+                    ≔ diff_z = abs(get(v, 2) - get(rotated, 2));
+                    ≔ eps = 0.001;
+                    ⤺ eps > diff_x && eps > diff_y && eps > diff_z;
                 }}
-            "#, x, y, z);
+            "#, fmt_float(x), fmt_float(y), fmt_float(z));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34263,24 +34273,24 @@ mod tests {
                                                           angle in -3.14f64..3.14) {
             // q(2θ) should equal q(θ) * q(θ)
             let code = format!(r#"
-                fn main() {{
-                    let v = vec3({}, {}, {});
-                    let axis = vec3(0.0, 1.0, 0.0);
-                    let q1 = quat_from_axis_angle(axis, {});
-                    let q2 = quat_from_axis_angle(axis, {} * 2.0);
-                    let q1q1 = quat_mul(q1, q1);
-                    let eps = 0.01;
-                    let same = eps > abs(get(q2, 0) - get(q1q1, 0)) &&
+                rite main() {{
+                    ≔ v = vec3({}, {}, {});
+                    ≔ axis = vec3(0.0, 1.0, 0.0);
+                    ≔ q1 = quat_from_axis_angle(axis, {});
+                    ≔ q2 = quat_from_axis_angle(axis, {} * 2.0);
+                    ≔ q1q1 = quat_mul(q1, q1);
+                    ≔ eps = 0.01;
+                    ≔ same = eps > abs(get(q2, 0) - get(q1q1, 0)) &&
                                eps > abs(get(q2, 1) - get(q1q1, 1)) &&
                                eps > abs(get(q2, 2) - get(q1q1, 2)) &&
                                eps > abs(get(q2, 3) - get(q1q1, 3));
-                    let neg_same = eps > abs(get(q2, 0) + get(q1q1, 0)) &&
+                    ≔ neg_same = eps > abs(get(q2, 0) + get(q1q1, 0)) &&
                                    eps > abs(get(q2, 1) + get(q1q1, 1)) &&
                                    eps > abs(get(q2, 2) + get(q1q1, 2)) &&
                                    eps > abs(get(q2, 3) + get(q1q1, 3));
-                    return same || neg_same;
+                    ⤺ same || neg_same;
                 }}
-            "#, x, y, z, angle, angle);
+            "#, fmt_float(x), fmt_float(y), fmt_float(z), fmt_float(angle), fmt_float(angle));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34291,21 +34301,21 @@ mod tests {
                                      x3 in -100.0f64..100.0, y3 in -100.0f64..100.0, z3 in -100.0f64..100.0) {
             // (a + b) + c = a + (b + c)
             let code = format!(r#"
-                fn main() {{
-                    let a = vec3({}, {}, {});
-                    let b = vec3({}, {}, {});
-                    let c = vec3({}, {}, {});
-                    let ab_c = vec3_add(vec3_add(a, b), c);
-                    let a_bc = vec3_add(a, vec3_add(b, c));
-                    let diff_x = abs(get(ab_c, 0) - get(a_bc, 0));
-                    let diff_y = abs(get(ab_c, 1) - get(a_bc, 1));
-                    let diff_z = abs(get(ab_c, 2) - get(a_bc, 2));
-                    let eps = 0.001;
-                    return eps > diff_x && eps > diff_y && eps > diff_z;
+                rite main() {{
+                    ≔ a = vec3({}, {}, {});
+                    ≔ b = vec3({}, {}, {});
+                    ≔ c = vec3({}, {}, {});
+                    ≔ ab_c = vec3_add(vec3_add(a, b), c);
+                    ≔ a_bc = vec3_add(a, vec3_add(b, c));
+                    ≔ diff_x = abs(get(ab_c, 0) - get(a_bc, 0));
+                    ≔ diff_y = abs(get(ab_c, 1) - get(a_bc, 1));
+                    ≔ diff_z = abs(get(ab_c, 2) - get(a_bc, 2));
+                    ≔ eps = 0.001;
+                    ⤺ eps > diff_x && eps > diff_y && eps > diff_z;
                 }}
-            "#, x1, y1, z1, x2, y2, z2, x3, y3, z3);
+            "#, fmt_float(x1), fmt_float(y1), fmt_float(z1), fmt_float(x2), fmt_float(y2), fmt_float(z2), fmt_float(x3), fmt_float(y3), fmt_float(z3));
             let result = eval(&code);
-            assert!(matches!(result, Ok(Value::Bool(true))));
+            assert!(matches!(result, Ok(Value::Bool(true))), "Got: {:?}, code: {}", result, code);
         }
 
         #[test]
@@ -34313,19 +34323,19 @@ mod tests {
                                         s1 in -10.0f64..10.0, s2 in -10.0f64..10.0) {
             // (s1 + s2) * v = s1*v + s2*v
             let code = format!(r#"
-                fn main() {{
-                    let v = vec3({}, {}, {});
-                    let s1 = {};
-                    let s2 = {};
-                    let combined = vec3_scale(v, s1 + s2);
-                    let separate = vec3_add(vec3_scale(v, s1), vec3_scale(v, s2));
-                    let diff_x = abs(get(combined, 0) - get(separate, 0));
-                    let diff_y = abs(get(combined, 1) - get(separate, 1));
-                    let diff_z = abs(get(combined, 2) - get(separate, 2));
-                    let eps = 0.01;
-                    return eps > diff_x && eps > diff_y && eps > diff_z;
+                rite main() {{
+                    ≔ v = vec3({}, {}, {});
+                    ≔ s1 = {};
+                    ≔ s2 = {};
+                    ≔ combined = vec3_scale(v, s1 + s2);
+                    ≔ separate = vec3_add(vec3_scale(v, s1), vec3_scale(v, s2));
+                    ≔ diff_x = abs(get(combined, 0) - get(separate, 0));
+                    ≔ diff_y = abs(get(combined, 1) - get(separate, 1));
+                    ≔ diff_z = abs(get(combined, 2) - get(separate, 2));
+                    ≔ eps = 0.01;
+                    ⤺ eps > diff_x && eps > diff_y && eps > diff_z;
                 }}
-            "#, x, y, z, s1, s2);
+            "#, fmt_float(x), fmt_float(y), fmt_float(z), fmt_float(s1), fmt_float(s2));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34340,13 +34350,13 @@ mod tests {
         fn test_grad_of_constant_is_zero(c in -100.0f64..100.0, x in -100.0f64..100.0) {
             // d/dx(c) = 0
             let code = format!(r#"
-                fn main() {{
-                    fn constant(x) {{ ⤺ {}; }}
-                    let g = grad(constant, {});
-                    let eps = 0.001;
-                    return eps > abs(g);
+                rite main() {{
+                    rite constant(x) {{ ⤺ {}; }}
+                    ≔ g = grad(constant, {});
+                    ≔ eps = 0.001;
+                    ⤺ eps > abs(g);
                 }}
-            "#, c, x);
+            "#, fmt_float(c), fmt_float(x));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34355,13 +34365,13 @@ mod tests {
         fn test_grad_of_x_is_one(x in -100.0f64..100.0) {
             // d/dx(x) = 1
             let code = format!(r#"
-                fn main() {{
-                    fn identity(x) {{ ⤺ x; }}
-                    let g = grad(identity, {});
-                    let eps = 0.001;
-                    return eps > abs(g - 1.0);
+                rite main() {{
+                    rite identity(x) {{ ⤺ x; }}
+                    ≔ g = grad(identity, {});
+                    ≔ eps = 0.001;
+                    ⤺ eps > abs(g - 1.0);
                 }}
-            "#, x);
+            "#, fmt_float(x));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34370,14 +34380,14 @@ mod tests {
         fn test_grad_of_x_squared(x in -50.0f64..50.0) {
             // d/dx(x^2) = 2x
             let code = format!(r#"
-                fn main() {{
-                    fn square(x) {{ ⤺ x * x; }}
-                    let g = grad(square, {});
-                    let expected = 2.0 * {};
-                    let eps = 0.1;
-                    return eps > abs(g - expected);
+                rite main() {{
+                    rite square(x) {{ ⤺ x * x; }}
+                    ≔ g = grad(square, {});
+                    ≔ expected = 2.0 * {};
+                    ≔ eps = 0.1;
+                    ⤺ eps > abs(g - expected);
                 }}
-            "#, x, x);
+            "#, fmt_float(x), fmt_float(x));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34386,13 +34396,13 @@ mod tests {
         fn test_grad_linearity(a in -10.0f64..10.0, b in -10.0f64..10.0, x in -10.0f64..10.0) {
             // d/dx(a*x + b) = a
             let code = format!(r#"
-                fn main() {{
-                    fn lin(x) {{ ⤺ {} * x + {}; }}
-                    let g = grad(lin, {});
-                    let eps = 0.1;
-                    return eps > abs(g - {});
+                rite main() {{
+                    rite lin(x) {{ ⤺ {} * x + {}; }}
+                    ≔ g = grad(lin, {});
+                    ≔ eps = 0.1;
+                    ⤺ eps > abs(g - {});
                 }}
-            "#, a, b, x, a);
+            "#, fmt_float(a), fmt_float(b), fmt_float(x), fmt_float(a));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34448,10 +34458,10 @@ mod tests {
         fn test_array_len_after_push(initial_len in 0..20usize, value in -100i64..100) {
             let initial: String = (0..initial_len).map(|i| format!("{}", i)).collect::<Vec<_>>().join(", ");
             let code = format!(r#"
-                fn main() {{
-                    let arr = [{}];
+                rite main() {{
+                    ≔ arr = [{}];
                     push(arr, {});
-                    return len(arr);
+                    ⤺ len(arr);
                 }}
             "#, initial, value);
             let result = eval(&code);
@@ -34462,19 +34472,19 @@ mod tests {
         fn test_reverse_reverse_identity(elements in prop::collection::vec(-100i64..100, 0..10)) {
             let arr_str = elements.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ");
             let code = format!(r#"
-                fn main() {{
-                    let arr = [{}];
-                    let rev1 = reverse(arr);
-                    let rev2 = reverse(rev1);
-                    let mut same = true;
-                    let mut i = 0;
-                    while i < len(arr) {{
-                        if get(arr, i) != get(rev2, i) {{
+                rite main() {{
+                    ≔ arr = [{}];
+                    ≔ rev1 = reverse(arr);
+                    ≔ rev2 = reverse(rev1);
+                    ≔ vary same = true;
+                    ≔ vary i = 0;
+                    ⟳ i < len(arr) {{
+                        ⎇ get(arr, i) ≠ get(rev2, i) {{
                             same = false;
                         }}
                         i = i + 1;
                     }}
-                    return same;
+                    ⤺ same;
                 }}
             "#, arr_str);
             let result = eval(&code);
@@ -34503,20 +34513,20 @@ mod tests {
         // Create and discard arrays many times
         let result = eval(
             r#"
-            fn main() {
-                let mut i = 0;
-                while i < 1000 {
-                    let arr = [1, 2, 3, 4, 5];
+            rite main() {
+                ≔ vary i = 0;
+                ⟳ i < 1000 {
+                    ≔ arr = [1, 2, 3, 4, 5];
                     push(arr, 6);
-                    let rev = reverse(arr);
-                    let s = sum(arr);
+                    ≔ rev = reverse(arr);
+                    ≔ s = sum(arr);
                     i = i + 1;
                 }
-                return i;
+                ⤺ i;
             }
         "#,
         );
-        assert!(matches!(result, Ok(Value::Int(1000))));
+        assert!(matches!(result, Ok(Value::Int(1000))), "Got: {:?}", result);
     }
 
     #[test]
@@ -34524,18 +34534,18 @@ mod tests {
         // Call functions many times to test function frame cleanup
         let result = eval(
             r#"
-            fn fib(n) {
-                if n <= 1 { ⤺ n; }
-                return fib(n - 1) + fib(n - 2);
+            rite fib(n) {
+                ⎇ n <= 1 { ⤺ n; }
+                ⤺ fib(n - 1) + fib(n - 2);
             }
-            fn main() {
-                let mut i = 0;
-                let mut total = 0;
-                while i < 100 {
+            rite main() {
+                ≔ vary i = 0;
+                ≔ vary total = 0;
+                ⟳ i < 100 {
                     total = total + fib(10);
                     i = i + 1;
                 }
-                return total;
+                ⤺ total;
             }
         "#,
         );
@@ -34547,17 +34557,17 @@ mod tests {
         // Create and discard maps many times
         let result = eval(
             r#"
-            fn main() {
-                let mut i = 0;
-                while i < 500 {
-                    let m = map_new();
+            rite main() {
+                ≔ vary i = 0;
+                ⟳ i < 500 {
+                    ≔ m = map_new();
                     map_set(m, "key1", 1);
                     map_set(m, "key2", 2);
                     map_set(m, "key3", 3);
-                    let v = map_get(m, "key1");
+                    ≔ v = map_get(m, "key1");
                     i = i + 1;
                 }
-                return i;
+                ⤺ i;
             }
         "#,
         );
@@ -34569,17 +34579,17 @@ mod tests {
         // Create and discard strings many times
         let result = eval(
             r#"
-            fn main() {
-                let mut i = 0;
-                while i < 1000 {
-                    let s = "hello world";
-                    let upper_s = upper(s);
-                    let lower_s = lower(upper_s);
-                    let concat_s = s ++ " " ++ upper_s;
-                    let replaced = replace(concat_s, "o", "0");
+            rite main() {
+                ≔ vary i = 0;
+                ⟳ i < 1000 {
+                    ≔ s = "hello world";
+                    ≔ upper_s = upper(s);
+                    ≔ lower_s = lower(upper_s);
+                    ≔ concat_s = s ++ " " ++ upper_s;
+                    ≔ replaced = replace(concat_s, "o", "0");
                     i = i + 1;
                 }
-                return i;
+                ⤺ i;
             }
         "#,
         );
@@ -34591,17 +34601,17 @@ mod tests {
         // Create and discard ECS entities many times
         let result = eval(
             r#"
-            fn main() {
-                let world = ecs_world();
-                let mut i = 0;
-                while i < 500 {
-                    let entity = ecs_spawn(world);
+            rite main() {
+                ≔ world = ecs_world();
+                ≔ vary i = 0;
+                ⟳ i < 500 {
+                    ≔ entity = ecs_spawn(world);
                     ecs_attach(world, entity, "Position", vec3(1.0, 2.0, 3.0));
                     ecs_attach(world, entity, "Velocity", vec3(0.0, 0.0, 0.0));
-                    let pos = ecs_get(world, entity, "Position");
+                    ≔ pos = ecs_get(world, entity, "Position");
                     i = i + 1;
                 }
-                return i;
+                ⤺ i;
             }
         "#,
         );
@@ -34613,17 +34623,17 @@ mod tests {
         // Create and use channels many times
         let result = eval(
             r#"
-            fn main() {
-                let mut i = 0;
-                while i < 500 {
-                    let ch = channel_new();
+            rite main() {
+                ≔ vary i = 0;
+                ⟳ i < 500 {
+                    ≔ ch = channel_new();
                     channel_send(ch, i);
                     channel_send(ch, i + 1);
-                    let v1 = channel_recv(ch);
-                    let v2 = channel_recv(ch);
+                    ≔ v1 = channel_recv(ch);
+                    ≔ v2 = channel_recv(ch);
                     i = i + 1;
                 }
-                return i;
+                ⤺ i;
             }
         "#,
         );
@@ -34635,16 +34645,16 @@ mod tests {
         // Create actors and send messages many times
         let result = eval(
             r#"
-            fn main() {
-                let mut i = 0;
-                while i < 100 {
-                    let act = spawn_actor("leak_test_actor");
+            rite main() {
+                ≔ vary i = 0;
+                ⟳ i < 100 {
+                    ≔ act = spawn_actor("leak_test_actor");
                     send_to_actor(act, "msg", i);
                     send_to_actor(act, "msg", i + 1);
-                    let count = get_actor_msg_count(act);
+                    ≔ count = get_actor_msg_count(act);
                     i = i + 1;
                 }
-                return i;
+                ⤺ i;
             }
         "#,
         );
@@ -34656,19 +34666,19 @@ mod tests {
         // Create and compute with vec3s many times
         let result = eval(
             r#"
-            fn main() {
-                let mut i = 0;
-                while i < 1000 {
-                    let v1 = vec3(1.0, 2.0, 3.0);
-                    let v2 = vec3(4.0, 5.0, 6.0);
-                    let added = vec3_add(v1, v2);
-                    let scaled = vec3_scale(added, 2.0);
-                    let dot = vec3_dot(v1, v2);
-                    let crossed = vec3_cross(v1, v2);
-                    let normalized = vec3_normalize(crossed);
+            rite main() {
+                ≔ vary i = 0;
+                ⟳ i < 1000 {
+                    ≔ v1 = vec3(1.0, 2.0, 3.0);
+                    ≔ v2 = vec3(4.0, 5.0, 6.0);
+                    ≔ added = vec3_add(v1, v2);
+                    ≔ scaled = vec3_scale(added, 2.0);
+                    ≔ dot = vec3_dot(v1, v2);
+                    ≔ crossed = vec3_cross(v1, v2);
+                    ≔ normalized = vec3_normalize(crossed);
                     i = i + 1;
                 }
-                return i;
+                ⤺ i;
             }
         "#,
         );
@@ -34680,16 +34690,16 @@ mod tests {
         // Create and call closures many times
         let result = eval(
             r#"
-            fn main() {
-                let mut i = 0;
-                let mut total = 0;
-                while i < 500 {
-                    let x = i;
-                    fn add_x(y) { ⤺ x + y; }
+            rite main() {
+                ≔ vary i = 0;
+                ≔ vary total = 0;
+                ⟳ i < 500 {
+                    ≔ x = i;
+                    rite add_x(y) { ⤺ x + y; }
                     total = total + add_x(1);
                     i = i + 1;
                 }
-                return total;
+                ⤺ total;
             }
         "#,
         );
@@ -34702,18 +34712,18 @@ mod tests {
         // Create nested arrays and maps many times
         let result = eval(
             r#"
-            fn main() {
-                let mut i = 0;
-                while i < 200 {
-                    let inner1 = [1, 2, 3];
-                    let inner2 = [4, 5, 6];
-                    let outer = [inner1, inner2];
-                    let m = map_new();
+            rite main() {
+                ≔ vary i = 0;
+                ⟳ i < 200 {
+                    ≔ inner1 = [1, 2, 3];
+                    ≔ inner2 = [4, 5, 6];
+                    ≔ outer = [inner1, inner2];
+                    ≔ m = map_new();
                     map_set(m, "arr", outer);
                     map_set(m, "nested", map_new());
                     i = i + 1;
                 }
-                return i;
+                ⤺ i;
             }
         "#,
         );
@@ -34726,10 +34736,10 @@ mod tests {
         for _ in 0..50 {
             let result = eval(
                 r#"
-                fn main() {
-                    let arr = [1, 2, 3, 4, 5];
-                    let total = sum(arr);
-                    return total * 2;
+                rite main() {
+                    ≔ arr = [1, 2, 3, 4, 5];
+                    ≔ total = sum(arr);
+                    ⤺ total * 2;
                 }
             "#,
             );

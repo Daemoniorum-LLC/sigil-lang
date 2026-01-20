@@ -8962,7 +8962,7 @@ mod tests {
             #![no_std]
 
             #[panic_handler]
-            rite panic(info: *const PanicInfo) → ! {
+            rite panic(info: *◆ PanicInfo) → ! {
                 forever {}
             }
         "#;
@@ -9097,8 +9097,8 @@ mod tests {
     #[test]
     fn test_parse_simd_type() {
         let source = r#"
-            fn vec_add(a: simd<f32, 4>, b: simd<f32, 4>) -> simd<f32, 4> {
-                return simd.add(a, b);
+            rite vec_add(a: simd<f32, 4>, b: simd<f32, 4>) → simd<f32, 4> {
+                ⤺ simd.add(a, b);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9124,8 +9124,8 @@ mod tests {
     #[test]
     fn test_parse_simd_literal() {
         let source = r#"
-            fn make_vec() -> simd<f32, 4> {
-                return simd[1.0, 2.0, 3.0, 4.0];
+            rite make_vec() → simd<f32, 4> {
+                ⤺ simd[1.0, 2.0, 3.0, 4.0];
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9136,9 +9136,9 @@ mod tests {
     #[test]
     fn test_parse_simd_intrinsics() {
         let source = r#"
-            fn dot_product(a: simd<f32, 4>, b: simd<f32, 4>) -> f32 {
-                let prod = simd.mul(a, b);
-                return simd.hadd(prod);
+            rite dot_product(a: simd<f32, 4>, b: simd<f32, 4>) → f32 {
+                ≔ prod = simd.mul(a, b);
+                ⤺ simd.hadd(prod);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9149,8 +9149,8 @@ mod tests {
     #[test]
     fn test_parse_simd_shuffle() {
         let source = r#"
-            fn interleave(a: simd<f32, 4>, b: simd<f32, 4>) -> simd<f32, 4> {
-                return simd.shuffle(a, b, [0, 4, 1, 5]);
+            rite interleave(a: simd<f32, 4>, b: simd<f32, 4>) → simd<f32, 4> {
+                ⤺ simd.shuffle(a, b, [0, 4, 1, 5]);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9161,7 +9161,7 @@ mod tests {
     #[test]
     fn test_parse_atomic_type() {
         let source = r#"
-            struct Counter {
+            sigil Counter {
                 value: atomic<i64>,
             }
         "#;
@@ -9187,8 +9187,8 @@ mod tests {
     #[test]
     fn test_parse_atomic_operations() {
         let source = r#"
-            fn increment(ptr: *mut i64) -> i64 {
-                return atomic.fetch_add(ptr, 1, SeqCst);
+            rite increment(ptr: *vary i64) → i64 {
+                ⤺ atomic.fetch_add(ptr, 1, SeqCst);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9199,9 +9199,9 @@ mod tests {
     #[test]
     fn test_parse_atomic_compare_exchange() {
         let source = r#"
-            fn cas(ptr: *mut i64, expected: i64, new: i64) -> bool {
-                let result = atomic.compare_exchange(ptr, expected, new, AcqRel, Relaxed);
-                return result;
+            rite cas(ptr: *vary i64, expected: i64, new: i64) → bool {
+                ≔ result = atomic.compare_exchange(ptr, expected, new, AcqRel, Relaxed);
+                ⤺ result;
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9212,7 +9212,7 @@ mod tests {
     #[test]
     fn test_parse_atomic_fence() {
         let source = r#"
-            fn memory_barrier() {
+            rite memory_barrier() {
                 atomic.fence(SeqCst);
             }
         "#;
@@ -9225,7 +9225,7 @@ mod tests {
     fn test_parse_derive_macro() {
         let source = r#"
             #[derive(Debug, Clone, Component)]
-            struct Position {
+            sigil Position {
                 x: f32,
                 y: f32,
                 z: f32,
@@ -9249,7 +9249,7 @@ mod tests {
     fn test_parse_repr_c_struct() {
         let source = r#"
             #[repr(C)]
-            struct FFIStruct {
+            sigil FFIStruct {
                 field: i32,
             }
         "#;
@@ -9267,11 +9267,11 @@ mod tests {
     #[test]
     fn test_parse_allocator_trait() {
         let source = r#"
-            trait Allocator {
+            aspect Allocator {
                 type Error;
 
-                fn allocate(size: usize, align: usize) -> *mut u8;
-                fn deallocate(ptr: *mut u8, size: usize, align: usize);
+                rite allocate(size: usize, align: usize) → *vary u8;
+                rite deallocate(ptr: *vary u8, size: usize, align: usize);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9290,11 +9290,11 @@ mod tests {
     #[test]
     fn test_parse_where_clause() {
         let source = r#"
-            fn alloc_array<T, A>(allocator: &mut A, count: usize) -> *mut T
-            where
+            rite alloc_array<T, A>(allocator: &vary A, count: usize) → *vary T
+            ∋
                 A: Allocator,
             {
-                return allocator.allocate(count, 8);
+                ⤺ allocator.allocate(count, 8);
             }
         "#;
         let mut parser = Parser::new(source);
