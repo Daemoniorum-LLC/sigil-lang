@@ -3970,11 +3970,11 @@ pub mod jit {
         fn test_extern_block_parsing_and_declaration() {
             let source = r#"
                 extern "C" {
-                    fn abs(x: c_int) -> c_int;
-                    fn strlen(s: *const c_char) -> usize;
+                    rite abs(x: c_int) → c_int;
+                    rite strlen(s: *◆ c_char) → usize;
                 }
 
-                fn main() -> i64 {
+                rite main() → i64 {
                     42
                 }
             "#;
@@ -4014,10 +4014,10 @@ pub mod jit {
         fn test_extern_variadic_function() {
             let source = r#"
                 extern "C" {
-                    fn printf(fmt: *const c_char, ...) -> c_int;
+                    rite printf(fmt: *◆ c_char, ...) → c_int;
                 }
 
-                fn main() -> i64 {
+                rite main() → i64 {
                     0
                 }
             "#;
@@ -4038,10 +4038,10 @@ pub mod jit {
         fn test_extern_c_abi_only() {
             let source = r#"
                 extern "Rust" {
-                    fn some_func(x: i32) -> i32;
+                    rite some_func(x: i32) → i32;
                 }
 
-                fn main() -> i64 {
+                rite main() → i64 {
                     0
                 }
             "#;
@@ -4070,10 +4070,10 @@ pub mod jit {
                 let source = format!(
                     r#"
                     extern "C" {{
-                        fn test_func(x: {}) -> {};
+                        rite test_func(x: {}) → {};
                     }}
 
-                    fn main() -> i64 {{ 0 }}
+                    rite main() → i64 {{ 0 }}
                 "#,
                     type_name, type_name
                 );

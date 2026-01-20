@@ -428,11 +428,13 @@ pub enum Token {
     #[token("@‽")]
     AlterSourceBlended,
 
-    // Boolean literals (Sigil-native only)
+    // Boolean literals
     // Note: ⊤/⊥ handled by Token::Top/Bottom - parser is context-aware
-    #[token("yea")] // yea for true
+    #[token("yea")] // yea for true (Sigil-native)
+    #[token("true")] // true for compatibility
     True,
-    #[token("nay")] // nay for false
+    #[token("nay")] // nay for false (Sigil-native)
+    #[token("false")] // false for compatibility
     False,
 
     // Null literal
@@ -1496,7 +1498,7 @@ mod tests {
     #[test]
     fn test_lifetime_labels() {
         // Test loop labels
-        let mut lexer = Lexer::new("'outer: loop { break 'outer }");
+        let mut lexer = Lexer::new("'outer: forever { ⊲ 'outer }");
         assert!(matches!(lexer.next_token(), Some((Token::Lifetime(s), _)) if s == "outer"));
         assert!(matches!(lexer.next_token(), Some((Token::Colon, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Loop, _))));

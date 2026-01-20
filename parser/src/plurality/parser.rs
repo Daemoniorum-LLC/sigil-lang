@@ -1137,11 +1137,11 @@ mod tests {
     fn test_parse_alter_def_basic() {
         let source = r#"
             alter Abaddon: Council {
-                archetype: Goetia::Abaddon,
+                archetype: Goetia·Abaddon,
             }
         "#;
         let result = parse_plurality(source);
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Parse failed: {:?}", result);
         if let Ok(PluralityItem::Alter(def)) = result {
             assert_eq!(def.name.name, "Abaddon");
             assert_eq!(def.category, AlterCategory::Council);
@@ -1153,7 +1153,7 @@ mod tests {
         let source = r#"
             alter test {
                 switch to Beleth {
-                    reason: SwitchReason::Combat,
+                    reason: SwitchReason·Combat,
                     urgency: 0.8,
                 }
             }

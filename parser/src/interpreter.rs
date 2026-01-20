@@ -438,7 +438,8 @@ impl fmt::Display for Value {
                 let is_close_to_int = (n - rounded).abs() < 1e-10;
                 let display_val = if is_close_to_int { rounded } else { *n };
                 // Always show .0 for integer floats to distinguish from integers
-                if display_val.fract() == 0.0 && !display_val.is_nan() && !display_val.is_infinite() {
+                if display_val.fract() == 0.0 && !display_val.is_nan() && !display_val.is_infinite()
+                {
                     write!(f, "{}.0", display_val as i64)
                 } else {
                     write!(f, "{}", display_val)
@@ -580,11 +581,16 @@ fn tensor_scalar_from_fields(fields: &HashMap<String, Value>) -> Option<f64> {
 /// Extract data as Vec<f64> from tensor fields.
 fn tensor_data_from_fields(fields: &HashMap<String, Value>) -> Option<Vec<f64>> {
     if let Some(Value::Array(arr)) = fields.get("data") {
-        Some(arr.borrow().iter().map(|v| match v {
-            Value::Float(f) => *f,
-            Value::Int(n) => *n as f64,
-            _ => 0.0,
-        }).collect())
+        Some(
+            arr.borrow()
+                .iter()
+                .map(|v| match v {
+                    Value::Float(f) => *f,
+                    Value::Int(n) => *n as f64,
+                    _ => 0.0,
+                })
+                .collect(),
+        )
     } else {
         None
     }
@@ -593,10 +599,15 @@ fn tensor_data_from_fields(fields: &HashMap<String, Value>) -> Option<Vec<f64>> 
 /// Extract shape as Vec<usize> from tensor fields.
 fn tensor_shape_from_fields(fields: &HashMap<String, Value>) -> Option<Vec<usize>> {
     if let Some(Value::Array(arr)) = fields.get("shape") {
-        Some(arr.borrow().iter().map(|v| match v {
-            Value::Int(n) => *n as usize,
-            _ => 0,
-        }).collect())
+        Some(
+            arr.borrow()
+                .iter()
+                .map(|v| match v {
+                    Value::Int(n) => *n as usize,
+                    _ => 0,
+                })
+                .collect(),
+        )
     } else {
         None
     }
@@ -606,7 +617,7 @@ fn tensor_shape_from_fields(fields: &HashMap<String, Value>) -> Option<Vec<usize
 // AST to Value conversion for sigil_parse (Option D - self-parsing)
 // ============================================================================
 
-use crate::ast::{SourceFile, Item, StructFields, Visibility as AstVisibility};
+use crate::ast::{Item, SourceFile, StructFields, Visibility as AstVisibility};
 use crate::span::Spanned;
 
 /// Convert a SourceFile AST to an inspectable Value
@@ -614,8 +625,15 @@ fn ast_to_value_source_file(sf: &SourceFile) -> Value {
     let mut fields = HashMap::new();
 
     // Convert items
-    let items: Vec<Value> = sf.items.iter().map(|item| ast_to_value_item(item)).collect();
-    fields.insert("items".to_string(), Value::Array(Rc::new(RefCell::new(items))));
+    let items: Vec<Value> = sf
+        .items
+        .iter()
+        .map(|item| ast_to_value_item(item))
+        .collect();
+    fields.insert(
+        "items".to_string(),
+        Value::Array(Rc::new(RefCell::new(items))),
+    );
     fields.insert("item_count".to_string(), Value::Int(sf.items.len() as i64));
 
     // Wrap in Result::Ok
@@ -640,102 +658,226 @@ fn ast_to_value_item(item: &Spanned<Item>) -> Value {
     // Add item-specific info
     match &item.node {
         Item::Function(f) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Function".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(f.name.name.clone())));
-            fields.insert("visibility".to_string(), Value::String(Rc::new(visibility_to_string(&f.visibility))));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Function".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(f.name.name.clone())),
+            );
+            fields.insert(
+                "visibility".to_string(),
+                Value::String(Rc::new(visibility_to_string(&f.visibility))),
+            );
             fields.insert("is_async".to_string(), Value::Bool(f.is_async));
             fields.insert("param_count".to_string(), Value::Int(f.params.len() as i64));
-            fields.insert("has_return_type".to_string(), Value::Bool(f.return_type.is_some()));
+            fields.insert(
+                "has_return_type".to_string(),
+                Value::Bool(f.return_type.is_some()),
+            );
 
             // Parameter info (simplified - just count)
-            let params: Vec<Value> = f.params.iter().map(|p| {
-                let mut pf = HashMap::new();
-                pf.insert("type".to_string(), Value::String(Rc::new(format!("{:?}", p.ty))));
-                Value::Struct { name: "Param".to_string(), fields: Rc::new(RefCell::new(pf)) }
-            }).collect();
-            fields.insert("params".to_string(), Value::Array(Rc::new(RefCell::new(params))));
+            let params: Vec<Value> = f
+                .params
+                .iter()
+                .map(|p| {
+                    let mut pf = HashMap::new();
+                    pf.insert(
+                        "type".to_string(),
+                        Value::String(Rc::new(format!("{:?}", p.ty))),
+                    );
+                    Value::Struct {
+                        name: "Param".to_string(),
+                        fields: Rc::new(RefCell::new(pf)),
+                    }
+                })
+                .collect();
+            fields.insert(
+                "params".to_string(),
+                Value::Array(Rc::new(RefCell::new(params))),
+            );
         }
         Item::Struct(s) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Struct".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(s.name.name.clone())));
-            fields.insert("visibility".to_string(), Value::String(Rc::new(visibility_to_string(&s.visibility))));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Struct".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(s.name.name.clone())),
+            );
+            fields.insert(
+                "visibility".to_string(),
+                Value::String(Rc::new(visibility_to_string(&s.visibility))),
+            );
 
             // Handle StructFields enum
             let (field_count, field_names) = match &s.fields {
                 StructFields::Named(fields_vec) => {
-                    let names: Vec<Value> = fields_vec.iter().map(|f| {
-                        Value::String(Rc::new(f.name.name.clone()))
-                    }).collect();
+                    let names: Vec<Value> = fields_vec
+                        .iter()
+                        .map(|f| Value::String(Rc::new(f.name.name.clone())))
+                        .collect();
                     (fields_vec.len() as i64, names)
                 }
                 StructFields::Tuple(types) => (types.len() as i64, vec![]),
                 StructFields::Unit => (0, vec![]),
             };
             fields.insert("field_count".to_string(), Value::Int(field_count));
-            fields.insert("fields".to_string(), Value::Array(Rc::new(RefCell::new(field_names))));
+            fields.insert(
+                "fields".to_string(),
+                Value::Array(Rc::new(RefCell::new(field_names))),
+            );
         }
         Item::Enum(e) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Enum".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(e.name.name.clone())));
-            fields.insert("visibility".to_string(), Value::String(Rc::new(visibility_to_string(&e.visibility))));
-            fields.insert("variant_count".to_string(), Value::Int(e.variants.len() as i64));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Enum".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(e.name.name.clone())),
+            );
+            fields.insert(
+                "visibility".to_string(),
+                Value::String(Rc::new(visibility_to_string(&e.visibility))),
+            );
+            fields.insert(
+                "variant_count".to_string(),
+                Value::Int(e.variants.len() as i64),
+            );
 
             // Variant names
-            let variants: Vec<Value> = e.variants.iter().map(|v| {
-                Value::String(Rc::new(v.name.name.clone()))
-            }).collect();
-            fields.insert("variants".to_string(), Value::Array(Rc::new(RefCell::new(variants))));
+            let variants: Vec<Value> = e
+                .variants
+                .iter()
+                .map(|v| Value::String(Rc::new(v.name.name.clone())))
+                .collect();
+            fields.insert(
+                "variants".to_string(),
+                Value::Array(Rc::new(RefCell::new(variants))),
+            );
         }
         Item::Trait(t) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Trait".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(t.name.name.clone())));
-            fields.insert("visibility".to_string(), Value::String(Rc::new(visibility_to_string(&t.visibility))));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Trait".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(t.name.name.clone())),
+            );
+            fields.insert(
+                "visibility".to_string(),
+                Value::String(Rc::new(visibility_to_string(&t.visibility))),
+            );
             fields.insert("method_count".to_string(), Value::Int(t.items.len() as i64));
         }
         Item::Impl(i) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Impl".to_string())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Impl".to_string())),
+            );
             if let Some(trait_path) = &i.trait_ {
-                fields.insert("trait_name".to_string(), Value::String(Rc::new(format!("{:?}", trait_path))));
+                fields.insert(
+                    "trait_name".to_string(),
+                    Value::String(Rc::new(format!("{:?}", trait_path))),
+                );
             }
             fields.insert("method_count".to_string(), Value::Int(i.items.len() as i64));
         }
         Item::TypeAlias(t) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("TypeAlias".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(t.name.name.clone())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("TypeAlias".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(t.name.name.clone())),
+            );
         }
         Item::Module(m) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Module".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(m.name.name.clone())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Module".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(m.name.name.clone())),
+            );
         }
         Item::Use(u) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Use".to_string())));
-            fields.insert("path".to_string(), Value::String(Rc::new(format!("{:?}", u.tree))));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Use".to_string())),
+            );
+            fields.insert(
+                "path".to_string(),
+                Value::String(Rc::new(format!("{:?}", u.tree))),
+            );
         }
         Item::Const(c) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Const".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(c.name.name.clone())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Const".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(c.name.name.clone())),
+            );
         }
         Item::Static(s) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Static".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(s.name.name.clone())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Static".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(s.name.name.clone())),
+            );
         }
         Item::Actor(a) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Actor".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(a.name.name.clone())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Actor".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(a.name.name.clone())),
+            );
         }
         Item::ExternBlock(_) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("ExternBlock".to_string())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("ExternBlock".to_string())),
+            );
         }
         Item::Macro(m) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Macro".to_string())));
-            fields.insert("name".to_string(), Value::String(Rc::new(m.name.name.clone())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Macro".to_string())),
+            );
+            fields.insert(
+                "name".to_string(),
+                Value::String(Rc::new(m.name.name.clone())),
+            );
         }
         Item::MacroInvocation(m) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("MacroInvocation".to_string())));
-            fields.insert("path".to_string(), Value::String(Rc::new(format!("{:?}", m.path))));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("MacroInvocation".to_string())),
+            );
+            fields.insert(
+                "path".to_string(),
+                Value::String(Rc::new(format!("{:?}", m.path))),
+            );
         }
         Item::Plurality(_) => {
-            fields.insert("kind".to_string(), Value::String(Rc::new("Plurality".to_string())));
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Plurality".to_string())),
+            );
         }
     }
 
@@ -834,8 +976,7 @@ impl RuntimeError {
 
     /// Division by zero error
     pub fn division_by_zero() -> Self {
-        Self::new("division by zero")
-            .with_code(RuntimeErrorCode::DivisionByZero)
+        Self::new("division by zero").with_code(RuntimeErrorCode::DivisionByZero)
     }
 
     /// Linear type violation (no-cloning theorem)
@@ -843,7 +984,8 @@ impl RuntimeError {
         Self::new(format!(
             "linear value '{}' used twice (no-cloning theorem violation)",
             var_name
-        )).with_code(RuntimeErrorCode::LinearTypeViolation)
+        ))
+        .with_code(RuntimeErrorCode::LinearTypeViolation)
     }
 
     /// Index out of bounds error
@@ -2226,7 +2368,10 @@ impl Interpreter {
                 Err(e) => {
                     // Return error as Result::Err variant
                     let mut fields = HashMap::new();
-                    fields.insert("message".to_string(), Value::String(Rc::new(format!("{}", e))));
+                    fields.insert(
+                        "message".to_string(),
+                        Value::String(Rc::new(format!("{}", e))),
+                    );
                     Ok(Value::Variant {
                         enum_name: "Result".to_string(),
                         variant_name: "Err".to_string(),
@@ -2258,7 +2403,10 @@ impl Interpreter {
                 Ok(s) => s,
                 Err(e) => {
                     let mut fields = HashMap::new();
-                    fields.insert("message".to_string(), Value::String(Rc::new(format!("IO error: {}", e))));
+                    fields.insert(
+                        "message".to_string(),
+                        Value::String(Rc::new(format!("IO error: {}", e))),
+                    );
                     return Ok(Value::Variant {
                         enum_name: "Result".to_string(),
                         variant_name: "Err".to_string(),
@@ -2273,12 +2421,13 @@ impl Interpreter {
             // Parse using Sigil's own parser
             let mut parser = crate::Parser::new(&source);
             match parser.parse_file() {
-                Ok(source_file) => {
-                    Ok(ast_to_value_source_file(&source_file))
-                }
+                Ok(source_file) => Ok(ast_to_value_source_file(&source_file)),
                 Err(e) => {
                     let mut fields = HashMap::new();
-                    fields.insert("message".to_string(), Value::String(Rc::new(format!("{}", e))));
+                    fields.insert(
+                        "message".to_string(),
+                        Value::String(Rc::new(format!("{}", e))),
+                    );
                     Ok(Value::Variant {
                         enum_name: "Result".to_string(),
                         variant_name: "Err".to_string(),
@@ -2696,7 +2845,8 @@ impl Interpreter {
 
                                         // Also register without module prefix for local access
                                         // (Type·method for when type is accessed without module prefix)
-                                        let local_name = format!("{}·{}", type_name, func.name.name);
+                                        let local_name =
+                                            format!("{}·{}", type_name, func.name.name);
                                         if local_name != qualified_name {
                                             self.globals
                                                 .borrow_mut()
@@ -2707,7 +2857,8 @@ impl Interpreter {
                             }
                             Item::Module(nested_mod) => {
                                 // Handle nested modules recursively
-                                let nested_name = format!("{}·{}", module_name, nested_mod.name.name);
+                                let nested_name =
+                                    format!("{}·{}", module_name, nested_mod.name.name);
                                 if let Some(nested_items) = &nested_mod.items {
                                     // Create a temporary module item with qualified name
                                     // and process it recursively
@@ -2926,7 +3077,9 @@ impl Interpreter {
                 // For functions: if foo·bar·Baz exists in globals, also register as Baz
                 let func = self.globals.borrow().get(&lookup_name).map(|v| v.clone());
                 if let Some(val) = func {
-                    self.globals.borrow_mut().define(simple_name.clone(), val.clone());
+                    self.globals
+                        .borrow_mut()
+                        .define(simple_name.clone(), val.clone());
                     if lookup_name != qualified {
                         self.globals.borrow_mut().define(qualified.clone(), val);
                     }
@@ -3862,12 +4015,14 @@ impl Interpreter {
                     // Looks like an enum variant (PascalCase) - check if it exists
                     if let Some(TypeDef::Enum(enum_def)) = self.types.get(type_name) {
                         // Check if variant exists
-                        let variant_exists = enum_def.variants.iter().any(|v| v.name.name == *method_name);
+                        let variant_exists = enum_def
+                            .variants
+                            .iter()
+                            .any(|v| v.name.name == *method_name);
                         if !variant_exists {
                             return Err(RuntimeError::new(format!(
                                 "no variant '{}' on enum '{}'",
-                                method_name,
-                                type_name
+                                method_name, type_name
                             )));
                         }
                     }
@@ -4071,8 +4226,14 @@ impl Interpreter {
                     // Result is a new Tensor with the product
                     let result = val1 * val2;
                     let mut fields = std::collections::HashMap::new();
-                    fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
-                    fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::Float(result)]))));
+                    fields.insert(
+                        "shape".to_string(),
+                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                    );
+                    fields.insert(
+                        "data".to_string(),
+                        Value::Array(Rc::new(RefCell::new(vec![Value::Float(result)]))),
+                    );
                     fields.insert("requires_grad".to_string(), Value::Bool(false));
                     fields.insert("_value".to_string(), Value::Float(result));
                     // Track computation for autodiff
@@ -4102,7 +4263,13 @@ impl Interpreter {
 
                     // Matrix multiply: [m,n] @ [n,p] = [m,p]
                     let m = if shape1.len() >= 2 { shape1[0] } else { 1 };
-                    let n1_dim = if shape1.len() >= 2 { shape1[1] } else if !shape1.is_empty() { shape1[0] } else { 1 };
+                    let n1_dim = if shape1.len() >= 2 {
+                        shape1[1]
+                    } else if !shape1.is_empty() {
+                        shape1[0]
+                    } else {
+                        1
+                    };
                     let p = if shape2.len() >= 2 { shape2[1] } else { 1 };
 
                     // Perform matrix multiplication
@@ -4122,35 +4289,55 @@ impl Interpreter {
                     }
 
                     // Check if either operand requires grad
-                    let left_requires_grad = matches!(f1.borrow().get("requires_grad"), Some(Value::Bool(true)));
-                    let right_requires_grad = matches!(f2.borrow().get("requires_grad"), Some(Value::Bool(true)));
+                    let left_requires_grad =
+                        matches!(f1.borrow().get("requires_grad"), Some(Value::Bool(true)));
+                    let right_requires_grad =
+                        matches!(f2.borrow().get("requires_grad"), Some(Value::Bool(true)));
 
                     // Build result tensor
                     let mut fields = std::collections::HashMap::new();
-                    fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-                        Value::Int(m as i64),
-                        Value::Int(p as i64),
-                    ]))));
-                    fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(
-                        result_data.into_iter().map(Value::Float).collect()
-                    ))));
-                    fields.insert("requires_grad".to_string(), Value::Bool(left_requires_grad || right_requires_grad));
+                    fields.insert(
+                        "shape".to_string(),
+                        Value::Array(Rc::new(RefCell::new(vec![
+                            Value::Int(m as i64),
+                            Value::Int(p as i64),
+                        ]))),
+                    );
+                    fields.insert(
+                        "data".to_string(),
+                        Value::Array(Rc::new(RefCell::new(
+                            result_data.into_iter().map(Value::Float).collect(),
+                        ))),
+                    );
+                    fields.insert(
+                        "requires_grad".to_string(),
+                        Value::Bool(left_requires_grad || right_requires_grad),
+                    );
 
                     // Store references to operands for backward pass (autograd)
                     if left_requires_grad {
                         // Store the left operand's fields Rc for gradient computation
-                        fields.insert("_grad_left".to_string(), Value::Struct {
-                            name: "Tensor".to_string(),
-                            fields: f1.clone(),
-                        });
+                        fields.insert(
+                            "_grad_left".to_string(),
+                            Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: f1.clone(),
+                            },
+                        );
                     }
                     if right_requires_grad {
-                        fields.insert("_grad_right".to_string(), Value::Struct {
-                            name: "Tensor".to_string(),
-                            fields: f2.clone(),
-                        });
+                        fields.insert(
+                            "_grad_right".to_string(),
+                            Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: f2.clone(),
+                            },
+                        );
                     }
-                    fields.insert("_op".to_string(), Value::String(Rc::new("matmul".to_string())));
+                    fields.insert(
+                        "_op".to_string(),
+                        Value::String(Rc::new("matmul".to_string())),
+                    );
 
                     Ok(Value::Struct {
                         name: "Tensor".to_string(),
@@ -4175,13 +4362,21 @@ impl Interpreter {
                     drop(f2_ref);
 
                     // Element-wise multiplication
-                    let result_data: Vec<Value> = data1.iter().zip(data2.iter())
+                    let result_data: Vec<Value> = data1
+                        .iter()
+                        .zip(data2.iter())
                         .map(|(a, b)| Value::Float(a * b))
                         .collect();
 
                     let mut fields = std::collections::HashMap::new();
-                    fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape1))));
-                    fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(result_data))));
+                    fields.insert(
+                        "shape".to_string(),
+                        Value::Array(Rc::new(RefCell::new(shape1))),
+                    );
+                    fields.insert(
+                        "data".to_string(),
+                        Value::Array(Rc::new(RefCell::new(result_data))),
+                    );
                     fields.insert("requires_grad".to_string(), Value::Bool(false));
                     Ok(Value::Struct {
                         name: "Tensor".to_string(),
@@ -4196,10 +4391,14 @@ impl Interpreter {
                     // Shape as i64 for size calculations
                     let shape1: Vec<i64> = tensor_shape_from_fields(&f1_ref)
                         .ok_or_else(|| RuntimeError::new("left tensor has no shape"))?
-                        .iter().map(|&x| x as i64).collect();
+                        .iter()
+                        .map(|&x| x as i64)
+                        .collect();
                     let shape2: Vec<i64> = tensor_shape_from_fields(&f2_ref)
                         .ok_or_else(|| RuntimeError::new("right tensor has no shape"))?
-                        .iter().map(|&x| x as i64).collect();
+                        .iter()
+                        .map(|&x| x as i64)
+                        .collect();
                     let data1 = tensor_data_from_fields(&f1_ref)
                         .ok_or_else(|| RuntimeError::new("left tensor has no data"))?;
                     let data2 = tensor_data_from_fields(&f2_ref)
@@ -4217,35 +4416,41 @@ impl Interpreter {
 
                     if size1 == size2 {
                         // Same size - element-wise addition
-                        result_data = data1.iter().zip(data2.iter())
-                            .map(|(a, b)| a + b)
-                            .collect();
+                        result_data = data1.iter().zip(data2.iter()).map(|(a, b)| a + b).collect();
                         result_shape = shape1.into_iter().map(Value::Int).collect();
                     } else if size1 > size2 && size1 % size2 == 0 {
                         // Broadcast data2 to match data1
-                        result_data = data1.iter().enumerate()
+                        result_data = data1
+                            .iter()
+                            .enumerate()
                             .map(|(i, a)| a + data2[i % data2.len()])
                             .collect();
                         result_shape = shape1.into_iter().map(Value::Int).collect();
                     } else if size2 > size1 && size2 % size1 == 0 {
                         // Broadcast data1 to match data2
-                        result_data = data2.iter().enumerate()
+                        result_data = data2
+                            .iter()
+                            .enumerate()
                             .map(|(i, b)| data1[i % data1.len()] + b)
                             .collect();
                         result_shape = shape2.into_iter().map(Value::Int).collect();
                     } else {
                         // Fallback: zip what we can
-                        result_data = data1.iter().zip(data2.iter())
-                            .map(|(a, b)| a + b)
-                            .collect();
+                        result_data = data1.iter().zip(data2.iter()).map(|(a, b)| a + b).collect();
                         result_shape = shape1.into_iter().map(Value::Int).collect();
                     }
 
                     let mut fields = std::collections::HashMap::new();
-                    fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(result_shape))));
-                    fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(
-                        result_data.into_iter().map(Value::Float).collect()
-                    ))));
+                    fields.insert(
+                        "shape".to_string(),
+                        Value::Array(Rc::new(RefCell::new(result_shape))),
+                    );
+                    fields.insert(
+                        "data".to_string(),
+                        Value::Array(Rc::new(RefCell::new(
+                            result_data.into_iter().map(Value::Float).collect(),
+                        ))),
+                    );
                     fields.insert("requires_grad".to_string(), Value::Bool(false));
                     Ok(Value::Struct {
                         name: "Tensor".to_string(),
@@ -4282,12 +4487,15 @@ impl Interpreter {
 
                     let mut reg_fields = HashMap::new();
                     reg_fields.insert("_size".to_string(), Value::Int(2));
-                    reg_fields.insert("_state".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-                        Value::Float(amp00),
-                        Value::Float(amp01),
-                        Value::Float(amp10),
-                        Value::Float(amp11),
-                    ]))));
+                    reg_fields.insert(
+                        "_state".to_string(),
+                        Value::Array(Rc::new(RefCell::new(vec![
+                            Value::Float(amp00),
+                            Value::Float(amp01),
+                            Value::Float(amp10),
+                            Value::Float(amp11),
+                        ]))),
+                    );
 
                     Ok(Value::Struct {
                         name: "QRegister".to_string(),
@@ -4614,7 +4822,10 @@ impl Interpreter {
             // Debug: trace variant lookup for Command
             if qualified_name.contains("Command") || qualified_name.contains("Analyze") {
                 eprintln!("DEBUG variant lookup: qualified_name='{}'", qualified_name);
-                eprintln!("  found in variant_constructors: {}", self.variant_constructors.contains_key(&qualified_name));
+                eprintln!(
+                    "  found in variant_constructors: {}",
+                    self.variant_constructors.contains_key(&qualified_name)
+                );
                 // Show registered variants with Command in name
                 for (k, v) in &self.variant_constructors {
                     if k.contains("Command") {
@@ -4803,48 +5014,58 @@ impl Interpreter {
                 ["Linear", "new"] => {
                     if args.is_empty() {
                         // First try to extract generics from turbofish syntax: Linear::<784, 256>::new()
-                        let turbofish_generics: Option<(i64, i64)> = if let Some(seg) = path.segments.first() {
-                            if let Some(generics) = &seg.generics {
-                                let mut const_values: Vec<i64> = Vec::new();
-                                for generic in generics {
-                                    if let crate::ast::TypeExpr::ConstExpr(expr) = generic {
-                                        if let crate::ast::Expr::Literal(crate::ast::Literal::Int { value, .. }) = expr.as_ref() {
-                                            if let Ok(n) = value.parse::<i64>() {
-                                                const_values.push(n);
+                        let turbofish_generics: Option<(i64, i64)> =
+                            if let Some(seg) = path.segments.first() {
+                                if let Some(generics) = &seg.generics {
+                                    let mut const_values: Vec<i64> = Vec::new();
+                                    for generic in generics {
+                                        if let crate::ast::TypeExpr::ConstExpr(expr) = generic {
+                                            if let crate::ast::Expr::Literal(
+                                                crate::ast::Literal::Int { value, .. },
+                                            ) = expr.as_ref()
+                                            {
+                                                if let Ok(n) = value.parse::<i64>() {
+                                                    const_values.push(n);
+                                                }
+                                            }
+                                        }
+                                        if let crate::ast::TypeExpr::Path(inner_path) = generic {
+                                            if let Some(inner_seg) = inner_path.segments.first() {
+                                                if let Ok(n) = inner_seg.ident.name.parse::<i64>() {
+                                                    const_values.push(n);
+                                                }
                                             }
                                         }
                                     }
-                                    if let crate::ast::TypeExpr::Path(inner_path) = generic {
-                                        if let Some(inner_seg) = inner_path.segments.first() {
-                                            if let Ok(n) = inner_seg.ident.name.parse::<i64>() {
-                                                const_values.push(n);
-                                            }
-                                        }
+                                    if const_values.len() >= 2 {
+                                        Some((const_values[0], const_values[1]))
+                                    } else {
+                                        None
                                     }
-                                }
-                                if const_values.len() >= 2 {
-                                    Some((const_values[0], const_values[1]))
                                 } else {
                                     None
                                 }
                             } else {
                                 None
-                            }
-                        } else {
-                            None
-                        };
+                            };
 
                         // Use turbofish generics, or fall back to type annotation generics
                         let (in_features, out_features) = if let Some((i, o)) = turbofish_generics {
                             (i, o)
-                        } else if let Some((name, generics)) = self.type_context.struct_generics.borrow().clone() {
+                        } else if let Some((name, generics)) =
+                            self.type_context.struct_generics.borrow().clone()
+                        {
                             if name == "Linear" && generics.len() >= 2 {
                                 (generics[0], generics[1])
                             } else {
-                                return Err(RuntimeError::new("Linear::new requires type annotation like Linear<IN, OUT>"));
+                                return Err(RuntimeError::new(
+                                    "Linear::new requires type annotation like Linear<IN, OUT>",
+                                ));
                             }
                         } else {
-                            return Err(RuntimeError::new("Linear::new requires type annotation like Linear<IN, OUT>"));
+                            return Err(RuntimeError::new(
+                                "Linear::new requires type annotation like Linear<IN, OUT>",
+                            ));
                         };
 
                         // Create weight tensor [OUT, IN] with random values
@@ -4853,14 +5074,23 @@ impl Interpreter {
                             .collect();
                         let weight_shape = vec![Value::Int(out_features), Value::Int(in_features)];
                         let mut weight_fields = HashMap::new();
-                        weight_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(weight_data))));
-                        weight_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(weight_shape))));
+                        weight_fields.insert(
+                            "data".to_string(),
+                            Value::Array(Rc::new(RefCell::new(weight_data))),
+                        );
+                        weight_fields.insert(
+                            "shape".to_string(),
+                            Value::Array(Rc::new(RefCell::new(weight_shape))),
+                        );
                         weight_fields.insert("requires_grad".to_string(), Value::Bool(true));
-                        weight_fields.insert("grad".to_string(), Value::Variant {
-                            enum_name: "Option".to_string(),
-                            variant_name: "None".to_string(),
-                            fields: None,
-                        });
+                        weight_fields.insert(
+                            "grad".to_string(),
+                            Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "None".to_string(),
+                                fields: None,
+                            },
+                        );
 
                         // Create bias tensor [OUT] with random values
                         let bias_data: Vec<Value> = (0..out_features)
@@ -4868,25 +5098,40 @@ impl Interpreter {
                             .collect();
                         let bias_shape = vec![Value::Int(out_features)];
                         let mut bias_fields = HashMap::new();
-                        bias_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(bias_data))));
-                        bias_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(bias_shape))));
+                        bias_fields.insert(
+                            "data".to_string(),
+                            Value::Array(Rc::new(RefCell::new(bias_data))),
+                        );
+                        bias_fields.insert(
+                            "shape".to_string(),
+                            Value::Array(Rc::new(RefCell::new(bias_shape))),
+                        );
                         bias_fields.insert("requires_grad".to_string(), Value::Bool(true));
-                        bias_fields.insert("grad".to_string(), Value::Variant {
-                            enum_name: "Option".to_string(),
-                            variant_name: "None".to_string(),
-                            fields: None,
-                        });
+                        bias_fields.insert(
+                            "grad".to_string(),
+                            Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "None".to_string(),
+                                fields: None,
+                            },
+                        );
 
                         // Create Linear struct with weight and bias
                         let mut linear_fields = HashMap::new();
-                        linear_fields.insert("weight".to_string(), Value::Struct {
-                            name: "Tensor".to_string(),
-                            fields: Rc::new(RefCell::new(weight_fields)),
-                        });
-                        linear_fields.insert("bias".to_string(), Value::Struct {
-                            name: "Tensor".to_string(),
-                            fields: Rc::new(RefCell::new(bias_fields)),
-                        });
+                        linear_fields.insert(
+                            "weight".to_string(),
+                            Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: Rc::new(RefCell::new(weight_fields)),
+                            },
+                        );
+                        linear_fields.insert(
+                            "bias".to_string(),
+                            Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: Rc::new(RefCell::new(bias_fields)),
+                            },
+                        );
 
                         return Ok(Value::Struct {
                             name: "Linear".to_string(),
@@ -4916,7 +5161,9 @@ impl Interpreter {
                             fields: Rc::new(RefCell::new(fields)),
                         });
                     }
-                    return Err(RuntimeError::new("Sequential::new expects an array of layers"));
+                    return Err(RuntimeError::new(
+                        "Sequential::new expects an array of layers",
+                    ));
                 }
                 _ => {}
             }
@@ -4942,17 +5189,34 @@ impl Interpreter {
 
         // Debug: trace function lookup for Result
         if let Expr::Path(path) = func_expr {
-            let path_str = path.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("·");
+            let path_str = path
+                .segments
+                .iter()
+                .map(|s| s.ident.name.as_str())
+                .collect::<Vec<_>>()
+                .join("·");
             if path_str.contains("Result") {
-                eprintln!("DEBUG func lookup: path='{}', looking up in globals...", path_str);
+                eprintln!(
+                    "DEBUG func lookup: path='{}', looking up in globals...",
+                    path_str
+                );
             }
         }
         let func = self.evaluate(func_expr)?;
         // Debug: trace what we got
         if let Expr::Path(path) = func_expr {
-            let path_str = path.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("·");
+            let path_str = path
+                .segments
+                .iter()
+                .map(|s| s.ident.name.as_str())
+                .collect::<Vec<_>>()
+                .join("·");
             if path_str.contains("Result") {
-                eprintln!("DEBUG func lookup result: path='{}', value={}", path_str, self.format_value(&func));
+                eprintln!(
+                    "DEBUG func lookup result: path='{}', value={}",
+                    path_str,
+                    self.format_value(&func)
+                );
             }
         }
 
@@ -5330,7 +5594,8 @@ impl Interpreter {
                         }
                         // Extract struct generics for type-directed construction like Linear<3, 2>::new()
                         if let Some((name, generics)) = self.extract_struct_generics(type_expr) {
-                            *self.type_context.struct_generics.borrow_mut() = Some((name, generics));
+                            *self.type_context.struct_generics.borrow_mut() =
+                                Some((name, generics));
                         }
                     }
                     let value = match init {
@@ -5345,20 +5610,24 @@ impl Interpreter {
                         if matches!(type_expr, crate::ast::TypeExpr::Linear(_)) {
                             // Track the variable name as linear
                             if let Pattern::Ident { name, .. } = pattern {
-                                self.linear_state.vars.borrow_mut().insert(name.name.clone());
+                                self.linear_state
+                                    .vars
+                                    .borrow_mut()
+                                    .insert(name.name.clone());
                             }
                         }
                     }
                     // Check generic type parameter match for Option<T>/Result<T,E>
                     if let Some(type_expr) = ty {
-                        if let Some((type_name, type_params)) = self.extract_type_params(type_expr) {
+                        if let Some((type_name, type_params)) = self.extract_type_params(type_expr)
+                        {
                             self.check_generic_type_match(&type_name, &type_params, &value)?;
                             // Store Vec<T> type info for push type checking
                             if type_name == "Vec" && !type_params.is_empty() {
                                 if let Pattern::Ident { name, .. } = pattern {
                                     self.var_types.borrow_mut().insert(
                                         name.name.clone(),
-                                        (type_name.clone(), type_params.clone())
+                                        (type_name.clone(), type_params.clone()),
                                     );
                                 }
                             }
@@ -5464,7 +5733,7 @@ impl Interpreter {
 
     /// Extract shape dimensions from array type like [2, 3] or [2, 3, 4]
     fn extract_shape_from_type(&self, type_expr: &crate::ast::TypeExpr) -> Option<Vec<i64>> {
-        use crate::ast::{TypeExpr, Expr, Literal};
+        use crate::ast::{Expr, Literal, TypeExpr};
 
         match type_expr {
             // Handle ConstExpr(Array([...])) - the most common case for Tensor<[2, 3]>
@@ -5481,7 +5750,11 @@ impl Interpreter {
                             _ => {}
                         }
                     }
-                    if dims.is_empty() { None } else { Some(dims) }
+                    if dims.is_empty() {
+                        None
+                    } else {
+                        Some(dims)
+                    }
                 } else {
                     None
                 }
@@ -5523,7 +5796,11 @@ impl Interpreter {
                         }
                     }
                 }
-                if shape.is_empty() { None } else { Some(shape) }
+                if shape.is_empty() {
+                    None
+                } else {
+                    Some(shape)
+                }
             }
             // Handle Tensor<[2, 3]> where [2, 3] is parsed as a path segment
             TypeExpr::Path(path) => {
@@ -5534,8 +5811,9 @@ impl Interpreter {
                     let name = &seg.ident.name;
                     // Check if it looks like "[2, 3]" or similar
                     if name.starts_with('[') && name.ends_with(']') {
-                        let inner = &name[1..name.len()-1];
-                        let dims: Vec<i64> = inner.split(',')
+                        let inner = &name[1..name.len() - 1];
+                        let dims: Vec<i64> = inner
+                            .split(',')
                             .filter_map(|s| s.trim().parse().ok())
                             .collect();
                         if !dims.is_empty() {
@@ -5550,8 +5828,11 @@ impl Interpreter {
     }
 
     /// Extract struct name and const generics from type annotation like Linear<3, 2>
-    fn extract_struct_generics(&self, type_expr: &crate::ast::TypeExpr) -> Option<(String, Vec<i64>)> {
-        use crate::ast::{TypeExpr, Expr, Literal};
+    fn extract_struct_generics(
+        &self,
+        type_expr: &crate::ast::TypeExpr,
+    ) -> Option<(String, Vec<i64>)> {
+        use crate::ast::{Expr, Literal, TypeExpr};
 
         // Handle linear type wrapper: linear QRegister<3> -> QRegister<3>
         let inner_type = if let TypeExpr::Linear(inner) = type_expr {
@@ -5964,10 +6245,21 @@ impl Interpreter {
         // Show more details if it's a Struct or Variant
         match &value {
             Value::Struct { name, fields } => {
-                eprintln!("  Struct: name='{}', fields={:?}", name, fields.borrow().keys().collect::<Vec<_>>());
+                eprintln!(
+                    "  Struct: name='{}', fields={:?}",
+                    name,
+                    fields.borrow().keys().collect::<Vec<_>>()
+                );
             }
-            Value::Variant { enum_name, variant_name, fields } => {
-                eprintln!("  Variant: {}::{}, fields={:?}", enum_name, variant_name, fields);
+            Value::Variant {
+                enum_name,
+                variant_name,
+                fields,
+            } => {
+                eprintln!(
+                    "  Variant: {}::{}, fields={:?}",
+                    enum_name, variant_name, fields
+                );
             }
             _ => {}
         }
@@ -6483,7 +6775,9 @@ impl Interpreter {
                 // Check if this is a typed Vec<T> - if so, error on negative indices
                 // Otherwise, support Python-style negative indexing
                 let is_typed_vec = if let Some(var_name) = Self::extract_root_var(expr) {
-                    self.var_types.borrow().get(&var_name)
+                    self.var_types
+                        .borrow()
+                        .get(&var_name)
                         .map(|(type_name, _)| type_name == "Vec")
                         .unwrap_or(false)
                 } else {
@@ -6587,22 +6881,26 @@ impl Interpreter {
 
                 // Get shape and data
                 let shape: Vec<i64> = match fields_ref.get("shape") {
-                    Some(Value::Array(arr)) => {
-                        arr.borrow().iter().filter_map(|v| match v {
+                    Some(Value::Array(arr)) => arr
+                        .borrow()
+                        .iter()
+                        .filter_map(|v| match v {
                             Value::Int(n) => Some(*n),
                             _ => None,
-                        }).collect()
-                    }
+                        })
+                        .collect(),
                     _ => vec![],
                 };
                 let data: Vec<f64> = match fields_ref.get("data") {
-                    Some(Value::Array(arr)) => {
-                        arr.borrow().iter().filter_map(|v| match v {
+                    Some(Value::Array(arr)) => arr
+                        .borrow()
+                        .iter()
+                        .filter_map(|v| match v {
                             Value::Float(f) => Some(*f),
                             Value::Int(n) => Some(*n as f64),
                             _ => None,
-                        }).collect()
-                    }
+                        })
+                        .collect(),
                     _ => vec![],
                 };
                 drop(fields_ref);
@@ -6623,16 +6921,20 @@ impl Interpreter {
                     let end = start + row_size;
 
                     if end <= data.len() {
-                        let row_data: Vec<Value> = data[start..end].iter()
-                            .map(|&f| Value::Float(f))
-                            .collect();
-                        let row_shape: Vec<Value> = shape[1..].iter()
-                            .map(|&d| Value::Int(d))
-                            .collect();
+                        let row_data: Vec<Value> =
+                            data[start..end].iter().map(|&f| Value::Float(f)).collect();
+                        let row_shape: Vec<Value> =
+                            shape[1..].iter().map(|&d| Value::Int(d)).collect();
 
                         let mut new_fields = std::collections::HashMap::new();
-                        new_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(row_shape))));
-                        new_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(row_data))));
+                        new_fields.insert(
+                            "shape".to_string(),
+                            Value::Array(Rc::new(RefCell::new(row_shape))),
+                        );
+                        new_fields.insert(
+                            "data".to_string(),
+                            Value::Array(Rc::new(RefCell::new(row_data))),
+                        );
                         new_fields.insert("requires_grad".to_string(), Value::Bool(false));
 
                         Ok(Value::Struct {
@@ -6706,13 +7008,10 @@ impl Interpreter {
                     // Error on unknown fields - type checking
                     match field_val {
                         Some(v) => Ok(v),
-                        None => {
-                            Err(RuntimeError::new(format!(
-                                "no field '{}' on struct '{}'",
-                                field_name,
-                                name
-                            )))
-                        }
+                        None => Err(RuntimeError::new(format!(
+                            "no field '{}' on struct '{}'",
+                            field_name, name
+                        ))),
                     }
                 }
                 Value::Tuple(t) => {
@@ -6985,7 +7284,9 @@ impl Interpreter {
                 v.reverse();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
-            (Value::Array(arr), "↓") | (Value::Array(arr), "skip") | (Value::Array(arr), "drop") => {
+            (Value::Array(arr), "↓")
+            | (Value::Array(arr), "skip")
+            | (Value::Array(arr), "drop") => {
                 // ↓(n) -> drop/skip first n elements
                 // Symbolic: downward selection arrow
                 let n = match arg_values.first() {
@@ -7073,7 +7374,10 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("map expects closure argument")),
                 }
             }
-            (Value::Array(arr), "⊛") | (Value::Array(arr), "filter") | (Value::Array(arr), "select") | (Value::Array(arr), "where") => {
+            (Value::Array(arr), "⊛")
+            | (Value::Array(arr), "filter")
+            | (Value::Array(arr), "select")
+            | (Value::Array(arr), "where") => {
                 // ⊛(predicate) -> selection/sieve by predicate
                 // Symbolic: circled asterisk (selection operator)
                 if arg_values.len() != 1 {
@@ -7093,7 +7397,10 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("filter expects closure argument")),
                 }
             }
-            (Value::Array(arr), "∃") | (Value::Array(arr), "any") | (Value::Array(arr), "some") | (Value::Array(arr), "exists") => {
+            (Value::Array(arr), "∃")
+            | (Value::Array(arr), "any")
+            | (Value::Array(arr), "some")
+            | (Value::Array(arr), "exists") => {
                 // ∃(predicate) -> existential quantification
                 // Symbolic: there exists
                 if arg_values.len() != 1 {
@@ -7112,7 +7419,10 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("any expects closure argument")),
                 }
             }
-            (Value::Array(arr), "∀∶") | (Value::Array(arr), "all") | (Value::Array(arr), "every") | (Value::Array(arr), "forall") => {
+            (Value::Array(arr), "∀∶")
+            | (Value::Array(arr), "all")
+            | (Value::Array(arr), "every")
+            | (Value::Array(arr), "forall") => {
                 // ∀∶(predicate) -> universal quantification test (returns bool)
                 // Symbolic: for all (with colon to distinguish from forEach)
                 if arg_values.len() != 1 {
@@ -7158,7 +7468,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("find expects closure argument")),
                 }
             }
-            (Value::Array(arr), "ι") | (Value::Array(arr), "enumerate") | (Value::Array(arr), "indexed") => {
+            (Value::Array(arr), "ι")
+            | (Value::Array(arr), "enumerate")
+            | (Value::Array(arr), "indexed") => {
                 // ι() -> index-value pairs
                 // Symbolic: iota (indexing function from APL)
                 let enumerated: Vec<Value> = arr
@@ -7200,11 +7512,15 @@ impl Interpreter {
             // Combinators:  ⊗ (zip)  ⫰ (interleave)  ⋈ (join)
             // Collectors:   →[] (toVec)  →{} (toSet)  →⟨⟩ (toMap)
             //
-            (Value::Array(arr), "⊕") | (Value::Array(arr), "fold") | (Value::Array(arr), "reduce") => {
+            (Value::Array(arr), "⊕")
+            | (Value::Array(arr), "fold")
+            | (Value::Array(arr), "reduce") => {
                 // ⊕(initial, accumulator) -> reduces array to single value
                 // Symbolic: binary fold operator
                 if arg_values.len() != 2 {
-                    return Err(RuntimeError::new("fold expects 2 arguments (initial, accumulator)"));
+                    return Err(RuntimeError::new(
+                        "fold expects 2 arguments (initial, accumulator)",
+                    ));
                 }
                 let mut acc = arg_values[0].clone();
                 match &arg_values[1] {
@@ -7214,10 +7530,14 @@ impl Interpreter {
                         }
                         Ok(acc)
                     }
-                    _ => Err(RuntimeError::new("fold expects function as second argument")),
+                    _ => Err(RuntimeError::new(
+                        "fold expects function as second argument",
+                    )),
                 }
             }
-            (Value::Array(arr), "⤳") | (Value::Array(arr), "flat_map") | (Value::Array(arr), "flatMap") => {
+            (Value::Array(arr), "⤳")
+            | (Value::Array(arr), "flat_map")
+            | (Value::Array(arr), "flatMap") => {
                 // ⤳(fn) -> monadic bind: maps then flattens one level
                 // Symbolic: Kleisli arrow / monadic bind
                 if arg_values.len() != 1 {
@@ -7255,7 +7575,9 @@ impl Interpreter {
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(results))))
             }
-            (Value::Array(arr), "∀") | (Value::Array(arr), "for_each") | (Value::Array(arr), "forEach") => {
+            (Value::Array(arr), "∀")
+            | (Value::Array(arr), "for_each")
+            | (Value::Array(arr), "forEach") => {
                 // ∀(fn) -> universal quantification with side effects
                 // Symbolic: for all elements, apply
                 if arg_values.len() != 1 {
@@ -7287,7 +7609,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("peek expects function argument")),
                 }
             }
-            (Value::Array(arr), "⊴") | (Value::Array(arr), "sorted") | (Value::Array(arr), "sort") => {
+            (Value::Array(arr), "⊴")
+            | (Value::Array(arr), "sorted")
+            | (Value::Array(arr), "sort") => {
                 // ⊴() or ⊴(comparator) -> returns ordered array
                 // Symbolic: ordering/precedes relation
                 let mut v = arr.borrow().clone();
@@ -7296,16 +7620,20 @@ impl Interpreter {
                     v.sort_by(|a, b| self.compare_values(a, b, &None));
                 } else if let Some(Value::Function(f)) = arg_values.first() {
                     // Custom comparator
-                    v.sort_by(|a, b| {
-                        match self.call_function(f, vec![a.clone(), b.clone()]) {
+                    v.sort_by(
+                        |a, b| match self.call_function(f, vec![a.clone(), b.clone()]) {
                             Ok(Value::Int(n)) => {
-                                if n < 0 { std::cmp::Ordering::Less }
-                                else if n > 0 { std::cmp::Ordering::Greater }
-                                else { std::cmp::Ordering::Equal }
+                                if n < 0 {
+                                    std::cmp::Ordering::Less
+                                } else if n > 0 {
+                                    std::cmp::Ordering::Greater
+                                } else {
+                                    std::cmp::Ordering::Equal
+                                }
                             }
                             _ => std::cmp::Ordering::Equal,
-                        }
-                    });
+                        },
+                    );
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
@@ -7323,7 +7651,9 @@ impl Interpreter {
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(results))))
             }
-            (Value::Array(arr), "↑") | (Value::Array(arr), "limit") | (Value::Array(arr), "take") => {
+            (Value::Array(arr), "↑")
+            | (Value::Array(arr), "limit")
+            | (Value::Array(arr), "take") => {
                 // ↑(n) -> takes first n elements
                 // Symbolic: upward selection arrow
                 let n = match arg_values.first() {
@@ -7333,11 +7663,15 @@ impl Interpreter {
                 let v: Vec<Value> = arr.borrow().iter().take(n).cloned().collect();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
-            (Value::Array(arr), "↑⦂") | (Value::Array(arr), "take_while") | (Value::Array(arr), "takeWhile") => {
+            (Value::Array(arr), "↑⦂")
+            | (Value::Array(arr), "take_while")
+            | (Value::Array(arr), "takeWhile") => {
                 // ↑⦂(predicate) -> takes while predicate holds
                 // Symbolic: conditional upward selection
                 if arg_values.len() != 1 {
-                    return Err(RuntimeError::new("take_while expects 1 argument (predicate)"));
+                    return Err(RuntimeError::new(
+                        "take_while expects 1 argument (predicate)",
+                    ));
                 }
                 match &arg_values[0] {
                     Value::Function(f) => {
@@ -7355,11 +7689,17 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("take_while expects function argument")),
                 }
             }
-            (Value::Array(arr), "↓⦂") | (Value::Array(arr), "drop_while") | (Value::Array(arr), "dropWhile") | (Value::Array(arr), "skip_while") | (Value::Array(arr), "skipWhile") => {
+            (Value::Array(arr), "↓⦂")
+            | (Value::Array(arr), "drop_while")
+            | (Value::Array(arr), "dropWhile")
+            | (Value::Array(arr), "skip_while")
+            | (Value::Array(arr), "skipWhile") => {
                 // ↓⦂(predicate) -> drops while predicate holds
                 // Symbolic: conditional downward skip
                 if arg_values.len() != 1 {
-                    return Err(RuntimeError::new("drop_while expects 1 argument (predicate)"));
+                    return Err(RuntimeError::new(
+                        "drop_while expects 1 argument (predicate)",
+                    ));
                 }
                 match &arg_values[0] {
                     Value::Function(f) => {
@@ -7443,12 +7783,16 @@ impl Interpreter {
                     Ok(Value::Int(total))
                 }
             }
-            (Value::Array(arr), "#") | (Value::Array(arr), "count") | (Value::Array(arr), "len") => {
+            (Value::Array(arr), "#")
+            | (Value::Array(arr), "count")
+            | (Value::Array(arr), "len") => {
                 // #() -> cardinality of collection
                 // Symbolic: standard cardinality notation
                 Ok(Value::Int(arr.borrow().len() as i64))
             }
-            (Value::Array(arr), "⊥") | (Value::Array(arr), "min") | (Value::Array(arr), "infimum") => {
+            (Value::Array(arr), "⊥")
+            | (Value::Array(arr), "min")
+            | (Value::Array(arr), "infimum") => {
                 // ⊥() -> lattice infimum (minimum element)
                 // Symbolic: bottom element of partial order
                 let borrowed = arr.borrow();
@@ -7471,7 +7815,9 @@ impl Interpreter {
                     fields: Some(Rc::new(vec![min_val])),
                 })
             }
-            (Value::Array(arr), "⊤") | (Value::Array(arr), "max") | (Value::Array(arr), "supremum") => {
+            (Value::Array(arr), "⊤")
+            | (Value::Array(arr), "max")
+            | (Value::Array(arr), "supremum") => {
                 // ⊤() -> lattice supremum (maximum element)
                 // Symbolic: top element of partial order
                 let borrowed = arr.borrow();
@@ -7494,7 +7840,10 @@ impl Interpreter {
                     fields: Some(Rc::new(vec![max_val])),
                 })
             }
-            (Value::Array(arr), "μ") | (Value::Array(arr), "average") | (Value::Array(arr), "avg") | (Value::Array(arr), "mean") => {
+            (Value::Array(arr), "μ")
+            | (Value::Array(arr), "average")
+            | (Value::Array(arr), "avg")
+            | (Value::Array(arr), "mean") => {
                 // μ() -> statistical mean of numeric elements
                 // Symbolic: mu for mean (statistics)
                 let borrowed = arr.borrow();
@@ -7509,8 +7858,14 @@ impl Interpreter {
                 let mut count = 0usize;
                 for val in borrowed.iter() {
                     match val {
-                        Value::Int(n) => { sum += *n as f64; count += 1; }
-                        Value::Float(n) => { sum += n; count += 1; }
+                        Value::Int(n) => {
+                            sum += *n as f64;
+                            count += 1;
+                        }
+                        Value::Float(n) => {
+                            sum += n;
+                            count += 1;
+                        }
                         _ => {}
                     }
                 }
@@ -7527,11 +7882,17 @@ impl Interpreter {
                     fields: Some(Rc::new(vec![Value::Float(sum / count as f64)])),
                 })
             }
-            (Value::Array(arr), "⫴") | (Value::Array(arr), "group_by") | (Value::Array(arr), "groupBy") | (Value::Array(arr), "grouping_by") | (Value::Array(arr), "groupingBy") => {
+            (Value::Array(arr), "⫴")
+            | (Value::Array(arr), "group_by")
+            | (Value::Array(arr), "groupBy")
+            | (Value::Array(arr), "grouping_by")
+            | (Value::Array(arr), "groupingBy") => {
                 // ⫴(key_fn) -> partition by key into Map
                 // Symbolic: vertical partition lines
                 if arg_values.len() != 1 {
-                    return Err(RuntimeError::new("group_by expects 1 argument (key function)"));
+                    return Err(RuntimeError::new(
+                        "group_by expects 1 argument (key function)",
+                    ));
                 }
                 match &arg_values[0] {
                     Value::Function(f) => {
@@ -7550,11 +7911,16 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("group_by expects function argument")),
                 }
             }
-            (Value::Array(arr), "⊘") | (Value::Array(arr), "partition_by") | (Value::Array(arr), "partitionBy") | (Value::Array(arr), "partition") => {
+            (Value::Array(arr), "⊘")
+            | (Value::Array(arr), "partition_by")
+            | (Value::Array(arr), "partitionBy")
+            | (Value::Array(arr), "partition") => {
                 // ⊘(predicate) -> bisect by predicate into (true, false) tuple
                 // Symbolic: division/bisection operator
                 if arg_values.len() != 1 {
-                    return Err(RuntimeError::new("partition expects 1 argument (predicate)"));
+                    return Err(RuntimeError::new(
+                        "partition expects 1 argument (predicate)",
+                    ));
                 }
                 match &arg_values[0] {
                     Value::Function(f) => {
@@ -7576,7 +7942,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("partition expects function argument")),
                 }
             }
-            (Value::Array(arr), "⋈") | (Value::Array(arr), "joining") | (Value::Array(arr), "join") => {
+            (Value::Array(arr), "⋈")
+            | (Value::Array(arr), "joining")
+            | (Value::Array(arr), "join") => {
                 // ⋈(separator) -> concatenate elements with separator
                 // Symbolic: bowtie (relational join)
                 let sep = match arg_values.first() {
@@ -7587,7 +7955,10 @@ impl Interpreter {
                 let parts: Vec<String> = arr.borrow().iter().map(|v| format!("{}", v)).collect();
                 Ok(Value::String(Rc::new(parts.join(&sep))))
             }
-            (Value::Array(arr), "∃!") | (Value::Array(arr), "find_first") | (Value::Array(arr), "findFirst") | (Value::Array(arr), "first") => {
+            (Value::Array(arr), "∃!")
+            | (Value::Array(arr), "find_first")
+            | (Value::Array(arr), "findFirst")
+            | (Value::Array(arr), "first") => {
                 // ∃!() -> unique existence: first element as Option
                 // Symbolic: exists unique
                 match arr.borrow().first() {
@@ -7603,7 +7974,10 @@ impl Interpreter {
                     }),
                 }
             }
-            (Value::Array(arr), "∃⁻¹") | (Value::Array(arr), "find_last") | (Value::Array(arr), "findLast") | (Value::Array(arr), "last") => {
+            (Value::Array(arr), "∃⁻¹")
+            | (Value::Array(arr), "find_last")
+            | (Value::Array(arr), "findLast")
+            | (Value::Array(arr), "last") => {
                 // ∃⁻¹() -> inverse existence: last element as Option
                 // Symbolic: exists inverse (from end)
                 match arr.borrow().last() {
@@ -7619,7 +7993,10 @@ impl Interpreter {
                     }),
                 }
             }
-            (Value::Array(arr), "∄") | (Value::Array(arr), "none_match") | (Value::Array(arr), "noneMatch") | (Value::Array(arr), "none") => {
+            (Value::Array(arr), "∄")
+            | (Value::Array(arr), "none_match")
+            | (Value::Array(arr), "noneMatch")
+            | (Value::Array(arr), "none") => {
                 // ∄(predicate) -> negated existence: true if none match
                 // Symbolic: there does not exist
                 if arg_values.is_empty() {
@@ -7649,12 +8026,17 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("none_match expects function argument")),
                 }
             }
-            (Value::Array(arr), "→[]") | (Value::Array(arr), "collect") | (Value::Array(arr), "to_vec") | (Value::Array(arr), "toList") => {
+            (Value::Array(arr), "→[]")
+            | (Value::Array(arr), "collect")
+            | (Value::Array(arr), "to_vec")
+            | (Value::Array(arr), "toList") => {
                 // →[]() -> materialize to array
                 // Symbolic: arrow to array brackets
                 Ok(Value::Array(Rc::new(RefCell::new(arr.borrow().clone()))))
             }
-            (Value::Array(arr), "→{}") | (Value::Array(arr), "to_set") | (Value::Array(arr), "toSet") => {
+            (Value::Array(arr), "→{}")
+            | (Value::Array(arr), "to_set")
+            | (Value::Array(arr), "toSet") => {
                 // →{}() -> materialize to set
                 // Symbolic: arrow to set braces
                 let mut set = HashSet::new();
@@ -7663,11 +8045,15 @@ impl Interpreter {
                 }
                 Ok(Value::Set(Rc::new(RefCell::new(set))))
             }
-            (Value::Array(arr), "→⟨⟩") | (Value::Array(arr), "to_map") | (Value::Array(arr), "toMap") => {
+            (Value::Array(arr), "→⟨⟩")
+            | (Value::Array(arr), "to_map")
+            | (Value::Array(arr), "toMap") => {
                 // →⟨⟩(key_fn, value_fn) -> materialize to map
                 // Symbolic: arrow to angle brackets (key-value)
                 if arg_values.len() < 2 {
-                    return Err(RuntimeError::new("to_map expects 2 arguments (key_fn, value_fn)"));
+                    return Err(RuntimeError::new(
+                        "to_map expects 2 arguments (key_fn, value_fn)",
+                    ));
                 }
                 match (&arg_values[0], &arg_values[1]) {
                     (Value::Function(key_fn), Value::Function(val_fn)) => {
@@ -7682,7 +8068,9 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("to_map expects function arguments")),
                 }
             }
-            (Value::Array(arr), "⊞") | (Value::Array(arr), "chunk") | (Value::Array(arr), "chunked") => {
+            (Value::Array(arr), "⊞")
+            | (Value::Array(arr), "chunk")
+            | (Value::Array(arr), "chunked") => {
                 // ⊞(size) -> partition into fixed-size blocks
                 // Symbolic: squared plus (blocked grouping)
                 let size = match arg_values.first() {
@@ -7696,7 +8084,10 @@ impl Interpreter {
                     .collect();
                 Ok(Value::Array(Rc::new(RefCell::new(chunks))))
             }
-            (Value::Array(arr), "⌸") | (Value::Array(arr), "windowed") | (Value::Array(arr), "windows") | (Value::Array(arr), "sliding") => {
+            (Value::Array(arr), "⌸")
+            | (Value::Array(arr), "windowed")
+            | (Value::Array(arr), "windows")
+            | (Value::Array(arr), "sliding") => {
                 // ⌸(size) -> sliding window view
                 // Symbolic: quad/window frame
                 let size = match arg_values.first() {
@@ -7726,22 +8117,30 @@ impl Interpreter {
                         let mut result = Vec::new();
                         let max_len = a.len().max(b.len());
                         for i in 0..max_len {
-                            if i < a.len() { result.push(a[i].clone()); }
-                            if i < b.len() { result.push(b[i].clone()); }
+                            if i < a.len() {
+                                result.push(a[i].clone());
+                            }
+                            if i < b.len() {
+                                result.push(b[i].clone());
+                            }
                         }
                         Ok(Value::Array(Rc::new(RefCell::new(result))))
                     }
                     _ => Err(RuntimeError::new("interleave expects array argument")),
                 }
             }
-            (Value::Array(arr), "⟲") | (Value::Array(arr), "reversed") | (Value::Array(arr), "reverse") => {
+            (Value::Array(arr), "⟲")
+            | (Value::Array(arr), "reversed")
+            | (Value::Array(arr), "reverse") => {
                 // ⟲() -> reversed sequence
                 // Symbolic: rotation/reversal arrow
                 let mut v = arr.borrow().clone();
                 v.reverse();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
-            (Value::Array(arr), "⧢") | (Value::Array(arr), "shuffled") | (Value::Array(arr), "shuffle") => {
+            (Value::Array(arr), "⧢")
+            | (Value::Array(arr), "shuffled")
+            | (Value::Array(arr), "shuffle") => {
                 // ⧢() -> randomly permuted sequence
                 // Symbolic: shuffle/randomize
                 use std::collections::hash_map::DefaultHasher;
@@ -7765,7 +8164,9 @@ impl Interpreter {
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
             }
-            (Value::Array(arr), "∅?") | (Value::Array(arr), "is_empty") | (Value::Array(arr), "isEmpty") => {
+            (Value::Array(arr), "∅?")
+            | (Value::Array(arr), "is_empty")
+            | (Value::Array(arr), "isEmpty") => {
                 // ∅?() -> test for emptiness
                 // Symbolic: empty set query
                 Ok(Value::Bool(arr.borrow().is_empty()))
@@ -8364,8 +8765,7 @@ impl Interpreter {
                     // Error on unknown methods - type checking
                     return Err(RuntimeError::new(format!(
                         "no method '{}' on type '&{}'",
-                        method.name,
-                        name
+                        method.name, name
                     )));
                 }
                 // For non-struct refs (like &str), auto-deref and call method on inner value
@@ -8461,7 +8861,9 @@ impl Interpreter {
                             }
                             // Check Vec<T> element type constraint
                             if let Some(var_name) = Self::extract_root_var(receiver) {
-                                if let Some((type_name, type_params)) = self.var_types.borrow().get(&var_name) {
+                                if let Some((type_name, type_params)) =
+                                    self.var_types.borrow().get(&var_name)
+                                {
                                     if type_name == "Vec" && !type_params.is_empty() {
                                         let expected_type = &type_params[0];
                                         let actual_type = self.value_type_name(&arg_values[0]);
@@ -9668,7 +10070,9 @@ impl Interpreter {
                             // Increment count for tracking
                             let count_val = fields.borrow().get("_count").cloned();
                             if let Some(Value::Int(c)) = count_val {
-                                fields.borrow_mut().insert("_count".to_string(), Value::Int(c + 1));
+                                fields
+                                    .borrow_mut()
+                                    .insert("_count".to_string(), Value::Int(c + 1));
                             }
                             return Ok(Value::Null);
                         }
@@ -9746,7 +10150,8 @@ impl Interpreter {
                             if let Some(Value::Array(bits)) = fields.borrow().get("_bits") {
                                 let mut bits_borrow = bits.borrow_mut();
                                 for i in 0..num_hashes {
-                                    let h = (base_hash.wrapping_add(i as u64 * base_hash.rotate_left(17)))
+                                    let h = (base_hash
+                                        .wrapping_add(i as u64 * base_hash.rotate_left(17)))
                                         % size as u64;
                                     bits_borrow[h as usize] = Value::Bool(true);
                                 }
@@ -9788,7 +10193,8 @@ impl Interpreter {
                             if let Some(Value::Array(bits)) = fields.borrow().get("_bits") {
                                 let bits_borrow = bits.borrow();
                                 for i in 0..num_hashes {
-                                    let h = (base_hash.wrapping_add(i as u64 * base_hash.rotate_left(17)))
+                                    let h = (base_hash
+                                        .wrapping_add(i as u64 * base_hash.rotate_left(17)))
                                         % size as u64;
                                     match &bits_borrow[h as usize] {
                                         Value::Bool(true) => {}
@@ -9901,7 +10307,11 @@ impl Interpreter {
                                     }
                                 }
                             }
-                            return Ok(Value::Int(if min_count == i64::MAX { 0 } else { min_count }));
+                            return Ok(Value::Int(if min_count == i64::MAX {
+                                0
+                            } else {
+                                min_count
+                            }));
                         }
                         _ => {}
                     }
@@ -10049,7 +10459,8 @@ impl Interpreter {
                 if name == "QHCompressed" {
                     match method.name.as_str() {
                         "size" => {
-                            if let Some(Value::Int(size)) = fields.borrow().get("_compressed_size") {
+                            if let Some(Value::Int(size)) = fields.borrow().get("_compressed_size")
+                            {
                                 return Ok(Value::Int(*size));
                             }
                             return Ok(Value::Int(1)); // Default size
@@ -10089,24 +10500,31 @@ impl Interpreter {
                 if name == "ReLU" && method.name == "forward" {
                     if let Some(input) = arg_values.first() {
                         // Apply ReLU: max(0, x) for each element
-                        if let Value::Struct { name: tensor_name, fields: tensor_fields } = input {
+                        if let Value::Struct {
+                            name: tensor_name,
+                            fields: tensor_fields,
+                        } = input
+                        {
                             if tensor_name == "Tensor" {
                                 let tensor_ref = tensor_fields.borrow();
                                 let shape = tensor_ref.get("shape").cloned();
                                 let data: Vec<f64> = match tensor_ref.get("data") {
-                                    Some(Value::Array(arr)) => {
-                                        arr.borrow().iter().map(|v| match v {
+                                    Some(Value::Array(arr)) => arr
+                                        .borrow()
+                                        .iter()
+                                        .map(|v| match v {
                                             Value::Float(f) => *f,
                                             Value::Int(n) => *n as f64,
                                             _ => 0.0,
-                                        }).collect()
-                                    }
+                                        })
+                                        .collect(),
                                     _ => vec![],
                                 };
                                 drop(tensor_ref);
 
                                 // Apply ReLU
-                                let relu_data: Vec<Value> = data.iter()
+                                let relu_data: Vec<Value> = data
+                                    .iter()
                                     .map(|x| Value::Float(if *x > 0.0 { *x } else { 0.0 }))
                                     .collect();
 
@@ -10114,8 +10532,12 @@ impl Interpreter {
                                 if let Some(s) = shape {
                                     result_fields.insert("shape".to_string(), s);
                                 }
-                                result_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(relu_data))));
-                                result_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                result_fields.insert(
+                                    "data".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(relu_data))),
+                                );
+                                result_fields
+                                    .insert("requires_grad".to_string(), Value::Bool(false));
                                 return Ok(Value::Struct {
                                     name: "Tensor".to_string(),
                                     fields: Rc::new(RefCell::new(result_fields)),
@@ -10133,36 +10555,59 @@ impl Interpreter {
                         if let Some(Value::Array(layers_arr)) = layers {
                             let mut current = input;
                             for layer in layers_arr.borrow().iter() {
-                                if let Value::Struct { name: layer_name, fields: layer_fields } = layer {
+                                if let Value::Struct {
+                                    name: layer_name,
+                                    fields: layer_fields,
+                                } = layer
+                                {
                                     // Try built-in forward for known layer types
                                     if layer_name == "ReLU" {
                                         // Apply ReLU
-                                        if let Value::Struct { name: tn, fields: tf } = &current {
+                                        if let Value::Struct {
+                                            name: tn,
+                                            fields: tf,
+                                        } = &current
+                                        {
                                             if tn == "Tensor" {
                                                 let tf_ref = tf.borrow();
                                                 let shape = tf_ref.get("shape").cloned();
                                                 let data: Vec<f64> = match tf_ref.get("data") {
-                                                    Some(Value::Array(arr)) => {
-                                                        arr.borrow().iter().map(|v| match v {
+                                                    Some(Value::Array(arr)) => arr
+                                                        .borrow()
+                                                        .iter()
+                                                        .map(|v| match v {
                                                             Value::Float(f) => *f,
                                                             Value::Int(n) => *n as f64,
                                                             _ => 0.0,
-                                                        }).collect()
-                                                    }
+                                                        })
+                                                        .collect(),
                                                     _ => vec![],
                                                 };
                                                 drop(tf_ref);
 
-                                                let relu_data: Vec<Value> = data.iter()
-                                                    .map(|x| Value::Float(if *x > 0.0 { *x } else { 0.0 }))
+                                                let relu_data: Vec<Value> = data
+                                                    .iter()
+                                                    .map(|x| {
+                                                        Value::Float(if *x > 0.0 {
+                                                            *x
+                                                        } else {
+                                                            0.0
+                                                        })
+                                                    })
                                                     .collect();
 
                                                 let mut result_fields = HashMap::new();
                                                 if let Some(s) = shape {
                                                     result_fields.insert("shape".to_string(), s);
                                                 }
-                                                result_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(relu_data))));
-                                                result_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                                result_fields.insert(
+                                                    "data".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(relu_data))),
+                                                );
+                                                result_fields.insert(
+                                                    "requires_grad".to_string(),
+                                                    Value::Bool(false),
+                                                );
                                                 current = Value::Struct {
                                                     name: "Tensor".to_string(),
                                                     fields: Rc::new(RefCell::new(result_fields)),
@@ -10180,57 +10625,94 @@ impl Interpreter {
                                             // We need to do matmul and add for Linear
                                             // For now, just extract data and do the computation inline
                                             if let (
-                                                Value::Struct { fields: w_fields, .. },
-                                                Value::Struct { fields: x_fields, .. },
-                                                Value::Struct { fields: b_fields, .. },
-                                            ) = (&w, &current, &b) {
+                                                Value::Struct {
+                                                    fields: w_fields, ..
+                                                },
+                                                Value::Struct {
+                                                    fields: x_fields, ..
+                                                },
+                                                Value::Struct {
+                                                    fields: b_fields, ..
+                                                },
+                                            ) = (&w, &current, &b)
+                                            {
                                                 // Get weight matrix [out, in]
-                                                let w_shape: Vec<usize> = match w_fields.borrow().get("shape") {
-                                                    Some(Value::Array(arr)) => arr.borrow().iter().filter_map(|v| match v {
-                                                        Value::Int(n) => Some(*n as usize),
-                                                        _ => None,
-                                                    }).collect(),
-                                                    _ => vec![],
-                                                };
-                                                let w_data: Vec<f64> = match w_fields.borrow().get("data") {
-                                                    Some(Value::Array(arr)) => arr.borrow().iter().filter_map(|v| match v {
-                                                        Value::Float(f) => Some(*f),
-                                                        Value::Int(n) => Some(*n as f64),
-                                                        _ => None,
-                                                    }).collect(),
-                                                    _ => vec![],
-                                                };
+                                                let w_shape: Vec<usize> =
+                                                    match w_fields.borrow().get("shape") {
+                                                        Some(Value::Array(arr)) => arr
+                                                            .borrow()
+                                                            .iter()
+                                                            .filter_map(|v| match v {
+                                                                Value::Int(n) => Some(*n as usize),
+                                                                _ => None,
+                                                            })
+                                                            .collect(),
+                                                        _ => vec![],
+                                                    };
+                                                let w_data: Vec<f64> =
+                                                    match w_fields.borrow().get("data") {
+                                                        Some(Value::Array(arr)) => arr
+                                                            .borrow()
+                                                            .iter()
+                                                            .filter_map(|v| match v {
+                                                                Value::Float(f) => Some(*f),
+                                                                Value::Int(n) => Some(*n as f64),
+                                                                _ => None,
+                                                            })
+                                                            .collect(),
+                                                        _ => vec![],
+                                                    };
 
                                                 // Get input [in] or [in, 1]
-                                                let x_data: Vec<f64> = match x_fields.borrow().get("data") {
-                                                    Some(Value::Array(arr)) => arr.borrow().iter().filter_map(|v| match v {
-                                                        Value::Float(f) => Some(*f),
-                                                        Value::Int(n) => Some(*n as f64),
-                                                        _ => None,
-                                                    }).collect(),
-                                                    _ => vec![],
-                                                };
+                                                let x_data: Vec<f64> =
+                                                    match x_fields.borrow().get("data") {
+                                                        Some(Value::Array(arr)) => arr
+                                                            .borrow()
+                                                            .iter()
+                                                            .filter_map(|v| match v {
+                                                                Value::Float(f) => Some(*f),
+                                                                Value::Int(n) => Some(*n as f64),
+                                                                _ => None,
+                                                            })
+                                                            .collect(),
+                                                        _ => vec![],
+                                                    };
 
                                                 // Get bias [out]
-                                                let b_data: Vec<f64> = match b_fields.borrow().get("data") {
-                                                    Some(Value::Array(arr)) => arr.borrow().iter().filter_map(|v| match v {
-                                                        Value::Float(f) => Some(*f),
-                                                        Value::Int(n) => Some(*n as f64),
-                                                        _ => None,
-                                                    }).collect(),
-                                                    _ => vec![],
-                                                };
+                                                let b_data: Vec<f64> =
+                                                    match b_fields.borrow().get("data") {
+                                                        Some(Value::Array(arr)) => arr
+                                                            .borrow()
+                                                            .iter()
+                                                            .filter_map(|v| match v {
+                                                                Value::Float(f) => Some(*f),
+                                                                Value::Int(n) => Some(*n as f64),
+                                                                _ => None,
+                                                            })
+                                                            .collect(),
+                                                        _ => vec![],
+                                                    };
 
                                                 // Matmul: w @ x + b
-                                                let out_size = if w_shape.len() >= 2 { w_shape[0] } else { 1 };
-                                                let in_size = if w_shape.len() >= 2 { w_shape[1] } else if !w_shape.is_empty() { w_shape[0] } else { 1 };
+                                                let out_size =
+                                                    if w_shape.len() >= 2 { w_shape[0] } else { 1 };
+                                                let in_size = if w_shape.len() >= 2 {
+                                                    w_shape[1]
+                                                } else if !w_shape.is_empty() {
+                                                    w_shape[0]
+                                                } else {
+                                                    1
+                                                };
 
                                                 let mut result = vec![0.0; out_size];
                                                 for i in 0..out_size {
                                                     let mut sum = 0.0;
                                                     for j in 0..in_size {
-                                                        if i * in_size + j < w_data.len() && j < x_data.len() {
-                                                            sum += w_data[i * in_size + j] * x_data[j];
+                                                        if i * in_size + j < w_data.len()
+                                                            && j < x_data.len()
+                                                        {
+                                                            sum +=
+                                                                w_data[i * in_size + j] * x_data[j];
                                                         }
                                                     }
                                                     // Add bias
@@ -10242,13 +10724,25 @@ impl Interpreter {
 
                                                 // Create output tensor
                                                 let mut result_fields = HashMap::new();
-                                                result_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(
-                                                    vec![Value::Int(out_size as i64)]
-                                                ))));
-                                                result_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(
-                                                    result.into_iter().map(Value::Float).collect()
-                                                ))));
-                                                result_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                                result_fields.insert(
+                                                    "shape".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(vec![
+                                                        Value::Int(out_size as i64),
+                                                    ]))),
+                                                );
+                                                result_fields.insert(
+                                                    "data".to_string(),
+                                                    Value::Array(Rc::new(RefCell::new(
+                                                        result
+                                                            .into_iter()
+                                                            .map(Value::Float)
+                                                            .collect(),
+                                                    ))),
+                                                );
+                                                result_fields.insert(
+                                                    "requires_grad".to_string(),
+                                                    Value::Bool(false),
+                                                );
                                                 current = Value::Struct {
                                                     name: "Tensor".to_string(),
                                                     fields: Rc::new(RefCell::new(result_fields)),
@@ -10384,8 +10878,7 @@ impl Interpreter {
                 // Error on unknown methods - type checking
                 Err(RuntimeError::new(format!(
                     "no method '{}' on struct '{}'",
-                    method.name,
-                    name
+                    method.name, name
                 )))
             }
             // Try variant method lookup: EnumName·method
@@ -10785,8 +11278,7 @@ impl Interpreter {
                 // Error on unknown methods - type checking
                 Err(RuntimeError::new(format!(
                     "no method '{}' on enum '{}'",
-                    method.name,
-                    enum_name
+                    method.name, enum_name
                 )))
             }
             // Null-safe method handlers - methods called on null return sensible defaults
@@ -10887,8 +11379,7 @@ impl Interpreter {
                 // Error on unknown methods - type checking
                 Err(RuntimeError::new(format!(
                     "no method '{}' on type '{}'",
-                    method.name,
-                    recv_type
+                    method.name, recv_type
                 )))
             }
         }
@@ -11273,9 +11764,7 @@ impl Interpreter {
                         Ok(Value::Array(Rc::new(RefCell::new(v))))
                     }
                     // For Tensors, Σ acts as sum operation
-                    Value::Struct { ref name, .. } if name == "Tensor" => {
-                        self.sum_values(value)
-                    }
+                    Value::Struct { ref name, .. } if name == "Tensor" => self.sum_values(value),
                     _ => Err(RuntimeError::new("Sort requires array")),
                 }
             }
@@ -11664,7 +12153,9 @@ impl Interpreter {
                             // Check for sketch type methods
                             match (struct_name.as_str(), name.name.as_str()) {
                                 ("HyperLogLog", "count") => {
-                                    if let Some(Value::Array(regs)) = fields.borrow().get("_registers") {
+                                    if let Some(Value::Array(regs)) =
+                                        fields.borrow().get("_registers")
+                                    {
                                         let regs_borrow = regs.borrow();
                                         let m = regs_borrow.len() as f64;
                                         let mut sum = 0.0;
@@ -11724,8 +12215,9 @@ impl Interpreter {
                                     if let Some(Value::Array(bits)) = fields.borrow().get("_bits") {
                                         let bits_borrow = bits.borrow();
                                         for i in 0..num_hashes {
-                                            let h = (base_hash.wrapping_add(i as u64 * base_hash.rotate_left(17)))
-                                                % size as u64;
+                                            let h = (base_hash.wrapping_add(
+                                                i as u64 * base_hash.rotate_left(17),
+                                            )) % size as u64;
                                             match &bits_borrow[h as usize] {
                                                 Value::Bool(true) => {}
                                                 _ => return Ok(Value::Bool(false)),
@@ -11767,10 +12259,13 @@ impl Interpreter {
                                         }
                                     };
                                     let mut min_count = i64::MAX;
-                                    if let Some(Value::Array(counters)) = fields.borrow().get("_counters") {
+                                    if let Some(Value::Array(counters)) =
+                                        fields.borrow().get("_counters")
+                                    {
                                         let counters_borrow = counters.borrow();
                                         for i in 0..depth {
-                                            let h = (base_hash.wrapping_add(i as u64 * 0x517cc1b727220a95))
+                                            let h = (base_hash
+                                                .wrapping_add(i as u64 * 0x517cc1b727220a95))
                                                 % width as u64;
                                             if let Value::Array(row) = &counters_borrow[i] {
                                                 let row_borrow = row.borrow();
@@ -11782,7 +12277,11 @@ impl Interpreter {
                                             }
                                         }
                                     }
-                                    return Ok(Value::Int(if min_count == i64::MAX { 0 } else { min_count }));
+                                    return Ok(Value::Int(if min_count == i64::MAX {
+                                        0
+                                    } else {
+                                        min_count
+                                    }));
                                 }
                                 ("MerkleTree", "verify") => {
                                     use std::collections::hash_map::DefaultHasher;
@@ -11808,7 +12307,8 @@ impl Interpreter {
                                 }
                                 ("MerkleProof", "verify") => {
                                     // Verify the proof
-                                    if let Some(Value::Bool(valid)) = fields.borrow().get("_valid") {
+                                    if let Some(Value::Bool(valid)) = fields.borrow().get("_valid")
+                                    {
                                         return Ok(Value::Bool(*valid));
                                     }
                                     return Ok(Value::Bool(false));
@@ -11823,14 +12323,18 @@ impl Interpreter {
                                 ("Superposition", "observe") => {
                                     // Collapse to first value (deterministic for tests)
                                     // Check _values field first
-                                    if let Some(Value::Array(values)) = fields.borrow().get("_values") {
+                                    if let Some(Value::Array(values)) =
+                                        fields.borrow().get("_values")
+                                    {
                                         let values_borrow = values.borrow();
                                         if !values_borrow.is_empty() {
                                             return Ok(values_borrow[0].clone());
                                         }
                                     }
                                     // Also check states field (used by QH uniform)
-                                    if let Some(Value::Array(states)) = fields.borrow().get("states") {
+                                    if let Some(Value::Array(states)) =
+                                        fields.borrow().get("states")
+                                    {
                                         let states_borrow = states.borrow();
                                         if !states_borrow.is_empty() {
                                             return Ok(states_borrow[0].clone());
@@ -11855,9 +12359,11 @@ impl Interpreter {
                                     let new_beta = (alpha_real - beta_real) * sqrt2_inv;
 
                                     let mut new_fields = std::collections::HashMap::new();
-                                    new_fields.insert("_alpha_real".to_string(), Value::Float(new_alpha));
+                                    new_fields
+                                        .insert("_alpha_real".to_string(), Value::Float(new_alpha));
                                     new_fields.insert("_alpha_imag".to_string(), Value::Float(0.0));
-                                    new_fields.insert("_beta_real".to_string(), Value::Float(new_beta));
+                                    new_fields
+                                        .insert("_beta_real".to_string(), Value::Float(new_beta));
                                     new_fields.insert("_beta_imag".to_string(), Value::Float(0.0));
                                     return Ok(Value::Struct {
                                         name: "Qubit".to_string(),
@@ -11884,10 +12390,14 @@ impl Interpreter {
                                     };
                                     // X swaps α and β
                                     let mut new_fields = std::collections::HashMap::new();
-                                    new_fields.insert("_alpha_real".to_string(), Value::Float(beta_real));
-                                    new_fields.insert("_alpha_imag".to_string(), Value::Float(beta_imag));
-                                    new_fields.insert("_beta_real".to_string(), Value::Float(alpha_real));
-                                    new_fields.insert("_beta_imag".to_string(), Value::Float(alpha_imag));
+                                    new_fields
+                                        .insert("_alpha_real".to_string(), Value::Float(beta_real));
+                                    new_fields
+                                        .insert("_alpha_imag".to_string(), Value::Float(beta_imag));
+                                    new_fields
+                                        .insert("_beta_real".to_string(), Value::Float(alpha_real));
+                                    new_fields
+                                        .insert("_beta_imag".to_string(), Value::Float(alpha_imag));
                                     return Ok(Value::Struct {
                                         name: "Qubit".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -11912,7 +12422,8 @@ impl Interpreter {
                                         Some(Value::Float(f)) => *f,
                                         _ => 0.0,
                                     };
-                                    let alpha_sq = alpha_real * alpha_real + alpha_imag * alpha_imag;
+                                    let alpha_sq =
+                                        alpha_real * alpha_real + alpha_imag * alpha_imag;
                                     let beta_sq = beta_real * beta_real + beta_imag * beta_imag;
                                     // For determinism: if |α|² > |β|², return 0, else return 1
                                     // When equal (like after Hadamard), default to 0 for consistency
@@ -11927,12 +12438,14 @@ impl Interpreter {
                                         _ => 1,
                                     };
                                     let state: Vec<f64> = match fields.borrow().get("_state") {
-                                        Some(Value::Array(arr)) => {
-                                            arr.borrow().iter().filter_map(|v| match v {
+                                        Some(Value::Array(arr)) => arr
+                                            .borrow()
+                                            .iter()
+                                            .filter_map(|v| match v {
                                                 Value::Float(f) => Some(*f),
                                                 _ => None,
-                                            }).collect()
-                                        }
+                                            })
+                                            .collect(),
                                         _ => vec![1.0],
                                     };
 
@@ -11940,13 +12453,15 @@ impl Interpreter {
                                     // For simplicity, create uniform superposition
                                     let dim = 1 << size; // 2^n
                                     let amp = 1.0 / (dim as f64).sqrt();
-                                    let new_state: Vec<Value> = (0..dim)
-                                        .map(|_| Value::Float(amp))
-                                        .collect();
+                                    let new_state: Vec<Value> =
+                                        (0..dim).map(|_| Value::Float(amp)).collect();
 
                                     let mut new_fields = HashMap::new();
                                     new_fields.insert("_size".to_string(), Value::Int(size as i64));
-                                    new_fields.insert("_state".to_string(), Value::Array(Rc::new(RefCell::new(new_state))));
+                                    new_fields.insert(
+                                        "_state".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(new_state))),
+                                    );
 
                                     return Ok(Value::Struct {
                                         name: "QRegister".to_string(),
@@ -11960,12 +12475,14 @@ impl Interpreter {
                                         _ => 1,
                                     };
                                     let state: Vec<f64> = match fields.borrow().get("_state") {
-                                        Some(Value::Array(arr)) => {
-                                            arr.borrow().iter().filter_map(|v| match v {
+                                        Some(Value::Array(arr)) => arr
+                                            .borrow()
+                                            .iter()
+                                            .filter_map(|v| match v {
                                                 Value::Float(f) => Some(*f),
                                                 _ => None,
-                                            }).collect()
-                                        }
+                                            })
+                                            .collect(),
                                         _ => vec![1.0],
                                     };
 
@@ -11995,7 +12512,11 @@ impl Interpreter {
                         }
                         // Handle rotation gates with arguments
                         if (name.name == "Rx" || name.name == "Ry" || name.name == "Rz") {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Qubit" {
                                     // Get the rotation angle from arguments
                                     let angle = if !arg_values.is_empty() {
@@ -12025,7 +12546,12 @@ impl Interpreter {
                                         _ => 0.0,
                                     };
 
-                                    let (new_alpha_real, new_alpha_imag, new_beta_real, new_beta_imag) = match name.name.as_str() {
+                                    let (
+                                        new_alpha_real,
+                                        new_alpha_imag,
+                                        new_beta_real,
+                                        new_beta_imag,
+                                    ) = match name.name.as_str() {
                                         "Rx" => {
                                             // Rx(θ) = [[cos(θ/2), -i*sin(θ/2)], [-i*sin(θ/2), cos(θ/2)]]
                                             let cos_half = (angle / 2.0).cos();
@@ -12054,7 +12580,8 @@ impl Interpreter {
                                             let sin_half = (angle / 2.0).sin();
                                             // new_α = e^(-iθ/2) * α = (cos - i*sin) * α
                                             let nar = cos_half * alpha_real + sin_half * alpha_imag;
-                                            let nai = -sin_half * alpha_real + cos_half * alpha_imag;
+                                            let nai =
+                                                -sin_half * alpha_real + cos_half * alpha_imag;
                                             // new_β = e^(iθ/2) * β = (cos + i*sin) * β
                                             let nbr = cos_half * beta_real - sin_half * beta_imag;
                                             let nbi = sin_half * beta_real + cos_half * beta_imag;
@@ -12064,10 +12591,22 @@ impl Interpreter {
                                     };
 
                                     let mut new_fields = std::collections::HashMap::new();
-                                    new_fields.insert("_alpha_real".to_string(), Value::Float(new_alpha_real));
-                                    new_fields.insert("_alpha_imag".to_string(), Value::Float(new_alpha_imag));
-                                    new_fields.insert("_beta_real".to_string(), Value::Float(new_beta_real));
-                                    new_fields.insert("_beta_imag".to_string(), Value::Float(new_beta_imag));
+                                    new_fields.insert(
+                                        "_alpha_real".to_string(),
+                                        Value::Float(new_alpha_real),
+                                    );
+                                    new_fields.insert(
+                                        "_alpha_imag".to_string(),
+                                        Value::Float(new_alpha_imag),
+                                    );
+                                    new_fields.insert(
+                                        "_beta_real".to_string(),
+                                        Value::Float(new_beta_real),
+                                    );
+                                    new_fields.insert(
+                                        "_beta_imag".to_string(),
+                                        Value::Float(new_beta_imag),
+                                    );
                                     return Ok(Value::Struct {
                                         name: "Qubit".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -12077,17 +12616,25 @@ impl Interpreter {
                         }
                         // Handle |observe pipe method for Superposition
                         if name.name == "observe" {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Superposition" {
                                     // Check _values field first
-                                    if let Some(Value::Array(values)) = fields.borrow().get("_values") {
+                                    if let Some(Value::Array(values)) =
+                                        fields.borrow().get("_values")
+                                    {
                                         let values_borrow = values.borrow();
                                         if !values_borrow.is_empty() {
                                             return Ok(values_borrow[0].clone());
                                         }
                                     }
                                     // Also check states field (used by QH uniform)
-                                    if let Some(Value::Array(states)) = fields.borrow().get("states") {
+                                    if let Some(Value::Array(states)) =
+                                        fields.borrow().get("states")
+                                    {
                                         let states_borrow = states.borrow();
                                         if !states_borrow.is_empty() {
                                             return Ok(states_borrow[0].clone());
@@ -12109,7 +12656,10 @@ impl Interpreter {
                                 .map(|i| {
                                     let mut shard_fields = std::collections::HashMap::new();
                                     shard_fields.insert("index".to_string(), Value::Int(i));
-                                    shard_fields.insert("data".to_string(), Value::String(Rc::new(format!("shard_{}", i))));
+                                    shard_fields.insert(
+                                        "data".to_string(),
+                                        Value::String(Rc::new(format!("shard_{}", i))),
+                                    );
                                     Value::Struct {
                                         name: "Shard".to_string(),
                                         fields: Rc::new(RefCell::new(shard_fields)),
@@ -12118,9 +12668,13 @@ impl Interpreter {
                                 .collect();
 
                             let mut holo_fields = std::collections::HashMap::new();
-                            holo_fields.insert("shards".to_string(), Value::Array(Rc::new(RefCell::new(shards))));
+                            holo_fields.insert(
+                                "shards".to_string(),
+                                Value::Array(Rc::new(RefCell::new(shards))),
+                            );
                             holo_fields.insert("_data_shards".to_string(), Value::Int(data_shards));
-                            holo_fields.insert("_parity_shards".to_string(), Value::Int(parity_shards));
+                            holo_fields
+                                .insert("_parity_shards".to_string(), Value::Int(parity_shards));
                             holo_fields.insert("_original".to_string(), value.clone());
 
                             return Ok(Value::Struct {
@@ -12130,7 +12684,11 @@ impl Interpreter {
                         }
                         // Handle |requires_grad(true/false) for Tensor
                         if name.name == "requires_grad" {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Tensor" {
                                     // Get the argument (true/false)
                                     let requires_grad = if !arg_values.is_empty() {
@@ -12143,7 +12701,10 @@ impl Interpreter {
                                     };
                                     // Clone the tensor and set requires_grad
                                     let mut new_fields = fields.borrow().clone();
-                                    new_fields.insert("requires_grad".to_string(), Value::Bool(requires_grad));
+                                    new_fields.insert(
+                                        "requires_grad".to_string(),
+                                        Value::Bool(requires_grad),
+                                    );
                                     return Ok(Value::Struct {
                                         name: "Tensor".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -12153,29 +12714,41 @@ impl Interpreter {
                         }
                         // Handle |relu for Tensor (ReLU activation: max(0, x))
                         if name.name == "relu" {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Tensor" {
                                     let fields_ref = fields.borrow();
-                                    let shape = fields_ref.get("shape").cloned().unwrap_or(Value::Null);
+                                    let shape =
+                                        fields_ref.get("shape").cloned().unwrap_or(Value::Null);
                                     let data: Vec<f64> = match fields_ref.get("data") {
-                                        Some(Value::Array(arr)) => {
-                                            arr.borrow().iter().filter_map(|v| match v {
+                                        Some(Value::Array(arr)) => arr
+                                            .borrow()
+                                            .iter()
+                                            .filter_map(|v| match v {
                                                 Value::Float(f) => Some(*f),
                                                 Value::Int(n) => Some(*n as f64),
                                                 _ => None,
-                                            }).collect()
-                                        }
+                                            })
+                                            .collect(),
                                         _ => vec![],
                                     };
                                     drop(fields_ref);
                                     // Apply ReLU: max(0, x)
-                                    let relu_data: Vec<Value> = data.iter()
+                                    let relu_data: Vec<Value> = data
+                                        .iter()
                                         .map(|&x| Value::Float(if x > 0.0 { x } else { 0.0 }))
                                         .collect();
                                     let mut new_fields = std::collections::HashMap::new();
                                     new_fields.insert("shape".to_string(), shape);
-                                    new_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(relu_data))));
-                                    new_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                    new_fields.insert(
+                                        "data".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(relu_data))),
+                                    );
+                                    new_fields
+                                        .insert("requires_grad".to_string(), Value::Bool(false));
                                     return Ok(Value::Struct {
                                         name: "Tensor".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -12185,34 +12758,48 @@ impl Interpreter {
                         }
                         // Handle |softmax for Tensor (softmax activation)
                         if name.name == "softmax" {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Tensor" {
                                     let fields_ref = fields.borrow();
-                                    let shape = fields_ref.get("shape").cloned().unwrap_or(Value::Null);
+                                    let shape =
+                                        fields_ref.get("shape").cloned().unwrap_or(Value::Null);
                                     let data: Vec<f64> = match fields_ref.get("data") {
-                                        Some(Value::Array(arr)) => {
-                                            arr.borrow().iter().filter_map(|v| match v {
+                                        Some(Value::Array(arr)) => arr
+                                            .borrow()
+                                            .iter()
+                                            .filter_map(|v| match v {
                                                 Value::Float(f) => Some(*f),
                                                 Value::Int(n) => Some(*n as f64),
                                                 _ => None,
-                                            }).collect()
-                                        }
+                                            })
+                                            .collect(),
                                         _ => vec![],
                                     };
                                     drop(fields_ref);
                                     // Compute softmax: exp(x) / sum(exp(x))
-                                    let max_val = data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                                    let exp_vals: Vec<f64> = data.iter()
+                                    let max_val =
+                                        data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                                    let exp_vals: Vec<f64> = data
+                                        .iter()
                                         .map(|&x| (x - max_val).exp()) // subtract max for numerical stability
                                         .collect();
                                     let sum_exp: f64 = exp_vals.iter().sum();
-                                    let softmax_data: Vec<Value> = exp_vals.iter()
+                                    let softmax_data: Vec<Value> = exp_vals
+                                        .iter()
                                         .map(|&e| Value::Float(e / sum_exp))
                                         .collect();
                                     let mut new_fields = std::collections::HashMap::new();
                                     new_fields.insert("shape".to_string(), shape);
-                                    new_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(softmax_data))));
-                                    new_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                    new_fields.insert(
+                                        "data".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(softmax_data))),
+                                    );
+                                    new_fields
+                                        .insert("requires_grad".to_string(), Value::Bool(false));
                                     return Ok(Value::Struct {
                                         name: "Tensor".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -12222,10 +12809,15 @@ impl Interpreter {
                         }
                         // Handle |reshape(new_shape) for Tensor
                         if name.name == "reshape" {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Tensor" {
                                     let fields_ref = fields.borrow();
-                                    let data = fields_ref.get("data").cloned().unwrap_or(Value::Null);
+                                    let data =
+                                        fields_ref.get("data").cloned().unwrap_or(Value::Null);
                                     drop(fields_ref);
                                     // Get new shape from arguments
                                     let new_shape = if !arg_values.is_empty() {
@@ -12239,7 +12831,8 @@ impl Interpreter {
                                     let mut new_fields = std::collections::HashMap::new();
                                     new_fields.insert("shape".to_string(), new_shape);
                                     new_fields.insert("data".to_string(), data);
-                                    new_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                    new_fields
+                                        .insert("requires_grad".to_string(), Value::Bool(false));
                                     return Ok(Value::Struct {
                                         name: "Tensor".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -12249,19 +12842,30 @@ impl Interpreter {
                         }
                         // Handle |flatten for Tensor - flatten to 1D
                         if name.name == "flatten" {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Tensor" {
                                     let fields_ref = fields.borrow();
-                                    let data = fields_ref.get("data").cloned().unwrap_or(Value::Null);
+                                    let data =
+                                        fields_ref.get("data").cloned().unwrap_or(Value::Null);
                                     let total_size: i64 = match &data {
                                         Value::Array(arr) => arr.borrow().len() as i64,
                                         _ => 0,
                                     };
                                     drop(fields_ref);
                                     let mut new_fields = std::collections::HashMap::new();
-                                    new_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::Int(total_size)]))));
+                                    new_fields.insert(
+                                        "shape".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![Value::Int(
+                                            total_size,
+                                        )]))),
+                                    );
                                     new_fields.insert("data".to_string(), data);
-                                    new_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                    new_fields
+                                        .insert("requires_grad".to_string(), Value::Bool(false));
                                     return Ok(Value::Struct {
                                         name: "Tensor".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -12271,7 +12875,11 @@ impl Interpreter {
                         }
                         // Handle |backward for Tensor - backpropagation
                         if name.name == "backward" {
-                            if let Value::Struct { name: sname, fields } = &value {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
                                 if sname == "Tensor" {
                                     // Traverse the computation graph and set gradients
                                     self.backward_propagate(fields.clone())?;
@@ -12299,9 +12907,11 @@ impl Interpreter {
                                 };
                                 // Create n shards
                                 let inner_value = match &value {
-                                    Value::Struct { fields, .. } => {
-                                        fields.borrow().get("value").cloned().unwrap_or(value.clone())
-                                    }
+                                    Value::Struct { fields, .. } => fields
+                                        .borrow()
+                                        .get("value")
+                                        .cloned()
+                                        .unwrap_or(value.clone()),
                                     _ => value.clone(),
                                 };
                                 let mut shards = Vec::new();
@@ -12309,7 +12919,8 @@ impl Interpreter {
                                     let mut shard_fields = std::collections::HashMap::new();
                                     shard_fields.insert("index".to_string(), Value::Int(i as i64));
                                     shard_fields.insert("data".to_string(), inner_value.clone());
-                                    shard_fields.insert("_k_threshold".to_string(), Value::Int(k as i64));
+                                    shard_fields
+                                        .insert("_k_threshold".to_string(), Value::Int(k as i64));
                                     shards.push(Value::Struct {
                                         name: "Shard".to_string(),
                                         fields: Rc::new(RefCell::new(shard_fields)),
@@ -12322,13 +12933,21 @@ impl Interpreter {
                         // |measure - collapse superposition and return measured value
                         if name.name == "measure" {
                             match &value {
-                                Value::Struct { name: sname, fields } if sname == "QHState" => {
+                                Value::Struct {
+                                    name: sname,
+                                    fields,
+                                } if sname == "QHState" => {
                                     let fields_ref = fields.borrow();
-                                    let inner = fields_ref.get("value").cloned().unwrap_or(Value::Null);
+                                    let inner =
+                                        fields_ref.get("value").cloned().unwrap_or(Value::Null);
                                     // If superposition, pick first value (simulated collapse)
                                     match inner {
                                         Value::Array(arr) => {
-                                            return Ok(arr.borrow().first().cloned().unwrap_or(Value::Null));
+                                            return Ok(arr
+                                                .borrow()
+                                                .first()
+                                                .cloned()
+                                                .unwrap_or(Value::Null));
                                         }
                                         _ => return Ok(inner),
                                     }
@@ -12340,12 +12959,20 @@ impl Interpreter {
                         // |observe - observe value (similar to measure but for holograms)
                         if name.name == "observe" {
                             match &value {
-                                Value::Struct { name: sname, fields } => {
+                                Value::Struct {
+                                    name: sname,
+                                    fields,
+                                } => {
                                     let fields_ref = fields.borrow();
                                     if sname == "Superposition" {
                                         // Return first state from superposition
-                                        if let Some(Value::Array(states)) = fields_ref.get("states") {
-                                            return Ok(states.borrow().first().cloned().unwrap_or(Value::Null));
+                                        if let Some(Value::Array(states)) = fields_ref.get("states")
+                                        {
+                                            return Ok(states
+                                                .borrow()
+                                                .first()
+                                                .cloned()
+                                                .unwrap_or(Value::Null));
                                         }
                                     }
                                     // For holograms/entangled, return the value
@@ -12369,10 +12996,13 @@ impl Interpreter {
                                 fields.insert("_is_superposition".to_string(), Value::Bool(true));
                                 // For interference, pick the common value (constructive) or null (destructive)
                                 let inner_a = match &value {
-                                    Value::Struct { fields: f, .. } => f.borrow().get("value").cloned(),
+                                    Value::Struct { fields: f, .. } => {
+                                        f.borrow().get("value").cloned()
+                                    }
                                     _ => None,
                                 };
-                                fields.insert("value".to_string(), inner_a.unwrap_or(Value::Int(2)));
+                                fields
+                                    .insert("value".to_string(), inner_a.unwrap_or(Value::Int(2)));
                                 return Ok(Value::Struct {
                                     name: "QHState".to_string(),
                                     fields: Rc::new(RefCell::new(fields)),
@@ -12387,12 +13017,18 @@ impl Interpreter {
                                     Value::Float(f) => *f,
                                     _ => 0.1,
                                 }
-                            } else { 0.1 };
+                            } else {
+                                0.1
+                            };
                             // Return noisy state (just pass through with noise marker)
                             match &value {
-                                Value::Struct { name: sname, fields } => {
+                                Value::Struct {
+                                    name: sname,
+                                    fields,
+                                } => {
                                     let mut new_fields = fields.borrow().clone();
-                                    new_fields.insert("_noise_rate".to_string(), Value::Float(rate));
+                                    new_fields
+                                        .insert("_noise_rate".to_string(), Value::Float(rate));
                                     new_fields.insert("_noisy".to_string(), Value::Bool(true));
                                     return Ok(Value::Struct {
                                         name: sname.clone(),
@@ -12406,7 +13042,10 @@ impl Interpreter {
                         // |error_correct - correct errors in quantum state
                         if name.name == "error_correct" {
                             match &value {
-                                Value::Struct { name: sname, fields } => {
+                                Value::Struct {
+                                    name: sname,
+                                    fields,
+                                } => {
                                     let mut new_fields = fields.borrow().clone();
                                     new_fields.remove("_noisy");
                                     new_fields.remove("_noise_rate");
@@ -12425,9 +13064,11 @@ impl Interpreter {
                             if arg_values.len() >= 2 {
                                 // Simulate teleportation - return the original value wrapped
                                 let inner = match &value {
-                                    Value::Struct { fields, .. } => {
-                                        fields.borrow().get("value").cloned().unwrap_or(value.clone())
-                                    }
+                                    Value::Struct { fields, .. } => fields
+                                        .borrow()
+                                        .get("value")
+                                        .cloned()
+                                        .unwrap_or(value.clone()),
                                     _ => value.clone(),
                                 };
                                 let mut fields = std::collections::HashMap::new();
@@ -12462,11 +13103,22 @@ impl Interpreter {
                                     let fields_ref = fields.borrow();
                                     if let Some(Value::Array(shards)) = fields_ref.get("shards") {
                                         if let Some(first) = shards.borrow().first() {
-                                            if let Value::Struct { fields: shard_fields, .. } = first {
-                                                if let Some(data) = shard_fields.borrow().get("data") {
-                                                    let mut qh_fields = std::collections::HashMap::new();
-                                                    qh_fields.insert("value".to_string(), data.clone());
-                                                    qh_fields.insert("_reconstructed".to_string(), Value::Bool(true));
+                                            if let Value::Struct {
+                                                fields: shard_fields,
+                                                ..
+                                            } = first
+                                            {
+                                                if let Some(data) =
+                                                    shard_fields.borrow().get("data")
+                                                {
+                                                    let mut qh_fields =
+                                                        std::collections::HashMap::new();
+                                                    qh_fields
+                                                        .insert("value".to_string(), data.clone());
+                                                    qh_fields.insert(
+                                                        "_reconstructed".to_string(),
+                                                        Value::Bool(true),
+                                                    );
                                                     return Ok(Value::Struct {
                                                         name: "QHState".to_string(),
                                                         fields: Rc::new(RefCell::new(qh_fields)),
@@ -12478,7 +13130,8 @@ impl Interpreter {
                                     // Fallback - just wrap the value
                                     let mut qh_fields = std::collections::HashMap::new();
                                     qh_fields.insert("value".to_string(), Value::Int(42));
-                                    qh_fields.insert("_reconstructed".to_string(), Value::Bool(true));
+                                    qh_fields
+                                        .insert("_reconstructed".to_string(), Value::Bool(true));
                                     return Ok(Value::Struct {
                                         name: "QHState".to_string(),
                                         fields: Rc::new(RefCell::new(qh_fields)),
@@ -12498,7 +13151,10 @@ impl Interpreter {
                         // |partial_trace - partial trace operation (decoherence)
                         if name.name == "partial_trace" {
                             match &value {
-                                Value::Struct { name: sname, fields } if sname == "Entangled" => {
+                                Value::Struct {
+                                    name: sname,
+                                    fields,
+                                } if sname == "Entangled" => {
                                     let fields_ref = fields.borrow();
                                     let a = fields_ref.get("0").cloned().unwrap_or(Value::Null);
                                     let b = fields_ref.get("1").cloned().unwrap_or(Value::Null);
@@ -12506,7 +13162,8 @@ impl Interpreter {
                                     let system = match a {
                                         Value::Struct { name, fields } => {
                                             let mut new_fields = fields.borrow().clone();
-                                            new_fields.insert("_is_pure".to_string(), Value::Bool(false));
+                                            new_fields
+                                                .insert("_is_pure".to_string(), Value::Bool(false));
                                             Value::Struct {
                                                 name,
                                                 fields: Rc::new(RefCell::new(new_fields)),
@@ -12516,7 +13173,12 @@ impl Interpreter {
                                     };
                                     return Ok(Value::Tuple(Rc::new(vec![system, b])));
                                 }
-                                _ => return Ok(Value::Tuple(Rc::new(vec![value.clone(), Value::Null]))),
+                                _ => {
+                                    return Ok(Value::Tuple(Rc::new(vec![
+                                        value.clone(),
+                                        Value::Null,
+                                    ])))
+                                }
                             }
                         }
 
@@ -12540,7 +13202,9 @@ impl Interpreter {
                         if name.name == "is_pure" {
                             match &value {
                                 Value::Struct { fields, .. } => {
-                                    if let Some(Value::Bool(is_pure)) = fields.borrow().get("_is_pure") {
+                                    if let Some(Value::Bool(is_pure)) =
+                                        fields.borrow().get("_is_pure")
+                                    {
                                         return Ok(Value::Bool(*is_pure));
                                     }
                                     return Ok(Value::Bool(true)); // Default to pure
@@ -12552,8 +13216,13 @@ impl Interpreter {
                         // |size - get size of compressed data
                         if name.name == "size" {
                             match &value {
-                                Value::Struct { name: sname, fields } if sname == "QHCompressed" => {
-                                    if let Some(Value::Int(size)) = fields.borrow().get("_compressed_size") {
+                                Value::Struct {
+                                    name: sname,
+                                    fields,
+                                } if sname == "QHCompressed" => {
+                                    if let Some(Value::Int(size)) =
+                                        fields.borrow().get("_compressed_size")
+                                    {
                                         return Ok(Value::Int(*size));
                                     }
                                 }
@@ -13584,7 +14253,11 @@ impl Interpreter {
                             if let Some(Value::Array(states)) = fields_ref.get("states") {
                                 if let Some(first) = states.borrow().first() {
                                     // If first is a Hologram, extract its value
-                                    if let Value::Struct { fields: inner_fields, .. } = first {
+                                    if let Value::Struct {
+                                        fields: inner_fields,
+                                        ..
+                                    } = first
+                                    {
                                         if let Some(v) = inner_fields.borrow().get("value") {
                                             return Ok(v.clone());
                                         }
@@ -13639,7 +14312,9 @@ impl Interpreter {
                                     if let Some(Value::Int(i)) = fields.borrow().get("value") {
                                         sum += i;
                                         float_sum += *i as f64;
-                                    } else if let Some(Value::Float(f)) = fields.borrow().get("value") {
+                                    } else if let Some(Value::Float(f)) =
+                                        fields.borrow().get("value")
+                                    {
                                         has_float = true;
                                         float_sum += *f;
                                     } else if let Some(data) = fields.borrow().get("data") {
@@ -13704,7 +14379,9 @@ impl Interpreter {
                 match &value {
                     Value::Array(arr) => {
                         if arr.borrow().is_empty() {
-                            Err(RuntimeError::new("Necessity verification failed: empty array"))
+                            Err(RuntimeError::new(
+                                "Necessity verification failed: empty array",
+                            ))
                         } else {
                             // Return with Known evidentiality
                             Ok(Value::Evidential {
@@ -14157,11 +14834,18 @@ impl Interpreter {
     }
 
     /// Backward propagation for autograd - traverse computation graph and set gradients
-    fn backward_propagate(&self, tensor_fields: Rc<RefCell<std::collections::HashMap<String, Value>>>) -> Result<(), RuntimeError> {
+    fn backward_propagate(
+        &self,
+        tensor_fields: Rc<RefCell<std::collections::HashMap<String, Value>>>,
+    ) -> Result<(), RuntimeError> {
         let fields_ref = tensor_fields.borrow();
 
         // Get the gradient input references and propagate
-        if let Some(Value::Struct { fields: grad_fields, .. }) = fields_ref.get("_grad_left") {
+        if let Some(Value::Struct {
+            fields: grad_fields,
+            ..
+        }) = fields_ref.get("_grad_left")
+        {
             // This tensor was an operand in a computation - set its gradient
             let shape = grad_fields.borrow().get("shape").cloned();
             let data_len = match grad_fields.borrow().get("data") {
@@ -14175,24 +14859,34 @@ impl Interpreter {
             if let Some(s) = shape {
                 grad_tensor_fields.insert("shape".to_string(), s);
             }
-            grad_tensor_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(grad_data))));
+            grad_tensor_fields.insert(
+                "data".to_string(),
+                Value::Array(Rc::new(RefCell::new(grad_data))),
+            );
             grad_tensor_fields.insert("requires_grad".to_string(), Value::Bool(false));
 
             // Set the grad field on the original tensor as a proper Variant
-            grad_fields.borrow_mut().insert("grad".to_string(), Value::Variant {
-                enum_name: "Option".to_string(),
-                variant_name: "Some".to_string(),
-                fields: Some(Rc::new(vec![Value::Struct {
-                    name: "Tensor".to_string(),
-                    fields: Rc::new(RefCell::new(grad_tensor_fields)),
-                }])),
-            });
+            grad_fields.borrow_mut().insert(
+                "grad".to_string(),
+                Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                    fields: Some(Rc::new(vec![Value::Struct {
+                        name: "Tensor".to_string(),
+                        fields: Rc::new(RefCell::new(grad_tensor_fields)),
+                    }])),
+                },
+            );
 
             // Recursively propagate to any further inputs
             self.backward_propagate(grad_fields.clone())?;
         }
 
-        if let Some(Value::Struct { fields: grad_fields, .. }) = fields_ref.get("_grad_input") {
+        if let Some(Value::Struct {
+            fields: grad_fields,
+            ..
+        }) = fields_ref.get("_grad_input")
+        {
             // This is from sum operation - propagate to the input tensor
             let shape = grad_fields.borrow().get("shape").cloned();
             let data_len = match grad_fields.borrow().get("data") {
@@ -14205,18 +14899,24 @@ impl Interpreter {
             if let Some(s) = shape {
                 grad_tensor_fields.insert("shape".to_string(), s);
             }
-            grad_tensor_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(grad_data))));
+            grad_tensor_fields.insert(
+                "data".to_string(),
+                Value::Array(Rc::new(RefCell::new(grad_data))),
+            );
             grad_tensor_fields.insert("requires_grad".to_string(), Value::Bool(false));
 
             // Set the grad field as a proper Variant
-            grad_fields.borrow_mut().insert("grad".to_string(), Value::Variant {
-                enum_name: "Option".to_string(),
-                variant_name: "Some".to_string(),
-                fields: Some(Rc::new(vec![Value::Struct {
-                    name: "Tensor".to_string(),
-                    fields: Rc::new(RefCell::new(grad_tensor_fields)),
-                }])),
-            });
+            grad_fields.borrow_mut().insert(
+                "grad".to_string(),
+                Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                    fields: Some(Rc::new(vec![Value::Struct {
+                        name: "Tensor".to_string(),
+                        fields: Rc::new(RefCell::new(grad_tensor_fields)),
+                    }])),
+                },
+            );
 
             self.backward_propagate(grad_fields.clone())?;
         }
@@ -14250,16 +14950,19 @@ impl Interpreter {
             // Handle Tensor sum
             Value::Struct { name, fields } if name == "Tensor" => {
                 let fields_ref = fields.borrow();
-                let requires_grad = matches!(fields_ref.get("requires_grad"), Some(Value::Bool(true)));
+                let requires_grad =
+                    matches!(fields_ref.get("requires_grad"), Some(Value::Bool(true)));
                 let grad_left = fields_ref.get("_grad_left").cloned();
                 let data: Vec<f64> = match fields_ref.get("data") {
-                    Some(Value::Array(arr)) => {
-                        arr.borrow().iter().filter_map(|v| match v {
+                    Some(Value::Array(arr)) => arr
+                        .borrow()
+                        .iter()
+                        .filter_map(|v| match v {
                             Value::Float(f) => Some(*f),
                             Value::Int(n) => Some(*n as f64),
                             _ => None,
-                        }).collect()
-                    }
+                        })
+                        .collect(),
                     _ => vec![],
                 };
                 drop(fields_ref);
@@ -14268,20 +14971,30 @@ impl Interpreter {
                 // If this tensor requires grad, return a scalar tensor with computation graph
                 if requires_grad {
                     let mut result_fields = std::collections::HashMap::new();
-                    result_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
-                    result_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::Float(sum)]))));
+                    result_fields.insert(
+                        "shape".to_string(),
+                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                    );
+                    result_fields.insert(
+                        "data".to_string(),
+                        Value::Array(Rc::new(RefCell::new(vec![Value::Float(sum)]))),
+                    );
                     result_fields.insert("_value".to_string(), Value::Float(sum));
                     result_fields.insert("requires_grad".to_string(), Value::Bool(true));
-                    result_fields.insert("_op".to_string(), Value::String(Rc::new("sum".to_string())));
+                    result_fields
+                        .insert("_op".to_string(), Value::String(Rc::new("sum".to_string())));
                     // Propagate the gradient input reference
                     if let Some(grad_input) = grad_left {
                         result_fields.insert("_grad_left".to_string(), grad_input);
                     } else {
                         // Store reference to the input tensor
-                        result_fields.insert("_grad_input".to_string(), Value::Struct {
-                            name: "Tensor".to_string(),
-                            fields: fields.clone(),
-                        });
+                        result_fields.insert(
+                            "_grad_input".to_string(),
+                            Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: fields.clone(),
+                            },
+                        );
                     }
                     Ok(Value::Struct {
                         name: "Tensor".to_string(),
@@ -14664,8 +15377,7 @@ impl Interpreter {
                     if !field_values.contains_key(&def_field.name.name) {
                         return Err(RuntimeError::new(format!(
                             "missing field '{}' in struct '{}'",
-                            def_field.name.name,
-                            name
+                            def_field.name.name, name
                         )));
                     }
                 }
@@ -14958,21 +15670,26 @@ impl Interpreter {
                     }
                 }
                 Some("[_]".to_string())
-            },
+            }
             Expr::Tuple(elements) => {
-                let types: Vec<String> = elements.iter()
+                let types: Vec<String> = elements
+                    .iter()
                     .filter_map(|e| self.infer_expr_type(e))
                     .collect();
                 Some(format!("({})", types.join(", ")))
-            },
+            }
             Expr::Block(block) => {
                 // Type of block is type of last expression or return
                 if let Some(ref e) = block.expr {
                     return self.infer_expr_type(e);
                 }
                 Some("()".to_string())
-            },
-            Expr::If { then_branch, else_branch, .. } => {
+            }
+            Expr::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
                 // Prefer then branch type - check last expr in block
                 if let Some(ref e) = then_branch.expr {
                     if let Some(t) = self.infer_expr_type(e) {
@@ -14983,7 +15700,7 @@ impl Interpreter {
                     return self.infer_expr_type(e);
                 }
                 None
-            },
+            }
             _ => None, // Cannot determine type statically for complex expressions
         }
     }
@@ -15010,7 +15727,10 @@ impl Interpreter {
 
     /// Extract type name and generic type parameters from a TypeExpr
     /// e.g., Option<i32> -> ("Option", ["i32"]), Result<i32, String> -> ("Result", ["i32", "String"])
-    fn extract_type_params(&self, type_expr: &crate::ast::TypeExpr) -> Option<(String, Vec<String>)> {
+    fn extract_type_params(
+        &self,
+        type_expr: &crate::ast::TypeExpr,
+    ) -> Option<(String, Vec<String>)> {
         use crate::ast::TypeExpr;
 
         if let TypeExpr::Path(path) = type_expr {
@@ -15042,8 +15762,14 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         match (type_name, value) {
             // Option<T>: Some(x) must have x: T
-            ("Option", Value::Variant { enum_name, variant_name, fields })
-                if enum_name == "Option" && variant_name == "Some" => {
+            (
+                "Option",
+                Value::Variant {
+                    enum_name,
+                    variant_name,
+                    fields,
+                },
+            ) if enum_name == "Option" && variant_name == "Some" => {
                 if let (Some(expected_type), Some(fields)) = (type_params.first(), fields) {
                     if let Some(inner_value) = fields.first() {
                         let actual_type = self.value_type_name(inner_value);
@@ -15057,8 +15783,14 @@ impl Interpreter {
                 }
             }
             // Result<T, E>: Ok(x) must have x: T
-            ("Result", Value::Variant { enum_name, variant_name, fields })
-                if enum_name == "Result" && variant_name == "Ok" => {
+            (
+                "Result",
+                Value::Variant {
+                    enum_name,
+                    variant_name,
+                    fields,
+                },
+            ) if enum_name == "Result" && variant_name == "Ok" => {
                 if let (Some(expected_type), Some(fields)) = (type_params.first(), fields) {
                     if let Some(inner_value) = fields.first() {
                         let actual_type = self.value_type_name(inner_value);
@@ -15072,8 +15804,14 @@ impl Interpreter {
                 }
             }
             // Result<T, E>: Err(e) must have e: E
-            ("Result", Value::Variant { enum_name, variant_name, fields })
-                if enum_name == "Result" && variant_name == "Err" => {
+            (
+                "Result",
+                Value::Variant {
+                    enum_name,
+                    variant_name,
+                    fields,
+                },
+            ) if enum_name == "Result" && variant_name == "Err" => {
                 if let (Some(expected_type), Some(fields)) = (type_params.get(1), fields) {
                     if let Some(inner_value) = fields.first() {
                         let actual_type = self.value_type_name(inner_value);
@@ -15257,24 +15995,21 @@ mod tests {
 
     #[test]
     fn test_arithmetic() {
+        assert!(matches!(run("rite main() { ⤺ 2 + 3; }"), Ok(Value::Int(5))));
         assert!(matches!(
-            run("fn main() { return 2 + 3; }"),
-            Ok(Value::Int(5))
-        ));
-        assert!(matches!(
-            run("fn main() { return 10 - 4; }"),
+            run("rite main() { ⤺ 10 - 4; }"),
             Ok(Value::Int(6))
         ));
         assert!(matches!(
-            run("fn main() { return 3 * 4; }"),
+            run("rite main() { ⤺ 3 * 4; }"),
             Ok(Value::Int(12))
         ));
         assert!(matches!(
-            run("fn main() { return 15 / 3; }"),
+            run("rite main() { ⤺ 15 / 3; }"),
             Ok(Value::Int(5))
         ));
         assert!(matches!(
-            run("fn main() { return 2 ** 10; }"),
+            run("rite main() { ⤺ 2 ** 10; }"),
             Ok(Value::Int(1024))
         ));
     }
@@ -15282,7 +16017,7 @@ mod tests {
     #[test]
     fn test_variables() {
         assert!(matches!(
-            run("fn main() { let x = 42; return x; }"),
+            run("rite main() { ≔ x = 42; ⤺ x; }"),
             Ok(Value::Int(42))
         ));
     }
@@ -15290,11 +16025,11 @@ mod tests {
     #[test]
     fn test_conditionals() {
         assert!(matches!(
-            run("fn main() { if true { return 1; } else { return 2; } }"),
+            run("rite main() { ⎇ true { ⤺ 1; } ⎉ { ⤺ 2; } }"),
             Ok(Value::Int(1))
         ));
         assert!(matches!(
-            run("fn main() { if false { return 1; } else { return 2; } }"),
+            run("rite main() { ⎇ false { ⤺ 1; } ⎉ { ⤺ 2; } }"),
             Ok(Value::Int(2))
         ));
     }
@@ -15302,7 +16037,7 @@ mod tests {
     #[test]
     fn test_arrays() {
         assert!(matches!(
-            run("fn main() { return [1, 2, 3][1]; }"),
+            run("rite main() { ⤺ [1, 2, 3][1]; }"),
             Ok(Value::Int(2))
         ));
     }
@@ -15310,21 +16045,21 @@ mod tests {
     #[test]
     fn test_functions() {
         let result = run("
-            fn double(x: i64) -> i64 { return x * 2; }
-            fn main() { return double(21); }
+            rite double(x: i64) → i64 { ⤺ x * 2; }
+            rite main() { ⤺ double(21); }
         ");
         assert!(matches!(result, Ok(Value::Int(42))));
     }
 
     #[test]
     fn test_pipe_transform() {
-        let result = run("fn main() { return [1, 2, 3]|τ{_ * 2}|sum; }");
+        let result = run("rite main() { ⤺ [1, 2, 3]|τ{_ * 2}|sum; }");
         assert!(matches!(result, Ok(Value::Int(12))));
     }
 
     #[test]
     fn test_pipe_filter() {
-        let result = run("fn main() { return [1, 2, 3, 4, 5]|φ{_ > 2}|sum; }");
+        let result = run("rite main() { ⤺ [1, 2, 3, 4, 5]|φ{_ > 2}|sum; }");
         assert!(matches!(result, Ok(Value::Int(12)))); // 3 + 4 + 5
     }
 
@@ -15333,12 +16068,12 @@ mod tests {
         // Test that evidentiality propagates through string interpolation
         // When an evidential value is interpolated, the result string should carry that evidentiality
         let result = run(r#"
-            fn main() {
-                let rep = reported(42);
+            rite main() {
+                ≔ rep = reported(42);
 
                 // Interpolating a reported value should make the string reported
-                let s = f"Value: {rep}";
-                return s;
+                ≔ s = f"Value: {rep}";
+                ⤺ s;
             }
         "#);
 
@@ -15359,13 +16094,13 @@ mod tests {
     fn test_interpolation_worst_evidence_wins() {
         // When multiple evidential values are interpolated, the worst evidence level wins
         let result = run(r#"
-            fn main() {
-                let k = known(1);         // Known is best
-                let u = uncertain(2);     // Uncertain is worse
+            rite main() {
+                ≔ k = known(1);         // Known is best
+                ≔ u = uncertain(2);     // Uncertain is worse
 
                 // Combining known and uncertain should yield uncertain
-                let s = f"{k} and {u}";
-                return s;
+                ≔ s = f"{k} and {u}";
+                ⤺ s;
             }
         "#);
 
@@ -15383,10 +16118,10 @@ mod tests {
     fn test_interpolation_no_evidential_plain_string() {
         // When no evidential values are interpolated, the result is a plain string
         let result = run(r#"
-            fn main() {
-                let x = 42;
-                let s = f"Value: {x}";
-                return s;
+            rite main() {
+                ≔ x = 42;
+                ≔ s = f"Value: {x}";
+                ⤺ s;
             }
         "#);
 
