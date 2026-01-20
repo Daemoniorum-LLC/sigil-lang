@@ -289,146 +289,163 @@ rite main() → i64 {
 }`,
 
   // Evidentiality
-  evidence: `// Evidentiality Markers Demonstration
+  evidence: `// Evidentiality Concept Demonstration
 //
-// Evidence tracks data provenance at the type level:
+// In full Sigil, evidence markers track data provenance:
 //   ! (known)     - Computed locally, verified
 //   ? (uncertain) - Might be absent (like Option)
 //   ~ (reported)  - External data, untrusted
 //   ‽ (paradox)   - Trust boundary crossing
+//
+// This playground version shows the concept without markers.
 
 rite main() → i64 {
-    println("=== Evidence Chain: ~ -> ? -> ! ===");
+    println("=== Evidence Chain Concept ===");
     println("");
 
-    // Stage 1: External data arrives as reported (~)
-    println("Stage 1: External data (reported ~)");
-    ≔ raw_data~ = 42;  // Marked as external
-    println("  raw_data~ received from API");
+    // Stage 1: External data arrives (reported)
+    println("Stage 1: External data arrives");
+    ≔ raw_data = 42;
+    println("  raw_data received from API: " ++ raw_data.to_string());
 
-    // Stage 2: Validation promotes to uncertain (?)
+    // Stage 2: Validation promotes to uncertain
     println("");
-    println("Stage 2: After validation (uncertain ?)");
-    ≔ validated? = raw_data~;  // Still not fully trusted
-    println("  validated? passed basic checks");
+    println("Stage 2: After validation");
+    ≔ validated = raw_data;
+    ⎇ validated > 0 {
+        println("  validated - passed basic checks");
+    }
 
-    // Stage 3: Computation produces known (!)
+    // Stage 3: Computation produces known
     println("");
-    println("Stage 3: After verification (known !)");
-    ≔ result! = validated? * 2;  // Now trusted
-    println("  result! = " ++ result!.to_string());
+    println("Stage 3: After verification");
+    ≔ result = validated * 2;
+    println("  result = " ++ result.to_string());
 
     println("");
     println("Evidence promotes pessimistically:");
-    println("  ! + ~ = ~ (known polluted by reported)");
+    println("  known + reported = reported");
 
     0
 }`,
 
-  validation: `// Data Validation with Evidence
+  validation: `// Data Validation Pipeline
 rite main() → i64 {
     // Simulate external API data
-    ≔ api_response~ = 100;
+    ≔ api_response = 100;
 
     // Validation pipeline
-    println("Raw data from API: " ++ api_response~.to_string());
+    println("Raw data from API: " ++ api_response.to_string());
 
-    // Check if positive (promotes ~ to ?)
-    ≔ checked? = api_response~;
-    ⎇ checked? > 0 {
-        println("✓ Passed: value is positive");
+    // Check if positive
+    ≔ checked = api_response;
+    ⎇ checked > 0 {
+        println("Passed: value is positive");
     }
 
-    // Verify bounds (promotes ? to !)
-    ≔ safe! = checked?;
-    ⎇ safe! >= 0 ∧ safe! <= 1000 {
-        println("✓ Verified: value in safe range");
+    // Verify bounds
+    ≔ safe = checked;
+    ⎇ safe >= 0 ∧ safe <= 1000 {
+        println("Verified: value in safe range");
     }
 
     // Now we can use it with confidence
-    ≔ result! = safe! * 2;
-    println("Final result!: " ++ result!.to_string());
+    ≔ result = safe * 2;
+    println("Final result: " ++ result.to_string());
 
     0
 }`,
 
   // Patterns
-  structs: `// Sigils (Structs) and Implementations
+  structs: `// Sigils (Structs) - Data Types
 sigil Point {
     x: i64,
     y: i64,
 }
 
-impl Point {
-    rite new(x: i64, y: i64) → Point {
-        Point { x: x, y: y }
-    }
+sigil Rectangle {
+    width: i64,
+    height: i64,
+}
 
-    rite origin() → Point {
-        Point·new(0, 0)
-    }
+rite make_point(x: i64, y: i64) → Point {
+    Point { x: x, y: y }
+}
 
-    rite distance_from_origin(self) → f64 {
-        ≔ x2 = (self.x * self.x) as f64;
-        ≔ y2 = (self.y * self.y) as f64;
-        (x2 + y2).sqrt()
-    }
-
-    rite translate(self, dx: i64, dy: i64) → Point {
-        Point·new(self.x + dx, self.y + dy)
-    }
+rite area(rect: Rectangle) → i64 {
+    rect.width * rect.height
 }
 
 rite main() → i64 {
-    ≔ p1 = Point·new(3, 4);
+    // Create a point using struct literal
+    ≔ p1 = Point { x: 3, y: 4 };
     println("Point: (" ++ p1.x.to_string() ++ ", " ++ p1.y.to_string() ++ ")");
 
-    ≔ dist = p1.distance_from_origin();
-    println("Distance from origin: " ++ dist.to_string());
+    // Create using helper function
+    ≔ p2 = make_point(10, 20);
+    println("Point 2: (" ++ p2.x.to_string() ++ ", " ++ p2.y.to_string() ++ ")");
 
-    ≔ p2 = p1.translate(2, 3);
-    println("Translated: (" ++ p2.x.to_string() ++ ", " ++ p2.y.to_string() ++ ")");
+    // Rectangle example
+    ≔ rect = Rectangle { width: 5, height: 3 };
+    println("Rectangle: " ++ rect.width.to_string() ++ " x " ++ rect.height.to_string());
+    println("Area: " ++ area(rect).to_string());
+
+    // Distance calculation (manual, no sqrt in playground)
+    ≔ dx = p2.x - p1.x;
+    ≔ dy = p2.y - p1.y;
+    ≔ dist_sq = dx * dx + dy * dy;
+    println("Distance squared: " ++ dist_sq.to_string());
 
     0
 }`,
 
-  matching: `// Pattern Matching
-enum Status {
-    Active,
-    Pending(String),
-    Completed(i64),
-    Failed(String, i64),
+  matching: `// Pattern Matching with ⌥ (match)
+rite classify(n: i64) → String {
+    ⌥ n {
+        0 => "zero",
+        1 => "one",
+        2 => "two",
+        _ => "many",
+    }
 }
 
-rite describe_status(s: Status) → String {
-    ⌥ s {
-        Status·Active => "Currently active",
-        Status·Pending(reason) => "Pending: " ++ reason,
-        Status·Completed(code) => "Done with code " ++ code.to_string(),
-        Status·Failed(msg, code) => msg ++ " (error " ++ code.to_string() ++ ")",
+rite describe_sign(n: i64) → String {
+    ⎇ n > 0 {
+        "positive"
+    } ⎉ {
+        ⎇ n < 0 {
+            "negative"
+        } ⎉ {
+            "zero"
+        }
     }
 }
 
 rite main() → i64 {
-    ≔ s1 = Status·Active;
-    ≔ s2 = Status·Pending("Awaiting approval");
-    ≔ s3 = Status·Completed(0);
-    ≔ s4 = Status·Failed("Connection lost", 503);
+    println("=== Pattern Matching Demo ===");
+    println("");
 
-    println(describe_status(s1));
-    println(describe_status(s2));
-    println(describe_status(s3));
-    println(describe_status(s4));
+    // Simple number matching
+    ≔ nums = [0, 1, 2, 5, 10];
+    ≔ i = 0;
+    while i < 5 {
+        ≔ n = nums[i];
+        ≔ desc = classify(n);
+        println(n.to_string() ++ " is " ++ desc);
+        i = i + 1;
+    }
 
-    // Pattern matching with guards
-    ≔ value = 42;
-    ≔ description = ⌥ value {
-        0 => "zero",
-        n ⎇ n < 0 => "negative",
-        n ⎇ n > 100 => "large",
-        _ => "normal positive",
-    };
-    println("42 is: " ++ description);
+    println("");
+    println("=== Sign Classification ===");
+
+    ≔ test_nums = [42, 0, -7, 100, -1];
+    ≔ j = 0;
+    while j < 5 {
+        ≔ n = test_nums[j];
+        ≔ sign = describe_sign(n);
+        println(n.to_string() ++ " is " ++ sign);
+        j = j + 1;
+    }
 
     0
 }`,
