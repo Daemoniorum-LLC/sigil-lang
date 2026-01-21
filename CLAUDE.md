@@ -1,5 +1,11 @@
 # Sigil Language - Agent Guide
 
+## Agent Coordination
+
+**Register your presence** in the workspace `CONCLAVE.sigil` and follow:
+- [SDD Methodology](../docs/methodologies/SPEC-DRIVEN-DEVELOPMENT.md)
+- [Agent-TDD](../docs/methodologies/AGENT-TDD.md)
+
 ## The Canonical Compiler
 
 The **Rust-based Sigil compiler** at `parser/` is the canonical compiler.

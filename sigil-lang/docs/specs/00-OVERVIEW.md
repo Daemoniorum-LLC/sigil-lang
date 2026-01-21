@@ -145,6 +145,39 @@ fn main() {
 
 ---
 
+---
+
+## Implementation Status
+
+### Test Coverage (as of 2026-01-21)
+
+| Category | Pass Rate | Notes |
+|----------|-----------|-------|
+| Core Language | 100% | Lexical, syntax, basic types |
+| Type System | 100% | Generics, Option, Result, Trait Bounds, Method Chaining |
+| Memory | 100% | Ownership, borrowing, reborrow, Box deref, slice coercion |
+| Negative Tests | 100% | Error validation (all 30 pass) |
+| Experimental | 0% | Quantum, neural, protocols |
+| **Overall** | **87%** | **466/531 tests** |
+
+### Priority Roadmap
+
+| Priority | Description | Tests | Status |
+|----------|-------------|-------|--------|
+| **P0: Critical** | Blocks production use | 0 | All P0 tests pass (Wave 1 complete) |
+| **P1: High** | Quality of life | 9 | Planned |
+| **P2: Low** | Future/experimental | 62 | Deferred |
+
+See [INTERPRETER-SPEC-ROADMAP.md](./INTERPRETER-SPEC-ROADMAP.md) for detailed TDD roadmap.
+
+### Bootstrap Status
+
+- **Jormungandr (self-hosted compiler):** Functional
+- **C code generation:** Working
+- **Fixed-point compilation:** In progress
+
+---
+
 ## Version
 
 This specification describes **Sigil 0.1.0** (Codename: *First Seal*)
